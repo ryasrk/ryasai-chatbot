@@ -1,0 +1,214 @@
+// =====================================================================
+// Enterprise AI Internal Assistant — Prisma Schema
+// Adapted from "DOKUMEN SPESIFIKASI TEKNIS" (PostgreSQL) to SQLite.
+// Implements: multi-tenancy, RBAC, AES-256-GCM encrypted integrations,
+// RAG document store, chat history, audit logs, query history.
+// =====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------
+// 4.1  Tenant / Company
+// ------------------------------------------------------------------
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  industry    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  integrations Integration[]
+  documents    Document[]
+  chatSessions ChatSession[]
+  auditLogs    AuditLog[]
+}
+
+// ------------------------------------------------------------------
+// 4.1  User with RBAC (admin / manager / staff)
+// ------------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  companyId    String
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("staff") // admin | manager | staff
+  avatarColor  String   @default("oklch(0.55 0.18 250)")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chatSessions ChatSession[]
+  auditLogs    AuditLog[]
+  messages     ChatMessage[]
+  queries      QueryHistory[]
+
+  @@index([companyId])
+}
+
+// ------------------------------------------------------------------
+// 3.1 / 3.2  Dynamic Connector — encrypted config blob
+// ------------------------------------------------------------------
+model Integration {
+  id              String   @id @default(cuid())
+  companyId       String
+  name            String
+  type            String   // DATABASE | API
+  provider        String   // POSTGRESQL | MYSQL | MSSQL | REST_API | SQLITE_DEMO
+  encryptedConfig String   // AES-256-GCM hex blob (nonce + ciphertext)
+  status          String   @default("active") // active | inactive | error
+  lastTestedAt    DateTime?
+  lastTestOk      Boolean?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  schemas       IntegrationSchema[]
+  queryHistory  QueryHistory[]
+  chatMessages  ChatMessage[]
+
+  @@index([companyId])
+}
+
+// Cached reflected schema (tables + columns) for Text-to-SQL prompts
+model IntegrationSchema {
+  id            String   @id @default(cuid())
+  integrationId String
+  tableName     String
+  columns       String   // JSON: [{name,type}]
+  rowCount      Int?
+  reflectedAt   DateTime @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
+}
+
+// ------------------------------------------------------------------
+// 3.3  RAG — documents & semantic chunks
+// ------------------------------------------------------------------
+model Document {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  type        String   // pdf | docx | xlsx | txt | md
+  sizeBytes   Int
+  mimeType    String
+  status      String   @default("processing") // processing | ready | error
+  category    String?  // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
+  description String?
+  contentText String   // full extracted text (for RAG context)
+  uploadPath  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chunks  DocumentChunk[]
+
+  @@index([companyId])
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  tokenCount Int?
+  keywords   String?  // simple keyword tags for retrieval
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+// ------------------------------------------------------------------
+// 5.2  Chat sessions & messages (streaming protocol)
+// ------------------------------------------------------------------
+model ChatSession {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String
+  title     String   @default("Sesi Baru")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([companyId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  sessionId  String
+  userId     String?
+  sender     String   // user | ai | system
+  text       String
+  status     String?  // executing_sql | rag_retrieving | generating | complete | error
+  citations  String?  // JSON array of {type,source,query_used}
+  chartData  String?  // JSON for Recharts if SQL result is chartable
+  createdAt  DateTime @default(now())
+
+  session     ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user        User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  integration Integration?   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  integrationId String?
+
+  @@index([sessionId])
+}
+
+// ------------------------------------------------------------------
+// 7    Audit logs (security events, guardrail blocks, etc.)
+// ------------------------------------------------------------------
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  userId    String?
+  action    String   // INTEGRATION_CREATE | GUARDRAIL_BLOCK | SQL_EXECUTE | DOC_UPLOAD | LOGIN ...
+  severity  String   @default("info") // info | warning | critical
+  detail    String   // JSON string
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([severity])
+}
+
+// ------------------------------------------------------------------
+// 7    Query history (Text-to-SQL executed queries)
+// ------------------------------------------------------------------
+model QueryHistory {
+  id            String   @id @default(cuid())
+  integrationId String
+  userId        String
+  naturalQuery  String
+  generatedSql  String
+  rowCount      Int?
+  executionMs   Int?
+  success       Boolean  @default(true)
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
+  @@index([userId])
+}

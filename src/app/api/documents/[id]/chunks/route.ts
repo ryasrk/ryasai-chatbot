@@ -1,0 +1,76 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getActiveUser } from '@/lib/session'
+
+export const runtime = 'nodejs'
+
+const MAX_PAGE_SIZE = 100
+const DEFAULT_PAGE_SIZE = 20
+
+/**
+ * GET /api/documents/[id]/chunks?page=1&pageSize=20
+ * Returns all chunks for a document (paginated), ordered by chunkIndex.
+ */
+export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await getActiveUser()
+    const { id } = await ctx.params
+    const { searchParams } = new URL(req.url)
+
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1)
+    const requestedSize = parseInt(
+      searchParams.get('pageSize') ?? String(DEFAULT_PAGE_SIZE),
+      10,
+    ) || DEFAULT_PAGE_SIZE
+    const pageSize = Math.min(Math.max(1, requestedSize), MAX_PAGE_SIZE)
+
+    // Make sure the document belongs to the active company before paginating.
+    const doc = await db.document.findFirst({
+      where: { id, companyId: user.companyId },
+      select: { id: true, name: true, _count: { select: { chunks: true } } },
+    })
+    if (!doc) {
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 },
+      )
+    }
+
+    const [chunks, total] = await Promise.all([
+      db.documentChunk.findMany({
+        where: { documentId: id },
+        orderBy: { chunkIndex: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          chunkIndex: true,
+          content: true,
+          tokenCount: true,
+          keywords: true,
+          createdAt: true,
+        },
+      }),
+      db.documentChunk.count({ where: { documentId: id } }),
+    ])
+
+    return NextResponse.json({
+      documentId: id,
+      documentName: doc.name,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      chunks,
+    })
+  } catch (e) {
+    console.error('[GET /api/documents/[id]/chunks]', e)
+    return NextResponse.json(
+      { error: 'Failed to list chunks', detail: String(e) },
+      { status: 500 },
+    )
+  }
+}
