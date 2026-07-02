@@ -24,6 +24,7 @@ import { KnowledgeBaseView } from '@/components/views/knowledge-base-view'
 import { SecurityView } from '@/components/views/security-view'
 import { SettingsView } from '@/components/views/settings-view'
 import { LoginView } from '@/components/views/login-view'
+import { SetupView } from '@/components/views/setup-view'
 import { Topbar } from '@/components/views/topbar'
 import {
   resolveViewFromSearch,
@@ -61,6 +62,19 @@ export default function Home() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { user, loading, unauthorized, refresh } = useActiveUser()
 
+  // Setup status — fetched once on mount. When setup is not yet complete the
+  // wizard renders (even if unauthorized, because the admin step auto-logs-in).
+  const [setup, setSetup] = useState<{
+    setupCompleted: boolean
+    hasAdmin: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/setup/status', { cache: 'no-store' }).then(async (r) =>
+      setSetup(r.ok ? await r.json() : { setupCompleted: true, hasAdmin: true }),
+    )
+  }, [])
+
   useEffect(() => {
     document.title = 'ryasai'
     queueMicrotask(() => {
@@ -85,9 +99,24 @@ export default function Home() {
     window.history.pushState(null, '', url)
   }, [])
 
-  // Gate: when there is no valid session, render the login screen instead of
-  // the app shell. While the session is still being checked we render the full
-  // shell skeleton so a logged-in user doesn't see a flash of the login page.
+  // Setup gate — must come BEFORE the auth gate: when setup is not yet complete
+  // the wizard renders even without a session (the admin step auto-logs-in).
+  if (setup && !setup.setupCompleted) {
+    return (
+      <SetupView
+        hasAdmin={setup.hasAdmin}
+        onDone={() => {
+          setSetup({ setupCompleted: true, hasAdmin: true })
+          refresh()
+        }}
+      />
+    )
+  }
+
+  // Auth gate: when there is no valid session, render the login screen instead
+  // of the app shell. While the session is still being checked we render the
+  // full shell skeleton so a logged-in user doesn't see a flash of the login
+  // page.
   if (!loading && unauthorized) {
     return <LoginView onSuccess={refresh} />
   }
