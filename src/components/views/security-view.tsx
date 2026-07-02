@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -80,6 +81,56 @@ interface AuditPage {
   pageSize: number
 }
 
+interface ToolRunItem {
+  id: string
+  type: string
+  status: string
+  latencyMs: number | null
+  inputSummary: string
+  outputSummary: string | null
+  errorMessage: string | null
+  createdAt: string
+}
+
+interface ApiRequestLogItem {
+  id: string
+  endpoint: string
+  status: number
+  latencyMs: number | null
+  errorMessage: string | null
+  createdAt: string
+}
+
+interface RestApiErrorItem {
+  id: string
+  requestSummary: string
+  statusCode: number | null
+  latencyMs: number | null
+  errorMessage: string | null
+  createdAt: string
+}
+
+interface BlockedSqlItem {
+  id: string
+  action: string
+  severity: string
+  detail: string
+  createdAt: string
+}
+
+interface MonitoringData {
+  ok: boolean
+  toolRuns: ToolRunItem[]
+  failedApiRequests: ApiRequestLogItem[]
+  restApiErrors: RestApiErrorItem[]
+  blockedSql: BlockedSqlItem[]
+  stats: {
+    toolRunCount24h: number
+    avgToolLatencyMs24h: number
+    failedApiCount24h: number
+  }
+}
+
 export function SecurityView() {
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState<SeverityFilter>('all')
@@ -87,6 +138,28 @@ export function SecurityView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<AuditLogItem | null>(null)
+
+  // ---- monitoring data (tool runs, failed requests, blocked SQL) ----
+  const [monitoring, setMonitoring] = useState<MonitoringData | null>(null)
+  const [monLoading, setMonLoading] = useState(true)
+
+  const loadMonitoring = useCallback(async () => {
+    setMonLoading(true)
+    try {
+      const res = await fetch('/api/monitoring', { cache: 'no-store' })
+      if (!res.ok) throw new Error('Gagal memuat data monitoring.')
+      const json = await res.json()
+      if (json?.ok) setMonitoring(json)
+    } catch {
+      /* keep null — tabs show empty state */
+    } finally {
+      setMonLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadMonitoring()
+  }, [loadMonitoring])
 
   const load = useCallback(async (targetPage: number) => {
     setLoading(true)
@@ -136,6 +209,74 @@ export function SecurityView() {
 
   return (
     <div className="space-y-4 md:space-y-6">
+      {/* ---- monitoring stat cards ---- */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+        <Card className="py-4 gap-2">
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-muted-foreground">Tool Run (24j)</div>
+              <div className="text-2xl font-semibold mt-1">{id(monitoring?.stats.toolRunCount24h ?? 0)}</div>
+              <div className="text-[11px] text-muted-foreground mt-1">eksekusi tool</div>
+            </div>
+            <div className="rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 p-2">
+              <ListChecks className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-4 gap-2">
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-muted-foreground">Rata-rata Latency (24j)</div>
+              <div className="text-2xl font-semibold mt-1">
+                {id(monitoring?.stats.avgToolLatencyMs24h ?? 0)}
+                <span className="text-sm font-normal text-muted-foreground"> ms</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">tool run</div>
+            </div>
+            <div className="rounded-lg bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300 p-2">
+              <FlaskConical className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="py-4 gap-2">
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-muted-foreground">API Gagal (24j)</div>
+              <div className="text-2xl font-semibold mt-1 text-rose-600 dark:text-rose-400">
+                {id(monitoring?.stats.failedApiCount24h ?? 0)}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">status &ge; 400</div>
+            </div>
+            <div className="rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 p-2">
+              <ShieldAlert className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="audit" className="w-full">
+        <div className="overflow-x-auto -mx-1 px-1 pb-1">
+          <TabsList className="w-max">
+            <TabsTrigger value="audit" className="gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Audit Log
+            </TabsTrigger>
+            <TabsTrigger value="tool-runs" className="gap-1.5">
+              <ListChecks className="h-3.5 w-3.5" />
+              Tool Runs
+            </TabsTrigger>
+            <TabsTrigger value="failed-requests" className="gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Failed Requests
+            </TabsTrigger>
+            <TabsTrigger value="blocked-sql" className="gap-1.5">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Blocked SQL
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="audit" className="mt-4 space-y-4 md:space-y-6">
       {/* ---- summary cards ---- */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         <Card className="py-4 gap-2">
@@ -386,6 +527,247 @@ export function SecurityView() {
           </div>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        {/* ---- Tool Runs tab ---- */}
+        <TabsContent value="tool-runs" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Tool Runs</CardTitle>
+              <CardDescription>50 eksekusi tool terakhir (RAG, SQL, REST API, Chat)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {monLoading && !monitoring ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-full" />
+                  ))}
+                </div>
+              ) : (monitoring?.toolRuns ?? []).length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">Belum ada tool run.</div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[140px]">Waktu</TableHead>
+                        <TableHead className="w-[100px]">Tipe</TableHead>
+                        <TableHead className="w-[100px]">Status</TableHead>
+                        <TableHead className="w-[90px]">Latency</TableHead>
+                        <TableHead className="min-w-[200px]">Ringkasan</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(monitoring?.toolRuns ?? []).map((run) => (
+                        <TableRow key={run.id}>
+                          <TableCell className="text-xs text-muted-foreground align-top">
+                            <div>{format(new Date(run.createdAt), 'dd MMM yyyy', { locale: localeId })}</div>
+                            <div>{format(new Date(run.createdAt), 'HH:mm:ss', { locale: localeId })}</div>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge variant="outline" className="font-mono text-[10px]">{run.type}</Badge>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'text-[10px]',
+                                run.status === 'success'
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                  : run.status === 'blocked'
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                    : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+                              )}
+                            >
+                              {run.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs align-top">
+                            {run.latencyMs != null ? `${run.latencyMs}ms` : '-'}
+                          </TableCell>
+                          <TableCell className="max-w-[300px] align-top">
+                            <div className="text-xs line-clamp-2 text-muted-foreground">
+                              {run.errorMessage || run.outputSummary || run.inputSummary}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---- Failed Requests tab ---- */}
+        <TabsContent value="failed-requests" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Failed Requests</CardTitle>
+              <CardDescription>50 request API eksternal & REST terakhir yang gagal (status &ge; 400)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* API request logs */}
+              <div>
+                <div className="text-sm font-medium mb-2">API Request Logs</div>
+                {monLoading && !monitoring ? (
+                  <Skeleton className="h-9 w-full" />
+                ) : (monitoring?.failedApiRequests ?? []).length === 0 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">Tidak ada request gagal.</div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Waktu</TableHead>
+                          <TableHead className="w-[90px]">Status</TableHead>
+                          <TableHead className="w-[90px]">Latency</TableHead>
+                          <TableHead className="min-w-[180px]">Endpoint / Error</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(monitoring?.failedApiRequests ?? []).map((req) => (
+                          <TableRow key={req.id}>
+                            <TableCell className="text-xs text-muted-foreground align-top">
+                              <div>{format(new Date(req.createdAt), 'dd MMM yyyy', { locale: localeId })}</div>
+                              <div>{format(new Date(req.createdAt), 'HH:mm:ss', { locale: localeId })}</div>
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <Badge variant="outline" className="bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 text-[10px]">
+                                {req.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs align-top">
+                              {req.latencyMs != null ? `${req.latencyMs}ms` : '-'}
+                            </TableCell>
+                            <TableCell className="max-w-[300px] align-top">
+                              <div className="text-xs font-mono text-muted-foreground line-clamp-1">{req.endpoint}</div>
+                              {req.errorMessage && (
+                                <div className="text-[11px] text-rose-600 dark:text-rose-400 line-clamp-1">{req.errorMessage}</div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* REST API errors */}
+              <div>
+                <div className="text-sm font-medium mb-2">REST API Errors</div>
+                {monLoading && !monitoring ? (
+                  <Skeleton className="h-9 w-full" />
+                ) : (monitoring?.restApiErrors ?? []).length === 0 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">Tidak ada error REST API.</div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Waktu</TableHead>
+                          <TableHead className="w-[90px]">Status</TableHead>
+                          <TableHead className="w-[90px]">Latency</TableHead>
+                          <TableHead className="min-w-[180px]">Request / Error</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(monitoring?.restApiErrors ?? []).map((req) => (
+                          <TableRow key={req.id}>
+                            <TableCell className="text-xs text-muted-foreground align-top">
+                              <div>{format(new Date(req.createdAt), 'dd MMM yyyy', { locale: localeId })}</div>
+                              <div>{format(new Date(req.createdAt), 'HH:mm:ss', { locale: localeId })}</div>
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <Badge variant="outline" className="bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 text-[10px]">
+                                {req.statusCode ?? '-'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs align-top">
+                              {req.latencyMs != null ? `${req.latencyMs}ms` : '-'}
+                            </TableCell>
+                            <TableCell className="max-w-[300px] align-top">
+                              <div className="text-xs text-muted-foreground line-clamp-1">{req.requestSummary}</div>
+                              {req.errorMessage && (
+                                <div className="text-[11px] text-rose-600 dark:text-rose-400 line-clamp-1">{req.errorMessage}</div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---- Blocked SQL tab ---- */}
+        <TabsContent value="blocked-sql" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Blocked SQL</CardTitle>
+              <CardDescription>50 blok guardrail SQL terakhir (kueri destruktif ditolak)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {monLoading && !monitoring ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-full" />
+                  ))}
+                </div>
+              ) : (monitoring?.blockedSql ?? []).length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">Tidak ada blok guardrail SQL.</div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[140px]">Waktu</TableHead>
+                        <TableHead className="w-[110px]">Severity</TableHead>
+                        <TableHead className="min-w-[240px]">Detail</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(monitoring?.blockedSql ?? []).map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="text-xs text-muted-foreground align-top">
+                            <div>{format(new Date(item.createdAt), 'dd MMM yyyy', { locale: localeId })}</div>
+                            <div>{format(new Date(item.createdAt), 'HH:mm:ss', { locale: localeId })}</div>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge
+                              variant="outline"
+                              className={cn('text-[10px]', severityBadgeClass(item.severity))}
+                            >
+                              {severityIcon(item.severity)}
+                              {item.severity}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[360px] align-top">
+                            <div className="text-xs line-clamp-2 text-muted-foreground">
+                              {(() => {
+                                try {
+                                  return JSON.stringify(JSON.parse(item.detail))
+                                } catch {
+                                  return item.detail
+                                }
+                              })()}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
