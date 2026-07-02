@@ -8,4 +8,9 @@ describe('view routing', () => {
     expect(resolveViewFromSearch('?view=unknown')).toBe('dashboard')
     expect(resolveViewFromSearch('')).toBe('dashboard')
   })
+
+  test('resolves the new production views', () => {
+    expect(resolveViewFromSearch('?view=ai-config')).toBe('ai-config')
+    expect(resolveViewFromSearch('?view=prompt-tools')).toBe('prompt-tools')
+  })
 })

@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Settings,
   Brain,
+  Wrench,
   Menu,
   X,
   CheckCircle2,
@@ -23,6 +24,8 @@ import { IntegrationsView } from '@/components/views/integrations-view'
 import { KnowledgeBaseView } from '@/components/views/knowledge-base-view'
 import { SecurityView } from '@/components/views/security-view'
 import { SettingsView } from '@/components/views/settings-view'
+import { AIConfigurationView } from '@/components/views/ai-configuration-view'
+import { PromptToolsView } from '@/components/views/prompt-tools-view'
 import { LoginView } from '@/components/views/login-view'
 import { SetupView } from '@/components/views/setup-view'
 import { Topbar } from '@/components/views/topbar'
@@ -36,6 +39,8 @@ const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string }[] =
   { key: 'chat', label: 'Chat', icon: MessageSquare, desc: 'Asisten internal' },
   { key: 'integrations', label: 'Data Sources', icon: Database, desc: 'Database dan REST API' },
   { key: 'knowledge', label: 'Knowledge', icon: FileText, desc: 'Dokumen dan RAG' },
+  { key: 'ai-config', label: 'AI Configuration', icon: Brain, desc: 'Provider, model, embedding' },
+  { key: 'prompt-tools', label: 'Prompt & Tools', icon: Wrench, desc: 'System prompt dan routing' },
   { key: 'security', label: 'Monitoring', icon: ShieldCheck, desc: 'Audit dan guardrails' },
   { key: 'settings', label: 'Settings', icon: Settings, desc: 'Admin dan konfigurasi' },
 ]
@@ -50,6 +55,10 @@ function renderView(view: ViewKey) {
       return <IntegrationsView />
     case 'knowledge':
       return <KnowledgeBaseView />
+    case 'ai-config':
+      return <AIConfigurationView />
+    case 'prompt-tools':
+      return <PromptToolsView />
     case 'security':
       return <SecurityView />
     case 'settings':

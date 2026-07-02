@@ -3,6 +3,8 @@ export const VIEW_KEYS = [
   'chat',
   'integrations',
   'knowledge',
+  'ai-config',
+  'prompt-tools',
   'security',
   'settings',
 ] as const
