@@ -240,30 +240,31 @@ export async function generateAnswer(args: {
   source: 'SQL' | 'RAG' | 'REST_API'
   provider?: string
   companyId?: string
+  systemPromptPrefix?: string
 }): Promise<string> {
   const sourceLabel = answerContextLabel(args.source)
-  return chatOnce(
-    [
-      {
-        role: 'system',
-        content:
-          `Anda adalah ryasai, asisten AI perusahaan. ` +
-          `Jawab pertanyaan user berdasarkan KONTEKS yang diberikan. ` +
-          `Jika konteks tidak cukup, nyatakan dengan jelas. ` +
-          `Sajikan jawaban dalam Bahasa Indonesia yang jelas, ringkas, dan profesional. ` +
-          `Jika data berupa angka, tampilkan dalam format yang mudah dibaca. ` +
-          `Sebutkan sumber data secara natural di akhir jawaban.`,
-      },
-      {
-        role: 'user',
-        content:
-          `Pertanyaan: ${args.question}\n\n` +
-          `KONTEKS (${sourceLabel}):\n${args.context}\n\n` +
-          `Jawab:`,
-      },
-    ],
-    { companyId: args.companyId },
-  )
+  const messages: ChatMessage[] = []
+  if (args.systemPromptPrefix) {
+    messages.push({ role: 'system', content: args.systemPromptPrefix })
+  }
+  messages.push({
+    role: 'system',
+    content:
+      `Anda adalah ryasai, asisten AI perusahaan. ` +
+      `Jawab pertanyaan user berdasarkan KONTEKS yang diberikan. ` +
+      `Jika konteks tidak cukup, nyatakan dengan jelas. ` +
+      `Sajikan jawaban dalam Bahasa Indonesia yang jelas, ringkas, dan profesional. ` +
+      `Jika data berupa angka, tampilkan dalam format yang mudah dibaca. ` +
+      `Sebutkan sumber data secara natural di akhir jawaban.`,
+  })
+  messages.push({
+    role: 'user',
+    content:
+      `Pertanyaan: ${args.question}\n\n` +
+      `KONTEKS (${sourceLabel}):\n${args.context}\n\n` +
+      `Jawab:`,
+  })
+  return chatOnce(messages, { companyId: args.companyId })
 }
 
 export function answerContextLabel(source: 'SQL' | 'RAG' | 'REST_API'): string {
@@ -274,18 +275,19 @@ export function answerContextLabel(source: 'SQL' | 'RAG' | 'REST_API'): string {
 export async function generateChat(
   question: string,
   companyId?: string,
+  systemPromptPrefix?: string,
 ): Promise<string> {
-  return chatOnce(
-    [
-      {
-        role: 'system',
-        content:
-          'Anda adalah ryasai, asisten AI perusahaan yang ramah, profesional, dan menjawab dalam Bahasa Indonesia.',
-      },
-      { role: 'user', content: question },
-    ],
-    { companyId },
-  )
+  const messages: ChatMessage[] = []
+  if (systemPromptPrefix) {
+    messages.push({ role: 'system', content: systemPromptPrefix })
+  }
+  messages.push({
+    role: 'system',
+    content:
+      'Anda adalah ryasai, asisten AI perusahaan yang ramah, profesional, dan menjawab dalam Bahasa Indonesia.',
+  })
+  messages.push({ role: 'user', content: question })
+  return chatOnce(messages, { companyId })
 }
 
 export interface RestEndpointOption {

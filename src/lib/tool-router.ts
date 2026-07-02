@@ -24,6 +24,7 @@ import {
   matchEndpoint,
   sanitizeHeaders,
 } from '@/lib/rest-api-connectors'
+import { getPromptSettings } from '@/lib/prompt-settings'
 import type { ChartData, Citation } from '@/lib/types'
 
 type ToolRunStatus = 'success' | 'error' | 'blocked'
@@ -52,7 +53,7 @@ export async function runNonStreamingChatCompletion(args: {
   userId: string
   integrationId?: string
 }): Promise<CompletionResult> {
-  const [integrationCount, documentCount, restEndpointCount] = await Promise.all([
+  const [integrationCount, documentCount, restEndpointCount, promptSettings] = await Promise.all([
     db.integration.count({ where: { companyId: args.companyId, status: 'active' } }),
     db.document.count({ where: { companyId: args.companyId, status: 'ready' } }),
     db.restApiEndpoint.count({
@@ -61,6 +62,7 @@ export async function runNonStreamingChatCompletion(args: {
         connector: { companyId: args.companyId, isActive: true },
       },
     }),
+    getPromptSettings(db, args.companyId),
   ])
   const smartMappingHints = await loadSmartMappingHints(args.companyId)
 
@@ -72,16 +74,27 @@ export async function runNonStreamingChatCompletion(args: {
     companyId: args.companyId,
     smartMappingHints,
   })
-  const decision = chooseAvailableDecision(routed.decision, {
+  let decision = chooseAvailableDecision(routed.decision, {
     hasIntegrations: integrationCount > 0,
     hasDocuments: documentCount > 0,
     hasRestApis: restEndpointCount > 0,
   })
 
-  if (decision === 'SQL') return runSqlBranch(args)
-  if (decision === 'RAG') return runRagBranch(args)
-  if (decision === 'REST') return runRestBranch(args)
-  return runChatBranch(args)
+  // Enforce prompt-settings tool toggles: if the chosen tool is disabled, fall
+  // back to CHAT (the default safe path).
+  if (decision === 'SQL' && !promptSettings.tools.sql) decision = 'CHAT'
+  if (decision === 'RAG' && !promptSettings.tools.rag) decision = 'CHAT'
+  if (decision === 'REST' && !promptSettings.tools.restApi) decision = 'CHAT'
+
+  const branchArgs = {
+    ...args,
+    systemPromptPrefix: promptSettings.systemPrompt || undefined,
+  }
+
+  if (decision === 'SQL') return runSqlBranch(branchArgs)
+  if (decision === 'RAG') return runRagBranch(branchArgs)
+  if (decision === 'REST') return runRestBranch(branchArgs)
+  return runChatBranch(branchArgs)
 }
 
 async function loadSmartMappingHints(companyId: string): Promise<string> {
@@ -179,9 +192,10 @@ export function buildDocumentCitation(args: {
 async function runChatBranch(args: {
   question: string
   companyId: string
+  systemPromptPrefix?: string
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const answer = await generateChat(args.question, args.companyId)
+  const answer = await generateChat(args.question, args.companyId, args.systemPromptPrefix)
   return {
     answer,
     citations: [],
@@ -201,6 +215,7 @@ async function runChatBranch(args: {
 async function runRagBranch(args: {
   question: string
   companyId: string
+  systemPromptPrefix?: string
 }): Promise<CompletionResult> {
   const started = Date.now()
   const retrieval = await retrieveRelevantChunks({
@@ -222,6 +237,7 @@ async function runRagBranch(args: {
     context,
     source: 'RAG',
     companyId: args.companyId,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
   const citations = topChunks.map((item) =>
     buildDocumentCitation({
@@ -269,6 +285,7 @@ async function runSqlBranch(args: {
   companyId: string
   userId: string
   integrationId?: string
+  systemPromptPrefix?: string
 }): Promise<CompletionResult> {
   const started = Date.now()
   const integration = args.integrationId
@@ -374,6 +391,7 @@ async function runSqlBranch(args: {
       context: JSON.stringify(result.rows, null, 2),
       source: 'SQL',
       companyId: args.companyId,
+      systemPromptPrefix: args.systemPromptPrefix,
     })
     const citations: Citation[] = [
       {
@@ -441,6 +459,7 @@ async function runRestBranch(args: {
   question: string
   companyId: string
   userId: string
+  systemPromptPrefix?: string
 }): Promise<CompletionResult> {
   const started = Date.now()
   const connectors = await db.restApiConnector.findMany({
@@ -555,6 +574,7 @@ async function runRestBranch(args: {
     context: result.bodyText,
     source: 'REST_API',
     companyId: args.companyId,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
   const citations: Citation[] = [
     {

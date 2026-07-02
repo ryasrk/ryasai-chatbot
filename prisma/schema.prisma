@@ -268,6 +268,7 @@ model AppConfig {
   organizationName    String?
   brandingJson        String?
   productionChecklist String?
+  promptSettings      String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
