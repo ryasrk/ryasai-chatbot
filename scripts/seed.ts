@@ -10,40 +10,56 @@
  */
 import { db } from '../src/lib/db'
 import { encryptConfig } from '../src/lib/crypto'
+import { hashPassword } from '../src/lib/passwords'
 import { ensureDemoSchema, connectorRegistry, describeSchema } from '../src/lib/connectors'
 
+// Admin credentials honour env overrides so production seeds use real values
+// instead of a placeholder hash. Defaults are dev-only.
+const adminEmailOverride = process.env.ADMIN_EMAIL?.trim().toLowerCase() || null
+const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin12345'
+
 async function main() {
-  console.log('🌱 Seeding enterprise AI assistant database...')
+  console.log('🌱 Seeding ryasai database...')
 
   // 1. Company -------------------------------------------------------------
   const company = await db.company.upsert({
     where: { id: 'cmp-001' },
-    update: { name: 'PT Nusantara Digital Teknologi', industry: 'Teknologi & Distribusi', isActive: true },
+    update: { name: 'ryasai', industry: 'Artificial Intelligence', isActive: true },
     create: {
       id: 'cmp-001',
-      name: 'PT Nusantara Digital Teknologi',
-      industry: 'Teknologi & Distribusi',
+      name: 'ryasai',
+      industry: 'Artificial Intelligence',
       isActive: true,
     },
   })
 
   // 2. Users (RBAC) --------------------------------------------------------
   const users = [
-    { id: 'usr-admin', email: 'admin@nusantara.co.id', name: 'Budi Santoso (Admin)', role: 'admin', color: 'oklch(0.55 0.18 250)' },
-    { id: 'usr-manager', email: 'manager@nusantara.co.id', name: 'Siti Rahayu (Manager)', role: 'manager', color: 'oklch(0.6 0.16 160)' },
-    { id: 'usr-staff', email: 'staff@nusantara.co.id', name: 'Andi Wijaya (Staff)', role: 'staff', color: 'oklch(0.65 0.2 70)' },
+    { id: 'usr-admin', email: 'admin@ryas.ai', name: 'Ryas Admin', role: 'admin', color: 'oklch(0.55 0.18 250)' },
+    { id: 'usr-manager', email: 'manager@ryas.ai', name: 'Ryas Manager', role: 'manager', color: 'oklch(0.6 0.16 160)' },
+    { id: 'usr-staff', email: 'staff@ryas.ai', name: 'Ryas Staff', role: 'staff', color: 'oklch(0.65 0.2 70)' },
   ]
   for (const u of users) {
+    const isAdmin = u.role === 'admin'
+    const email = isAdmin && adminEmailOverride ? adminEmailOverride : u.email
+    const password = isAdmin ? adminPassword : 'user12345'
     await db.user.upsert({
-      where: { email: u.email },
-      update: { name: u.name, role: u.role, companyId: company.id, isActive: true, avatarColor: u.color },
-      create: {
-        id: u.id,
-        email: u.email,
+      where: { email },
+      update: {
         name: u.name,
         role: u.role,
         companyId: company.id,
-        passwordHash: 'demo-bcrypt-placeholder',
+        isActive: true,
+        avatarColor: u.color,
+        passwordHash: hashPassword(password),
+      },
+      create: {
+        id: u.id,
+        email,
+        name: u.name,
+        role: u.role,
+        companyId: company.id,
+        passwordHash: hashPassword(password),
         avatarColor: u.color,
         isActive: true,
       },
@@ -52,7 +68,7 @@ async function main() {
 
   // 3. Integration (encrypted config) --------------------------------------
   const enc = encryptConfig({
-    host: 'erp-db.nusantara.co.id',
+    host: 'erp-db.ryas.ai',
     port: 5432,
     username: 'ai_reader_restricted',
     password: 'P@sswordSecureClient2026',
@@ -156,7 +172,7 @@ async function main() {
         userId: 'usr-admin',
         action: 'SYSTEM_INIT',
         severity: 'info',
-        detail: JSON.stringify({ message: 'Sistem AI Internal Assistant diinisialisasi.' }),
+        detail: JSON.stringify({ message: 'Sistem ryasai diinisialisasi.' }),
       },
       {
         companyId: company.id,
