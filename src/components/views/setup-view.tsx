@@ -363,11 +363,11 @@ function TestChatStep({ onFinish }: { onFinish: () => void }) {
       const sendRes = await fetch(`/api/chat/sessions/${session.id}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: message }),
+        body: JSON.stringify({ text: message }),
       })
       if (!sendRes.ok) throw new Error('Gagal')
       const data = await sendRes.json()
-      setReply(data?.reply ?? data?.assistantMessage ?? '(kosong)')
+      setReply(data?.aiMessage?.content ?? '(kosong)')
       setWarned(false)
     } catch {
       setWarned(true)
