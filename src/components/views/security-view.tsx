@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 import type { AuditLogItem } from '@/lib/types'
 
 const id = (n: number) => n.toLocaleString('id-ID')
+const AUDIT_LOG_PAGE_SIZE = 20
 
 type SeverityFilter = 'all' | 'critical' | 'warning' | 'info'
 
@@ -92,7 +93,7 @@ export function SecurityView() {
     setError(null)
     try {
       const res = await fetch(
-        `/api/audit?page=${targetPage}&pageSize=50`,
+        `/api/audit?page=${targetPage}&pageSize=${AUDIT_LOG_PAGE_SIZE}`,
         { cache: 'no-store' },
       )
       if (!res.ok) throw new Error('Gagal memuat audit log.')
@@ -203,7 +204,9 @@ export function SecurityView() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <CardTitle className="text-base">Audit Log</CardTitle>
-              <CardDescription>Semua aktivitas penting pada perusahaan ini</CardDescription>
+              <CardDescription>
+                Semua aktivitas penting pada perusahaan ini, maksimal {AUDIT_LOG_PAGE_SIZE} event per halaman
+              </CardDescription>
             </div>
             <div className="flex flex-wrap gap-1">
               {(['all', 'critical', 'warning', 'info'] as SeverityFilter[]).map((f) => (

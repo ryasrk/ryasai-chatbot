@@ -1,4 +1,8 @@
-:81 {
+# Caddy reverse proxy.
+# Ports come from the environment: {$CADDY_PORT} (listen) and {$WEB_PORT} (Next.js upstream).
+# The chat mini-service is reached dynamically via the ?XTransformPort=<ws> query param,
+# so its port is never hardcoded here. See .env.example for defaults.
+:{$CADDY_PORT} {
 	@transform_port_query {
 		query XTransformPort=*
 	}
@@ -13,7 +17,7 @@
 	}
 
 	handle {
-		reverse_proxy localhost:3000 {
+		reverse_proxy localhost:{$WEB_PORT} {
 			header_up Host {host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}

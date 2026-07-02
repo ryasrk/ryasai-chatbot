@@ -3,9 +3,8 @@
 /**
  * IntegrationsView — Dynamic Connector Factory UI (spec §3.1, §3.2, §5.1).
  *
- * Admins register new database / API connections here. The view also exposes
- * a schema viewer (cached reflection) and a Text-to-SQL query tester that
- * exercises the full pipeline: LLM generation → AST guardrail → execution.
+ * Admins register SQL databases and REST API connectors here. Database
+ * integrations expose schema reflection and a Text-to-SQL query tester.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -120,11 +119,10 @@ const STATUS_BADGE: Record<
 }
 
 const PROVIDER_HINT: Record<string, string> = {
-  SQLITE_DEMO: 'Database ERP simulasi — demo fungsional end-to-end',
+  SQLITE_DEMO: 'SQLite sample dataset untuk validasi internal',
   POSTGRESQL: 'Production PostgreSQL',
   MYSQL: 'Production MySQL / MariaDB',
   MSSQL: 'Microsoft SQL Server',
-  REST_API: 'REST API connector',
 }
 
 /* ------------------------------------------------------------------- types */
@@ -149,7 +147,6 @@ interface SchemaData {
 
 interface CreateFormState {
   name: string
-  type: 'DATABASE' | 'API'
   provider: string
   host: string
   port: string
@@ -158,9 +155,41 @@ interface CreateFormState {
   database_name: string
 }
 
+interface RestConnectorItem {
+  id: string
+  name: string
+  baseUrl: string
+  authType: 'NONE' | 'BEARER' | 'API_KEY_HEADER' | string
+  isActive: boolean
+  timeoutMs: number
+  createdAt: string
+  updatedAt: string
+  _count?: {
+    endpoints: number
+    requestLogs: number
+  }
+}
+
+interface RestEndpointItem {
+  id: string
+  method: string
+  path: string
+  description: string | null
+  parameterSchema: string | null
+  sampleRequest: string | null
+  sampleResponse: string | null
+  isEnabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+interface RestConnectorDetail extends RestConnectorItem {
+  authConfig?: Record<string, unknown>
+  endpoints: RestEndpointItem[]
+}
+
 const EMPTY_FORM: CreateFormState = {
   name: '',
-  type: 'DATABASE',
   provider: 'SQLITE_DEMO',
   host: 'localhost',
   port: '5432',
@@ -173,12 +202,21 @@ const EMPTY_FORM: CreateFormState = {
 
 export function IntegrationsView() {
   const [items, setItems] = useState<Integration[]>([])
+  const [restItems, setRestItems] = useState<RestConnectorItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [restLoading, setRestLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [restName, setRestName] = useState('')
+  const [restBaseUrl, setRestBaseUrl] = useState('')
+  const [restAuthType, setRestAuthType] = useState('NONE')
+  const [restToken, setRestToken] = useState('')
+  const [restCreating, setRestCreating] = useState(false)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null)
   const [schemaTarget, setSchemaTarget] = useState<Integration | null>(null)
   const [queryTarget, setQueryTarget] = useState<Integration | null>(null)
+  const [restTarget, setRestTarget] = useState<RestConnectorItem | null>(null)
 
   const fetchList = useCallback(async () => {
     setLoading(true)
@@ -202,6 +240,28 @@ export function IntegrationsView() {
     fetchList()
   }, [fetchList])
 
+  const fetchRestList = useCallback(async () => {
+    setRestLoading(true)
+    try {
+      const res = await fetch('/api/data-sources/rest-connectors', { cache: 'no-store' })
+      const json = await res.json()
+      if (res.ok && json.ok) {
+        setRestItems(json.items ?? [])
+      } else {
+        toast.error(json.error ?? 'Gagal memuat REST API connectors.')
+      }
+    } catch (e) {
+      toast.error('Kesalahan jaringan saat memuat REST API connectors.')
+      console.error(e)
+    } finally {
+      setRestLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchRestList()
+  }, [fetchRestList])
+
   const handleTest = async (id: string) => {
     setTestingId(id)
     try {
@@ -213,10 +273,10 @@ export function IntegrationsView() {
         toast.success(
           `Koneksi berhasil. ${json.tablesCount ?? 0} tabel tersedia.`,
         )
-        fetchList()
+        await fetchList()
       } else {
         toast.error(json.message ?? 'Koneksi gagal — periksa kredensial.')
-        fetchList()
+        await fetchList()
       }
     } catch (e) {
       toast.error('Kesalahan jaringan saat menguji koneksi.')
@@ -227,12 +287,19 @@ export function IntegrationsView() {
   }
 
   const handleDelete = async (id: string) => {
+    setDeletingId(id)
     try {
       const res = await fetch(`/api/integrations/${id}`, { method: 'DELETE' })
       const json = await res.json()
-      if (res.ok && json.ok) {
-        toast.success('Integrasi berhasil dihapus.')
-        fetchList()
+      if ((res.ok && json.ok) || res.status === 404) {
+        toast.success(
+          res.status === 404
+            ? 'Integrasi sudah tidak ada. Daftar dimuat ulang.'
+            : 'Integrasi berhasil dihapus.',
+        )
+        if (schemaTarget?.id === id) setSchemaTarget(null)
+        if (queryTarget?.id === id) setQueryTarget(null)
+        await fetchList()
       } else {
         toast.error(json.error ?? 'Gagal menghapus integrasi.')
       }
@@ -241,6 +308,49 @@ export function IntegrationsView() {
       console.error(e)
     } finally {
       setDeleteTarget(null)
+      setDeletingId(null)
+    }
+  }
+
+  const handleCreateRestConnector = async () => {
+    const name = restName.trim()
+    const baseUrl = restBaseUrl.trim()
+    if (!name || !baseUrl) {
+      toast.error('Nama dan Base URL wajib diisi.')
+      return
+    }
+    setRestCreating(true)
+    try {
+      const authConfig =
+        restAuthType === 'BEARER'
+          ? { token: restToken }
+          : restAuthType === 'API_KEY_HEADER'
+            ? { headerName: 'X-API-Key', apiKey: restToken }
+            : {}
+      const res = await fetch('/api/data-sources/rest-connectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          baseUrl,
+          authType: restAuthType,
+          authConfig,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal membuat connector.')
+      toast.success('REST API connector dibuat.')
+      setRestName('')
+      setRestBaseUrl('')
+      setRestToken('')
+      setRestAuthType('NONE')
+      await fetchRestList()
+    } catch (e) {
+      toast.error('Gagal membuat REST API connector', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setRestCreating(false)
     }
   }
 
@@ -267,14 +377,14 @@ export function IntegrationsView() {
         </div>
         <Button onClick={() => setCreateOpen(true)} size="sm">
           <Plus className="h-4 w-4" />
-          Tambah Integrasi
+          Tambah Database
         </Button>
       </div>
 
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard
-          label="Total Integrasi"
+          label="Total Database"
           value={stats.total}
           icon={Server}
           tone="slate"
@@ -304,8 +414,8 @@ export function IntegrationsView() {
           <CardContent className="py-16 text-center">
             <Database className="h-10 w-10 mx-auto text-muted-foreground/60 mb-3" />
             <p className="text-sm text-muted-foreground">
-              Belum ada integrasi terdaftar. Klik <strong>Tambah Integrasi</strong>{' '}
-              untuk mulai menghubungkan database atau API.
+              Belum ada database terdaftar. Klik <strong>Tambah Database</strong>{' '}
+              untuk mulai menghubungkan sumber data SQL.
             </p>
           </CardContent>
         </Card>
@@ -317,6 +427,7 @@ export function IntegrationsView() {
               integration={it}
               onTest={() => handleTest(it.id)}
               testing={testingId === it.id}
+              deleting={deletingId === it.id}
               onSchema={() => setSchemaTarget(it)}
               onQuery={() => setQueryTarget(it)}
               onDelete={() => setDeleteTarget(it)}
@@ -324,6 +435,106 @@ export function IntegrationsView() {
           ))}
         </div>
       )}
+
+      {/* REST API Connectors */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            REST API Connectors
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Daftarkan base URL sistem eksternal, lalu whitelist endpoint yang boleh dipanggil chatbot.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <Input
+              value={restName}
+              onChange={(e) => setRestName(e.target.value)}
+              placeholder="Nama connector"
+              className="md:col-span-1"
+            />
+            <Input
+              value={restBaseUrl}
+              onChange={(e) => setRestBaseUrl(e.target.value)}
+              placeholder="https://api.example.com"
+              className="md:col-span-2 font-mono text-sm"
+            />
+            <Select value={restAuthType} onValueChange={setRestAuthType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NONE">No Auth</SelectItem>
+                <SelectItem value="BEARER">Bearer Token</SelectItem>
+                <SelectItem value="API_KEY_HEADER">API Key Header</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={handleCreateRestConnector}
+              disabled={restCreating || !restName.trim() || !restBaseUrl.trim()}
+            >
+              {restCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Tambah REST
+            </Button>
+          </div>
+
+          {restAuthType !== 'NONE' && (
+            <Input
+              value={restToken}
+              onChange={(e) => setRestToken(e.target.value)}
+              placeholder={restAuthType === 'BEARER' ? 'Bearer token' : 'API key'}
+              type="password"
+              className="font-mono text-sm"
+            />
+          )}
+
+          {restLoading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              Memuat REST API connectors...
+            </div>
+          ) : restItems.length === 0 ? (
+            <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
+              Belum ada REST API connector.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {restItems.map((connector) => (
+                <div key={connector.id} className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{connector.name}</div>
+                      <div className="font-mono text-xs text-muted-foreground truncate">
+                        {connector.baseUrl}
+                      </div>
+                    </div>
+                    <Badge variant={connector.isActive ? 'default' : 'secondary'}>
+                      {connector.isActive ? 'Aktif' : 'Nonaktif'}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline">{connector.authType}</Badge>
+                    <Badge variant="outline">{connector._count?.endpoints ?? 0} endpoint</Badge>
+                    <Badge variant="outline">{connector._count?.requestLogs ?? 0} request log</Badge>
+                    <Badge variant="outline">{connector.timeoutMs}ms timeout</Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRestTarget(connector)}
+                    className="w-full"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Kelola Endpoint
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Create dialog */}
       <CreateIntegrationDialog
@@ -339,6 +550,12 @@ export function IntegrationsView() {
       <SchemaViewerSheet
         integration={schemaTarget}
         onClose={() => setSchemaTarget(null)}
+      />
+
+      <RestConnectorSheet
+        connector={restTarget}
+        onClose={() => setRestTarget(null)}
+        onChanged={fetchRestList}
       />
 
       {/* Query tester */}
@@ -365,9 +582,17 @@ export function IntegrationsView() {
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
+              disabled={!!deletingId}
               className="bg-rose-600 hover:bg-rose-700 text-white"
             >
-              Hapus
+              {deletingId ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menghapus...
+                </>
+              ) : (
+                'Hapus'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -416,6 +641,7 @@ function IntegrationCard({
   integration,
   onTest,
   testing,
+  deleting,
   onSchema,
   onQuery,
   onDelete,
@@ -423,6 +649,7 @@ function IntegrationCard({
   integration: Integration
   onTest: () => void
   testing: boolean
+  deleting?: boolean
   onSchema: () => void
   onQuery: () => void
   onDelete: () => void
@@ -590,10 +817,15 @@ function IntegrationCard({
             size="sm"
             variant="outline"
             onClick={onDelete}
+            disabled={deleting}
             className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            Hapus
+            {deleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+            {deleting ? 'Menghapus' : 'Hapus'}
           </Button>
         </div>
       </CardContent>
@@ -649,7 +881,6 @@ function CreateIntegrationDialog({
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = 'Nama wajib diisi.'
-    if (!form.type) e.type = 'Tipe wajib dipilih.'
     if (!form.provider) e.provider = 'Provider wajib dipilih.'
     // For non-DEMO providers, require host + database_name.
     if (!isDemo) {
@@ -669,7 +900,7 @@ function CreateIntegrationDialog({
     try {
       const config: Record<string, unknown> = isDemo
         ? {
-            // The demo provider ignores these but the backend expects an object.
+            // The sample provider ignores these but the backend expects an object.
             host: 'demo',
             port: 0,
             database_name: 'demo_erp',
@@ -689,7 +920,7 @@ function CreateIntegrationDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name.trim(),
-          type: form.type,
+          type: 'DATABASE',
           provider: form.provider,
           config,
         }),
@@ -726,11 +957,10 @@ function CreateIntegrationDialog({
     >
       <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Tambah Integrasi Baru</DialogTitle>
+          <DialogTitle>Tambah Database</DialogTitle>
           <DialogDescription>
-            Daftarkan koneksi database atau API. Sistem akan mengenkripsi
-            kredensial (AES-256-GCM), menguji koneksi, dan merefleksikan skema
-            secara otomatis.
+            Daftarkan koneksi database SQL. Sistem akan mengenkripsi kredensial,
+            menguji koneksi, dan merefleksikan skema secara otomatis.
           </DialogDescription>
         </DialogHeader>
 
@@ -750,40 +980,22 @@ function CreateIntegrationDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="int-type">Tipe</Label>
-              <Select
-                value={form.type}
-                onValueChange={(v) => update('type', v)}
-              >
-                <SelectTrigger id="int-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DATABASE">DATABASE</SelectItem>
-                  <SelectItem value="API">API</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="int-provider">Provider</Label>
-              <Select
-                value={form.provider}
-                onValueChange={(v) => update('provider', v)}
-              >
-                <SelectTrigger id="int-provider">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SQLITE_DEMO">SQLITE_DEMO</SelectItem>
-                  <SelectItem value="POSTGRESQL">POSTGRESQL</SelectItem>
-                  <SelectItem value="MYSQL">MYSQL</SelectItem>
-                  <SelectItem value="MSSQL">MSSQL</SelectItem>
-                  <SelectItem value="REST_API">REST_API</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="int-provider">Database Provider</Label>
+            <Select
+              value={form.provider}
+              onValueChange={(v) => update('provider', v)}
+            >
+              <SelectTrigger id="int-provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SQLITE_DEMO">SQLITE_DEMO</SelectItem>
+                <SelectItem value="POSTGRESQL">POSTGRESQL</SelectItem>
+                <SelectItem value="MYSQL">MYSQL</SelectItem>
+                <SelectItem value="MSSQL">MSSQL</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {form.provider && (
@@ -791,7 +1003,7 @@ function CreateIntegrationDialog({
               {PROVIDER_HINT[form.provider] ?? 'Provider'}
               {isDemo && (
                 <span className="block mt-1 text-emerald-600 dark:text-emerald-400">
-                  Pilih SQLITE_DEMO untuk demo fungsional (database ERP simulasi).
+                  Gunakan SQLITE_DEMO hanya untuk validasi internal sebelum koneksi production tersedia.
                 </span>
               )}
             </p>
@@ -1039,6 +1251,359 @@ function SchemaViewerContent({ integration }: { integration: Integration }) {
   )
 }
 
+/* --------------------------------------------- REST connector manager */
+
+function RestConnectorSheet({
+  connector,
+  onClose,
+  onChanged,
+}: {
+  connector: RestConnectorItem | null
+  onClose: () => void
+  onChanged: () => void
+}) {
+  return (
+    <Sheet open={!!connector} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent className="sm:max-w-[680px] w-full flex flex-col">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            REST API — {connector?.name ?? ''}
+          </SheetTitle>
+          <SheetDescription>
+            Kelola endpoint whitelist dan uji request yang boleh digunakan chatbot.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 min-h-0 mt-2">
+          {connector && (
+            <RestConnectorContent
+              key={connector.id}
+              connector={connector}
+              onChanged={onChanged}
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function RestConnectorContent({
+  connector,
+  onChanged,
+}: {
+  connector: RestConnectorItem
+  onChanged: () => void
+}) {
+  const [detail, setDetail] = useState<RestConnectorDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [method, setMethod] = useState('GET')
+  const [path, setPath] = useState('')
+  const [description, setDescription] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [testMethod, setTestMethod] = useState('GET')
+  const [testPath, setTestPath] = useState('')
+  const [testQuery, setTestQuery] = useState('')
+  const [testBody, setTestBody] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<unknown>(null)
+
+  const fetchDetail = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/data-sources/rest-connectors/${connector.id}`, {
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (res.ok && json.ok) {
+        setDetail(json.data as RestConnectorDetail)
+      } else {
+        setError(json.error ?? 'Gagal memuat REST connector.')
+      }
+    } catch (e) {
+      console.error(e)
+      setError('Kesalahan jaringan saat memuat REST connector.')
+    } finally {
+      setLoading(false)
+    }
+  }, [connector.id])
+
+  useEffect(() => {
+    fetchDetail()
+  }, [fetchDetail])
+
+  const handleAddEndpoint = async () => {
+    const trimmedPath = path.trim()
+    if (!trimmedPath) {
+      toast.error('Path endpoint wajib diisi.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/data-sources/rest-connectors/${connector.id}/endpoints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method,
+          path: trimmedPath,
+          description: description.trim() || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal menambah endpoint.')
+      toast.success('Endpoint whitelist ditambahkan.')
+      setPath('')
+      setDescription('')
+      await fetchDetail()
+      onChanged()
+    } catch (e) {
+      toast.error('Gagal menambah endpoint', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleTestEndpoint = async () => {
+    const trimmedPath = testPath.trim()
+    if (!trimmedPath) {
+      toast.error('Path test wajib diisi.')
+      return
+    }
+
+    let parsedBody: unknown
+    if (testBody.trim()) {
+      try {
+        parsedBody = JSON.parse(testBody)
+      } catch {
+        toast.error('Body harus JSON valid.')
+        return
+      }
+    }
+
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch(`/api/data-sources/rest-connectors/${connector.id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: testMethod,
+          path: trimmedPath,
+          query: parseQueryPairs(testQuery),
+          body: parsedBody,
+        }),
+      })
+      const json = await res.json()
+      setTestResult(json)
+      if (res.ok && json.ok) toast.success('REST endpoint berhasil diuji.')
+      else toast.error(json.error ?? 'REST endpoint gagal diuji.')
+    } catch (e) {
+      console.error(e)
+      toast.error('Kesalahan jaringan saat menguji endpoint.')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+        Memuat REST connector...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <ShieldAlert className="h-4 w-4" />
+        <AlertTitle>Gagal</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (!detail) return null
+
+  return (
+    <ScrollArea className="h-full pr-2">
+      <div className="space-y-4">
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-medium">{detail.name}</div>
+              <div className="font-mono text-xs text-muted-foreground truncate">
+                {detail.baseUrl}
+              </div>
+            </div>
+            <Badge variant={detail.isActive ? 'default' : 'secondary'}>
+              {detail.isActive ? 'Aktif' : 'Nonaktif'}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline">{detail.authType}</Badge>
+            <Badge variant="outline">{detail.timeoutMs}ms timeout</Badge>
+            <Badge variant="outline">{detail.endpoints.length} endpoint</Badge>
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-3 space-y-3">
+          <div>
+            <div className="text-sm font-medium">Tambah Endpoint Whitelist</div>
+            <p className="text-xs text-muted-foreground">
+              Hanya endpoint di daftar ini yang dapat dipanggil oleh test request dan router chatbot.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            <Select value={method} onValueChange={setMethod}>
+              <SelectTrigger className="sm:col-span-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="/customers"
+              className="sm:col-span-4 font-mono text-sm"
+            />
+          </div>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Deskripsi singkat untuk AI, contoh: mengambil daftar customer aktif"
+          />
+          <Button
+            onClick={handleAddEndpoint}
+            disabled={submitting || !path.trim()}
+            size="sm"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Tambah Endpoint
+          </Button>
+        </div>
+
+        <div className="rounded-lg border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Method</TableHead>
+                <TableHead className="text-xs">Path</TableHead>
+                <TableHead className="text-xs">Deskripsi</TableHead>
+                <TableHead className="text-xs text-right">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {detail.endpoints.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">
+                    Belum ada endpoint whitelist.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                detail.endpoints.map((endpoint) => (
+                  <TableRow
+                    key={endpoint.id}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setTestMethod(endpoint.method)
+                      setTestPath(endpoint.path)
+                    }}
+                  >
+                    <TableCell className="font-mono text-xs">{endpoint.method}</TableCell>
+                    <TableCell className="font-mono text-xs">{endpoint.path}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {endpoint.description ?? '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant={endpoint.isEnabled ? 'default' : 'secondary'}>
+                        {endpoint.isEnabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="rounded-lg border p-3 space-y-3">
+          <div>
+            <div className="text-sm font-medium">Test Endpoint</div>
+            <p className="text-xs text-muted-foreground">
+              Klik endpoint di tabel untuk mengisi method dan path, lalu jalankan request.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            <Select value={testMethod} onValueChange={setTestMethod}>
+              <SelectTrigger className="sm:col-span-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={testPath}
+              onChange={(e) => setTestPath(e.target.value)}
+              placeholder="/customers"
+              className="sm:col-span-4 font-mono text-sm"
+            />
+          </div>
+          <Input
+            value={testQuery}
+            onChange={(e) => setTestQuery(e.target.value)}
+            placeholder="limit=10&status=active"
+            className="font-mono text-sm"
+          />
+          {testMethod !== 'GET' && (
+            <Textarea
+              value={testBody}
+              onChange={(e) => setTestBody(e.target.value)}
+              rows={4}
+              placeholder='{"name":"Contoh"}'
+              className="font-mono text-xs resize-none"
+            />
+          )}
+          <Button
+            onClick={handleTestEndpoint}
+            disabled={testing || !testPath.trim()}
+            size="sm"
+          >
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+            Jalankan Test
+          </Button>
+          {testResult !== null && (
+            <pre className="max-h-[260px] overflow-auto rounded-md border bg-muted/40 p-3 text-[11px]">
+              <code>{JSON.stringify(testResult, null, 2)}</code>
+            </pre>
+          )}
+        </div>
+      </div>
+    </ScrollArea>
+  )
+}
+
+function parseQueryPairs(raw: string): Record<string, string> {
+  const params = new URLSearchParams(raw.trim().replace(/^\?/, ''))
+  return Object.fromEntries(params.entries())
+}
+
 /* ------------------------------------------------- query tester */
 
 const SAMPLE_QUERY = 'Tampilkan 5 produk dengan harga tertinggi'
@@ -1140,7 +1705,7 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
 
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              Pre-fill: contoh kueri demo. Edit sesuai kebutuhan.
+              Pre-fill: contoh kueri. Edit sesuai kebutuhan.
             </p>
             <Button onClick={handleRun} disabled={running || !query.trim()}>
               {running ? (

@@ -1,0 +1,201 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { decryptConfig, encryptConfig, maskConfig } from '@/lib/crypto'
+import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+
+interface RouteContext {
+  params: Promise<{ id: string }>
+}
+
+interface PatchConnectorBody {
+  name?: string
+  baseUrl?: string
+  authType?: string
+  authConfig?: Record<string, unknown>
+  timeoutMs?: number
+  isActive?: boolean
+}
+
+export async function GET(_req: NextRequest, ctx: RouteContext) {
+  try {
+    const user = await getActiveUser()
+    const { id } = await ctx.params
+    const connector = await db.restApiConnector.findFirst({
+      where: { id, companyId: user.companyId },
+      include: { endpoints: { orderBy: [{ method: 'asc' }, { path: 'asc' }] } },
+    })
+    if (!connector) {
+      return NextResponse.json(
+        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
+
+    const authConfig = connector.encryptedAuthConfig
+      ? maskConfig(decryptConfig(connector.encryptedAuthConfig))
+      : {}
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        id: connector.id,
+        name: connector.name,
+        baseUrl: connector.baseUrl,
+        authType: connector.authType,
+        authConfig,
+        isActive: connector.isActive,
+        timeoutMs: connector.timeoutMs,
+        createdAt: connector.createdAt,
+        updatedAt: connector.updatedAt,
+        endpoints: connector.endpoints,
+      },
+    })
+  } catch (e) {
+    return handleApiError(e, 'Gagal memuat REST connector.')
+  }
+}
+
+export async function PATCH(req: NextRequest, ctx: RouteContext) {
+  try {
+    const user = await getActiveUser()
+    if (user.role !== 'admin') {
+      return NextResponse.json(
+        { ok: false, error: 'Hanya admin yang dapat mengubah REST connector.' },
+        { status: 403 },
+      )
+    }
+
+    const { id } = await ctx.params
+    const existing = await db.restApiConnector.findFirst({
+      where: { id, companyId: user.companyId },
+      select: { id: true, name: true, encryptedAuthConfig: true },
+    })
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
+
+    const body = (await req.json().catch(() => ({}))) as PatchConnectorBody
+    const data: {
+      name?: string
+      baseUrl?: string
+      authType?: string
+      encryptedAuthConfig?: string | null
+      timeoutMs?: number
+      isActive?: boolean
+    } = {}
+
+    if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
+    if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
+      const url = parseBaseUrl(body.baseUrl)
+      if (!url) {
+        return NextResponse.json(
+          { ok: false, error: 'Base URL tidak valid.' },
+          { status: 400 },
+        )
+      }
+      data.baseUrl = url
+    }
+    if (typeof body.authType === 'string') {
+      const authType = body.authType.trim().toUpperCase()
+      if (authType !== 'NONE' && authType !== 'BEARER' && authType !== 'API_KEY_HEADER') {
+        return NextResponse.json(
+          { ok: false, error: 'Auth type harus NONE, BEARER, atau API_KEY_HEADER.' },
+          { status: 400 },
+        )
+      }
+      data.authType = authType
+      data.encryptedAuthConfig =
+        authType === 'NONE' ? null : encryptConfig(body.authConfig ?? {})
+    } else if (body.authConfig) {
+      data.encryptedAuthConfig = encryptConfig(body.authConfig)
+    }
+    if (typeof body.timeoutMs === 'number' && Number.isFinite(body.timeoutMs)) {
+      data.timeoutMs = Math.min(Math.max(Math.floor(body.timeoutMs), 1000), 120000)
+    }
+    if (typeof body.isActive === 'boolean') data.isActive = body.isActive
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { status: 400 },
+      )
+    }
+
+    const updated = await db.restApiConnector.update({
+      where: { id: existing.id },
+      data,
+      select: {
+        id: true,
+        name: true,
+        baseUrl: true,
+        authType: true,
+        isActive: true,
+        timeoutMs: true,
+        updatedAt: true,
+      },
+    })
+
+    await writeAudit({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'REST_CONNECTOR_UPDATE',
+      severity: 'warning',
+      detail: { connectorId: updated.id, beforeName: existing.name, after: data },
+    })
+
+    return NextResponse.json({ ok: true, data: updated })
+  } catch (e) {
+    return handleApiError(e, 'Gagal memperbarui REST connector.')
+  }
+}
+
+export async function DELETE(_req: NextRequest, ctx: RouteContext) {
+  try {
+    const user = await getActiveUser()
+    if (user.role !== 'admin') {
+      return NextResponse.json(
+        { ok: false, error: 'Hanya admin yang dapat menghapus REST connector.' },
+        { status: 403 },
+      )
+    }
+
+    const { id } = await ctx.params
+    const existing = await db.restApiConnector.findFirst({
+      where: { id, companyId: user.companyId },
+      select: { id: true, name: true },
+    })
+    if (!existing) {
+      return NextResponse.json(
+        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
+
+    await db.restApiConnector.delete({ where: { id: existing.id } })
+
+    await writeAudit({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'REST_CONNECTOR_DELETE',
+      severity: 'warning',
+      detail: { connectorId: existing.id, name: existing.name },
+    })
+
+    return NextResponse.json({ ok: true, data: { id: existing.id, deleted: true } })
+  } catch (e) {
+    return handleApiError(e, 'Gagal menghapus REST connector.')
+  }
+}
+
+function parseBaseUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim())
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return null
+  }
+}

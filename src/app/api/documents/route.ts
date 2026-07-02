@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import {
   chunkText,
   detectDocType,
   extractFileText,
   extractKeywords,
 } from '@/lib/rag'
+import { embedDocumentChunks } from '@/lib/embeddings'
+import { upsertChunkFts } from '@/lib/rag-fts'
 
 export const runtime = 'nodejs'
 
@@ -60,11 +62,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents: data, total: data.length })
   } catch (e) {
-    console.error('[GET /api/documents]', e)
-    return NextResponse.json(
-      { error: 'Failed to list documents', detail: String(e) },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat daftar dokumen.')
   }
 }
 
@@ -154,15 +152,38 @@ export async function POST(req: NextRequest) {
     }
 
     // Persist chunks with token estimate + keyword tags.
-    await db.documentChunk.createMany({
-      data: chunks.map((content, idx) => ({
+    const chunkRows = chunks.map((content, idx) => ({
         documentId: doc.id,
         chunkIndex: idx,
         content,
         tokenCount: Math.ceil(content.length / 4),
         keywords: extractKeywords(content, 8),
-      })),
+      }))
+    await db.documentChunk.createMany({
+      data: chunkRows,
     })
+    const persistedChunks = await db.documentChunk.findMany({
+      where: { documentId: doc.id },
+      select: { id: true, content: true, keywords: true },
+    })
+    for (const chunk of persistedChunks) {
+      await upsertChunkFts({
+        chunkId: chunk.id,
+        companyId: user.companyId,
+        content: chunk.content,
+        keywords: chunk.keywords,
+      })
+    }
+
+    const embedding = await embedDocumentChunks({
+      companyId: user.companyId,
+      documentId: doc.id,
+    }).catch((error) => ({
+      embedded: 0,
+      skipped: chunks.length,
+      provider: null,
+      model: error instanceof Error ? error.message : 'embedding failed',
+    }))
 
     await writeAudit({
       companyId: user.companyId,
@@ -177,6 +198,7 @@ export async function POST(req: NextRequest) {
         sizeBytes: doc.sizeBytes,
         chunkCount: chunks.length,
         isPlaceholder,
+        embedding,
       },
     })
 
@@ -208,10 +230,6 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     )
   } catch (e) {
-    console.error('[POST /api/documents]', e)
-    return NextResponse.json(
-      { error: 'Failed to upload document', detail: String(e) },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal mengunggah dokumen.')
   }
 }

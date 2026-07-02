@@ -64,6 +64,9 @@ export interface Citation {
   type: 'DATABASE' | 'DOCUMENT' | string
   source: string
   query_used?: string
+  chunkIndex?: number
+  snippet?: string
+  score?: number
 }
 
 export interface ChartData {
@@ -127,4 +130,21 @@ export interface QueryResult {
   executionMs?: number
   reason?: string
   generatedSql?: string
+}
+
+export interface PublicLlmConfig {
+  configured: boolean
+  provider: string
+  baseUrl: string
+  model: string
+  apiKeyMasked: string | null
+  availableModels: string[]
+  lastModelSyncAt: string | null
+  embeddingProvider: string
+  embeddingBaseUrl: string
+  embeddingModel: string
+  embeddingApiKeyMasked: string | null
+  embeddingAvailableModels: string[]
+  lastEmbeddingModelSyncAt: string | null
+  updatedAt: string | null
 }

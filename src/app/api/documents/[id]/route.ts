@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 
 export const runtime = 'nodejs'
 
@@ -71,11 +71,7 @@ export async function GET(
       },
     })
   } catch (e) {
-    console.error('[GET /api/documents/[id]]', e)
-    return NextResponse.json(
-      { error: 'Failed to fetch document', detail: String(e) },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat detail dokumen.')
   }
 }
 
@@ -128,10 +124,6 @@ export async function DELETE(
       chunkCountRemoved: existing._count.chunks,
     })
   } catch (e) {
-    console.error('[DELETE /api/documents/[id]]', e)
-    return NextResponse.json(
-      { error: 'Failed to delete document', detail: String(e) },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal menghapus dokumen.')
   }
 }

@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser } from '@/lib/session'
+import { getActiveUser, handleApiError } from '@/lib/session'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -55,11 +55,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    console.error('[GET /api/integrations/[id]/schema]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal memuat skema integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat skema integrasi.')
   }
 }
 

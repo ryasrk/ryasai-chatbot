@@ -15,18 +15,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Enterprise AI Internal Assistant",
+  title: "ryasai",
   description:
-    "Sistem Otak Digital Perusahaan — Multi-Source Knowledge & Query Engine dengan integrasi database dinamis, RAG, dan guardrails keamanan.",
+    "ryasai — platform AI perusahaan untuk knowledge, query engine, integrasi database dinamis, RAG, dan guardrails keamanan.",
   keywords: [
-    "AI Assistant",
-    "Enterprise",
+    "ryasai",
+    "AI perusahaan",
     "Text-to-SQL",
     "RAG",
     "Knowledge Base",
     "Dynamic Connector",
   ],
-  authors: [{ name: "PT Nusantara Digital Teknologi" }],
+  authors: [{ name: "ryasai" }],
 };
 
 export default function RootLayout({
@@ -38,6 +38,7 @@ export default function RootLayout({
     <html lang="id" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        suppressHydrationWarning
       >
         {children}
         <Toaster />

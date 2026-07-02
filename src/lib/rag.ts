@@ -8,6 +8,21 @@
  * overlap scorer that preserves the same API surface (chunk + keywords).
  * The retrieval function in `search/route.ts` documents this clearly.
  */
+import { db } from '@/lib/db'
+import {
+  combineHybridScore,
+  cosineSimilarity,
+  embedTexts,
+  getEmbeddingRuntimeConfig,
+  parseEmbeddingJson,
+} from '@/lib/embeddings'
+import { getVectorStoreRuntimeConfig, searchVectorStore } from '@/lib/vector-stores'
+import { searchFtsChunkIds } from '@/lib/rag-fts'
+import {
+  extractDocxTextFromBuffer,
+  extractPdfTextFromBuffer,
+  extractXlsxTextFromBuffer,
+} from '@/lib/document-parsers'
 
 /** Indonesian + English stopword set (lowercased). */
 export const STOPWORDS = new Set<string>([
@@ -67,16 +82,373 @@ export function extractKeywords(text: string, topN = 8): string {
   return sorted.map(([w]) => w).join(',')
 }
 
+export interface RetrievalScore {
+  total: number
+  lexicalTotal: number
+  contentHits: number
+  keywordHits: number
+  phraseHits: number
+  semanticSimilarity: number
+  semanticScore: number
+}
+
+export interface RetrievedChunk {
+  chunkId: string
+  documentId: string
+  documentName: string
+  chunkIndex: number
+  content: string
+  score: number
+  scoreBreakdown: RetrievalScore
+}
+
+export function sortRetrievedChunks<T extends { score: number; chunkIndex: number }>(
+  rows: T[],
+): T[] {
+  return [...rows].sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex)
+}
+
+export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: number; documentId: string }>(
+  rows: T[],
+  topK: number,
+  maxPerDocument = 2,
+): T[] {
+  const selected: T[] = []
+  const perDocument = new Map<string, number>()
+
+  for (const row of sortRetrievedChunks(rows)) {
+    const count = perDocument.get(row.documentId) ?? 0
+    if (count >= maxPerDocument) continue
+    selected.push(row)
+    perDocument.set(row.documentId, count + 1)
+    if (selected.length >= topK) break
+  }
+
+  return selected
+}
+
+export async function retrieveRelevantChunks(args: {
+  companyId: string
+  query: string
+  topK: number
+}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number }> {
+  const queryTokens = tokenize(args.query)
+  if (queryTokens.length === 0) {
+    return { chunks: [], queryTokens: [], candidatesScanned: 0 }
+  }
+
+  const queryEmbedding = await resolveQueryEmbedding(args.companyId, args.query)
+  const vectorScores = await resolveVectorScores({
+    companyId: args.companyId,
+    vector: queryEmbedding?.vector ?? null,
+    topK: args.topK,
+  })
+  const candidates = vectorScores.size > 0
+    ? await loadVectorCandidateChunks(args.companyId, [...vectorScores.keys()])
+    : await loadLexicalCandidateChunks(args.companyId, queryTokens, args.topK)
+
+  const scored: RetrievedChunk[] = []
+  let candidatesScanned = 0
+  for (const chunk of candidates) {
+    candidatesScanned += 1
+    const lexicalScore = scoreChunk(queryTokens, chunk)
+    const vectorScore = vectorScores.get(chunk.chunkId)
+    const chunkEmbedding =
+      queryEmbedding && chunk.embeddingModel === queryEmbedding.model
+        ? parseEmbeddingJson(chunk.embeddingJson)
+        : null
+    const scoreBreakdown =
+      typeof vectorScore === 'number'
+        ? applyVectorStoreScore(lexicalScore, vectorScore)
+        : queryEmbedding && chunkEmbedding
+          ? applySemanticScore(lexicalScore, queryEmbedding.vector, chunkEmbedding)
+          : lexicalScore
+    if (scoreBreakdown.total <= 0) continue
+    scored.push({
+      chunkId: chunk.chunkId,
+      documentId: chunk.documentId,
+      documentName: chunk.documentName,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      score: scoreBreakdown.total,
+      scoreBreakdown,
+    })
+  }
+
+  return {
+    chunks: selectTopRetrievedChunks(scored, args.topK),
+    queryTokens,
+    candidatesScanned,
+  }
+}
+
+export function scoreChunk(
+  queryTokens: string[],
+  chunk: { content: string; keywords?: string | null },
+): RetrievalScore {
+  const contentTokens = tokenize(chunk.content)
+  const contentSet = new Set(contentTokens)
+  const keywordSet = new Set(
+    (chunk.keywords ?? '')
+      .split(',')
+      .map((keyword) => keyword.trim().toLowerCase())
+      .filter(Boolean),
+  )
+
+  let contentHits = 0
+  let keywordHits = 0
+  for (const token of queryTokens) {
+    if (contentSet.has(token)) contentHits += 1
+    if (keywordSet.has(token)) keywordHits += 1
+  }
+
+  const phraseHits = countPhraseHits(contentTokens, queryTokens)
+  return {
+    contentHits,
+    keywordHits,
+    phraseHits,
+    lexicalTotal: contentHits + keywordHits * 2 + phraseHits * 3,
+    semanticSimilarity: 0,
+    semanticScore: 0,
+    total: contentHits + keywordHits * 2 + phraseHits * 3,
+  }
+}
+
+export function applySemanticScore(
+  lexicalScore: RetrievalScore,
+  queryEmbedding: number[],
+  chunkEmbedding: number[],
+): RetrievalScore {
+  const hybrid = combineHybridScore({
+    lexicalTotal: lexicalScore.lexicalTotal,
+    semanticSimilarity: cosineSimilarity(queryEmbedding, chunkEmbedding),
+  })
+  return {
+    ...lexicalScore,
+    total: hybrid.total,
+    semanticSimilarity: hybrid.semanticSimilarity,
+    semanticScore: hybrid.semanticScore,
+  }
+}
+
+export function applyVectorStoreScore(
+  lexicalScore: RetrievalScore,
+  vectorScore: number,
+): RetrievalScore {
+  const hybrid = combineHybridScore({
+    lexicalTotal: lexicalScore.lexicalTotal,
+    semanticSimilarity: vectorScore,
+  })
+  return {
+    ...lexicalScore,
+    total: hybrid.total,
+    semanticSimilarity: hybrid.semanticSimilarity,
+    semanticScore: hybrid.semanticScore,
+  }
+}
+
+async function resolveQueryEmbedding(
+  companyId: string,
+  query: string,
+): Promise<{ vector: number[]; model: string } | null> {
+  try {
+    const config = await getEmbeddingRuntimeConfig(companyId)
+    if (!config) return null
+    const [embedding] = await embedTexts(config, [query])
+    return embedding ? { vector: embedding, model: config.model } : null
+  } catch {
+    return null
+  }
+}
+
+async function resolveVectorScores(args: {
+  companyId: string
+  vector: number[] | null
+  topK: number
+}): Promise<Map<string, number>> {
+  if (!args.vector) return new Map()
+  try {
+    const config = await getVectorStoreRuntimeConfig(args.companyId)
+    if (!config) return new Map()
+    const hits = await searchVectorStore({
+      config,
+      companyId: args.companyId,
+      vector: args.vector,
+      limit: Math.max(args.topK * 8, 16),
+    })
+    return new Map(hits.map((hit) => [hit.chunkId, hit.score]))
+  } catch {
+    return new Map()
+  }
+}
+
+interface CandidateChunk {
+  chunkId: string
+  documentId: string
+  documentName: string
+  chunkIndex: number
+  content: string
+  keywords: string | null
+  embeddingJson: string | null
+  embeddingModel: string | null
+}
+
+async function loadVectorCandidateChunks(
+  companyId: string,
+  chunkIds: string[],
+): Promise<CandidateChunk[]> {
+  const rows = await db.documentChunk.findMany({
+    where: {
+      id: { in: chunkIds },
+      document: { companyId, status: 'ready' },
+    },
+    select: {
+      id: true,
+      chunkIndex: true,
+      content: true,
+      keywords: true,
+      embeddingJson: true,
+      embeddingModel: true,
+      document: { select: { id: true, name: true } },
+    },
+  })
+  const order = new Map(chunkIds.map((id, index) => [id, index]))
+  return rows
+    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+    .map((row) => ({
+      chunkId: row.id,
+      documentId: row.document.id,
+      documentName: row.document.name,
+      chunkIndex: row.chunkIndex,
+      content: row.content,
+      keywords: row.keywords,
+      embeddingJson: row.embeddingJson,
+      embeddingModel: row.embeddingModel,
+    }))
+}
+
+async function loadAllCandidateChunks(companyId: string): Promise<CandidateChunk[]> {
+  const docs = await db.document.findMany({
+    where: { companyId, status: 'ready' },
+    select: {
+      id: true,
+      name: true,
+      chunks: {
+        select: {
+          id: true,
+          chunkIndex: true,
+          content: true,
+          keywords: true,
+          embeddingJson: true,
+          embeddingModel: true,
+        },
+      },
+    },
+  })
+  return docs.flatMap((doc) =>
+    doc.chunks.map((chunk) => ({
+      chunkId: chunk.id,
+      documentId: doc.id,
+      documentName: doc.name,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.content,
+      keywords: chunk.keywords,
+      embeddingJson: chunk.embeddingJson,
+      embeddingModel: chunk.embeddingModel,
+    })),
+  )
+}
+
+async function loadLexicalCandidateChunks(
+  companyId: string,
+  queryTokens: string[],
+  topK: number,
+): Promise<CandidateChunk[]> {
+  const ftsIds = await searchFtsChunkIds({
+    companyId,
+    queryTokens,
+    limit: Math.max(topK * 12, 32),
+  })
+  return ftsIds.length > 0
+    ? loadVectorCandidateChunks(companyId, ftsIds)
+    : loadAllCandidateChunks(companyId)
+}
+
+function countPhraseHits(contentTokens: string[], queryTokens: string[]): number {
+  if (queryTokens.length < 2 || contentTokens.length < 2) return 0
+
+  let hits = 0
+  for (let size = Math.min(4, queryTokens.length); size >= 2; size -= 1) {
+    for (let start = 0; start <= queryTokens.length - size; start += 1) {
+      const phrase = queryTokens.slice(start, start + size)
+      if (containsTokenPhrase(contentTokens, phrase)) hits += 1
+    }
+  }
+  return hits
+}
+
+function containsTokenPhrase(contentTokens: string[], phrase: string[]): boolean {
+  for (let start = 0; start <= contentTokens.length - phrase.length; start += 1) {
+    if (phrase.every((token, offset) => contentTokens[start + offset] === token)) {
+      return true
+    }
+  }
+  return false
+}
+
+const DEFAULT_MAX_CHUNK_CHARS = 1400
+const DEFAULT_OVERLAP_CHARS = 180
+
 /**
- * Split text into semantic-ish chunks on double-newlines.
- * Filters empty chunks and trims whitespace.
+ * Split text into semantic-ish chunks on double-newlines, with a hard ceiling
+ * for long single-paragraph documents.
  */
-export function chunkText(content: string): string[] {
+export function chunkText(
+  content: string,
+  options: { maxChars?: number; overlapChars?: number } = {},
+): string[] {
+  const maxChars = options.maxChars ?? DEFAULT_MAX_CHUNK_CHARS
+  const overlapChars = Math.min(options.overlapChars ?? DEFAULT_OVERLAP_CHARS, maxChars)
   if (!content) return []
   return content
     .split(/\n\n+/)
     .map((c) => c.trim())
     .filter((c) => c.length > 0)
+    .flatMap((chunk) => splitLongChunk(chunk, maxChars, overlapChars))
+}
+
+function splitLongChunk(content: string, maxChars: number, overlapChars: number): string[] {
+  if (content.length <= maxChars) return [content]
+
+  const chunks: string[] = []
+  let current = ''
+  for (const word of content.split(/\s+/).filter(Boolean)) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length > maxChars && current) {
+      chunks.push(current)
+      const overlap = trailingWordsWithin(current, overlapChars)
+      current = overlap ? `${overlap} ${word}` : word
+    } else {
+      current = next
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
+}
+
+function trailingWordsWithin(content: string, maxChars: number): string {
+  if (maxChars <= 0) return ''
+  const words = content.split(/\s+/).filter(Boolean)
+  const kept: string[] = []
+  let length = 0
+  for (let index = words.length - 1; index >= 0; index -= 1) {
+    const word = words[index]
+    const nextLength = length + word.length + (kept.length > 0 ? 1 : 0)
+    if (nextLength > maxChars) break
+    kept.unshift(word)
+    length = nextLength
+  }
+  return kept.join(' ')
 }
 
 /** Detect document type from filename. Falls back to 'txt'. */
@@ -123,6 +495,20 @@ export async function extractFileText(
     }
   }
 
+  const binary = Buffer.from(await file.arrayBuffer())
+  if (type === 'pdf') {
+    const text = extractPdfTextFromBuffer(binary)
+    if (text) return { text: limitExtractedText(text), isPlaceholder: false }
+  }
+  if (type === 'docx') {
+    const text = extractDocxTextFromBuffer(binary)
+    if (text) return { text: limitExtractedText(text), isPlaceholder: false }
+  }
+  if (type === 'xlsx') {
+    const text = extractXlsxTextFromBuffer(binary)
+    if (text) return { text: limitExtractedText(text), isPlaceholder: false }
+  }
+
   // Binary formats: try text(), validate printable ratio.
   try {
     const raw = await file.text()
@@ -143,4 +529,8 @@ export async function extractFileText(
     text: `[Binary document: ${name}, ${size} bytes. Parsed content placeholder.]`,
     isPlaceholder: true,
   }
+}
+
+function limitExtractedText(text: string): string {
+  return text.replace(/\s+\n/g, '\n').trim().slice(0, 2_000_000)
 }

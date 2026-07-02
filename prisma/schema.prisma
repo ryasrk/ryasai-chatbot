@@ -1,5 +1,5 @@
 // =====================================================================
-// Enterprise AI Internal Assistant — Prisma Schema
+// ryasai — Prisma Schema
 // Adapted from "DOKUMEN SPESIFIKASI TEKNIS" (PostgreSQL) to SQLite.
 // Implements: multi-tenancy, RBAC, AES-256-GCM encrypted integrations,
 // RAG document store, chat history, audit logs, query history.
@@ -30,6 +30,15 @@ model Company {
   documents    Document[]
   chatSessions ChatSession[]
   auditLogs    AuditLog[]
+  llmConfig    LlmConfig?
+  appConfig    AppConfig?
+  restApiConnectors RestApiConnector[]
+  restApiRequestLogs RestApiRequestLog[]
+  toolRuns     ToolRun[]
+  apiKeys      ApiKey[]
+  apiRequestLogs ApiRequestLog[]
+  vectorStoreConfig VectorStoreConfig?
+  smartMappings SmartMapping[]
 }
 
 // ------------------------------------------------------------------
@@ -95,6 +104,32 @@ model IntegrationSchema {
 }
 
 // ------------------------------------------------------------------
+// LLM provider configuration — encrypted API key per tenant
+// ------------------------------------------------------------------
+model LlmConfig {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  provider        String   @default("OPENAI_COMPATIBLE")
+  baseUrl         String
+  encryptedApiKey String
+  model           String
+  availableModels String?  // JSON: string[]
+  lastModelSyncAt DateTime?
+  embeddingProvider        String?
+  embeddingBaseUrl         String?
+  encryptedEmbeddingApiKey String?
+  embeddingModel           String?
+  embeddingAvailableModels String?  // JSON: string[]
+  lastEmbeddingModelSyncAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+// ------------------------------------------------------------------
 // 3.3  RAG — documents & semantic chunks
 // ------------------------------------------------------------------
 model Document {
@@ -125,11 +160,63 @@ model DocumentChunk {
   content    String
   tokenCount Int?
   keywords   String?  // simple keyword tags for retrieval
+  embeddingJson      String?  // JSON number[] generated through external API
+  embeddingProvider  String?
+  embeddingModel     String?
+  embeddedAt         DateTime?
   createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId])
+  @@index([embeddingModel])
+}
+
+// ------------------------------------------------------------------
+// Hybrid RAG — external vector database config
+// ------------------------------------------------------------------
+model VectorStoreConfig {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  provider        String   @default("INTERNAL") // INTERNAL | QDRANT | MILVUS
+  baseUrl         String?
+  encryptedApiKey String?
+  collectionName  String   @default("ryasai_chunks")
+  vectorSize      Int      @default(1536)
+  distance        String   @default("Cosine")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([provider])
+}
+
+// ------------------------------------------------------------------
+// Smart Mapping AI — source/entity/field map approved by admin
+// ------------------------------------------------------------------
+model SmartMapping {
+  id            String   @id @default(cuid())
+  companyId     String
+  sourceType    String   // DATABASE | REST_API | DOCUMENT | MANUAL
+  sourceId      String?
+  sourceName    String
+  entityType    String
+  routingHint   String   // SQL | RAG | REST | CHAT
+  fieldsJson    String   // JSON: [{source, canonical}]
+  synonymsJson  String   // JSON: string[]
+  status        String   @default("active") // active | draft | disabled
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([sourceType])
+  @@index([sourceId])
+  @@index([routingHint])
+  @@index([status])
 }
 
 // ------------------------------------------------------------------
@@ -166,8 +253,157 @@ model ChatMessage {
   user        User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   integration Integration?   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
   integrationId String?
+  toolRuns    ToolRun[]
 
   @@index([sessionId])
+}
+
+// ------------------------------------------------------------------
+// Production core — singleton setup/config for dedicated deployment
+// ------------------------------------------------------------------
+model AppConfig {
+  id                  String   @id @default(cuid())
+  companyId           String   @unique
+  setupCompleted      Boolean  @default(false)
+  organizationName    String?
+  brandingJson        String?
+  productionChecklist String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------------------
+// Production core — REST API connector registry and whitelist
+// ------------------------------------------------------------------
+model RestApiConnector {
+  id                  String   @id @default(cuid())
+  companyId           String
+  name                String
+  baseUrl             String
+  authType            String   @default("NONE") // NONE | BEARER | API_KEY_HEADER
+  encryptedAuthConfig String?
+  isActive            Boolean  @default(true)
+  timeoutMs           Int      @default(30000)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  endpoints   RestApiEndpoint[]
+  requestLogs RestApiRequestLog[]
+
+  @@index([companyId])
+}
+
+model RestApiEndpoint {
+  id              String   @id @default(cuid())
+  connectorId     String
+  method          String
+  path            String
+  description     String?
+  parameterSchema String?
+  sampleRequest   String?
+  sampleResponse  String?
+  isEnabled       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  connector   RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  requestLogs RestApiRequestLog[]
+  toolRuns    ToolRun[]
+
+  @@index([connectorId])
+  @@index([method, path])
+}
+
+model RestApiRequestLog {
+  id              String   @id @default(cuid())
+  companyId       String
+  connectorId     String
+  endpointId      String?
+  statusCode      Int?
+  latencyMs       Int?
+  requestSummary  String
+  responseSummary String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  connector RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  endpoint  RestApiEndpoint?  @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([connectorId])
+  @@index([endpointId])
+}
+
+// ------------------------------------------------------------------
+// Production core — tool execution and external API observability
+// ------------------------------------------------------------------
+model ToolRun {
+  id                String   @id @default(cuid())
+  companyId         String
+  chatMessageId     String?
+  restApiEndpointId String?
+  type              String   // RAG | SQL | REST_API | CHAT
+  status            String   // success | error | blocked
+  latencyMs         Int?
+  inputSummary      String
+  outputSummary     String?
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chatMessage     ChatMessage?     @relation(fields: [chatMessageId], references: [id], onDelete: SetNull)
+  restApiEndpoint RestApiEndpoint? @relation(fields: [restApiEndpointId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([chatMessageId])
+  @@index([restApiEndpointId])
+  @@index([type])
+  @@index([status])
+}
+
+model ApiKey {
+  id                    String    @id @default(cuid())
+  companyId             String
+  label                 String
+  keyPrefix             String
+  keyHash               String
+  isActive              Boolean   @default(true)
+  requestLimitPerMinute Int?
+  dailyRequestLimit     Int?
+  lastUsedAt            DateTime?
+  revokedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requestLogs ApiRequestLog[]
+
+  @@index([companyId])
+  @@index([keyPrefix])
+  @@index([isActive])
+}
+
+model ApiRequestLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  apiKeyId     String?
+  endpoint     String
+  status       Int
+  latencyMs    Int?
+  requestId    String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  apiKey  ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([apiKeyId])
+  @@index([endpoint])
 }
 
 // ------------------------------------------------------------------

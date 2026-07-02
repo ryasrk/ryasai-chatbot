@@ -51,6 +51,15 @@ echo ""
 # 切换到构建目录
 cd "$BUILD_DIR" || exit 1
 
+# 加载本地 .env（如果随包附带）并确保 Caddy 所需端口有默认值。
+if [ -f "$BUILD_DIR/.env" ]; then
+	set -a
+	. "$BUILD_DIR/.env" 2>/dev/null
+	set +a
+fi
+export CADDY_PORT="${CADDY_PORT:-81}"
+export WEB_PORT="${WEB_PORT:-${PORT:-3000}}"
+
 ls -lah
 
 DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"

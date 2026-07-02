@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * ChatView — the centerpiece of the Enterprise AI Internal Assistant.
+ * ChatView — the centerpiece of ryasai.
  *
  * Implements spec §5.2 (streaming chat protocol), §6.2 (Zustand store
  * consumption), §6 (Recharts visualization).
@@ -14,16 +14,11 @@
  *
  * Message flow:
  *   1. user types → Enter / Send
- *   2. POST /api/chat/sessions/[id]/messages  { sender:'user', text }   (persist user msg)
- *   3. addMessage(userMsg) to the store
- *   4. sendMessage({ text, sessionId, user, integrationId }) — the hook emits
- *      `user_message` over WS, adds a placeholder AI message to the store,
- *      and the hook's internal listeners keep updating it (status_update /
- *      text_stream / message_complete).
- *   5. The WebSocket service (port 3003) persists the AI message — the
- *      frontend does NOT re-persist the AI message (would duplicate).
+ *   2. POST /api/chat/sessions/[id]/send { text, integrationId? }
+ *   3. API persists the user + AI messages and runs the shared production router.
+ *   4. UI replaces optimistic placeholders with persisted messages.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, memo } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -49,6 +44,8 @@ import {
   FileText,
   Loader2,
   MessageSquarePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
   Send,
@@ -57,12 +54,9 @@ import {
   Trash2,
   TriangleAlert,
   Wand2,
-  Wifi,
-  WifiOff,
 } from 'lucide-react'
 
 import { useChatStore } from '@/store/useChatStore'
-import { useChatSocket } from '@/hooks/use-chat-socket'
 import { useActiveUser } from '@/hooks/use-active-user'
 import type {
   ChartData,
@@ -71,6 +65,11 @@ import type {
   Citation,
   Integration,
 } from '@/lib/types'
+import {
+  chatSessionPanelWidthClass,
+  chatShellGridClass,
+  citationDetailLabel,
+} from '@/lib/chat-layout'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -146,6 +145,14 @@ const STATUS_META: Record<
 }
 
 const AUTO_INTEGRATION_VALUE = '__auto__'
+const AUTO_INTEGRATION_LABEL = 'Otomatis (semua sumber)'
+
+function newSessionTitle(): string {
+  return `Sesi ${new Date().toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
+}
 
 /* ------------------------------------------------------------------ */
 /* Main component                                                      */
@@ -154,7 +161,6 @@ const AUTO_INTEGRATION_VALUE = '__auto__'
 export function ChatView() {
   const store = useChatStore()
   const { user } = useActiveUser()
-  const { connected, sendMessage } = useChatSocket()
 
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>(
@@ -163,8 +169,10 @@ export function ChatView() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [sessionRailCollapsed, setSessionRailCollapsed] = useState(false)
   const [loadingSession, setLoadingSession] = useState(false)
   const [loadingList, setLoadingList] = useState(true)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -177,9 +185,9 @@ export function ChatView() {
       if (!res.ok) throw new Error('Gagal memuat sesi')
       const data = await res.json()
       const items: ChatSessionItem[] = data.items ?? []
-      store.setSessions(items)
+      useChatStore.getState().setSessions(items)
       // auto-select the most recent session if any
-      if (items.length > 0 && !store.activeSessionId) {
+      if (items.length > 0 && !useChatStore.getState().activeSessionId) {
         await selectSession(items[0].id)
       }
     } catch (e) {
@@ -215,16 +223,19 @@ export function ChatView() {
   }, [])
 
   /* ----- auto-scroll on new messages / streaming ----- */
+  // Streaming grows the last message's text without changing messages.length,
+  // so track the last message length too (otherwise tokens render below the fold).
+  const lastMsgLen = store.messages[store.messages.length - 1]?.text.length ?? 0
   useEffect(() => {
     const el = messagesEndRef.current
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [store.messages.length, store.currentStatus, store.isStreaming])
+  }, [store.messages.length, lastMsgLen, store.currentStatus, store.isStreaming])
 
   /* ----- session selection ----- */
   const selectSession = useCallback(
     async (id: string) => {
       setLoadingSession(true)
-      store.setActiveSession(id)
+      useChatStore.getState().setActiveSession(id)
       try {
         const res = await fetch(`/api/chat/sessions/${id}`, {
           cache: 'no-store',
@@ -232,7 +243,7 @@ export function ChatView() {
         if (!res.ok) throw new Error('Gagal memuat sesi')
         const data = await res.json()
         const msgs: ChatMessageItem[] = data.messages ?? []
-        store.setMessages(msgs)
+        useChatStore.getState().setMessages(msgs)
       } catch (e) {
         toast.error(
           e instanceof Error ? e.message : 'Gagal memuat pesan sesi.',
@@ -250,13 +261,14 @@ export function ChatView() {
       const res = await fetch('/api/chat/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Sesi Baru' }),
+        body: JSON.stringify({ title: newSessionTitle() }),
       })
       if (!res.ok) throw new Error('Gagal membuat sesi')
       const session: ChatSessionItem = await res.json()
-      store.setSessions([session, ...store.sessions])
-      store.setActiveSession(session.id)
-      store.setMessages([])
+      const chat = useChatStore.getState()
+      chat.setSessions([session, ...chat.sessions])
+      chat.setActiveSession(session.id)
+      chat.setMessages([])
       setMobileSidebarOpen(false)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal membuat sesi baru.')
@@ -266,21 +278,32 @@ export function ChatView() {
   /* ----- delete session ----- */
   const deleteSession = useCallback(
     async (id: string) => {
+      setDeletingSessionId(id)
       try {
         const res = await fetch(`/api/chat/sessions/${id}`, {
           method: 'DELETE',
         })
-        if (!res.ok) throw new Error('Gagal menghapus sesi')
-        const remaining = store.sessions.filter((s) => s.id !== id)
-        store.setSessions(remaining)
-        if (store.activeSessionId === id) {
-          store.setActiveSession(null)
-          store.setMessages([])
-          if (remaining.length > 0) await selectSession(remaining[0].id)
+        if (!res.ok && res.status !== 404) throw new Error('Gagal menghapus sesi')
+
+        const listRes = await fetch('/api/chat/sessions', { cache: 'no-store' })
+        if (!listRes.ok) throw new Error('Gagal memuat ulang daftar sesi')
+        const data = await listRes.json()
+        const remaining: ChatSessionItem[] = data.items ?? []
+        const chat = useChatStore.getState()
+        chat.setSessions(remaining)
+
+        if (chat.activeSessionId === id) {
+          chat.setActiveSession(null)
+          chat.setMessages([])
+          if (remaining.length > 0) {
+            await selectSession(remaining[0].id)
+          }
         }
         toast.success('Sesi dihapus.')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Gagal menghapus sesi.')
+      } finally {
+        setDeletingSessionId(null)
       }
     },
     [],
@@ -295,11 +318,6 @@ export function ChatView() {
         toast.error('Pengguna belum dimuat. Coba lagi.')
         return
       }
-      if (!connected) {
-        toast.error('Koneksi WebSocket tidak aktif. Tunggu sebentar.')
-        return
-      }
-
       // Ensure we have an active session — auto-create if none.
       let sessionId = store.activeSessionId
       if (!sessionId) {
@@ -311,8 +329,9 @@ export function ChatView() {
           })
           if (!res.ok) throw new Error('Gagal membuat sesi')
           const session: ChatSessionItem = await res.json()
-          store.setSessions([session, ...store.sessions])
-          store.setActiveSession(session.id)
+          const chat = useChatStore.getState()
+          chat.setSessions([session, ...chat.sessions])
+          chat.setActiveSession(session.id)
           sessionId = session.id
         } catch (e) {
           toast.error(
@@ -332,28 +351,75 @@ export function ChatView() {
         text,
         createdAt: new Date().toISOString(),
       }
+      const aiPlaceholder: ChatMessageItem = {
+        id: `ai-${Date.now()}`,
+        sender: 'ai',
+        text: '',
+        status: 'generating',
+        createdAt: new Date().toISOString(),
+      }
       store.addMessage(userMessage)
+      store.addMessage(aiPlaceholder)
+      store.setStreaming(true)
+      store.setStatus('generating', 'Memproses pertanyaan melalui REST API...')
 
       try {
-        await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+        const integrationId =
+          selectedIntegrationId === AUTO_INTEGRATION_VALUE
+            ? undefined
+            : selectedIntegrationId
+        const res = await fetch(`/api/chat/sessions/${sessionId}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sender: 'user', text }),
+          body: JSON.stringify({ text, integrationId }),
         })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(
+            typeof data?.error === 'string'
+              ? data.error
+              : 'Gagal memproses chat.',
+          )
+        }
+
+        const persistedUser = data.userMessage as ChatMessageItem
+        const persistedAi = data.aiMessage as ChatMessageItem
+        const current = useChatStore.getState().messages
+        const chat = useChatStore.getState()
+        chat.setMessages(
+          current.map((message) => {
+            if (message.id === userMessage.id) return persistedUser
+            if (message.id === aiPlaceholder.id) return persistedAi
+            return message
+          }),
+        )
+        const listRes = await fetch('/api/chat/sessions', { cache: 'no-store' })
+        if (listRes.ok) {
+          const listData = await listRes.json()
+          chat.setSessions(listData.items ?? [])
+        }
+        chat.setStatus('', '')
+        chat.setStreaming(false)
       } catch (e) {
-        console.warn('persist user msg failed', e)
-        // non-fatal: the chat still streams; just log
+        const message =
+          e instanceof Error ? e.message : 'Gagal memproses chat.'
+        const current = useChatStore.getState().messages
+        store.setMessages(
+          current.map((item) =>
+            item.id === aiPlaceholder.id
+              ? {
+                  ...item,
+                  text: message,
+                  status: 'error',
+                }
+              : item,
+          ),
+        )
+        store.setError(message)
+        toast.error(message)
+      } finally {
+        setSending(false)
       }
-
-      // 2) Emit WS user_message — the hook adds the AI placeholder and
-      //    updates it via status_update / text_stream / message_complete.
-      const integrationId =
-        selectedIntegrationId === AUTO_INTEGRATION_VALUE
-          ? undefined
-          : selectedIntegrationId
-
-      sendMessage({ text, sessionId: sessionId, user, integrationId })
-      setSending(false)
     },
     [
       input,
@@ -362,7 +428,6 @@ export function ChatView() {
       store.activeSessionId,
       store.sessions,
       user,
-      connected,
       selectedIntegrationId,
     ],
   )
@@ -386,21 +451,35 @@ export function ChatView() {
   const hasMessages = store.messages.length > 0
   const isStreaming = store.isStreaming
   const canSend =
-    input.trim().length > 0 && !isStreaming && !sending && connected
+    input.trim().length > 0 && !isStreaming && !sending
 
   /* ---------------------------------------------------------------- */
   /* Render                                                           */
   /* ---------------------------------------------------------------- */
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] min-h-[480px] gap-3">
-      <div className="flex flex-1 gap-3 min-h-0">
+    <div className="flex flex-col h-[calc(100vh-200px)] min-h-[520px] gap-3">
+      <div
+        className={cn(
+          'grid flex-1 min-h-0 gap-3',
+          chatShellGridClass(),
+        )}
+      >
         {/* ---------- Sidebar (desktop) ---------- */}
-        <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 flex-col rounded-xl border bg-card overflow-hidden">
+        <aside
+          className={cn(
+            'hidden min-w-0 md:flex flex-col rounded-lg border bg-card overflow-hidden',
+            'transition-[width,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width]',
+            chatSessionPanelWidthClass(sessionRailCollapsed),
+          )}
+        >
           <SessionListPanel
             sessions={store.sessions}
             activeId={store.activeSessionId}
             loading={loadingList}
+            deletingId={deletingSessionId}
+            collapsed={sessionRailCollapsed}
+            onCollapsedChange={setSessionRailCollapsed}
             onSelect={(id) => void selectSession(id)}
             onNew={createSession}
             onDelete={(id) => void deleteSession(id)}
@@ -408,7 +487,7 @@ export function ChatView() {
         </aside>
 
         {/* ---------- Center ---------- */}
-        <div className="flex-1 flex flex-col min-w-0 rounded-xl border bg-card overflow-hidden">
+        <div className="flex min-w-0 flex-col rounded-lg border bg-card overflow-hidden">
           {/* chat topbar */}
           <header className="flex items-center justify-between gap-2 px-3 md:px-4 h-12 border-b bg-card/80 backdrop-blur">
             <div className="flex items-center gap-2 min-w-0">
@@ -436,6 +515,8 @@ export function ChatView() {
                       sessions={store.sessions}
                       activeId={store.activeSessionId}
                       loading={loadingList}
+                      deletingId={deletingSessionId}
+                      collapsed={false}
                       onSelect={async (id) => {
                         await selectSession(id)
                         setMobileSidebarOpen(false)
@@ -449,11 +530,11 @@ export function ChatView() {
 
               <Brain className="h-4 w-4 text-primary shrink-0" />
               <span className="text-sm font-medium truncate">
-                AI Internal Assistant
+                ryasai
               </span>
             </div>
 
-            <ConnectionBadge connected={connected} />
+            <DeliveryBadge />
           </header>
 
           {/* messages */}
@@ -473,7 +554,7 @@ export function ChatView() {
                 }}
               />
             ) : (
-              <div className="space-y-4 max-w-3xl mx-auto">
+              <div className="space-y-4 w-full max-w-4xl mx-auto">
                 {store.messages.map((m) => (
                   <MessageBubble key={m.id} message={m} />
                 ))}
@@ -492,34 +573,19 @@ export function ChatView() {
 
           {/* input area */}
           <div className="border-t bg-card/80 backdrop-blur px-3 md:px-4 py-3 space-y-2">
-            {/* suggested prompt chips (only when no messages yet) */}
-            {!hasMessages && (
-              <div className="flex flex-wrap gap-1.5">
-                {SUGGESTED_PROMPTS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setInput(p)}
-                    className="text-xs px-2.5 py-1 rounded-full border bg-background hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* integration selector + warning row */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="grid gap-2 sm:grid-cols-[minmax(220px,auto)_minmax(0,1fr)] sm:items-center">
               <Select
                 value={selectedIntegrationId}
                 onValueChange={setSelectedIntegrationId}
               >
-                <SelectTrigger className="h-8 w-auto gap-2 text-xs">
+                <SelectTrigger className="h-8 w-full gap-2 text-xs sm:w-[264px]">
                   <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Sumber Data" />
+                  <SelectValue placeholder="Sumber jawaban" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={AUTO_INTEGRATION_VALUE}>
-                    Otomatis (RAG + DB)
+                    {AUTO_INTEGRATION_LABEL}
                   </SelectItem>
                   {integrations.map((i) => (
                     <SelectItem key={i.id} value={i.id}>
@@ -529,15 +595,9 @@ export function ChatView() {
                 </SelectContent>
               </Select>
 
-              {!connected && (
-                <Badge
-                  variant="outline"
-                  className="text-rose-600 border-rose-300 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-300"
-                >
-                  <WifiOff className="h-3 w-3" />
-                  Koneksi terputus
-                </Badge>
-              )}
+              <span className="min-w-0 text-xs text-muted-foreground">
+                Router memilih Knowledge, Database, REST API, atau Chat.
+              </span>
             </div>
 
             {/* input row */}
@@ -546,7 +606,7 @@ export function ChatView() {
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Tulis pertanyaan Anda... (Enter untuk kirim, Shift+Enter untuk baris baru)"
+                placeholder="Tulis pertanyaan..."
                 rows={1}
                 className="min-h-[40px] max-h-40 resize-none"
                 disabled={isStreaming || sending}
@@ -583,6 +643,9 @@ function SessionListPanel({
   onSelect,
   onNew,
   onDelete,
+  deletingId,
+  collapsed,
+  onCollapsedChange,
 }: {
   sessions: ChatSessionItem[]
   activeId: string | null
@@ -590,9 +653,69 @@ function SessionListPanel({
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
+  deletingId?: string | null
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
 }) {
+  const expanded = !collapsed
+  const canCollapse = !!onCollapsedChange
+  const setExpanded = (next: boolean | ((value: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(expanded) : next
+    onCollapsedChange?.(!value)
+  }
+
+  if (collapsed) {
+    return (
+      <div className="flex h-full flex-col items-center gap-2 py-2">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color,transform] duration-200 hover:translate-x-0.5 hover:bg-muted hover:text-foreground"
+          aria-label="Buka daftar sesi"
+          aria-expanded={false}
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+        <Button
+          onClick={onNew}
+          size="icon"
+          variant="default"
+          className="h-10 w-10"
+          aria-label="Sesi baru"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+        <div className="mt-1 rounded-md border bg-muted/40 px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
+          {sessions.length}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full">
+      <div className="border-b">
+        <button
+          type="button"
+          onClick={() => canCollapse && setExpanded((v) => !v)}
+          className={cn(
+            'group flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-[background-color,color] duration-200',
+            canCollapse && 'hover:bg-muted/70',
+          )}
+          aria-expanded={expanded}
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Sesi Chat</div>
+            <div className="text-xs text-muted-foreground">
+              {sessions.length} sesi tersimpan
+            </div>
+          </div>
+          {canCollapse && (
+            <PanelLeftClose className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:-translate-x-0.5" />
+          )}
+        </button>
+      </div>
+
       <div className="p-3 border-b">
         <Button
           onClick={onNew}
@@ -605,6 +728,7 @@ function SessionListPanel({
         </Button>
       </div>
 
+      {expanded ? (
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-2 space-y-1">
           {loading ? (
@@ -622,22 +746,23 @@ function SessionListPanel({
             sessions.map((s) => {
               const active = s.id === activeId
               const count = s._count?.messages ?? 0
+              const deleting = deletingId === s.id
               return (
                 <div
                   key={s.id}
                   className={cn(
-                    'group relative rounded-lg px-3 py-2 cursor-pointer transition-colors',
+                    'group rounded-lg px-3 py-2 cursor-pointer transition-colors',
                     active
                       ? 'bg-primary/10 ring-1 ring-primary/30'
                       : 'hover:bg-muted',
                   )}
                   onClick={() => onSelect(s.id)}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <div
                         className={cn(
-                          'text-sm font-medium truncate',
+                          'line-clamp-2 break-words text-sm font-medium leading-snug',
                           active ? 'text-primary' : 'text-foreground',
                         )}
                       >
@@ -651,33 +776,44 @@ function SessionListPanel({
                         lalu
                       </div>
                     </div>
-                    {count > 0 && (
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] px-1.5 py-0 h-4"
+                    <div className="flex shrink-0 items-center gap-1">
+                      {count > 0 && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] px-1.5 py-0 h-4"
+                        >
+                          {count}
+                        </Badge>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(s.id)
+                        }}
+                        disabled={deleting}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-60"
+                        aria-label="Hapus sesi"
                       >
-                        {count}
-                      </Badge>
-                    )}
+                        {deleting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-
-                  {/* delete button — visible on hover */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(s.id)
-                    }}
-                    className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-opacity"
-                    aria-label="Hapus sesi"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               )
             })
           )}
         </div>
       </ScrollArea>
+      ) : (
+        <div className="flex-1 min-h-0 px-3 py-4 text-xs text-muted-foreground">
+          Daftar sesi disembunyikan. Klik header untuk membuka kembali.
+        </div>
+      )}
     </div>
   )
 }
@@ -686,23 +822,14 @@ function SessionListPanel({
 /* Connection badge                                                    */
 /* ------------------------------------------------------------------ */
 
-function ConnectionBadge({ connected }: { connected: boolean }) {
+function DeliveryBadge() {
   return (
     <Badge
       variant="outline"
-      className={cn(
-        'text-[11px] gap-1.5 py-0.5',
-        connected
-          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300'
-          : 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-300',
-      )}
+      className="text-[11px] gap-1.5 py-0.5 border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300"
     >
-      {connected ? (
-        <Wifi className="h-3 w-3" />
-      ) : (
-        <WifiOff className="h-3 w-3" />
-      )}
-      {connected ? 'Terhubung' : 'Terputus'}
+      <Server className="h-3 w-3" />
+      REST API
     </Badge>
   )
 }
@@ -714,14 +841,13 @@ function ConnectionBadge({ connected }: { connected: boolean }) {
 function EmptyState({ onPickPrompt }: { onPickPrompt: (p: string) => void }) {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8">
-      <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-primary/10 text-primary mb-4">
+      <div className="flex items-center justify-center h-14 w-14 rounded-lg border bg-background text-primary mb-4">
         <Brain className="h-8 w-8" />
       </div>
-      <h3 className="text-lg font-semibold">Mulai percakapan dengan AI Internal Assistant</h3>
+      <h3 className="text-lg font-semibold">Mulai percakapan dengan ryasai</h3>
       <p className="text-sm text-muted-foreground mt-1 max-w-md">
-        Tanyakan apa saja seputar data perusahaan Anda — stok produk, pelanggan,
-        invoice, kebijakan, atau dokumen lainnya. AI akan otomatis memilih sumber
-        data yang tepat.
+        Tanyakan data perusahaan, dokumen, kebijakan, atau status operasional.
+        Router akan memilih jalur RAG, SQL, REST API, atau chat umum.
       </p>
 
       <div className="mt-6 w-full max-w-lg">
@@ -730,11 +856,14 @@ function EmptyState({ onPickPrompt }: { onPickPrompt: (p: string) => void }) {
           Coba pertanyaan berikut
         </div>
         <div className="grid sm:grid-cols-2 gap-2">
-          {SUGGESTED_PROMPTS.map((p) => (
+          {SUGGESTED_PROMPTS.map((p, idx) => (
             <button
               key={p}
               onClick={() => onPickPrompt(p)}
-              className="text-left text-sm px-3 py-2 rounded-lg border bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+              className={cn(
+                'text-left text-sm px-3 py-2 rounded-lg border bg-background hover:bg-accent hover:text-accent-foreground transition-colors',
+                idx > 1 && 'hidden sm:block',
+              )}
             >
               {p}
             </button>
@@ -781,11 +910,13 @@ function StatusBanner({
 /* Message bubble                                                      */
 /* ------------------------------------------------------------------ */
 
-function MessageBubble({ message }: { message: ChatMessageItem }) {
+// Memoized so a streaming token (which only changes the last message's object
+// reference) doesn't re-render / re-parse markdown for every other message.
+const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessageItem }) {
   if (message.sender === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap break-words">
+      <div className="flex min-w-0 justify-end">
+        <div className="max-w-[min(85%,44rem)] overflow-hidden rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           {message.text}
         </div>
       </div>
@@ -813,13 +944,13 @@ function MessageBubble({ message }: { message: ChatMessageItem }) {
           <Brain className="h-4 w-4" />
         </div>
       </div>
-      <div className="max-w-[85%] sm:max-w-[80%] min-w-0">
-        <Card className="py-3 gap-3 shadow-none bg-background">
-          <CardContent className="px-4 pt-0 pb-0">
+      <div className="min-w-0 flex-1 max-w-[min(100%,52rem)]">
+          <Card className="overflow-hidden py-3 gap-3 shadow-none bg-background">
+          <CardContent className="min-w-0 px-4 pt-0 pb-0">
             {isStreaming ? (
               <TypingDots />
             ) : (
-              <div className="prose-chat text-sm leading-relaxed">
+              <div className="prose-chat min-w-0 text-sm leading-relaxed break-words [overflow-wrap:anywhere]">
                 <ReactMarkdown
                   components={{
                     h1: ({ children }) => (
@@ -855,13 +986,13 @@ function MessageBubble({ message }: { message: ChatMessageItem }) {
                       const isBlock = (className ?? '').includes('language-')
                       if (isBlock) {
                         return (
-                          <pre className="bg-muted/60 border rounded-md p-2 my-2 overflow-x-auto text-xs">
+                          <pre className="max-w-full bg-muted/60 border rounded-md p-2 my-2 overflow-x-auto text-xs">
                             <code>{children}</code>
                           </pre>
                         )
                       }
                       return (
-                        <code className="bg-muted/60 px-1 py-0.5 rounded text-xs font-mono">
+                        <code className="bg-muted/60 px-1 py-0.5 rounded text-xs font-mono break-words whitespace-normal">
                           {children}
                         </code>
                       )
@@ -932,7 +1063,7 @@ function MessageBubble({ message }: { message: ChatMessageItem }) {
       </div>
     </div>
   )
-}
+})
 
 // helper: a message is "streaming" if it has no final text AND the store
 // currently marks streaming active. We detect via the message status flag
@@ -967,24 +1098,24 @@ function TypingDots() {
 
 function CitationList({ citations }: { citations: Citation[] }) {
   return (
-    <div className="mt-1 pt-3 border-t">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+    <div className="mt-1 min-w-0 pt-3 border-t">
+      <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
         <FileText className="h-3.5 w-3.5" />
         Sumber Data
       </div>
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         {citations.map((c, idx) => {
           const isDb = c.type === 'DATABASE'
           return (
             <div
               key={idx}
-              className="rounded-lg border bg-background/60 px-3 py-2"
+              className="min-w-0 overflow-hidden rounded-lg border bg-background/60 px-3 py-2"
             >
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
                 <Badge
                   variant="outline"
                   className={cn(
-                    'text-[10px] gap-1',
+                    'w-fit text-[10px] gap-1',
                     isDb
                       ? 'border-teal-300 bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-300'
                       : 'border-violet-300 bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:border-violet-800 dark:text-violet-300',
@@ -997,7 +1128,7 @@ function CitationList({ citations }: { citations: Citation[] }) {
                   )}
                   {c.type}
                 </Badge>
-                <span className="text-xs font-medium truncate">
+                <span className="min-w-0 break-words text-xs font-medium [overflow-wrap:anywhere]">
                   {c.source}
                 </span>
               </div>
@@ -1008,11 +1139,16 @@ function CitationList({ citations }: { citations: Citation[] }) {
                     <span className="group-open:rotate-90 transition-transform">
                       ▸
                     </span>
-                    Lihat kueri SQL
+                    {citationDetailLabel(c.type)}
                   </summary>
-                  <pre className="mt-1.5 rounded-md bg-muted/60 border p-2 overflow-x-auto text-[11px] font-mono leading-relaxed">
+                  <pre className="mt-1.5 max-w-full rounded-md bg-muted/60 border p-2 overflow-x-auto text-[11px] font-mono leading-relaxed">
                     <code>{c.query_used}</code>
                   </pre>
+                  {c.snippet && (
+                    <p className="mt-1.5 rounded-md border bg-muted/30 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                      {c.snippet}
+                    </p>
+                  )}
                 </details>
               )}
             </div>

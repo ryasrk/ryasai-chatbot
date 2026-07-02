@@ -29,6 +29,7 @@ import {
   FileStack,
   X,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -67,6 +68,11 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { DocumentItem } from '@/lib/types'
+import {
+  normalizeRagSearchResponse,
+  type RagSearchMeta,
+  type RagSearchResult,
+} from '@/lib/rag-search-tester'
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -174,15 +180,14 @@ interface DocDetail extends DocumentItem {
   chunkPreview: ChunkPreview[]
 }
 
-interface SearchResult {
-  chunkId: string
-  documentId: string
-  documentName: string
-  chunkIndex: number
-  content: string
-  score: number
-  contentHits: number
-  keywordHits: number
+interface SmartMappingItem {
+  id: string
+  sourceName: string
+  entityType: string
+  routingHint: string
+  status: string
+  synonyms: string[]
+  fields: Array<{ source: string; canonical: string }>
 }
 
 /* ============================================================ main view */
@@ -194,14 +199,22 @@ export function KnowledgeBaseView() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [detailTarget, setDetailTarget] = useState<DocumentItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DocumentItem | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [rebuildingEmbeddings, setRebuildingEmbeddings] = useState(false)
+  const [rebuildingFts, setRebuildingFts] = useState(false)
+  // Request-id guard: only the latest category fetch may write docs, so rapid
+  // tab switches can't let a slow earlier response overwrite the wrong tab.
+  const fetchIdRef = useRef(0)
 
   const fetchDocs = useCallback(async (cat: Category | 'ALL' = 'ALL') => {
+    const reqId = ++fetchIdRef.current
     setLoading(true)
     try {
       const url =
         cat === 'ALL' ? '/api/documents' : `/api/documents?category=${cat}`
       const res = await fetch(url, { cache: 'no-store' })
       const json = await res.json()
+      if (reqId !== fetchIdRef.current) return // superseded by a newer request
       if (res.ok && Array.isArray(json.documents)) {
         setDocs(json.documents as DocumentItem[])
       } else {
@@ -211,7 +224,7 @@ export function KnowledgeBaseView() {
       toast.error('Kesalahan jaringan saat memuat dokumen.')
       console.error(e)
     } finally {
-      setLoading(false)
+      if (reqId === fetchIdRef.current) setLoading(false)
     }
   }, [])
 
@@ -220,14 +233,18 @@ export function KnowledgeBaseView() {
   }, [activeCat, fetchDocs])
 
   const handleDelete = async (id: string) => {
+    setDeletingId(id)
     try {
       const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' })
       const json = await res.json()
-      if (res.ok && json.ok) {
+      if ((res.ok && json.ok) || res.status === 404) {
         toast.success(
-          `Dokumen dihapus. ${json.chunkCountRemoved ?? 0} chunk ikut dihapus.`,
+          res.status === 404
+            ? 'Dokumen sudah tidak ada. Daftar dimuat ulang.'
+            : `Dokumen dihapus. ${json.chunkCountRemoved ?? 0} chunk ikut dihapus.`,
         )
-        fetchDocs(activeCat)
+        if (detailTarget?.id === id) setDetailTarget(null)
+        await fetchDocs(activeCat)
       } else {
         toast.error(json.error ?? 'Gagal menghapus dokumen.')
       }
@@ -236,6 +253,50 @@ export function KnowledgeBaseView() {
       console.error(e)
     } finally {
       setDeleteTarget(null)
+      setDeletingId(null)
+    }
+  }
+
+  const rebuildEmbeddings = async () => {
+    setRebuildingEmbeddings(true)
+    try {
+      const res = await fetch('/api/documents/embeddings/rebuild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? 'Gagal rebuild embeddings.')
+      }
+      toast.success('Embeddings selesai diproses.', {
+        description: `${json.data.embedded ?? 0} chunk embedded, ${json.data.skipped ?? 0} dilewati.`,
+      })
+      await fetchDocs(activeCat)
+    } catch (e) {
+      toast.error('Gagal rebuild embeddings', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setRebuildingEmbeddings(false)
+    }
+  }
+
+  const rebuildFts = async () => {
+    setRebuildingFts(true)
+    try {
+      const res = await fetch('/api/documents/fts/rebuild', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal rebuild FTS.')
+      toast.success('Index BM25 selesai diproses.', {
+        description: `${json.data.indexed ?? 0} chunk masuk index lexical.`,
+      })
+    } catch (e) {
+      toast.error('Gagal rebuild FTS', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setRebuildingFts(false)
     }
   }
 
@@ -255,15 +316,39 @@ export function KnowledgeBaseView() {
     <div className="space-y-5">
       {/* Action row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchDocs(activeCat)}
-          disabled={loading}
-        >
-          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-          Muat ulang
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchDocs(activeCat)}
+            disabled={loading}
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            Muat ulang
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={rebuildEmbeddings}
+            disabled={rebuildingEmbeddings || docs.length === 0}
+          >
+            <RefreshCw
+              className={cn('h-4 w-4', rebuildingEmbeddings && 'animate-spin')}
+            />
+            Rebuild Embeddings
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={rebuildFts}
+            disabled={rebuildingFts || docs.length === 0}
+          >
+            <RefreshCw
+              className={cn('h-4 w-4', rebuildingFts && 'animate-spin')}
+            />
+            Rebuild BM25
+          </Button>
+        </div>
         <Button onClick={() => setUploadOpen(true)} size="sm">
           <UploadCloud className="h-4 w-4" />
           Unggah Dokumen
@@ -320,6 +405,7 @@ export function KnowledgeBaseView() {
             <DocCard
               key={d.id}
               doc={d}
+              deleting={deletingId === d.id}
               onDetail={() => setDetailTarget(d)}
               onDelete={() => setDeleteTarget(d)}
             />
@@ -329,6 +415,12 @@ export function KnowledgeBaseView() {
 
       {/* RAG Search Tester (bonus) */}
       <RagSearchTester />
+
+      <RagEvalPanel />
+
+      <VectorStorePanel />
+
+      <SmartMappingPanel />
 
       {/* Upload dialog */}
       <UploadDialog
@@ -364,14 +456,540 @@ export function KnowledgeBaseView() {
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
+              disabled={!!deletingId}
               className="bg-rose-600 hover:bg-rose-700 text-white"
             >
-              Hapus
+              {deletingId ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menghapus...
+                </>
+              ) : (
+                'Hapus'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+function SmartMappingPanel() {
+  const [items, setItems] = useState<SmartMappingItem[]>([])
+  const [summary, setSummary] = useState('')
+  const [running, setRunning] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState({
+    sourceName: '',
+    entityType: '',
+    routingHint: 'CHAT',
+    synonyms: '',
+    fieldsText: '',
+  })
+
+  const fetchItems = useCallback(() => {
+    fetch('/api/smart-mappings', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((json) => setItems(json.items ?? []))
+      .catch(() => null)
+  }, [])
+
+  useEffect(() => {
+    fetchItems()
+  }, [fetchItems])
+
+  const generate = async () => {
+    setRunning(true)
+    try {
+      const res = await fetch('/api/smart-mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceType: 'MANUAL',
+          sourceName: 'Manual mapping',
+          summary,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal membuat mapping.')
+      toast.success('Smart mapping dibuat.')
+      setSummary('')
+      fetchItems()
+    } catch (e) {
+      toast.error('Gagal membuat smart mapping', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const startEdit = (item: SmartMappingItem) => {
+    setEditingId(item.id)
+    setDraft({
+      sourceName: item.sourceName,
+      entityType: item.entityType,
+      routingHint: item.routingHint,
+      synonyms: item.synonyms?.join(', ') ?? '',
+      fieldsText: item.fields?.map((field) => `${field.source}=${field.canonical}`).join('\n') ?? '',
+    })
+  }
+
+  const patchItem = async (id: string, body: Record<string, unknown>, success: string) => {
+    setBusyId(id)
+    try {
+      const res = await fetch(`/api/smart-mappings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal memperbarui mapping.')
+      toast.success(success)
+      setEditingId(null)
+      fetchItems()
+    } catch (e) {
+      toast.error('Gagal memperbarui smart mapping', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const deleteItem = async (id: string) => {
+    setBusyId(id)
+    try {
+      const res = await fetch(`/api/smart-mappings/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal menghapus mapping.')
+      toast.success('Smart mapping dihapus.')
+      fetchItems()
+    } catch (e) {
+      toast.error('Gagal menghapus smart mapping', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Smart Mapping AI</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Mapping sinonim/entity membantu router memilih SQL, Knowledge, REST, atau Chat.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <Textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            rows={2}
+            placeholder="contoh: demo_inventory(sku, warehouse, quantity), invoice amount, SLA ticket"
+            className="resize-none"
+          />
+          <Button onClick={generate} disabled={running || !summary.trim()} className="sm:self-end">
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Generate
+          </Button>
+        </div>
+        {items.length > 0 && (
+          <div className="grid gap-2 md:grid-cols-2">
+            {items.slice(0, 6).map((item) => (
+              <div key={item.id} className="rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{item.routingHint}</Badge>
+                  <Badge variant={item.status === 'active' ? 'default' : 'outline'}>
+                    {item.status}
+                  </Badge>
+                  <span className="text-sm font-medium">{item.entityType}</span>
+                  <span className="text-xs text-muted-foreground">{item.sourceName}</span>
+                </div>
+                {item.synonyms?.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {item.synonyms.slice(0, 8).join(', ')}
+                  </p>
+                )}
+                {editingId === item.id ? (
+                  <div className="mt-3 grid gap-2">
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <Input
+                        value={draft.sourceName}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, sourceName: e.target.value }))}
+                        placeholder="Source"
+                      />
+                      <Input
+                        value={draft.entityType}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, entityType: e.target.value }))}
+                        placeholder="Entity"
+                      />
+                      <Select
+                        value={draft.routingHint}
+                        onValueChange={(value) => setDraft((prev) => ({ ...prev, routingHint: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SQL">SQL</SelectItem>
+                          <SelectItem value="RAG">Knowledge</SelectItem>
+                          <SelectItem value="REST">REST</SelectItem>
+                          <SelectItem value="CHAT">Chat</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Textarea
+                      value={draft.synonyms}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, synonyms: e.target.value }))}
+                      rows={2}
+                      placeholder="Sinonim, pisahkan koma"
+                    />
+                    <Textarea
+                      value={draft.fieldsText}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, fieldsText: e.target.value }))}
+                      rows={3}
+                      placeholder="source=canonical per baris"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditingId(null)}>
+                        <X className="h-4 w-4" />
+                        Batal
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={busyId === item.id}
+                        onClick={() =>
+                          patchItem(item.id, {
+                            ...draft,
+                            status: item.status === 'draft' ? 'active' : item.status,
+                          }, 'Smart mapping diperbarui.')
+                        }
+                      >
+                        {busyId === item.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        Simpan
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => startEdit(item)}>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === item.id}
+                      onClick={() =>
+                        patchItem(
+                          item.id,
+                          { status: item.status === 'active' ? 'disabled' : 'active' },
+                          item.status === 'active' ? 'Smart mapping dinonaktifkan.' : 'Smart mapping aktif.',
+                        )
+                      }
+                    >
+                      {busyId === item.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
+                      {item.status === 'active' ? 'Disable' : 'Approve'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busyId === item.id}
+                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                      onClick={() => deleteItem(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Hapus
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RagEvalPanel() {
+  const [casesText, setCasesText] = useState(
+    JSON.stringify(
+      [
+        {
+          question: 'Apa isi utama dokumen?',
+          expectedSource: '',
+          expectedText: '',
+        },
+      ],
+      null,
+      2,
+    ),
+  )
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<{
+    summary?: {
+      total: number
+      precisionAtK: number
+      groundedRate: number
+      avgLatencyMs: number
+    }
+    results?: Array<{
+      question: string
+      ok: boolean
+      grounded: boolean
+      latencyMs: number
+      topSource?: string
+      returned: number
+    }>
+  } | null>(null)
+
+  const runEval = async () => {
+    setRunning(true)
+    try {
+      const parsed = JSON.parse(casesText)
+      const res = await fetch('/api/rag/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cases: parsed, topK: 4 }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Evaluasi gagal.')
+      setResult(json)
+      toast.success('Evaluasi RAG selesai.')
+    } catch (e) {
+      toast.error('Gagal evaluasi RAG', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">RAG Evaluation</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Uji precision@K, grounded rate, dan latency retrieval dari golden questions.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Textarea
+          value={casesText}
+          onChange={(e) => setCasesText(e.target.value)}
+          rows={9}
+          className="font-mono text-xs"
+        />
+        <div className="space-y-3">
+          <Button onClick={runEval} disabled={running} className="w-full">
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Jalankan Evaluasi
+          </Button>
+          {result?.summary && (
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <Metric label="Cases" value={result.summary.total} />
+              <Metric label="Latency" value={`${result.summary.avgLatencyMs}ms`} />
+              <Metric label="Precision@K" value={`${Math.round(result.summary.precisionAtK * 100)}%`} />
+              <Metric label="Grounded" value={`${Math.round(result.summary.groundedRate * 100)}%`} />
+            </div>
+          )}
+          {result?.results?.slice(0, 5).map((item) => (
+            <div key={item.question} className="rounded-md border p-2 text-xs">
+              <div className="font-medium line-clamp-1">{item.question}</div>
+              <div className="mt-1 text-muted-foreground">
+                {item.ok ? 'match' : 'miss'} · {item.grounded ? 'grounded' : 'not grounded'} · {item.returned} chunk
+              </div>
+              {item.topSource && (
+                <div className="mt-1 truncate text-muted-foreground">{item.topSource}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function VectorStorePanel() {
+  const [provider, setProvider] = useState('INTERNAL')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [collectionName, setCollectionName] = useState('ryasai_chunks')
+  const [vectorSize, setVectorSize] = useState('1536')
+  const [distance, setDistance] = useState('Cosine')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/vector-store', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled || !json.ok || !json.data) return
+        setProvider(json.data.provider ?? 'INTERNAL')
+        setBaseUrl(json.data.baseUrl ?? '')
+        setCollectionName(json.data.collectionName ?? 'ryasai_chunks')
+        setVectorSize(String(json.data.vectorSize ?? 1536))
+        setDistance(json.data.distance ?? 'Cosine')
+      })
+      .catch(() => null)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/vector-store', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          baseUrl,
+          apiKey: apiKey || undefined,
+          collectionName,
+          vectorSize: Number(vectorSize) || 1536,
+          distance,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal menyimpan.')
+      setApiKey('')
+      toast.success('Konfigurasi vector DB tersimpan.')
+    } catch (e) {
+      toast.error('Gagal menyimpan vector DB', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async () => {
+    setTesting(true)
+    try {
+      const res = await fetch('/api/vector-store', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal test vector DB.')
+      toast.success('Vector DB siap.', {
+        description: json.data?.collectionName ?? json.data?.provider,
+      })
+    } catch (e) {
+      toast.error('Vector DB belum siap', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+            <Layers className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Vector DB</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Qdrant/Milvus untuk semantic retrieval eksternal. Internal tetap fallback.
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Provider</Label>
+          <Select value={provider} onValueChange={setProvider}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="INTERNAL">Internal</SelectItem>
+              <SelectItem value="QDRANT">Qdrant</SelectItem>
+              <SelectItem value="MILVUS">Milvus</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Base URL</Label>
+          <Input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={provider === 'QDRANT' ? 'http://localhost:6333' : 'http://localhost:19530'}
+            className="font-mono text-sm"
+            disabled={provider === 'INTERNAL'}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Collection</Label>
+          <Input
+            value={collectionName}
+            onChange={(e) => setCollectionName(e.target.value)}
+            className="font-mono text-sm"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label>Dimensi</Label>
+            <Input
+              value={vectorSize}
+              onChange={(e) => setVectorSize(e.target.value)}
+              inputMode="numeric"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Distance</Label>
+            <Input value={distance} onChange={(e) => setDistance(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1.5 md:col-span-2">
+          <Label>API Key</Label>
+          <Input
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="optional"
+            className="font-mono text-sm"
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="flex justify-end gap-2 md:col-span-2">
+          <Button variant="outline" onClick={test} disabled={testing || provider === 'INTERNAL'}>
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Test
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Simpan
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -453,10 +1071,12 @@ function CatTab({
 
 function DocCard({
   doc,
+  deleting,
   onDetail,
   onDelete,
 }: {
   doc: DocumentItem
+  deleting?: boolean
   onDetail: () => void
   onDelete: () => void
 }) {
@@ -523,10 +1143,15 @@ function DocCard({
             size="sm"
             variant="outline"
             onClick={onDelete}
+            disabled={deleting}
             className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            Hapus
+            {deleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+            {deleting ? 'Menghapus' : 'Hapus'}
           </Button>
         </div>
       </CardContent>
@@ -816,7 +1441,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(doc.chunkCount)
-  const [loadingChunks, setLoadingChunks] = useState(false)
+  const [loadingChunks, setLoadingChunks] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1018,7 +1643,8 @@ function RagSearchTester() {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState('4')
   const [running, setRunning] = useState(false)
-  const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [results, setResults] = useState<RagSearchResult[] | null>(null)
+  const [meta, setMeta] = useState<RagSearchMeta | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleSearch = async () => {
@@ -1029,6 +1655,7 @@ function RagSearchTester() {
     }
     setRunning(true)
     setResults(null)
+    setMeta(null)
     setError(null)
     try {
       const res = await fetch('/api/documents/search', {
@@ -1038,8 +1665,10 @@ function RagSearchTester() {
       })
       const j = await res.json()
       if (res.ok && Array.isArray(j.results)) {
-        setResults(j.results as SearchResult[])
-        if ((j.results as SearchResult[]).length === 0) {
+        const normalized = normalizeRagSearchResponse(j)
+        setResults(normalized.results)
+        setMeta(normalized.meta)
+        if (normalized.results.length === 0) {
           toast.info('Tidak ada chunk yang cocok ditemukan.')
         }
       } else {
@@ -1121,6 +1750,24 @@ function RagSearchTester() {
           </Alert>
         )}
 
+        {meta && (
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <Badge variant="outline" className="text-[10px]">
+                {meta.candidatesScanned} chunk dipindai
+              </Badge>
+              <Badge variant="outline" className="text-[10px]">
+                top {meta.topK}
+              </Badge>
+              {meta.queryTokens.length > 0 && (
+                <span className="min-w-0 break-words">
+                  Token: {meta.queryTokens.join(', ')}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {results && results.length > 0 && (
           <ScrollArea className="max-h-[420px] pr-2">
             <div className="space-y-2">
@@ -1151,8 +1798,14 @@ function RagSearchTester() {
                     {r.content.length > 280 ? '…' : ''}
                   </p>
                   <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
-                    <span>{r.contentHits} content hit</span>
-                    <span>{r.keywordHits} keyword hit</span>
+                    <span>{r.scoreBreakdown.contentHits} content hit</span>
+                    <span>{r.scoreBreakdown.keywordHits} keyword hit</span>
+                    <span>{r.scoreBreakdown.phraseHits} phrase hit</span>
+                    {r.scoreBreakdown.semanticScore > 0 && (
+                      <span>
+                        semantic +{r.scoreBreakdown.semanticScore.toFixed(2)}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

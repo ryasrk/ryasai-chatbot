@@ -8,11 +8,11 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 
-const ALLOWED_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'REST_API', 'SQLITE_DEMO'])
+const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'SQLITE_DEMO'])
 
 export async function GET(_req: NextRequest) {
   try {
@@ -48,15 +48,11 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json({ ok: true, data })
   } catch (e) {
-    console.error('[GET /api/integrations]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal memuat daftar integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat daftar integrasi.')
   }
 }
 
-interface CreateBody {
+export interface CreateBody {
   name?: string
   type?: string
   provider?: string
@@ -70,31 +66,47 @@ interface CreateBody {
   }
 }
 
+export function validateCreateIntegrationInput(body: CreateBody) {
+  const name = (body.name ?? '').trim()
+  const type = (body.type ?? '').toUpperCase()
+  const provider = (body.provider ?? '').toUpperCase()
+  const config = body.config ?? {}
+
+  if (!name) {
+    return { ok: false as const, status: 400, error: 'Nama integrasi wajib diisi.' }
+  }
+  if (type !== 'DATABASE') {
+    return {
+      ok: false as const,
+      status: 400,
+      error:
+        "Endpoint /api/integrations khusus database. Untuk REST API gunakan /api/data-sources/rest-connectors.",
+    }
+  }
+  if (!ALLOWED_DATABASE_PROVIDERS.has(provider)) {
+    return {
+      ok: false as const,
+      status: 400,
+      error: `Provider database tidak didukung. Pilihan: ${[...ALLOWED_DATABASE_PROVIDERS].join(', ')}`,
+    }
+  }
+
+  return { ok: true as const, name, type, provider, config }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const body = (await req.json()) as CreateBody
+    const body = (await req.json().catch(() => ({}))) as CreateBody
 
-    const name = (body.name ?? '').trim()
-    const type = (body.type ?? '').toUpperCase()
-    const provider = (body.provider ?? '').toUpperCase()
-    const config = body.config ?? {}
-
-    if (!name) {
-      return NextResponse.json({ ok: false, error: 'Nama integrasi wajib diisi.' }, { status: 400 })
-    }
-    if (type !== 'DATABASE' && type !== 'API') {
+    const validation = validateCreateIntegrationInput(body)
+    if (!validation.ok) {
       return NextResponse.json(
-        { ok: false, error: "Tipe harus 'DATABASE' atau 'API'." },
-        { status: 400 },
+        { ok: false, error: validation.error },
+        { status: validation.status },
       )
     }
-    if (!ALLOWED_PROVIDERS.has(provider)) {
-      return NextResponse.json(
-        { ok: false, error: `Provider tidak didukung. Pilihan: ${[...ALLOWED_PROVIDERS].join(', ')}` },
-        { status: 400 },
-      )
-    }
+    const { name, type, provider, config } = validation
 
     // Encrypt config (AES-256-GCM) before persistence — spec §4.2
     const encryptedConfig = encryptConfig(config as Record<string, unknown>)
@@ -195,10 +207,6 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     )
   } catch (e) {
-    console.error('[POST /api/integrations]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal membuat integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal membuat integrasi.')
   }
 }

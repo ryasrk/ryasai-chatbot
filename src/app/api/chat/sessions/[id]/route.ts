@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id, companyId: user.companyId, userId: user.userId },
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
@@ -47,11 +47,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ...session, messages })
   } catch (err) {
-    console.error('[api/chat/sessions/[id] GET] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal memuat detail sesi chat.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal memuat detail sesi chat.')
   }
 }
 
@@ -61,7 +57,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id, companyId: user.companyId, userId: user.userId },
       select: { id: true, userId: true, title: true },
     })
 
@@ -84,11 +80,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('[api/chat/sessions/[id] DELETE] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal menghapus sesi chat.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal menghapus sesi chat.')
   }
 }
 

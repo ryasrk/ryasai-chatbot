@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { decryptConfig, maskConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
 
@@ -66,11 +66,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    console.error('[GET /api/integrations/[id]]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal memuat detail integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat detail integrasi.')
   }
 }
 
@@ -141,11 +137,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    console.error('[PATCH /api/integrations/[id]]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal memperbarui integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memperbarui integrasi.')
   }
 }
 
@@ -180,11 +172,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ok: true, data: { id, deleted: true } })
   } catch (e) {
-    console.error('[DELETE /api/integrations/[id]]', e)
-    return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : 'Gagal menghapus integrasi.' },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal menghapus integrasi.')
   }
 }
 

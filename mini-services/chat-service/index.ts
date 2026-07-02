@@ -20,6 +20,7 @@
 import { createServer } from 'http'
 import { Server, type Socket } from 'socket.io'
 import { db } from '../../src/lib/db'
+import { serverConfig } from '../../src/lib/config'
 import { routeQuery, generateSql, streamAnswer, streamChat } from '../../src/lib/ai'
 import { validateAndSanitizeLlmSql } from '../../src/lib/guardrails'
 import { decryptConfig } from '../../src/lib/crypto'
@@ -60,7 +61,37 @@ type StatusEvent = (status: string, message: string) => void
 type TokenEvent = (token: string) => void
 type CompleteEvent = (textFinal: string, citations: Citation[], chartData?: ChartData | null) => void
 
-const PORT = 3003
+const PORT = serverConfig.wsPort
+
+/**
+ * Verify a client-supplied identity against the database before processing.
+ * The socket protocol previously trusted userId/companyId/sessionId verbatim,
+ * which allowed any client to drive chat as any user/tenant. We now confirm the
+ * user is active, belongs to the claimed company, and owns the session.
+ */
+async function resolveIdentity(args: {
+  userId: string
+  companyId: string
+  sessionId: string
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const [user, session] = await Promise.all([
+    db.user.findUnique({
+      where: { id: args.userId },
+      select: { id: true, companyId: true, isActive: true },
+    }),
+    db.chatSession.findUnique({
+      where: { id: args.sessionId },
+      select: { id: true, companyId: true, userId: true },
+    }),
+  ])
+  if (!user || !user.isActive) return { ok: false, reason: 'Identitas pengguna tidak valid.' }
+  if (user.companyId !== args.companyId) return { ok: false, reason: 'Tenant tidak cocok.' }
+  if (!session) return { ok: false, reason: 'Sesi tidak ditemukan.' }
+  if (session.companyId !== args.companyId || session.userId !== args.userId) {
+    return { ok: false, reason: 'Sesi bukan milik pengguna ini.' }
+  }
+  return { ok: true }
+}
 
 // ---------------------------------------------------------------------------
 // Keyword utilities (used by RAG scoring)
@@ -270,6 +301,7 @@ async function runSqlBranch(
     question: text,
     schemaDescription,
     provider: integration.provider,
+    companyId,
   })
 
   // Guardrail — AST validate + sanitize.
@@ -389,6 +421,7 @@ async function runSqlBranch(
     question: text,
     context: JSON.stringify(result.rows, null, 2),
     source: 'SQL',
+    companyId,
   })) {
     textFinal += token
     emitToken(token)
@@ -456,7 +489,7 @@ async function runRagBranch(
     // No relevant chunks — fall back to plain chat with a soft notice.
     emitStatus('generating', 'Menyusun jawaban...')
     let textFinal = ''
-    for await (const token of streamChat(text)) {
+    for await (const token of streamChat(text, companyId)) {
       textFinal += token
       emitToken(token)
     }
@@ -474,6 +507,7 @@ async function runRagBranch(
     question: text,
     context: contextText,
     source: 'RAG',
+    companyId,
   })) {
     textFinal += token
     emitToken(token)
@@ -495,13 +529,14 @@ async function runChatBranch(
   text: string,
   sessionId: string,
   userId: string,
+  companyId: string,
   emitStatus: StatusEvent,
   emitToken: TokenEvent,
   emitComplete: CompleteEvent,
 ): Promise<void> {
   emitStatus('generating', 'Menyusun jawaban...')
   let textFinal = ''
-  for await (const token of streamChat(text)) {
+  for await (const token of streamChat(text, companyId)) {
     textFinal += token
     emitToken(token)
   }
@@ -538,16 +573,17 @@ async function handleMessage(
       question: text,
       hasIntegrations,
       hasDocuments,
+      companyId,
     })
 
     // Safety fallbacks: if the router picks SQL but no integrations, or RAG
     // but no documents, gracefully degrade to CHAT.
     if (decision === 'SQL' && !hasIntegrations) {
-      await runChatBranch(text, sessionId, userId, emitStatus, emitToken, emitComplete)
+      await runChatBranch(text, sessionId, userId, companyId, emitStatus, emitToken, emitComplete)
       return
     }
     if (decision === 'RAG' && !hasDocuments) {
-      await runChatBranch(text, sessionId, userId, emitStatus, emitToken, emitComplete)
+      await runChatBranch(text, sessionId, userId, companyId, emitStatus, emitToken, emitComplete)
       return
     }
 
@@ -565,7 +601,7 @@ async function handleMessage(
     } else if (decision === 'RAG') {
       await runRagBranch(text, sessionId, userId, companyId, emitStatus, emitToken, emitComplete)
     } else {
-      await runChatBranch(text, sessionId, userId, emitStatus, emitToken, emitComplete)
+      await runChatBranch(text, sessionId, userId, companyId, emitStatus, emitToken, emitComplete)
     }
   } catch (err) {
     console.error('[chat-service] handleMessage error:', err)
@@ -587,7 +623,12 @@ const io = new Server(httpServer, {
   // DO NOT change the path — Caddy uses it to route to the correct port.
   // Note: because path is '/', socket.io owns ALL HTTP requests on this server.
   path: '/',
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  // CORS from config (WS_CORS_ORIGIN). Empty list => reflect the request Origin
+  // (never a wildcard). Restrict via env in production.
+  cors: {
+    origin: serverConfig.wsCorsOrigins.length > 0 ? serverConfig.wsCorsOrigins : true,
+    methods: ['GET', 'POST'],
+  },
   pingTimeout: 60000,
   pingInterval: 25000,
 })
@@ -609,6 +650,14 @@ io.on('connection', (socket: Socket) => {
     })
   }
 
+  // Serialize messages per-socket so token streams never interleave (which would
+  // corrupt the client's "last AI message"). A long answer fully completes before
+  // the next user_message starts processing.
+  let chain: Promise<unknown> = Promise.resolve()
+  const enqueue = (fn: () => Promise<void>) => {
+    chain = chain.then(fn).catch((e) => console.error('[chat-service] queue error:', e))
+  }
+
   // Direct payload form: socket.emit('user_message', { text, sessionId, ... })
   socket.on('user_message', async (raw: unknown) => {
     const payload = normalizePayload(raw)
@@ -617,7 +666,13 @@ io.on('connection', (socket: Socket) => {
       emitComplete('Permintaan tidak valid: payload hilang atau format salah.', [])
       return
     }
-    await handleMessage(payload, emitStatus, emitToken, emitComplete)
+    const identity = await resolveIdentity(payload)
+    if (!identity.ok) {
+      emitStatus('error', identity.reason)
+      emitComplete(`Permintaan ditolak: ${identity.reason}`, [])
+      return
+    }
+    enqueue(() => handleMessage(payload, emitStatus, emitToken, emitComplete))
   })
 
   // Wrapped envelope form: socket.emit('message', { event: 'user_message', payload: {...} })
@@ -630,7 +685,13 @@ io.on('connection', (socket: Socket) => {
         emitComplete('Permintaan tidak valid: payload hilang atau format salah.', [])
         return
       }
-      await handleMessage(payload, emitStatus, emitToken, emitComplete)
+      const identity = await resolveIdentity(payload)
+      if (!identity.ok) {
+        emitStatus('error', identity.reason)
+        emitComplete(`Permintaan ditolak: ${identity.reason}`, [])
+        return
+      }
+      enqueue(() => handleMessage(payload, emitStatus, emitToken, emitComplete))
     }
   })
 

@@ -55,6 +55,29 @@ const DEMO_TABLES = [
   'demo_employees',
 ] as const
 
+// Allowlist set (lower-cased). The demo connector only ever owns these tables —
+// any FROM/JOIN target outside it is rejected before $queryRawUnsafe runs.
+const DEMO_TABLE_SET = new Set(DEMO_TABLES.map((t) => t.toLowerCase()))
+
+/**
+ * Defence-in-depth table allowlist. Extracts every FROM/JOIN table reference
+ * and rejects the SQL unless ALL of them are demo tables. This prevents a
+ * prompt-injected SELECT from reading the app's own tables (User, Session,
+ * LlmConfig, Integration, sqlite_master, …) which live in the SAME SQLite file.
+ */
+function assertDemoTablesOnly(sql: string): void {
+  const re = /\b(?:from|join)\s+["`]?([A-Za-z_][\w]*)["`]?/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(sql)) !== null) {
+    const tbl = m[1].toLowerCase()
+    if (!DEMO_TABLE_SET.has(tbl)) {
+      throw new Error(
+        `Pelanggaran Keamanan: akses tabel di luar allowlist (${m[1]}). Hanya tabel demo_ yang diizinkan.`,
+      )
+    }
+  }
+}
+
 export class SqliteDemoConnector implements BaseDatabaseConnector {
   readonly provider = 'SQLITE_DEMO'
   constructor(private _config: Record<string, unknown>) {}
@@ -86,9 +109,12 @@ export class SqliteDemoConnector implements BaseDatabaseConnector {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     await ensureDemoSchema()
+    // Defence-in-depth: only demo_* tables may be read. The guardrail already
+    // enforces SELECT-only; this closes the "read auth/system tables" gap.
+    assertDemoTablesOnly(sql)
     const start = Date.now()
-    // Prisma cannot parameterise identifiers, but the guardrail already validated.
-    // We run via $queryRawUnsafe because the SQL is LLM-generated + AST-validated.
+    // Prisma cannot parameterise identifiers, but the SQL is LLM-generated +
+    // AST-validated (guardrail) + table-allowlisted (above).
     const rows = await db.$queryRawUnsafe<QueryRow[]>(sql)
     const exec = Date.now() - start
     return { rows: rows.map((r) => normaliseRow(r)), rowCount: rows.length, executionMs: exec }

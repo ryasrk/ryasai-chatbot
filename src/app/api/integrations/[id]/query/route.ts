@@ -19,7 +19,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { decryptConfig } from '@/lib/crypto'
 import {
   connectorRegistry,
@@ -101,6 +101,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         question: naturalQuery,
         schemaDescription,
         provider: integration.provider,
+        companyId: user.companyId,
       })
       generatedSql = llm.sql
       llmExplanation = llm.explanation
@@ -216,28 +217,22 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         detail: { integrationId: integration.id, naturalQuery, sql: sanitizedSql, error: msg },
       })
       console.error('[query] executeQuery failed', e)
+      // Don't reflect the raw DB error to the client — it leaks schema/table names.
       return NextResponse.json(
         {
           ok: false,
           error:
             'Maaf, koneksi ke Database ERP Anda terputus atau kueri gagal dieksekusi. ' +
-            'Tim teknis telah diberi notifikasi. (Detail: ' +
-            msg +
-            ')',
+            'Tim teknis telah diberi notifikasi.',
           sql: sanitizedSql,
         },
         { status: 502 },
       )
     }
   } catch (e) {
-    console.error('[POST /api/integrations/[id]/query]', e)
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          'Maaf, terjadi kesalahan tak terduga saat memproses permintaan Anda. Silakan coba lagi.',
-      },
-      { status: 500 },
+    return handleApiError(
+      e,
+      'Maaf, terjadi kesalahan tak terduga saat memproses permintaan Anda. Silakan coba lagi.',
     )
   }
 }

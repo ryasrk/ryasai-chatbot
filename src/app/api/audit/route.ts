@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser } from '@/lib/session'
+import { getActiveUser, handleApiError } from '@/lib/session'
+
+const DEFAULT_AUDIT_PAGE_SIZE = 20
+const MAX_AUDIT_PAGE_SIZE = 20
+
+export function parseAuditPagination(searchParams: URLSearchParams) {
+  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1)
+  const requestedPageSize =
+    parseInt(searchParams.get('pageSize') ?? String(DEFAULT_AUDIT_PAGE_SIZE), 10) ||
+    DEFAULT_AUDIT_PAGE_SIZE
+  const pageSize = Math.max(1, Math.min(MAX_AUDIT_PAGE_SIZE, requestedPageSize))
+
+  return { page, pageSize }
+}
 
 /**
  * GET /api/audit?severity=info|warning|critical&action=...&page=1&pageSize=20
@@ -14,8 +27,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl
     const severity = searchParams.get('severity') || undefined
     const action = searchParams.get('action') || undefined
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-    const pageSize = Math.max(1, Math.min(100, Number(searchParams.get('pageSize') ?? '20')))
+    const { page, pageSize } = parseAuditPagination(searchParams)
 
     const where: {
       companyId: string
@@ -44,10 +56,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items, total, page, pageSize })
   } catch (err) {
-    console.error('[api/audit] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal memuat audit log.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal memuat audit log.')
   }
 }

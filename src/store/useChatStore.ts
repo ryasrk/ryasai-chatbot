@@ -48,25 +48,32 @@ export const useChatStore = create<ChatState>((set) => ({
 
   updateLastAiMessage: (token) =>
     set((state) => {
-      const updated = [...state.messages]
-      const last = updated[updated.length - 1]
-      if (last && last.sender === 'ai') {
-        last.text += token
-      }
-      return { messages: updated }
+      const last = state.messages[state.messages.length - 1]
+      if (!last || last.sender !== 'ai') return {}
+      // Immutable update: replace the last item with a new object so React 19
+      // concurrent rendering (and React.memo) sees a real reference change.
+      return { messages: [...state.messages.slice(0, -1), { ...last, text: last.text + token }] }
     }),
 
   finalizeLastAiMessage: (payload) =>
     set((state) => {
-      const updated = [...state.messages]
-      const last = updated[updated.length - 1]
-      if (last && last.sender === 'ai') {
-        last.text = payload.text_final
-        last.citations = payload.citations ?? null
-        last.chartData = payload.chartData ?? null
-        last.status = 'complete'
+      const last = state.messages[state.messages.length - 1]
+      if (!last || last.sender !== 'ai') {
+        return { isStreaming: false, currentStatus: '', currentStatusMessage: '' }
       }
-      return { messages: updated, isStreaming: false, currentStatus: '', currentStatusMessage: '' }
+      const finalized = {
+        ...last,
+        text: payload.text_final,
+        citations: payload.citations ?? null,
+        chartData: payload.chartData ?? null,
+        status: 'complete',
+      }
+      return {
+        messages: [...state.messages.slice(0, -1), finalized],
+        isStreaming: false,
+        currentStatus: '',
+        currentStatusMessage: '',
+      }
     }),
 
   setStatus: (status, message) =>

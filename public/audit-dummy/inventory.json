@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "source": "audit-static-inventory-api",
+  "rows": [
+    { "sku": "SKU-901", "warehouse": "Jakarta", "quantity": 1420, "reserved": 120 },
+    { "sku": "SKU-902", "warehouse": "Jakarta", "quantity": 5800, "reserved": 300 },
+    { "sku": "SKU-902", "warehouse": "Surabaya", "quantity": 2100, "reserved": 180 },
+    { "sku": "SKU-910", "warehouse": "Bandung", "quantity": 95, "reserved": 10 }
+  ]
+}

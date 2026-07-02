@@ -1,8 +1,162 @@
-# Worklog — Enterprise AI Internal Assistant
+# Worklog — ryasai
 
-Project: AI Internal Assistant Berbasis Data Perusahaan (Enterprise Multi-Source Knowledge & Query Engine)
+Project: ryasai — AI Assistant Berbasis Data Perusahaan (Multi-Source Knowledge & Query Engine)
 
 Built per "DOKUMEN SPESIFIKASI TEKNIS & PENGEMBANGAN SISTEM.docx".
+
+---
+Task ID: production-core-phase-1.1
+Agent: main
+Task: Add production-core progress ledger and Prisma models
+
+Work Log:
+- Created the phase progress ledger at docs/superpowers/progress/2026-06-25-production-core-phase-1.md.
+- Added production-core Prisma models: AppConfig, RestApiConnector, RestApiEndpoint, RestApiRequestLog, ToolRun, ApiKey, ApiRequestLog.
+- Ran `bunx prisma validate` successfully.
+- Ran `bun run db:generate` successfully.
+- `bun run db:push` was blocked by Prisma data-loss guard because the local SQLite database contains manual `demo_*` ERP tables outside the Prisma schema.
+- Added and executed idempotent SQL DDL at prisma/production-core-phase-1.sql to create only the new phase tables without dropping demo data.
+
+Stage Summary:
+- Database model foundation is ready for API key and REST connector implementation.
+
+---
+Task ID: production-core-phase-1.2
+Agent: main
+Task: Add API key utility and tests
+
+Work Log:
+- Added Bun tests for API key generation, hashing, verification, and masking.
+- Confirmed red state: `bun test src/lib/api-keys.test.ts` failed because `src/lib/api-keys.ts` did not exist.
+- Implemented `generateApiKey`, `hashApiKey`, `verifyApiKey`, and `maskApiKey`.
+- Confirmed green state: `bun test src/lib/api-keys.test.ts` passed with 3 tests.
+
+Stage Summary:
+- External integration keys now have reusable hash/verify/mask helpers for admin routes and `/api/v1` auth.
+
+---
+Task ID: production-core-phase-1.3
+Agent: main
+Task: Add REST API connector utility and tests
+
+Work Log:
+- Added Bun tests for endpoint whitelist matching, URL construction, auth header construction, and sensitive header sanitization.
+- Confirmed red state: `bun test src/lib/rest-api-connectors.test.ts` failed because `src/lib/rest-api-connectors.ts` did not exist.
+- Implemented REST connector helpers: `matchEndpoint`, `buildEndpointUrl`, `buildAuthHeaders`, `sanitizeHeaders`, and `normalizeEndpointPath`.
+- Confirmed green state: `bun test src/lib/rest-api-connectors.test.ts` passed with 4 tests.
+
+Stage Summary:
+- REST API connector routes can now rely on shared whitelist and request-building helpers.
+
+---
+Task ID: production-core-phase-1.4
+Agent: main
+Task: Add external API auth helper and health endpoint
+
+Work Log:
+- Added `src/lib/external-api-auth.ts` to parse Bearer tokens, verify hashed API keys, update `lastUsedAt`, and return external API identity.
+- Added public `GET /api/v1/health` endpoint for external system health checks.
+- `bunx tsc --noEmit` initially failed because Bun test files were included by tsconfig without Bun types.
+- Added `bun-types` to `tsconfig.json`.
+- Confirmed `bunx tsc --noEmit` passed.
+
+Stage Summary:
+- `/api/v1` now has a public health check and a reusable Bearer API key auth helper for protected integration routes.
+
+---
+Task ID: production-core-phase-1.5
+Agent: main
+Task: Add admin API key routes
+
+Work Log:
+- Added `GET /api/settings/api-keys` to list API key metadata without exposing secrets.
+- Added `POST /api/settings/api-keys` to create hashed API keys and return plaintext only once.
+- Added `DELETE /api/settings/api-keys/[id]` to revoke keys by setting `isActive=false` and `revokedAt`.
+- API key create/revoke actions write audit events.
+- Confirmed `bunx tsc --noEmit` passed.
+
+Stage Summary:
+- Admin routes now support creating, listing, and revoking integration API keys for external programs.
+
+---
+Task ID: production-core-phase-1.6
+Agent: main
+Task: Add admin REST connector routes
+
+Work Log:
+- Added `GET/POST /api/data-sources/rest-connectors` for REST connector list/create.
+- Added `GET/PATCH/DELETE /api/data-sources/rest-connectors/[id]` for connector detail, update, and delete.
+- Added `GET/POST /api/data-sources/rest-connectors/[id]/endpoints` for endpoint whitelist management.
+- Added `POST /api/data-sources/rest-connectors/[id]/test` to execute only enabled whitelist endpoints, decrypt auth server-side, sanitize logs, and record request logs.
+- Confirmed `bunx tsc --noEmit` passed.
+
+Stage Summary:
+- REST API connectors now have backend CRUD and endpoint testing foundations. UI integration remains a next phase.
+
+---
+Task ID: production-core-phase-1.7
+Agent: main
+Task: Add external chat completion endpoint
+
+Work Log:
+- Added authenticated `POST /api/v1/chat/completions` endpoint.
+- Endpoint accepts OpenAI-shaped `messages`, rejects `stream=true` for phase 1, persists chat messages, records a `ToolRun`, and writes `ApiRequestLog`.
+- Added `generateChat()` to `src/lib/ai.ts` for non-streaming direct chat without pretending the source is SQL or RAG.
+- Confirmed `bunx tsc --noEmit` passed.
+
+Stage Summary:
+- External programs can now call a protected non-streaming chat completion endpoint using admin-created Bearer API keys. Tool routing to RAG/SQL/REST remains a next phase.
+
+---
+Task ID: production-core-phase-1.final
+Agent: main
+Task: Verify production core phase 1 and record durable handoff
+
+Work Log:
+- Ran `bun test src/lib/api-keys.test.ts src/lib/rest-api-connectors.test.ts`: passed with 7 tests, 0 failures, 14 assertions.
+- Ran `bunx tsc --noEmit`: passed.
+- Ran `bun run lint`: passed.
+- Ran `bunx prisma validate`: passed.
+- Updated `docs/superpowers/progress/2026-06-25-production-core-phase-1.md` with implemented files, verification evidence, and next steps.
+- Did not create a phase commit because the repo had pre-existing dirty changes in files touched by this work (`prisma/schema.prisma`, `worklog.md`, `src/lib/ai.ts`). Staging whole files would risk including unrelated changes.
+
+Stage Summary:
+- Phase 1 implementation is verified locally. Next session should review the mixed diff before committing, then continue with UI surfaces and shared tool routing for `/api/v1/chat/completions`.
+
+---
+Task ID: production-core-cleanup.1
+Agent: main
+Task: Remove non-runtime clutter before Phase 2
+
+Work Log:
+- Removed untracked server log file `run`.
+- Removed completed Phase 1 implementation plan document to reduce docs clutter; kept the spec and progress ledger as durable handoff records.
+- Consolidated `src/lib/external-api-auth.ts` into `src/lib/api-keys.ts` because it was only used for API key authentication.
+- Updated `/api/v1/chat/completions` to import `requireExternalApiKey` from `src/lib/api-keys.ts`.
+- Updated the Phase 1 progress ledger to record the cleanup.
+
+Stage Summary:
+- Runtime helpers are slightly flatter, and progress remains documented without keeping the large completed plan file.
+
+---
+Task ID: production-core-phase-2.1
+Agent: main
+Task: Add Phase 2 UI surfaces without creating new view files
+
+Work Log:
+- Replaced the Settings "Pengguna" tab with an "API Keys" tab for single-admin production direction.
+- Added API key create/list/revoke UI and a copyable `curl` example for `/api/v1/chat/completions`.
+- Added a REST API Connectors panel to the existing integrations view with connector create/list and endpoint/request-log counts.
+- Updated the Phase 1 progress ledger with Phase 2 UI checklist and verification.
+- Ran `bunx tsc --noEmit`, `bun run lint`, and `bun test --pass-with-no-tests`; all passed.
+- Smoke checked the running Chatbot dev server on port 3005:
+  - `GET /api/v1/health` returned ok.
+  - `GET /api/settings/api-keys` returned ok with an empty list.
+  - `GET /api/data-sources/rest-connectors` returned ok with an empty list.
+  - `GET /` returned HTTP 200.
+
+Stage Summary:
+- Backend features from Phase 1 now have visible admin UI entry points without adding new view files. Endpoint whitelist create/test UI is still a follow-up.
 
 ## Environment Adaptation Notes
 - Original spec: FastAPI (Python) + PostgreSQL + Redis + LangChain + ChromaDB.
@@ -222,7 +376,7 @@ Work Log:
     * "Koneksi terputus" badge (rose) shown when !connected.
     * Textarea: auto-grow via onInput handler (caps at 160px ~5 rows), Enter to send / Shift+Enter for newline.
     * Send button: icon size, disabled when !canSend (empty / streaming / sending / !connected). Shows Loader2 spinner while sending.
-- Empty state: Brain icon in primary/10 rounded box, "Mulai percakapan dengan AI Internal Assistant" heading, descriptive subtitle, suggested prompts grid (2 cols on sm+). Clicking a prompt fills the textarea (does not auto-send, so the user can edit).
+- Empty state: Brain icon in primary/10 rounded box, "Mulai percakapan dengan ryasai" heading, descriptive subtitle, suggested prompts grid (2 cols on sm+). Clicking a prompt fills the textarea (does not auto-send, so the user can edit).
 - Session selection: selectSession(id) calls store.setActiveSession(id) (clears messages) then GET /api/chat/sessions/[id] then store.setMessages(data.messages). Loading state shows spinner "Memuat percakapan...".
 - Lint: bun run lint reports 0 errors / 0 warnings for chat-view.tsx specifically. (1 error in integrations-view.tsx and 1 warning in use-chat-socket.ts are pre-existing in other agents' files — not touched.) Removed all eslint-disable-next-line comments since react-hooks/exhaustive-deps is disabled in the project's eslint config.
 - TypeScript: npx tsc --noEmit reports 0 errors in chat-view.tsx.
@@ -270,3 +424,674 @@ Stage Summary:
 - The Text-to-SQL Query Tester (the "wow" feature) is fully functional end-to-end: natural-language question → LLM SQL generation → AST guardrail validation → execution → dynamic result table. Verified live against the seeded ERP integration.
 - The RAG Search Tester demonstrates the retrieval pipeline: query → tokenized keyword-overlap scoring → top-K chunks with scores + provenance.
 - Lint clean (0 errors). Dev server compiles. No existing files modified. page.tsx already imports both views (added by an earlier agent).
+
+---
+Task ID: production-core-phase-2.2
+Agent: Codex
+Task: Continue Phase 2 production core after cleanup
+
+Work Log:
+- Added REST connector management sheet in `src/components/views/integrations-view.tsx`.
+- Admin can now open a connector, add endpoint whitelist rows (method/path/description), view endpoint status, click a row to prefill test request, pass query string/body, and inspect the JSON result.
+- Updated `docs/superpowers/progress/2026-06-25-production-core-phase-1.md` so the next session can resume from the shared router/API completion work.
+- Added `src/lib/tool-router.ts` as the shared non-streaming production router for external API chat completions.
+- Router supports CHAT, RAG, SQL, and REST_API branches with citations, chart data, query history/audit logs, REST request logs, and pending ToolRun payloads for the caller to persist against the AI message.
+- Updated `/api/v1/chat/completions` to persist user message, route via the shared router, persist AI message with citations/chart data, create ToolRun rows, and return `chart_data` plus `tool_runs`.
+- Added `src/lib/tool-router.test.ts`; verified red first (missing module), then green after implementation.
+- Added `src/app/api/v1/chat/completions/route.test.ts` and `statusForExternalChatError()` so a missing production LLM provider returns HTTP 503 with a clear AI Configuration message instead of a generic HTTP 500.
+- Added `stream=true` SSE response support for `/api/v1/chat/completions`. The route uses the same router/persistence path, then emits event-stream chunks with answer, citations, chart data, tool runs, and `[DONE]`.
+- Verification: `bunx tsc --noEmit`, `bun run lint`, and `bun test --pass-with-no-tests` pass. HTTP smoke on port 3005 passes for health/page/API key/REST connector routes; authenticated chat and stream mode correctly return 503 until AI Configuration is filled.
+
+---
+Task ID: production-core-phase-2.3-ui-standardization
+Agent: Codex
+Task: Standardize frontend production layout, dashboard, cards, and shell
+
+Work Log:
+- Applied the approved production UI direction: restrained SaaS/admin surfaces, 8px radius baseline, no animated aurora/glass/shimmer dashboard treatment, and copy aligned to a dedicated single-admin deployment.
+- Reworked `src/components/views/dashboard-view.tsx` from animated/glass KPI cards into a production operations dashboard:
+  * flat KPI metric cards with stable dimensions,
+  * one operational chart panel for chat/query activity,
+  * audit severity panel,
+  * dense recent query table,
+  * provider/category summary lists.
+- Reworked `src/app/page.tsx` shell:
+  * simplified transitions,
+  * removed ambient aurora background usage,
+  * renamed navigation to production menu language (`Chat`, `Data Sources`, `Knowledge`, `Monitoring`, `Settings`),
+  * replaced multi-tenant/RBAC sidebar copy with dedicated admin and API-only LLM copy.
+- Reworked `src/components/views/topbar.tsx`:
+  * removed demo user switcher and RBAC dropdown,
+  * shows a simple admin identity pill and guardrails status.
+- Updated `src/app/globals.css`:
+  * default radius now 8px,
+  * legacy `.aurora-field`, `.glass`, `.glow-ring`, and `.text-shimmer` are neutralized to production-safe styling.
+- Verification: `bunx tsc --noEmit`, `bun run lint`, and `bun test --pass-with-no-tests` passed. Dev server started on `http://localhost:3005`; `GET /`, `GET /api/analytics`, and `GET /api/v1/health` all returned HTTP 200.
+
+---
+Task ID: production-core-phase-2.4-full-ui-standardization
+Agent: Codex
+Task: Extend production UI standards across cards, dialogs, sheets, settings copy, and secondary views
+
+Work Log:
+- Standardized base UI primitives so all views inherit the same production surface:
+  * `src/components/ui/card.tsx`: default radius 8px, reduced padding, no default shadow, tighter header/content spacing.
+  * `src/components/ui/dialog.tsx`: lighter overlay, 8px radius, consistent padding, smaller production title size, less theatrical animation.
+  * `src/components/ui/sheet.tsx`: consistent overlay, width baseline, bordered header/footer, shorter transition duration.
+- Cleaned production copy conflicts:
+  * `src/components/views/settings-view.tsx`: replaced RBAC/multi-tenant/demo language with dedicated single-admin language, removed local/Ollama provider from visible choices, documented API-only LLM behavior.
+  * `src/components/views/integrations-view.tsx`: changed visible demo wording to internal sample/validation wording and removed demo phrasing from query tester helper text.
+- Resulting effect: Data Sources, Knowledge, Settings, Monitoring, and shared dialogs/sheets now follow one modal/card baseline instead of each view inventing a separate modal/card layout.
+- Verification: `bunx tsc --noEmit`, `bun run lint`, and `bun test --pass-with-no-tests` passed. HTTP smoke on port 3005 passed for `/`, `/api/analytics`, `/api/integrations`, `/api/documents`, and `/api/settings/api-keys`.
+
+---
+Task ID: production-core-phase-2.5-chat-audit-and-rest-send
+Agent: Codex
+Task: Full audit and repair of the Chat menu/dashboard function
+
+Work Log:
+- Root cause found with a reproducible loop: the Chat UI hard-blocked sending when the Socket.IO mini-service/gateway was unavailable. `bun -e` socket smoke against `http://localhost:3005/?XTransformPort=3003` returned `connect_error websocket error`, while `/api/chat/sessions` returned HTTP 200.
+- Reworked Chat to use a production-safe REST path as the primary delivery mode:
+  * Added `POST /api/chat/sessions/[id]/send`.
+  * The endpoint validates session ownership, optionally validates the selected integration, persists the user message, runs the shared non-streaming router (`CHAT`, `RAG`, `SQL`, `REST_API`), persists the AI response, creates `ToolRun` rows, and returns persisted messages to the UI.
+  * Missing LLM provider now returns HTTP 503 with an actionable AI Configuration message and persists an AI error message in the session so history is not half-empty after failures.
+- Reworked `src/components/views/chat-view.tsx`:
+  * removed WebSocket hard dependency from sending,
+  * changed the top badge to `REST API`,
+  * uses optimistic user/AI placeholders and replaces them with persisted server messages,
+  * removed duplicate suggested prompts in the input area,
+  * shortened the mobile textarea placeholder,
+  * reduced mobile empty-state prompts to two so the input bar no longer clips content.
+- Reworked `src/app/page.tsx`:
+  * removed global `ChatSocketProvider` from the app shell,
+  * added `?view=chat` deep-link support and URL state updates for all menu views,
+  * removed initial opacity/stagger animations from the primary shell so content is visible immediately and browser screenshots do not show a blank/pale UI.
+- Added `src/app/api/chat/sessions/[id]/send/route.test.ts`.
+- Verification:
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 14 tests, 0 failures, 23 assertions.
+  * HTTP smoke: `POST /api/chat/sessions/[id]/send` returns HTTP 503 with clear setup copy when LLM provider is not configured.
+  * Persistence smoke: the same 503 path leaves two messages in the session (`user` + `ai` error), not an orphan user message.
+  * Browser smoke: `http://localhost:3005/?view=chat` renders the Chat menu directly; desktop and mobile screenshots captured with Playwright after the fixes.
+
+---
+Task ID: production-core-phase-2.6-chat-session-delete-fix
+Agent: Codex
+Task: Fix deleted chat sessions appearing again after refresh
+
+Work Log:
+- Built a tight repro loop: create a unique chat session via `POST /api/chat/sessions`, delete it via `DELETE /api/chat/sessions/[id]`, then assert the id is absent from `GET /api/chat/sessions`.
+- Finding: API/database deletion was already correct (`GET /api/chat/sessions/[id]` returned 404 and list did not contain the deleted id). The user-visible bug was in Chat UI state/UX:
+  * delete callback used stale Zustand snapshot values,
+  * the UI did not re-fetch the session list from the server after delete,
+  * many sessions had the same title `Sesi Baru`, so a different remaining session looked like the deleted one after refresh.
+- Updated `src/components/views/chat-view.tsx`:
+  * after delete, re-fetches `/api/chat/sessions` with `cache: 'no-store'` and uses that server list as the source of truth,
+  * treats HTTP 404 on delete as already-deleted success and still refreshes the list,
+  * uses `useChatStore.getState()` inside session callbacks to avoid stale state snapshots,
+  * shows a per-session deleting spinner,
+  * makes the delete button visible on mobile/touch instead of hover-only,
+  * new manually-created sessions now get a timestamped title such as `Sesi 07.02` instead of another indistinguishable `Sesi Baru`.
+- Verification:
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 14 tests, 0 failures, 23 assertions.
+  * Delete loop after fix returned `{ "found": false }`, confirming the deleted session id does not reappear after list refresh.
+
+---
+Task ID: production-core-phase-2.7-ui-crud-best-practices
+Agent: Codex
+Task: Apply common production CRUD/state best practices across dashboard features
+Timestamp: 2026-06-26 07:04 WIB
+
+Work Log:
+- Standardized mutation behavior across production dashboard features:
+  * Chat sessions now revalidate `/api/chat/sessions` after create/send/delete and use server state as the source of truth.
+  * Knowledge document delete now has per-item deleting state, handles HTTP 404 as already removed, closes stale detail panels, and re-fetches documents after mutation.
+  * Data Source integration delete/test/create paths now re-fetch the server list after mutation, close stale schema/query panels, and show per-item deleting state.
+  * Settings API key create/revoke now re-fetches active keys after mutation and treats HTTP 404 revoke as already removed.
+- Removed stale-client-state risks:
+  * Chat callbacks use the latest Zustand state via `useChatStore.getState()` instead of old render snapshots.
+  * Mutation paths await server revalidation before showing final UI state where needed.
+- Clarified the Chat source selector:
+  * Replaced confusing `Otomatis (RAG + DB)` wording with `Otomatis (semua sumber)`.
+  * Helper copy now explains that the router can choose Knowledge, Database, REST API, or normal Chat.
+- Verification:
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 14 tests, 0 failures, 23 assertions.
+  * Chat create/delete/list smoke returned `{ "area": "chat", "found": false }`.
+  * API key create/revoke/list smoke returned `{ "area": "api-key", "active": null, "revoked": false }`, confirming revoked keys are absent from active list.
+  * Integration create/delete/list smoke returned `{ "area": "integration", "found": false }`.
+  * Browser DOM check confirmed Chat displays `Otomatis (semua sumber)` and no longer displays `RAG + DB`.
+
+---
+Task ID: production-core-phase-2.8-audit-log-page-size
+Agent: Codex
+Task: Limit Security audit log pages to 20 events
+Timestamp: 2026-06-26 07:06 WIB
+
+Work Log:
+- Changed the Security/Audit Log UI request from `pageSize=50` to a named `AUDIT_LOG_PAGE_SIZE = 20`.
+- Updated Audit Log description copy so admins know each page shows a maximum of 20 events.
+- Hardened the backend audit route with `parseAuditPagination`, capping any requested `pageSize` at 20 so callers cannot accidentally flood the dashboard or API response with oversized pages.
+- Added `src/app/api/audit/route.test.ts` to lock the 20-event cap.
+- Verification:
+  * Red test first failed because `parseAuditPagination` did not exist.
+  * `bun test src/app/api/audit/route.test.ts` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 15 tests, 0 failures, 24 assertions.
+
+---
+Task ID: production-core-phase-2.9-data-sources-db-api-separation
+Agent: Codex
+Task: Separate Database and REST API creation flows in Data Sources
+Timestamp: 2026-06-26 07:10 WIB
+
+Work Log:
+- Confirmed the UX issue: the main `Tambah Integrasi` modal exposed both `DATABASE/API` type choices and `REST_API` provider, while REST API connectors already have a dedicated `/api/data-sources/rest-connectors` flow.
+- Reworked the Data Sources UI:
+  * main action is now `Tambah Database`,
+  * create dialog is database-only,
+  * removed the ambiguous `Tipe` selector,
+  * removed `REST_API` from database provider choices,
+  * REST API creation stays in the `REST API Connectors` section with clearer `Tambah REST` copy.
+- Hardened backend behavior:
+  * `/api/integrations` is now dedicated to database providers only,
+  * attempts to create `type=API` / `provider=REST_API` through that route return an error pointing to `/api/data-sources/rest-connectors`.
+- Added `src/app/api/integrations/route.test.ts` to lock the separation.
+- Verification:
+  * Red test first failed because `validateCreateIntegrationInput` did not exist.
+  * `bun test src/app/api/integrations/route.test.ts` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 16 tests, 0 failures, 26 assertions.
+  * HTTP smoke: `GET http://localhost:3005/?view=integrations` returned HTTP 200.
+
+---
+Task ID: production-core-phase-2.10-hydration-settings-chat-ux
+Agent: Codex
+Task: Fix hydration mismatch, LLM API key double eye icon, and Chat session panel controls
+Timestamp: 2026-06-26 12:54 WIB
+
+Work Log:
+- Root cause found for hydration warning:
+  * `src/app/page.tsx` initialized view state by reading `window.location.search`.
+  * Server rendered `dashboard`, while the first client render could render `chat` / `settings` from query string, causing React hydration mismatch.
+- Fixed routing hydration:
+  * Added `src/lib/view-routing.ts` with deterministic query parsing helper.
+  * `Home` now renders `dashboard` for the initial server/client render, then applies the URL view after hydration via a microtask.
+  * Added `src/lib/view-routing.test.ts`.
+- Fixed LLM API key double eye:
+  * Changed the API key input from native `type=password` to `type=text` with `.text-security-disc`.
+  * This removes browser-native password reveal controls and leaves only the app's custom eye button.
+- Improved Chat session list:
+  * Added a `Sesi Chat` header with `aria-expanded`.
+  * Session list can collapse/expand.
+  * Delete buttons now have a fixed visible hit area instead of hover-only/overlapping behavior.
+- Verification:
+  * Red test first failed because `src/lib/view-routing.ts` did not exist.
+  * `bun test src/lib/view-routing.test.ts` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 17 tests, 0 failures, 30 assertions.
+  * Restarted dev server on `http://localhost:3005`.
+  * CDP browser QA on `?view=settings`: `inputType="text"`, masked class present, one eye button, zero native password inputs, no hydration errors.
+  * CDP browser QA on `?view=chat`: session header present, delete buttons visible when expanded, collapse toggles `aria-expanded` to `false`, collapsed helper text appears, no hydration errors.
+
+---
+Task ID: production-core-phase-2.11-chat-card-overlap-layout
+Agent: Codex
+Task: Fix Chat modal/card overlap and blocked content
+Timestamp: 2026-06-26 12:59 WIB
+
+Work Log:
+- Reworked Chat layout from a flex row with fixed sidebar width to a production grid:
+  * desktop uses `minmax(280px,360px)` for session list and `minmax(0,1fr)` for chat content,
+  * center panel and sidebar now consistently use `min-w-0` so long text cannot push cards out.
+- Fixed session cards:
+  * delete action moved from absolute positioning into a normal right-side flex action area,
+  * long session titles use two-line clamp and word wrapping,
+  * badges and delete buttons no longer sit on top of title text.
+- Hardened message/citation cards:
+  * user and AI bubbles use bounded max widths and `overflow-wrap:anywhere`,
+  * AI cards use `overflow-hidden` and full `min-w-0` content flow,
+  * inline code wraps instead of stretching cards,
+  * source/citation cards wrap long source names and keep SQL inside internal horizontal scroll.
+- Hardened composer row:
+  * source selector/helper row uses a grid so helper text cannot be squeezed under the selector.
+- Verification:
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * CDP browser QA at `1543x774`: no elements outside viewport, delete buttons visible, no hydration errors.
+  * CDP browser QA at `390x844`: no page-level horizontal overflow, no hydration errors.
+  * Screenshot captured at `/tmp/ryasai-chat-layout-fix.png`.
+  * `bun test --pass-with-no-tests` passed: 17 tests, 0 failures, 30 assertions.
+  * HTTP smoke: `GET http://localhost:3005/?view=chat` returned HTTP 200.
+
+---
+Task ID: production-core-phase-2.12-chat-session-rail-collapse
+Agent: Codex
+Task: Make Chat session collapse give horizontal space back to chat
+Timestamp: 2026-06-26 13:05 WIB
+
+Work Log:
+- Root UX issue: the previous collapse only hid the session list content while the sidebar column still occupied the same desktop width.
+- Added `src/lib/chat-layout.ts` with `chatShellGridClass(collapsed)`:
+  * expanded grid: `minmax(280px,360px) + minmax(0,1fr)`,
+  * collapsed grid: `64px + minmax(0,1fr)`.
+- Added `src/lib/chat-layout.test.ts` to lock the expanded/collapsed grid widths.
+- Lifted session collapse state into `ChatView` so the parent grid columns actually change.
+- Reworked collapsed desktop session panel into a 64px rail:
+  * expand button,
+  * icon-only new session button,
+  * compact session count.
+- Kept mobile sheet in full panel mode; collapse control is only active where it affects desktop space.
+- Verification:
+  * Red test first failed because `src/lib/chat-layout.ts` did not exist.
+  * `bun test src/lib/chat-layout.test.ts` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 18 tests, 0 failures, 32 assertions.
+  * CDP browser QA at `1543x774`: Chat session aside changed from `360px` to `64px`, chat panel increased from `825px` to `1121px` (`+296px`), no viewport offenders, no hydration errors.
+  * Screenshot captured at `/tmp/ryasai-chat-collapsed-rail.png`.
+
+---
+Task ID: production-core-phase-2.13-chat-collapse-icon-motion
+Agent: Codex
+Task: Correct Chat collapse direction icon and smooth the collapse animation
+Timestamp: 2026-06-26 13:09 WIB
+
+Work Log:
+- Replaced generic vertical/down chevrons with explicit panel-direction icons:
+  * expanded state uses `PanelLeftClose` to communicate collapsing the left session panel,
+  * collapsed rail uses `PanelLeftOpen` to communicate expanding the left session panel.
+- Changed collapse animation approach:
+  * grid now uses `auto + minmax(0,1fr)`,
+  * the session panel width animates from `clamp(280px,24vw,360px)` to `64px`,
+  * transition uses `width` with `300ms` cubic easing for smoother browser interpolation.
+- Updated `src/lib/chat-layout.ts` and `src/lib/chat-layout.test.ts` so the layout classes are covered by tests.
+- Verification:
+  * Red test first failed because `chatSessionPanelWidthClass` did not exist.
+  * `bun test src/lib/chat-layout.test.ts` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 18 tests, 0 failures, 33 assertions.
+  * CDP browser QA at `1543x774`: icon class changed from `panel-left-close` to `panel-left-open`; sidebar width animated through an intermediate `90.58px` before settling at `64px`; chat gained `296px`; no hydration errors.
+  * Screenshot captured at `/tmp/ryasai-chat-smooth-collapse.png`.
+
+---
+Task ID: codex-token-tooling-install
+Agent: Codex
+Task: Install Caveman, RTK, and Ponytail token optimization tooling for Codex
+Timestamp: 2026-06-26 13:33 WIB
+
+Work Log:
+- Installed Caveman skills into `~/.codex/skills`:
+  * `caveman`, `caveman-compress`, `caveman-review`, `caveman-help`, `caveman-stats`, `caveman-commit`, `cavecrew`.
+- Installed Ponytail skills into `~/.codex/skills`:
+  * `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`.
+- Confirmed RTK is already installed as `rtk 0.42.4`.
+- Configured RTK for Codex globally with `rtk init --codex --global --ultra-compact`.
+- Confirmed global Codex instructions now reference `~/.codex/RTK.md` from `~/.codex/AGENTS.md`.
+- Added Ponytail marketplace through `codex plugin marketplace add DietrichGebert/ponytail`.
+- Added Caveman marketplace through a persistent local clone at `~/.codex/marketplaces/caveman` because the upstream repo exposes the Codex plugin below `plugins/caveman` rather than as a root marketplace.
+- Verification:
+  * all requested Caveman and Ponytail skills are present under `~/.codex/skills`,
+  * `rtk gain` runs and reports no tracking data yet,
+  * `rtk init --codex --global --show` reports global RTK configuration OK,
+  * `~/.codex/config.toml` contains marketplaces for `ponytail` and `caveman`.
+
+---
+Task ID: production-core-phase-2.14-chat-send-delete-race
+Agent: Codex
+Task: Prevent Chat send from returning 500 when the session is deleted mid-request
+Timestamp: 2026-06-26 13:38 WIB
+
+Work Log:
+- Found a real failure in `dev.log`: `POST /api/chat/sessions/[id]/send` returned 500 after Prisma `P2003` because the assistant reply was saved after the backing session had been deleted.
+- Added regression coverage in `src/app/api/chat/sessions/[id]/send/route.test.ts`:
+  * `P2003` maps to 404 when the session disappears before assistant reply persistence,
+  * `P2025` maps to 404 when the session disappears before retitling/update.
+- Updated `src/app/api/chat/sessions/[id]/send/route.ts`:
+  * `statusForInternalChatError` now classifies `P2003` and `P2025` as 404,
+  * the catch block returns `Sesi tidak ditemukan.` for expected delete races instead of logging a generic 500.
+- Verification:
+  * Red test first failed with expected 500 vs 404 mismatch.
+  * `bun test src/app/api/chat/sessions/[id]/send/route.test.ts` passed: 4 tests, 0 failures.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 20 tests, 0 failures, 35 assertions.
+
+---
+Task ID: production-core-phase-2.15-chatbot-quality-audit-fixtures
+Agent: Codex
+Task: Audit chatbot answer quality with dummy database and REST API data
+Timestamp: 2026-06-26 13:47 WIB
+
+Work Log:
+- Created live DB audit fixtures through `POST /api/integrations` for all supported database providers:
+  * `SQLITE_DEMO`,
+  * `POSTGRESQL`,
+  * `MYSQL`,
+  * `MSSQL`.
+- Each DB fixture reflected 8 demo ERP tables and returned `lastTestOk=true`.
+- Created temporary REST API first to validate REST flow, then replaced it with durable static fixtures:
+  * `public/audit-dummy/inventory.json`,
+  * `public/audit-dummy/tickets.json`.
+- Created REST connector `Audit Static REST 20260626064518` pointing to `http://localhost:3005`.
+- Added endpoint whitelist:
+  * `GET /audit-dummy/inventory.json`,
+  * `GET /audit-dummy/tickets.json`.
+- Live SQL audit:
+  * Asked each provider: `Berapa total quantity stok SKU-902 di semua gudang?`
+  * Expected answer: `7,900`.
+  * All 4 providers returned `7.900`, `DATABASE` citation, and `SQL/success` tool run.
+- Live REST audit:
+  * Asked: `Gunakan REST API whitelisted static inventory untuk SKU-902. Berapa total quantity SKU-902 dari endpoint inventory JSON?`
+  * Expected answer: `7,900`.
+  * Final result returned `7.900`, `REST_API` citation, and `REST_API/success` tool run.
+- Quality findings fixed:
+  * REST branch sent context as `RAG`, causing answers to mention `KONTEKS RAG`.
+  * REST router could treat `sampleResponse` as answer data inside the source explanation.
+  * REST router could invent query params when an endpoint had no `parameterSchema`.
+- Code changes:
+  * Added `answerContextLabel()` and `REST_ROUTER_SYSTEM_PROMPT` in `src/lib/ai.ts`.
+  * Changed REST answer generation in `src/lib/tool-router.ts` to pass `source: 'REST_API'`.
+  * Added `src/lib/ai.test.ts`.
+- Verification:
+  * Red tests failed before helper/prompt exports existed.
+  * `bun test src/lib/ai.test.ts` passed: 3 tests, 0 failures.
+  * Live REST retest returned correct `7.900` answer and clean citation metadata with `query:{}`.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 23 tests, 0 failures, 38 assertions.
+
+---
+Task ID: production-core-phase-2.16-rag-chunking-audit
+Agent: Codex
+Task: Audit RAG chunking quality and repair oversized single-paragraph chunks
+Timestamp: 2026-06-26 13:51 WIB
+
+Work Log:
+- Audited RAG ingestion and retrieval flow:
+  * `POST /api/documents` extracts text and calls `chunkText()`,
+  * `/api/documents/search` scores `DocumentChunk` rows by keyword/content overlap,
+  * Chat RAG branch uses `retrieveTopChunks()` and cites document names.
+- Found quality bug: `chunkText()` only split on double-newline, so a long single-paragraph document became one oversized chunk.
+- Added regression test in `src/lib/rag.test.ts`:
+  * a 23k-char single paragraph must split into more than one chunk,
+  * max chunk length must stay <= 1600 chars.
+- Updated `src/lib/rag.ts`:
+  * paragraph split behavior remains,
+  * any oversized paragraph is split by words with a 1400-char ceiling.
+- Live audit fixture:
+  * uploaded `audit-rag-long-single-paragraph-20260626065051.txt`,
+  * upload produced 22 chunks,
+  * max chunk length was 1400 chars,
+  * `/api/documents/search` returned the audit document in top results,
+  * Chat RAG answer cited `audit-rag-long-single-paragraph-20260626065051.txt`,
+  * tool run was `RAG/success`.
+- Verification:
+  * Red test first failed because `chunkText()` returned 1 chunk.
+  * `bun test src/lib/rag.test.ts` passed: 1 test, 0 failures.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 24 tests, 0 failures, 40 assertions.
+
+---
+Task ID: production-core-phase-2.17-hybrid-rag-quality-phase-1
+Agent: Codex
+Task: Implement Hybrid RAG Quality Phase 1
+Timestamp: 2026-06-26 18:50 WIB
+
+Work Log:
+- Implemented chunk overlap in `src/lib/rag.ts`:
+  * `chunkText()` now accepts `{ maxChars, overlapChars }`,
+  * long chunks keep trailing word overlap,
+  * default overlap is 180 chars.
+- Added shared retrieval quality helpers:
+  * `scoreChunk()` with content, keyword, and phrase scoring,
+  * `sortRetrievedChunks()`,
+  * `selectTopRetrievedChunks()` to avoid one repetitive document monopolizing context,
+  * `retrieveRelevantChunks()` for shared DB retrieval.
+- Updated `/api/documents/search` to reuse `retrieveRelevantChunks()` instead of duplicate scoring logic.
+- Updated Chat RAG in `src/lib/tool-router.ts`:
+  * uses the same retrieval helper as Search API,
+  * adds source/chunk/score labels into RAG context,
+  * returns chunk-level document citations with snippet and score.
+- Extended `Citation` in `src/lib/types.ts` with optional `chunkIndex`, `snippet`, and `score`.
+- Updated Chat citation UI:
+  * document citations show `Lihat detail sumber`,
+  * SQL citations still show `Lihat kueri SQL`,
+  * document snippets render inside citation details.
+- Live audit:
+  * uploaded `audit-rag-quality-1782474511365.txt`,
+  * upload returned HTTP 201 and 14 chunks,
+  * search query scanned 68 chunks and returned score breakdowns,
+  * first Chat RAG audit found old repetitive chunks hiding the answer-bearing fixture,
+  * after `selectTopRetrievedChunks()`, Chat RAG returned `maksimal 14 hari kalender`,
+  * final Chat RAG tool run was `RAG/success`,
+  * final citations included `chunkIndex`, `score`, and `snippet`.
+- Verification:
+  * Red tests failed before each helper existed: overlap behavior, `scoreChunk`, `sortRetrievedChunks`, `buildDocumentCitation`, `citationDetailLabel`, `selectTopRetrievedChunks`.
+  * `bun test src/lib/rag.test.ts src/lib/tool-router.test.ts src/lib/chat-layout.test.ts` passed: 10 tests, 0 failures.
+  * `bun test --pass-with-no-tests` passed: 30 tests, 0 failures, 53 assertions.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+
+---
+Task ID: production-core-phase-2.18-knowledge-retrieval-tester-metadata
+Agent: Codex
+Task: Surface Hybrid RAG score metadata in the Knowledge retrieval tester
+Timestamp: 2026-06-26 21:26 WIB
+
+Work Log:
+- Audited `KnowledgeBaseView` and found the RAG Search Tester already existed, but only showed total score plus legacy content/keyword hit counts.
+- Added `src/lib/rag-search-tester.ts`:
+  * `normalizeRagSearchResponse()` safely normalizes `/api/documents/search` responses,
+  * returns `queryTokens`, `topK`, `candidatesScanned`,
+  * preserves nested `scoreBreakdown` including `phraseHits`.
+- Added `src/lib/rag-search-tester.test.ts`.
+- Updated `src/components/views/knowledge-base-view.tsx`:
+  * tester now shows chunks scanned,
+  * effective top-K,
+  * query tokens,
+  * content/keyword/phrase hit breakdown per result.
+- Live API smoke:
+  * query `SLA pembayaran invoice enterprise dokumen lengkap`,
+  * HTTP 200,
+  * `candidatesScanned: 68`,
+  * top result `audit-rag-quality-1782474511365.txt` chunk `0`,
+  * score breakdown `contentHits:5`, `keywordHits:3`, `phraseHits:4`, `total:23`.
+- Verification:
+  * Red test first failed because `src/lib/rag-search-tester.ts` did not exist.
+  * `bun test src/lib/rag-search-tester.test.ts` passed: 1 test, 0 failures.
+  * `bun test src/lib/rag-search-tester.test.ts src/lib/rag.test.ts` passed: 6 tests, 0 failures.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 31 tests, 0 failures, 56 assertions.
+
+---
+Task ID: production-core-phase-2.19-api-embeddings-hybrid-retrieval
+Agent: Codex
+Task: Add OpenAI-compatible and Ollama API embeddings for Hybrid RAG
+Timestamp: 2026-06-26 21:45 WIB
+
+Work Log:
+- Added API embedding support without running local inference:
+  * OpenAI-compatible providers call `{baseUrl}/embeddings`,
+  * Ollama providers call `{baseUrl}/api/embed`,
+  * retrieval falls back to lexical scoring when embedding config/API is unavailable.
+- Added `src/lib/embeddings.ts`:
+  * cosine similarity,
+  * OpenAI-compatible response parsing,
+  * Ollama response parsing,
+  * hybrid score composition,
+  * chunk embedding helpers.
+- Added `src/lib/embeddings.test.ts`.
+- Extended `RetrievalScore` in `src/lib/rag.ts`:
+  * `lexicalTotal`,
+  * `semanticSimilarity`,
+  * `semanticScore`.
+- Updated retrieval:
+  * query embedding is generated best-effort,
+  * chunk embedding is used only when its embedding model matches the active query embedding model,
+  * stale embeddings are ignored,
+  * lexical fallback remains default.
+- Extended Prisma schema:
+  * `DocumentChunk.embeddingJson`,
+  * `DocumentChunk.embeddingProvider`,
+  * `DocumentChunk.embeddingModel`,
+  * `DocumentChunk.embeddedAt`,
+  * embedding config fields on `LlmConfig`.
+- Added safe SQL migration file:
+  * `prisma/hybrid-rag-embeddings.sql`.
+- Applied nullable columns to local SQLite manually because `prisma db push` warned it would drop non-Prisma demo tables.
+- Updated document upload:
+  * new uploads try embedding after chunk creation,
+  * upload does not fail if embedding API is missing/unavailable.
+- Added rebuild endpoint:
+  * `POST /api/documents/embeddings/rebuild`.
+- Updated UI:
+  * Settings > AI/LLM has Embedding RAG provider/base URL/model/API key,
+  * Knowledge has `Rebuild Embeddings`,
+  * Knowledge tester shows semantic score when active.
+- Live smoke:
+  * temporary mock Ollama API at `http://localhost:11435`,
+  * saved provider `OLLAMA`, model `mock-embed`,
+  * rebuilt 68 chunk embeddings across 6 documents,
+  * hybrid search returned semantic score `9.56` and final score `32.56`,
+  * restored embedding config to blank OpenAI-compatible defaults after smoke,
+  * fallback lexical search still returned HTTP 200 with score `23`.
+- Verification:
+  * Red test first failed because `src/lib/embeddings.ts` did not exist.
+  * Red test first failed because `applySemanticScore` was not exported.
+  * `bun test src/lib/embeddings.test.ts src/lib/rag.test.ts src/lib/rag-search-tester.test.ts` passed: 10 tests, 0 failures.
+  * `bunx prisma generate` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 35 tests, 0 failures, 66 assertions.
+
+---
+Task ID: production-core-phase-2.20-vector-db-smart-mapping-ai
+Agent: Codex
+Task: Add Qdrant/Milvus vector DB integration and Smart Mapping AI
+Timestamp: 2026-06-26 23:42 WIB
+
+Work Log:
+- Added vector DB config schema:
+  * `VectorStoreConfig`,
+  * providers `INTERNAL`, `QDRANT`, `MILVUS`,
+  * base URL, encrypted API key, collection, vector size, distance.
+- Added `src/lib/vector-stores.ts`:
+  * stable point IDs from chunk IDs,
+  * Qdrant collection create/upsert/search,
+  * Milvus collection create/upsert/search,
+  * tenant filter by `companyId`,
+  * parsed search hits as `{ chunkId, score }`.
+- Updated embedding rebuild:
+  * if external vector DB is configured, chunk vectors are upserted to Qdrant/Milvus,
+  * if not configured, SQLite embedding storage remains fallback.
+- Updated RAG retrieval:
+  * query embedding searches vector DB when available,
+  * vector hits load chunk text/provenance from SQLite,
+  * vector score feeds hybrid score,
+  * lexical full scan remains fallback.
+- Added vector DB APIs:
+  * `GET /api/vector-store`,
+  * `PUT /api/vector-store`,
+  * `POST /api/vector-store` for test/create collection.
+- Added Knowledge UI Vector DB panel:
+  * provider selector,
+  * base URL,
+  * collection,
+  * dimension,
+  * distance,
+  * API key,
+  * save/test actions.
+- Added Smart Mapping AI schema:
+  * `SmartMapping`,
+  * source type/id/name,
+  * entity,
+  * routing hint,
+  * fields,
+  * synonyms.
+- Added `src/lib/smart-mapping.ts`:
+  * prompt builder,
+  * normalizer,
+  * heuristic fallback,
+  * AI/fallback merge guard.
+- Added Smart Mapping API:
+  * `GET /api/smart-mappings`,
+  * `POST /api/smart-mappings`.
+- Added Knowledge UI Smart Mapping panel:
+  * manual summary input,
+  * generate action,
+  * mapping cards.
+- Router now receives active smart mapping hints before choosing SQL/RAG/REST/CHAT.
+- Added safe SQLite migration:
+  * `prisma/vector-store-smart-mapping.sql`.
+- Applied migration to local SQLite.
+- Live smoke:
+  * vector config default `INTERNAL` returned OK,
+  * Qdrant mock at `http://localhost:6334` passed save/test,
+  * vector config restored to `INTERNAL`,
+  * smart mapping generated `inventory` / `SQL` mapping from inventory/invoice/ticket summary.
+- Verification:
+  * Red test first failed because `src/lib/vector-stores.ts` did not exist.
+  * Red test first failed because `src/lib/smart-mapping.ts` did not exist.
+  * Red test first failed because `mergeSmartMapping` was not exported.
+  * `bun test src/lib/vector-stores.test.ts src/lib/smart-mapping.test.ts` passed.
+  * `bunx prisma generate` passed.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 41 tests, 0 failures, 82 assertions.
+
+---
+Task ID: production-core-phase-2.21-rag-quality-ops
+Agent: Codex
+Task: Implement points 1-4 for RAG performance and quality
+Timestamp: 2026-06-26 23:59 WIB
+
+Work Log:
+- Added SQLite FTS5/BM25 retrieval:
+  * `src/lib/rag-fts.ts`,
+  * `prisma/rag-fts.sql`,
+  * `POST /api/documents/fts/rebuild`,
+  * document upload now upserts chunk text into FTS,
+  * RAG retrieval now uses BM25 candidate IDs before lexical scoring when no external vector hits exist.
+- Added production-ish document extraction helpers:
+  * `src/lib/document-parsers.ts`,
+  * PDF literal text extraction,
+  * DOCX ZIP/XML paragraph extraction,
+  * XLSX shared string + sheet value extraction,
+  * fallback placeholder remains when binary text cannot be parsed safely.
+- Added RAG evaluation suite:
+  * `src/lib/rag-eval.ts`,
+  * `POST /api/rag/evaluate`,
+  * Knowledge UI `RAG Evaluation` panel for golden questions,
+  * metrics: `precisionAtK`, `groundedRate`, average latency.
+- Added Knowledge UI BM25 rebuild button.
+- Extended Smart Mapping approval/edit lifecycle:
+  * `normalizeSmartMappingUpdate`,
+  * `PATCH /api/smart-mappings/[id]`,
+  * `DELETE /api/smart-mappings/[id]`,
+  * Knowledge UI edit form,
+  * approve/disable action,
+  * delete action.
+- Applied FTS migration to local SQLite.
+- Restarted dev server on `http://localhost:3005` after clearing `.next`.
+- Live smoke:
+  * `POST /api/documents/fts/rebuild` returned `indexed: 68`,
+  * `POST /api/documents/search` for `stok gudang sku` returned 3 results and scanned 8 BM25 candidates,
+  * `POST /api/rag/evaluate` returned `precisionAtK: 1`, `groundedRate: 1`, `avgLatencyMs: 4`,
+  * Smart Mapping create → patch disabled → delete returned `201 → 200 → 200`.
+- Verification:
+  * Red test first failed because `normalizeSmartMappingUpdate` was not exported.
+  * `bun test src/lib/rag-fts.test.ts src/lib/document-parsers.test.ts src/lib/rag-eval.test.ts src/lib/smart-mapping.test.ts` passed: 10 tests, 0 failures.
+  * `bunx tsc --noEmit` passed.
+  * `bun run lint` passed.
+  * `bun test --pass-with-no-tests` passed: 48 tests, 0 failures, 92 assertions.

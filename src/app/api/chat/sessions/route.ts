@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit } from '@/lib/session'
+import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 
 /**
  * GET /api/chat/sessions
@@ -26,11 +26,7 @@ export async function GET() {
 
     return NextResponse.json({ items: sessions })
   } catch (err) {
-    console.error('[api/chat/sessions GET] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal memuat daftar sesi chat.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal memuat daftar sesi chat.')
   }
 }
 
@@ -61,10 +57,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(session, { status: 201 })
   } catch (err) {
-    console.error('[api/chat/sessions POST] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal membuat sesi chat baru.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal membuat sesi chat baru.')
   }
 }

@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "source": "audit-static-ticket-api",
+  "rows": [
+    {
+      "id": "TCK-1001",
+      "customer": "PT Maju Bersama",
+      "status": "open",
+      "priority": "high",
+      "topic": "VPN down"
+    },
+    {
+      "id": "TCK-1002",
+      "customer": "CV Sentosa Jaya",
+      "status": "closed",
+      "priority": "low",
+      "topic": "Password reset"
+    },
+    {
+      "id": "TCK-1003",
+      "customer": "PT Global Teknologi",
+      "status": "open",
+      "priority": "medium",
+      "topic": "Invoice mismatch"
+    }
+  ]
+}

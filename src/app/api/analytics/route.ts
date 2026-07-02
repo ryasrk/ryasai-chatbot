@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser } from '@/lib/session'
+import { getActiveUser, handleApiError } from '@/lib/session'
 
 /**
  * GET /api/analytics
@@ -165,10 +165,6 @@ export async function GET() {
       documentsByCategory,
     })
   } catch (err) {
-    console.error('[api/analytics] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal memuat data analitik.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal memuat data analitik.')
   }
 }

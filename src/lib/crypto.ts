@@ -4,26 +4,24 @@
  * Adapted from the spec's Python `cryptography.hazmat.primitives.ciphers.aead.AESGCM`.
  *
  * Implementation uses Node's built-in `crypto` module:
- *   - 32-byte (256-bit) key derived from ENCRYPTION_SECRET_KEY env (hex or passphrase).
+ *   - 32-byte (256-bit) key resolved from the ENCRYPTION_SECRET_KEY env var.
  *   - 12-byte random nonce per encryption (GCM standard).
  *   - Output stored as hex(nonce || ciphertext || authTag), mirroring the spec's
  *     `(nonce + encrypted_bytes).hex()` (authTag is appended by Node's GCM).
  *
- * SECURITY: This module MUST only be imported by server-side code (route handlers,
- * the socket.io mini-service, server libs). Never import in client components.
+ * SECURITY:
+ *   - The key is REQUIRED (fail-closed). There is NO hardcoded fallback — a
+ *     missing/empty ENCRYPTION_SECRET_KEY throws at first use instead of
+ *     silently encrypting with a publicly-visible key. Generate one with
+ *     `openssl rand -hex 32`.
+ *   - This module MUST only be imported by server-side code (route handlers,
+ *     the socket.io mini-service, server libs). Never import in client components.
  */
 import crypto from 'crypto'
-
-const ENC_KEY_ENV = process.env.ENCRYPTION_SECRET_KEY
+import { getEncryptionKey } from '@/lib/config'
 
 function getKey(): Buffer {
-  const raw = ENC_KEY_ENV || '4a66613634353037323533373531343135343431353233363333343334363337'
-  // If the env value is valid 64-char hex, use it directly (matches spec docker env).
-  if (/^[0-9a-fA-F]{64}$/.test(raw)) {
-    return Buffer.from(raw, 'hex')
-  }
-  // Otherwise derive a 32-byte key via SHA-256 (deterministic) so any passphrase works.
-  return crypto.createHash('sha256').update(raw).digest()
+  return getEncryptionKey()
 }
 
 const KEY = getKey()
@@ -64,4 +62,36 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
     }
   }
   return out
+}
+
+// ---------------------------------------------------------------------------
+// Session cookie signing (HMAC-SHA256)
+// ---------------------------------------------------------------------------
+// The active-user cookie used to be plain JSON trusting `userId` verbatim,
+// which allowed trivial impersonation (IDs leak via /api/me/users). It is now a
+// `userId.signature` token; the server only trusts `userId` if the HMAC verifies.
+function sessionHmac(userId: string): string {
+  return crypto.createHmac('sha256', getKey()).update(userId).digest('base64url')
+}
+
+/** Sign a user id into a verifiable session token. */
+export function signSession(userId: string): string {
+  return `${userId}.${sessionHmac(userId)}`
+}
+
+/** Verify a session token and return the user id, or null if invalid/unsigned. */
+export function verifySession(token: string | undefined | null): string | null {
+  if (!token) return null
+  const idx = token.lastIndexOf('.')
+  if (idx < 1) return null
+  const userId = token.slice(0, idx)
+  const sig = token.slice(idx + 1)
+  const expected = sessionHmac(userId)
+  if (sig.length !== expected.length) return null
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
+  } catch {
+    return null
+  }
+  return userId
 }

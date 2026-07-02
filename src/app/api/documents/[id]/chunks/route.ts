@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser } from '@/lib/session'
+import { getActiveUser, handleApiError } from '@/lib/session'
 
 export const runtime = 'nodejs'
 
@@ -67,10 +67,6 @@ export async function GET(
       chunks,
     })
   } catch (e) {
-    console.error('[GET /api/documents/[id]/chunks]', e)
-    return NextResponse.json(
-      { error: 'Failed to list chunks', detail: String(e) },
-      { status: 500 },
-    )
+    return handleApiError(e, 'Gagal memuat daftar chunk dokumen.')
   }
 }

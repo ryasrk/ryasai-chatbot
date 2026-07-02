@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser } from '@/lib/session'
+import { getActiveUser, handleApiError } from '@/lib/session'
 
 /**
  * GET /api/users
@@ -27,10 +27,6 @@ export async function GET() {
 
     return NextResponse.json({ items: users })
   } catch (err) {
-    console.error('[api/users] error:', err)
-    return NextResponse.json(
-      { error: 'Gagal memuat daftar pengguna.' },
-      { status: 500 }
-    )
+    return handleApiError(err, 'Gagal memuat daftar pengguna.')
   }
 }
