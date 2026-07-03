@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test": "bun test src/ scripts/ --pass-with-no-tests"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

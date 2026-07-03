@@ -1095,3 +1095,50 @@ Work Log:
   * `bunx tsc --noEmit` passed.
   * `bun run lint` passed.
   * `bun test --pass-with-no-tests` passed: 48 tests, 0 failures, 92 assertions.
+
+---
+Task ID: production-final-phase.11
+Agent: main
+Task: Playwright e2e suite (setup wizard, auth, knowledge chat, external API)
+
+Work Log:
+- Installed `@playwright/test` (dev-only) and Chromium browser.
+- Created mock LLM server (`e2e/mock-llm.ts`) — Node http server on :4545 providing OpenAI-compatible `/models`, `/chat/completions`, `/embeddings` endpoints with deterministic canned responses.
+- Created global setup (`e2e/global-setup.ts`) — seeds a fresh `db/e2e.db` via `scripts/e2e-seed.ts` and starts the mock LLM before tests; tears down on completion.
+- Created 4 e2e spec files:
+  * `01-setup-wizard.spec.ts` — first-run 6-step wizard (admin creation, LLM config, connection test).
+  * `02-auth.spec.ts` — wrong password rejection, correct login, logout.
+  * `03-knowledge-chat.spec.ts` — document upload + chat returns mock LLM response.
+  * `04-api-key.spec.ts` — API key creation, external `/api/v1/chat/completions`, 401 without/with bad key.
+- Configured `playwright.config.ts`: port 3105, single worker (shared SQLite), absolute DB path.
+- Fixed Node-compatibility issue: replaced `import { $ } from 'bun'` with `execSync` in global setup (Playwright runs Node, not Bun).
+- Fixed Prisma path mismatch: `file:./db/e2e.db` resolved to `prisma/db/` — switched to absolute paths.
+- Fixed selector issues: shadcn CardTitle renders as `<div>` not `<h1>`, Next.js route announcer has `role="alert"` — used form field IDs and specific text matchers.
+
+Stage Summary:
+- All 4 e2e specs passing (27s total). Mock LLM provides deterministic responses.
+
+Verification:
+- `bun run e2e` → 4 passed (27.3s).
+
+---
+Task ID: production-final-phase.12
+Agent: main
+Task: Production readiness verification
+
+Work Log:
+- Flipped `AUTH_DEMO_FALLBACK=false` in `.env` — fail-closed mode active.
+- Verified unauthenticated API access returns 401: `GET /api/documents` without cookie → 401.
+- Verified login works: `POST /api/auth/login` with admin credentials → 200 `{"ok":true,"user":{...}}`.
+- Production build: `bun run build` → ✓ Compiled successfully in 7.2s (30/30 static pages).
+- Standalone server smoke test: `bun run start` → health 200, fail-closed 401, login 200, full chat round-trip 200.
+- Added `"test": "bun test src/ scripts/ --pass-with-no-tests"` script to exclude Playwright specs from `bun test`.
+- Full verification chain all green:
+  * `bunx tsc --noEmit` → exit 0
+  * `bun run lint` → exit 0
+  * `bun run test` → 61 pass, 0 fail, 116 assertions
+  * `bun run e2e` → 4 pass (27.7s)
+- Created progress ledger at `docs/superpowers/progress/2026-07-02-production-final-phase.md`.
+
+Stage Summary:
+- **Production ready.** All 12 plan tasks complete. Fail-closed auth, production build verified, full test suite green.
