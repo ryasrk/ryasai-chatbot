@@ -5,6 +5,7 @@
  */
 import { getLlmRuntimeConfig, getAgentLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { db } from '@/lib/db'
+import { traceLlmCall } from '@/lib/observability'
 
 export interface LlmToolCall {
   id: string
@@ -70,12 +71,42 @@ const STREAM_TIMEOUT_MS = 120000
 const MAX_RETRIES = 1
 const RETRY_BACKOFF_MS = 1000
 
+function previewMessages(messages: LlmMessage[]): string {
+  const m = messages[0]
+  if (!m || m.content === null) return ''
+  if (typeof m.content === 'string') return m.content.slice(0, 500)
+  if (Array.isArray(m.content)) {
+    const text = m.content.find((p) => p.type === 'text')
+    return text ? text.text.slice(0, 500) : ''
+  }
+  return ''
+}
+
+interface TraceCtx {
+  messages?: LlmMessage[]
+  responsePreview?: string
+  toolCalls?: Array<{ name: string; arguments: string }>
+  error?: string
+}
+
 function logLlmUsage(
   purpose: string,
   cfg: LlmRuntimeConfig,
   usage: LlmUsage | null,
   latencyMs?: number,
+  traceCtx?: TraceCtx,
 ): void {
+  traceLlmCall({
+    purpose,
+    provider: cfg.provider ?? 'OPENAI_COMPATIBLE',
+    model: cfg.model,
+    inputPreview: traceCtx?.messages ? previewMessages(traceCtx.messages) : '',
+    outputPreview: traceCtx?.responsePreview ?? '',
+    toolCalls: traceCtx?.toolCalls,
+    usage: usage ?? undefined,
+    latencyMs: latencyMs ?? 0,
+    error: traceCtx?.error,
+  })
   if (!usage || (usage.totalTokens === 0 && usage.promptTokens === 0)) return
   if (!db.llmUsageLog) return
   const provider = cfg.provider ?? 'OPENAI_COMPATIBLE'
@@ -295,6 +326,7 @@ export async function chatOnce(
   responseFormat?: LlmResponseFormat,
 ): Promise<string | LlmToolCall[]> {
   const t0 = Date.now()
+  try {
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
     const body = buildAnthropicBody(messages, temperature, false, tools, responseFormat)
     body.model = cfg.model
@@ -324,7 +356,7 @@ export async function chatOnce(
     if (responseFormat) {
       const toolUse = data.content?.find((c) => c.type === 'tool_use')
       const structured = toolUse ? JSON.stringify(toolUse.input ?? {}) : (data.content?.find((c) => c.type === 'text')?.text ?? '')
-      logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+      logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: structured.slice(0, 500) })
       return structured
     }
     const toolUseBlocks = data.content?.filter((c) => c.type === 'tool_use')
@@ -334,11 +366,11 @@ export async function chatOnce(
         name: b.name ?? '',
         arguments: JSON.stringify(b.input ?? {}),
       }))
-      logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+      logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: toolCalls.map((tc) => tc.name).join(', ').slice(0, 500), toolCalls })
       return toolCalls
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
-    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: text.slice(0, 500) })
     return text.trim()
   }
 
@@ -388,7 +420,7 @@ export async function chatOnce(
     totalTokens: data.usage?.total_tokens ?? 0,
   }
   if (responseFormat) {
-    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
     return (choice?.message?.content ?? '').trim()
   }
   if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
@@ -397,11 +429,15 @@ export async function chatOnce(
       name: tc.function.name,
       arguments: tc.function.arguments,
     }))
-    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: toolCalls.map((tc) => tc.name).join(', ').slice(0, 500), toolCalls })
     return toolCalls
   }
-  logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+  logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
   return (choice?.message?.content ?? '').trim()
+  } catch (e) {
+    logLlmUsage(purpose, cfg, null, Date.now() - t0, { messages, error: e instanceof Error ? e.message : String(e) })
+    throw e
+  }
 }
 
 /** Streaming completion. Yields token strings. */
@@ -414,6 +450,7 @@ export async function* chatStream(
   tools?: LlmToolDef[],
 ): AsyncGenerator<string, void, unknown> {
   const t0 = Date.now()
+  try {
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
     const body = buildAnthropicBody(messages, temperature, true, tools)
     body.model = cfg.model
@@ -433,6 +470,7 @@ export async function* chatStream(
     }
     let inputTokens = 0
     let outputTokens = 0
+    let streamOutput = ''
     for await (const chunk of iterSseStream(res.body)) {
       try {
         const parsed = JSON.parse(chunk) as {
@@ -448,6 +486,7 @@ export async function* chatStream(
           outputTokens = parsed.usage.output_tokens
         }
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+          streamOutput += parsed.delta.text
           yield parsed.delta.text
         }
       } catch { /* skip malformed */ }
@@ -456,7 +495,7 @@ export async function* chatStream(
       promptTokens: inputTokens,
       completionTokens: outputTokens,
       totalTokens: inputTokens + outputTokens,
-    }, Date.now() - t0)
+    }, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
     return
   }
 
@@ -485,6 +524,7 @@ export async function* chatStream(
     throw new Error(`LLM stream error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
   }
   let usage: LlmUsage | null = null
+  let streamOutput = ''
   for await (const chunk of iterSseStream(res.body)) {
     try {
       const parsed = JSON.parse(chunk) as {
@@ -499,10 +539,14 @@ export async function* chatStream(
         }
       }
       const token = parsed.choices?.[0]?.delta?.content
-      if (token) yield token
+      if (token) { streamOutput += token; yield token }
     } catch { /* skip malformed */ }
   }
-  logLlmUsage(purpose, cfg, usage, Date.now() - t0)
+  logLlmUsage(purpose, cfg, usage, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
+  } catch (e) {
+    logLlmUsage(purpose, cfg, null, Date.now() - t0, { messages, error: e instanceof Error ? e.message : String(e) })
+    throw e
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -526,6 +570,7 @@ export async function chatOnceResponses(
 ): Promise<{ text: string; responseId: string; usage?: LlmUsage }> {
   const t0 = Date.now()
   const purpose = options?.purpose ?? 'chat'
+  try {
   const body: Record<string, unknown> = {
     model: cfg.model,
     input: typeof input === 'string' ? input : input,
@@ -586,8 +631,18 @@ export async function chatOnceResponses(
         totalTokens: data.usage.total_tokens ?? (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0),
       }
     : undefined
-  logLlmUsage(purpose, cfg, usage ?? null, Date.now() - t0)
+  logLlmUsage(purpose, cfg, usage ?? null, Date.now() - t0, {
+    messages: typeof input === 'string' ? undefined : input,
+    responsePreview: text.slice(0, 500),
+  })
   return { text: text.trim(), responseId: data.id ?? '', usage }
+  } catch (e) {
+    logLlmUsage(purpose, cfg, null, Date.now() - t0, {
+      messages: typeof input === 'string' ? undefined : input,
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw e
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.cognee
+db/*.db
+db/*.db-journal
+dev.log
+server.log
+.env
+upload/
+download/
+test-data/
+test-results/
+e2e/
+playwright-report/
+bun-debug.log*

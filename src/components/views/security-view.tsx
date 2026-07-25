@@ -9,6 +9,7 @@ import {
   ListChecks,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Loader2,
   FlaskConical,
   Coins,
@@ -34,6 +35,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { AuditLogItem } from '@/lib/types'
 
@@ -103,6 +109,20 @@ interface BlockedSqlItem {
   createdAt: string
 }
 
+interface TraceItem {
+  id: string
+  purpose: string
+  provider: string
+  model: string
+  inputPreview: string
+  outputPreview: string
+  toolCalls?: Array<{ name: string; arguments: string }>
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs: number
+  timestamp: string
+  error?: string
+}
+
 interface MonitoringData {
   ok: boolean
   toolRuns: ToolRunItem[]
@@ -132,6 +152,32 @@ export function SecurityView() {
   // ---- monitoring data (tool runs, failed requests, blocked SQL) ----
   const [monitoring, setMonitoring] = useState<MonitoringData | null>(null)
   const [monLoading, setMonLoading] = useState(true)
+
+  // ---- recent LLM traces (in-memory observability ring buffer) ----
+  const [tracesOpen, setTracesOpen] = useState(false)
+  const [traces, setTraces] = useState<TraceItem[]>([])
+  const [tracesLoading, setTracesLoading] = useState(false)
+
+  const loadTraces = useCallback(async () => {
+    setTracesLoading(true)
+    try {
+      const res = await fetch('/api/traces?limit=20', { cache: 'no-store' })
+      if (!res.ok) return
+      const json = await res.json()
+      if (json?.ok) setTraces(json.traces ?? [])
+    } catch {
+      /* keep last */
+    } finally {
+      setTracesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!tracesOpen) return
+    loadTraces()
+    const t = setInterval(loadTraces, 10000)
+    return () => clearInterval(t)
+  }, [tracesOpen, loadTraces])
 
   const loadMonitoring = useCallback(async () => {
     setMonLoading(true)
@@ -270,6 +316,71 @@ export function SecurityView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ---- recent LLM traces (observability ring buffer) ---- */}
+      <Collapsible open={tracesOpen} onOpenChange={setTracesOpen}>
+        <Card>
+          <CardContent className="py-2.5">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-7 px-2 w-full justify-between">
+                <span className="flex items-center gap-1.5">
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', tracesOpen && 'rotate-180')} />
+                  Recent LLM Traces
+                </span>
+                <span className="text-[11px] text-muted-foreground">{traces.length} in buffer</span>
+              </Button>
+            </CollapsibleTrigger>
+          </CardContent>
+          <CollapsibleContent>
+            <div className="px-3 pb-3">
+              {tracesLoading && traces.length === 0 ? (
+                <div className="flex items-center justify-center py-6 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              ) : traces.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">No traces yet. LLM calls will appear here.</div>
+              ) : (
+                <div className="rounded-md border overflow-y-auto [scrollbar-width:thin] max-h-[50vh]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px] text-xs">Time</TableHead>
+                        <TableHead className="w-[90px] text-xs">Purpose</TableHead>
+                        <TableHead className="w-[120px] text-xs">Model</TableHead>
+                        <TableHead className="w-[70px] text-xs">Latency</TableHead>
+                        <TableHead className="w-[70px] text-xs">Tokens</TableHead>
+                        <TableHead className="w-[70px] text-xs">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {traces.map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell className="text-xs text-muted-foreground align-top">
+                            {format(new Date(t.timestamp), 'HH:mm:ss')}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge variant="outline" className="font-mono text-xs">{t.purpose}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs align-top text-muted-foreground line-clamp-1 max-w-[160px]">{t.model}</TableCell>
+                          <TableCell className="text-xs align-top">{t.latencyMs}ms</TableCell>
+                          <TableCell className="text-xs align-top">{t.usage?.totalTokens ?? '-'}</TableCell>
+                          <TableCell className="align-top">
+                            {t.error ? (
+                              <Badge variant="outline" className="bg-destructive/15 text-destructive text-xs">error</Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-success/15 text-success text-xs">ok</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       <Tabs defaultValue="audit" className="w-full">
         <div className="overflow-x-auto -mx-1 px-1 pb-1">

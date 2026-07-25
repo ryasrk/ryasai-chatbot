@@ -9,6 +9,10 @@ import {
   type VectorPoint,
 } from '@/lib/vector-stores'
 
+// ponytail: embeddings stored as JSON string in DocumentChunk.embeddingJson — works on both
+// SQLite and Postgres (O(n) scan). pgvector migration documented in docs/postgres-migration.md
+// but not implemented; add when chunk count > 10K and scan latency matters.
+
 export type EmbeddingProvider = 'OPENAI_COMPATIBLE' | 'OPENAI' | 'OLLAMA'
 
 export interface EmbeddingRuntimeConfig {
