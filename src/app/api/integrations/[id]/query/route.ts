@@ -213,16 +213,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         detail: { integrationId: integration.id, naturalQuery, sql: sanitizedSql, error: msg },
       })
       console.error('[query] executeQuery failed', e)
-      // Don't reflect the raw DB error to the client — it leaks schema/table names.
+      const tableMissing = /no such table|relation .* does not exist|table .* doesn'?t exist/i.test(msg)
       return NextResponse.json(
         {
           ok: false,
-          error:
-            'Maaf, koneksi ke Database ERP Anda terputus atau kueri gagal dieksekusi. ' +
-            'Tim teknis telah diberi notifikasi.',
+          error: tableMissing
+            ? 'Tabel database tidak ditemukan. Skema mungkin sudah kedaluwarsa. Silakan jalankan uji koneksi ulang di halaman Integrations untuk memperbarui skema.'
+            : 'Maaf, kueri gagal dieksekusi. Silakan coba pertanyaan yang berbeda atau hubungi admin.',
           sql: sanitizedSql,
         },
-        { status: 502 },
+        { status: tableMissing ? 409 : 502 },
       )
     }
   } catch (e) {
