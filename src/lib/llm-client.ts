@@ -30,6 +30,7 @@ function logLlmUsage(
   latencyMs?: number,
 ): void {
   if (!usage || (usage.totalTokens === 0 && usage.promptTokens === 0)) return
+  if (!db.llmUsageLog) return
   const provider = cfg.provider ?? 'OPENAI_COMPATIBLE'
   db.llmUsageLog
     .create({
