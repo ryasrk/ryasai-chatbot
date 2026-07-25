@@ -30,7 +30,7 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { LoadingState, EmptyState } from '@/components/ui/view-states'
+import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -164,6 +164,7 @@ interface DocDetail extends DocumentItem {
 export function KnowledgeBaseView() {
   const [docs, setDocs] = useState<DocumentItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [activeCat, setActiveCat] = useState<string>('ALL')
   const [uploadOpen, setUploadOpen] = useState(false)
   const [detailTarget, setDetailTarget] = useState<DocumentItem | null>(null)
@@ -174,15 +175,18 @@ export function KnowledgeBaseView() {
 
   const fetchDocs = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await fetch('/api/documents', { cache: 'no-store' })
       const json = await res.json()
       if (res.ok && Array.isArray(json.documents)) {
         setDocs(json.documents as DocumentItem[])
       } else {
+        setLoadError(true)
         toast.error(json.error ?? 'Failed to load document list.')
       }
     } catch (e) {
+      setLoadError(true)
       toast.error('Network error while loading documents.')
       console.error(e)
     } finally {
@@ -384,6 +388,8 @@ export function KnowledgeBaseView() {
       {/* Document list */}
       {loading ? (
         <LoadingState label="Loading documents…" />
+      ) : loadError ? (
+        <ErrorState message="Failed to load documents." onRetry={fetchDocs} />
       ) : docs.length === 0 ? (
         <Card>
           <CardContent className="p-0">

@@ -8,7 +8,7 @@ import { format } from 'date-fns'
 import { describeCron, formatRelativeTime, previewNextRuns, SCHEDULE_PRESETS } from '@/lib/cron-describe'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState, EmptyState } from '@/components/ui/view-states'
+import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -75,6 +75,7 @@ function lastStatusFromResult(lastResult: string | null): 'success' | 'error' | 
 export function SchedulesView() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Schedule | null>(null)
   const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true })
@@ -85,15 +86,18 @@ export function SchedulesView() {
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await fetch('/api/schedules')
       const data = await res.json()
       if (data.ok) {
         setSchedules(data.schedules)
       } else {
+        setLoadError(true)
         toast.error(data.error || 'Failed to load execution schedules.')
       }
     } catch {
+      setLoadError(true)
       toast.error('Failed to load execution schedules.')
     } finally {
       setLoading(false)
@@ -219,6 +223,8 @@ export function SchedulesView() {
 
       {loading ? (
         <LoadingState />
+      ) : loadError ? (
+        <ErrorState message="Failed to load execution schedules." onRetry={fetchSchedules} />
       ) : schedules.length === 0 ? (
         <Card className="rounded-none border border-border/70">
           <CardContent className="p-0">

@@ -358,7 +358,7 @@ export async function generateRestCall(args: {
   return parseRestCallJson(raw)
 }
 
-function parseRestCallJson(raw: string): RestCallPlan {
+export function parseRestCallJson(raw: string): RestCallPlan {
   const cleaned = raw.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(cleaned) as Partial<RestCallPlan>
   const query =

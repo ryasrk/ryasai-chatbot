@@ -453,6 +453,34 @@ export async function cognifyBatch(args: {
 }
 
 /**
+ * Auto-cognify all ready + enabled documents that haven't been cognified yet.
+ * Used by the cognee settings route when cognee is newly enabled.
+ */
+export async function autoCognifyAll(): Promise<{ processed: number; failed: number; skipped: number }> {
+  const docs = await db.document.findMany({
+    where: {
+      status: 'ready',
+      isEnabled: true,
+      OR: [
+        { cognifyStatus: null },
+        { cognifyStatus: { not: 'completed' } },
+      ],
+    },
+    include: {
+      chunks: { select: { content: true, chunkIndex: true }, orderBy: { chunkIndex: 'asc' } },
+    },
+  })
+  if (docs.length === 0) return { processed: 0, failed: 0, skipped: 0 }
+  return cognifyBatch({
+    documents: docs.map((doc) => ({
+      documentId: doc.id,
+      documentName: doc.name,
+      chunks: doc.chunks.map((c) => ({ content: c.content, chunkIndex: c.chunkIndex })),
+    })),
+  })
+}
+
+/**
  * Recall knowledge graph — graph-grounded retrieval for RAG outer ring.
  * Returns entity summaries + relationship context for multi-hop reasoning.
  */

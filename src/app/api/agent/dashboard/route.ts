@@ -7,7 +7,7 @@ import { getPromptSettings, mergePromptSettings } from '@/lib/prompt-settings'
 import { getRoutingScores } from '@/lib/smart-router'
 import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
-import { agentChatStream } from '@/lib/llm-client'
+import { streamAnswer } from '@/lib/ai'
 
 interface AdminActionResult {
   handled: boolean
@@ -378,7 +378,9 @@ export async function POST(req: NextRequest) {
 
           const synthesisContext = results.map(r => `Step ${r.stepId} (${r.tool}): ${r.output ?? r.error}`).join('\n')
           let fullAnswer = ''
-          for await (const token of agentChatStream(contextualizedMessage, synthesisContext, chatHistory)) {
+          // ponytail: streamAnswer includes z-ai-web-dev-sdk fallback (no LLM config → sandbox).
+          // source 'SQL' is a neutral generic label for multi-source synthesis context.
+          for await (const token of streamAnswer({ question: contextualizedMessage, context: synthesisContext, source: 'SQL', chatHistory })) {
             fullAnswer += token
             send('token', { content: token })
           }

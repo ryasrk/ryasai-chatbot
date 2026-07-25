@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
-import { forgetKnowledgeGraph } from '@/lib/cognee'
+import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
 
 export const runtime = 'nodejs'
 
@@ -123,6 +123,22 @@ export async function PATCH(
       data: { isEnabled: body.isEnabled },
       select: { id: true, isEnabled: true, updatedAt: true },
     })
+
+    // ponytail: cognifyDocument checks isCogneeEnabled internally — no-op if disabled.
+    // forgetKnowledgeGraph is global (no per-doc forget in cognee API), so we only
+    // re-cognify on enable; stale data on disable is a known limitation.
+    if (!existing.isEnabled && body.isEnabled) {
+      const chunks = await db.documentChunk.findMany({
+        where: { documentId: existing.id },
+        select: { content: true, chunkIndex: true },
+        orderBy: { chunkIndex: 'asc' },
+      })
+      void cognifyDocument({
+        documentId: existing.id,
+        documentName: existing.name,
+        chunks: chunks.map((c) => ({ content: c.content, chunkIndex: c.chunkIndex })),
+      }).catch(() => null)
+    }
 
     await writeAudit({
       userId: user.userId,

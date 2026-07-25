@@ -75,6 +75,13 @@ export function AgenticView() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const idRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const sessionAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    sessionAbortRef.current?.abort()
+  }, [])
 
   const loadSessions = useCallback(() => {
     setLoadingSessions(true)
@@ -90,11 +97,15 @@ export function AgenticView() {
   useEffect(() => { loadSessions() }, [loadSessions])
 
   const selectSession = useCallback(async (sessionId: string) => {
+    sessionAbortRef.current?.abort()
+    const ac = new AbortController()
+    sessionAbortRef.current = ac
     setConversationId(sessionId)
     setMessages([])
     try {
-      const res = await fetch(`/api/agent/dashboard/sessions?sessionId=${sessionId}`)
+      const res = await fetch(`/api/agent/dashboard/sessions?sessionId=${sessionId}`, { signal: ac.signal })
       const data = await res.json()
+      if (ac.signal.aborted) return
       if (data?.messages) {
         const loaded: ChatMessage[] = data.messages.map((m: { id: string; sender: string; text: string; createdAt?: string }) => ({
           id: m.id,
@@ -104,7 +115,9 @@ export function AgenticView() {
         }))
         setMessages(loaded)
       }
-    } catch {}
+    } catch {
+      // aborted or network error — ignore
+    }
   }, [])
 
   const newSession = useCallback(() => {
@@ -148,6 +161,8 @@ export function AgenticView() {
     setThinking(true)
 
     try {
+      const ac = new AbortController()
+      abortControllerRef.current = ac
       const res = await fetch('/api/agent/dashboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -156,6 +171,7 @@ export function AgenticView() {
           sessionId: conversationId,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         }),
+        signal: ac.signal,
       })
 
       if (!res.ok) {
@@ -188,8 +204,13 @@ export function AgenticView() {
           }
         }
       }
-    } catch {
-      toast.error('Connection lost')
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        // user stopped — mark running tool cards as failed
+        setMessages((prev) => prev.map((m) => (m.toolCards ? { ...m, toolCards: m.toolCards.map((tc) => (tc.status === 'running' ? { ...tc, status: 'failed' as const, error: 'Cancelled' } : tc)) } : m)))
+      } else {
+        toast.error('Connection lost')
+      }
     } finally {
       setThinking(false)
       setExecuting(false)
@@ -217,7 +238,7 @@ export function AgenticView() {
         break
       }
       case 'tool_end': {
-        const status = data.status as 'success' | 'failed'
+        const status = (data.status as string) === 'success' ? 'success' : 'failed'
         setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), `Done: ${data.tool} (${status})`] } : m)))
         setMessages((prev) =>
           prev.map((m) =>
@@ -341,14 +362,25 @@ export function AgenticView() {
               rows={1}
               disabled={executing}
             />
-            <Button
-              onClick={sendMessage}
-              disabled={!input.trim() || executing}
-              className="h-12 w-12 shrink-0 rounded-xl bg-primary hover:bg-primary/90 p-0"
-              aria-label="Send"
-            >
-              {executing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-            </Button>
+            {executing ? (
+              <Button
+                onClick={() => abortControllerRef.current?.abort()}
+                className="h-12 w-12 shrink-0 rounded-xl p-0"
+                variant="destructive"
+                aria-label="Stop"
+              >
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </Button>
+            ) : (
+              <Button
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                className="h-12 w-12 shrink-0 rounded-xl bg-primary hover:bg-primary/90 p-0"
+                aria-label="Send"
+              >
+                <Send className="h-5 w-5" />
+              </Button>
+            )}
           </div>
         </div>
       </div>

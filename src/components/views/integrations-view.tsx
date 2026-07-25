@@ -38,7 +38,7 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { LoadingState, EmptyState } from '@/components/ui/view-states'
+import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -227,6 +227,7 @@ export function IntegrationsView() {
   const [restItems, setRestItems] = useState<RestConnectorItem[]>([])
   const [loading, setLoading] = useState(true)
   const [restLoading, setRestLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [restName, setRestName] = useState('')
   const [restBaseUrl, setRestBaseUrl] = useState('')
@@ -249,15 +250,18 @@ export function IntegrationsView() {
 
   const fetchList = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await fetch('/api/integrations', { cache: 'no-store' })
       const json = await res.json()
       if (res.ok && json.ok) {
         setItems(json.data as Integration[])
       } else {
+        setLoadError(true)
         toast.error(json.error ?? 'Failed to load integration list.')
       }
     } catch (e) {
+      setLoadError(true)
       toast.error('Network error while loading integrations.')
       console.error(e)
     } finally {
@@ -521,6 +525,8 @@ export function IntegrationsView() {
         <TabsContent value="database" className="mt-2">
       {loading ? (
         <LoadingState label="Loading integrations…" />
+      ) : loadError ? (
+        <ErrorState message="Failed to load integrations." onRetry={fetchList} />
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="p-0">
@@ -851,7 +857,7 @@ function IntegrationCard({
 
   const isDb = integration.type === 'DATABASE'
   const Icon = isDb ? Database : Globe
-  const status = STATUS_BADGE[integration.status]
+  const status = STATUS_BADGE[integration.status] ?? STATUS_BADGE.error
   const lastOk = integration.lastTestOk
   const isActive = integration.status === 'active'
 

@@ -209,6 +209,12 @@ export function ChatView() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const sessionAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    sessionAbortRef.current?.abort()
+  }, [])
 
   /* ----- fetch sessions on mount ----- */
   const fetchSessions = useCallback(async () => {
@@ -257,22 +263,28 @@ export function ChatView() {
   /* ----- session selection ----- */
   const selectSession = useCallback(
     async (id: string) => {
+      sessionAbortRef.current?.abort()
+      const ac = new AbortController()
+      sessionAbortRef.current = ac
       setLoadingSession(true)
       useChatStore.getState().setActiveSession(id)
       try {
         const res = await fetch(`/api/chat/sessions/${id}`, {
           cache: 'no-store',
+          signal: ac.signal,
         })
         if (!res.ok) throw new Error('Failed to load session')
         const data = await res.json()
+        if (ac.signal.aborted) return
         const msgs: ChatMessageItem[] = data.messages ?? []
         useChatStore.getState().setMessages(msgs)
       } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
         toast.error(
           e instanceof Error ? e.message : 'Failed to load session messages.',
         )
       } finally {
-        setLoadingSession(false)
+        if (!ac.signal.aborted) setLoadingSession(false)
       }
     },
     [],
@@ -381,7 +393,7 @@ export function ChatView() {
           break
         }
         case 'tool_end': {
-          const ok = (data.status as string) !== 'error'
+          const ok = data.status === 'success'
           setPipeline((p) => ({ ...p, tool: ok ? 'done' : 'error' }))
           chat.setStatus(ok ? 'done' : 'error', ok ? 'Done' : 'Failed')
           break

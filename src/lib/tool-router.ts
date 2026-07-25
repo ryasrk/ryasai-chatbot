@@ -650,20 +650,8 @@ export function buildChartDataFromRows(rows: QueryRow[]): ChartData | null {
   }
 }
 
-export function parseRestCallJson(raw: string): RestCallPlan {
-  const cleaned = raw.replace(/```json|```/g, '').trim()
-  const parsed = JSON.parse(cleaned) as Partial<RestCallPlan>
-  const query =
-    parsed.query && typeof parsed.query === 'object' && !Array.isArray(parsed.query)
-      ? parsed.query
-      : {}
-  return {
-    endpointId: String(parsed.endpointId ?? '').trim(),
-    query: query as RestCallPlan['query'],
-    body: parsed.body === undefined ? null : parsed.body,
-    explanation: String(parsed.explanation ?? '').trim(),
-  }
-}
+// ponytail: re-exported from ai.ts — single definition, test imports from here.
+export { parseRestCallJson } from '@/lib/ai'
 
 export function buildDocumentCitation(args: {
   documentName: string

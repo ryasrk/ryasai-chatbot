@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError } from '@/lib/session'
-import { cogneeStats, resetCognee, cognifyBatch, forgetKnowledgeGraph, invalidateCogneeSettings } from '@/lib/cognee'
+import { cogneeStats, resetCognee, cognifyBatch, forgetKnowledgeGraph, invalidateCogneeSettings, autoCognifyAll } from '@/lib/cognee'
 import { db } from '@/lib/db'
 
 export async function GET() {
@@ -44,14 +44,21 @@ export async function POST(req: NextRequest) {
 
     if (action === 'update_config') {
       const { enabled, dbProvider, dbUrl, batchSize, maxRetries } = body
+      const willBeEnabled = Boolean(enabled)
+      const willBeDbProvider = dbProvider === 'postgres' ? 'postgres' : 'local'
+      const willBeDbUrl = dbUrl || null
       const existing = await db.appConfig.findFirst()
+      const wasEnabled = existing?.cogneeEnabled ?? false
+      const wasDbProvider = existing?.cogneeDbProvider ?? 'local'
+      const wasDbUrl = existing?.cogneeDbUrl ?? null
+
       if (existing) {
         await db.appConfig.update({
           where: { id: existing.id },
           data: {
-            cogneeEnabled: Boolean(enabled),
-            cogneeDbProvider: dbProvider === 'postgres' ? 'postgres' : 'local',
-            cogneeDbUrl: dbUrl || null,
+            cogneeEnabled: willBeEnabled,
+            cogneeDbProvider: willBeDbProvider,
+            cogneeDbUrl: willBeDbUrl,
             cogneeBatchSize: Math.max(1, Math.min(500, parseInt(batchSize) || 50)),
             cogneeMaxRetries: Math.max(0, Math.min(10, parseInt(maxRetries) || 3)),
           },
@@ -59,15 +66,31 @@ export async function POST(req: NextRequest) {
       } else {
         await db.appConfig.create({
           data: {
-            cogneeEnabled: Boolean(enabled),
-            cogneeDbProvider: dbProvider === 'postgres' ? 'postgres' : 'local',
-            cogneeDbUrl: dbUrl || null,
+            cogneeEnabled: willBeEnabled,
+            cogneeDbProvider: willBeDbProvider,
+            cogneeDbUrl: willBeDbUrl,
             cogneeBatchSize: Math.max(1, Math.min(500, parseInt(batchSize) || 50)),
             cogneeMaxRetries: Math.max(0, Math.min(10, parseInt(maxRetries) || 3)),
           },
         })
       }
       invalidateCogneeSettings()
+
+      // Fire-and-forget: sync cognee data when settings change.
+      const storeChanged = wasEnabled && willBeEnabled &&
+        (wasDbProvider !== willBeDbProvider || wasDbUrl !== willBeDbUrl)
+      if (wasEnabled && !willBeEnabled) {
+        // Cognee disabled — invalidate all cognee data
+        void forgetKnowledgeGraph().catch(() => null)
+      } else if (!wasEnabled && willBeEnabled) {
+        // Cognee newly enabled — auto-cognify all ready documents
+        void autoCognifyAll().catch(() => null)
+      } else if (storeChanged) {
+        // Store changed while enabled — forget stale data, re-cognify
+        void forgetKnowledgeGraph().catch(() => null)
+        void autoCognifyAll().catch(() => null)
+      }
+
       return NextResponse.json({ ok: true, data: { updated: true } })
     }
 

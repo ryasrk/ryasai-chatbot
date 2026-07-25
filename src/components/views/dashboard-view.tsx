@@ -3,20 +3,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
-  Code2,
-  Database,
-  FileText,
-  MessageSquare,
-  ShieldAlert,
   Brain,
+  CheckCircle2,
+  Clock,
+  Coins,
+  Database,
+  Puzzle,
+  ShieldAlert,
+  Zap,
 } from 'lucide-react'
+import { format } from 'date-fns'
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   XAxis,
   YAxis,
 } from 'recharts'
@@ -26,8 +28,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LoadingState, ErrorState } from '@/components/ui/view-states'
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -37,34 +37,60 @@ import type { AnalyticsData } from '@/lib/types'
 
 const formatNumber = (n: number) => n.toLocaleString('en-US')
 
-const SEVERITY_COLORS: Record<'info' | 'warning' | 'critical', string> = {
-  info: 'var(--chart-2)',
-  warning: 'var(--chart-4)',
-  critical: 'var(--destructive)',
-}
-
 const chatChartConfig: ChartConfig = {
   count: { label: 'Chat Messages', color: 'var(--chart-1)' },
 }
 
-const auditChartConfig: ChartConfig = {
-  info: { label: 'Info', color: 'var(--chart-2)' },
-  warning: { label: 'Warning', color: 'var(--chart-4)' },
-  critical: { label: 'Critical', color: 'var(--destructive)' },
+const tokenChartConfig: ChartConfig = {
+  totalTokens: { label: 'Tokens', color: 'var(--chart-3)' },
+}
+
+interface MonitoringStats {
+  toolRunCount24h: number
+  avgToolLatencyMs24h: number
+  failedApiCount24h: number
+  llmCalls24h: number
+  llmPromptTokens24h: number
+  llmCompletionTokens24h: number
+  llmTotalTokens24h: number
+  llmUsageByPurpose: { purpose: string; calls: number; totalTokens: number }[]
 }
 
 export function DashboardView() {
   const [data, setData] = useState<AnalyticsData | null>(null)
+  const [monitoring, setMonitoring] = useState<MonitoringStats | null>(null)
+  const [activeSchedules, setActiveSchedules] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(() => {
-    fetch('/api/analytics', { cache: 'no-store' })
-      .then(async (response) => {
+    Promise.all([
+      fetch('/api/analytics', { cache: 'no-store' }).then(async (response) => {
         if (!response.ok) throw new Error('Failed to load analytics data.')
-        return response.json()
+        return response.json() as Promise<AnalyticsData>
+      }),
+      // ponytail: monitoring + schedules are best-effort; analytics is the hard dependency.
+      fetch('/api/monitoring', { cache: 'no-store' })
+        .then(async (r) => {
+          if (!r.ok) return null
+          const j = await r.json()
+          return (j.stats ?? null) as MonitoringStats | null
+        })
+        .catch(() => null),
+      fetch('/api/schedules', { cache: 'no-store' })
+        .then(async (r) => {
+          if (!r.ok) return 0
+          const j = await r.json()
+          const arr: { isActive?: boolean }[] = j.schedules ?? []
+          return arr.filter((s) => s.isActive).length
+        })
+        .catch(() => 0),
+    ])
+      .then(([a, m, s]) => {
+        setData(a)
+        setMonitoring(m)
+        setActiveSchedules(s)
       })
-      .then((payload: AnalyticsData) => setData(payload))
       .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error.'))
       .finally(() => setLoading(false))
   }, [])
@@ -95,81 +121,45 @@ export function DashboardView() {
     return <ErrorState message={error ?? 'Data unavailable.'} onRetry={handleRefresh} />
   }
 
-  const stats = [
-    {
-      label: 'Data Integrations',
-      value: data.totals.integrations,
-      sub: 'Active sources',
-      icon: Database,
-      iconClass: 'text-success',
-    },
-    {
-      label: 'Knowledge Base',
-      value: data.totals.documents,
-      sub: 'RAG-ready documents',
-      icon: FileText,
-      iconClass: 'text-warning',
-    },
-    {
-      label: 'Chat Sessions',
-      value: data.totals.chatSessions,
-      sub: 'Saved conversations',
-      icon: MessageSquare,
-      iconClass: 'text-muted-foreground',
-    },
-    {
-      label: 'SQL Queries',
-      value: data.totals.queriesExecuted,
-      sub: `${data.querySuccessRate}% success`,
-      icon: Code2,
-      iconClass: 'text-success',
-    },
-    {
-      label: 'Guardrail Block',
-      value: data.totals.guardrailBlocks,
-      sub: 'Rejected requests',
-      icon: ShieldAlert,
-      iconClass: 'text-destructive',
-    },
-  ] as const
-
-  const auditPieData = [
-    { name: 'info', value: data.auditBySeverity.info },
-    { name: 'warning', value: data.auditBySeverity.warning },
-    { name: 'critical', value: data.auditBySeverity.critical },
-  ].filter((item) => item.value > 0)
+  const stats: { label: string; value: number | string; icon: typeof Database; iconClass: string }[] = [
+    { label: 'Queries (24h)', value: monitoring?.toolRunCount24h ?? 0, icon: Activity, iconClass: 'text-primary' },
+    { label: 'Success Rate', value: `${data.querySuccessRate}%`, icon: CheckCircle2, iconClass: 'text-success' },
+    { label: 'Integrations', value: data.totals.integrations, icon: Database, iconClass: 'text-success' },
+    { label: 'LLM Tokens (24h)', value: monitoring?.llmTotalTokens24h ?? 0, icon: Coins, iconClass: 'text-warning' },
+    { label: 'LLM Calls (24h)', value: monitoring?.llmCalls24h ?? 0, icon: Zap, iconClass: 'text-primary' },
+    { label: 'Plugin Calls', value: '—', icon: Puzzle, iconClass: 'text-muted-foreground' },
+    { label: 'Active Schedules', value: activeSchedules, icon: Clock, iconClass: 'text-success' },
+    { label: 'Guardrail Blocks', value: data.totals.guardrailBlocks, icon: ShieldAlert, iconClass: 'text-destructive' },
+  ]
 
   const chatTrend = data.chatTrend.map((item) => ({
     date: item.date.slice(5),
     count: item.count,
   }))
 
-  const queryTrend = data.queryTrend.map((item) => ({
-    date: item.date.slice(5),
-    count: item.count,
+  const tokenData = (monitoring?.llmUsageByPurpose ?? []).map((p) => ({
+    purpose: p.purpose,
+    totalTokens: p.totalTokens,
   }))
 
   return (
     <div className="space-y-3">
-      <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5">
+      <section className="grid grid-cols-2 xl:grid-cols-4 gap-2.5">
         {stats.map((stat) => (
           <MetricCard key={stat.label} {...stat} />
         ))}
       </section>
 
-      <CogneeStatusBar />
-
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        {/* Aktivitas + SQL overview merged */}
-        <Card className="xl:col-span-2">
+      <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-              Operational Activity
+              Chat Activity
             </CardTitle>
-            <CardDescription className="text-xs">Chat and queries for the last 7 days</CardDescription>
+            <CardDescription className="text-xs">Messages per day, last 7 days</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2.5">
+          <CardContent>
             <ChartContainer config={chatChartConfig} className="h-[140px] w-full aspect-auto">
               <AreaChart data={chatTrend} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
                 <defs>
@@ -192,70 +182,89 @@ export function DashboardView() {
                 />
               </AreaChart>
             </ChartContainer>
-
-            {/* SQL overview — inline stats, not a list */}
-            <div className="border-t pt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                <div className="text-xs text-muted-foreground">SQL queries (7 days)</div>
-                <div className="text-sm font-semibold tabular-nums">{queryTrend.reduce((s, d) => s + d.count, 0)}</div>
-              </div>
-              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                <div className="text-xs text-muted-foreground">Total Queries</div>
-                <div className="text-sm font-semibold tabular-nums">{data.recentQueries.length}</div>
-              </div>
-              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                <div className="text-xs text-muted-foreground">Success</div>
-                <div className="text-sm font-semibold tabular-nums text-success">
-                  {data.recentQueries.filter((q) => q.success).length}
-                </div>
-              </div>
-              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
-                <div className="text-xs text-muted-foreground">Failed</div>
-                <div className="text-sm font-semibold tabular-nums text-destructive">
-                  {data.recentQueries.filter((q) => !q.success).length}
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs">Audit Log</CardTitle>
-            <CardDescription className="text-xs">Severity distribution</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Coins className="h-3.5 w-3.5 text-muted-foreground" />
+              Token Usage (24h)
+            </CardTitle>
+            <CardDescription className="text-xs">Tokens by LLM purpose</CardDescription>
           </CardHeader>
           <CardContent>
-            {auditPieData.length === 0 ? (
+            {tokenData.length === 0 ? (
               <div className="h-[140px] flex items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
-                No audit logs yet.
+                No LLM calls in the last 24h.
               </div>
             ) : (
-              <ChartContainer config={auditChartConfig} className="h-[140px] w-full aspect-square">
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-                  <Pie data={auditPieData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={56} paddingAngle={2}>
-                    {auditPieData.map((entry) => (
-                      <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name as keyof typeof SEVERITY_COLORS]} />
-                    ))}
-                  </Pie>
-                  <ChartLegend content={<ChartLegendContent nameKey="name" />} />
-                </PieChart>
+              <ChartContainer config={tokenChartConfig} className="h-[140px] w-full aspect-auto">
+                <BarChart data={tokenData} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="purpose" tickLine={false} axisLine={false} fontSize={10} />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    fontSize={10}
+                    width={40}
+                    tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="totalTokens" fill="var(--chart-3)" isAnimationActive={false} radius={[2, 2, 0, 0]} />
+                </BarChart>
               </ChartContainer>
             )}
-            <div className="grid grid-cols-3 gap-1.5 mt-2 text-center">
-              {(['info', 'warning', 'critical'] as const).map((severity) => (
-                <div key={severity} className="rounded-md border bg-muted/30 px-1.5 py-1.5">
-                  <div className="text-sm font-semibold" style={{ color: SEVERITY_COLORS[severity] }}>
-                    {formatNumber(data.auditBySeverity[severity])}
-                  </div>
-                  <div className="text-xs uppercase text-muted-foreground">
-                    {severity === 'info' ? 'Info' : severity === 'warning' ? 'Warning' : 'Critical'}
-                  </div>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs">Recent Activity</CardTitle>
+            <CardDescription className="text-xs">Latest queries</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.recentQueries.length === 0 ? (
+              <div className="rounded-md border border-dashed py-4 text-center text-xs text-muted-foreground">
+                No queries yet.
+              </div>
+            ) : (
+              <ul className="divide-y rounded-md border">
+                {data.recentQueries.slice(0, 10).map((q) => (
+                  <li key={q.id} className="px-2.5 py-1.5 flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 w-[58px]">
+                      {format(new Date(q.createdAt), 'MM-dd HH:mm')}
+                    </span>
+                    <span className="truncate text-xs flex-1">{q.naturalQuery}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0 hidden sm:inline truncate max-w-[80px]">
+                      {q.integration?.name ?? '—'}
+                    </span>
+                    <Badge variant={q.success ? 'default' : 'destructive'} className="text-[10px] shrink-0">
+                      {q.success ? 'OK' : 'Error'}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs">System Health</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <HealthRow label="Failed API (24h)" value={`${monitoring?.failedApiCount24h ?? 0}`} valueClass="text-destructive" />
+              <HealthRow label="Avg Latency (24h)" value={`${monitoring?.avgToolLatencyMs24h ?? 0}ms`} />
+              <HealthRow label="Prompt Tokens (24h)" value={formatNumber(monitoring?.llmPromptTokens24h ?? 0)} />
+              <HealthRow label="Completion Tokens (24h)" value={formatNumber(monitoring?.llmCompletionTokens24h ?? 0)} />
+            </CardContent>
+          </Card>
+          <CogneeStatusBar />
+        </div>
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -283,13 +292,11 @@ export function DashboardView() {
 function MetricCard({
   label,
   value,
-  sub: _sub,
   icon: Icon,
   iconClass,
 }: {
   label: string
-  value: number
-  sub: string
+  value: number | string
   icon: typeof Database
   iconClass: string
 }) {
@@ -297,12 +304,31 @@ function MetricCard({
     <Card>
       <CardContent className="flex items-center justify-between">
         <div className="min-w-0">
-          <div className="text-lg font-semibold tabular-nums leading-tight">{formatNumber(value)}</div>
+          <div className="text-lg font-semibold tabular-nums leading-tight">
+            {typeof value === 'number' ? formatNumber(value) : value}
+          </div>
           <div className="truncate text-xs text-muted-foreground">{label}</div>
         </div>
         <Icon className={cn('h-4 w-4 shrink-0', iconClass)} />
       </CardContent>
     </Card>
+  )
+}
+
+function HealthRow({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string
+  value: string
+  valueClass?: string
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-md border bg-muted/20 px-2.5 py-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn('text-sm font-semibold tabular-nums', valueClass)}>{value}</span>
+    </div>
   )
 }
 
@@ -395,4 +421,3 @@ function CogneeStatusBar() {
     </Card>
   )
 }
-
