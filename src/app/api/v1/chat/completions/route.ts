@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError } from '@/lib/session'
-import { runNonStreamingChatCompletion } from '@/lib/tool-router'
+import { runNonStreamingChatCompletion, runStreamingChatCompletion } from '@/lib/tool-router'
 
 interface ChatCompletionBody {
   model?: string
@@ -125,6 +125,136 @@ export async function POST(req: NextRequest) {
         content: m.text,
       }))
 
+    if (body.stream) {
+      const streaming = await runStreamingChatCompletion({
+        question,
+        userId: admin.id,
+        sessionId: session.id,
+        chatHistory,
+      })
+
+      const completionId = `chatcmpl_${session.id}_${started}`
+      const created = Math.floor(Date.now() / 1000)
+      const model = body.model ?? 'default'
+      const encoder = new TextEncoder()
+
+      const sseStream = new ReadableStream({
+        async start(controller) {
+          let fullAnswer = ''
+          try {
+            for await (const token of streaming.stream) {
+              fullAnswer += token
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: completionId,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{ index: 0, delta: { content: token }, finish_reason: null }],
+                  })}\n\n`,
+                ),
+              )
+            }
+
+            const aiMessage = await db.chatMessage.create({
+              data: {
+                sessionId: session.id,
+                userId: admin.id,
+                sender: 'ai',
+                text: fullAnswer,
+                status: 'complete',
+                citations: JSON.stringify(streaming.citations),
+                chartData: streaming.chartData ? JSON.stringify(streaming.chartData) : null,
+                integrationId: streaming.integrationId ?? null,
+              },
+            })
+
+            const latencyMs = Date.now() - started
+            const toolRuns = await Promise.all(
+              streaming.toolRuns.map((toolRun) =>
+                db.toolRun.create({
+                  data: {
+                    chatMessageId: aiMessage.id,
+                    restApiEndpointId: toolRun.restApiEndpointId,
+                    type: toolRun.type,
+                    status: toolRun.status,
+                    latencyMs: toolRun.latencyMs ?? latencyMs,
+                    inputSummary: toolRun.inputSummary,
+                    outputSummary: toolRun.outputSummary ?? null,
+                    errorMessage: toolRun.errorMessage ?? null,
+                  },
+                  select: {
+                    id: true,
+                    type: true,
+                    status: true,
+                    latencyMs: true,
+                    restApiEndpointId: true,
+                  },
+                }),
+              ),
+            )
+
+            await db.chatSession.update({
+              where: { id: session.id },
+              data: { updatedAt: new Date() },
+            })
+
+            await writeApiLog({ apiKeyId, status: 200, latencyMs })
+
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: completionId,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  session_id: session.id,
+                  choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                  citations: streaming.citations,
+                  chart_data: streaming.chartData,
+                  tool_runs: toolRuns.map((toolRun) => ({
+                    id: toolRun.id,
+                    type: toolRun.type,
+                    status: toolRun.status,
+                    latency_ms: toolRun.latencyMs,
+                    rest_api_endpoint_id: toolRun.restApiEndpointId,
+                  })),
+                })}\n\n`,
+              ),
+            )
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+          } catch (e) {
+            const message = e instanceof Error ? e.message : 'Stream failed.'
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: completionId,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  choices: [{ index: 0, delta: { content: `[error: ${message}]` }, finish_reason: 'stop' }],
+                })}\n\n`,
+              ),
+            )
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            await writeApiLog({ apiKeyId, status: 503, latencyMs: Date.now() - started, errorMessage: message })
+            controller.close()
+          }
+        },
+      })
+
+      return new NextResponse(sseStream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          ...corsHeaders,
+        },
+      })
+    }
+
     const completion = await runNonStreamingChatCompletion({
       question,
       userId: admin.id,
@@ -193,69 +323,6 @@ export async function POST(req: NextRequest) {
         latency_ms: toolRun.latencyMs,
         rest_api_endpoint_id: toolRun.restApiEndpointId,
       })),
-    }
-
-    if (body.stream) {
-      const completionId = `chatcmpl_${aiMessage.id}`
-      const created = Math.floor(Date.now() / 1000)
-      const model = body.model ?? 'default'
-      const encoder = new TextEncoder()
-
-      const sseStream = new ReadableStream({
-        async start(controller) {
-          try {
-            const words = completion.answer.match(/\S+\s*/g) ?? []
-            for (const word of words) {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    id: completionId,
-                    object: 'chat.completion.chunk',
-                    created,
-                    model,
-                    choices: [{ index: 0, delta: { content: word }, finish_reason: null }],
-                  })}\n\n`,
-                ),
-              )
-              await new Promise((resolve) => setTimeout(resolve, 10))
-            }
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  id: completionId,
-                  object: 'chat.completion.chunk',
-                  created,
-                  model,
-                  session_id: session.id,
-                  choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-                  citations: completion.citations,
-                  chart_data: completion.chartData,
-                  tool_runs: toolRuns.map((toolRun) => ({
-                    id: toolRun.id,
-                    type: toolRun.type,
-                    status: toolRun.status,
-                    latency_ms: toolRun.latencyMs,
-                    rest_api_endpoint_id: toolRun.restApiEndpointId,
-                  })),
-                })}\n\n`,
-              ),
-            )
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-            controller.close()
-          } catch {
-            // client disconnected mid-stream
-          }
-        },
-      })
-
-      return new NextResponse(sseStream, {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-          ...corsHeaders,
-        },
-      })
     }
 
     return NextResponse.json(payload, { headers: corsHeaders })

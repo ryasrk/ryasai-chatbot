@@ -9,6 +9,9 @@ generator client {
 }
 
 datasource db {
+  // For Postgres: change provider to "postgresql" and set DATABASE_URL to a
+  // postgresql:// connection string. See docs/postgres-migration.md for the
+  // full migration guide (raw SQL adaptations needed in connectors.ts + rag-fts.ts).
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
@@ -446,4 +449,23 @@ model AgentRun {
   @@index([status])
   @@index([userId])
   @@index([sessionId])
+}
+
+// ------------------------------------------------------------------
+// LlmUsageLog — token usage per LLM call (cost tracking + monitoring)
+// ------------------------------------------------------------------
+model LlmUsageLog {
+  id               String   @id @default(cuid())
+  purpose          String   // chat | agent | router | sql | rag | rest | synthesis
+  provider         String   // OPENAI_COMPATIBLE | ANTHROPIC_COMPATIBLE
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  latencyMs        Int?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([purpose])
+  @@index([model])
 }

@@ -7,7 +7,7 @@ import { getPromptSettings, mergePromptSettings } from '@/lib/prompt-settings'
 import { getRoutingScores } from '@/lib/smart-router'
 import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
-import { agentChatStream } from '@/lib/agent-llm'
+import { agentChatStream } from '@/lib/llm-client'
 
 interface AdminActionResult {
   handled: boolean

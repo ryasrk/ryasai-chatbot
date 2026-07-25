@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Loader2,
   FlaskConical,
+  Coins,
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -112,6 +113,11 @@ interface MonitoringData {
     toolRunCount24h: number
     avgToolLatencyMs24h: number
     failedApiCount24h: number
+    llmCalls24h: number
+    llmPromptTokens24h: number
+    llmCompletionTokens24h: number
+    llmTotalTokens24h: number
+    llmUsageByPurpose: Array<{ purpose: string; calls: number; totalTokens: number }>
   }
 }
 
@@ -221,6 +227,46 @@ export function SecurityView() {
               <div className="text-xs text-muted-foreground">Failed API (24h)</div>
             </div>
             <ShieldAlert className="h-4 w-4 text-destructive shrink-0" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2.5">
+        <Card>
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold leading-tight">
+                {id(monitoring?.stats.llmTotalTokens24h ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground">LLM Tokens (24h)</div>
+            </div>
+            <Coins className="h-4 w-4 text-muted-foreground shrink-0" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold leading-tight">
+                {id(monitoring?.stats.llmCalls24h ?? 0)}
+              </div>
+              <div className="text-xs text-muted-foreground">LLM Calls (24h)</div>
+            </div>
+            <ListChecks className="h-4 w-4 text-muted-foreground shrink-0" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold leading-tight">
+                {id(
+                  monitoring?.stats.llmCalls24h
+                    ? Math.round((monitoring?.stats.llmTotalTokens24h ?? 0) / monitoring.stats.llmCalls24h)
+                    : 0,
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">Avg Tokens/Call</div>
+            </div>
+            <FlaskConical className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardContent>
         </Card>
       </div>

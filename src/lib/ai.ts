@@ -41,6 +41,7 @@ interface ChatMessage {
 
 interface ChatOpts {
   temperature?: number
+  purpose?: string
 }
 
 type Backend =
@@ -59,7 +60,7 @@ async function chatOnce(messages: ChatMessage[], opts: ChatOpts = {}): Promise<s
   const temperature = opts.temperature ?? 0
 
   if (backend.mode === 'custom') {
-    return llmChatOnce(backend.cfg, messages, temperature)
+    return llmChatOnce(backend.cfg, messages, temperature, opts.purpose ?? 'chat')
   }
 
   const completion = await backend.ai.chat.completions.create({
@@ -78,7 +79,7 @@ async function* chatStream(
   const temperature = opts.temperature ?? 0
 
   if (backend.mode === 'custom') {
-    yield* llmChatStream(backend.cfg, messages, temperature)
+    yield* llmChatStream(backend.cfg, messages, temperature, opts.purpose ?? 'chat')
     return
   }
 
@@ -156,6 +157,7 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           `Jawab hanya SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT.`,
       },
     ],
+    { purpose: 'router' },
   )
   const raw = decisionRaw.toUpperCase().trim()
   const decision: RouteDecision = raw.includes('CONTEXTUAL')
@@ -205,6 +207,7 @@ export async function generateSql(args: {
           `Berikan JSON {"sql": "...", "explanation": "..."}.`,
       },
     ],
+    { purpose: 'sql' },
   )
   return parseSqlJson(raw)
 }
@@ -260,7 +263,7 @@ export async function generateAnswer(args: {
       `CONTEXT (${sourceLabel}):\n${args.context}\n\n` +
       `Answer:`,
   })
-  return chatOnce(messages)
+  return chatOnce(messages, { purpose: 'synthesis' })
 }
 
 export function answerContextLabel(source: 'SQL' | 'RAG' | 'REST_API' | 'CHAT'): string {
@@ -296,7 +299,7 @@ export async function generateChat(
     messages.push({ role: 'system', content: `Prior conversation history:\n${formatHistory(chatHistory)}` })
   }
   messages.push({ role: 'user', content: question })
-  return chatOnce(messages)
+  return chatOnce(messages, { purpose: 'chat' })
 }
 
 export interface RestEndpointOption {
@@ -350,6 +353,7 @@ export async function generateRestCall(args: {
           'Berikan JSON pilihan endpoint.',
       },
     ],
+    { purpose: 'rest' },
   )
   return parseRestCallJson(raw)
 }
@@ -403,7 +407,7 @@ export async function* streamAnswer(args: {
       content: `Question: ${args.question}\n\nCONTEXT (${answerContextLabel(args.source)}):\n${args.context}\n\nAnswer:`,
     },
   )
-  yield* chatStream(messages)
+  yield* chatStream(messages, { purpose: 'synthesis' })
 }
 
 export async function* streamChat(
@@ -434,7 +438,7 @@ export async function* streamChat(
     },
     { role: 'user', content: question },
   )
-  yield* chatStream(messages)
+  yield* chatStream(messages, { purpose: 'chat' })
 }
 
 function formatHistory(history: ChatMessage[]): string {
