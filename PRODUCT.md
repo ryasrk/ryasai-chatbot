@@ -1,7 +1,5 @@
 # Product
 
-<!-- impeccable:product-schema 1 -->
-
 ## Platform
 
 web
@@ -12,32 +10,35 @@ Enterprise administrators in Indonesian companies who manage an AI assistant dep
 
 ## Product Purpose
 
-A multi-source AI chatbot that answers questions by routing to the right tool — SQL queries, document RAG, REST API calls, or general chat. It exists to give internal teams a single assistant that can access structured data, company documents, and external APIs without switching tools. Success means the admin can configure it once and trust it to answer accurately with guardrails.
+A multi-source AI chatbot that answers questions by routing to the right tool — SQL queries, document RAG, REST API calls, external plugins, or general chat. It exists to give internal teams a single assistant that can access structured data, company documents, and external APIs without switching tools. Success means the admin can configure it once and trust it to answer accurately with guardrails.
 
 ## Positioning
 
-Self-hosted, multi-tenant, fail-closed enterprise AI assistant. Unlike SaaS chatbots, all data stays in the admin's infrastructure. SQL guardrails, AES-256-GCM encrypted credentials, and per-tenant isolation are built in, not add-ons.
+Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS chatbots, all data stays in the admin's infrastructure. SQL guardrails, AES-256-GCM encrypted credentials, and audit logging are built in, not add-ons.
 
 ## Operating Context
 
 - Admin logs in, runs a setup wizard (admin account → LLM config → test model → upload docs → data sources → test chat)
-- Daily work: manage integrations, upload documents, configure AI, manage API keys, monitor audit logs
+- Daily work: manage integrations, upload documents, configure AI, manage API keys, monitor audit logs, use agentic console
 - Language: Indonesian for all UI labels and system prompts
-- Deployment: single instance per company, dedicated admin mode
+- Deployment: single instance, dedicated admin mode
 
-## Capabilities and Constraints
+## Capabilities
 
 - Text-to-SQL with AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
 - Hybrid RAG (lexical + semantic + FTS + external vector store)
 - REST API connector with whitelisted endpoints
-- OpenAI-compatible and Anthropic-compatible LLM providers
+- OpenAI-compatible and Anthropic-native LLM providers
+- Real SSE token streaming (chat + external API)
 - API key generation with rate limiting for external integrations
 - Audit logging for all security-relevant actions
-- Streaming chat via Socket.io
-- Multi-step agentic planner (super-app phase)
+- Multi-step agentic planner with self-correction (DAG execution)
+- 9 prebuilt plugins (weather, Wikipedia, translate, calculator, news, StackOverflow, timezone, datetime) + custom webhook tools
 - Cognee memory layer (optional, disabled by default)
-- Scheduled runs (cron-based automation)
-- Plugin/tool registry (external webhook tools)
+- Scheduled runs (cron-based automation with notification delivery)
+- Notification API (webhook + email + Telegram)
+- LLM token usage tracking (per-purpose monitoring)
+- Smart router (self-adjusting load balancer with circuit breaker)
 
 ## Brand Commitments
 
@@ -48,10 +49,11 @@ Self-hosted, multi-tenant, fail-closed enterprise AI assistant. Unlike SaaS chat
 
 ## Evidence on Hand
 
-- Full codebase at /home/ryasr/ryasai/Chatbot
-- CLAUDE.md with architecture audit and super-app roadmap
-- Original spec: DOKUMEN SPESIFIKASI TEKNIS & PENGEMBANGAN SISTEM.docx
-- Production status: 103 tests green, tsc + lint clean
+- Full codebase (23 Prisma models, 60 API routes, 16 views, 194 unit tests + 4 e2e)
+- CLAUDE.md with architecture audit and progress log
+- README.md with quick start and commands
+- docs/postgres-migration.md for scaling
+- Production status: tsc 0 errors, lint 0 errors, 194 tests green
 
 ## Product Principles
 

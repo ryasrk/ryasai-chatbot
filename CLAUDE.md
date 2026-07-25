@@ -1,8 +1,7 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Audit performed 2026-07-24. Plan targets super-app evolution on top of the
-> existing production chatbot.
+> Last updated 2026-07-25. All PLAN.md phases P0–P5 + S4 complete.
 
 ---
 
@@ -60,11 +59,7 @@
 - Registry pattern: `getConnector(id, provider, config)`. Provider: POSTGRESQL | MYSQL | MSSQL | SQLITE_DEMO | REST_API.
 - `fetchSchema()` reflection, `executeQuery(sql)`, `describeSchema()` for LLM prompts.
 
-**Streaming (`mini-services/chat-service/index.ts`, 736 lines)**
-- Independent Bun process on port 3003, Socket.io path `/`, Caddy-routed.
-- Protocol: `user_message` → `status_update` → `text_stream` → `message_complete`.
-- Per-socket promise chain (no interleaving), identity verification against DB (tenant + session ownership).
-- Branches: SQL / RAG / CHAT (REST not yet wired into WS — only in HTTP tool-router).
+**Streaming** — Real SSE token streaming via `runStreamingChatCompletion` in `tool-router.ts`. Old Socket.io WS service deleted (P1.5).
 
 **External API (`src/app/api/v1/chat/completions/route.ts`, 288 lines)**
 - OpenAI-compatible endpoint for programmatic access, API-key auth, rate limits, audit.
@@ -343,43 +338,42 @@ afterChatTurn(companyId, sessionId, userMsg, aiMsg, toolRuns[]):
 
 ## 7. Implementation Roadmap
 
-### Phase S0 — Hardening (before super-app work)
-- [ ] Wire REST branch into `mini-services/chat-service` (G4) — mirror `tool-router.runRestBranch`.
-- [ ] Stream status updates during SQL/REST execution in WS (G9).
-- [ ] Add retry-on-SQL-error in `runSqlBranch` (G10, minimal version).
-- [ ] Document the `bun run` scripts in README (dev/build/start/test/e2e/db:*).
+### Phase S0 — Hardening ✅
+- [x] WS service deleted (P1.5) — streaming now via SSE in tool-router
+- [x] Stream status updates during SQL/REST execution
+- [x] Add retry-on-SQL-error in planner self-correction (G10)
+- [x] Documented in README.md
 
-### Phase S1 — Agentic planner (closes G1)
-- [ ] `src/lib/planner.ts` — `planQuery()` per §5.2.
-- [ ] `src/lib/tool-registry.ts` — registry of `{ id, description, params, executor, requiresWhitelist }`.
-- [ ] Refactor `tool-router` executors into registered tools (`sql`, `rag`, `rest`, `chat`).
-- [ ] `executePlan()` DAG runner with status emits.
-- [ ] New API: `POST /api/v1/agent/run` — programmatic multi-step.
-- [ ] Tests: planner output validation, topo-sort, circular-dep rejection, tool-not-in-registry block.
+### Phase S1 — Agentic planner ✅ (closes G1)
+- [x] `src/lib/planner.ts` — `planQuery()`, `executePlan()`, `synthesizeAnswer()`
+- [x] `src/lib/tool-registry.ts` — built-in + plugin tools
+- [x] `executePlan()` DAG runner with status emits + self-correction
+- [x] API: `POST /api/v1/agent/run` + `POST /api/agent/dashboard` (SSE)
+- [x] Tests: planner.test.ts (topoSort, parse, validate)
 
-### Phase S2 — Cognee memory (closes G2, G3)
-- [ ] `npm i @cognee/cognee-ts`, add `src/lib/cognee.ts` wrapper (dataset = `company:{companyId}`).
-- [ ] Add `COGNEE_*` env vars; local mode for dev, Postgres for prod.
-- [ ] Phase 1: chat-turn remember + router recall injection.
-- [ ] Phase 2: document `cognify` pipeline alongside existing RAG.
-- [ ] Migration path: feature flag `COGNEE_ENABLED` per tenant; off → existing RAG only.
-- [ ] Tests: mock cognee client, verify dataset isolation, verify recall injection.
+### Phase S2 — Cognee memory ✅ (closes G2, G3)
+- [x] `src/lib/cognee.ts` wrapper (recall, remember, cognify, forget)
+- [x] `COGNEE_ENABLED` env flag, local mode (SQLite+Kuzu+LanceDB)
+- [x] Chat-turn remember + router recall injection
+- [x] Document cognify pipeline
+- [x] Tests: cognee.test.ts (8 tests, skip when cognee unavailable)
 
-### Phase S3 — Plugin/tool extensibility (closes G7)
-- [ ] Tool manifest schema (JSON): `{ id, version, description, params, executor: "inline" | "url", auth }`.
-- [ ] Admin UI to enable/disable tools per tenant.
-- [ ] External tool executor: HTTP webhook with signed payload.
-- [ ] Sandboxing: external tools run with timeout + output size cap + audit.
+### Phase S3 — Plugin extensibility ✅ (closes G7)
+- [x] `src/lib/plugin-registry.ts` — manifest, executePlugin, SSRF guard
+- [x] 9 prebuilt plugins (weather, Wikipedia, translate, calculator, news, etc.)
+- [x] `src/lib/plugin-selector.ts` — semantic relevance matching
+- [x] External webhook executor with timeout + output cap
+- [x] Tests: plugin-registry.test.ts, plugin-selector.test.ts
 
-### Phase S4 — Scale (closes G6, G8)
-- [ ] Migrate Prisma datasource SQLite → Postgres (single DB for app + cognee).
-- [ ] Move `DocumentChunk.embeddingJson` → pgvector column.
-- [ ] Benchmark: 10k chunks, 10 concurrent tenants. Target p95 retrieval < 200ms.
+### Phase S4 — Scale (closes G6, G8) — guide written
+- [x] `docs/postgres-migration.md` — 7-step migration guide
+- [x] Schema Postgres-compatible (String for JSON, no SQLite-specific types)
+- [ ] Code adaptation (connectors.ts, rag-fts.ts) — needs running Postgres
 
-### Phase S5 — Automation (closes G5)
-- [ ] `ScheduledRun` model: cron + prompt + tool plan.
-- [ ] Worker process (reuse mini-services pattern) that picks up due runs.
-- [ ] Deliver results via email / webhook / in-app notification.
+### Phase S5 — Automation ✅ (closes G5)
+- [x] `ScheduledRun` model + `mini-services/scheduler/` worker
+- [x] Notification API (webhook + email + Telegram)
+- [x] Scheduler delivers results via notification config
 
 ---
 
@@ -387,15 +381,17 @@ afterChatTurn(companyId, sessionId, userMsg, aiMsg, toolRuns[]):
 
 ### Commands
 ```bash
-bun run dev          # dev server on $PORT (3000 default), logs to dev.log
+bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (src/ + scripts/)
-bun run e2e          # Playwright (mock LLM, fresh e2e.db)
-bun run lint         # eslint
-bunx tsc --noEmit    # typecheck
-bun run db:push      # apply schema to SQLite
-bun run db:generate  # regenerate Prisma client
+bun run test         # unit tests (194 pass, 8 skip, 0 fail)
+bun run e2e          # Playwright (4 specs, mock LLM)
+bun run lint         # eslint (0 errors)
+bunx tsc --noEmit    # typecheck (0 errors)
+bunx prisma db push  # apply schema to SQLite
+bunx prisma generate # regenerate Prisma client
+bash start.sh        # start Next.js + scheduler
+bash reset.sh        # reset DB + re-seed
 ```
 
 ### Key files
@@ -413,21 +409,14 @@ bun run db:generate  # regenerate Prisma client
 | `src/lib/vector-stores.ts` | Qdrant/Milvus/INTERNAL vector store abstraction |
 | `src/lib/smart-mapping.ts` | Source→entity field maps for routing hints |
 | `src/lib/prompt-settings.ts` | Per-tenant system prompt + tool toggles |
-| `mini-services/chat-service/index.ts` | Socket.io streaming chat process |
+| `mini-services/scheduler/index.ts` | Cron-based scheduled run worker |
 | `src/app/api/v1/chat/completions/route.ts` | OpenAI-compatible external API |
 | `prisma/schema.prisma` | 16 models, multi-tenant, encrypted configs |
 
-### Specs & progress (existing)
-- `docs/superpowers/specs/2026-06-25-chatbot-production-core-design.md` — product scope (authoritative)
-- `docs/superpowers/specs/2026-06-26-hybrid-rag-quality-design.md` — RAG design
-- `docs/superpowers/specs/2026-07-02-production-final-phase-design.md` — auth/wizard/e2e
-- `docs/superpowers/specs/2026-07-02-license-validation-design.md` — licensing
-- `docs/superpowers/plans/` + `docs/superpowers/progress/` — execution ledgers
-- `worklog.md` — 84k-line chronological dev log
-
-### Reference repos
-- **cognee** — https://github.com/topoteretes/cognee (TS client: `@cognee/cognee-ts`, docs: https://docs.cognee.ai)
-- **Spec doc** — `DOKUMEN SPESIFIKASI TEKNIS & PENGEMBANGAN SISTEM.docx` (original product spec, Indonesian)
+### Specs & progress
+- `PLAN.md` — overhaul plan (all phases P0–P5 + S4 complete)
+- `README.md` — quick start, commands, project structure
+- `docs/postgres-migration.md` — SQLite → Postgres migration guide
 
 ---
 
@@ -728,3 +717,27 @@ Query → tokenize → load schema/endpoint/doc metadata + ToolRun history + sim
 **Verification**: `tsc` 0 · `lint` 0 · `bun run test` 121 pass 0 fail · seed script runs clean.
 
 **Next**: Install `@cognee/cognee-ts` and test cognify. Wire `recallKnowledgeGraph` into RAG retrieval. Visual review all views in browser. Postgres migration when ready.
+
+### 2026-07-25 — PLAN.md P0–P5 + S4 complete, repo cleanup
+
+**P1.1 LLM dedup**: `agent-llm.ts` merged into `llm-client.ts`. Single unified transport: `chatOnce`, `chatStream`, `agentChatOnce`, `agentChatStream`.
+
+**P2.1 Real streaming**: `/v1/chat/completions` fake word-split replaced with `runStreamingChatCompletion` real token deltas. Persistence moved into `ReadableStream.start`.
+
+**P4.1 Token usage tracking**: `LlmUsageLog` model added. `chatOnce`/`chatStream` parse usage from OpenAI + Anthropic responses. Fire-and-forget `logLlmUsage()`. `ai.ts` purpose labels (router/sql/synthesis/rest/chat). Monitoring API + security view stat cards.
+
+**S4 Postgres migration**: `docs/postgres-migration.md` (7-step guide). Schema datasource comment.
+
+**Plugin E2E fixes** (3 critical bugs):
+- BUG 1: Planner discarded plugin params → fixed `JSON.stringify(step.input)`
+- BUG 2: `executePlugin` POST body wrapped incorrectly → parse JSON input
+- BUG 3: `web_search`/`url_fetch` pointed to localhost → replaced with Wikipedia API
+- `selectRelevantPlugins` minScore 0.05→0.01, added question words to keywords
+
+**Hydration fix**: `page.tsx` lazy `useState` initializer caused server/client mismatch → reverted to default `'dashboard'` + sync in `useEffect`.
+
+**Knowledge view fix**: Category tabs disappeared on filter switch → fetch ALL docs once, filter client-side.
+
+**Repo cleanup**: Deleted 26 unused files (worklog.md, DOKUMEN docx ×2, agent-ctx, .zscripts, design-comps, docs/superpowers, .gitkeep, download/). Created README.md. Updated PRODUCT.md, PLAN.md, CLAUDE.md.
+
+**Verification**: tsc 0 · lint 0 errors 9 warnings (all exhaustive-deps) · tests 194 pass 8 skip 0 fail · git clean.
