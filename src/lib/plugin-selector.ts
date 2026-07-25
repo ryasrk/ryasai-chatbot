@@ -53,7 +53,7 @@ function phraseMatch(queryTokens: string[], keywords: string[]): number {
 
 function categoryBoost(queryTokens: string[], category: string, subcategory: string): number {
   const categoryKeywords: Record<string, string[]> = {
-    'utility': ['cuaca', 'weather', 'tanggal', 'date', 'time', 'waktu', 'jam', 'timezone', 'zona', 'translate', 'terjemah', 'calculate', 'hitung', 'kalkulator', 'math', 'berita', 'news', 'documentation', 'doc', 'syntax', 'code', 'search'],
+    'utility': ['cuaca', 'weather', 'tanggal', 'date', 'time', 'waktu', 'jam', 'timezone', 'zona', 'translate', 'terjemah', 'calculate', 'hitung', 'kalkulator', 'math', 'berita', 'news', 'documentation', 'doc', 'syntax', 'code', 'search', 'siapa', 'who', 'apa', 'what', 'dimana', 'where', 'kapan', 'when', 'kenapa', 'why', 'bagaimana', 'how', 'biography', 'biografi', 'person', 'tokoh', 'sejarah', 'history'],
     'business_intelligence': ['saham', 'stock', 'crypto', 'kripto', 'bitcoin', 'harga', 'kurs', 'nilai', 'tukar', 'exchange', 'rate', 'berita', 'news', 'finance', 'keuangan', 'market', 'pasar', 'ekonomi', 'economy'],
     'productivity': ['email', 'mail', 'surat', 'task', 'tugas', 'calendar', 'kalender', 'jadwal', 'schedule', 'dokumen', 'document', 'pdf', 'sheet', 'spreadsheet', 'notion'],
     'communication': ['slack', 'telegram', 'whatsapp', 'discord', 'chat', 'message', 'pesan', 'kirim', 'send', 'notify', 'notifikasi', 'broadcast'],
@@ -85,8 +85,8 @@ function categoryBoost(queryTokens: string[], category: string, subcategory: str
     'weather': ['cuaca', 'weather', 'suhu', 'temperature', 'hujan', 'rain', 'forecast', 'prakiraan', 'angin', 'wind'],
     'datetime': ['tanggal', 'date', 'time', 'waktu', 'jam', 'now', 'sekarang', 'current'],
     'timezone': ['timezone', 'zona', 'waktu', 'utc', 'offset', 'dst', 'daylight', 'country'],
-    'web_search': ['search', 'cari', 'web', 'internet', 'wikipedia', 'definition', 'definisi', 'apa', 'itu', 'meaning', 'artinya', 'hacker', 'news'],
-    'web_fetch': ['fetch', 'url', 'link', 'read', 'baca', 'content', 'konten', 'page', 'halaman', 'extract', 'scrape'],
+    'web_search': ['search', 'cari', 'web', 'internet', 'wikipedia', 'definition', 'definisi', 'apa', 'itu', 'meaning', 'artinya', 'news', 'siapa', 'who', 'tokoh', 'person', 'sejarah', 'history', 'presiden'],
+    'web_fetch': ['fetch', 'url', 'link', 'read', 'baca', 'content', 'konten', 'page', 'halaman', 'extract', 'scrape', 'biography', 'biografi', 'siapa', 'who', 'person', 'tokoh', 'detail', 'info'],
   }
 
   let boost = 0
@@ -107,7 +107,7 @@ export async function selectRelevantPlugins(args: {
   minScore?: number
 }): Promise<ScoredPlugin[]> {
   const topK = args.topK ?? 5
-  const minScore = args.minScore ?? 0.05
+  const minScore = args.minScore ?? 0.01
 
   const plugins = await db.plugin.findMany({
     where: { isEnabled: true },

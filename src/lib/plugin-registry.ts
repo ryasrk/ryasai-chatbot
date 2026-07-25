@@ -174,10 +174,20 @@ export async function executePlugin(args: {
 
   const started = Date.now()
   try {
+    let bodyStr: string | undefined
+    if (hasBody && args.input) {
+      try {
+        bodyStr = JSON.stringify(JSON.parse(args.input))
+      } catch {
+        bodyStr = JSON.stringify({ input: args.input })
+      }
+    } else if (hasBody) {
+      bodyStr = JSON.stringify({})
+    }
     const response = await fetch(url, {
       method: manifest.method,
       headers,
-      body: hasBody ? JSON.stringify({ input: args.input }) : undefined,
+      body: bodyStr,
       signal: AbortSignal.timeout(manifest.timeoutMs || 15000),
     })
     const output = (await response.text()).slice(0, 8000)

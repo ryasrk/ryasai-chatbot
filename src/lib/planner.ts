@@ -283,7 +283,7 @@ export async function executePlan(args: {
           args.onStatus?.(step.id, step.tool, 'error')
           continue
         }
-        const input = step.input.question ?? step.input.query ?? step.input.message ?? step.input.input ?? ''
+        const input = JSON.stringify(step.input)
         const result = await executePlugin({ plugin, input })
         results.push({
           stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
@@ -393,8 +393,9 @@ export async function synthesizeAnswer(args: {
     return 'Maaf, tidak ada langkah yang berhasil dijalankan.'
   }
 
-  // Single successful step or no synthesis needed → return its output directly.
-  if (!args.plan.needsSynthesis || successful.length === 1) {
+  const hasPluginStep = args.plan.steps.some((s) => s.tool.startsWith('plugin:'))
+
+  if (!args.plan.needsSynthesis && successful.length === 1 && !hasPluginStep) {
     return successful[0].output
   }
 
