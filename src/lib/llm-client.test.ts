@@ -1,5 +1,5 @@
 import { describe, expect, test, mock, afterEach } from 'bun:test'
-import { chatOnce, chatStream, chatOnceResponses } from './llm-client'
+import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop } from './llm-client'
 import type { LlmRuntimeConfig } from './llm-config'
 
 const originalFetch = global.fetch
@@ -386,5 +386,249 @@ describe('chatOnceResponses', () => {
     const body = JSON.parse(sentInit.body as string)
     expect(Array.isArray(body.input)).toBe(true)
     expect(body.input[0].content).toBe('hello')
+  })
+
+  test('multiAgent.enabled → adds multi_agent + betas + OpenAI-Beta header', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ id: 'resp_ma', output_text: 'done' })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnceResponses(openaiCfg, 'research X', {
+      multiAgent: { enabled: true, maxConcurrentSubagents: 5 },
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.multi_agent).toEqual({ enabled: true, max_concurrent_subagents: 5 })
+    expect(body.betas).toEqual(['responses_multi_agent=v1'])
+    const headers = init.headers as Record<string, string>
+    expect(headers['OpenAI-Beta']).toBe('responses_multi_agent=v1')
+  })
+
+  test('multiAgent.enabled with default → max_concurrent_subagents defaults to 3', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ id: 'resp_ma2', output_text: 'done' })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnceResponses(openaiCfg, 'research X', {
+      multiAgent: { enabled: true },
+    })
+
+    const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    const body = JSON.parse(sentInit.body as string)
+    expect(body.multi_agent.max_concurrent_subagents).toBe(3)
+  })
+
+  test('programmaticToolCalling → adds programmatic_tool_calling to tools array', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ id: 'resp_pt', output_text: 'done' })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnceResponses(openaiCfg, 'compute', {
+      tools: [{
+        type: 'function',
+        function: { name: 'add', description: 'add numbers', parameters: { type: 'object' } },
+      }],
+      programmaticToolCalling: true,
+    })
+
+    const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    const body = JSON.parse(sentInit.body as string)
+    expect(body.tools).toContainEqual({ type: 'programmatic_tool_calling' })
+    expect(body.tools).toHaveLength(2)
+  })
+
+  test('allowed_callers + output_schema on tool def → passed to request body', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ id: 'resp_ac', output_text: 'done' })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnceResponses(openaiCfg, 'search', {
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'search',
+          description: 'search the web',
+          parameters: { type: 'object' },
+          allowed_callers: ['direct', 'programmatic'],
+          output_schema: { type: 'string' },
+        },
+      }],
+    })
+
+    const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    const body = JSON.parse(sentInit.body as string)
+    expect(body.tools[0].function.allowed_callers).toEqual(['direct', 'programmatic'])
+    expect(body.tools[0].function.output_schema).toEqual({ type: 'string' })
+  })
+
+  test('parses multi_agent_call + program_output + function_call from output', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({
+        id: 'resp_parse',
+        output_text: 'final answer',
+        output: [
+          { type: 'multi_agent_call', action: 'spawn_agent', agent_name: 'researcher', task_message: 'find X' },
+          { type: 'function_call', call_id: 'call_1', name: 'search', arguments: '{"q":"X"}' },
+          { type: 'program_output', output: 'computed result' },
+          { type: 'message', content: [{ type: 'output_text', text: 'final answer' }] },
+        ],
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnceResponses(openaiCfg, 'do research', {
+      multiAgent: { enabled: true },
+      programmaticToolCalling: true,
+    })
+
+    expect(out.text).toBe('final answer')
+    expect(out.multiAgentCalls).toEqual([{ type: 'spawn_agent', agentName: 'researcher', taskMessage: 'find X' }])
+    expect(out.toolCalls).toEqual([{ id: 'call_1', name: 'search', arguments: '{"q":"X"}' }])
+    expect(out.programOutput).toBe('computed result')
+  })
+
+  test('Anthropic + multiAgent → throws clear error', async () => {
+    await expect(
+      chatOnceResponses(anthropicCfg, 'test', { multiAgent: { enabled: true } }),
+    ).rejects.toThrow('OpenAI-only')
+  })
+
+  test('Anthropic + programmaticToolCalling → throws clear error', async () => {
+    await expect(
+      chatOnceResponses(anthropicCfg, 'test', { programmaticToolCalling: true }),
+    ).rejects.toThrow('OpenAI-only')
+  })
+
+  test('Anthropic without beta features → does not throw OpenAI-only error', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ id: 'resp_anth', output_text: 'ok' })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnceResponses(anthropicCfg, 'hi')
+    expect(out.text).toBe('ok')
+  })
+})
+
+describe('runMultiAgentLoop', () => {
+  test('executes tool calls and continues until final answer', async () => {
+    let callCount = 0
+    global.fetch = mock(() => {
+      callCount++
+      if (callCount === 1) {
+        return Promise.resolve(jsonResponse({
+          id: 'resp_round1',
+          output: [
+            { type: 'function_call', call_id: 'call_1', name: 'search', arguments: '{"q":"X"}' },
+          ],
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        }))
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'resp_round2',
+        output_text: 'final answer based on search results',
+        usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      }))
+    }) as unknown as typeof fetch
+
+    const result = await runMultiAgentLoop({
+      cfg: openaiCfg,
+      input: 'search for X',
+      tools: [{ type: 'function', function: { name: 'search', description: 'search', parameters: { type: 'object' } } }],
+      toolExecutor: async () => 'search results for X',
+    })
+
+    expect(result.text).toBe('final answer based on search results')
+    expect(result.totalUsage?.totalTokens).toBe(45)
+    expect(callCount).toBe(2)
+  })
+
+  test('no tool calls → returns immediately after first round', async () => {
+    let callCount = 0
+    global.fetch = mock(() => {
+      callCount++
+      return Promise.resolve(jsonResponse({
+        id: 'resp_direct',
+        output_text: 'no tools needed',
+        usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+      }))
+    }) as unknown as typeof fetch
+
+    const result = await runMultiAgentLoop({
+      cfg: openaiCfg,
+      input: 'say hi',
+      tools: [],
+      toolExecutor: async () => '',
+    })
+
+    expect(result.text).toBe('no tools needed')
+    expect(result.totalUsage?.totalTokens).toBe(8)
+    expect(callCount).toBe(1)
+  })
+
+  test('toolExecutor error → error string sent as output, loop continues', async () => {
+    let callCount = 0
+    global.fetch = mock(() => {
+      callCount++
+      if (callCount === 1) {
+        return Promise.resolve(jsonResponse({
+          id: 'resp_err1',
+          output: [
+            { type: 'function_call', call_id: 'call_1', name: 'fail', arguments: '{}' },
+          ],
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        }))
+      }
+      return Promise.resolve(jsonResponse({
+        id: 'resp_err2',
+        output_text: 'recovered from error',
+        usage: { input_tokens: 15, output_tokens: 8, total_tokens: 23 },
+      }))
+    }) as unknown as typeof fetch
+
+    const result = await runMultiAgentLoop({
+      cfg: openaiCfg,
+      input: 'do something',
+      tools: [{ type: 'function', function: { name: 'fail', description: 'fails', parameters: { type: 'object' } } }],
+      toolExecutor: async () => { throw new Error('tool broke') },
+    })
+
+    expect(result.text).toBe('recovered from error')
+    expect(callCount).toBe(2)
+    // Verify the error was sent as function_call_output in round 2's input
+    const calls = (global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls
+    const body = JSON.parse(calls[1][1].body as string)
+    expect(body.input[0].output).toContain('tool broke')
+  })
+
+  test('maxRounds exceeded → returns empty text', async () => {
+    let callCount = 0
+    global.fetch = mock(() => {
+      callCount++
+      return Promise.resolve(jsonResponse({
+        id: `resp_${callCount}`,
+        output: [
+          { type: 'function_call', call_id: `call_${callCount}`, name: 'loop', arguments: '{}' },
+        ],
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      }))
+    }) as unknown as typeof fetch
+
+    const result = await runMultiAgentLoop({
+      cfg: openaiCfg,
+      input: 'loop forever',
+      tools: [{ type: 'function', function: { name: 'loop', description: 'loops', parameters: { type: 'object' } } }],
+      toolExecutor: async () => 'result',
+      maxRounds: 3,
+    })
+
+    expect(result.text).toBe('')
+    expect(callCount).toBe(3)
   })
 })
