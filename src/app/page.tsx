@@ -89,9 +89,7 @@ function renderView(view: ViewKey) {
 }
 
 export default function Home() {
-  const [view, setViewState] = useState<ViewKey>(() =>
-    typeof window !== 'undefined' ? resolveViewFromSearch(window.location.search) : 'dashboard',
-  )
+  const [view, setViewState] = useState<ViewKey>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
   const { user, loading, unauthorized, refresh } = useActiveUser()
 
@@ -109,6 +107,8 @@ export default function Home() {
 
   useEffect(() => {
     applyTheme(getStoredTheme(), getStoredDarkMode())
+    const fromUrl = resolveViewFromSearch(window.location.search)
+    setViewState((prev) => (prev === fromUrl ? prev : fromUrl))
     const onPop = () => setViewState(resolveViewFromSearch(window.location.search))
     window.addEventListener('popstate', onPop)
     const onNavigate = (e: Event) => {
