@@ -23,7 +23,7 @@ const POLL_INTERVAL_SEC =
 const RUN_TIMEOUT_MS = 60_000
 
 let running = true
-let pollCount = 0
+let lastCleanupDay = ''
 
 // ---------------------------------------------------------------------------
 // Timeout helper — races a promise against a timer, clears the timer on
@@ -44,12 +44,21 @@ async function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T
 
 // ---------------------------------------------------------------------------
 // Log retention — prune observability tables older than LOG_RETENTION_DAYS.
-// Runs once on startup (first poll) and every 24 polls thereafter.
+// Runs once per day at the first poll after midnight (cron equivalent: 0 0 * * *).
 // ---------------------------------------------------------------------------
 
 async function cleanupOldLogs(): Promise<void> {
   const days = serverConfig.logRetentionDays
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+  const names = [
+    'AuditLog',
+    'ApiRequestLog',
+    'RestApiRequestLog',
+    'ToolRun',
+    'QueryHistory',
+    'LlmUsageLog',
+    'AgentRun',
+  ]
   try {
     const result = await Promise.allSettled([
       db.auditLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
@@ -57,14 +66,14 @@ async function cleanupOldLogs(): Promise<void> {
       db.restApiRequestLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
       db.toolRun.deleteMany({ where: { createdAt: { lt: cutoff } } }),
       db.queryHistory.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      db.llmUsageLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
       db.agentRun.deleteMany({ where: { createdAt: { lt: cutoff } } }),
     ])
-    const totalDeleted = result.reduce(
-      (sum, r) => sum + (r.status === 'fulfilled' ? r.value.count : 0),
-      0,
-    )
-    if (totalDeleted > 0)
-      console.log(`[scheduler] Cleaned up ${totalDeleted} old log rows (>${days}d)`)
+    for (let i = 0; i < result.length; i++) {
+      const r = result[i]
+      if (r.status === 'fulfilled' && r.value.count > 0)
+        console.log(`[scheduler] cleanup ${names[i]}: ${r.value.count} rows (>${days}d)`)
+    }
   } catch (e) {
     console.warn('[scheduler] Log cleanup failed:', e)
   }
@@ -75,9 +84,12 @@ async function cleanupOldLogs(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function poll(): Promise<void> {
-  if (pollCount % 24 === 0) await cleanupOldLogs()
-  pollCount++
   const now = new Date()
+  const today = now.toDateString()
+  if (today !== lastCleanupDay) {
+    lastCleanupDay = today
+    await cleanupOldLogs()
+  }
 
   // 1) Execute runs that are due (nextRunAt <= now).
   let due: Awaited<ReturnType<typeof db.scheduledRun.findMany>>

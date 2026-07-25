@@ -76,6 +76,7 @@ export async function writeAudit(args: {
       },
     })
   } catch (e) {
+    // ponytail: critical throws (fail-closed — can't audit a security block → don't proceed), info/warning swallowed (non-critical).
     if (severity === 'critical') throw e
     console.error('[audit] failed to write log:', e)
   }

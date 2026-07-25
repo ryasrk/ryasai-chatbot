@@ -1,0 +1,1990 @@
+openapi: 3.1.0
+info:
+  title: ryasai Chatbot API
+  description: |
+    Self-hosted enterprise AI assistant API. Routes natural-language questions to
+    the right tool — SQL queries, document RAG, REST API calls, external plugins,
+    or general chat — with security guardrails and streaming responses.
+
+    ## Authentication
+
+    Two authentication schemes are used:
+
+    - **API Key (Bearer)** — for the external-facing `/api/v1/*` endpoints (chat
+      completions, agent run). Generate keys via the admin UI (Settings >
+      Integration API > API Keys) and pass as `Authorization: Bearer <key>`.
+    - **Session Cookie** — for the admin/management API (`/api/chat/*`,
+      `/api/integrations/*`, etc.). Obtain a session by calling
+      `POST /api/auth/login`; the response sets an `x-active-user` httpOnly cookie
+      that must be included in subsequent requests.
+
+    ## Streaming
+
+    Endpoints that return `text/event-stream` use Server-Sent Events (SSE).
+    Each event has a named `event:` line and a JSON `data:` line. Streams
+    terminate with a final event (e.g. `done` or `data: [DONE]`).
+  version: 1.0.0
+  contact:
+    name: ryasai
+    url: https://ryas.ai
+  license:
+    name: Proprietary
+    url: https://ryas.ai
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://chatbot.example.com
+    description: Production (replace with your domain)
+
+tags:
+  - name: External API
+    description: OpenAI-compatible and agentic endpoints for programmatic integration (API key auth)
+  - name: Auth
+    description: Login, logout, and session management
+  - name: Chat
+    description: Chat sessions, messages, and streaming responses
+  - name: Integrations
+    description: Database integrations and natural-language SQL queries
+  - name: Knowledge
+    description: Document upload and management for RAG
+  - name: Plugins
+    description: Custom webhook tool registry
+  - name: MCP
+    description: Model Context Protocol server management
+  - name: Notifications
+    description: Notification channel configuration (webhook, email, Telegram)
+  - name: Schedules
+    description: Cron-based automated runs
+  - name: Monitoring
+    description: Observability, traces, and metrics
+  - name: API Keys
+    description: API key management for external access
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: "API key obtained from Settings > Integration API. Pass as `Authorization: Bearer <key>`."
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: x-active-user
+      description: HMAC-signed httpOnly session cookie obtained via POST /api/auth/login.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: Email atau password salah.
+
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        service:
+          type: string
+          example: ryasai
+        version:
+          type: string
+          example: 2.0.0
+        time:
+          type: string
+          format: date-time
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@ryas.ai
+        password:
+          type: string
+          format: password
+          example: admin12345
+
+    LoginResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        user:
+          type: object
+          properties:
+            userId:
+              type: string
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+          example: user
+        content:
+          type: string
+          example: What were total sales last month?
+
+    ChatCompletionRequest:
+      type: object
+      required: [messages]
+      properties:
+        model:
+          type: string
+          description: Model identifier (optional, defaults to the configured tenant model).
+          example: default
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          description: Conversation messages. Must contain at least one role=user message.
+        stream:
+          type: boolean
+          default: false
+          description: If true, returns SSE stream of chat.completion.chunk events. If false, returns a single JSON response.
+        session_id:
+          type: string
+          description: Existing chat session ID to append to. If omitted, a new session is created.
+
+    ToolRun:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SQL, RAG, REST_API, CHAT]
+          example: SQL
+        status:
+          type: string
+          enum: [success, error, blocked]
+          example: success
+        latency_ms:
+          type: integer
+          nullable: true
+          example: 340
+        rest_api_endpoint_id:
+          type: string
+          nullable: true
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: chatcmpl_abc123
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+          description: Unix timestamp (seconds).
+          example: 1721900000
+        model:
+          type: string
+          example: default
+        session_id:
+          type: string
+          description: The chat session ID (use for follow-up requests).
+        answer:
+          type: string
+          description: The assistant's answer text.
+          example: Total sales last month were Rp 1.2B across 3,400 transactions.
+        citations:
+          type: array
+          items:
+            type: object
+          description: Source citations (document references, SQL results, etc.).
+        chart_data:
+          description: Chart data payload if the answer includes a visualization (object or null).
+        tool_runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolRun'
+
+    ChatCompletionChunk:
+      type: object
+      description: SSE event payload for streaming responses.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion.chunk
+        created:
+          type: integer
+        model:
+          type: string
+        session_id:
+          type: string
+          description: Present on the final chunk (finish_reason=stop).
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              delta:
+                type: object
+                properties:
+                  content:
+                    type: string
+                    description: Token text (absent on final chunk).
+              finish_reason:
+                type: string
+                nullable: true
+                enum: [stop, null]
+        citations:
+          type: array
+          items:
+            type: object
+          description: Present on the final chunk only.
+        chart_data:
+          description: Present on the final chunk only.
+        tool_runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolRun'
+          description: Present on the final chunk only.
+
+    PlanStep:
+      type: object
+      properties:
+        id:
+          type: string
+        tool:
+          type: string
+          description: Tool identifier from the registry (sql, rag, rest, chat, or plugin:*).
+          example: sql
+        input:
+          description: Input for the tool step (string or object).
+        dependsOn:
+          type: array
+          items:
+            type: string
+          description: IDs of steps whose output is needed as input for this step.
+
+    Plan:
+      type: object
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanStep'
+        needsSynthesis:
+          type: boolean
+          description: Whether a final synthesis step combines all step outputs.
+
+    StepResult:
+      type: object
+      properties:
+        id:
+          type: string
+        tool:
+          type: string
+        ok:
+          type: boolean
+        output:
+          description: Tool output (string, object, or array).
+        latencyMs:
+          type: integer
+        error:
+          type: string
+          nullable: true
+
+    AgentRunRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          description: The user's question for multi-step agentic execution.
+          example: Compare last month's sales with the SOP for handling returns.
+        sessionId:
+          type: string
+          description: Optional chat session ID for context continuity.
+
+    AgentRunResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        agentRunId:
+          type: string
+        answer:
+          type: string
+          description: The synthesized answer combining all step outputs.
+        plan:
+          $ref: '#/components/schemas/Plan'
+        stepResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/StepResult'
+
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          example: Sales analysis Q2
+        userId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        _count:
+          type: object
+          properties:
+            messages:
+              type: integer
+
+    ChatSessionDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        userId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessageRow'
+
+    ChatMessageRow:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        sender:
+          type: string
+          enum: [user, ai]
+        text:
+          type: string
+        status:
+          type: string
+          enum: [complete, error]
+        citations:
+          description: Parsed citations object or null.
+        chartData:
+          description: Parsed chart data object or null.
+        integration:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            provider:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SendMessageRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The user's message text.
+          example: Show me the top 5 products by revenue.
+        integrationId:
+          type: string
+          description: Optional integration ID to scope the query to a specific database.
+        timezone:
+          type: string
+          description: IANA timezone for temporal reference resolution.
+          example: Asia/Jakarta
+
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: ERP Production
+        type:
+          type: string
+          example: DATABASE
+        provider:
+          type: string
+          enum: [POSTGRESQL, MYSQL, MSSQL, SQLITE_DEMO]
+          example: POSTGRESQL
+        status:
+          type: string
+          enum: [active, inactive]
+          example: active
+        lastTestedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastTestOk:
+          type: boolean
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        tableCount:
+          type: integer
+          description: Number of reflected tables in the schema cache.
+
+    CreateIntegrationRequest:
+      type: object
+      required: [name, type, provider, config]
+      properties:
+        name:
+          type: string
+          example: ERP Production
+        type:
+          type: string
+          example: DATABASE
+          description: Must be DATABASE. REST API connectors use a separate endpoint.
+        provider:
+          type: string
+          enum: [POSTGRESQL, MYSQL, MSSQL, SQLITE_DEMO]
+        config:
+          type: object
+          description: Connection parameters (encrypted at rest with AES-256-GCM).
+          properties:
+            host:
+              type: string
+              example: db.internal
+            port:
+              type: integer
+              example: 5432
+            username:
+              type: string
+            password:
+              type: string
+            database_name:
+              type: string
+
+    NaturalQueryRequest:
+      type: object
+      required: [naturalQuery]
+      properties:
+        naturalQuery:
+          type: string
+          description: Natural-language question to convert to SQL and execute.
+          example: What were total sales by region last quarter?
+
+    NaturalQueryResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        sql:
+          type: string
+          description: The sanitized SQL that was executed.
+          example: SELECT region, SUM(total) FROM sales WHERE quarter = 'Q2' LIMIT 100
+        explanation:
+          type: string
+          description: LLM-generated explanation of the query.
+        rows:
+          type: array
+          items:
+            type: object
+          description: Query result rows (max 100).
+        rowCount:
+          type: integer
+          example: 5
+        executionMs:
+          type: integer
+          example: 42
+
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: returns-policy.pdf
+        type:
+          type: string
+          example: pdf
+        sizeBytes:
+          type: integer
+          example: 245630
+        mimeType:
+          type: string
+          example: application/pdf
+        status:
+          type: string
+          enum: [ready, processing, error]
+          example: ready
+        isEnabled:
+          type: boolean
+          example: true
+        category:
+          type: string
+          example: Policies
+        description:
+          type: string
+        cognifyStatus:
+          type: string
+          nullable: true
+          description: Cognee knowledge graph processing status (if cognee enabled).
+        createdAt:
+          type: string
+          format: date-time
+        chunkCount:
+          type: integer
+          example: 12
+
+    Plugin:
+      type: object
+      properties:
+        id:
+          type: string
+        toolId:
+          type: string
+          example: weather
+        name:
+          type: string
+          example: Weather Lookup
+        description:
+          type: string
+        manifest:
+          type: object
+          description: Masked plugin manifest (credentials redacted).
+          properties:
+            url:
+              type: string
+            method:
+              type: string
+              enum: [GET, POST]
+            authType:
+              type: string
+              enum: [NONE, BEARER, API_KEY, BASIC]
+        isEnabled:
+          type: boolean
+        category:
+          type: string
+          example: general
+        subcategory:
+          type: string
+          nullable: true
+        keywords:
+          type: string
+          example: weather,temperature,forecast
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreatePluginRequest:
+      type: object
+      required: [toolId, name, manifest]
+      properties:
+        toolId:
+          type: string
+          description: Unique tool identifier (used by the planner as a stable key).
+          example: weather
+        name:
+          type: string
+        description:
+          type: string
+        manifest:
+          type: object
+          description: Plugin manifest defining the webhook endpoint and auth.
+          properties:
+            url:
+              type: string
+              example: https://api.open-meteo.com/v1/forecast
+            method:
+              type: string
+              enum: [GET, POST]
+            authType:
+              type: string
+              enum: [NONE, BEARER, API_KEY, BASIC]
+            authCredentials:
+              type: object
+              description: Credentials (encrypted at rest with AES-256-GCM).
+        category:
+          type: string
+          default: general
+        keywords:
+          type: string
+          description: Comma-separated keywords for semantic plugin matching.
+
+    McpServer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: filesystem-tools
+        description:
+          type: string
+        transport:
+          type: string
+          enum: [stdio, sse, http]
+          example: sse
+        command:
+          type: string
+          description: Command for stdio transport (empty for sse/http).
+        args:
+          type: string
+          description: JSON array of command arguments (stdio transport).
+        url:
+          type: string
+          description: URL for sse/http transport (empty for stdio).
+        hasEnvVars:
+          type: boolean
+          description: Whether encrypted environment variables are configured.
+        isEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateMcpServerRequest:
+      type: object
+      required: [name, transport]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        transport:
+          type: string
+          enum: [stdio, sse, http]
+        command:
+          type: string
+          description: Required for stdio transport.
+        args:
+          type: array
+          items:
+            type: string
+          description: Command arguments (stdio transport).
+        url:
+          type: string
+          description: Required for sse/http transport. Must be http/https, non-internal host.
+        envVars:
+          type: object
+          additionalProperties:
+            type: string
+          description: Environment variables (encrypted at rest).
+        isEnabled:
+          type: boolean
+          default: true
+
+    NotificationConfig:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: Slack Alerts
+        type:
+          type: string
+          enum: [webhook, email, telegram]
+          example: webhook
+        isActive:
+          type: boolean
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        configured:
+          type: boolean
+        maskedConfig:
+          type: object
+          description: Masked configuration (credentials redacted).
+
+    CreateNotificationRequest:
+      type: object
+      required: [name, type, config]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [webhook, email, telegram]
+        config:
+          type: object
+          description: Type-specific configuration (encrypted at rest).
+          example:
+            url: https://hooks.slack.com/services/...
+        additionalProperties: true
+
+    ScheduledRun:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: Daily Sales Summary
+        cronExpr:
+          type: string
+          example: "0 9 * * *"
+          description: 5-field cron expression (min hour dom month dow).
+        prompt:
+          type: string
+          example: Summarize yesterday's sales anomalies.
+        isActive:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastResult:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateScheduleRequest:
+      type: object
+      required: [name, cronExpr, prompt]
+      properties:
+        name:
+          type: string
+        cronExpr:
+          type: string
+          description: 5-field cron expression.
+          example: "0 9 * * *"
+        prompt:
+          type: string
+          description: The prompt to execute on each run.
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+          example: Production Integration
+        keyPrefix:
+          type: string
+          example: ryas_
+        maskedKey:
+          type: string
+          example: ryas_****...
+        isActive:
+          type: boolean
+        requestLimitPerMinute:
+          type: integer
+          nullable: true
+          example: 60
+        dailyRequestLimit:
+          type: integer
+          nullable: true
+          example: 10000
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateApiKeyRequest:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+          example: Production Integration
+        requestLimitPerMinute:
+          type: integer
+          nullable: true
+          description: Max requests per minute (null = unlimited).
+          example: 60
+        dailyRequestLimit:
+          type: integer
+          nullable: true
+          description: Max requests per day (null = unlimited).
+          example: 10000
+
+    CreateApiKeyResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        apiKey:
+          type: string
+          description: The full API key. Shown only once — store securely.
+          example: ryas_a1b2c3d4e5f6...
+        item:
+          $ref: '#/components/schemas/ApiKey'
+
+    MonitoringStats:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        toolRuns:
+          type: array
+          items:
+            type: object
+          description: Last 50 tool executions.
+        failedApiRequests:
+          type: array
+          items:
+            type: object
+          description: Last 50 API requests with status >= 400.
+        restApiErrors:
+          type: array
+          items:
+            type: object
+          description: Last 50 REST requests with errors.
+        blockedSql:
+          type: array
+          items:
+            type: object
+          description: Last 50 GUARDRAIL_BLOCK audit entries.
+        stats:
+          type: object
+          properties:
+            toolRunCount24h:
+              type: integer
+            avgToolLatencyMs24h:
+              type: integer
+            failedApiCount24h:
+              type: integer
+            llmCalls24h:
+              type: integer
+            llmPromptTokens24h:
+              type: integer
+            llmCompletionTokens24h:
+              type: integer
+            llmTotalTokens24h:
+              type: integer
+            llmUsageByPurpose:
+              type: array
+              items:
+                type: object
+                properties:
+                  purpose:
+                    type: string
+                    example: sql
+                  calls:
+                    type: integer
+                  totalTokens:
+                    type: integer
+
+    Trace:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        purpose:
+          type: string
+          example: sql
+        model:
+          type: string
+          example: gpt-4o
+        latencyMs:
+          type: integer
+        status:
+          type: string
+          enum: [ok, error]
+        promptTokens:
+          type: integer
+          nullable: true
+        completionTokens:
+          type: integer
+          nullable: true
+        totalTokens:
+          type: integer
+          nullable: true
+        inputPreview:
+          type: string
+        outputPreview:
+          type: string
+        toolCalls:
+          type: integer
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [External API]
+      summary: Health check
+      description: Returns service health and version. No authentication required. Suitable for load balancer health checks.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                ok: true
+                service: ryasai
+                version: 2.0.0
+                time: "2026-07-25T12:00:00.000Z"
+
+  /api/v1/chat/completions:
+    post:
+      tags: [External API]
+      summary: Chat completion (OpenAI-compatible)
+      description: |
+        Submit a chat completion request. When `stream` is `true`, returns a
+        Server-Sent Events stream of `chat.completion.chunk` objects (OpenAI
+        streaming format) followed by `data: [DONE]`. When `stream` is `false`,
+        returns a single JSON response with the full answer, citations, chart
+        data, and tool run metadata.
+
+        The question is routed through the Smart Router (schema-aware
+        self-adjusting load balancer) to the best tool — SQL, RAG, REST, or
+        pure chat — and the answer is synthesized with citations.
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+            example:
+              model: default
+              messages:
+                - role: user
+                  content: What were total sales last month?
+              stream: false
+      responses:
+        '200':
+          description: Chat completion (non-streaming) or SSE stream (streaming).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionChunk'
+              description: |
+                SSE stream. Each line is `data: {json}\n\n`. The final chunk
+                has `finish_reason: "stop"` and includes `session_id`,
+                `citations`, `chart_data`, and `tool_runs`. The stream
+                terminates with `data: [DONE]\n\n`.
+        '400':
+          description: Missing or invalid messages (no role=user found).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Specified session_id not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded (per-minute or daily limit).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: AI provider not configured or unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/agent/run:
+    post:
+      tags: [External API]
+      summary: Agentic multi-step run
+      description: |
+        Submit a question for multi-step agentic execution. The planner
+        decomposes the question into a DAG of tool steps (SQL, RAG, REST,
+        plugins), executes them in topological order with self-correction,
+        and synthesizes a final answer from all step outputs.
+
+        Unlike `/api/v1/chat/completions` (single-tool routing), this endpoint
+        can chain multiple tools — e.g., query the database, then search
+        documents, then combine both into one answer.
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRunRequest'
+            example:
+              question: Compare last month's sales with the SOP for handling returns.
+      responses:
+        '200':
+          description: Agent run completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunResponse'
+        '400':
+          description: Missing question.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Agent run failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: |
+        Authenticates a user and sets an `x-active-user` httpOnly cookie
+        (7-day, HMAC-signed session). Returns a generic error on bad
+        credentials to prevent user enumeration.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful. Session cookie set.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: x-active-user=...; HttpOnly; SameSite=Lax; Path=/
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Email or password missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      description: Clears the session cookie. Always returns 200 (idempotent).
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Logout successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /api/chat/sessions:
+    get:
+      tags: [Chat]
+      summary: List chat sessions
+      description: Returns the 50 most recent chat sessions (excluding agent sessions).
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Session list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChatSession'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Chat]
+      summary: Create chat session
+      security:
+        - sessionCookie: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  default: New Session
+                  maxLength: 200
+      responses:
+        '201':
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSession'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/chat/sessions/{id}:
+    get:
+      tags: [Chat]
+      summary: Get session detail with messages
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session with messages (sorted ascending by createdAt).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionDetail'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Chat]
+      summary: Delete chat session
+      description: Deletes the session and all its messages (cascade).
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/chat/sessions/{id}/send:
+    post:
+      tags: [Chat]
+      summary: Send message (SSE streaming)
+      description: |
+        Sends a message to a chat session and returns a Server-Sent Events
+        stream. The stream emits named events in order:
+
+        1. `user_message` — the persisted user message (so client can swap placeholder)
+        2. `thinking` — analysis indicator
+        3. `tool_start` — tool execution begins (type + label)
+        4. `tool_end` — tool execution result (status + latency)
+        5. `token` — streamed answer tokens (multiple events)
+        6. `answer` — full answer with citations, chart data, message ID
+        7. `done` — stream complete (messageId + latencyMs)
+
+        On error, an `error` event is emitted instead of `done`.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: SSE stream of chat events.
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                description: |
+                  SSE events: user_message, thinking, tool_start, tool_end,
+                  token, answer, done, error. Each event has a named `event:`
+                  line and a JSON `data:` line.
+        '400':
+          description: Missing text or invalid integration ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/integrations:
+    get:
+      tags: [Integrations]
+      summary: List database integrations
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Integration list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Integration'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Integrations]
+      summary: Create database integration
+      description: |
+        Creates a new database integration. The connection is tested before
+        persisting (no orphan rows on failure). On success, the schema is
+        reflected (tables, columns, row counts, sample rows) and cached in
+        `IntegrationSchema` rows for LLM prompts. Config is encrypted at rest
+        with AES-256-GCM.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationRequest'
+      responses:
+        '201':
+          description: Integration created and schema reflected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      type:
+                        type: string
+                      provider:
+                        type: string
+                      status:
+                        type: string
+                      lastTestedAt:
+                        type: string
+                        format: date-time
+                      lastTestOk:
+                        type: boolean
+                      tableCount:
+                        type: integer
+                      message:
+                        type: string
+        '400':
+          description: Invalid input or connection test failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/integrations/{id}/query:
+    post:
+      tags: [Integrations]
+      summary: Natural-language SQL query
+      description: |
+        Converts a natural-language question to SQL via the LLM, validates it
+        through the AST guardrail (SELECT only, LIMIT 100, no DML/DDL), and
+        executes it against the integration's database. Returns the rows,
+        row count, and execution time.
+
+        If the guardrail blocks the generated SQL, a `GUARDRAIL_BLOCK` audit
+        entry is written at critical severity and a 403 is returned.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaturalQueryRequest'
+      responses:
+        '200':
+          description: Query executed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NaturalQueryResponse'
+        '400':
+          description: Empty query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: SQL blocked by guardrail.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  reason:
+                    type: string
+                  generatedSql:
+                    type: string
+        '404':
+          description: Integration not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Integration inactive or schema not reflected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: SQL generation or execution failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/documents:
+    get:
+      tags: [Knowledge]
+      summary: List documents
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category.
+      responses:
+        '200':
+          description: Document list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+                  total:
+                    type: integer
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Knowledge]
+      summary: Upload document
+      description: |
+        Uploads a document for RAG. Extracts text, chunks on double-newlines
+        (1400 char ceiling, 180 overlap), persists chunks with keyword tags,
+        builds the FTS index, generates embeddings (if configured), and
+        optionally runs the cognee cognify pipeline (if enabled).
+
+        Max file size: 50 MB. Max chunks per upload: 500.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The document file (pdf, txt, md, docx, csv, etc.).
+                category:
+                  type: string
+                  default: Uncategorized
+                description:
+                  type: string
+              required: [file]
+      responses:
+        '201':
+          description: Document uploaded and processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    allOf:
+                      - $ref: '#/components/schemas/Document'
+        '400':
+          description: Missing file or empty file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: File exceeds 50 MB limit.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  sizeBytes:
+                    type: integer
+                  limitBytes:
+                    type: integer
+
+  /api/tools:
+    get:
+      tags: [Plugins]
+      summary: List plugins
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Plugin list (manifests masked).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  plugins:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plugin'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Plugins]
+      summary: Create plugin
+      description: |
+        Registers a custom webhook tool. The `toolId` must be unique (used by
+        the planner as a stable key). Credentials in the manifest are encrypted
+        at rest with AES-256-GCM. New plugins are created disabled — enable
+        via the UI or PATCH.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePluginRequest'
+      responses:
+        '201':
+          description: Plugin created (disabled by default).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      toolId:
+                        type: string
+                      name:
+                        type: string
+                      isEnabled:
+                        type: boolean
+                      createdAt:
+                        type: string
+                        format: date-time
+        '400':
+          description: Invalid input or manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Plugin with this toolId already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/mcp/servers:
+    get:
+      tags: [MCP]
+      summary: List MCP servers
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: MCP server list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpServer'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [MCP]
+      summary: Create MCP server
+      description: |
+        Registers an MCP (Model Context Protocol) server. Supports stdio
+        (local command), sse, and http transports. URLs for sse/http are
+        validated against an SSRF blocklist (RFC1918, link-local, CGNAT, ULA).
+        Environment variables are encrypted at rest.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMcpServerRequest'
+      responses:
+        '201':
+          description: MCP server created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  server:
+                    $ref: '#/components/schemas/McpServer'
+        '400':
+          description: Invalid input or blocked host.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/mcp/servers/{id}/test:
+    post:
+      tags: [MCP]
+      summary: Test MCP server connection
+      description: Tests the MCP server connection and returns the number of available tools. Invalidates the tool cache on success.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connection test successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  toolCount:
+                    type: integer
+        '404':
+          description: MCP server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Connection test failed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  error:
+                    type: string
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notification configs
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Notification config list (configs masked).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  configs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationConfig'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Notifications]
+      summary: Create notification config
+      description: Creates a notification channel (webhook, email, or Telegram). Config is encrypted at rest with AES-256-GCM.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRequest'
+      responses:
+        '201':
+          description: Notification config created (active by default).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  config:
+                    $ref: '#/components/schemas/NotificationConfig'
+        '400':
+          description: Invalid input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/schedules:
+    get:
+      tags: [Schedules]
+      summary: List scheduled runs
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Scheduled run list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  schedules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScheduledRun'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Schedules]
+      summary: Create scheduled run
+      description: |
+        Creates a cron-based scheduled run. The scheduler worker (separate
+        process) polls every 60s and executes due prompts via the chat
+        pipeline, then delivers results via the configured notification channel.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScheduleRequest'
+      responses:
+        '201':
+          description: Scheduled run created (active by default).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  schedule:
+                    $ref: '#/components/schemas/ScheduledRun'
+        '400':
+          description: Invalid input or cron expression.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/settings/api-keys:
+    get:
+      tags: [API Keys]
+      summary: List API keys
+      description: Returns all API keys (key hashes are never returned; only prefix-based masked keys).
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: API key list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKey'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [API Keys]
+      summary: Create API key
+      description: |
+        Generates a new API key. The full key is returned **only once** in the
+        response — store it securely. The key is hashed (SHA-256) at rest;
+        only the prefix is stored for display. Rate limits are enforced
+        per-key (in-memory counter + DB-backed daily reset).
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+      responses:
+        '201':
+          description: API key created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateApiKeyResponse'
+        '400':
+          description: Label is required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/monitoring:
+    get:
+      tags: [Monitoring]
+      summary: Monitoring stats
+      description: Returns 24h aggregated observability data — tool runs, failed requests, REST errors, blocked SQL, LLM token usage by purpose.
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Monitoring data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitoringStats'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/traces:
+    get:
+      tags: [Monitoring]
+      summary: List LLM traces
+      description: Returns recent LLM call traces from the in-memory ring buffer (max 100, most-recent-first). Traces are lost on restart.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: LLM trace list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  traces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trace'
+        '401':
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
