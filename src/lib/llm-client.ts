@@ -12,9 +12,21 @@ export interface LlmToolCall {
   arguments: string
 }
 
+export interface LlmImageContent {
+  type: 'image_url'
+  image_url: { url: string; detail?: 'auto' | 'low' | 'high' }
+}
+
+export interface LlmTextContent {
+  type: 'text'
+  text: string
+}
+
+export type LlmContentPart = LlmTextContent | LlmImageContent
+
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  content: string | LlmContentPart[] | null
   tool_calls?: LlmToolCall[]
   tool_call_id?: string
   name?: string
@@ -40,6 +52,16 @@ export interface LlmUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+}
+
+export interface LlmResponseFormat {
+  type: 'json_schema'
+  json_schema: {
+    name: string
+    description?: string
+    schema: Record<string, unknown>
+    strict?: boolean
+  }
 }
 
 const MAX_TOKENS_ANTHROPIC = 4096
@@ -135,20 +157,40 @@ async function* iterSseStream(
 // memory context, chat history, and prompt prefixes on Anthropic.)
 // ---------------------------------------------------------------------------
 
+function toAnthropicContent(
+  content: string | LlmContentPart[] | null,
+): string | Array<Record<string, unknown>> {
+  if (content === null) return ''
+  if (typeof content === 'string') return content
+  return content.map((part) => {
+    if (part.type === 'text') return { type: 'text', text: part.text }
+    const url = part.image_url.url
+    const m = url.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/)
+    if (m) {
+      return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }
+    }
+    return { type: 'image', source: { type: 'url', url } }
+  })
+}
+
 function buildAnthropicBody(
   messages: LlmMessage[],
   temperature: number,
   stream: boolean = false,
   tools?: LlmToolDef[],
+  responseFormat?: LlmResponseFormat,
 ): Record<string, unknown> {
   const systemParts = messages
     .filter((m) => m.role === 'system')
-    .map((m) => m.content ?? '')
+    .map((m) => (typeof m.content === 'string' ? m.content : ''))
   const nonSystem = messages.filter((m) => m.role !== 'system')
   const body: Record<string, unknown> = {
     max_tokens: MAX_TOKENS_ANTHROPIC,
     temperature,
-    messages: nonSystem.map((m) => ({ role: m.role, content: m.content })),
+    messages: nonSystem.map((m) => ({
+      role: m.role,
+      content: toAnthropicContent(m.content),
+    })),
   }
   if (systemParts.length > 0) {
     body.system = [
@@ -160,7 +202,17 @@ function buildAnthropicBody(
     ]
   }
   if (stream) body.stream = true
-  if (tools && tools.length > 0) {
+  if (responseFormat) {
+    // ponytail: Anthropic has no native structured output — synthesize a tool
+    // with the schema as input_schema, force tool_choice, parse tool_use input.
+    const synthTool = {
+      name: responseFormat.json_schema.name,
+      description: responseFormat.json_schema.description ?? responseFormat.json_schema.name,
+      input_schema: responseFormat.json_schema.schema,
+    }
+    body.tools = [synthTool]
+    body.tool_choice = { type: 'tool', name: responseFormat.json_schema.name }
+  } else if (tools && tools.length > 0) {
     const anthropicTools: Array<{
       name: string
       description: string
@@ -224,17 +276,27 @@ export async function chatOnce(
   temperature: number | undefined,
   purpose: string | undefined,
   tools: LlmToolDef[],
+  responseFormat?: LlmResponseFormat,
 ): Promise<string | LlmToolCall[]>
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number | undefined,
+  purpose: string | undefined,
+  tools: undefined,
+  responseFormat: LlmResponseFormat,
+): Promise<string>
 export async function chatOnce(
   cfg: LlmRuntimeConfig,
   messages: LlmMessage[],
   temperature: number = 0,
   purpose: string = 'chat',
   tools?: LlmToolDef[],
+  responseFormat?: LlmResponseFormat,
 ): Promise<string | LlmToolCall[]> {
   const t0 = Date.now()
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
-    const body = buildAnthropicBody(messages, temperature, false, tools)
+    const body = buildAnthropicBody(messages, temperature, false, tools, responseFormat)
     body.model = cfg.model
     const res = await fetchWithRetry(`${cfg.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -254,6 +316,17 @@ export async function chatOnce(
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>
       usage?: { input_tokens?: number; output_tokens?: number }
     }
+    const usageData = {
+      promptTokens: data.usage?.input_tokens ?? 0,
+      completionTokens: data.usage?.output_tokens ?? 0,
+      totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+    }
+    if (responseFormat) {
+      const toolUse = data.content?.find((c) => c.type === 'tool_use')
+      const structured = toolUse ? JSON.stringify(toolUse.input ?? {}) : (data.content?.find((c) => c.type === 'text')?.text ?? '')
+      logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+      return structured
+    }
     const toolUseBlocks = data.content?.filter((c) => c.type === 'tool_use')
     if (toolUseBlocks && toolUseBlocks.length > 0) {
       const toolCalls: LlmToolCall[] = toolUseBlocks.map((b) => ({
@@ -261,19 +334,11 @@ export async function chatOnce(
         name: b.name ?? '',
         arguments: JSON.stringify(b.input ?? {}),
       }))
-      logLlmUsage(purpose, cfg, {
-        promptTokens: data.usage?.input_tokens ?? 0,
-        completionTokens: data.usage?.output_tokens ?? 0,
-        totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
-      }, Date.now() - t0)
+      logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
       return toolCalls
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
-    logLlmUsage(purpose, cfg, {
-      promptTokens: data.usage?.input_tokens ?? 0,
-      completionTokens: data.usage?.output_tokens ?? 0,
-      totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
-    }, Date.now() - t0)
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
     return text.trim()
   }
 
@@ -282,6 +347,17 @@ export async function chatOnce(
   const body: Record<string, unknown> = { model: cfg.model, messages, temperature }
   if (tools && tools.length > 0) {
     body.tools = tools
+  }
+  if (responseFormat) {
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: {
+        name: responseFormat.json_schema.name,
+        ...(responseFormat.json_schema.description ? { description: responseFormat.json_schema.description } : {}),
+        schema: responseFormat.json_schema.schema,
+        ...(responseFormat.json_schema.strict !== undefined ? { strict: responseFormat.json_schema.strict } : {}),
+      },
+    }
   }
   const res = await fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -306,24 +382,25 @@ export async function chatOnce(
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   }
   const choice = data.choices?.[0]
+  const usageData = {
+    promptTokens: data.usage?.prompt_tokens ?? 0,
+    completionTokens: data.usage?.completion_tokens ?? 0,
+    totalTokens: data.usage?.total_tokens ?? 0,
+  }
+  if (responseFormat) {
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
+    return (choice?.message?.content ?? '').trim()
+  }
   if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
     const toolCalls: LlmToolCall[] = choice.message.tool_calls.map((tc) => ({
       id: tc.id,
       name: tc.function.name,
       arguments: tc.function.arguments,
     }))
-    logLlmUsage(purpose, cfg, {
-      promptTokens: data.usage?.prompt_tokens ?? 0,
-      completionTokens: data.usage?.completion_tokens ?? 0,
-      totalTokens: data.usage?.total_tokens ?? 0,
-    }, Date.now() - t0)
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
     return toolCalls
   }
-  logLlmUsage(purpose, cfg, {
-    promptTokens: data.usage?.prompt_tokens ?? 0,
-    completionTokens: data.usage?.completion_tokens ?? 0,
-    totalTokens: data.usage?.total_tokens ?? 0,
-  }, Date.now() - t0)
+  logLlmUsage(purpose, cfg, usageData, Date.now() - t0)
   return (choice?.message?.content ?? '').trim()
 }
 
@@ -426,6 +503,91 @@ export async function* chatStream(
     } catch { /* skip malformed */ }
   }
   logLlmUsage(purpose, cfg, usage, Date.now() - t0)
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI Responses API — opt-in alternative to Chat Completions.
+// ponytail: OpenAI-specific. Chat Completions remains the default for all
+// providers. Use this only when you need conversation state (previous_response_id)
+// or background mode. Anthropic has no equivalent.
+// ---------------------------------------------------------------------------
+
+export async function chatOnceResponses(
+  cfg: LlmRuntimeConfig,
+  input: LlmMessage[] | string,
+  options?: {
+    temperature?: number
+    purpose?: string
+    tools?: LlmToolDef[]
+    responseFormat?: LlmResponseFormat
+    previousResponseId?: string
+    background?: boolean
+  },
+): Promise<{ text: string; responseId: string; usage?: LlmUsage }> {
+  const t0 = Date.now()
+  const purpose = options?.purpose ?? 'chat'
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    input: typeof input === 'string' ? input : input,
+    temperature: options?.temperature ?? 0,
+  }
+  if (options?.previousResponseId) {
+    body.previous_response_id = options.previousResponseId
+  }
+  if (options?.background) {
+    body.background = true
+  }
+  if (options?.tools && options.tools.length > 0) {
+    body.tools = options.tools
+  }
+  if (options?.responseFormat) {
+    body.text = {
+      format: {
+        type: 'json_schema',
+        name: options.responseFormat.json_schema.name,
+        schema: options.responseFormat.json_schema.schema,
+        ...(options.responseFormat.json_schema.strict !== undefined
+          ? { strict: options.responseFormat.json_schema.strict }
+          : {}),
+      },
+    }
+  }
+  const res = await fetchWithRetry(`${cfg.baseUrl}/responses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+  })
+  if (!res.ok) {
+    const errText = await readErrorBody(res)
+    throw new Error(`LLM Responses API error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
+  }
+  const data = (await res.json()) as {
+    id?: string
+    output_text?: string
+    output?: Array<{
+      type?: string
+      content?: Array<{ type?: string; text?: string }>
+      text?: string
+    }>
+    usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number }
+  }
+  const text =
+    data.output_text ??
+    data.output?.find((o) => o.type === 'message')?.content?.find((c) => c.type === 'output_text')?.text ??
+    ''
+  const usage: LlmUsage | undefined = data.usage
+    ? {
+        promptTokens: data.usage.input_tokens ?? 0,
+        completionTokens: data.usage.output_tokens ?? 0,
+        totalTokens: data.usage.total_tokens ?? (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0),
+      }
+    : undefined
+  logLlmUsage(purpose, cfg, usage ?? null, Date.now() - t0)
+  return { text: text.trim(), responseId: data.id ?? '', usage }
 }
 
 // ---------------------------------------------------------------------------
