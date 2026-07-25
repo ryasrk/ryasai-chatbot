@@ -26,7 +26,6 @@ export async function POST(req: NextRequest) {
       if (!question) continue
       const started = Date.now()
       const retrieval = await retrieveRelevantChunks({
-        companyId: user.companyId,
         query: question,
         topK,
       })
@@ -49,7 +48,6 @@ export async function POST(req: NextRequest) {
 
     const summary = summarizeRagEval(results)
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'RAG_EVAL_RUN',
       severity: 'info',

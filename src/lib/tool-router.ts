@@ -13,10 +13,13 @@ import {
   generateRestCall,
   generateSql,
   routeQuery,
+  streamAnswer,
+  streamChat,
   type RouteDecision,
   type RestCallPlan,
   type RestEndpointOption,
 } from '@/lib/ai'
+import { smartRoute } from '@/lib/smart-router'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import {
   buildAuthHeaders,
@@ -25,6 +28,7 @@ import {
   sanitizeHeaders,
 } from '@/lib/rest-api-connectors'
 import { getPromptSettings } from '@/lib/prompt-settings'
+import { recallContext, rememberChatTurn } from '@/lib/cognee'
 import type { ChartData, Citation } from '@/lib/types'
 
 type ToolRunStatus = 'success' | 'error' | 'blocked'
@@ -47,68 +51,556 @@ export interface CompletionResult {
   integrationId?: string
 }
 
+export interface ChatHistoryEntry {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export async function runNonStreamingChatCompletion(args: {
   question: string
-  companyId: string
   userId: string
   integrationId?: string
+  sessionId?: string
+  chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
+  const memoryContext = await recallContext({
+    query: args.question,
+    sessionId: args.sessionId,
+  })
+
   const [integrationCount, documentCount, restEndpointCount, promptSettings] = await Promise.all([
-    db.integration.count({ where: { companyId: args.companyId, status: 'active' } }),
-    db.document.count({ where: { companyId: args.companyId, status: 'ready' } }),
+    db.integration.count({ where: { status: 'active' } }),
+    db.document.count({ where: { status: 'ready', isEnabled: true } }),
     db.restApiEndpoint.count({
       where: {
         isEnabled: true,
-        connector: { companyId: args.companyId, isActive: true },
+        connector: { isActive: true },
       },
     }),
-    getPromptSettings(db, args.companyId),
+    getPromptSettings(db),
   ])
-  const smartMappingHints = await loadSmartMappingHints(args.companyId)
 
-  const routed = await routeQuery({
-    question: args.question,
+  const hasHistory = args.chatHistory && args.chatHistory.length > 0
+
+  let decision: RouteDecision
+  let resolvedIntegrationId = args.integrationId
+
+  if (hasHistory) {
+    // Multi-turn: LLM router sees history and can pick CONTEXTUAL_CHAT
+    const routed = await routeQuery({
+      question: args.question,
+      hasIntegrations: integrationCount > 0,
+      hasDocuments: documentCount > 0,
+      hasRestApis: restEndpointCount > 0,
+      memoryContext,
+      chatHistory: args.chatHistory,
+    })
+    decision = routed.decision
+  } else {
+    // First turn: fast heuristic router (no LLM call if confident)
+    const routed = await smartRoute({
+      question: args.question,
+      hasIntegrations: integrationCount > 0,
+      hasDocuments: documentCount > 0,
+      hasRestApis: restEndpointCount > 0,
+      memoryContext,
+    })
+    decision = routed.decision
+    resolvedIntegrationId = routed.integrationId ?? args.integrationId
+  }
+
+  decision = chooseAvailableDecision(decision, {
     hasIntegrations: integrationCount > 0,
     hasDocuments: documentCount > 0,
     hasRestApis: restEndpointCount > 0,
-    companyId: args.companyId,
-    smartMappingHints,
   })
-  let decision = chooseAvailableDecision(routed.decision, {
-    hasIntegrations: integrationCount > 0,
-    hasDocuments: documentCount > 0,
-    hasRestApis: restEndpointCount > 0,
-  })
-
-  // Enforce prompt-settings tool toggles: if the chosen tool is disabled, fall
-  // back to CHAT (the default safe path).
   if (decision === 'SQL' && !promptSettings.tools.sql) decision = 'CHAT'
   if (decision === 'RAG' && !promptSettings.tools.rag) decision = 'CHAT'
   if (decision === 'REST' && !promptSettings.tools.restApi) decision = 'CHAT'
 
-  const branchArgs = {
-    ...args,
-    systemPromptPrefix: promptSettings.systemPrompt || undefined,
+  const historyMsgs: ChatHistoryEntry[] = args.chatHistory ?? []
+
+  // For CONTEXTUAL_CHAT: load recent tool run outputs so the LLM has prior data context
+  let contextualContext = ''
+  if (decision === 'CONTEXTUAL_CHAT' && args.sessionId) {
+    const recentToolRuns = await db.toolRun.findMany({
+      where: {
+        chatMessage: { sessionId: args.sessionId },
+        status: 'success',
+        outputSummary: { not: '' },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: { type: true, inputSummary: true, outputSummary: true },
+    })
+    if (recentToolRuns.length > 0) {
+      contextualContext = recentToolRuns
+        .map((tr) => `[Prior ${tr.type} result for: ${tr.inputSummary}]\n${tr.outputSummary}`)
+        .join('\n\n---\n\n')
+    }
   }
 
-  if (decision === 'SQL') return runSqlBranch(branchArgs)
-  if (decision === 'RAG') return runRagBranch(branchArgs)
-  if (decision === 'REST') return runRestBranch(branchArgs)
-  return runChatBranch(branchArgs)
+  const branchArgs = {
+    ...args,
+    integrationId: resolvedIntegrationId,
+    systemPromptPrefix: promptSettings.systemPrompt || undefined,
+    memoryContext,
+    chatHistory: historyMsgs,
+  }
+
+  let result: CompletionResult
+  if (decision === 'SQL') result = await runSqlBranch(branchArgs)
+  else if (decision === 'RAG') result = await runRagBranch(branchArgs)
+  else if (decision === 'REST') result = await runRestBranch(branchArgs)
+  else if (decision === 'CONTEXTUAL_CHAT' && contextualContext) {
+    result = await runContextualChatBranch({ ...branchArgs, context: contextualContext })
+  } else {
+    result = await runChatBranch(branchArgs)
+  }
+
+  await rememberChatTurn({
+    sessionId: args.sessionId,
+    userMessage: args.question,
+    aiMessage: result.answer,
+    toolRuns: result.toolRuns.map((t) => ({ type: t.type, status: t.status, latencyMs: t.latencyMs ?? 0 })),
+  })
+
+  return result
 }
 
-async function loadSmartMappingHints(companyId: string): Promise<string> {
-  const rows = await db.smartMapping.findMany({
-    where: { companyId, status: 'active' },
-    orderBy: { updatedAt: 'desc' },
-    take: 20,
+export interface StreamingCompletionResult {
+  toolRuns: PendingToolRun[]
+  citations: Citation[]
+  chartData: ChartData | null
+  integrationId?: string
+  stream: AsyncGenerator<string, void, unknown>
+}
+
+export async function runStreamingChatCompletion(args: {
+  question: string
+  userId: string
+  integrationId?: string
+  sessionId?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const memoryContext = await recallContext({
+    query: args.question,
+    sessionId: args.sessionId,
   })
-  return rows
-    .map((row) => {
-      const synonyms = safeParseArray(row.synonymsJson).slice(0, 12).join(', ')
-      return `${row.sourceType}:${row.sourceName} -> ${row.routingHint}/${row.entityType} (${synonyms})`
+
+  const [integrationCount, documentCount, restEndpointCount, promptSettings] = await Promise.all([
+    db.integration.count({ where: { status: 'active' } }),
+    db.document.count({ where: { status: 'ready', isEnabled: true } }),
+    db.restApiEndpoint.count({
+      where: {
+        isEnabled: true,
+        connector: { isActive: true },
+      },
+    }),
+    getPromptSettings(db),
+  ])
+
+  const hasHistory = args.chatHistory && args.chatHistory.length > 0
+
+  let decision: RouteDecision
+  let resolvedIntegrationId = args.integrationId
+
+  if (hasHistory) {
+    const routed = await routeQuery({
+      question: args.question,
+      hasIntegrations: integrationCount > 0,
+      hasDocuments: documentCount > 0,
+      hasRestApis: restEndpointCount > 0,
+      memoryContext,
+      chatHistory: args.chatHistory,
     })
-    .join('\n')
+    decision = routed.decision
+  } else {
+    const routed = await smartRoute({
+      question: args.question,
+      hasIntegrations: integrationCount > 0,
+      hasDocuments: documentCount > 0,
+      hasRestApis: restEndpointCount > 0,
+      memoryContext,
+    })
+    decision = routed.decision
+    resolvedIntegrationId = routed.integrationId ?? args.integrationId
+  }
+
+  decision = chooseAvailableDecision(decision, {
+    hasIntegrations: integrationCount > 0,
+    hasDocuments: documentCount > 0,
+    hasRestApis: restEndpointCount > 0,
+  })
+  if (decision === 'SQL' && !promptSettings.tools.sql) decision = 'CHAT'
+  if (decision === 'RAG' && !promptSettings.tools.rag) decision = 'CHAT'
+  if (decision === 'REST' && !promptSettings.tools.restApi) decision = 'CHAT'
+
+  // For CONTEXTUAL_CHAT: load recent tool run outputs so the LLM has prior data context
+  let contextualContext = ''
+  if (decision === 'CONTEXTUAL_CHAT' && args.sessionId) {
+    const recentToolRuns = await db.toolRun.findMany({
+      where: {
+        chatMessage: { sessionId: args.sessionId },
+        status: 'success',
+        outputSummary: { not: '' },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: { type: true, inputSummary: true, outputSummary: true },
+    })
+    if (recentToolRuns.length > 0) {
+      contextualContext = recentToolRuns
+        .map((tr) => `[Prior ${tr.type} result for: ${tr.inputSummary}]\n${tr.outputSummary}`)
+        .join('\n\n---\n\n')
+    }
+  }
+
+  const branchArgs = {
+    ...args,
+    integrationId: resolvedIntegrationId,
+    systemPromptPrefix: promptSettings.systemPrompt || undefined,
+    memoryContext,
+    chatHistory: args.chatHistory ?? [],
+  }
+
+  if (decision === 'SQL') return await prepareSqlStream(branchArgs)
+  if (decision === 'RAG') return await prepareRagStream(branchArgs)
+  if (decision === 'REST') return await prepareRestStream(branchArgs)
+  if (decision === 'CONTEXTUAL_CHAT' && contextualContext) {
+    return await prepareContextualChatStream({ ...branchArgs, context: contextualContext })
+  }
+  return await prepareChatStream(branchArgs)
+}
+
+async function prepareContextualChatStream(args: {
+  question: string
+  context: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const stream = streamAnswer({
+    question: args.question,
+    context: args.context,
+    source: 'CHAT',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+  return {
+    toolRuns: [{
+      type: 'CHAT',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(args.context),
+    }],
+    citations: [],
+    chartData: null,
+    stream,
+  }
+}
+
+async function prepareChatStream(args: {
+  question: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const stream = streamChat(args.question, args.memoryContext, args.systemPromptPrefix, args.chatHistory)
+  return {
+    toolRuns: [{
+      type: 'CHAT',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+    }],
+    citations: [],
+    chartData: null,
+    stream,
+  }
+}
+
+async function prepareRagStream(args: {
+  question: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const retrieval = await retrieveRelevantChunks({ query: args.question, topK: 4 })
+  const topChunks = retrieval.chunks
+  if (topChunks.length === 0 && !retrieval.graphContext) return prepareChatStream(args)
+
+  const chunkContext = topChunks
+    .map((item) => `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`)
+    .join('\n\n---\n\n')
+
+  const context = retrieval.graphContext
+    ? `${chunkContext}\n\n--- Knowledge Graph Context ---\n${retrieval.graphContext}`
+    : chunkContext
+
+  const stream = streamAnswer({
+    question: args.question,
+    context,
+    source: 'RAG',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+
+  const citations = topChunks.map((item) =>
+    buildDocumentCitation({
+      documentName: item.documentName,
+      chunkIndex: item.chunkIndex,
+      content: item.content,
+      score: item.score,
+    }),
+  )
+
+  await db.auditLog.create({
+    data: {
+      userId: null,
+      action: 'RAG_SEARCH',
+      severity: 'info',
+      detail: JSON.stringify({
+        query: args.question,
+        returned: topChunks.length,
+        candidatesScanned: retrieval.candidatesScanned,
+        queryTokens: retrieval.queryTokens,
+        topScore: topChunks[0]?.score ?? 0,
+      }),
+    },
+  })
+
+  return {
+    toolRuns: [{
+      type: 'RAG',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(context),
+    }],
+    citations,
+    chartData: null,
+    stream,
+  }
+}
+
+async function prepareSqlStream(args: {
+  question: string
+  userId: string
+  integrationId?: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const integration = args.integrationId
+    ? await db.integration.findFirst({
+        where: { id: args.integrationId, status: 'active' },
+        include: { schemas: { orderBy: { tableName: 'asc' } } },
+      })
+    : await db.integration.findFirst({
+        where: { status: 'active' },
+        orderBy: { createdAt: 'asc' },
+        include: { schemas: { orderBy: { tableName: 'asc' } } },
+      })
+
+  if (!integration || integration.schemas.length === 0) {
+    return prepareChatStream(args)
+  }
+
+  const schemaDescription = describeSchema(
+    integration.schemas.map((schema) => ({
+      tableName: schema.tableName,
+      columns: safeParseColumns(schema.columns),
+      rowCount: schema.rowCount ?? undefined,
+      sampleRow: safeParseSampleRow(schema.sampleRow),
+    })),
+  )
+  const llm = await generateSql({
+    question: args.question,
+    schemaDescription,
+    provider: integration.provider,
+    memoryContext: args.memoryContext,
+  })
+  const guard = validateAndSanitizeLlmSql(llm.sql)
+  if (!guard.ok) {
+    return {
+      toolRuns: [{
+        type: 'SQL',
+        status: 'blocked',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        errorMessage: guard.reason,
+      }],
+      citations: [],
+      chartData: null,
+      stream: streamChat(
+        `The SQL query was blocked by guardrails: ${guard.reason}. Please rephrase. ${args.question}`,
+        args.memoryContext, args.systemPromptPrefix, args.chatHistory,
+      ),
+    }
+  }
+
+  const sql = guard.sanitized
+  const connector = connectorRegistry.getConnector(
+    integration.id,
+    integration.provider,
+    decryptConfig(integration.encryptedConfig),
+  )
+
+  try {
+    const result = await connector.executeQuery(sql)
+    const context = JSON.stringify(result.rows, null, 2)
+    const chartData = buildChartDataFromRows(result.rows)
+    const stream = streamAnswer({
+      question: args.question,
+      context,
+      source: 'SQL',
+      systemPromptPrefix: args.systemPromptPrefix,
+      memoryContext: args.memoryContext,
+      chatHistory: args.chatHistory,
+    })
+
+    const citations: Citation[] = [
+      {
+        type: 'DATABASE',
+        source: `${integration.name}.${extractTableName(sql)}`,
+        query_used: sql,
+      },
+    ]
+
+    return {
+      toolRuns: [{
+        type: 'SQL',
+        status: 'success',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: summarize(sql),
+      }],
+      citations,
+      chartData,
+      integrationId: integration.id,
+      stream,
+    }
+  } catch {
+    return prepareChatStream(args)
+  }
+}
+
+async function prepareRestStream(args: {
+  question: string
+  userId: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const connectors = await db.restApiConnector.findMany({
+    where: { isActive: true },
+    include: {
+      endpoints: {
+        where: { isEnabled: true },
+        orderBy: [{ method: 'asc' }, { path: 'asc' }],
+      },
+    },
+  })
+  const endpointOptions: RestEndpointOption[] = connectors.flatMap((c) =>
+    c.endpoints.map((e) => ({
+      id: e.id,
+      connectorName: c.name,
+      method: e.method,
+      path: e.path,
+      description: e.description,
+      parameterSchema: e.parameterSchema,
+      sampleResponse: e.sampleResponse,
+    })),
+  )
+
+  if (endpointOptions.length === 0) return prepareChatStream(args)
+
+  const plan = await generateRestCall({
+    question: args.question,
+    endpoints: endpointOptions,
+    memoryContext: args.memoryContext,
+  })
+  const selected = endpointOptions.find((e) => e.id === plan.endpointId)
+  if (!selected) return prepareChatStream(args)
+
+  const connector = connectors.find((c) =>
+    c.endpoints.some((e) => e.id === selected.id),
+  )
+  if (!connector) return prepareChatStream(args)
+
+  const endpoint = matchEndpoint(
+    selected.method,
+    selected.path,
+    connector.endpoints.map((e) => ({ id: e.id, method: e.method, path: e.path, enabled: e.isEnabled })),
+  )
+  if (!endpoint) return prepareChatStream(args)
+
+  const result = await executeRestRequest({
+    connector,
+    endpointId: endpoint.id,
+    method: selected.method,
+    path: selected.path,
+    plan,
+  })
+
+  if (!result.ok) {
+    return {
+      toolRuns: [{
+        type: 'REST_API',
+        status: 'error',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        errorMessage: result.error,
+        restApiEndpointId: endpoint.id,
+      }],
+      citations: [],
+      chartData: null,
+      stream: streamChat(
+        `The REST API request failed: ${result.error}. ${args.question}`,
+        args.memoryContext, args.systemPromptPrefix, args.chatHistory,
+      ),
+    }
+  }
+
+  const stream = streamAnswer({
+    question: args.question,
+    context: result.bodyText,
+    source: 'REST_API',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+
+  const citations: Citation[] = [
+    {
+      type: 'REST_API',
+      source: `${connector.name} ${selected.method} ${selected.path}`,
+      query_used: JSON.stringify({ query: plan.query, explanation: plan.explanation }),
+    },
+  ]
+
+  return {
+    toolRuns: [{
+      type: 'REST_API',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(result.bodyText),
+      restApiEndpointId: endpoint.id,
+    }],
+    citations,
+    chartData: jsonRowsToChart(result.body),
+    stream,
+  }
 }
 
 export function chooseAvailableDecision(
@@ -119,6 +611,7 @@ export function chooseAvailableDecision(
     hasRestApis: boolean
   },
 ): RouteDecision {
+  if (decision === 'CONTEXTUAL_CHAT') return 'CONTEXTUAL_CHAT'
   if (decision === 'SQL' && !available.hasIntegrations) return 'CHAT'
   if (decision === 'RAG' && !available.hasDocuments) return 'CHAT'
   if (decision === 'REST' && !available.hasRestApis) return 'CHAT'
@@ -191,11 +684,12 @@ export function buildDocumentCitation(args: {
 
 async function runChatBranch(args: {
   question: string
-  companyId: string
   systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const answer = await generateChat(args.question, args.companyId, args.systemPromptPrefix)
+  const answer = await generateChat(args.question, args.systemPromptPrefix, args.memoryContext, args.chatHistory)
   return {
     answer,
     citations: [],
@@ -212,32 +706,68 @@ async function runChatBranch(args: {
   }
 }
 
+async function runContextualChatBranch(args: {
+  question: string
+  context: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<CompletionResult> {
+  const started = Date.now()
+  const answer = await generateAnswer({
+    question: args.question,
+    context: args.context,
+    source: 'CHAT',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+  return {
+    answer,
+    citations: [],
+    chartData: null,
+    toolRuns: [
+      {
+        type: 'CHAT',
+        status: 'success',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: summarize(args.context),
+      },
+    ],
+  }
+}
+
 async function runRagBranch(args: {
   question: string
-  companyId: string
   systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
   const retrieval = await retrieveRelevantChunks({
-    companyId: args.companyId,
     query: args.question,
     topK: 4,
   })
   const topChunks = retrieval.chunks
-  if (topChunks.length === 0) return runChatBranch(args)
+  if (topChunks.length === 0 && !retrieval.graphContext) return runChatBranch(args)
 
-  const context = topChunks
+  const chunkContext = topChunks
     .map(
       (item) =>
         `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`,
     )
     .join('\n\n---\n\n')
+  const context = retrieval.graphContext
+    ? `${chunkContext}\n\n--- Knowledge Graph Context ---\n${retrieval.graphContext}`
+    : chunkContext
   const answer = await generateAnswer({
     question: args.question,
     context,
     source: 'RAG',
-    companyId: args.companyId,
     systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
   })
   const citations = topChunks.map((item) =>
     buildDocumentCitation({
@@ -250,7 +780,6 @@ async function runRagBranch(args: {
 
   await db.auditLog.create({
     data: {
-      companyId: args.companyId,
       userId: null,
       action: 'RAG_SEARCH',
       severity: 'info',
@@ -282,19 +811,20 @@ async function runRagBranch(args: {
 
 async function runSqlBranch(args: {
   question: string
-  companyId: string
   userId: string
   integrationId?: string
   systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
   const integration = args.integrationId
     ? await db.integration.findFirst({
-        where: { id: args.integrationId, companyId: args.companyId, status: 'active' },
+        where: { id: args.integrationId, status: 'active' },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     : await db.integration.findFirst({
-        where: { companyId: args.companyId, status: 'active' },
+        where: { status: 'active' },
         orderBy: { createdAt: 'asc' },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
@@ -308,19 +838,19 @@ async function runSqlBranch(args: {
       tableName: schema.tableName,
       columns: safeParseColumns(schema.columns),
       rowCount: schema.rowCount ?? undefined,
+      sampleRow: safeParseSampleRow(schema.sampleRow),
     })),
   )
   const llm = await generateSql({
     question: args.question,
     schemaDescription,
     provider: integration.provider,
-    companyId: args.companyId,
+    memoryContext: args.memoryContext,
   })
   const guard = validateAndSanitizeLlmSql(llm.sql)
   if (!guard.ok) {
     await db.auditLog.create({
       data: {
-        companyId: args.companyId,
         userId: args.userId,
         action: 'GUARDRAIL_BLOCK',
         severity: 'critical',
@@ -373,7 +903,6 @@ async function runSqlBranch(args: {
     })
     await db.auditLog.create({
       data: {
-        companyId: args.companyId,
         userId: args.userId,
         action: 'SQL_EXECUTE',
         severity: 'info',
@@ -390,8 +919,9 @@ async function runSqlBranch(args: {
       question: args.question,
       context: JSON.stringify(result.rows, null, 2),
       source: 'SQL',
-      companyId: args.companyId,
       systemPromptPrefix: args.systemPromptPrefix,
+      memoryContext: args.memoryContext,
+      chatHistory: args.chatHistory,
     })
     const citations: Citation[] = [
       {
@@ -430,7 +960,6 @@ async function runSqlBranch(args: {
     })
     await db.auditLog.create({
       data: {
-        companyId: args.companyId,
         userId: args.userId,
         action: 'SQL_EXECUTE_ERROR',
         severity: 'warning',
@@ -457,13 +986,14 @@ async function runSqlBranch(args: {
 
 async function runRestBranch(args: {
   question: string
-  companyId: string
   userId: string
   systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
   const connectors = await db.restApiConnector.findMany({
-    where: { companyId: args.companyId, isActive: true },
+    where: { isActive: true },
     include: {
       endpoints: {
         where: { isEnabled: true },
@@ -488,7 +1018,7 @@ async function runRestBranch(args: {
   const plan = await generateRestCall({
     question: args.question,
     endpoints: endpointOptions,
-    companyId: args.companyId,
+    memoryContext: args.memoryContext,
   })
   const selected = endpointOptions.find((endpoint) => endpoint.id === plan.endpointId)
   if (!selected) {
@@ -526,7 +1056,6 @@ async function runRestBranch(args: {
   if (!endpoint) return unavailableDataSourceResult('REST_API', args.question, started)
 
   const result = await executeRestRequest({
-    companyId: args.companyId,
     connector,
     endpointId: endpoint.id,
     method: selected.method,
@@ -554,7 +1083,6 @@ async function runRestBranch(args: {
 
   await db.auditLog.create({
     data: {
-      companyId: args.companyId,
       userId: args.userId,
       action: 'REST_ENDPOINT_EXECUTE',
       severity: result.statusCode >= 200 && result.statusCode < 400 ? 'info' : 'warning',
@@ -573,8 +1101,9 @@ async function runRestBranch(args: {
     question: args.question,
     context: result.bodyText,
     source: 'REST_API',
-    companyId: args.companyId,
     systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
   })
   const citations: Citation[] = [
     {
@@ -602,7 +1131,6 @@ async function runRestBranch(args: {
 }
 
 async function executeRestRequest(args: {
-  companyId: string
   connector: {
     id: string
     baseUrl: string
@@ -622,7 +1150,7 @@ async function executeRestRequest(args: {
   const authConfig = args.connector.encryptedAuthConfig
     ? decryptConfig(args.connector.encryptedAuthConfig)
     : {}
-  const authHeaders = buildAuthHeaders(args.connector.authType, authConfig)
+  const authHeaders = await buildAuthHeaders(args.connector.authType, authConfig)
   const hasBody = args.method !== 'GET' && args.method !== 'HEAD' && args.plan.body !== null
   const headers = {
     ...authHeaders,
@@ -647,7 +1175,6 @@ async function executeRestRequest(args: {
     const latencyMs = Date.now() - started
     await db.restApiRequestLog.create({
       data: {
-        companyId: args.companyId,
         connectorId: args.connector.id,
         endpointId: args.endpointId,
         statusCode: response.status,
@@ -675,7 +1202,6 @@ async function executeRestRequest(args: {
     const error = e instanceof Error ? e.message : String(e)
     await db.restApiRequestLog.create({
       data: {
-        companyId: args.companyId,
         connectorId: args.connector.id,
         endpointId: args.endpointId,
         latencyMs,
@@ -715,9 +1241,24 @@ function safeParseColumns(raw: string): ReflectedTable['columns'] {
     return parsed.map((column) => ({
       name: String(column?.name ?? ''),
       type: String(column?.type ?? ''),
+      primaryKey: Boolean(column?.primaryKey) || undefined,
+      notNull: Boolean(column?.notNull) || undefined,
+      foreignKey: column?.foreignKey ? String(column.foreignKey) : undefined,
+      distinctValues: Array.isArray(column?.distinctValues) ? column.distinctValues.map(String) : undefined,
     }))
   } catch {
     return []
+  }
+}
+
+function safeParseSampleRow(raw: string | null | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed
+    return undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -742,11 +1283,6 @@ function safeJson(text: string): unknown | null {
   } catch {
     return null
   }
-}
-
-function safeParseArray(text: string): string[] {
-  const parsed = safeJson(text)
-  return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []
 }
 
 function summarize(value: string): string {

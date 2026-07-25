@@ -20,10 +20,11 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({
-      where: { id, companyId: user.companyId, userId: user.userId },
+      where: { id, userId: user.userId },
       include: {
         messages: {
-          orderBy: { createdAt: 'asc' },
+          where: { sender: { in: ['user', 'ai'] } },
+          orderBy: { createdAt: 'asc' as const },
           include: {
             integration: { select: { id: true, name: true, provider: true } },
           },
@@ -33,7 +34,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     if (!session) {
       return NextResponse.json(
-        { error: 'Sesi tidak ditemukan.' },
+        { error: 'Session not found.' },
         { status: 404 }
       )
     }
@@ -47,7 +48,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ...session, messages })
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat detail sesi chat.')
+    return handleApiError(err, 'Failed to load chat session details.')
   }
 }
 
@@ -57,13 +58,13 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({
-      where: { id, companyId: user.companyId, userId: user.userId },
+      where: { id, userId: user.userId },
       select: { id: true, userId: true, title: true },
     })
 
     if (!session) {
       return NextResponse.json(
-        { error: 'Sesi tidak ditemukan.' },
+        { error: 'Session not found.' },
         { status: 404 }
       )
     }
@@ -71,7 +72,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     await db.chatSession.delete({ where: { id: session.id } })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'CHAT_SESSION_DELETE',
       severity: 'warning',
@@ -80,7 +80,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return handleApiError(err, 'Gagal menghapus sesi chat.')
+    return handleApiError(err, 'Failed to delete chat session.')
   }
 }
 

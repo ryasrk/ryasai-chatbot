@@ -1,0 +1,269 @@
+Meta Platforms
+
+Meta Platforms, Inc. (doing business as Meta) is an American multinational technology company headquartered in Menlo Park, California. Meta owns and operates several prominent social media platforms and communication services, including Facebook, Instagram, WhatsApp, Messenger, and Threads. The company also operates an advertising network for its own sites and third parties; as of 2023, advertising accounted for 97.8 percent of its total revenue. Meta has been described as a part of Big Tech, which refers to the largest six tech companies in the United States, Alphabet (Google), Amazon, Apple, Meta (Facebook), Microsoft, and Nvidia, which are also the largest companies in the world by market capitalization.
+The company was originally established in 2004 as TheFacebook, Inc., and was renamed Facebook, Inc. in 2005. In 2021, it rebranded as Meta Platforms, Inc. to reflect a strategic shift toward developing the metaverse—an interconnected digital ecosystem spanning virtual and augmented reality technologies.
+In 2023, Meta was ranked 31st on the Forbes Global 2000 list of the world's largest public companies. As of 2022, it was the world's third-largest spender on research and development, with R&D expenses totaling US$35.3 billion.
+
+
+== History ==
+
+Facebook filed for an initial public offering (IPO) on January 1, 2012. The preliminary prospectus stated that the company sought to raise $5 billion, had 845 million monthly active users, and a website accruing 2.7 billion likes and comments daily. After the IPO, Zuckerberg would retain 22% of the total shares and 57% of the total voting power in Facebook.
+Underwriters valued the shares at $38 each, valuing the company at $104 billion, the largest valuation yet for a newly public company. On May 16, one day before the IPO, Facebook announced it would sell 25% more shares than originally planned due to high demand. The IPO raised $16 billion, making it the third-largest in US history (slightly ahead of AT&T Mobility and behind only General Motors and Visa). The stock price left the company with a higher market capitalization than all but a few U.S. corporations—surpassing heavyweights such as Amazon, McDonald's, Disney, and Kraft Foods—and made Zuckerberg's stock worth $19 billion. The New York Times stated that the offering overcame questions about Facebook's difficulties in attracting advertisers to transform the company into a "must-own stock". Jimmy Lee of JPMorgan Chase described it as "the next great blue-chip". Writers at TechCrunch, on the other hand, expressed skepticism, stating, "That's a big multiple to live up to, and Facebook will likely need to add bold new revenue streams to justify the mammoth valuation."
+Trading in the stock, which began on May 18, was delayed that day due to technical problems with the Nasdaq exchange. The stock struggled to stay above the IPO price for most of the day, forcing underwriters to buy back shares to support the price. At the closing bell, shares were valued at $38.23, only $0.23 above the IPO price and down $3.82 from the opening bell value. The opening was widely described by the financial press as a disappointment. The stock set a new record for trading volume of an IPO. On May 25, 2012, the stock ended its first full week of trading at $31.91, a 16.5% decline.
+On May 22, 2012, regulators from Wall Street's Financial Industry Regulatory Authority announced that it had begun to investigate whether banks underwriting Facebook had improperly shared information only with select clients rather than the general public. Massachusetts Secretary of State William F. Galvin subpoenaed Morgan Stanley over the same issue. The allegations sparked "fury" among some investors and led to the immediate filing of several lawsuits, one of them a class action suit claiming more than $2.5 billion in losses due to the IPO. Bloomberg estimated that retail investors may have lost approximately $630 million on Facebook stock since its debut. S&P Global Ratings added Facebook to its S&P 500 index on December 21, 2013.
+On May 2, 2014, Zuckerberg announced that the company would be changing its internal motto from "Move fast and break things" to "Move fast with stable infrastructure". The earlier motto had been described as Zuckerberg's "prime directive to his developers and team" in a 2009 interview in Business Insider, in which he also said, "Unless you are breaking stuff, you are not moving fast enough."
+In November 2016, Facebook announced the Microsoft Windows client of gaming service Facebook Gameroom, formerly Facebook Games Arcade, at the Unity Technologies developers conference. The client allows Facebook users to play "native" games in addition to its web games. The service was closed in June 2021.
+
+
+=== 2018–2020: Focus on the metaverse ===
+Lasso was a short-video sharing app from Facebook similar to TikTok that was launched on iOS and Android in 2018 and was aimed at teenagers. On July 2, 2020, Facebook announced that Lasso would be shutting down on July 10.
+In 2018, the Oculus lead Jason Rubin sent his 50-page vision document titled "The Metaverse" to Facebook's leadership. In the document, Rubin acknowledged that Facebook's virtual reality business had not caught on as expected, despite the hundreds of millions of dollars spent on content for early adopters. He also urged the company to execute fast and invest heavily in the vision, to shut out HTC, Apple, Google and other competitors in the VR space. Regarding other players' participation in the metaverse vision, he called for the company to build the "metaverse" to prevent its competitors from "being in the VR business in a meaningful way at all".
+In May 2019, Facebook founded Libra Networks, reportedly to develop its own stablecoin cryptocurrency. Later, it was reported that Libra was being supported by financial companies such as Visa, Mastercard, PayPal and Uber. The consortium of companies was expected to pool in $10 million each to fund the launch of the cryptocurrency coin named Libra. Depending on when it would receive approval from the Swiss Financial Market Supervisory authority to operate as a payments service, the Libra Association had planned to launch a limited format cryptocurrency in 2021. Libra was renamed Diem, before being shut down and sold in January 2022 after backlash from Swiss government regulators and the public.
+During the COVID-19 pandemic, the use of online services, including Facebook, grew globally. Zuckerberg predicted this would be a "permanent acceleration" that would continue after the pandemic. Facebook hired aggressively, growing from 48,268 employees in March 2020 to more than 87,000 by September 2022.
+
+
+=== 2021: Rebrand as Meta ===
+
+Following a period of intense scrutiny and damaging whistleblower leaks, news started to emerge on October 21, 2021 about Facebook's plan to rebrand the company and change its name. In the Q3 2021 earnings call on October 25, Mark Zuckerberg discussed the ongoing criticism of the company's social services and the way it operates, and pointed to the pivoting efforts to building the metaverse – without mentioning the rebranding and the name change. The metaverse vision and the name change from Facebook, Inc. to Meta Platforms was introduced at Facebook Connect on October 28, 2021. Based on Facebook's PR campaign, the name change reflects the company's shifting long term focus of building the metaverse, a digital extension of the physical world by social media, virtual reality and augmented reality features.
+"Meta" had been registered as a trademark in the United States in 2018 (after an initial filing in 2015) for marketing, advertising, and computer services, by a Canadian company that provided big data analysis of scientific literature. This company was acquired in 2017 by the Chan Zuckerberg Initiative (CZI), a foundation established by Zuckerberg and his wife, Priscilla Chan, and became one of their projects. Following the rebranding announcement, CZI announced that it had already decided to deprioritize the earlier Meta project, thus it would be transferring its rights to the name to Meta Platforms, and the previous project would end in 2022.
+
+
+=== 2022: Declining profits and mass layoffs ===
+Soon after the rebranding, in early February 2022, Meta reported a greater-than-expected decline in profits in the fourth quarter of 2021. It reported no growth in monthly users, and indicated it expected revenue growth to stall. It also expected measures taken by Apple Inc. to protect user privacy to cost it some $10 billion in advertisement revenue, an amount equal to roughly 8% of its revenue for 2021. In meeting with Meta staff the day after earnings were reported, Zuckerberg blamed competition for user attention, particularly from video-based apps such as TikTok.
+The 27% reduction in the company's share price which occurred in reaction to the news eliminated some $230 billion of value from Meta's market capitalization. Bloomberg described the decline as "an epic rout that, in its sheer scale, is unlike anything Wall Street or Silicon Valley has ever seen". Zuckerberg's net worth fell by as much as $31 billion. Zuckerberg owns 13% of Meta, and the holding makes up the bulk of his wealth.
+According to published reports by Bloomberg on March 30, 2022, Meta turned over data such as phone numbers, physical addresses, and IP addresses to hackers posing as law enforcement officials using forged documents. The law enforcement requests sometimes included forged signatures of real or fictional officials. When asked about the allegations, a Meta representative said, "We review every data request for legal sufficiency and use advanced systems and processes to validate law enforcement requests and detect abuse." In June 2022, Sheryl Sandberg, the chief operating officer of 14 years, announced she would step down that year. Zuckerberg said that Javier Olivan would replace Sandberg, though in a “more traditional” role.
+In March 2022, Meta (except Meta-owned WhatsApp) and Instagram were banned in Russia and added to the Russian list of terrorist and extremist organizations for alleged Russophobia and hate speech (up to genocidal calls) amid the ongoing Russian invasion of Ukraine. Meta appealed against the ban, but it was upheld by a Moscow court in June of the same year.
+Also in March 2022, Meta and Italian eyewear giant Luxottica released Ray-Ban Stories, a series of smartglasses which could play music and take pictures. Meta and Luxottica parent company EssilorLuxottica declined to disclose sales on the line of products as of September 2022, though Meta has expressed satisfaction with its customer feedback.
+In July 2022, Meta saw its first year-on-year revenue decline when its total revenue slipped by 1% to $28.8bn. Analysts and journalists accredited the loss to its advertising business, which has been limited by Apple's app tracking transparency feature and the number of people who have opted not to be tracked by Meta apps. Zuckerberg also accredited the decline to increasing competition from TikTok. On October 27, 2022, Meta's market value dropped to $268 billion, a loss of around $700 billion compared to 2021, and its shares fell by 24%. It lost its spot among the top 20 US companies by market cap, despite reaching the top 5 in the previous year.
+In November 2022, Meta laid off 11,000 employees, 13% of its workforce. Zuckerberg said the decision to aggressively increase Meta's investments had been a mistake, as he had wrongly predicted that the surge in e-commerce would last beyond the COVID-19 pandemic. He also attributed the decline to increased competition, a global economic downturn and "ads signal loss". Plans to lay off a further 10,000 employees began in April 2023. The layoffs were part of a general downturn in the technology industry, alongside layoffs by companies including Google, Amazon, Tesla, Snap, Twitter and Lyft.
+Starting from 2022, Meta scrambled to catch up to other tech companies in adopting specialized artificial intelligence hardware and software. It had been using less expensive CPUs instead of GPUs for AI work, but that approach turned out to be less efficient. The company gifted the Inter-university Consortium for Political and Social Research $1.3 million to finance the Social Media Archive's aim to make its data available to social science research.
+
+
+=== 2023: Threads, AI and all-time high stock value ===
+In 2023, Ireland's Data Protection Commissioner imposed a record EUR 1.2 billion fine on Meta for transferring data from Europe to the United States without adequate protections for EU citizens.
+In March 2023, Meta announced a new round of layoffs that would cut 10,000 employees and close 5,000 open positions to make the company more efficient. Meta revenue surpassed analyst expectations for the first quarter of 2023 after announcing that it was increasing its focus on AI. On July 6, Meta launched a new app, Threads, a competitor to Twitter.
+Meta announced its artificial intelligence model Llama 2 in July 2023, available for commercial use via partnerships with major cloud providers like Microsoft. It was the first project to be unveiled out of Meta's generative AI group after it was set up in February. It would not charge access or usage but instead operate with a source-available model to allow Meta to ascertain what improvements need to be made. Prior to this announcement, Meta said it had no plans to release Llama 2 for commercial use. An earlier version of Llama was released to academics.
+In August 2023, Meta announced its permanent removal of news content from Facebook and Instagram in Canada due to the Online News Act, which requires Canadian news outlets to be compensated for content shared on its platform. The Online News Act was in effect by year-end, but Meta will not participate in the regulatory process. In October 2023, Zuckerberg said that AI would be Meta's biggest investment area in 2024. Meta finished 2023 as one of the best-performing technology stocks of the year, with its share price up 150 percent. Its stock reached an all-time high in January 2024, bringing Meta within 2% of achieving $1 trillion market capitalization.
+In November 2023 Meta Platforms launched an ad-free service in Europe, allowing subscribers to opt-out of personal data being collected for targeted advertising. A group of 28 European organizations, including Max Schrems' advocacy group NOYB, the Irish Council for Civil Liberties, Wikimedia Europe, and the Electronic Privacy Information Center, signed a 2024 letter to the European Data Protection Board (EDPB) expressing concern that this subscriber model would undermine privacy protections, specifically GDPR data protection standards.
+Meta removed the Facebook and Instagram accounts of Iran's Supreme Leader Ali Khamenei in February 2024, citing repeated violations of its Dangerous Organizations & Individuals policy. As of March, Meta was under investigation by the FDA for alleged use of its social media platforms to sell illegal drugs. On 16 May 2024, the European Commission began an investigation into Meta over concerns related to child safety.
+In May 2023, Iraqi social media influencer Esaa Ahmed-Adnan encountered a troubling issue when Instagram removed his posts, citing false copyright violations despite his content being original and free from copyrighted material. He discovered that extortionists were behind these takedowns, offering to restore his content for $3,000 or provide ongoing protection for $1,000 per month. This scam, exploiting Meta's rights management tools, became widespread in the Middle East, revealing a gap in Meta's enforcement in developing regions. An Iraqi nonprofit Tech4Peace's founder, Aws al-Saadi helped Ahmed-Adnan and others, but the restoration process was slow, leading to significant financial losses for many victims, including prominent figures like Ammar al-Hakim. This situation highlighted Meta's challenges in balancing global growth with effective content moderation and protection.
+
+
+=== 2024: Developments and controversies ===
+On 16 September 2024, Meta announced it had banned Russian state media outlets from its platforms worldwide due to concerns about "foreign interference activity." This decision followed allegations that RT and its employees funneled $10 million through shell companies to secretly fund influence campaigns on various social media channels. Meta's actions were part of a broader effort to counter Russian covert influence operations, which had intensified since the invasion.
+At its 2024 Connect conference, Meta presented Orion, its first pair of augmented reality glasses. Though Orion was originally intended to be sold to consumers, the manufacturing process turned out to be too complex and expensive. Instead, the company pivoted to producing a small number of the glasses to be used internally.
+On 4 October 2024, Meta announced about its new AI model called Movie Gen, capable of generating realistic video and audio clips based on user prompts. Meta stated it would not release Movie Gen for open development, preferring to collaborate directly with content creators and integrate it into its products by the following year. The model was built using a combination of licensed and publicly available datasets.
+On October 31, 2024, ProPublica published an investigation into deceptive political advertisement scams that sometimes use hundreds of hijacked profiles and Facebook pages run by organized networks of scammers. The authors cited spotty enforcement by Meta as a major reason for the extent of the issue.
+In November 2024, TechCrunch reported that Meta were considering building a $10bn global underwater cable spanning 25,000 miles.
+In the same month, Meta closed down 2 million accounts on Facebook and Instagram that were linked to scam centers in Myanmar, Laos, Cambodia, the Philippines, and the United Arab Emirates doing pig butchering scams.
+In December 2024, Meta announced that, beginning February 2025, it would require advertisers to run ads about financial services in Australia to verify information about who are the beneficiary and the payer in a bid to regulate scams.
+On December 4, 2024, Meta announced it will invest US$10 billion for its largest AI data center in northeast Louisiana, powered by natural gas facilities.
+On the 11th of that month, Meta experienced a global outage, impacting accounts on all of its social media and messaging applications. Outage reports from DownDetector reached 70,000+ and 100,000+ within minutes for Instagram and Facebook, respectively.
+
+
+=== 2025: Policy shifts and AI investments ===
+In January 2025, Meta announced plans to roll back its diversity, equity, and inclusion (DEI) initiatives, citing shifts in the "legal and policy landscape" in the United States following the 2024 presidential election. The decision followed reports that CEO Mark Zuckerberg sought to align the company more closely with the incoming Trump administration, including changes to content moderation policies and executive leadership.  The new content moderation policies continued to bar insults about a person's intellect or mental illness, but made an exception to allow calling LGBTQ people mentally ill because they are gay or transgender.  Later that month, Meta agreed to pay $25 million to settle a 2021 lawsuit brought by Donald Trump for suspending his social media accounts after the January 6 riots. Changes to Meta's moderation policies were controversial among its oversight board, with a significant divide in opinion between the board's US conservatives and its global members.
+In June 2025, Meta Platforms Inc. has decided to make a multibillion-dollar investment into artificial intelligence startup Scale AI. The financing could exceed $10 billion in value which would make it one of the largest private company funding events of all time.
+In October 2025, it was announced that Meta would be laying off 600 employees in the artificial intelligence unit to perform better and simpler. It referred to its AI unit as "bloated" and are seeking to trim down the department. This mass layoff is going to impact Meta's AI infrastructure units, Fundamental Artificial Intelligence Research unit (FAIR) and other product-related positions.
+In late 2025, Meta said that it would start remove images and videos containing nudity or explicit sexual activity, including when generated by AI for teen users on Instagram.
+
+
+=== 2026: Investments in AI ===
+In February 2026, Meta announced a long-term partnership with Nvidia. According to an analysis by Bridgewater Associates, Meta, along with Amazon, Alphabet and Microsoft are expected to collectively invest about $650 billion to scale up AI-related infrastructure in 2026.
+As of March 2026, Meta is currently facing investigations in the United Kingdom and the United States related to its AI-enabled smart glasses. Regulators are examining how images and videos captured by the devices may be used in the development and improvement of artificial intelligence systems.
+In March 2026, Meta agreed to allow AI rivals on WhatsApp for a year, in a bid to prevent a possible temporary order from EU antitrust regulators after complaints from competitors who were blocked from WhatsApp.
+In March 2026, Meta signed an energy pledge at the White House which required it to bear the cost of new electricity generation to power its data centers.
+In March 2026, Meta acquired Moltbook a social network for AI bots, where AI agents interact with one another autonomously.
+On 11 March 2026, Meta revealed a roadmap of four new chips that it is making in-house. The new chips are part of the company's Meta Training and Inference Accelerator program.
+On March 31, 2026, Meta unveiled two new Ray-Ban smart glasses designed for prescription lenses, expanding its lineup of AI-enabled wearable devices.
+In 2026, the UK government ramped up scrutiny of social media companies. In a meeting with the executives of companies including Meta, Prime Minister Keir Starmer asked which steps they would take to ensure child online safety.
+In May 2026, major publishers including Macmillan, Hachette, Cengage, Elsevier, and McGraw Hill sued Meta Platforms, alleging that Meta used their books and journal articles, without their permission, to train Llama. Reports stated that Meta was preparing to launch an agentic AI assistant designed to carry out personalized tasks across its platforms. The same month, Meta laid off 8,000 workers, or about 10% of its workforce, with a detached-sounding memo that emphasized that “success isn't a given” in the AI race. 7,000 employees were also set to be moved to AI-focused roles.
+In May 2026, Meta introduced subscription tiers for Facebook, Instagram, and WhatsApp, providing users with access to additional customization, analytics, and platform features.
+In June 2026, Meta introduced an AI-based assistant for creators, designed to provide guidance on content strategy, audience engagement, and account performance through an interactive chat interface. The same month, Meta announced new AI-powered advertising features designed to assist businesses with creating, managing, and optimizing digital advertising campaigns.
+In late June 2026, WIRED exposed a months-long, covert testing program, Project Cannes, which involved Meta-employed contractors testing the competitor AI chatbots ChatGPT, Gemini and Character.ai with highly-sensitive prompts, while posing as younger users to evaluate safety and vulnerabilities.
+In July 2026, Meta introduced Muse Spark 1.1 and opened a public developer preview through the Meta Model API, expanding access to its multimodal AI model for software development.
+
+
+== Mergers and acquisitions ==
+
+Meta has acquired multiple companies (often identified as talent acquisitions). One of its first major acquisitions was in April 2012, when it acquired Instagram for approximately US$1 billion in cash and stock. In October 2013, Facebook, Inc. acquired Onavo, an Israeli mobile web analytics company. In February 2014, Facebook, Inc. announced it would buy mobile messaging company WhatsApp for US$19 billion in cash and stock. The acquisition was completed on October 6. Later that year, Facebook bought Oculus VR for $2.3 billion in cash and stock, which released its first consumer virtual reality headset in 2016. In late November 2019, Facebook, Inc. announced the acquisition of the game developer Beat Games, responsible for developing one of that year's most popular VR games, Beat Saber. In Late 2022, after Facebook Inc rebranded to Meta Platforms Inc, Oculus was rebranded to Meta Quest.
+In May 2020, Facebook, Inc. announced it had acquired Giphy for a reported cash price of $400 million. It will be integrated with the Instagram team. However, in August 2021, UK's Competition and Markets Authority (CMA) stated that Facebook, Inc. might have to sell Giphy, after an investigation found that the deal between the two companies would harm competition in display advertising market. Facebook, Inc. was fined $70 million by CMA for deliberately failing to report all information regarding the acquisition and the ongoing antitrust investigation. In October 2022, the CMA ruled for a second time that Meta be required to divest Giphy, stating that Meta already controls half of the advertising in the UK. Meta agreed to the sale, though it stated that it disagrees with the decision itself. In May 2023, Giphy was divested to Shutterstock for $53 million.
+In November 2020, Facebook, Inc. announced that it planned to purchase the customer-service platform and chatbot specialist startup Kustomer to promote companies to use its platform for business. It has been reported that Kustomer valued at slightly over $1 billion. The deal was closed in February 2022 after regulatory approval.
+In September 2022, Meta acquired Lofelt, a Berlin-based haptic tech startup.
+In December 2025, it was announced Meta had acquired the AI-wearables startup, Limitless. In the same month, it also acquired another AI startup, Manus AI, for $2 billion. Manus announced in December that its platform had achieved $100mm in recurring revenue just 8 months after its launch and Meta said it will scale the platform to many other businesses. In January 2026, it was announced Meta proposed acquisition of Manus was undergoing preliminary scrutiny by Chinese regulators. The examination concerns the cross-border transfer of artificial intelligence technology developed in China.
+
+
+== Lobbying ==
+In 2020, Facebook, Inc. spent $19.7 million on lobbying, hiring 79 lobbyists. In 2019, it had spent $16.7 million on lobbying and had a team of 71 lobbyists, up from $12.6 million and 51 lobbyists in 2018. Facebook was the largest spender of lobbying money among the Big Tech companies in 2020. The lobbying team includes top congressional aide John Branscome, who was hired in September 2021, to help the company fend off threats from Democratic lawmakers and the Biden administration.
+In December 2024, Meta donated $1 million to the inauguration fund for then-President-elect Donald Trump.
+In 2025, Meta was listed among the donors funding the construction of the White House State Ballroom.
+
+
+== Censorship ==
+In 2016 Meta hired Jordana Cutler, formerly an employee at the Israeli Embassy to the United States, as its policy chief for Israel and the Jewish Diaspora. In this role, Cutler pushed for the censorship of accounts belonging to Students for Justice in Palestine chapters in the United States. Critics have said that Cutler's position gives the Israeli government an undue influence over Meta policy, and that few countries have such high levels of contact with Meta policymakers.
+In August 2024, Mark Zuckerberg sent a letter to Jim Jordan indicating that during the COVID-19 pandemic the Biden administration repeatedly asked Meta to limit certain COVID-19 content, including humor and satire, on Facebook and Instagram.
+Following the election of Donald Trump in 2025, various sources noted possible censorship related to the Democratic Party on Instagram and other Meta platforms. In February 2025, a Meta rep flagged journalist Gil Duran's article and other "critiques of tech industry figures" as spam or sensitive content, limiting their reach.
+According to a 2025 complaint by whistleblower Sarah Wynn-Williams, Facebook created in 2014 a "China team" to develop a version of its services that would be allowed in China, a project internally code-named "Project Aldrin". The company allegedly created a custom censorship system and agreed to hire 300 content moderators to support it. In an email exchange, an employee of Facebook's privacy team wrote, "In exchange for the ability to establish operations in China, FB will agree to grant the Chinese government access to Chinese users’ data — including Hongkongese users’ data". According to Wynn-Williams, Facebook also restricted the account of Guo Wengui, a Chinese businessman critical of the government, to foster cooperation with China. By 2019, Facebook had abandoned its ambitions in China, as trade tensions between the Trump administration and China escalated.
+In March 2025, Meta attempted to block Sarah Wynn-Williams from promoting or further distributing her memoir, Careless People, that includes allegations of unaddressed sexual harassment in the workplace by senior executives. The New York Times reports that the arbitration is among Meta's most forcible attempts to repudiate a former employee's account of workplace dynamics.  Publisher Macmillan reacted to the ruling by the Emergency International Arbitral Tribunal by stating that it will ignore its provisions.  As of 15 March 2025, hardback and digital versions of Careless People were being offered for sale by major online retailers.
+From October 2025, Meta began removing and restricting access for accounts related to LGBTQ, reproductive health and abortion information pages on its platforms. Martha Dimitratou, executive director of Repro Uncensored, called Meta's shadow-banning of these issues "One of the biggest waves of censorship we are seeing".
+
+
+== Disinformation concerns ==
+Since its inception, Meta has been accused of being a host for fake news and misinformation. In the wake of the 2016 United States presidential election, Zuckerberg began to take steps to eliminate the prevalence of fake news, as the platform had been criticized for its potential influence on the outcome of the election. The company initially partnered with ABC News, the Associated Press, FactCheck.org, Snopes and PolitiFact for its fact-checking initiative; as of 2018, it had over 40 fact-checking partners across the world, including The Weekly Standard.
+A May 2017 review by The Guardian found that the platform's fact-checking initiatives of partnering with third-party fact-checkers and publicly flagging fake news were regularly ineffective, and appeared to be having minimal impact in some cases. In 2018, journalists working as fact-checkers for the company criticized the partnership, stating that it had produced minimal results and that the company had ignored their concerns.
+In 2024 Meta's decision to continue to disseminate a falsified video of US president Joe Biden, even after it had been proven to be fake, attracted criticism and concern.
+
+
+=== Misinformation and hate speech ===
+In January 2025, Meta ended its use of third-party fact-checkers in favor of a user-run community notes system similar to the one used on X.
+While Zuckerberg supported these changes, saying that the amount of censorship on the platform was excessive, the decision received criticism by fact-checking institutions, stating that the changes would make it more difficult for users to identify misinformation. Meta also faced criticism for weakening its policies on hate speech that were designed to protect minorities and LGBTQ+ individuals from bullying and discrimination. While moving its content review teams from California to Texas, Meta changed its hateful conduct policy to eliminate restrictions on anti-LGBT and anti-immigrant hate speech, as well as explicitly allowing users to accuse LGBT people of being mentally ill or abnormal based on their sexual orientation or gender identity.
+In January 2025, Meta faced significant criticism for its role in removing LGBTQ+ content from its platforms, amid its broader efforts to address anti-LGBTQ+ hate speech. The removal of LGBTQ+ themes was noted as part of the wider crackdown on content deemed to violate its community guidelines. Meta's content moderation policies, which were designed to combat harmful speech and protect users from discrimination, inadvertently led to the removal or restriction of LGBTQ+ content, particularly posts highlighting LGBTQ+ identities, support, or political issues. According to reports, LGBTQ+ posts, including those that simply celebrated pride or advocated for LGBTQ+ rights, were flagged and removed for reasons that some critics argue were vague or inconsistently applied. Many LGBTQ+ activists and users on Meta's platforms expressed concern that such actions stifled visibility and expression, potentially isolating LGBTQ+ individuals and communities, especially in spaces that were historically important for outreach and support.
+In an April 2026 interview with Outlook Business, former Meta executive turned whistleblower Kelly Stonelake claimed that Big Tech platforms such as Meta tended to prioritise scale over user safety in developing countries such as India, often treating them as "scale markets". This, according to Stonelake, amplified prevalent issues such as misinformation, harassment, political manipulation, and communal-violence.
+
+
+== Lawsuits ==
+
+Numerous lawsuits have been filed against the company, both when it was known as Facebook, Inc., and as Meta Platforms.
+In March 2020, the Office of the Australian Information Commissioner (OAIC) sued Facebook, for significant and persistent infringements of the rule on privacy involving the Cambridge Analytica fiasco. Every violation of the Privacy Act is subject to a theoretical cumulative liability of $1.7 million. The OAIC estimated that a total of 311,127 Australians had been exposed.
+On December 8, 2020, the U.S. Federal Trade Commission and 46 states (excluding Alabama, Georgia, South Carolina, and South Dakota), the District of Columbia and the territory of Guam, launched Federal Trade Commission v. Facebook as an antitrust lawsuit against Facebook. The lawsuit concerns Facebook's acquisition of two competitors—Instagram and WhatsApp—and the ensuing monopolistic situation. FTC alleges that Facebook holds monopolistic power in the U.S. social networking market and seeks to force the company to divest from Instagram and WhatsApp to break up the conglomerate. William Kovacic, a former chairman of the Federal Trade Commission, argued the case will be difficult to win as it would require the government to create a counterfactual argument of an internet where the Facebook-WhatsApp-Instagram entity did not exist, and prove that harmed competition or consumers. In November 2025, it was ruled that Meta did not violate antitrust laws and holds no monopoly in the market.
+On December 24, 2021, a court in Russia fined Meta for $27 million after the company declined to remove unspecified banned content. The fine was reportedly tied to the company's annual revenue in the country.
+In May 2022, a lawsuit was filed in Kenya against Meta and its local outsourcing company Sama. Allegedly, Meta has poor working conditions in Kenya for workers moderating Facebook posts. According to the lawsuit, 260 screeners were declared redundant with confusing reasoning. The lawsuit seeks financial compensation and an order that outsourced moderators be given the same health benefits and pay scale as Meta employees.
+In June 2022, 8 lawsuits were filed across the U.S. over the allege that excessive exposure to platforms including Facebook and Instagram has led to attempted or actual suicides, eating disorders and sleeplessness, among other issues. The litigation follows a former Facebook employee's testimony in Congress that the company refused to take responsibility. The company noted that tools have been developed for parents to keep track of their children's activity on Instagram and set time limits, in addition to Meta's "Take a break" reminders. In addition, the company is providing resources specific to eating disorders as well as developing AI to prevent children under the age of 13 signing up for Facebook or Instagram.
+In June 2022, Meta settled a lawsuit with the US Department of Justice. The lawsuit, which was filed in 2019, alleged that the company enabled housing discrimination through targeted advertising, as it allowed homeowners and landlords to run housing ads excluding people based on sex, race, religion, and other characteristics. The U.S. Department of Justice stated that this was in violation of the Fair Housing Act. Meta was handed a penalty of $115,054 and given until December 31, 2022, to shadow the algorithm tool.
+In January 2023, Meta was fined €390 million for violations of the European Union General Data Protection Regulation.
+In May 2023, the European Data Protection Board fined Meta a record €1.2 billion for breaching European Union data privacy laws by transferring personal data of Facebook users to servers in the U.S.
+In July 2024, Meta agreed to pay the state of Texas US$1.4 billion to settle a lawsuit brought by Texas Attorney General Ken Paxton accusing the company of collecting users' biometric data without consent, setting a record for the largest privacy-related settlement ever obtained by a state attorney general.
+In October 2024, Meta Platforms faced lawsuits in Japan from 30 plaintiffs who claimed they were defrauded by fake investment ads on Facebook and Instagram, featuring false celebrity endorsements. The plaintiffs are seeking approximately $2.8 million in damages.
+In April 2025, the Kenyan High Court ruled that a US$2.4 billion lawsuit in which three plaintiffs claim that Facebook inflamed civil violence in Ethiopia in 2021 could proceed.
+In April 2025, Meta was fined €200 million ($230 million) for breaking the Digital Markets Act, by imposing a “consent or pay” system that forces users to either allow their personal data to be used to target advertisements, or pay a subscription fee for advertising-free versions of Facebook and Instagram.
+In late April 2025, a case was filed against Meta in Ghana over the alleged psychological distress experienced by content moderators employed to take down disturbing social media content including depictions of murders, extreme violence and child sexual abuse. Meta moved the moderation service to the Ghanaian capital of Accra after legal issues in the previous location Kenya. The new moderation company is Teleperformance, a multinational corporation with a history of worker's rights violation. Reports suggests the conditions are worse here than in the previous Kenyan location, with many workers afraid of speaking out due to fear of returning to conflict zones. Workers reported developing mental illnesses, attempted suicides, and low pay.
+In December 2023, a New Mexico state court case was filed by New Mexico Attorney General Raúl Torrez based on an undercover investigation alleging that "Meta knowingly exposes children to the twin dangers of sexual exploitation and mental health harm [...] Meta's motive for doing so is profit." In March 2026, a New Mexico jury found that Meta had harmed children's mental health and safety and violated state law in the case. Meta was ordered to pay $375 million in civil penalties. New Mexico will argue that the company "make specific changes to its platforms and company operations, including enacting effective age verification, removing predators from the platform, and protecting minors from encrypted communications that shield bad actors."
+In March 2026, a Los Angeles jury found Meta and YouTube liable in K.G.M. v. Meta et al., a civil lawsuit alleging that their platforms contributed to a user's mental health harm.
+In March 2026, a New Mexico jury found that Meta violated New Mexico's consumer protection law and ordered Meta to pay US$372 million in civil penalties.
+
+
+=== UReputation ===
+In 2020, UReputation, a communication agency involved in several influence operations, filed a lawsuit against Facebook, accusing it of unlawfully transmitting personal data to third parties. Legal actions were initiated in Tunisia, France, and the United States. In 2025, the United States District court for the Northern District of Georgia approved a discovery procedure, allowing UReputation to access documents and evidence held by Meta.
+
+
+== Structure ==
+
+
+=== Management ===
+Meta's key management consists of:
+
+Mark Zuckerberg, chairman and chief executive officer
+Javier Olivan, chief operating officer
+Sir Nick Clegg, president, global affairs
+Susan Li, chief financial officer
+Andrew Bosworth, chief technology officer
+David Wehner, chief strategy officer
+Chris Cox, chief product officer
+Jennifer Newstead, chief legal officer
+As of October 2022, Meta had 83,553 employees worldwide.
+
+
+=== Board of directors ===
+As of June 2024, Meta's board consisted of the following directors;
+
+Mark Zuckerberg (chairman, co-founder, controlling shareholder, and chief executive officer)
+Peggy Alford (non-executive director, executive vice president, global sales, PayPal)
+Marc Andreessen (non-executive director, co-founder and general partner, Andreessen Horowitz)
+Drew Houston (non-executive director, chairman and chief executive officer, Dropbox)
+Nancy Killefer (non-executive director, senior partner, McKinsey & Company)
+Robert M. Kimmitt (non-executive director, senior international counsel, WilmerHale)
+Tracey Travis (non-executive director, executive vice president, chief financial officer, Estée Lauder Companies)
+Tony Xu (non-executive director, chairman and chief executive officer, DoorDash)
+Hock Tan (CEO of Broadcom) 
+John D. Arnold (former Enron executive) 
+Dana White (non-executive director, president and CEO of UFC)
+John Elkann (Stellantis chairman, and Exor CEO)
+Charlie Songhurst
+
+
+=== Ownership ===
+Meta Platforms is mainly owned by institutional investors, who hold around 80% of all shares. Insiders control the majority of voting shares. The three largest individual investors in 2024 were Mark Zuckerberg, Sheryl Sandberg and Christopher K. Cox.
+The largest shareholders in late 2024/early 2025 were:
+
+Mark Zuckerberg (13.5%)
+The Vanguard Group (8.8%)
+BlackRock (7.66%)
+Fidelity Investments (6.28%)
+State Street Corporation (3.97%)
+JPMorgan Chase (2.38%)
+Geode Capital Management (2.27%)
+T. Rowe Price (1.95%)
+Capital World Investors (1.86%)
+Capital Research Global Investors (1.7%)
+Morgan Stanley (1.66%)
+
+
+=== Company governance ===
+Roger McNamee, an early Facebook investor and Zuckerberg's former mentor, said Facebook had "the most centralized decision-making structure I have ever encountered in a large company".
+Facebook co-founder Chris Hughes has stated that chief executive officer Mark Zuckerberg has too much power, that the company is now a monopoly, and that, as a result, it should be split into multiple smaller companies. In an op-ed in The New York Times, Hughes said he was concerned that Zuckerberg had surrounded himself with a team that did not challenge him, and that it is the U.S. government's job to hold him accountable and curb his "unchecked power". He also said that "Mark's power is unprecedented and un-American." Several U.S. politicians agreed with Hughes. European Union Commissioner for Competition Margrethe Vestager stated that splitting Facebook should be done only as "a remedy of the very last resort", and that it would not solve Facebook's underlying problems.
+
+
+== Revenue ==
+
+Facebook ranked No. 34 in the 2020 Fortune 500 list of the largest United States corporations by revenue, with almost $86 billion in revenue most of it coming from advertising. One analysis of 2017 data determined that the company earned US$20.21 per user from advertising.
+According to New York, since its rebranding, Meta has reportedly lost $500 billion as a result of new privacy measures put in place by companies such as Apple and Google which prevents Meta from gathering users' data.
+
+
+=== Number of advertisers ===
+In February 2015, Facebook announced it had reached two million active advertisers, with most of the gain coming from small businesses. An active advertiser was defined as an entity that had advertised on the Facebook platform in the last 28 days. In March 2016, Facebook announced it had reached three million active advertisers with more than 70% from outside the United States. Prices for advertising follow a variable pricing model based on auctioning ad placements, and potential engagement levels of the advertisement itself. Similar to other online advertising platforms like Google and Twitter, targeting of advertisements is one of the chief merits of digital advertising compared to traditional media. Marketing on Meta is employed through two methods based on the viewing habits, likes and shares, and purchasing data of the audience, namely targeted audiences and "look alike" audiences.
+
+
+=== Scam advertising ===
+According to internal documents analyzed by Reuters, Meta projected that 10% of its 2024 revenue ($16 billion) would come from ads for scams and prohibited goods. Meta estimated that this represented 15 billion "higher risk" scam ads shown per day and that the company's platforms were involved in a third of all successful scams in the US. Rather than banning suspected scammers, Meta decided to charge them higher rates to reduce the profitability of scam campaigns. The company estimated that any regulatory fine would be significantly lower than the revenue from such ads, and an internal document states that the team responsible for vetting questionable advertisers wasn't allowed to take actions that would cost more than 0.15% of Meta's total revenue.
+
+
+=== Tax affairs ===
+
+The U.S. IRS challenged the valuation Facebook used when it transferred IP from the U.S. to Facebook Ireland (now Meta Platforms Ireland) in 2010 (which Facebook Ireland then revalued higher before charging out), as it was building its double Irish tax structure. The case is ongoing and Meta faces a potential fine of $3–5bn.
+The U.S. Tax Cuts and Jobs Act of 2017 changed Facebook's global tax calculations. Meta Platforms Ireland is subject to the U.S. GILTI tax of 10.5% on global intangible profits (i.e. Irish profits). On the basis that Meta Platforms Ireland Limited is paying some tax, the effective minimum US tax for Facebook Ireland will be circa 11%. In contrast, Meta Platforms Inc. would incur a special IP tax rate of 13.125% (the FDII rate) if its Irish business relocated to the U.S. Tax relief in the U.S. (21% vs. Irish at the GILTI rate) and accelerated capital expensing, would make this effective U.S. rate around 12%.
+The insignificance of the U.S./Irish tax difference was demonstrated when Facebook moved 1.5bn non-EU accounts to the U.S. to limit exposure to GDPR.
+
+
+== Facilities ==
+
+
+=== Offices ===
+Users outside of the U.S. and Canada contract with Meta's Irish subsidiary, Meta Platforms Ireland Limited (formerly Facebook Ireland Limited), allowing Meta to avoid US taxes for all users in Europe, Asia, Australia, Africa and South America. Meta is making use of the Double Irish arrangement which allows it to pay 2–3% corporation tax on all international revenue. In 2010, Facebook opened its fourth office, in Hyderabad, India, which houses online advertising and developer support teams and provides support to users and advertisers. In India, Meta is registered as Facebook India Online Services Pvt Ltd. It also has offices or planned sites in Chittagong, Bangladesh; Dublin, Ireland; and Austin, Texas, among other cities.
+Facebook opened its London headquarters in 2017 in Fitzrovia in central London. Facebook opened an office in Cambridge, Massachusetts in 2018. The offices were initially home to the "Connectivity Lab", a group focused on bringing Internet access to those who do not have access to the Internet. In April 2019, Facebook opened its Taiwan headquarters in Taipei.
+In March 2022, Meta opened new regional headquarters in Dubai.
+In September 2023, it was reported that Meta had paid £149m to British Land to break the lease on Triton Square London office. Meta reportedly had another 18 years left on its lease on the site.
+
+
+=== Data centers ===
+As of 2023, Facebook operated 21 data centers. It committed to purchase 100% renewable energy and to reduce its greenhouse gas emissions 75% by 2020. Its data center technologies include Fabric Aggregator, a distributed network system that accommodates larger regions and varied traffic patterns.
+In June 2026, Meta partnered with Reliance Industries to establish its first AI-enabled data centre in India. The 168 MW facility, to be built in Jamnagar, Gujarat, will be leased by Meta and is expected to support the company's growing AI infrastructure needs.
+In July 2026, Meta announced the construction of its first Canadian data center, a facility intended to expand the company's infrastructure for artificial intelligence and cloud services.
+
+
+== Reception ==
+
+US Representative Alexandria Ocasio-Cortez responded in a tweet to Zuckerberg's announcement about Meta, saying: "Meta as in 'we are a cancer to democracy metastasizing into a global surveillance and propaganda machine for boosting authoritarian regimes and destroying civil society ... for profit!'"
+Ex-Facebook employee Frances Haugen and whistleblower behind the Facebook Papers responded to the rebranding efforts by expressing doubts about the company's ability to improve while led by Mark Zuckerberg, and urged the chief executive officer to resign.
+In November 2021, a video published by Inspired by Iceland went viral, in which a Zuckerberg look-alike promoted the Icelandverse, a place of "enhanced actual reality without silly looking headsets".
+In a December 2021 interview, SpaceX and Tesla chief executive officer Elon Musk said he could not see a compelling use-case for the VR-driven metaverse, adding: "I don't see someone strapping a frigging screen to their face all day."
+In January 2022, Louise Eccles of The Sunday Times logged into the metaverse with the intention of making a video guide. She wrote:
+
+Initially, my experience with the Oculus went well. I attended work meetings as an avatar and tried an exercise class set in the streets of Paris. The headset enabled me to feel the thrill of carving down mountains on a snowboard and the adrenaline rush of climbing a mountain without ropes. Yet switching to the social apps, where you mingle with strangers also using VR headsets, it was at times predatory and vile.
+Eccles described being sexually harassed by another user, as well as "accents from all over the world, American, Indian, English, Australian, using racist, sexist, homophobic and transphobic language". She also encountered users as young as 7 years old on the platform, despite Oculus headsets being intended for users over 13.
+
+
+== See also ==
+Meta AI – Artificial intelligence division of Meta Platforms
+The Social Network – 2010 film by David Fincher
+Private equity in the 2020s
+
+
+== References ==
+
+
+== External links ==
+
+Official website 
+Meta Platforms on OpenSecrets, a website that tracks and publishes data on campaign finance and lobbying 
+Meta Platforms companies grouped at OpenCorporates
+Business data for Meta Platforms, Inc.:

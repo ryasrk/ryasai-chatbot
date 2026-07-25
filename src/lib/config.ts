@@ -74,13 +74,12 @@ export const serverConfig = {
   /**
    * Demo auth fallback: when no session cookie is present, impersonate the first
    * admin so the demo UI works without a login screen. Must be OFF in production.
-   * Defaults to ON only outside production.
+   * Defaults to OFF; enable explicitly with AUTH_DEMO_FALLBACK=true.
    */
-  authDemoFallback: optionalBool(
-    'AUTH_DEMO_FALLBACK',
-    process.env.NODE_ENV !== 'production',
-  ),
+  authDemoFallback: optionalBool('AUTH_DEMO_FALLBACK', false),
 
   /** WebSocket CORS allow-list (comma-separated). Empty list = reflect Origin. */
   wsCorsOrigins: parseCorsOrigins(optionalString('WS_CORS_ORIGIN', '')),
+
+  logRetentionDays: optionalInt('LOG_RETENTION_DAYS', 90),
 } as const

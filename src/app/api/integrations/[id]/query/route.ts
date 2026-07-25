@@ -52,7 +52,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     const integration = await db.integration.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       include: { schemas: { orderBy: { tableName: 'asc' } } },
     })
 
@@ -90,6 +90,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       tableName: s.tableName,
       columns: safeParseColumns(s.columns),
       rowCount: s.rowCount ?? undefined,
+      sampleRow: safeParseSampleRow(s.sampleRow),
     }))
     const schemaDescription = describeSchema(reflectedTables)
 
@@ -101,14 +102,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         question: naturalQuery,
         schemaDescription,
         provider: integration.provider,
-        companyId: user.companyId,
       })
       generatedSql = llm.sql
       llmExplanation = llm.explanation
     } catch (e) {
       console.error('[query] generateSql failed', e)
       await writeAudit({
-        companyId: user.companyId,
         userId: user.userId,
         action: 'SQL_GENERATE_ERROR',
         severity: 'warning',
@@ -128,7 +127,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const guard = validateAndSanitizeLlmSql(generatedSql)
     if (!guard.ok) {
       await writeAudit({
-        companyId: user.companyId,
         userId: user.userId,
         action: 'GUARDRAIL_BLOCK',
         severity: 'critical',
@@ -176,7 +174,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       })
 
       await writeAudit({
-        companyId: user.companyId,
         userId: user.userId,
         action: 'SQL_EXECUTE',
         severity: 'info',
@@ -210,7 +207,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         },
       })
       await writeAudit({
-        companyId: user.companyId,
         userId: user.userId,
         action: 'SQL_EXECUTE_ERROR',
         severity: 'warning',
@@ -237,17 +233,32 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   }
 }
 
-function safeParseColumns(raw: string): Array<{ name: string; type: string }> {
+function safeParseColumns(raw: string): Array<{ name: string; type: string; primaryKey?: boolean; notNull?: boolean; foreignKey?: string; distinctValues?: string[] }> {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
       return parsed.map((c) => ({
         name: String(c?.name ?? ''),
         type: String(c?.type ?? ''),
+        primaryKey: Boolean(c?.primaryKey) || undefined,
+        notNull: Boolean(c?.notNull) || undefined,
+        foreignKey: c?.foreignKey ? String(c.foreignKey) : undefined,
+        distinctValues: Array.isArray(c?.distinctValues) ? c.distinctValues.map(String) : undefined,
       }))
     }
     return []
   } catch {
     return []
+  }
+}
+
+function safeParseSampleRow(raw: string | null | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed
+    return undefined
+  } catch {
+    return undefined
   }
 }

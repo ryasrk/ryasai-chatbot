@@ -36,7 +36,6 @@ export async function POST(req: NextRequest) {
     if (!user || !ok) {
       if (user) {
         await writeAudit({
-          companyId: user.companyId,
           userId: user.id,
           action: 'LOGIN_FAILED',
           severity: 'warning',
@@ -48,7 +47,6 @@ export async function POST(req: NextRequest) {
     }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.id,
       action: 'LOGIN_SUCCESS',
       detail: { email: user.email },
@@ -56,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const res = NextResponse.json({
       ok: true,
-      user: { userId: user.id, name: user.name, email: user.email, role: user.role },
+      user: { userId: user.id, name: user.name, email: user.email },
     })
     res.cookies.set('x-active-user', signSession(user.id), {
       httpOnly: true,

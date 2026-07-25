@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { requireExternalApiKey } from '@/lib/api-keys'
+import { handleApiError, writeAudit } from '@/lib/session'
+import { getAvailableTools } from '@/lib/tool-registry'
+import { planQuery, executePlan, synthesizeAnswer } from '@/lib/planner'
+import { rememberChatTurn } from '@/lib/cognee'
+
+async function writeApiLog(args: {
+  apiKeyId: string | null
+  status: number
+  latencyMs: number
+  errorMessage?: string
+}) {
+  await db.apiRequestLog.create({
+    data: {
+      apiKeyId: args.apiKeyId,
+      endpoint: 'POST /api/v1/agent/run',
+      status: args.status,
+      latencyMs: args.latencyMs,
+      errorMessage: args.errorMessage ?? null,
+    },
+  }).catch(() => {})
+}
+
+interface AgentRunBody {
+  question?: string
+  sessionId?: string
+}
+
+export async function POST(req: NextRequest) {
+  const started = Date.now()
+  let apiKeyId: string | null = null
+  let agentRun: { id: string } | null = null
+
+  try {
+    const identity = await requireExternalApiKey(req)
+    apiKeyId = identity.apiKeyId
+
+    const body = (await req.json().catch(() => ({}))) as AgentRunBody
+    const question = (body.question ?? '').trim()
+    if (!question) {
+      await writeApiLog({
+        apiKeyId,
+        status: 400,
+        latencyMs: Date.now() - started,
+        errorMessage: 'question wajib diisi.',
+      })
+      return NextResponse.json(
+        { ok: false, error: 'question wajib diisi.' },
+        { status: 400 },
+      )
+    }
+
+    const admin = await db.user.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    })
+
+    const availableTools = await getAvailableTools(question)
+
+    // 1) Plan
+    agentRun = await db.agentRun.create({
+      data: {
+        userId: admin?.id ?? undefined,
+        sessionId: body.sessionId ?? undefined,
+        question,
+        planJson: '',
+        status: 'planning',
+      },
+    })
+
+    const plan = await planQuery({ question, availableTools })
+    await db.agentRun.update({
+      where: { id: agentRun.id },
+      data: { planJson: JSON.stringify(plan), status: 'executing' },
+    })
+
+    // 2) Execute
+    const stepResults = await executePlan({
+      plan,
+      userId: admin?.id ?? 'system',
+      sessionId: body.sessionId,
+    })
+
+    // 3) Synthesize
+    const answer = await synthesizeAnswer({
+      question,
+      stepResults,
+      plan,
+    })
+
+    await db.agentRun.update({
+      where: { id: agentRun.id },
+      data: {
+        status: 'complete',
+        resultJson: JSON.stringify(stepResults),
+        latencyMs: Date.now() - started,
+      },
+    })
+
+    await writeAudit({
+      userId: admin?.id ?? undefined,
+      action: 'AGENT_RUN',
+      severity: 'info',
+      detail: {
+        agentRunId: agentRun.id,
+        question,
+        steps: plan.steps.length,
+        synthesis: plan.needsSynthesis,
+        latencyMs: Date.now() - started,
+      },
+    })
+
+    await rememberChatTurn({
+      userMessage: question,
+      aiMessage: answer,
+      toolRuns: stepResults.map((r) => ({ type: r.tool, status: r.ok ? 'success' : 'error', latencyMs: r.latencyMs })),
+    })
+
+    return NextResponse.json({
+      ok: true,
+      agentRunId: agentRun.id,
+      answer,
+      plan,
+      stepResults,
+    })
+  } catch (e) {
+    if (agentRun) {
+      await db.agentRun.update({
+        where: { id: agentRun.id },
+        data: { status: 'error', errorMessage: e instanceof Error ? e.message : String(e) },
+      }).catch(() => {})
+    }
+    await writeApiLog({
+      apiKeyId,
+      status: 500,
+      latencyMs: Date.now() - started,
+      errorMessage: String(e),
+    })
+    return handleApiError(e, 'Agent run gagal.')
+  }
+}

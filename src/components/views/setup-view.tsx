@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import { Loader2, CheckCircle2 } from 'lucide-react'
+import { Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,9 +14,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 
-const STEPS = ['Akun Admin', 'LLM API', 'Tes Model', 'Dokumen', 'Data Source', 'Tes Chat'] as const
+const STEPS = ['Admin Account', 'LLM API', 'Test Model', 'Document', 'Data Source', 'Test Chat'] as const
 
 interface SetupViewProps {
   hasAdmin: boolean
@@ -26,9 +27,14 @@ interface SetupViewProps {
 export function SetupView({ hasAdmin, onDone }: SetupViewProps) {
   const [step, setStep] = useState(hasAdmin ? 1 : 0)
   const next = () => setStep((s) => s + 1)
+  const prev = () => setStep((s) => Math.max(0, s - 1))
 
   async function finish() {
-    await fetch('/api/setup/complete', { method: 'POST' })
+    const res = await fetch('/api/setup/complete', { method: 'POST' })
+    if (!res.ok) {
+      toast.error('Failed to complete setup.')
+      return
+    }
     onDone()
   }
 
@@ -36,19 +42,19 @@ export function SetupView({ hasAdmin, onDone }: SetupViewProps) {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle>Setup Awal — {STEPS[step]}</CardTitle>
+          <CardTitle>Initial Setup — {STEPS[step]}</CardTitle>
           <CardDescription>
-            Langkah {step + 1} dari {STEPS.length}
+            Step {step + 1} of {STEPS.length}
           </CardDescription>
           <Progress value={((step + 1) / STEPS.length) * 100} className="mt-2" />
         </CardHeader>
         <CardContent className="min-h-[280px]">
           {step === 0 && <AdminStep onNext={next} />}
-          {step === 1 && <LlmStep onNext={next} />}
-          {step === 2 && <TestModelStep onNext={next} />}
-          {step === 3 && <DocumentStep onNext={next} />}
-          {step === 4 && <DataSourceStep onNext={next} />}
-          {step === 5 && <TestChatStep onFinish={finish} />}
+          {step === 1 && <LlmStep onNext={next} onPrev={prev} />}
+          {step === 2 && <TestModelStep onNext={next} onPrev={prev} />}
+          {step === 3 && <DocumentStep onNext={next} onPrev={prev} />}
+          {step === 4 && <DataSourceStep onNext={next} onPrev={prev} />}
+          {step === 5 && <TestChatStep onFinish={finish} onPrev={prev} />}
         </CardContent>
       </Card>
     </div>
@@ -63,6 +69,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -76,20 +83,74 @@ function AdminStep({ onNext }: { onNext: () => void }) {
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok) {
-        onNext()
+        setCreated({ email, password })
         return
       }
-      setError(data?.error || 'Gagal membuat akun admin.')
+      setError(data?.error || 'Failed to create admin account.')
     } catch {
-      setError('Tidak dapat terhubung ke server.')
+      setError('Unable to connect to the server.')
     } finally {
       setSubmitting(false)
     }
   }
 
+  if (created) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 text-emerald-600">
+          <CheckCircle2 className="h-5 w-5" />
+          <span className="font-medium">Admin account created successfully!</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Note the following credentials for future logins:
+        </p>
+        <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs text-muted-foreground">Email</div>
+              <code className="text-xs font-mono">{created.email}</code>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(created.email); toast.success('Email copied.') } catch { toast.error('Failed to copy') }
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs text-muted-foreground">Password</div>
+              <code className="text-xs font-mono">{created.password}</code>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(created.password); toast.success('Password copied.') } catch { toast.error('Failed to copy') }
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+        <Alert className="border-amber-300 bg-amber-50/70 dark:bg-amber-950/20">
+          <AlertDescription>
+            You can change your password anytime in Settings &gt; Change Password after logging in.
+          </AlertDescription>
+        </Alert>
+        <Button className="w-full" onClick={onNext}>
+          Continue →
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Buat akun admin pertama. Anda akan otomatis masuk setelah akun dibuat.
       </p>
       <div className="space-y-2">
@@ -125,7 +186,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
           disabled={submitting}
         />
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={submitting}>
         {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Buat Akun & Lanjut
@@ -136,7 +197,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
 
 /* ------------------------------ Step 1: LLM ------------------------------ */
 
-function LlmStep({ onNext }: { onNext: () => void }) {
+function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   const [provider] = useState('openai-compatible')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -146,7 +207,7 @@ function LlmStep({ onNext }: { onNext: () => void }) {
   async function handleSave() {
     setSaving(true)
     try {
-      await fetch('/api/llm-config', {
+      const res = await fetch('/api/llm-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,9 +217,14 @@ function LlmStep({ onNext }: { onNext: () => void }) {
           model: model || undefined,
         }),
       })
+      if (!res.ok) {
+        toast.error('Gagal menyimpan konfigurasi LLM')
+        return
+      }
       toast.success('Konfigurasi LLM tersimpan')
     } catch {
-      /* ignore — skippable */
+      toast.error('Gagal menyimpan konfigurasi LLM')
+      return
     } finally {
       setSaving(false)
     }
@@ -167,7 +233,7 @@ function LlmStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Hubungkan penyedia LLM (OpenAI-compatible). Anda bisa melewati langkah ini dan mengaturnya
         nanti di AI Configuration.
       </p>
@@ -200,6 +266,10 @@ function LlmStep({ onNext }: { onNext: () => void }) {
         />
       </div>
       <div className="flex gap-2">
+        <Button variant="outline" onClick={onPrev} disabled={saving}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Kembali
+        </Button>
         <Button variant="outline" className="flex-1" onClick={onNext} disabled={saving}>
           Lewati
         </Button>
@@ -214,7 +284,7 @@ function LlmStep({ onNext }: { onNext: () => void }) {
 
 /* --------------------------- Step 2: Test Model -------------------------- */
 
-function TestModelStep({ onNext }: { onNext: () => void }) {
+function TestModelStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   const [syncing, setSyncing] = useState(false)
   const [modelCount, setModelCount] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -226,7 +296,7 @@ function TestModelStep({ onNext }: { onNext: () => void }) {
       const res = await fetch('/api/llm-config/models', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Gagal')
-      setModelCount(Array.isArray(data?.models) ? data.models.length : 0)
+      setModelCount(Array.isArray(data?.data?.models) ? data.data.models.length : 0)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal')
     } finally {
@@ -236,17 +306,21 @@ function TestModelStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Verifikasi koneksi LLM dengan menyinkronkan daftar model.
       </p>
       {modelCount !== null && (
-        <div className="flex items-center gap-2 text-sm text-emerald-600">
+        <div className="flex items-center gap-2 text-xs text-emerald-600">
           <CheckCircle2 className="h-4 w-4" />
           {modelCount} model tersedia.
         </div>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-2">
+        <Button variant="outline" onClick={onPrev}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Kembali
+        </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
           Lewati
         </Button>
@@ -266,7 +340,7 @@ function TestModelStep({ onNext }: { onNext: () => void }) {
 
 /* --------------------------- Step 3: Document ---------------------------- */
 
-function DocumentStep({ onNext }: { onNext: () => void }) {
+function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   const [uploading, setUploading] = useState(false)
   const [uploaded, setUploaded] = useState(false)
   const inputId = 'setup-doc-input'
@@ -277,12 +351,15 @@ function DocumentStep({ onNext }: { onNext: () => void }) {
       const form = new FormData()
       form.append('file', file)
       const res = await fetch('/api/documents', { method: 'POST', body: form })
-      if (res.ok) {
-        setUploaded(true)
-        toast.success('Dokumen diunggah')
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.error ?? 'Gagal mengunggah')
+        return
       }
+      setUploaded(true)
+      toast.success('Dokumen diunggah')
     } catch {
-      /* ignore */
+      toast.error('Gagal mengunggah dokumen')
     } finally {
       setUploading(false)
     }
@@ -290,7 +367,7 @@ function DocumentStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Unggah dokumen pertama untuk knowledge base (RAG). Anda bisa melewati dan mengunggahnya
         nanti di Knowledge.
       </p>
@@ -305,12 +382,16 @@ function DocumentStep({ onNext }: { onNext: () => void }) {
         }}
       />
       {uploaded && (
-        <div className="flex items-center gap-2 text-sm text-emerald-600">
+        <div className="flex items-center gap-2 text-xs text-emerald-600">
           <CheckCircle2 className="h-4 w-4" />
           Dokumen terunggah dan sedang diindeks.
         </div>
       )}
       <div className="flex gap-2">
+        <Button variant="outline" onClick={onPrev} disabled={uploading}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Kembali
+        </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
           Lewati
         </Button>
@@ -326,24 +407,30 @@ function DocumentStep({ onNext }: { onNext: () => void }) {
 
 /* -------------------------- Step 4: Data Source -------------------------- */
 
-function DataSourceStep({ onNext }: { onNext: () => void }) {
+function DataSourceStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Data Sources (database SQL dan REST API) dapat dikonfigurasi setelah setup selesai melalui
         menu Data Sources. Anda dapat menghubungkan PostgreSQL, MySQL, atau REST endpoint untuk
         memberikan asisten akses baca ke data internal Anda.
       </p>
-      <Button className="w-full" onClick={onNext}>
-        Mengerti, Lanjut →
-      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onPrev}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Kembali
+        </Button>
+        <Button className="flex-1" onClick={onNext}>
+          Mengerti, Lanjut →
+        </Button>
+      </div>
     </div>
   )
 }
 
 /* ---------------------------- Step 5: Test Chat -------------------------- */
 
-function TestChatStep({ onFinish }: { onFinish: () => void }) {
+function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () => void }) {
   const [message, setMessage] = useState('')
   const [reply, setReply] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -378,7 +465,7 @@ function TestChatStep({ onFinish }: { onFinish: () => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Tes satu percakapan untuk memastikan LLM merespons. Anda bisa menyelesaikan setup bahkan
         jika tes ini gagal.
       </p>
@@ -403,13 +490,19 @@ function TestChatStep({ onFinish }: { onFinish: () => void }) {
         </div>
       )}
       {warned && (
-        <p className="text-sm text-amber-600">
+        <p className="text-xs text-amber-600">
           Tes chat gagal — pastikan konfigurasi LLM benar. Anda tetap dapat menyelesaikan setup.
         </p>
       )}
-      <Button className="w-full" variant={warned ? 'destructive' : 'default'} onClick={onFinish}>
-        Selesai
-      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onPrev} disabled={sending}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Kembali
+        </Button>
+        <Button className="flex-1" variant={warned ? 'destructive' : 'default'} onClick={onFinish}>
+          Selesai
+        </Button>
+      </div>
     </div>
   )
 }

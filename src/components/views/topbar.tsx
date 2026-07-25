@@ -26,13 +26,13 @@ export function Topbar({
       .toUpperCase()
 
   return (
-    <header className="sticky top-0 z-30 h-14 border-b bg-background">
-      <div className="h-full px-4 md:px-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+    <header className="sticky top-0 z-30 h-14 border-b bg-background" suppressHydrationWarning>
+      <div className="h-full px-4 md:px-6 flex items-center justify-between gap-3" suppressHydrationWarning>
+        <div className="flex items-center gap-2 md:gap-3 min-w-0" suppressHydrationWarning>
           <button
             onClick={onMenuClick}
             className="md:hidden p-1.5 rounded-md hover:bg-muted"
-            aria-label="Buka menu"
+            aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -45,16 +45,16 @@ export function Topbar({
               className="h-8 w-8 rounded-md shrink-0"
               priority
             />
-            <div className="min-w-0 hidden sm:block">
-              <div className="text-sm font-semibold leading-tight truncate">ryasai</div>
-              <div className="text-[11px] text-muted-foreground leading-tight truncate">
-                {user?.companyName ?? 'Dedicated chatbot'}
+            <div className="min-w-0 hidden sm:block" suppressHydrationWarning>
+              <div className="text-sm font-semibold leading-tight truncate" suppressHydrationWarning>ryasai</div>
+              <div className="text-[11px] text-muted-foreground leading-tight truncate" suppressHydrationWarning>
+                {user?.email ?? 'Dedicated chatbot'}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" suppressHydrationWarning>
           <Badge
             variant="outline"
             className="hidden sm:inline-flex h-7 items-center gap-1 border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
@@ -63,7 +63,7 @@ export function Topbar({
             Guardrails
           </Badge>
 
-          <div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1">
+          <div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1" suppressHydrationWarning>
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : user ? (
@@ -92,8 +92,8 @@ export function Topbar({
                 await fetch('/api/auth/logout', { method: 'POST' })
                 window.location.reload()
               }}
-              aria-label="Keluar"
-              title="Keluar"
+              aria-label="Sign Out"
+              title="Sign Out"
             >
               <LogOut className="h-4 w-4" />
             </Button>

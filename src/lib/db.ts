@@ -14,3 +14,7 @@ export const db =
   })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+
+export function isPrismaNotFound(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { code?: string }).code === 'P2025'
+}

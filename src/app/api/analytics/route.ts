@@ -18,8 +18,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    const user = await getActiveUser()
-    const companyId = user.companyId
+    await getActiveUser()
 
     // ---- helpers ---------------------------------------------------------
     const days = 7
@@ -43,30 +42,30 @@ export async function GET() {
       queriesExecuted,
       guardrailBlocks,
     ] = await Promise.all([
-      db.integration.count({ where: { companyId } }),
-      db.document.count({ where: { companyId } }),
-      db.chatSession.count({ where: { companyId } }),
+      db.integration.count({ where: {} }),
+      db.document.count({ where: {} }),
+      db.chatSession.count({ where: {} }),
       db.queryHistory.count({
-        where: { integration: { companyId } },
+        where: {},
       }),
       db.auditLog.count({
-        where: { companyId, action: 'GUARDRAIL_BLOCK' },
+        where: { action: 'GUARDRAIL_BLOCK' },
       }),
     ])
 
     // ---- query success rate ---------------------------------------------
     const [successCount, totalQueries] = await Promise.all([
       db.queryHistory.count({
-        where: { integration: { companyId }, success: true },
+        where: { success: true },
       }),
-      db.queryHistory.count({ where: { integration: { companyId } } }),
+      db.queryHistory.count({ where: {} }),
     ])
     const querySuccessRate =
       totalQueries === 0 ? 0 : Math.round((successCount / totalQueries) * 100)
 
     // ---- recent queries (with integration + user name) ------------------
     const recentQueries = await db.queryHistory.findMany({
-      where: { integration: { companyId } },
+      where: {},
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: {
@@ -78,7 +77,6 @@ export async function GET() {
     // ---- query trend (last 7 days) --------------------------------------
     const recentQueryRows = await db.queryHistory.findMany({
       where: {
-        integration: { companyId },
         createdAt: { gte: since },
       },
       select: { createdAt: true },
@@ -93,7 +91,6 @@ export async function GET() {
     // ChatMessage has no direct company relation, so filter via session.
     const recentChatRows = await db.chatMessage.findMany({
       where: {
-        session: { companyId },
         createdAt: { gte: since },
       },
       select: { createdAt: true },
@@ -112,7 +109,7 @@ export async function GET() {
     // ---- audit by severity ----------------------------------------------
     const auditBySeverityRows = await db.auditLog.groupBy({
       by: ['severity'],
-      where: { companyId },
+      where: {},
       _count: { _all: true },
     })
     const auditBySeverity = {
@@ -129,7 +126,7 @@ export async function GET() {
     // ---- integrations by provider ---------------------------------------
     const providerGroups = await db.integration.groupBy({
       by: ['provider'],
-      where: { companyId },
+      where: {},
       _count: { _all: true },
     })
     const integrationsByProvider = providerGroups.map((g) => ({
@@ -140,11 +137,11 @@ export async function GET() {
     // ---- documents by category ------------------------------------------
     const docGroups = await db.document.groupBy({
       by: ['category'],
-      where: { companyId },
+      where: {},
       _count: { _all: true },
     })
     const documentsByCategory = docGroups.map((g) => ({
-      category: g.category ?? 'LAINNYA',
+      category: g.category ?? 'Uncategorized',
       count: g._count._all,
     }))
 

@@ -4,8 +4,8 @@ export function chatShellGridClass() {
 
 export function chatSessionPanelWidthClass(sessionRailCollapsed: boolean) {
   return sessionRailCollapsed
-    ? 'md:w-16'
-    : 'md:w-[clamp(280px,24vw,360px)]'
+    ? 'md:w-12'
+    : 'md:w-[clamp(200px,18vw,260px)]'
 }
 
 export function citationDetailLabel(type: string) {

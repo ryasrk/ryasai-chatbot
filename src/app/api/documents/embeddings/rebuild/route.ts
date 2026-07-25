@@ -7,12 +7,6 @@ export const runtime = 'nodejs'
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat rebuild embeddings.' },
-        { status: 403 },
-      )
-    }
 
     const body = (await req.json().catch(() => ({}))) as { documentId?: string }
     const documentId =
@@ -21,12 +15,10 @@ export async function POST(req: NextRequest) {
         : undefined
 
     const result = await embedCompanyDocuments({
-      companyId: user.companyId,
       documentId,
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'RAG_EMBEDDINGS_REBUILD',
       severity: 'info',

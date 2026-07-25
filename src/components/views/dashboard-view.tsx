@@ -1,22 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
-  CheckCircle2,
-  Clock,
   Code2,
   Database,
   FileText,
   MessageSquare,
   ShieldAlert,
-  XCircle,
+  Brain,
 } from 'lucide-react'
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -24,11 +20,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { formatDistanceToNow } from 'date-fns'
-import { id as localeId } from 'date-fns/locale'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { LoadingState, ErrorState } from '@/components/ui/view-states'
 import {
   ChartContainer,
   ChartLegend,
@@ -37,11 +32,10 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
 
-const formatNumber = (n: number) => n.toLocaleString('id-ID')
+const formatNumber = (n: number) => n.toLocaleString('en-US')
 
 const SEVERITY_COLORS: Record<'info' | 'warning' | 'critical', string> = {
   info: 'var(--chart-2)',
@@ -50,11 +44,7 @@ const SEVERITY_COLORS: Record<'info' | 'warning' | 'critical', string> = {
 }
 
 const chatChartConfig: ChartConfig = {
-  count: { label: 'Pesan Chat', color: 'var(--chart-1)' },
-}
-
-const queryChartConfig: ChartConfig = {
-  count: { label: 'Kueri', color: 'var(--chart-3)' },
+  count: { label: 'Chat Messages', color: 'var(--chart-1)' },
 }
 
 const auditChartConfig: ChartConfig = {
@@ -68,73 +58,78 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchAll = useCallback(() => {
     fetch('/api/analytics', { cache: 'no-store' })
       .then(async (response) => {
-        if (!response.ok) throw new Error('Gagal memuat data analitik.')
+        if (!response.ok) throw new Error('Failed to load analytics data.')
         return response.json()
       })
-      .then((payload: AnalyticsData) => {
-        if (!cancelled) setData(payload)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Kesalahan tidak dikenal.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
+      .then((payload: AnalyticsData) => setData(payload))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error.'))
+      .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <DashboardSkeleton />
+  const handleRefresh = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    fetchAll()
+  }, [fetchAll])
+
+  useEffect(() => {
+    fetchAll()
+  }, [fetchAll])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { action?: string } | undefined
+      if (detail?.action === 'refresh') handleRefresh()
+    }
+    window.addEventListener('view-action', handler)
+    return () => window.removeEventListener('view-action', handler)
+  }, [handleRefresh])
+
+  if (loading) {
+    return <LoadingState />
+  }
   if (error || !data) {
-    return (
-      <Card className="border-destructive/40">
-        <CardContent className="py-10 text-center">
-          <p className="text-sm text-destructive">{error ?? 'Data tidak tersedia.'}</p>
-        </CardContent>
-      </Card>
-    )
+    return <ErrorState message={error ?? 'Data unavailable.'} onRetry={handleRefresh} />
   }
 
   const stats = [
     {
-      label: 'Integrasi Data',
+      label: 'Data Integrations',
       value: data.totals.integrations,
-      sub: 'Sumber aktif',
+      sub: 'Active sources',
       icon: Database,
-      tone: 'emerald',
+      iconClass: 'text-success',
     },
     {
       label: 'Knowledge Base',
       value: data.totals.documents,
-      sub: 'Dokumen siap RAG',
+      sub: 'RAG-ready documents',
       icon: FileText,
-      tone: 'amber',
+      iconClass: 'text-warning',
     },
     {
-      label: 'Sesi Chat',
+      label: 'Chat Sessions',
       value: data.totals.chatSessions,
-      sub: 'Percakapan tersimpan',
+      sub: 'Saved conversations',
       icon: MessageSquare,
-      tone: 'slate',
+      iconClass: 'text-muted-foreground',
     },
     {
-      label: 'Kueri SQL',
+      label: 'SQL Queries',
       value: data.totals.queriesExecuted,
-      sub: `${data.querySuccessRate}% berhasil`,
+      sub: `${data.querySuccessRate}% success`,
       icon: Code2,
-      tone: 'teal',
+      iconClass: 'text-success',
     },
     {
       label: 'Guardrail Block',
       value: data.totals.guardrailBlocks,
-      sub: 'Request ditolak',
+      sub: 'Rejected requests',
       icon: ShieldAlert,
-      tone: 'rose',
+      iconClass: 'text-destructive',
     },
   ] as const
 
@@ -155,25 +150,28 @@ export function DashboardView() {
   }))
 
   return (
-    <div className="space-y-5">
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+    <div className="space-y-3">
+      <section className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5">
         {stats.map((stat) => (
           <MetricCard key={stat.label} {...stat} />
         ))}
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <CogneeStatusBar />
+
+      <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+        {/* Aktivitas + SQL overview merged */}
         <Card className="xl:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-muted-foreground" />
-              Aktivitas Operasional
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+              Operational Activity
             </CardTitle>
-            <CardDescription>Chat dan kueri selama 7 hari terakhir</CardDescription>
+            <CardDescription className="text-xs">Chat and queries for the last 7 days</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <ChartContainer config={chatChartConfig} className="h-[190px] w-full aspect-auto">
-              <AreaChart data={chatTrend} margin={{ left: 2, right: 8, top: 8, bottom: 0 }}>
+          <CardContent className="space-y-2.5">
+            <ChartContainer config={chatChartConfig} className="h-[140px] w-full aspect-auto">
+              <AreaChart data={chatTrend} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dashboardChatFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.24} />
@@ -181,8 +179,8 @@ export function DashboardView() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} width={26} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={10} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={10} width={22} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Area
                   type="monotone"
@@ -195,36 +193,47 @@ export function DashboardView() {
               </AreaChart>
             </ChartContainer>
 
-            <div className="border-t pt-4">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">Tren Kueri SQL</div>
-              <ChartContainer config={queryChartConfig} className="h-[110px] w-full aspect-auto">
-                <BarChart data={queryTrend} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={11} width={26} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--chart-3)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
-                </BarChart>
-              </ChartContainer>
+            {/* SQL overview — inline stats, not a list */}
+            <div className="border-t pt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
+                <div className="text-xs text-muted-foreground">SQL queries (7 days)</div>
+                <div className="text-sm font-semibold tabular-nums">{queryTrend.reduce((s, d) => s + d.count, 0)}</div>
+              </div>
+              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
+                <div className="text-xs text-muted-foreground">Total Queries</div>
+                <div className="text-sm font-semibold tabular-nums">{data.recentQueries.length}</div>
+              </div>
+              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
+                <div className="text-xs text-muted-foreground">Success</div>
+                <div className="text-sm font-semibold tabular-nums text-success">
+                  {data.recentQueries.filter((q) => q.success).length}
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/20 px-2 py-1.5">
+                <div className="text-xs text-muted-foreground">Failed</div>
+                <div className="text-sm font-semibold tabular-nums text-destructive">
+                  {data.recentQueries.filter((q) => !q.success).length}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Audit Log</CardTitle>
-            <CardDescription>Distribusi severity</CardDescription>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs">Audit Log</CardTitle>
+            <CardDescription className="text-xs">Severity distribution</CardDescription>
           </CardHeader>
           <CardContent>
             {auditPieData.length === 0 ? (
-              <div className="h-[220px] flex items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                Belum ada audit log.
+              <div className="h-[140px] flex items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+                No audit logs yet.
               </div>
             ) : (
-              <ChartContainer config={auditChartConfig} className="h-[220px] w-full aspect-square">
+              <ChartContainer config={auditChartConfig} className="h-[140px] w-full aspect-square">
                 <PieChart>
                   <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
-                  <Pie data={auditPieData} dataKey="value" nameKey="name" innerRadius={54} outerRadius={78} paddingAngle={2}>
+                  <Pie data={auditPieData} dataKey="value" nameKey="name" innerRadius={38} outerRadius={56} paddingAngle={2}>
                     {auditPieData.map((entry) => (
                       <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name as keyof typeof SEVERITY_COLORS]} />
                     ))}
@@ -233,13 +242,15 @@ export function DashboardView() {
                 </PieChart>
               </ChartContainer>
             )}
-            <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+            <div className="grid grid-cols-3 gap-1.5 mt-2 text-center">
               {(['info', 'warning', 'critical'] as const).map((severity) => (
-                <div key={severity} className="rounded-md border bg-muted/30 px-2 py-2">
-                  <div className="text-base font-semibold" style={{ color: SEVERITY_COLORS[severity] }}>
+                <div key={severity} className="rounded-md border bg-muted/30 px-1.5 py-1.5">
+                  <div className="text-sm font-semibold" style={{ color: SEVERITY_COLORS[severity] }}>
                     {formatNumber(data.auditBySeverity[severity])}
                   </div>
-                  <div className="text-[10px] uppercase text-muted-foreground">{severity}</div>
+                  <div className="text-xs uppercase text-muted-foreground">
+                    {severity === 'info' ? 'Info' : severity === 'warning' ? 'Warning' : 'Critical'}
+                  </div>
                 </div>
               ))}
             </div>
@@ -247,84 +258,23 @@ export function DashboardView() {
         </Card>
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card className="xl:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Kueri Terbaru</CardTitle>
-            <CardDescription>5 kueri Text-to-SQL terakhir</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data.recentQueries.length === 0 ? (
-              <div className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-                Belum ada kueri.
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-md border">
-                <div className="grid grid-cols-[minmax(0,1fr)_88px_108px] gap-3 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-                  <div>Pertanyaan dan SQL</div>
-                  <div className="text-right">Status</div>
-                  <div className="text-right">Waktu</div>
-                </div>
-                <div className="divide-y">
-                  {data.recentQueries.map((query) => (
-                    <div key={query.id} className="grid grid-cols-[minmax(0,1fr)_88px_108px] gap-3 px-3 py-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{query.naturalQuery}</div>
-                        <code className="mt-1 block truncate rounded bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground">
-                          {query.generatedSql}
-                        </code>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                          <span className="font-medium text-foreground">{query.integration.name}</span>
-                          <span>{query.rowCount ?? 0} baris</span>
-                          <span>{query.executionMs ?? 0} ms</span>
-                          <span>oleh {query.user.name}</span>
-                        </div>
-                      </div>
-                      <div className="flex justify-end">
-                        {query.success ? (
-                          <Badge variant="outline" className="h-6 border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Sukses
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive" className="h-6">
-                            <XCircle className="h-3 w-3" />
-                            Gagal
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-start justify-end gap-1 text-right text-[11px] text-muted-foreground">
-                        <Clock className="mt-0.5 h-3 w-3 shrink-0" />
-                        <span>
-                          {formatDistanceToNow(new Date(query.createdAt), { addSuffix: true, locale: localeId })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <SummaryList
-            title="Integrasi per Provider"
-            empty="Belum ada integrasi."
-            items={data.integrationsByProvider.map((item) => ({
-              label: item.provider,
-              value: item.count,
-            }))}
-          />
-          <SummaryList
-            title="Dokumen per Kategori"
-            empty="Belum ada dokumen."
-            items={data.documentsByCategory.map((item) => ({
-              label: item.category,
-              value: item.count,
-            }))}
-          />
-        </div>
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <SummaryList
+          title="Data Sources"
+          empty="No integrations yet. Add them from the Data Sources menu."
+          items={data.integrationsByProvider.map((item) => ({
+            label: item.provider,
+            value: item.count,
+          }))}
+        />
+        <SummaryList
+          title="Knowledge"
+          empty="No documents yet. Upload them from the Knowledge menu."
+          items={data.documentsByCategory.map((item) => ({
+            label: item.category,
+            value: item.count,
+          }))}
+        />
       </section>
     </div>
   )
@@ -333,37 +283,24 @@ export function DashboardView() {
 function MetricCard({
   label,
   value,
-  sub,
+  sub: _sub,
   icon: Icon,
-  tone,
+  iconClass,
 }: {
   label: string
   value: number
   sub: string
   icon: typeof Database
-  tone: 'emerald' | 'amber' | 'slate' | 'teal' | 'rose'
+  iconClass: string
 }) {
-  const toneClass = {
-    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-    amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-    slate: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-    teal: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300',
-    rose: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
-  }[tone]
-
   return (
-    <Card className="min-h-[118px]">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-xs font-medium text-muted-foreground">{label}</div>
-            <div className="mt-2 text-2xl font-semibold tabular-nums">{formatNumber(value)}</div>
-            <div className="mt-1 truncate text-xs text-muted-foreground">{sub}</div>
-          </div>
-          <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-md', toneClass)}>
-            <Icon className="h-4 w-4" />
-          </div>
+    <Card>
+      <CardContent className="flex items-center justify-between">
+        <div className="min-w-0">
+          <div className="text-lg font-semibold tabular-nums leading-tight">{formatNumber(value)}</div>
+          <div className="truncate text-xs text-muted-foreground">{label}</div>
         </div>
+        <Icon className={cn('h-4 w-4 shrink-0', iconClass)} />
       </CardContent>
     </Card>
   )
@@ -380,20 +317,20 @@ function SummaryList({
 }) {
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{title}</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xs">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
-          <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
+          <div className="rounded-md border border-dashed py-4 text-center text-xs text-muted-foreground">
             {empty}
           </div>
         ) : (
           <ul className="divide-y rounded-md border">
             {items.map((item) => (
-              <li key={item.label} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                <span className="truncate text-sm font-medium">{item.label}</span>
-                <Badge variant="secondary">{formatNumber(item.value)}</Badge>
+              <li key={item.label} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                <span className="truncate text-xs font-medium">{item.label}</span>
+                <Badge variant="secondary" className="text-xs">{formatNumber(item.value)}</Badge>
               </li>
             ))}
           </ul>
@@ -403,74 +340,59 @@ function SummaryList({
   )
 }
 
-function DashboardSkeleton() {
+function CogneeStatusBar() {
+  const [cognee, setCognee] = useState<{
+    enabled: boolean
+    connected: boolean
+    mode: string
+    documents?: { total: number; cognified: number; pending: number; failed: number }
+    batchSize?: number
+  } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/cognee')
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setCognee(d.data) })
+      .catch(() => {})
+  }, [])
+
+  if (!cognee) return null
+
+  if (!cognee.enabled) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-2 px-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <Brain className="h-3.5 w-3.5" />
+          <span>AI Memory (Cognee)</span>
+          <Badge variant="outline" className="text-[10px]">Disabled</Badge>
+          <span className="text-[10px]">— enable in Settings for cross-session memory & knowledge graph</span>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const docs = cognee.documents
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <Card key={index} className="min-h-[118px]">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-8 w-16" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
-                <Skeleton className="h-9 w-9 rounded-md" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <Skeleton className="h-4 w-44" />
-            <Skeleton className="h-3 w-56" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-[190px] w-full" />
-            <Skeleton className="h-[110px] w-full" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-3 w-40" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-[220px] w-full" />
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-3 w-48" />
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-16 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-        <div className="space-y-4">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <Card key={index}>
-              <CardHeader>
-                <Skeleton className="h-4 w-36" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
-              </CardContent>
-            </Card>
-          ))}
+    <Card>
+      <CardContent className="py-2 px-3 flex items-center gap-3 text-xs flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <Brain className="h-3.5 w-3.5 text-primary" />
+          <span className="font-medium">AI Memory</span>
         </div>
-      </div>
-    </div>
+        <Badge variant={cognee.connected ? 'default' : 'destructive'} className="text-[10px]">
+          {cognee.connected ? 'Connected' : 'Disconnected'}
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">{cognee.mode}</Badge>
+        {docs && (
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span>{docs.cognified} graphed</span>
+            {docs.pending > 0 && <span className="text-amber-600">{docs.pending} pending</span>}
+            {docs.failed > 0 && <span className="text-red-600">{docs.failed} failed</span>}
+            <span>· batch {cognee.batchSize}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
+

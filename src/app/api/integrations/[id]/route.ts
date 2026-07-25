@@ -8,7 +8,7 @@
  * Server-only route handler. No 'use client'.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { decryptConfig, maskConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
@@ -19,11 +19,11 @@ interface RouteCtx {
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
 
     const integration = await db.integration.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       include: {
         schemas: {
           orderBy: { tableName: 'asc' },
@@ -45,6 +45,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       tableName: s.tableName,
       columns: safeParseColumns(s.columns),
       rowCount: s.rowCount,
+      sampleRow: s.sampleRow ? safeParseJson(s.sampleRow) : undefined,
       reflectedAt: s.reflectedAt,
     }))
 
@@ -82,7 +83,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     const body = (await req.json().catch(() => ({}))) as PatchBody
 
     const existing = await db.integration.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, status: true },
     })
     if (!existing) {
@@ -117,10 +118,18 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     const updated = await db.integration.update({
       where: { id },
       data,
+    }).catch((e: unknown) => {
+      if (isPrismaNotFound(e)) return null
+      throw e
     })
+    if (!updated) {
+      return NextResponse.json(
+        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'INTEGRATION_UPDATE',
       severity: 'info',
@@ -147,7 +156,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const existing = await db.integration.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, provider: true },
     })
     if (!existing) {
@@ -160,10 +169,15 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     // Drop connector pool first — spec §3.2
     connectorRegistry.drop(id)
 
-    await db.integration.delete({ where: { id } })
+    const result = await db.integration.deleteMany({ where: { id } })
+    if (result.count === 0) {
+      return NextResponse.json(
+        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'INTEGRATION_DELETE',
       severity: 'warning',
@@ -176,17 +190,31 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   }
 }
 
-function safeParseColumns(raw: string): Array<{ name: string; type: string }> {
+function safeParseColumns(raw: string): Array<{ name: string; type: string; primaryKey?: boolean; notNull?: boolean; foreignKey?: string; distinctValues?: string[] }> {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
       return parsed.map((c) => ({
         name: String(c?.name ?? ''),
         type: String(c?.type ?? ''),
+        primaryKey: Boolean(c?.primaryKey) || undefined,
+        notNull: Boolean(c?.notNull) || undefined,
+        foreignKey: c?.foreignKey ? String(c.foreignKey) : undefined,
+        distinctValues: Array.isArray(c?.distinctValues) ? c.distinctValues.map(String) : undefined,
       }))
     }
     return []
   } catch {
     return []
+  }
+}
+
+function safeParseJson(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed
+    return undefined
+  } catch {
+    return undefined
   }
 }

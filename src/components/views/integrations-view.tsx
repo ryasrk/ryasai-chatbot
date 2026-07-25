@@ -7,9 +7,8 @@
  * integrations expose schema reflection and a Text-to-SQL query tester.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { id as idLocale } from 'date-fns/locale'
 import {
   Database,
   Globe,
@@ -26,11 +25,22 @@ import {
   Server,
   Clock,
   Table2,
+  Search,
+  Columns3,
+  Copy,
+  Download,
+  Key,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Code2,
+  type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { LoadingState, EmptyState } from '@/components/ui/view-states'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -83,17 +93,21 @@ import {
 } from '@/components/ui/table'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { Integration, IntegrationSchemaRow, QueryResult } from '@/lib/types'
+import type { Integration, QueryResult } from '@/lib/types'
+import { DB_PROVIDER_PRESETS, getDbProviderPreset } from '@/lib/db-provider-presets'
 
 /* ------------------------------------------------------------------ helpers */
 
 function timeAgo(iso: string | null): string {
-  if (!iso) return 'belum pernah'
+  if (!iso) return 'never'
   try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: idLocale })
+    return formatDistanceToNow(new Date(iso), { addSuffix: true })
   } catch {
-    return 'belum pernah'
+    return 'never'
   }
 }
 
@@ -102,27 +116,17 @@ const STATUS_BADGE: Record<
   { label: string; className: string }
 > = {
   active: {
-    label: 'Aktif',
-    className:
-      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+    label: 'Active',
+    className: 'bg-success/15 text-success border-success/20',
   },
   inactive: {
-    label: 'Nonaktif',
-    className:
-      'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+    label: 'Inactive',
+    className: 'bg-muted text-muted-foreground border-border',
   },
   error: {
     label: 'Error',
-    className:
-      'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+    className: 'bg-destructive/15 text-destructive border-destructive/20',
   },
-}
-
-const PROVIDER_HINT: Record<string, string> = {
-  SQLITE_DEMO: 'SQLite sample dataset untuk validasi internal',
-  POSTGRESQL: 'Production PostgreSQL',
-  MYSQL: 'Production MySQL / MariaDB',
-  MSSQL: 'Microsoft SQL Server',
 }
 
 /* ------------------------------------------------------------------- types */
@@ -136,13 +140,31 @@ interface MaskedConfig {
   [k: string]: unknown
 }
 
+interface SchemaColumn {
+  name: string
+  type: string
+  nullable?: boolean
+  primaryKey?: boolean
+  description?: string
+}
+
+interface SchemaTable {
+  id: string
+  tableName: string
+  columns: SchemaColumn[]
+  rowCount: number | null
+  reflectedAt: string
+  sampleData?: Record<string, unknown>[]
+  metadata?: Record<string, unknown>
+}
+
 interface SchemaData {
   integrationId: string
   name: string
   provider: string
   status: string
   tableCount: number
-  tables: IntegrationSchemaRow[]
+  tables: SchemaTable[]
 }
 
 interface CreateFormState {
@@ -210,7 +232,14 @@ export function IntegrationsView() {
   const [restBaseUrl, setRestBaseUrl] = useState('')
   const [restAuthType, setRestAuthType] = useState('NONE')
   const [restToken, setRestToken] = useState('')
+  const [restBasicUser, setRestBasicUser] = useState('')
+  const [restBasicPass, setRestBasicPass] = useState('')
+  const [restOauthUrl, setRestOauthUrl] = useState('')
+  const [restOauthClientId, setRestOauthClientId] = useState('')
+  const [restOauthClientSecret, setRestOauthClientSecret] = useState('')
+  const [restOauthScope, setRestOauthScope] = useState('')
   const [restCreating, setRestCreating] = useState(false)
+  const [activeTab, setActiveTab] = useState<'database' | 'rest'>('database')
   const [testingId, setTestingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null)
@@ -226,10 +255,10 @@ export function IntegrationsView() {
       if (res.ok && json.ok) {
         setItems(json.data as Integration[])
       } else {
-        toast.error(json.error ?? 'Gagal memuat daftar integrasi.')
+        toast.error(json.error ?? 'Failed to load integration list.')
       }
     } catch (e) {
-      toast.error('Kesalahan jaringan saat memuat integrasi.')
+      toast.error('Network error while loading integrations.')
       console.error(e)
     } finally {
       setLoading(false)
@@ -248,10 +277,10 @@ export function IntegrationsView() {
       if (res.ok && json.ok) {
         setRestItems(json.items ?? [])
       } else {
-        toast.error(json.error ?? 'Gagal memuat REST API connectors.')
+        toast.error(json.error ?? 'Failed to load REST API connectors.')
       }
     } catch (e) {
-      toast.error('Kesalahan jaringan saat memuat REST API connectors.')
+      toast.error('Network error while loading REST API connectors.')
       console.error(e)
     } finally {
       setRestLoading(false)
@@ -268,21 +297,70 @@ export function IntegrationsView() {
       const res = await fetch(`/api/integrations/${id}/test`, { method: 'POST' })
       const json = await res.json()
       if (!res.ok) {
-        toast.error(json.error ?? 'Gagal menguji koneksi.')
+        toast.error(json.error ?? 'Failed to test connection.')
       } else if (json.ok) {
         toast.success(
-          `Koneksi berhasil. ${json.tablesCount ?? 0} tabel tersedia.`,
+          `Connection successful. ${json.tablesCount ?? 0} tables available.`,
         )
         await fetchList()
       } else {
-        toast.error(json.message ?? 'Koneksi gagal — periksa kredensial.')
+        toast.error(json.message ?? 'Connection failed — check credentials.')
         await fetchList()
       }
     } catch (e) {
-      toast.error('Kesalahan jaringan saat menguji koneksi.')
+      toast.error('Network error while testing connection.')
       console.error(e)
     } finally {
       setTestingId(null)
+    }
+  }
+
+  const handleToggleIntegration = async (id: string, checked: boolean) => {
+    const newStatus = checked ? 'active' : 'inactive'
+    try {
+      const res = await fetch(`/api/integrations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Failed to change integration status.')
+        return
+      }
+      toast.success(
+        checked
+          ? 'Integration enabled.'
+          : 'Integration disabled.',
+      )
+      await fetchList()
+    } catch (e) {
+      toast.error('Network error while changing status.')
+      console.error(e)
+    }
+  }
+
+  const handleToggleRestConnector = async (id: string, checked: boolean) => {
+    try {
+      const res = await fetch(`/api/data-sources/rest-connectors/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: checked }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Failed to change REST connector status.')
+        return
+      }
+      toast.success(
+        checked
+          ? 'REST connector enabled.'
+          : 'REST connector disabled.',
+      )
+      await fetchRestList()
+    } catch (e) {
+      toast.error('Network error while changing status.')
+      console.error(e)
     }
   }
 
@@ -294,17 +372,17 @@ export function IntegrationsView() {
       if ((res.ok && json.ok) || res.status === 404) {
         toast.success(
           res.status === 404
-            ? 'Integrasi sudah tidak ada. Daftar dimuat ulang.'
-            : 'Integrasi berhasil dihapus.',
+            ? 'Integration no longer exists. List reloaded.'
+            : 'Integration deleted successfully.',
         )
         if (schemaTarget?.id === id) setSchemaTarget(null)
         if (queryTarget?.id === id) setQueryTarget(null)
         await fetchList()
       } else {
-        toast.error(json.error ?? 'Gagal menghapus integrasi.')
+        toast.error(json.error ?? 'Failed to delete integration.')
       }
     } catch (e) {
-      toast.error('Kesalahan jaringan saat menghapus.')
+      toast.error('Network error while deleting.')
       console.error(e)
     } finally {
       setDeleteTarget(null)
@@ -316,17 +394,42 @@ export function IntegrationsView() {
     const name = restName.trim()
     const baseUrl = restBaseUrl.trim()
     if (!name || !baseUrl) {
-      toast.error('Nama dan Base URL wajib diisi.')
+      toast.error('Name and Base URL are required.')
+      return
+    }
+    try { new URL(baseUrl) } catch {
+      toast.error('Invalid Base URL.')
+      return
+    }
+    if (restAuthType !== 'NONE' && !restToken.trim() && restAuthType !== 'BASIC' && restAuthType !== 'OAUTH2') {
+      toast.error('Token is required for authentication.')
+      return
+    }
+    if (restAuthType === 'BASIC' && !restBasicUser.trim() && !restBasicPass.trim()) {
+      toast.error('Username and password are required for Basic Auth.')
+      return
+    }
+    if (restAuthType === 'OAUTH2' && (!restOauthUrl.trim() || !restOauthClientId.trim() || !restOauthClientSecret.trim())) {
+      toast.error('Token URL, Client ID, and Client Secret are required for OAuth2.')
       return
     }
     setRestCreating(true)
     try {
-      const authConfig =
-        restAuthType === 'BEARER'
-          ? { token: restToken }
-          : restAuthType === 'API_KEY_HEADER'
-            ? { headerName: 'X-API-Key', apiKey: restToken }
-            : {}
+      let authConfig: Record<string, unknown> = {}
+      if (restAuthType === 'BEARER') {
+        authConfig = { token: restToken }
+      } else if (restAuthType === 'API_KEY_HEADER') {
+        authConfig = { headerName: 'X-API-Key', apiKey: restToken }
+      } else if (restAuthType === 'BASIC') {
+        authConfig = { username: restBasicUser, password: restBasicPass }
+      } else if (restAuthType === 'OAUTH2') {
+        authConfig = {
+          tokenUrl: restOauthUrl,
+          clientId: restOauthClientId,
+          clientSecret: restOauthClientSecret,
+          ...(restOauthScope.trim() ? { scope: restOauthScope } : {}),
+        }
+      }
       const res = await fetch('/api/data-sources/rest-connectors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -338,15 +441,21 @@ export function IntegrationsView() {
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal membuat connector.')
-      toast.success('REST API connector dibuat.')
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to create connector.')
+      toast.success('REST API connector created.')
       setRestName('')
       setRestBaseUrl('')
       setRestToken('')
+      setRestBasicUser('')
+      setRestBasicPass('')
+      setRestOauthUrl('')
+      setRestOauthClientId('')
+      setRestOauthClientSecret('')
+      setRestOauthScope('')
       setRestAuthType('NONE')
       await fetchRestList()
     } catch (e) {
-      toast.error('Gagal membuat REST API connector', {
+      toast.error('Failed to create REST API connector', {
         description: e instanceof Error ? e.message : undefined,
       })
     } finally {
@@ -361,62 +470,65 @@ export function IntegrationsView() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Action row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchList}
-            disabled={loading}
-          >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-            Muat ulang
-          </Button>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} size="sm">
-          <Plus className="h-4 w-4" />
-          Tambah Database
-        </Button>
-      </div>
-
+    <div className="space-y-3">
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2.5">
         <StatCard
-          label="Total Database"
+          label="Total Databases"
           value={stats.total}
           icon={Server}
-          tone="slate"
+          iconClass="text-muted-foreground"
         />
         <StatCard
-          label="Aktif"
+          label="Active"
           value={stats.active}
           icon={CheckCircle2}
-          tone="emerald"
+          iconClass="text-success"
         />
         <StatCard
-          label="Error / Nonaktif"
+          label="Error / Inactive"
           value={stats.errorInactive}
           icon={XCircle}
-          tone="rose"
+          iconClass="text-destructive"
         />
       </div>
 
-      {/* List */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin mr-2" />
-          Memuat integrasi…
+      <Tabs defaultValue="database" onValueChange={(v) => setActiveTab(v as 'database' | 'rest')} className="min-h-[500px]">
+        <div className="flex items-center justify-between gap-2">
+          <TabsList className="w-max">
+            <TabsTrigger value="database" className="gap-1.5 text-xs">
+              <Server className="h-3.5 w-3.5" />
+              Database
+            </TabsTrigger>
+            <TabsTrigger value="rest" className="gap-1.5 text-xs">
+              <Globe className="h-3.5 w-3.5" />
+              REST API
+            </TabsTrigger>
+          </TabsList>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={fetchList} disabled={loading}>
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            </Button>
+            {activeTab === 'database' && (
+              <Button onClick={() => setCreateOpen(true)} size="sm">
+                <Plus className="h-3.5 w-3.5" />
+                Add Database
+              </Button>
+            )}
+          </div>
         </div>
+
+        <TabsContent value="database" className="mt-2">
+      {loading ? (
+        <LoadingState label="Loading integrations…" />
       ) : items.length === 0 ? (
         <Card>
-          <CardContent className="py-16 text-center">
-            <Database className="h-10 w-10 mx-auto text-muted-foreground/60 mb-3" />
-            <p className="text-sm text-muted-foreground">
-              Belum ada database terdaftar. Klik <strong>Tambah Database</strong>{' '}
-              untuk mulai menghubungkan sumber data SQL.
-            </p>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Database}
+              title="No databases registered yet"
+              hint="Click Add Database to start connecting SQL data sources."
+            />
           </CardContent>
         </Card>
       ) : (
@@ -431,20 +543,23 @@ export function IntegrationsView() {
               onSchema={() => setSchemaTarget(it)}
               onQuery={() => setQueryTarget(it)}
               onDelete={() => setDeleteTarget(it)}
+              onToggle={(checked) => handleToggleIntegration(it.id, checked)}
             />
           ))}
         </div>
       )}
+        </TabsContent>
 
+        <TabsContent value="rest" className="mt-2">
       {/* REST API Connectors */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="text-xs flex items-center gap-2">
             <Globe className="h-4 w-4" />
             REST API Connectors
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Daftarkan base URL sistem eksternal, lalu whitelist endpoint yang boleh dipanggil chatbot.
+          <p className="text-xs text-muted-foreground">
+            Register the base URL of an external system, then whitelist endpoints that can be called by the chatbot.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -452,7 +567,7 @@ export function IntegrationsView() {
             <Input
               value={restName}
               onChange={(e) => setRestName(e.target.value)}
-              placeholder="Nama connector"
+              placeholder="Connector name"
               className="md:col-span-1"
             />
             <Input
@@ -469,6 +584,8 @@ export function IntegrationsView() {
                 <SelectItem value="NONE">No Auth</SelectItem>
                 <SelectItem value="BEARER">Bearer Token</SelectItem>
                 <SelectItem value="API_KEY_HEADER">API Key Header</SelectItem>
+                <SelectItem value="BASIC">Basic Auth</SelectItem>
+                <SelectItem value="OAUTH2">OAuth2 (Client Credentials)</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -476,11 +593,11 @@ export function IntegrationsView() {
               disabled={restCreating || !restName.trim() || !restBaseUrl.trim()}
             >
               {restCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Tambah REST
+              Add REST
             </Button>
           </div>
 
-          {restAuthType !== 'NONE' && (
+          {(restAuthType === 'BEARER' || restAuthType === 'API_KEY_HEADER') && (
             <Input
               value={restToken}
               onChange={(e) => setRestToken(e.target.value)}
@@ -490,14 +607,64 @@ export function IntegrationsView() {
             />
           )}
 
+          {restAuthType === 'BASIC' && (
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                value={restBasicUser}
+                onChange={(e) => setRestBasicUser(e.target.value)}
+                placeholder="Username"
+                className="font-mono text-sm"
+              />
+              <Input
+                value={restBasicPass}
+                onChange={(e) => setRestBasicPass(e.target.value)}
+                placeholder="Password"
+                type="password"
+                className="font-mono text-sm"
+              />
+            </div>
+          )}
+
+          {restAuthType === 'OAUTH2' && (
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <Input
+                value={restOauthUrl}
+                onChange={(e) => setRestOauthUrl(e.target.value)}
+                placeholder="Token URL (https://auth.example.com/oauth/token)"
+                className="font-mono text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={restOauthClientId}
+                  onChange={(e) => setRestOauthClientId(e.target.value)}
+                  placeholder="Client ID"
+                  className="font-mono text-sm"
+                />
+                <Input
+                  value={restOauthClientSecret}
+                  onChange={(e) => setRestOauthClientSecret(e.target.value)}
+                  placeholder="Client Secret"
+                  type="password"
+                  className="font-mono text-sm"
+                />
+              </div>
+              <Input
+                value={restOauthScope}
+                onChange={(e) => setRestOauthScope(e.target.value)}
+                placeholder="Scope (optional, e.g. read:api)"
+                className="font-mono text-sm"
+              />
+            </div>
+          )}
+
           {restLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+            <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Memuat REST API connectors...
+              Loading REST API connectors...
             </div>
           ) : restItems.length === 0 ? (
-            <div className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">
-              Belum ada REST API connector.
+            <div className="rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground">
+              No REST API connectors yet.
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -510,9 +677,17 @@ export function IntegrationsView() {
                         {connector.baseUrl}
                       </div>
                     </div>
-                    <Badge variant={connector.isActive ? 'default' : 'secondary'}>
-                      {connector.isActive ? 'Aktif' : 'Nonaktif'}
-                    </Badge>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {connector.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                      <Switch
+                        checked={connector.isActive}
+                        onCheckedChange={(checked) =>
+                          handleToggleRestConnector(connector.id, checked)
+                        }
+                      />
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <Badge variant="outline">{connector.authType}</Badge>
@@ -527,7 +702,7 @@ export function IntegrationsView() {
                     className="w-full"
                   >
                     <Eye className="h-3.5 w-3.5" />
-                    Kelola Endpoint
+                    Manage Endpoints
                   </Button>
                 </div>
               ))}
@@ -535,6 +710,8 @@ export function IntegrationsView() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Create dialog */}
       <CreateIntegrationDialog
@@ -571,27 +748,27 @@ export function IntegrationsView() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus integrasi ini?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this integration?</AlertDialogTitle>
             <AlertDialogDescription>
-              Integrasi <strong>{deleteTarget?.name}</strong> akan dihapus
-              permanen bersama skema yang sudah direfleksikan. Tindakan ini
-              tidak dapat dibatalkan dan dicatat di audit log.
+              Integration <strong>{deleteTarget?.name}</strong> will be permanently
+              deleted along with its reflected schema. This action cannot be
+              undone and is recorded in the audit log.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
               disabled={!!deletingId}
-              className="bg-rose-600 hover:bg-rose-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deletingId ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Menghapus...
+                  Deleting...
                 </>
               ) : (
-                'Hapus'
+                'Delete'
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -607,29 +784,21 @@ function StatCard({
   label,
   value,
   icon: Icon,
-  tone,
+  iconClass,
 }: {
   label: string
   value: number
   icon: typeof Server
-  tone: 'slate' | 'emerald' | 'rose'
+  iconClass: string
 }) {
-  const toneCls = {
-    slate: 'text-slate-600 bg-slate-100 dark:bg-slate-800/60 dark:text-slate-300',
-    emerald:
-      'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300',
-    rose: 'text-rose-600 bg-rose-100 dark:bg-rose-900/40 dark:text-rose-300',
-  }[tone]
   return (
     <Card>
-      <CardContent className="p-4 flex items-center gap-3">
-        <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', toneCls)}>
-          <Icon className="h-5 w-5" />
-        </div>
+      <CardContent className="flex items-center justify-between">
         <div className="min-w-0">
-          <div className="text-2xl font-semibold leading-tight">{value}</div>
+          <div className="text-lg font-semibold leading-tight">{value}</div>
           <div className="text-xs text-muted-foreground truncate">{label}</div>
         </div>
+        <Icon className={cn('h-4 w-4 shrink-0', iconClass)} />
       </CardContent>
     </Card>
   )
@@ -645,6 +814,7 @@ function IntegrationCard({
   onSchema,
   onQuery,
   onDelete,
+  onToggle,
 }: {
   integration: Integration
   onTest: () => void
@@ -653,13 +823,14 @@ function IntegrationCard({
   onSchema: () => void
   onQuery: () => void
   onDelete: () => void
+  onToggle: (checked: boolean) => void
 }) {
   const [configOpen, setConfigOpen] = useState(false)
   const [config, setConfig] = useState<MaskedConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(false)
+  const [toggling, setToggling] = useState(false)
 
   const fetchConfig = async () => {
-    if (config) return
     setConfigLoading(true)
     try {
       const res = await fetch(`/api/integrations/${integration.id}`, {
@@ -669,10 +840,10 @@ function IntegrationCard({
       if (res.ok && json.ok) {
         setConfig(json.data.config as MaskedConfig)
       } else {
-        toast.error(json.error ?? 'Gagal memuat konfigurasi.')
+        toast.error(json.error ?? 'Failed to load configuration.')
       }
     } catch {
-      toast.error('Kesalahan jaringan saat memuat konfigurasi.')
+      toast.error('Network error while loading configuration.')
     } finally {
       setConfigLoading(false)
     }
@@ -682,6 +853,7 @@ function IntegrationCard({
   const Icon = isDb ? Database : Globe
   const status = STATUS_BADGE[integration.status]
   const lastOk = integration.lastTestOk
+  const isActive = integration.status === 'active'
 
   return (
     <Card className="flex flex-col">
@@ -691,18 +863,37 @@ function IntegrationCard({
             <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <CardTitle className="text-base truncate">{integration.name}</CardTitle>
+            <CardTitle className="text-xs truncate">{integration.name}</CardTitle>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <Badge variant="secondary" className="text-[10px]">
+              <Badge variant="secondary" className="text-xs">
                 {integration.provider}
               </Badge>
-              <Badge variant="outline" className="text-[10px]">
+              <Badge variant="outline" className="text-xs">
                 {integration.type}
               </Badge>
-              <Badge variant="outline" className={cn('text-[10px]', status.className)}>
+              <Badge variant="outline" className={cn('text-xs', status.className)}>
                 {status.label}
               </Badge>
             </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-col items-end gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {isActive ? 'ACTIVE' : 'INACTIVE'}
+              </span>
+            </div>
+            <Switch
+              checked={isActive}
+              disabled={toggling}
+              onCheckedChange={async (checked) => {
+                setToggling(true)
+                try {
+                  await onToggle(checked)
+                } finally {
+                  setToggling(false)
+                }
+              }}
+            />
           </div>
         </div>
       </CardHeader>
@@ -712,14 +903,14 @@ function IntegrationCard({
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Clock className="h-3.5 w-3.5" />
-            <span>Terakhir diuji:</span>
+            <span>Last tested:</span>
           </div>
           <div className="flex items-center gap-1.5 justify-end">
             {lastOk === true && (
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
             )}
             {lastOk === false && (
-              <XCircle className="h-3.5 w-3.5 text-rose-500" />
+              <XCircle className="h-3.5 w-3.5 text-destructive" />
             )}
             <span className="text-muted-foreground truncate">
               {timeAgo(integration.lastTestedAt)}
@@ -728,10 +919,10 @@ function IntegrationCard({
 
           <div className="flex items-center gap-1.5 text-muted-foreground">
             <Table2 className="h-3.5 w-3.5" />
-            <span>Tabel terindeks:</span>
+            <span>Indexed tables:</span>
           </div>
           <div className="text-right font-medium">
-            {integration.tableCount ?? 0} tabel
+            {integration.tableCount ?? 0} tables
           </div>
         </div>
 
@@ -744,7 +935,7 @@ function IntegrationCard({
           }}
         >
           <summary className="cursor-pointer flex items-center justify-between text-muted-foreground hover:text-foreground transition-colors select-none">
-            <span className="font-medium">Konfigurasi (terenkripsi)</span>
+            <span className="font-medium">Configuration (encrypted)</span>
             <ChevronDown
               className={cn(
                 'h-3.5 w-3.5 transition-transform',
@@ -756,25 +947,23 @@ function IntegrationCard({
             {configLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                Memuat…
+                Loading…
               </div>
             ) : config ? (
-              <dl className="grid grid-cols-3 gap-y-1 gap-x-2">
-                <ConfigRow k="host" v={String(config.host ?? '-')} />
-                <ConfigRow k="port" v={String(config.port ?? '-')} />
-                <ConfigRow
-                  k="database"
-                  v={String(config.database_name ?? '-')}
-                />
-                <ConfigRow k="username" v={String(config.username ?? '-')} />
-                <ConfigRow
-                  k="password"
-                  v={String(config.password ?? '-')}
-                  span={2}
-                />
-              </dl>
+              <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1 text-xs">
+                <span className="text-muted-foreground">Host</span>
+                <span className="font-mono truncate">{String(config.host ?? '-')}</span>
+                <span className="text-muted-foreground">Port</span>
+                <span className="font-mono truncate">{String(config.port ?? '-')}</span>
+                <span className="text-muted-foreground">Database</span>
+                <span className="font-mono truncate">{String(config.database_name ?? '-')}</span>
+                <span className="text-muted-foreground">Username</span>
+                <span className="font-mono truncate">{String(config.username ?? '-')}</span>
+                <span className="text-muted-foreground">Password</span>
+                <span className="font-mono">••••••••</span>
+              </div>
             ) : (
-              <div className="text-muted-foreground">Belum dimuat.</div>
+              <div className="text-muted-foreground">Not loaded yet.</div>
             )}
           </div>
         </details>
@@ -793,7 +982,7 @@ function IntegrationCard({
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
             )}
-            Uji Koneksi
+            Test Connection
           </Button>
           <Button
             size="sm"
@@ -802,7 +991,7 @@ function IntegrationCard({
             className="text-xs"
           >
             <Eye className="h-3.5 w-3.5" />
-            Skema
+            Schema
           </Button>
           <Button
             size="sm"
@@ -811,50 +1000,25 @@ function IntegrationCard({
             className="text-xs"
           >
             <Terminal className="h-3.5 w-3.5" />
-            Kueri
+            Query
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={onDelete}
             disabled={deleting}
-            className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+            className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             {deleting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Trash2 className="h-3.5 w-3.5" />
             )}
-            {deleting ? 'Menghapus' : 'Hapus'}
+            {deleting ? 'Deleting' : 'Delete'}
           </Button>
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function ConfigRow({
-  k,
-  v,
-  span,
-}: {
-  k: string
-  v: string
-  span?: number
-}) {
-  return (
-    <>
-      <dt className="text-muted-foreground col-span-1">{k}</dt>
-      <dd
-        className={cn(
-          'font-mono text-[11px] truncate',
-          span === 2 ? 'col-span-2' : 'col-span-1',
-        )}
-        title={v}
-      >
-        {v}
-      </dd>
-    </>
   )
 }
 
@@ -873,23 +1037,37 @@ function CreateIntegrationDialog({
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const preset = getDbProviderPreset(form.provider)
   const isDemo = form.provider === 'SQLITE_DEMO'
+  const needsConnectionString = preset?.needsConnectionString ?? false
 
   const update = (k: keyof CreateFormState, v: string) =>
     setForm((f) => ({ ...f, [k]: v }))
 
+  const handleProviderChange = (providerId: string) => {
+    const p = getDbProviderPreset(providerId)
+    setForm((f) => ({
+      ...f,
+      provider: providerId,
+      port: p && p.defaultPort > 0 ? String(p.defaultPort) : f.port,
+    }))
+  }
+
   const validate = (): boolean => {
     const e: Record<string, string> = {}
-    if (!form.name.trim()) e.name = 'Nama wajib diisi.'
-    if (!form.provider) e.provider = 'Provider wajib dipilih.'
-    // For non-DEMO providers, require host + database_name.
+    if (!form.name.trim()) e.name = 'Name is required.'
+    if (!form.provider) e.provider = 'Provider is required.'
     if (!isDemo) {
-      if (!form.host.trim()) e.host = 'Host wajib diisi.'
-      if (!form.database_name.trim()) e.database_name = 'Database wajib diisi.'
-      if (!form.username.trim()) e.username = 'Username wajib diisi.'
-      if (!form.password) e.password = 'Password wajib diisi.'
+      if (needsConnectionString) {
+        if (!form.database_name.trim()) e.database_name = 'Connection string is required.'
+      } else {
+        if (!form.host.trim()) e.host = 'Host is required.'
+        if (!form.database_name.trim()) e.database_name = 'Database is required.'
+        if (!form.username.trim()) e.username = 'Username is required.'
+        if (!form.password) e.password = 'Password is required.'
+      }
     }
-    if (form.port && !/^\d+$/.test(form.port)) e.port = 'Port harus angka.'
+    if (form.port && !/^\d+$/.test(form.port)) e.port = 'Port must be a number.'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -898,22 +1076,26 @@ function CreateIntegrationDialog({
     if (!validate()) return
     setSubmitting(true)
     try {
-      const config: Record<string, unknown> = isDemo
-        ? {
-            // The sample provider ignores these but the backend expects an object.
-            host: 'demo',
-            port: 0,
-            database_name: 'demo_erp',
-            username: 'demo',
-            password: 'demo',
-          }
-        : {
-            host: form.host.trim(),
-            port: Number(form.port) || 0,
-            username: form.username.trim(),
-            password: form.password,
-            database_name: form.database_name.trim(),
-          }
+      let config: Record<string, unknown>
+      if (isDemo) {
+        config = {
+          host: 'demo',
+          port: 0,
+          database_name: 'demo_erp',
+          username: 'demo',
+          password: 'demo',
+        }
+      } else if (needsConnectionString) {
+        config = { connectionString: form.database_name.trim() }
+      } else {
+        config = {
+          host: form.host.trim(),
+          port: Number(form.port) || 0,
+          username: form.username.trim(),
+          password: form.password,
+          database_name: form.database_name.trim(),
+        }
+      }
 
       const res = await fetch('/api/integrations', {
         method: 'POST',
@@ -927,15 +1109,15 @@ function CreateIntegrationDialog({
       })
       const json = await res.json()
       if (res.ok && json.ok) {
-        toast.success('Integrasi berhasil dibuat & skema diindeks.')
+        toast.success('Integration created successfully & schema indexed.')
         setForm(EMPTY_FORM)
         setErrors({})
         onCreated()
       } else {
-        toast.error(json.error ?? 'Gagal membuat integrasi.')
+        toast.error(json.error ?? 'Failed to create integration.')
       }
     } catch (e) {
-      toast.error('Kesalahan jaringan saat membuat integrasi.')
+      toast.error('Network error while creating integration.')
       console.error(e)
     } finally {
       setSubmitting(false)
@@ -957,26 +1139,26 @@ function CreateIntegrationDialog({
     >
       <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Tambah Database</DialogTitle>
+          <DialogTitle>Add Database</DialogTitle>
           <DialogDescription>
-            Daftarkan koneksi database SQL. Sistem akan mengenkripsi kredensial,
-            menguji koneksi, dan merefleksikan skema secara otomatis.
+            Register a SQL database connection. The system will encrypt credentials,
+            test the connection, and reflect the schema automatically.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label htmlFor="int-name">
-              Nama Integrasi <span className="text-rose-500">*</span>
+              Integration Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="int-name"
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              placeholder="contoh: ERP Production"
+              placeholder="e.g. ERP Production"
             />
             {errors.name && (
-              <p className="text-xs text-rose-500">{errors.name}</p>
+              <p className="text-xs text-destructive">{errors.name}</p>
             )}
           </div>
 
@@ -984,33 +1166,56 @@ function CreateIntegrationDialog({
             <Label htmlFor="int-provider">Database Provider</Label>
             <Select
               value={form.provider}
-              onValueChange={(v) => update('provider', v)}
+              onValueChange={handleProviderChange}
             >
               <SelectTrigger id="int-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="SQLITE_DEMO">SQLITE_DEMO</SelectItem>
-                <SelectItem value="POSTGRESQL">POSTGRESQL</SelectItem>
-                <SelectItem value="MYSQL">MYSQL</SelectItem>
-                <SelectItem value="MSSQL">MSSQL</SelectItem>
+                {DB_PROVIDER_PRESETS.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
           {form.provider && (
             <p className="text-xs text-muted-foreground bg-muted/60 border rounded-md px-3 py-2">
-              {PROVIDER_HINT[form.provider] ?? 'Provider'}
+              {preset?.hint ?? 'Provider'}
+              {preset?.sslByDefault && (
+                <span className="block mt-1 text-warning">
+                  SSL is recommended for this provider.
+                </span>
+              )}
               {isDemo && (
-                <span className="block mt-1 text-emerald-600 dark:text-emerald-400">
-                  Gunakan SQLITE_DEMO hanya untuk validasi internal sebelum koneksi production tersedia.
+                <span className="block mt-1 text-success">
+                  Use SQLITE_DEMO only for internal validation before a production connection is available.
                 </span>
               )}
             </p>
           )}
 
           {/* Config fields — only shown for non-DEMO providers */}
-          {!isDemo && (
+          {!isDemo && needsConnectionString && (
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="int-connstring">
+                  Connection String <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="int-connstring"
+                  value={form.database_name}
+                  onChange={(e) => update('database_name', e.target.value)}
+                  placeholder="mongodb+srv://user:pass@cluster/db?retryWrites=true&w=majority"
+                  className="font-mono text-xs min-h-[80px]"
+                />
+                {errors.database_name && (
+                  <p className="text-xs text-destructive">{errors.database_name}</p>
+                )}
+              </div>
+            </div>
+          )}
+          {!isDemo && !needsConnectionString && (
             <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -1022,7 +1227,7 @@ function CreateIntegrationDialog({
                     placeholder="localhost"
                   />
                   {errors.host && (
-                    <p className="text-xs text-rose-500">{errors.host}</p>
+                    <p className="text-xs text-destructive">{errors.host}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -1032,10 +1237,10 @@ function CreateIntegrationDialog({
                     inputMode="numeric"
                     value={form.port}
                     onChange={(e) => update('port', e.target.value)}
-                    placeholder="5432"
+                    placeholder={preset ? String(preset.defaultPort) : '5432'}
                   />
                   {errors.port && (
-                    <p className="text-xs text-rose-500">{errors.port}</p>
+                    <p className="text-xs text-destructive">{errors.port}</p>
                   )}
                 </div>
               </div>
@@ -1048,7 +1253,7 @@ function CreateIntegrationDialog({
                   placeholder="erp_db"
                 />
                 {errors.database_name && (
-                  <p className="text-xs text-rose-500">{errors.database_name}</p>
+                  <p className="text-xs text-destructive">{errors.database_name}</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1061,7 +1266,7 @@ function CreateIntegrationDialog({
                     placeholder="db_user"
                   />
                   {errors.username && (
-                    <p className="text-xs text-rose-500">{errors.username}</p>
+                    <p className="text-xs text-destructive">{errors.username}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -1074,7 +1279,7 @@ function CreateIntegrationDialog({
                     placeholder="••••••••"
                   />
                   {errors.password && (
-                    <p className="text-xs text-rose-500">{errors.password}</p>
+                    <p className="text-xs text-destructive">{errors.password}</p>
                   )}
                 </div>
               </div>
@@ -1088,16 +1293,16 @@ function CreateIntegrationDialog({
             onClick={() => onOpenChange(false)}
             disabled={submitting}
           >
-            Batal
+            Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Membuat & menguji…
+                Creating & testing…
               </>
             ) : (
-              'Buat & Uji Koneksi'
+              'Create & Test Connection'
             )}
           </Button>
         </DialogFooter>
@@ -1108,6 +1313,217 @@ function CreateIntegrationDialog({
 
 /* ----------------------------------------------------- schema viewer */
 
+function generateCreateTable(table: SchemaTable): string {
+  const cols = table.columns.map((c) => {
+    let line = `  "${c.name}" ${c.type || 'TEXT'}`
+    if (c.primaryKey) line += ' PRIMARY KEY'
+    if (c.nullable === false) line += ' NOT NULL'
+    return line
+  })
+  return `CREATE TABLE "${table.tableName}" (\n${cols.join(',\n')}\n);`
+}
+
+function SchemaIconAction({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="button"
+          tabIndex={0}
+          className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-muted cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation()
+              e.preventDefault()
+              onClick()
+            }
+          }}
+        >
+          <Icon className="h-3 w-3" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+function SchemaTableDetails({
+  table,
+  columnSearch,
+}: {
+  table: SchemaTable
+  columnSearch: string
+}) {
+  const colQ = columnSearch.trim().toLowerCase()
+  const hasColMatch = colQ.length > 0
+  const hasDescriptions = table.columns.some((c) => c.description)
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+          Columns
+        </h4>
+        <div className="rounded-none border border-border/60 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-7 text-xs">Name</TableHead>
+                <TableHead className="h-7 text-xs">Type</TableHead>
+                <TableHead className="h-7 text-xs w-16">Null</TableHead>
+                <TableHead className="h-7 text-xs w-10">PK</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {table.columns.map((c, i) => {
+                const isMatch =
+                  hasColMatch && c.name.toLowerCase().includes(colQ)
+                return (
+                  <TableRow
+                    key={i}
+                    className={isMatch ? 'bg-primary/10' : undefined}
+                  >
+                    <TableCell className="py-1.5 text-xs font-mono">
+                      <div className="flex items-center gap-1.5">
+                        {c.primaryKey && (
+                          <Key className="h-3 w-3 text-warning shrink-0" />
+                        )}
+                        <span>{c.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <Badge
+                        variant="outline"
+                        className="text-xs px-1.5 py-0 font-mono"
+                      >
+                        {c.type || '-'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      {c.nullable !== undefined ? (
+                        <Badge
+                          variant={c.nullable ? 'secondary' : 'destructive'}
+                          className="text-xs px-1.5 py-0"
+                        >
+                          {c.nullable ? 'YES' : 'NO'}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      {c.primaryKey ? (
+                        <Key className="h-3 w-3 text-warning" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+        {hasDescriptions && (
+          <div className="mt-1.5 space-y-0.5">
+            {table.columns
+              .filter((c) => c.description)
+              .map((c, i) => (
+                <div
+                  key={i}
+                  className="text-xs text-muted-foreground"
+                >
+                  <span className="font-mono">{c.name}</span>: {c.description}
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+
+      {table.sampleData && table.sampleData.length > 0 && (
+        <>
+          <Separator />
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+              Sample Data ({table.sampleData.length} rows)
+            </h4>
+            <div className="rounded-none border border-border/60 overflow-auto max-h-32">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    {Object.keys(table.sampleData[0]).map((k) => (
+                      <TableHead
+                        key={k}
+                        className="h-6 text-xs font-mono whitespace-nowrap"
+                      >
+                        {k}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {table.sampleData.map((row, i) => (
+                    <TableRow key={i}>
+                      {Object.values(row).map((v, j) => (
+                        <TableCell
+                          key={j}
+                          className="py-1 text-xs font-mono whitespace-nowrap"
+                        >
+                          {v === null || v === undefined ? '—' : String(v)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </>
+      )}
+
+      <Separator />
+      <div>
+        <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+          Metadata
+        </h4>
+        <div className="space-y-0.5 text-xs">
+          <div className="flex gap-2">
+            <span className="text-muted-foreground w-28">Row count</span>
+            <span className="font-mono">{table.rowCount ?? '?'}</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-muted-foreground w-28">Reflected</span>
+            <span>{timeAgo(table.reflectedAt)}</span>
+          </div>
+          {table.metadata &&
+            Object.entries(table.metadata).map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <span className="text-muted-foreground w-28">{k}</span>
+                <span className="font-mono">{String(v)}</span>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SchemaViewerSheet({
   integration,
   onClose,
@@ -1117,19 +1533,22 @@ function SchemaViewerSheet({
 }) {
   return (
     <Sheet open={!!integration} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="sm:max-w-[560px] w-full flex flex-col">
+      <SheetContent className="sm:max-w-[720px] w-full flex flex-col">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Table2 className="h-4 w-4" />
-            Skema {integration?.name ?? ''}
+            Schema {integration?.name ?? ''}
           </SheetTitle>
           <SheetDescription>
-            Refleksi tabel &amp; kolom yang di-cache dari integrasi.
+            Cached table &amp; column reflection from the integration.
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 min-h-0 mt-2">
           {integration && (
-            <SchemaViewerContent key={integration.id} integration={integration} />
+            <SchemaViewerContent
+              key={integration.id}
+              integration={integration}
+            />
           )}
         </div>
       </SheetContent>
@@ -1137,10 +1556,17 @@ function SchemaViewerSheet({
   )
 }
 
-function SchemaViewerContent({ integration }: { integration: Integration }) {
+function SchemaViewerContent({
+  integration,
+}: {
+  integration: Integration
+}) {
   const [data, setData] = useState<SchemaData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tableSearch, setTableSearch] = useState('')
+  const [columnSearch, setColumnSearch] = useState('')
+  const [openItems, setOpenItems] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -1149,10 +1575,10 @@ function SchemaViewerContent({ integration }: { integration: Integration }) {
         const j = await r.json()
         if (cancelled) return
         if (r.ok && j.ok) setData(j.data as SchemaData)
-        else setError(j.error ?? 'Gagal memuat skema.')
+        else setError(j.error ?? 'Failed to load schema.')
       })
       .catch(() => {
-        if (!cancelled) setError('Kesalahan jaringan saat memuat skema.')
+        if (!cancelled) setError('Network error while loading schema.')
       })
       .finally(() => !cancelled && setLoading(false))
     return () => {
@@ -1160,11 +1586,57 @@ function SchemaViewerContent({ integration }: { integration: Integration }) {
     }
   }, [integration.id])
 
+  const filteredTables = useMemo(() => {
+    if (!data) return []
+    const q = tableSearch.trim().toLowerCase()
+    const colQ = columnSearch.trim().toLowerCase()
+    return data.tables.filter((t) => {
+      if (q && !t.tableName.toLowerCase().includes(q)) return false
+      if (
+        colQ &&
+        !t.columns.some((c) => c.name.toLowerCase().includes(colQ))
+      )
+        return false
+      return true
+    })
+  }, [data, tableSearch, columnSearch])
+
+  const allIds = useMemo(
+    () => filteredTables.map((t) => t.id),
+    [filteredTables],
+  )
+  const allOpen =
+    allIds.length > 0 && allIds.every((id) => openItems.includes(id))
+
+  const handleExpandAll = () => setOpenItems(allIds)
+  const handleCollapseAll = () => setOpenItems([])
+
+  const handleDownload = () => {
+    if (!data) return
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `schema-${data.name}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleCopyName = async (name: string) => {
+    try { await navigator.clipboard.writeText(name); toast.success('Table name copied') } catch { toast.error('Failed to copy') }
+  }
+
+  const handleCopyCreateTable = async (table: SchemaTable) => {
+    try { await navigator.clipboard.writeText(generateCreateTable(table)); toast.success('CREATE TABLE schema copied') } catch { toast.error('Failed to copy') }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Memuat skema…
+        Loading schema…
       </div>
     )
   }
@@ -1172,82 +1644,160 @@ function SchemaViewerContent({ integration }: { integration: Integration }) {
     return (
       <Alert variant="destructive">
         <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Gagal</AlertTitle>
+        <AlertTitle>Failed</AlertTitle>
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     )
   }
   if (!data) {
     return (
-      <div className="text-sm text-muted-foreground py-8 text-center">
-        Tidak ada data.
+      <div className="text-xs text-muted-foreground py-8 text-center">
+        No data.
       </div>
     )
   }
   if (data.tables.length === 0) {
     return (
-      <div className="text-sm text-muted-foreground py-8 text-center">
-        Skema kosong. Jalankan <strong>Uji Koneksi</strong> untuk merefleksikan
-        tabel.
+      <div className="text-xs text-muted-foreground py-8 text-center">
+        Schema is empty. Run <strong>Test Connection</strong> to
+        reflect tables.
       </div>
     )
   }
+
   return (
-    <ScrollArea className="h-full pr-2">
-      <div className="text-xs text-muted-foreground mb-2">
-        {data.tableCount} tabel · provider {data.provider}
-      </div>
-      <Accordion type="multiple" className="w-full">
-        {data.tables.map((t) => (
-          <AccordionItem key={t.id} value={t.id}>
-            <AccordionTrigger className="hover:no-underline">
-              <div className="flex items-center gap-2 min-w-0">
-                <Table2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="font-mono text-sm truncate">
-                  {t.tableName}
-                </span>
-                <Badge
-                  variant="secondary"
-                  className="text-[10px] ml-1 shrink-0"
-                >
-                  {t.rowCount ?? '?'} baris
-                </Badge>
-                <Badge
+    <div className="flex flex-col h-full">
+      <div className="space-y-2 pb-2.5 border-b border-border/70">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {filteredTables.length} of {data.tableCount} tables ·{' '}
+            <Badge
+              variant="outline"
+              className="text-xs px-1.5 py-0"
+            >
+              {data.provider}
+            </Badge>
+          </span>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
                   variant="outline"
-                  className="text-[10px] ml-1 shrink-0"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={allOpen ? handleCollapseAll : handleExpandAll}
                 >
-                  {t.columns.length} kolom
-                </Badge>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent>
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="h-8 text-xs">Kolom</TableHead>
-                      <TableHead className="h-8 text-xs">Tipe</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {t.columns.map((c, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="py-1.5 text-xs font-mono">
-                          {c.name}
-                        </TableCell>
-                        <TableCell className="py-1.5 text-xs text-muted-foreground">
-                          {c.type || '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
-      </Accordion>
-    </ScrollArea>
+                  {allOpen ? (
+                    <ChevronsDownUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronsUpDown className="h-3.5 w-3.5" />
+                  )}
+                  {allOpen ? 'Collapse' : 'Expand'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {allOpen ? 'Collapse all tables' : 'Expand all tables'}
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs gap-1"
+              onClick={handleDownload}
+            >
+              <Download className="h-3.5 w-3.5" />
+              JSON
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search tables…"
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <div className="relative flex-1">
+            <Columns3 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search columns…"
+              value={columnSearch}
+              onChange={(e) => setColumnSearch(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1 min-h-0 mt-2 pr-2">
+        {filteredTables.length === 0 ? (
+          <div className="text-xs text-muted-foreground py-8 text-center">
+            No matching tables.
+          </div>
+        ) : (
+          <Accordion
+            type="multiple"
+            value={openItems}
+            onValueChange={setOpenItems}
+            className="w-full space-y-2"
+          >
+            {filteredTables.map((t) => (
+              <AccordionItem
+                key={t.id}
+                value={t.id}
+                className="rounded-none border border-border/70 bg-card/50 overflow-hidden"
+              >
+                <div className="flex items-center gap-1 px-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <AccordionTrigger className="py-0 px-0 hover:no-underline">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Table2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-mono text-sm font-medium truncate">
+                          {t.tableName}
+                        </span>
+                        <Badge
+                          variant="secondary"
+                          className="text-xs px-1.5 py-0 shrink-0"
+                        >
+                          {t.rowCount ?? '?'} rows
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-xs px-1.5 py-0 shrink-0"
+                        >
+                          {t.columns.length} columns
+                        </Badge>
+                      </div>
+                    </AccordionTrigger>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <SchemaIconAction
+                      icon={Copy}
+                      label="Copy table name"
+                      onClick={() => handleCopyName(t.tableName)}
+                    />
+                    <SchemaIconAction
+                      icon={Code2}
+                      label="Copy CREATE TABLE"
+                      onClick={() => handleCopyCreateTable(t)}
+                    />
+                  </div>
+                </div>
+                <AccordionContent className="px-3 pb-3">
+                  <SchemaTableDetails
+                    table={t}
+                    columnSearch={columnSearch}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        )}
+      </ScrollArea>
+    </div>
   )
 }
 
@@ -1271,7 +1821,7 @@ function RestConnectorSheet({
             REST API — {connector?.name ?? ''}
           </SheetTitle>
           <SheetDescription>
-            Kelola endpoint whitelist dan uji request yang boleh digunakan chatbot.
+            Manage endpoint whitelist and test requests that can be used by the chatbot.
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 min-h-0 mt-2">
@@ -1308,6 +1858,7 @@ function RestConnectorContent({
   const [testBody, setTestBody] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<unknown>(null)
+  const [deletingEndpointId, setDeletingEndpointId] = useState<string | null>(null)
 
   const fetchDetail = useCallback(async () => {
     setLoading(true)
@@ -1320,11 +1871,11 @@ function RestConnectorContent({
       if (res.ok && json.ok) {
         setDetail(json.data as RestConnectorDetail)
       } else {
-        setError(json.error ?? 'Gagal memuat REST connector.')
+        setError(json.error ?? 'Failed to load REST connector.')
       }
     } catch (e) {
       console.error(e)
-      setError('Kesalahan jaringan saat memuat REST connector.')
+      setError('Network error while loading REST connector.')
     } finally {
       setLoading(false)
     }
@@ -1334,10 +1885,31 @@ function RestConnectorContent({
     fetchDetail()
   }, [fetchDetail])
 
+  const handleToggleActive = async (checked: boolean) => {
+    try {
+      const res = await fetch(`/api/data-sources/rest-connectors/${connector.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: checked }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        toast.error(json.error ?? 'Failed to change status.')
+        return
+      }
+      toast.success(checked ? 'REST connector enabled.' : 'REST connector disabled.')
+      setDetail((prev) => (prev ? { ...prev, isActive: checked } : prev))
+      onChanged()
+    } catch (e) {
+      toast.error('Network error while changing status.')
+      console.error(e)
+    }
+  }
+
   const handleAddEndpoint = async () => {
     const trimmedPath = path.trim()
     if (!trimmedPath) {
-      toast.error('Path endpoint wajib diisi.')
+      toast.error('Endpoint path is required.')
       return
     }
     setSubmitting(true)
@@ -1352,14 +1924,14 @@ function RestConnectorContent({
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Gagal menambah endpoint.')
-      toast.success('Endpoint whitelist ditambahkan.')
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to add endpoint.')
+      toast.success('Endpoint whitelist added.')
       setPath('')
       setDescription('')
       await fetchDetail()
       onChanged()
     } catch (e) {
-      toast.error('Gagal menambah endpoint', {
+      toast.error('Failed to add endpoint', {
         description: e instanceof Error ? e.message : undefined,
       })
     } finally {
@@ -1370,7 +1942,7 @@ function RestConnectorContent({
   const handleTestEndpoint = async () => {
     const trimmedPath = testPath.trim()
     if (!trimmedPath) {
-      toast.error('Path test wajib diisi.')
+      toast.error('Test path is required.')
       return
     }
 
@@ -1379,7 +1951,7 @@ function RestConnectorContent({
       try {
         parsedBody = JSON.parse(testBody)
       } catch {
-        toast.error('Body harus JSON valid.')
+        toast.error('Body must be valid JSON.')
         return
       }
     }
@@ -1399,13 +1971,34 @@ function RestConnectorContent({
       })
       const json = await res.json()
       setTestResult(json)
-      if (res.ok && json.ok) toast.success('REST endpoint berhasil diuji.')
-      else toast.error(json.error ?? 'REST endpoint gagal diuji.')
+      if (res.ok && json.ok) toast.success('REST endpoint tested successfully.')
+      else toast.error(json.error ?? 'REST endpoint failed to test.')
     } catch (e) {
       console.error(e)
-      toast.error('Kesalahan jaringan saat menguji endpoint.')
+      toast.error('Network error while testing endpoint.')
     } finally {
       setTesting(false)
+    }
+  }
+
+  const handleDeleteEndpoint = async (endpointId: string) => {
+    setDeletingEndpointId(endpointId)
+    try {
+      const res = await fetch(
+        `/api/data-sources/rest-connectors/${connector.id}/endpoints/${endpointId}`,
+        { method: 'DELETE' },
+      )
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to delete endpoint.')
+      toast.success('Endpoint whitelist deleted.')
+      await fetchDetail()
+      onChanged()
+    } catch (e) {
+      toast.error('Failed to delete endpoint', {
+        description: e instanceof Error ? e.message : undefined,
+      })
+    } finally {
+      setDeletingEndpointId(null)
     }
   }
 
@@ -1413,7 +2006,7 @@ function RestConnectorContent({
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Memuat REST connector...
+        Loading REST connector...
       </div>
     )
   }
@@ -1422,7 +2015,7 @@ function RestConnectorContent({
     return (
       <Alert variant="destructive">
         <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Gagal</AlertTitle>
+        <AlertTitle>Failed</AlertTitle>
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     )
@@ -1441,9 +2034,15 @@ function RestConnectorContent({
                 {detail.baseUrl}
               </div>
             </div>
-            <Badge variant={detail.isActive ? 'default' : 'secondary'}>
-              {detail.isActive ? 'Aktif' : 'Nonaktif'}
-            </Badge>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-medium text-muted-foreground">
+                {detail.isActive ? 'ACTIVE' : 'INACTIVE'}
+              </span>
+              <Switch
+                checked={detail.isActive}
+                onCheckedChange={handleToggleActive}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Badge variant="outline">{detail.authType}</Badge>
@@ -1454,9 +2053,9 @@ function RestConnectorContent({
 
         <div className="rounded-lg border p-3 space-y-3">
           <div>
-            <div className="text-sm font-medium">Tambah Endpoint Whitelist</div>
+            <div className="text-sm font-medium">Add Endpoint Whitelist</div>
             <p className="text-xs text-muted-foreground">
-              Hanya endpoint di daftar ini yang dapat dipanggil oleh test request dan router chatbot.
+              Only endpoints in this list can be called by test requests and the chatbot router.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
@@ -1482,7 +2081,7 @@ function RestConnectorContent({
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Deskripsi singkat untuk AI, contoh: mengambil daftar customer aktif"
+            placeholder="Brief description for AI, e.g. fetch list of active customers"
           />
           <Button
             onClick={handleAddEndpoint}
@@ -1490,7 +2089,7 @@ function RestConnectorContent({
             size="sm"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            Tambah Endpoint
+            Add Endpoint
           </Button>
         </div>
 
@@ -1500,15 +2099,16 @@ function RestConnectorContent({
               <TableRow>
                 <TableHead className="text-xs">Method</TableHead>
                 <TableHead className="text-xs">Path</TableHead>
-                <TableHead className="text-xs">Deskripsi</TableHead>
+                <TableHead className="text-xs">Description</TableHead>
                 <TableHead className="text-xs text-right">Status</TableHead>
+                <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {detail.endpoints.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-8">
-                    Belum ada endpoint whitelist.
+                  <TableCell colSpan={5} className="text-center text-xs text-muted-foreground py-8">
+                    No endpoint whitelist yet.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -1531,6 +2131,24 @@ function RestConnectorContent({
                         {endpoint.isEnabled ? 'Enabled' : 'Disabled'}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        disabled={deletingEndpointId === endpoint.id}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteEndpoint(endpoint.id)
+                        }}
+                      >
+                        {deletingEndpointId === endpoint.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -1542,7 +2160,7 @@ function RestConnectorContent({
           <div>
             <div className="text-sm font-medium">Test Endpoint</div>
             <p className="text-xs text-muted-foreground">
-              Klik endpoint di tabel untuk mengisi method dan path, lalu jalankan request.
+              Click an endpoint in the table to fill method and path, then run the request.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
@@ -1576,7 +2194,7 @@ function RestConnectorContent({
               value={testBody}
               onChange={(e) => setTestBody(e.target.value)}
               rows={4}
-              placeholder='{"name":"Contoh"}'
+              placeholder='{"name":"Example"}'
               className="font-mono text-xs resize-none"
             />
           )}
@@ -1586,10 +2204,10 @@ function RestConnectorContent({
             size="sm"
           >
             {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-            Jalankan Test
+            Run Test
           </Button>
           {testResult !== null && (
-            <pre className="max-h-[260px] overflow-auto rounded-md border bg-muted/40 p-3 text-[11px]">
+            <pre className="max-h-[260px] overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
               <code>{JSON.stringify(testResult, null, 2)}</code>
             </pre>
           )}
@@ -1606,7 +2224,7 @@ function parseQueryPairs(raw: string): Record<string, string> {
 
 /* ------------------------------------------------- query tester */
 
-const SAMPLE_QUERY = 'Tampilkan 5 produk dengan harga tertinggi'
+const SAMPLE_QUERY = 'Show 5 products with the highest price'
 
 function QueryTesterDialog({
   integration,
@@ -1624,8 +2242,8 @@ function QueryTesterDialog({
             Query Tester — {integration?.name ?? ''}
           </DialogTitle>
           <DialogDescription>
-            Ajukan pertanyaan bahasa alami. Sistem akan mengubahnya menjadi SQL,
-            memvalidasi via guardrail AST, lalu mengeksekusinya.
+            Ask a natural language question. The system will convert it to SQL,
+            validate via AST guardrail, then execute it.
           </DialogDescription>
         </DialogHeader>
         {integration && (
@@ -1645,7 +2263,7 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
   const handleRun = async () => {
     const q = query.trim()
     if (!q) {
-      toast.error('Pertanyaan tidak boleh kosong.')
+      toast.error('Question cannot be empty.')
       return
     }
     setRunning(true)
@@ -1668,19 +2286,19 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
         // guardrail block — keep the result shape so UI can render it
         setResult({
           ok: false,
-          reason: json.reason ?? 'Kueri ditolak oleh guardrail keamanan.',
+          reason: json.reason ?? 'Query rejected by security guardrail.',
           generatedSql: json.generatedSql,
         })
       } else {
         setErrorMsg(
           json.error ??
             json.reason ??
-            'Maaf, terjadi kesalahan saat memproses kueri.',
+            'Sorry, an error occurred while processing the query.',
         )
       }
     } catch (e) {
       console.error(e)
-      setErrorMsg('Kesalahan jaringan saat menjalankan kueri.')
+      setErrorMsg('Network error while running the query.')
     } finally {
       setRunning(false)
     }
@@ -1692,7 +2310,7 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
   return (
         <div className="space-y-3 min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="space-y-1.5">
-            <Label htmlFor="nlq">Pertanyaan (Natural Language)</Label>
+            <Label htmlFor="nlq">Question (Natural Language)</Label>
             <Textarea
               id="nlq"
               value={query}
@@ -1705,18 +2323,18 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
 
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              Pre-fill: contoh kueri. Edit sesuai kebutuhan.
+              Pre-fill: example query. Edit as needed.
             </p>
             <Button onClick={handleRun} disabled={running || !query.trim()}>
               {running ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Menjalankan…
+                  Running…
                 </>
               ) : (
                 <>
                   <Terminal className="h-4 w-4" />
-                  Jalankan
+                  Run
                 </>
               )}
             </Button>
@@ -1726,11 +2344,11 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
           {result && !result.ok && result.reason && (
             <Alert variant="destructive">
               <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>Kueri Ditolak oleh Guardrail</AlertTitle>
+              <AlertTitle>Query Rejected by Guardrail</AlertTitle>
               <AlertDescription className="space-y-1">
                 <p>{result.reason}</p>
                 {result.generatedSql && (
-                  <pre className="mt-2 text-[11px] bg-rose-950/20 dark:bg-rose-950/40 rounded-md p-2 overflow-x-auto">
+                  <pre className="mt-2 text-xs bg-rose-950/20 dark:bg-rose-950/40 rounded-md p-2 overflow-x-auto">
                     <code>{result.generatedSql}</code>
                   </pre>
                 )}
@@ -1742,7 +2360,7 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
           {errorMsg && (
             <Alert variant="destructive">
               <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>Terjadi Kesalahan</AlertTitle>
+              <AlertTitle>An Error Occurred</AlertTitle>
               <AlertDescription>{errorMsg}</AlertDescription>
             </Alert>
           )}
@@ -1753,19 +2371,19 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
               <div className="rounded-md border bg-muted/30 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5 text-xs font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                    SQL yang dihasilkan
+                    <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                    Generated SQL
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <Badge variant="secondary" className="text-[10px]">
-                      {result.rowCount ?? 0} baris
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="secondary" className="text-xs">
+                      {result.rowCount ?? 0} rows
                     </Badge>
-                    <Badge variant="secondary" className="text-[10px]">
+                    <Badge variant="secondary" className="text-xs">
                       {result.executionMs ?? 0} ms
                     </Badge>
                   </div>
                 </div>
-                <pre className="text-[11px] bg-background border rounded-md p-2 overflow-x-auto">
+                <pre className="text-xs bg-background border rounded-md p-2 overflow-x-auto">
                   <code>{result.sql}</code>
                 </pre>
                 {result.explanation && (
@@ -1810,7 +2428,7 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground italic">
-                  Kueri berhasil dieksekusi tetapi tidak mengembalikan baris.
+                  Query executed successfully but returned no rows.
                 </p>
               )}
             </div>

@@ -9,24 +9,24 @@ import {
 } from '@/lib/rag'
 import { embedDocumentChunks } from '@/lib/embeddings'
 import { upsertChunkFts } from '@/lib/rag-fts'
+import { cognifyDocument } from '@/lib/cognee'
 
 export const runtime = 'nodejs'
 
 const MAX_BYTES = 50 * 1024 * 1024 // 50 MB — spec §8
-const VALID_CATEGORIES = ['SOP', 'KEBIJAKAN', 'FINANSIAL', 'INVOICE', 'LAINNYA']
 
 /**
- * GET /api/documents?category=SOP
- * List all documents for the active user's company, with chunk counts.
+ * GET /api/documents?category=Foo
+ * List all documents, optionally filtered by category.
  */
 export async function GET(req: NextRequest) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
 
-    const where: { companyId: string; category?: string } = { companyId: user.companyId }
-    if (category && VALID_CATEGORIES.includes(category)) {
+    const where: { category?: string } = {}
+    if (category) {
       where.category = category
     }
 
@@ -40,8 +40,10 @@ export async function GET(req: NextRequest) {
         sizeBytes: true,
         mimeType: true,
         status: true,
+        isEnabled: true,
         category: true,
         description: true,
+        cognifyStatus: true,
         createdAt: true,
         _count: { select: { chunks: true } },
       },
@@ -54,8 +56,10 @@ export async function GET(req: NextRequest) {
       sizeBytes: d.sizeBytes,
       mimeType: d.mimeType,
       status: d.status,
+      isEnabled: d.isEnabled,
       category: d.category,
       description: d.description,
+      cognifyStatus: d.cognifyStatus,
       createdAt: d.createdAt,
       chunkCount: d._count.chunks,
     }))
@@ -85,17 +89,11 @@ export async function POST(req: NextRequest) {
   }
 
   const file = formData.get('file')
-  const category = (formData.get('category') as string | null)?.trim() || 'LAINNYA'
+  const category = (formData.get('category') as string | null)?.trim() || 'Uncategorized'
   const description = (formData.get('description') as string | null)?.trim() || ''
 
   if (!file || !(file instanceof File)) {
     return NextResponse.json({ error: 'Missing "file" field' }, { status: 400 })
-  }
-  if (!VALID_CATEGORIES.includes(category)) {
-    return NextResponse.json(
-      { error: `Invalid category. Allowed: ${VALID_CATEGORIES.join(', ')}` },
-      { status: 400 },
-    )
   }
   if (file.size <= 0) {
     return NextResponse.json({ error: 'File is empty' }, { status: 400 })
@@ -127,7 +125,6 @@ export async function POST(req: NextRequest) {
     // Create the document with status='ready'.
     const doc = await db.document.create({
       data: {
-        companyId: user.companyId,
         name: file.name,
         type: docType,
         sizeBytes: file.size,
@@ -169,14 +166,12 @@ export async function POST(req: NextRequest) {
     for (const chunk of persistedChunks) {
       await upsertChunkFts({
         chunkId: chunk.id,
-        companyId: user.companyId,
         content: chunk.content,
         keywords: chunk.keywords,
       })
     }
 
     const embedding = await embedDocumentChunks({
-      companyId: user.companyId,
       documentId: doc.id,
     }).catch((error) => ({
       embedded: 0,
@@ -185,8 +180,13 @@ export async function POST(req: NextRequest) {
       model: error instanceof Error ? error.message : 'embedding failed',
     }))
 
+    void cognifyDocument({
+      documentId: doc.id,
+      documentName: doc.name,
+      chunks: chunks.map((content, idx) => ({ content, chunkIndex: idx })),
+    }).catch(() => null)
+
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'DOC_UPLOAD',
       severity: 'info',

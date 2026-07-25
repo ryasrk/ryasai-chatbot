@@ -10,13 +10,13 @@ import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 export async function POST() {
   try {
     const user = await getActiveUser()
-    await db.appConfig.upsert({
-      where: { companyId: user.companyId },
-      create: { companyId: user.companyId, setupCompleted: true },
-      update: { setupCompleted: true },
-    })
+    const existing = await db.appConfig.findFirst()
+    if (existing) {
+      await db.appConfig.update({ where: { id: existing.id }, data: { setupCompleted: true } })
+    } else {
+      await db.appConfig.create({ data: { setupCompleted: true } })
+    }
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'SETUP_COMPLETED',
       detail: {},

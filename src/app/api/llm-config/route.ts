@@ -15,8 +15,8 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    const user = await getActiveUser()
-    const data = await getPublicLlmConfig(user.companyId)
+    await getActiveUser()
+    const data = await getPublicLlmConfig()
     return NextResponse.json({ ok: true, data })
   } catch (e) {
     return handleApiError(e, 'Gagal memuat konfigurasi LLM.')
@@ -38,21 +38,17 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
 
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat mengubah konfigurasi LLM.' },
-        { status: 403 },
-      )
-    }
-
     const body = (await req.json().catch(() => ({}))) as PutBody
-    const provider = (body.provider ?? 'OPENAI_COMPATIBLE').trim().toUpperCase() || 'OPENAI_COMPATIBLE'
+    const VALID_PROVIDERS = new Set(['OPENAI_COMPATIBLE', 'ANTHROPIC_COMPATIBLE'])
+    const provider = VALID_PROVIDERS.has((body.provider ?? '').trim().toUpperCase())
+      ? (body.provider as string).trim().toUpperCase()
+      : 'OPENAI_COMPATIBLE'
     const model = (body.model ?? '').trim()
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
-    const embeddingProvider =
-      (body.embeddingProvider ?? 'OPENAI_COMPATIBLE').trim().toUpperCase() ||
-      'OPENAI_COMPATIBLE'
-    const embeddingModel = (body.embeddingModel ?? '').trim()
+    const embeddingProvider = VALID_PROVIDERS.has((body.embeddingProvider ?? '').trim().toUpperCase())
+      ? (body.embeddingProvider as string).trim().toUpperCase()
+      : 'OPENAI_COMPATIBLE'
+    const embeddingModel = (body.embeddingModel ?? '').trim() || 'text-embedding-3-small'
     const embeddingApiKey =
       typeof body.embeddingApiKey === 'string' ? body.embeddingApiKey.trim() : ''
 
@@ -70,7 +66,7 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const existing = await db.llmConfig.findUnique({ where: { companyId: user.companyId } })
+    const existing = await db.llmConfig.findFirst()
 
     // apiKey is required on first create; on update, a blank value keeps the existing key.
     if (!apiKey && !existing) {
@@ -84,37 +80,32 @@ export async function PUT(req: NextRequest) {
     const encryptedApiKey = apiKey
       ? encryptConfig({ apiKey })
       : existing!.encryptedApiKey
-    const encryptedEmbeddingApiKey = embeddingApiKey
-      ? encryptConfig({ apiKey: embeddingApiKey })
-      : existing?.encryptedEmbeddingApiKey
+    // Auto-copy LLM apiKey to embedding if no separate embedding key provided
+    const effectiveEmbeddingApiKey = embeddingApiKey || apiKey
+    const encryptedEmbeddingApiKey = effectiveEmbeddingApiKey
+      ? encryptConfig({ apiKey: effectiveEmbeddingApiKey })
+      : existing?.encryptedEmbeddingApiKey ?? encryptedApiKey
 
-    await db.llmConfig.upsert({
-      where: { companyId: user.companyId },
-      update: {
-        provider,
-        baseUrl,
-        model: finalModel,
-        ...(apiKey ? { encryptedApiKey } : {}),
-        embeddingProvider,
-        embeddingBaseUrl: embeddingBaseUrl ?? baseUrl,
-        embeddingModel,
-        ...(embeddingApiKey ? { encryptedEmbeddingApiKey } : {}),
-      },
-      create: {
-        companyId: user.companyId,
-        provider,
-        baseUrl,
-        model: finalModel,
-        encryptedApiKey,
-        embeddingProvider,
-        embeddingBaseUrl: embeddingBaseUrl ?? baseUrl,
-        embeddingModel,
-        encryptedEmbeddingApiKey,
-      },
-    })
+    const payload = {
+      provider,
+      baseUrl,
+      model: finalModel,
+      ...(apiKey ? { encryptedApiKey } : {}),
+      embeddingProvider,
+      embeddingBaseUrl: embeddingBaseUrl ?? baseUrl,
+      embeddingModel,
+      ...(effectiveEmbeddingApiKey ? { encryptedEmbeddingApiKey } : {}),
+    }
+
+    if (existing) {
+      await db.llmConfig.update({ where: { id: existing.id }, data: payload })
+    } else {
+      await db.llmConfig.create({
+        data: { ...payload, encryptedApiKey, encryptedEmbeddingApiKey },
+      })
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'LLM_CONFIG_UPDATE',
       severity: 'warning',
@@ -131,7 +122,7 @@ export async function PUT(req: NextRequest) {
     })
 
     // Return the masked public view (single source of truth for shape/masking).
-    const data = await getPublicLlmConfig(user.companyId)
+    const data = await getPublicLlmConfig()
     return NextResponse.json({ ok: true, data })
   } catch (e) {
     return handleApiError(e, 'Gagal menyimpan konfigurasi LLM.')

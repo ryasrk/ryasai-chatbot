@@ -21,8 +21,7 @@ export function parseAuditPagination(searchParams: URLSearchParams) {
  */
 export async function GET(req: NextRequest) {
   try {
-    const user = await getActiveUser()
-    const companyId = user.companyId
+    await getActiveUser()
 
     const { searchParams } = req.nextUrl
     const severity = searchParams.get('severity') || undefined
@@ -30,10 +29,9 @@ export async function GET(req: NextRequest) {
     const { page, pageSize } = parseAuditPagination(searchParams)
 
     const where: {
-      companyId: string
       severity?: string
       action?: { contains: string }
-    } = { companyId }
+    } = {}
     if (severity && ['info', 'warning', 'critical'].includes(severity)) {
       where.severity = severity
     }
@@ -48,7 +46,7 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          user: { select: { id: true, name: true, email: true, role: true } },
+          user: { select: { id: true, name: true, email: true } },
         },
       }),
       db.auditLog.count({ where }),

@@ -43,10 +43,10 @@ export function buildEndpointUrl(
   return url.toString()
 }
 
-export function buildAuthHeaders(
+export async function buildAuthHeaders(
   authType: string,
   config: Record<string, unknown>,
-): Record<string, string> {
+): Promise<Record<string, string>> {
   const normalized = authType.trim().toUpperCase()
   if (normalized === 'NONE') return {}
   if (normalized === 'BEARER') {
@@ -57,6 +57,36 @@ export function buildAuthHeaders(
     const headerName = stringValue(config.headerName) || 'X-API-Key'
     const apiKey = stringValue(config.apiKey)
     return apiKey ? { [headerName]: apiKey } : {}
+  }
+  if (normalized === 'BASIC') {
+    const username = stringValue(config.username)
+    const password = stringValue(config.password)
+    if (!username && !password) return {}
+    const encoded = Buffer.from(`${username}:${password}`).toString('base64')
+    return { Authorization: `Basic ${encoded}` }
+  }
+  if (normalized === 'OAUTH2') {
+    const tokenUrl = stringValue(config.tokenUrl)
+    const clientId = stringValue(config.clientId)
+    const clientSecret = stringValue(config.clientSecret)
+    const scope = stringValue(config.scope)
+    if (!tokenUrl || !clientId || !clientSecret) return {}
+    // ponytail: no token cache, fetch fresh each call — add cache when throughput matters
+    const body = new URLSearchParams()
+    body.set('grant_type', 'client_credentials')
+    body.set('client_id', clientId)
+    body.set('client_secret', clientSecret)
+    if (scope) body.set('scope', scope)
+    const tokenRes = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!tokenRes.ok) throw new Error(`OAuth2 token fetch failed (HTTP ${tokenRes.status}).`)
+    const tokenData = (await tokenRes.json()) as { access_token?: string }
+    const accessToken = stringValue(tokenData.access_token)
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   }
   throw new Error(`Unsupported REST API auth type: ${authType}`)
 }

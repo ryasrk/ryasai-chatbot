@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig, maskConfig } from '@/lib/crypto'
+import { isBlockedHost } from '@/lib/llm-config'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 
 interface RouteContext {
@@ -18,10 +19,10 @@ interface PatchConnectorBody {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
     const connector = await db.restApiConnector.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       include: { endpoints: { orderBy: [{ method: 'asc' }, { path: 'asc' }] } },
     })
     if (!connector) {
@@ -58,16 +59,10 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat mengubah REST connector.' },
-        { status: 403 },
-      )
-    }
 
     const { id } = await ctx.params
     const existing = await db.restApiConnector.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, encryptedAuthConfig: true },
     })
     if (!existing) {
@@ -89,14 +84,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
-      const url = parseBaseUrl(body.baseUrl)
-      if (!url) {
+      try {
+        const url = parseBaseUrl(body.baseUrl)
+        if (!url) {
+          return NextResponse.json(
+            { ok: false, error: 'Base URL tidak valid.' },
+            { status: 400 },
+          )
+        }
+        data.baseUrl = url
+      } catch (e) {
         return NextResponse.json(
-          { ok: false, error: 'Base URL tidak valid.' },
+          { ok: false, error: e instanceof Error ? e.message : 'Base URL tidak valid.' },
           { status: 400 },
         )
       }
-      data.baseUrl = url
     }
     if (typeof body.authType === 'string') {
       const authType = body.authType.trim().toUpperCase()
@@ -139,7 +141,6 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'REST_CONNECTOR_UPDATE',
       severity: 'warning',
@@ -155,16 +156,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat menghapus REST connector.' },
-        { status: 403 },
-      )
-    }
 
     const { id } = await ctx.params
     const existing = await db.restApiConnector.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true },
     })
     if (!existing) {
@@ -177,7 +172,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     await db.restApiConnector.delete({ where: { id: existing.id } })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'REST_CONNECTOR_DELETE',
       severity: 'warning',
@@ -191,11 +185,15 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 }
 
 function parseBaseUrl(raw: string): string | null {
+  let url: URL
   try {
-    const url = new URL(raw.trim())
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    return url.toString().replace(/\/$/, '')
+    url = new URL(raw.trim())
   } catch {
     return null
   }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  if (isBlockedHost(url.hostname)) {
+    throw new Error('Base URL menuju host internal yang diblokir.')
+  }
+  return url.toString().replace(/\/$/, '')
 }

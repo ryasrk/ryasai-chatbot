@@ -12,35 +12,34 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    const user = await getActiveUser()
-    const companyId = user.companyId
+    await getActiveUser()
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const [toolRuns, failedApiRequests, restApiErrors, blockedSql, toolRunCount24h, latencyAgg, failedApiCount24h] =
       await Promise.all([
-        db.toolRun.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+        db.toolRun.findMany({ where: {}, orderBy: { createdAt: 'desc' }, take: 50 }),
         db.apiRequestLog.findMany({
-          where: { companyId, status: { gte: 400 } },
+          where: { status: { gte: 400 } },
           orderBy: { createdAt: 'desc' },
           take: 50,
         }),
         db.restApiRequestLog.findMany({
-          where: { companyId, errorMessage: { not: null } },
+          where: { errorMessage: { not: null } },
           orderBy: { createdAt: 'desc' },
           take: 50,
         }),
         db.auditLog.findMany({
-          where: { companyId, action: 'GUARDRAIL_BLOCK' },
+          where: { action: 'GUARDRAIL_BLOCK' },
           orderBy: { createdAt: 'desc' },
           take: 50,
         }),
-        db.toolRun.count({ where: { companyId, createdAt: { gte: dayAgo } } }),
+        db.toolRun.count({ where: { createdAt: { gte: dayAgo } } }),
         db.toolRun.aggregate({
-          where: { companyId, createdAt: { gte: dayAgo }, latencyMs: { not: null } },
+          where: { createdAt: { gte: dayAgo }, latencyMs: { not: null } },
           _avg: { latencyMs: true },
         }),
         db.apiRequestLog.count({
-          where: { companyId, status: { gte: 400 }, createdAt: { gte: dayAgo } },
+          where: { status: { gte: 400 }, createdAt: { gte: dayAgo } },
         }),
       ])
 

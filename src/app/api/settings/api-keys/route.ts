@@ -11,9 +11,8 @@ interface CreateApiKeyBody {
 
 export async function GET() {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const items = await db.apiKey.findMany({
-      where: { companyId: user.companyId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -43,12 +42,6 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat membuat API key.' },
-        { status: 403 },
-      )
-    }
 
     const body = (await req.json().catch(() => ({}))) as CreateApiKeyBody
     const label = (body.label ?? '').trim()
@@ -62,7 +55,6 @@ export async function POST(req: NextRequest) {
     const generated = generateApiKey()
     const item = await db.apiKey.create({
       data: {
-        companyId: user.companyId,
         label,
         keyPrefix: generated.prefix,
         keyHash: generated.hash,
@@ -81,7 +73,6 @@ export async function POST(req: NextRequest) {
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'API_KEY_CREATE',
       severity: 'warning',

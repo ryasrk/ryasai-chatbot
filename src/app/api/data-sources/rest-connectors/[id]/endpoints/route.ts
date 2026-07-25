@@ -19,10 +19,10 @@ interface CreateEndpointBody {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
     const connector = await db.restApiConnector.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true },
     })
     if (!connector) {
@@ -45,16 +45,10 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat membuat endpoint whitelist.' },
-        { status: 403 },
-      )
-    }
 
     const { id } = await ctx.params
     const connector = await db.restApiConnector.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true },
     })
     if (!connector) {
@@ -95,7 +89,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'REST_ENDPOINT_CREATE',
       severity: 'info',

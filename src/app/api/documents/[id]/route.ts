@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { forgetKnowledgeGraph } from '@/lib/cognee'
 
 export const runtime = 'nodejs'
 
@@ -14,11 +15,11 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
 
     const doc = await db.document.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: {
         id: true,
         name: true,
@@ -26,8 +27,12 @@ export async function GET(
         sizeBytes: true,
         mimeType: true,
         status: true,
+        isEnabled: true,
         category: true,
         description: true,
+        cognifyStatus: true,
+        cognifyError: true,
+        cognifiedAt: true,
         contentText: true,
         createdAt: true,
         updatedAt: true,
@@ -61,6 +66,7 @@ export async function GET(
         sizeBytes: doc.sizeBytes,
         mimeType: doc.mimeType,
         status: doc.status,
+        isEnabled: doc.isEnabled,
         category: doc.category,
         description: doc.description,
         contentText: doc.contentText,
@@ -72,6 +78,67 @@ export async function GET(
     })
   } catch (e) {
     return handleApiError(e, 'Gagal memuat detail dokumen.')
+  }
+}
+
+interface PatchBody {
+  isEnabled?: boolean
+}
+
+/**
+ * PATCH /api/documents/[id]
+ * Toggles document enabled state. Disabled documents are excluded from RAG
+ * retrieval (see tool-router.ts) but remain stored and can be re-enabled.
+ */
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await getActiveUser()
+    const { id } = await ctx.params
+    const body = (await req.json().catch(() => ({}))) as PatchBody
+
+    const existing = await db.document.findFirst({
+      where: { id },
+      select: { id: true, name: true, isEnabled: true },
+    })
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Document not found' },
+        { status: 404 },
+      )
+    }
+
+    if (typeof body.isEnabled !== 'boolean') {
+      return NextResponse.json(
+        { error: 'Field isEnabled (boolean) wajib diisi.' },
+        { status: 400 },
+      )
+    }
+
+    const updated = await db.document.update({
+      where: { id: existing.id },
+      data: { isEnabled: body.isEnabled },
+      select: { id: true, isEnabled: true, updatedAt: true },
+    })
+
+    await writeAudit({
+      userId: user.userId,
+      action: 'DOC_UPDATE',
+      severity: 'info',
+      detail: {
+        documentId: existing.id,
+        name: existing.name,
+        before: { isEnabled: existing.isEnabled },
+        after: { isEnabled: body.isEnabled },
+      },
+    })
+
+    return NextResponse.json({ ok: true, data: updated })
+  } catch (e) {
+    return handleApiError(e, 'Gagal memperbarui dokumen.')
   }
 }
 
@@ -89,7 +156,7 @@ export async function DELETE(
     const { id } = await ctx.params
 
     const existing = await db.document.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, type: true, category: true, _count: { select: { chunks: true } } },
     })
 
@@ -100,12 +167,11 @@ export async function DELETE(
       )
     }
 
-    // DocumentChunk has onDelete: Cascade on its document relation,
-    // so deleting the document automatically removes the chunks.
     await db.document.delete({ where: { id: existing.id } })
 
+    void forgetKnowledgeGraph()
+
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'DOC_DELETE',
       severity: 'warning',

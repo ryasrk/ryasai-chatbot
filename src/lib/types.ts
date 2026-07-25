@@ -3,15 +3,10 @@
  * Kept in a single file so all frontend views import from one place.
  */
 
-export type Role = 'admin' | 'manager' | 'staff'
-
 export interface ActiveUser {
   userId: string
-  companyId: string
-  role: Role
   name: string
   email: string
-  companyName?: string
 }
 
 export interface Integration {
@@ -31,8 +26,9 @@ export interface Integration {
 export interface IntegrationSchemaRow {
   id: string
   tableName: string
-  columns: { name: string; type: string }[]
+  columns: { name: string; type: string; primaryKey?: boolean; notNull?: boolean; foreignKey?: string; distinctValues?: string[] }[]
   rowCount: number | null
+  sampleRow?: Record<string, unknown>
   reflectedAt: string
 }
 
@@ -43,8 +39,10 @@ export interface DocumentItem {
   sizeBytes: number
   mimeType: string
   status: string
+  isEnabled?: boolean
   category: string | null
   description: string | null
+  cognifyStatus?: string | null
   createdAt: string
   chunkCount: number
 }
@@ -58,6 +56,7 @@ export interface ChatMessageItem {
   chartData?: ChartData | null
   createdAt: string
   integration?: { id: string; name: string } | null
+  toolType?: string | null
 }
 
 export interface Citation {

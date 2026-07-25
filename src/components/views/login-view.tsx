@@ -39,9 +39,9 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         return
       }
       const data = await res.json().catch(() => ({}))
-      setError(data?.error || 'Email atau password salah.')
+      setError(data?.error || 'Incorrect email or password.')
     } catch {
-      setError('Tidak dapat terhubung ke server. Coba lagi.')
+      setError('Unable to connect to the server. Try again.')
     } finally {
       setSubmitting(false)
     }
@@ -52,9 +52,9 @@ export function LoginView({ onSuccess }: LoginViewProps) {
       <Card className="w-full max-w-sm">
         <form onSubmit={handleSubmit}>
           <CardHeader className="space-y-1 text-center">
-            <CardTitle className="text-2xl">Masuk</CardTitle>
+            <CardTitle className="text-2xl">Sign In</CardTitle>
             <CardDescription>
-              Masukkan kredensial admin untuk melanjutkan.
+              Enter admin credentials to continue.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -83,7 +83,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               />
             </div>
             {error && (
-              <p className="text-sm text-destructive" role="alert">
+              <p className="text-xs text-destructive" role="alert">
                 {error}
               </p>
             )}
@@ -95,7 +95,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               ) : (
                 <LogIn className="mr-2 h-4 w-4" />
               )}
-              Masuk
+              Sign In
             </Button>
           </CardFooter>
         </form>

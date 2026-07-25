@@ -8,7 +8,7 @@ import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
  *   Includes `_count.messages` so the UI can show message counts.
  *
  * POST /api/chat/sessions
- *   Body: { title?: string }  (default "Sesi Baru")
+ *   Body: { title?: string }  (default "New Session")
  *   Creates a new chat session for the active user.
  */
 export async function GET() {
@@ -16,7 +16,10 @@ export async function GET() {
     const user = await getActiveUser()
 
     const sessions = await db.chatSession.findMany({
-      where: { userId: user.userId, companyId: user.companyId },
+      where: {
+        userId: user.userId,
+        title: { not: { startsWith: '[Agent]' } },
+      },
       orderBy: { createdAt: 'desc' },
       take: 50,
       include: {
@@ -26,7 +29,7 @@ export async function GET() {
 
     return NextResponse.json({ items: sessions })
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat daftar sesi chat.')
+    return handleApiError(err, 'Failed to load chat sessions.')
   }
 }
 
@@ -37,18 +40,16 @@ export async function POST(req: NextRequest) {
     const title: string =
       typeof body?.title === 'string' && body.title.trim().length > 0
         ? body.title.trim().slice(0, 200)
-        : 'Sesi Baru'
+        : 'New Session'
 
     const session = await db.chatSession.create({
       data: {
-        companyId: user.companyId,
         userId: user.userId,
         title,
       },
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'CHAT_SESSION_CREATE',
       severity: 'info',
@@ -57,6 +58,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(session, { status: 201 })
   } catch (err) {
-    return handleApiError(err, 'Gagal membuat sesi chat baru.')
+    return handleApiError(err, 'Failed to create new chat session.')
   }
 }

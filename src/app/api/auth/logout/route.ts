@@ -12,7 +12,6 @@ export async function POST() {
     try {
       const user = await getActiveUser()
       await writeAudit({
-        companyId: user.companyId,
         userId: user.userId,
         action: 'LOGOUT',
         detail: { email: user.email },

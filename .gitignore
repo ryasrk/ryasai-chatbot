@@ -39,6 +39,10 @@ db/e2e.db-journal
 /playwright-report/
 /test-results/
 
+# database (contains encrypted secrets + password hashes)
+db/*.db
+db/*.db-journal
+
 # vercel
 .vercel
 
@@ -58,3 +62,13 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# local data + secrets
+.cognee/
+cognee.db
+.anon_id
+.opencode/
+.zscripts/
+weapon.txt
+upload/
+download/

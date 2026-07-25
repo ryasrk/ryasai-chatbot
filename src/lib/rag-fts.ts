@@ -25,7 +25,6 @@ export async function ensureRagFtsTable() {
 
 export async function upsertChunkFts(args: {
   chunkId: string
-  companyId: string
   content: string
   keywords?: string | null
 }) {
@@ -34,29 +33,28 @@ export async function upsertChunkFts(args: {
   await db.$executeRawUnsafe(
     'INSERT INTO DocumentChunkFts(chunkId, companyId, content, keywords) VALUES (?, ?, ?, ?)',
     args.chunkId,
-    args.companyId,
+    '',
     args.content,
     args.keywords ?? '',
   )
 }
 
-export async function rebuildCompanyFts(companyId: string): Promise<{ indexed: number }> {
+export async function rebuildFts(): Promise<{ indexed: number }> {
   await ensureRagFtsTable()
-  await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts WHERE companyId = ?', companyId)
+  await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts')
   const chunks = await db.documentChunk.findMany({
-    where: { document: { companyId, status: 'ready' } },
+    where: { document: { status: 'ready', isEnabled: true } },
     select: {
       id: true,
       content: true,
       keywords: true,
-      document: { select: { companyId: true } },
     },
   })
   for (const chunk of chunks) {
     await db.$executeRawUnsafe(
       'INSERT INTO DocumentChunkFts(chunkId, companyId, content, keywords) VALUES (?, ?, ?, ?)',
       chunk.id,
-      chunk.document.companyId,
+      '',
       chunk.content,
       chunk.keywords ?? '',
     )
@@ -65,7 +63,6 @@ export async function rebuildCompanyFts(companyId: string): Promise<{ indexed: n
 }
 
 export async function searchFtsChunkIds(args: {
-  companyId: string
   queryTokens: string[]
   limit: number
 }): Promise<string[]> {
@@ -77,16 +74,16 @@ export async function searchFtsChunkIds(args: {
       `
         SELECT chunkId, bm25(DocumentChunkFts) AS rank
         FROM DocumentChunkFts
-        WHERE companyId = ? AND DocumentChunkFts MATCH ?
+        WHERE DocumentChunkFts MATCH ?
         ORDER BY rank ASC
         LIMIT ?
       `,
-      args.companyId,
       match,
       args.limit,
     )
     return normalizeFtsRows(rows)
-  } catch {
+  } catch (e) {
+    console.warn('[rag-fts] searchFtsChunkIds failed:', e)
     return []
   }
 }

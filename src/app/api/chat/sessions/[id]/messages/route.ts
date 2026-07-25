@@ -21,12 +21,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({
-      where: { id, companyId: user.companyId, userId: user.userId },
+      where: { id, userId: user.userId },
       select: { id: true },
     })
     if (!session) {
       return NextResponse.json(
-        { error: 'Sesi tidak ditemukan.' },
+        { error: 'Session not found.' },
         { status: 404 }
       )
     }
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     let integrationId: string | null = null
     if (typeof body?.integrationId === 'string' && body.integrationId.length > 0) {
       const owned = await db.integration.findFirst({
-        where: { id: body.integrationId, companyId: user.companyId },
+        where: { id: body.integrationId },
         select: { id: true },
       })
       if (!owned) {

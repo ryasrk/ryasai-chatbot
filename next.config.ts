@@ -2,11 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  // Enforce type-safety in production builds (previously silenced — hid real bugs).
   typescript: {
     ignoreBuildErrors: false,
   },
   reactStrictMode: true,
+  serverExternalPackages: ["@cognee/cognee-ts", "@cognee/neon-linux-x64-gnu"],
 };
 
 export default nextConfig;

@@ -10,8 +10,8 @@ import { getPromptSettings, mergePromptSettings, type PromptSettings } from '@/l
  */
 export async function GET() {
   try {
-    const user = await getActiveUser()
-    const settings = await getPromptSettings(db, user.companyId)
+    await getActiveUser()
+    const settings = await getPromptSettings(db)
     return NextResponse.json({ ok: true, settings })
   } catch (e) {
     return handleApiError(e, 'Gagal memuat pengaturan prompt.')
@@ -22,17 +22,17 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
     const body = await req.json().catch(() => ({}))
-    const current = await getPromptSettings(db, user.companyId)
+    const current = await getPromptSettings(db)
     const merged: PromptSettings = mergePromptSettings(current, body)
 
-    await db.appConfig.upsert({
-      where: { companyId: user.companyId },
-      create: { companyId: user.companyId, promptSettings: JSON.stringify(merged) },
-      update: { promptSettings: JSON.stringify(merged) },
-    })
+    const existing = await db.appConfig.findFirst()
+    if (existing) {
+      await db.appConfig.update({ where: { id: existing.id }, data: { promptSettings: JSON.stringify(merged) } })
+    } else {
+      await db.appConfig.create({ data: { promptSettings: JSON.stringify(merged) } })
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'PROMPT_TOOLS_UPDATE',
       detail: { tools: merged.tools, systemPromptLength: merged.systemPrompt.length },

@@ -51,13 +51,11 @@ export function buildVectorPoint(args: {
 export function buildQdrantSearchBody(
   vector: number[],
   limit: number,
-  companyId: string,
 ) {
   return {
     vector,
     limit,
     with_payload: true,
-    filter: { must: [{ key: 'companyId', match: { value: companyId } }] },
   }
 }
 
@@ -65,14 +63,12 @@ export function buildMilvusSearchBody(
   collectionName: string,
   vector: number[],
   limit: number,
-  companyId: string,
 ) {
   return {
     collectionName,
     data: [vector],
     limit,
     outputFields: ['chunkId'],
-    filter: `companyId == "${companyId.replace(/"/g, '')}"`,
   }
 }
 
@@ -99,9 +95,8 @@ export function parseMilvusSearchResponse(payload: unknown): VectorSearchHit[] {
 }
 
 export async function getVectorStoreRuntimeConfig(
-  companyId: string,
 ): Promise<VectorStoreRuntimeConfig | null> {
-  const row = await db.vectorStoreConfig.findUnique({ where: { companyId } })
+  const row = await db.vectorStoreConfig.findFirst()
   if (!row || row.provider === 'INTERNAL' || !row.baseUrl || !row.collectionName) {
     return null
   }
@@ -110,7 +105,8 @@ export async function getVectorStoreRuntimeConfig(
     try {
       const cfg = decryptConfig(row.encryptedApiKey)
       apiKey = typeof cfg.apiKey === 'string' ? cfg.apiKey : ''
-    } catch {
+    } catch (e) {
+      console.warn('[vector-stores] decryptConfig failed:', e)
       apiKey = ''
     }
   }
@@ -141,7 +137,7 @@ export async function ensureVectorCollection(config: VectorStoreRuntimeConfig) {
         dimension: config.vectorSize,
         metricType: 'COSINE',
       }),
-    }).catch(() => null)
+    }).catch((e) => { console.warn('[vector-stores] milvus collection create failed:', e) })
   }
 }
 
@@ -183,7 +179,6 @@ export async function upsertVectorPoints(
 
 export async function searchVectorStore(args: {
   config: VectorStoreRuntimeConfig
-  companyId: string
   vector: number[]
   limit: number
 }): Promise<VectorSearchHit[]> {
@@ -193,7 +188,7 @@ export async function searchVectorStore(args: {
       `/collections/${encodeURIComponent(args.config.collectionName)}/points/search`,
       {
         method: 'POST',
-        body: JSON.stringify(buildQdrantSearchBody(args.vector, args.limit, args.companyId)),
+        body: JSON.stringify(buildQdrantSearchBody(args.vector, args.limit)),
       },
     )
     return parseQdrantSearchResponse(response)
@@ -206,7 +201,6 @@ export async function searchVectorStore(args: {
           args.config.collectionName,
           args.vector,
           args.limit,
-          args.companyId,
         ),
       ),
     })
@@ -217,7 +211,7 @@ export async function searchVectorStore(args: {
 
 function normalizeVectorStoreProvider(provider: string): VectorStoreProvider {
   const upper = provider.trim().toUpperCase()
-  if (upper === 'QDRANT') return 'QDRANT'
+  if (upper === 'QDRANT' || upper === 'QDRANT_CLOUD') return 'QDRANT'
   if (upper === 'MILVUS') return 'MILVUS'
   return 'INTERNAL'
 }

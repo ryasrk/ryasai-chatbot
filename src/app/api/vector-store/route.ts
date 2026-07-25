@@ -7,8 +7,8 @@ import { maskSecret, normalizeBaseUrl } from '@/lib/llm-config'
 
 export async function GET() {
   try {
-    const user = await getActiveUser()
-    const row = await db.vectorStoreConfig.findUnique({ where: { companyId: user.companyId } })
+    await getActiveUser()
+    const row = await db.vectorStoreConfig.findFirst()
     return NextResponse.json({
       ok: true,
       data: row
@@ -39,9 +39,6 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Hanya admin.' }, { status: 403 })
-    }
     const body = (await req.json().catch(() => ({}))) as {
       provider?: string
       baseUrl?: string
@@ -56,31 +53,29 @@ export async function PUT(req: NextRequest) {
     const vectorSize = Math.max(1, Number(body.vectorSize ?? 1536) || 1536)
     const distance = (body.distance ?? 'Cosine').trim() || 'Cosine'
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
-    const existing = await db.vectorStoreConfig.findUnique({ where: { companyId: user.companyId } })
+    const existing = await db.vectorStoreConfig.findFirst()
 
-    await db.vectorStoreConfig.upsert({
-      where: { companyId: user.companyId },
-      update: {
-        provider,
-        baseUrl,
-        collectionName,
-        vectorSize,
-        distance,
-        ...(apiKey ? { encryptedApiKey: encryptConfig({ apiKey }) } : {}),
-      },
-      create: {
-        companyId: user.companyId,
-        provider,
-        baseUrl,
-        collectionName,
-        vectorSize,
-        distance,
-        encryptedApiKey: apiKey ? encryptConfig({ apiKey }) : existing?.encryptedApiKey,
-      },
-    })
+    const payload = {
+      provider,
+      baseUrl,
+      collectionName,
+      vectorSize,
+      distance,
+      ...(apiKey ? { encryptedApiKey: encryptConfig({ apiKey }) } : {}),
+    }
+
+    if (existing) {
+      await db.vectorStoreConfig.update({ where: { id: existing.id }, data: payload })
+    } else {
+      await db.vectorStoreConfig.create({
+        data: {
+          ...payload,
+          encryptedApiKey: apiKey ? encryptConfig({ apiKey }) : undefined,
+        },
+      })
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'VECTOR_STORE_CONFIG_UPDATE',
       severity: 'warning',
@@ -94,11 +89,8 @@ export async function PUT(req: NextRequest) {
 
 export async function POST() {
   try {
-    const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Hanya admin.' }, { status: 403 })
-    }
-    const config = await getVectorStoreRuntimeConfig(user.companyId)
+    await getActiveUser()
+    const config = await getVectorStoreRuntimeConfig()
     if (!config) return NextResponse.json({ ok: true, data: { provider: 'INTERNAL' } })
     await ensureVectorCollection(config)
     return NextResponse.json({ ok: true, data: { provider: config.provider, collectionName: config.collectionName } })

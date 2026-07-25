@@ -15,11 +15,11 @@ interface RouteCtx {
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
 
     const integration = await db.integration.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, provider: true, status: true },
     })
 
@@ -40,6 +40,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       tableName: r.tableName,
       columns: safeParseColumns(r.columns),
       rowCount: r.rowCount,
+      sampleRow: r.sampleRow ? safeParseJson(r.sampleRow) : undefined,
       reflectedAt: r.reflectedAt,
     }))
 
@@ -59,17 +60,31 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
   }
 }
 
-function safeParseColumns(raw: string): Array<{ name: string; type: string }> {
+function safeParseColumns(raw: string): Array<{ name: string; type: string; primaryKey?: boolean; notNull?: boolean; foreignKey?: string; distinctValues?: string[] }> {
   try {
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
       return parsed.map((c) => ({
         name: String(c?.name ?? ''),
         type: String(c?.type ?? ''),
+        primaryKey: Boolean(c?.primaryKey) || undefined,
+        notNull: Boolean(c?.notNull) || undefined,
+        foreignKey: c?.foreignKey ? String(c.foreignKey) : undefined,
+        distinctValues: Array.isArray(c?.distinctValues) ? c.distinctValues.map(String) : undefined,
       }))
     }
     return []
   } catch {
     return []
+  }
+}
+
+function safeParseJson(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed
+    return undefined
+  } catch {
+    return undefined
   }
 }

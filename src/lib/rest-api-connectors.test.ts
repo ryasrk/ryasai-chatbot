@@ -28,17 +28,39 @@ describe('REST API connector utilities', () => {
     ).toBe('https://api.example.com/base/invoices?status=overdue&page=2')
   })
 
-  test('builds auth headers', () => {
-    expect(buildAuthHeaders('BEARER', { token: 'abc' })).toEqual({
+  test('builds auth headers', async () => {
+    expect(await buildAuthHeaders('BEARER', { token: 'abc' })).toEqual({
       Authorization: 'Bearer abc',
     })
     expect(
-      buildAuthHeaders('API_KEY_HEADER', {
+      await buildAuthHeaders('API_KEY_HEADER', {
         headerName: 'X-API-Key',
         apiKey: 'secret',
       }),
     ).toEqual({ 'X-API-Key': 'secret' })
-    expect(buildAuthHeaders('NONE', {})).toEqual({})
+    expect(await buildAuthHeaders('NONE', {})).toEqual({})
+  })
+
+  test('builds BASIC auth header', async () => {
+    const headers = await buildAuthHeaders('BASIC', {
+      username: 'admin',
+      password: 'secret123',
+    })
+    expect(headers.Authorization).toMatch(/^Basic /)
+    const decoded = Buffer.from(
+      headers.Authorization.replace('Basic ', ''),
+      'base64',
+    ).toString()
+    expect(decoded).toBe('admin:secret123')
+  })
+
+  test('BASIC auth with empty creds returns no header', async () => {
+    expect(await buildAuthHeaders('BASIC', {})).toEqual({})
+  })
+
+  test('OAUTH2 with missing config returns no header', async () => {
+    expect(await buildAuthHeaders('OAUTH2', {})).toEqual({})
+    expect(await buildAuthHeaders('OAUTH2', { tokenUrl: 'https://x.com/token' })).toEqual({})
   })
 
   test('sanitizes sensitive headers', () => {

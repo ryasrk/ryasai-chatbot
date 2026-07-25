@@ -29,7 +29,7 @@ export function normalizeSetupAdminInput(body: unknown): SetupAdminInput | null 
 export async function getSetupState(db: PrismaClient) {
   const appConfig = await db.appConfig.findFirst({ select: { setupCompleted: true } })
   const admin = await db.user.findFirst({
-    where: { role: 'admin', isActive: true, passwordHash: { startsWith: 'scrypt$' } },
+    where: { isActive: true, passwordHash: { startsWith: 'scrypt$' } },
     select: { id: true },
   })
   return { setupCompleted: appConfig?.setupCompleted ?? false, hasAdmin: !!admin }

@@ -54,11 +54,7 @@ export function mergePromptSettings(
 
 export async function getPromptSettings(
   db: PrismaClient,
-  companyId: string,
 ): Promise<PromptSettings> {
-  const cfg = await db.appConfig.findUnique({
-    where: { companyId },
-    select: { promptSettings: true },
-  })
+  const cfg = await db.appConfig.findFirst()
   return parsePromptSettings(cfg?.promptSettings)
 }

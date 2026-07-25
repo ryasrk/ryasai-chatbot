@@ -18,11 +18,10 @@
  *   3. API persists the user + AI messages and runs the shared production router.
  *   4. UI replaces optimistic placeholders with persisted messages.
  */
-import { useCallback, useEffect, useRef, useState, memo } from 'react'
-import { formatDistanceToNow } from 'date-fns'
-import { id as idLocale } from 'date-fns/locale'
+import { Fragment, useCallback, useEffect, useRef, useState, memo } from 'react'
 import { toast } from 'sonner'
-import ReactMarkdown from 'react-markdown'
+import { SessionListPanel } from '@/components/ui/session-list-panel'
+import { ChatMarkdown } from '@/components/ui/markdown'
 import {
   Bar,
   BarChart,
@@ -39,21 +38,21 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  Bot,
   Brain,
+  Check,
+  ChevronDown,
   Database,
   FileText,
+  Globe,
   Loader2,
+  MessageSquare,
   MessageSquarePlus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-  Search,
   Send,
   Server,
   Sparkles,
-  Trash2,
   TriangleAlert,
-  Wand2,
+  X,
 } from 'lucide-react'
 
 import { useChatStore } from '@/store/useChatStore'
@@ -63,25 +62,21 @@ import type {
   ChatMessageItem,
   ChatSessionItem,
   Citation,
-  Integration,
 } from '@/lib/types'
 import {
   chatSessionPanelWidthClass,
-  chatShellGridClass,
   citationDetailLabel,
 } from '@/lib/chat-layout'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Sheet,
   SheetContent,
@@ -96,62 +91,96 @@ import { Textarea } from '@/components/ui/textarea'
 /* ------------------------------------------------------------------ */
 
 const SUGGESTED_PROMPTS = [
-  'Berapa total stok produk SKU-902 di gudang utama?',
-  'Tampilkan 5 pelanggan dengan total belanja tertinggi',
-  'Apa kebijakan termin pembayaran untuk pelanggan Enterprise?',
-  'Daftar invoice yang berstatus overdue',
+  'What is the total stock of product SKU-902 in the main warehouse?',
+  'Show 5 customers with the highest total spending',
+  'What are the payment terms for Enterprise customers?',
+  'List invoices with overdue status',
 ] as const
 
-const CHART_COLORS = [
-  '#10b981', // emerald-500
-  '#f59e0b', // amber-500
-  '#f43f5e', // rose-500
-  '#14b8a6', // teal-500
-  '#8b5cf6', // violet-500
-  '#d946ef', // fuchsia-500
-  '#84cc16', // lime-500
-  '#06b6d4', // cyan-500
-]
+const CHART_COLORS = ['#2563EB', '#7C3AED', '#16A34A', '#D97706', '#DC2626']
 
-const STATUS_META: Record<
+/* ------------------------------------------------------------------ */
+/* Tool execution metadata                                            */
+/* ------------------------------------------------------------------ */
+
+type StepStatus = 'pending' | 'running' | 'done' | 'error'
+
+interface PipelineState {
+  thinking: StepStatus
+  toolType: string
+  tool: StepStatus
+  answer: StepStatus
+}
+
+const INITIAL_PIPELINE: PipelineState = {
+  thinking: 'pending',
+  toolType: '',
+  tool: 'pending',
+  answer: 'pending',
+}
+
+// Status banner metadata per tool type (English labels, per spec).
+const TOOL_META: Record<
   string,
   { label: string; icon: typeof Loader2; tone: string }
 > = {
-  routing: {
-    label: 'AI sedang menganalisis pertanyaan Anda...',
-    icon: Search,
-    tone: 'text-emerald-600 dark:text-emerald-400',
-  },
-  executing_sql: {
-    label: 'Menjalankan kueri pada database...',
+  SQL: {
+    label: 'Running SQL query...',
     icon: Database,
-    tone: 'text-amber-600 dark:text-amber-400',
+    tone: 'text-info',
   },
-  rag_retrieving: {
-    label: 'Mencari dokumen relevan...',
+  RAG: {
+    label: 'Searching knowledge base documents...',
     icon: FileText,
-    tone: 'text-violet-600 dark:text-violet-400',
+    tone: 'text-primary',
   },
-  generating: {
-    label: 'Menyusun jawaban...',
-    icon: Wand2,
-    tone: 'text-teal-600 dark:text-teal-400',
+  REST_API: {
+    label: 'Calling external API...',
+    icon: Globe,
+    tone: 'text-success',
   },
-  error: {
-    label: 'Terjadi kesalahan',
-    icon: TriangleAlert,
-    tone: 'text-rose-600 dark:text-rose-400',
+  CHAT: {
+    label: 'Composing answer...',
+    icon: MessageSquare,
+    tone: 'text-muted-foreground',
   },
 }
 
-const AUTO_INTEGRATION_VALUE = '__auto__'
-const AUTO_INTEGRATION_LABEL = 'Otomatis (semua sumber)'
+// Pipeline step icon + short label per tool type.
+const TOOL_ICON: Record<string, typeof Loader2> = {
+  SQL: Database,
+  RAG: FileText,
+  REST_API: Globe,
+  CHAT: MessageSquare,
+}
 
-function newSessionTitle(): string {
-  return `Sesi ${new Date().toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`
+const TOOL_SHORT: Record<string, string> = {
+  SQL: 'Query SQL',
+  RAG: 'Knowledge Base',
+  REST_API: 'REST API',
+  CHAT: 'Chat',
+}
+
+// Data source badge shown above finalized AI messages.
+const TOOL_BADGE: Record<
+  string,
+  { label: string; icon: typeof Loader2; className: string }
+> = {
+  SQL: {
+    label: 'Database',
+    icon: Database,
+    className: 'border-info/30 bg-info/15 text-info',
+  },
+  RAG: {
+    label: 'Knowledge Base',
+    icon: FileText,
+    className: 'border-primary/30 bg-primary/15 text-primary',
+  },
+  REST_API: {
+    label: 'REST API',
+    icon: Globe,
+    className: 'border-success/30 bg-success/15 text-success',
+  },
 }
 
 /* ------------------------------------------------------------------ */
@@ -162,10 +191,6 @@ export function ChatView() {
   const store = useChatStore()
   const { user } = useActiveUser()
 
-  const [integrations, setIntegrations] = useState<Integration[]>([])
-  const [selectedIntegrationId, setSelectedIntegrationId] = useState<string>(
-    AUTO_INTEGRATION_VALUE,
-  )
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -173,16 +198,24 @@ export function ChatView() {
   const [loadingSession, setLoadingSession] = useState(false)
   const [loadingList, setLoadingList] = useState(true)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  const [pipeline, setPipeline] = useState<PipelineState>(INITIAL_PIPELINE)
+  const [currentTool, setCurrentTool] = useState<string>('')
+  const [pipelineVisible, setPipelineVisible] = useState(false)
+  const [toolStartTime, setToolStartTime] = useState<number | null>(null)
+  // Ref mirrors the active tool type so handleSseEvent (stable callback) can
+  // stamp it onto the finalized AI message without a stale closure.
+  const currentToolTypeRef = useRef<string>('')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   /* ----- fetch sessions on mount ----- */
   const fetchSessions = useCallback(async () => {
     setLoadingList(true)
     try {
       const res = await fetch('/api/chat/sessions', { cache: 'no-store' })
-      if (!res.ok) throw new Error('Gagal memuat sesi')
+      if (!res.ok) throw new Error('Failed to load session')
       const data = await res.json()
       const items: ChatSessionItem[] = data.items ?? []
       useChatStore.getState().setSessions(items)
@@ -191,7 +224,7 @@ export function ChatView() {
         await selectSession(items[0].id)
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Gagal memuat daftar sesi.')
+      toast.error(e instanceof Error ? e.message : 'Failed to load session list.')
     } finally {
       setLoadingList(false)
     }
@@ -199,27 +232,6 @@ export function ChatView() {
 
   useEffect(() => {
     fetchSessions()
-  }, [])
-
-  /* ----- fetch integrations on mount ----- */
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch('/api/integrations', { cache: 'no-store' })
-        if (!res.ok) return
-        const data = await res.json()
-        if (cancelled) return
-        const list: Integration[] = data?.data ?? []
-        setIntegrations(list.filter((i) => i.status === 'active'))
-      } catch {
-        /* silent */
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
   }, [])
 
   /* ----- auto-scroll on new messages / streaming ----- */
@@ -231,6 +243,17 @@ export function ChatView() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [store.messages.length, lastMsgLen, store.currentStatus, store.isStreaming])
 
+  /* ----- pipeline visibility: show while streaming, fade out 2s after ----- */
+  useEffect(() => {
+    if (store.isStreaming) {
+      setPipelineVisible(true)
+      return
+    }
+    if (!pipelineVisible) return
+    const t = setTimeout(() => setPipelineVisible(false), 2000)
+    return () => clearTimeout(t)
+  }, [store.isStreaming, pipelineVisible])
+
   /* ----- session selection ----- */
   const selectSession = useCallback(
     async (id: string) => {
@@ -240,13 +263,13 @@ export function ChatView() {
         const res = await fetch(`/api/chat/sessions/${id}`, {
           cache: 'no-store',
         })
-        if (!res.ok) throw new Error('Gagal memuat sesi')
+        if (!res.ok) throw new Error('Failed to load session')
         const data = await res.json()
         const msgs: ChatMessageItem[] = data.messages ?? []
         useChatStore.getState().setMessages(msgs)
       } catch (e) {
         toast.error(
-          e instanceof Error ? e.message : 'Gagal memuat pesan sesi.',
+          e instanceof Error ? e.message : 'Failed to load session messages.',
         )
       } finally {
         setLoadingSession(false)
@@ -261,9 +284,9 @@ export function ChatView() {
       const res = await fetch('/api/chat/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newSessionTitle() }),
+        body: JSON.stringify({}),
       })
-      if (!res.ok) throw new Error('Gagal membuat sesi')
+      if (!res.ok) throw new Error('Failed to create session')
       const session: ChatSessionItem = await res.json()
       const chat = useChatStore.getState()
       chat.setSessions([session, ...chat.sessions])
@@ -271,7 +294,7 @@ export function ChatView() {
       chat.setMessages([])
       setMobileSidebarOpen(false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Gagal membuat sesi baru.')
+      toast.error(e instanceof Error ? e.message : 'Failed to create new session.')
     }
   }, [])
 
@@ -283,10 +306,10 @@ export function ChatView() {
         const res = await fetch(`/api/chat/sessions/${id}`, {
           method: 'DELETE',
         })
-        if (!res.ok && res.status !== 404) throw new Error('Gagal menghapus sesi')
+        if (!res.ok && res.status !== 404) throw new Error('Failed to delete session')
 
         const listRes = await fetch('/api/chat/sessions', { cache: 'no-store' })
-        if (!listRes.ok) throw new Error('Gagal memuat ulang daftar sesi')
+        if (!listRes.ok) throw new Error('Failed to reload session list')
         const data = await listRes.json()
         const remaining: ChatSessionItem[] = data.items ?? []
         const chat = useChatStore.getState()
@@ -299,14 +322,157 @@ export function ChatView() {
             await selectSession(remaining[0].id)
           }
         }
-        toast.success('Sesi dihapus.')
+        toast.success('Session deleted.')
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal menghapus sesi.')
+        toast.error(e instanceof Error ? e.message : 'Failed to delete session.')
       } finally {
         setDeletingSessionId(null)
       }
     },
     [],
+  )
+
+  /* ----- SSE event handler ----- */
+  const handleSseEvent = useCallback(
+    (
+      event: string,
+      data: Record<string, unknown>,
+      userPlaceholderId: string,
+      aiPlaceholderId: string,
+    ) => {
+      const chat = useChatStore.getState()
+      switch (event) {
+        case 'user_message': {
+          const current = chat.messages
+          chat.setMessages(
+            current.map((m) =>
+              m.id === userPlaceholderId
+                ? {
+                    ...m,
+                    id: data.id as string,
+                    text: data.text as string,
+                    createdAt: data.createdAt as string,
+                  }
+                : m,
+            ),
+          )
+          break
+        }
+        case 'thinking':
+          setPipeline((p) => ({ ...p, thinking: 'running' }))
+          chat.setStatus('thinking', 'Analyzing question...')
+          break
+        case 'tool_start': {
+          const tool = (data.tool as string) ?? ''
+          const label =
+            (data.label as string | undefined) ??
+            TOOL_META[tool]?.label ??
+            `Running ${tool}...`
+          currentToolTypeRef.current = tool
+          setCurrentTool(tool)
+          setToolStartTime(Date.now())
+          setPipeline((p) => ({
+            ...p,
+            thinking: 'done',
+            toolType: tool,
+            tool: 'running',
+          }))
+          chat.setStatus('tool', label)
+          break
+        }
+        case 'tool_end': {
+          const ok = (data.status as string) !== 'error'
+          setPipeline((p) => ({ ...p, tool: ok ? 'done' : 'error' }))
+          chat.setStatus(ok ? 'done' : 'error', ok ? 'Done' : 'Failed')
+          break
+        }
+        case 'token': {
+          const token = data.content as string
+          chat.updateLastAiMessage(token)
+          if (chat.currentStatus !== 'generating') {
+            chat.setStatus('generating', 'Composing answer...')
+          }
+          setPipeline((p) =>
+            p.answer === 'running'
+              ? p
+              : {
+                  ...p,
+                  answer: 'running',
+                  thinking: 'done',
+                  tool: p.tool === 'error' ? 'error' : 'done',
+                },
+          )
+          break
+        }
+        case 'answer': {
+          chat.finalizeLastAiMessage({
+            text_final: data.content as string,
+            citations: data.citations as Citation[] | undefined,
+            chartData: (data.chartData as ChartData | null) ?? null,
+          })
+          setPipeline((p) => ({
+            ...p,
+            thinking: 'done',
+            tool: p.tool === 'error' ? 'error' : 'done',
+            answer: 'done',
+          }))
+          // Swap placeholder id with the real DB id, attach integration + tool type.
+          const toolType = currentToolTypeRef.current || null
+          if (data.messageId || data.integration || toolType) {
+            const msgs = useChatStore.getState().messages
+            useChatStore.getState().setMessages(
+              msgs.map((m) =>
+                m.id === aiPlaceholderId
+                  ? {
+                      ...m,
+                      ...(data.messageId ? { id: data.messageId as string } : {}),
+                      integration: (data.integration as {
+                        id: string
+                        name: string
+                      } | null) ?? null,
+                      toolType,
+                    }
+                  : m,
+              ),
+            )
+          }
+          break
+        }
+        case 'done': {
+          // Reload session list (title may have changed for new sessions).
+          fetch('/api/chat/sessions', { cache: 'no-store' })
+            .then((r) => r.json())
+            .then((d) =>
+              useChatStore.getState().setSessions(
+                (d.items as ChatSessionItem[]) ?? [],
+              ),
+            )
+            .catch(() => {})
+          break
+        }
+        case 'error': {
+          const message = (data.message as string) ?? 'An error occurred.'
+          const current = chat.messages
+          chat.setMessages(
+            current.map((item) =>
+              item.id === aiPlaceholderId
+                ? { ...item, text: message, status: 'error' }
+                : item,
+            ),
+          )
+          setPipeline((p) => ({
+            ...p,
+            thinking: p.thinking === 'running' ? 'error' : p.thinking,
+            tool: p.tool === 'running' ? 'error' : p.tool,
+            answer: 'error',
+          }))
+          chat.setError(message)
+          toast.error(message)
+          break
+        }
+      }
+    },
+    [setPipeline, setCurrentTool],
   )
 
   /* ----- send message ----- */
@@ -315,7 +481,7 @@ export function ChatView() {
       const text = (override ?? input).trim()
       if (!text || sending || store.isStreaming) return
       if (!user) {
-        toast.error('Pengguna belum dimuat. Coba lagi.')
+        toast.error('User not loaded yet. Try again.')
         return
       }
       // Ensure we have an active session — auto-create if none.
@@ -327,7 +493,7 @@ export function ChatView() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: text.slice(0, 60) }),
           })
-          if (!res.ok) throw new Error('Gagal membuat sesi')
+          if (!res.ok) throw new Error('Failed to create session')
           const session: ChatSessionItem = await res.json()
           const chat = useChatStore.getState()
           chat.setSessions([session, ...chat.sessions])
@@ -335,7 +501,7 @@ export function ChatView() {
           sessionId = session.id
         } catch (e) {
           toast.error(
-            e instanceof Error ? e.message : 'Gagal membuat sesi baru.',
+            e instanceof Error ? e.message : 'Failed to create new session.',
           )
           return
         }
@@ -361,62 +527,91 @@ export function ChatView() {
       store.addMessage(userMessage)
       store.addMessage(aiPlaceholder)
       store.setStreaming(true)
-      store.setStatus('generating', 'Memproses pertanyaan melalui REST API...')
+      currentToolTypeRef.current = ''
+      setCurrentTool('')
+      setPipeline({ thinking: 'running', toolType: '', tool: 'pending', answer: 'pending' })
+      setPipelineVisible(true)
+      setToolStartTime(null)
+      store.setStatus('thinking', 'Processing question...')
 
       try {
-        const integrationId =
-          selectedIntegrationId === AUTO_INTEGRATION_VALUE
-            ? undefined
-            : selectedIntegrationId
+        const ac = new AbortController()
+        abortControllerRef.current = ac
         const res = await fetch(`/api/chat/sessions/${sessionId}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, integrationId }),
+          body: JSON.stringify({
+            text,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          }),
+          signal: ac.signal,
         })
-        const data = await res.json().catch(() => ({}))
         if (!res.ok) {
+          const err = await res
+            .json()
+            .catch(() => ({ error: 'Failed to process chat.' }))
           throw new Error(
-            typeof data?.error === 'string'
-              ? data.error
-              : 'Gagal memproses chat.',
+            typeof err?.error === 'string' ? err.error : 'Failed to process chat.',
           )
         }
 
-        const persistedUser = data.userMessage as ChatMessageItem
-        const persistedAi = data.aiMessage as ChatMessageItem
-        const current = useChatStore.getState().messages
-        const chat = useChatStore.getState()
-        chat.setMessages(
-          current.map((message) => {
-            if (message.id === userMessage.id) return persistedUser
-            if (message.id === aiPlaceholder.id) return persistedAi
-            return message
-          }),
-        )
-        const listRes = await fetch('/api/chat/sessions', { cache: 'no-store' })
-        if (listRes.ok) {
-          const listData = await listRes.json()
-          chat.setSessions(listData.items ?? [])
+        // SSE parsing — read event/data pairs from the stream.
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let currentEvent = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() ?? ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+                handleSseEvent(
+                  currentEvent,
+                  data,
+                  userMessage.id,
+                  aiPlaceholder.id,
+                )
+              } catch {}
+            }
+          }
         }
-        chat.setStatus('', '')
-        chat.setStreaming(false)
       } catch (e) {
-        const message =
-          e instanceof Error ? e.message : 'Gagal memproses chat.'
-        const current = useChatStore.getState().messages
-        store.setMessages(
-          current.map((item) =>
-            item.id === aiPlaceholder.id
-              ? {
-                  ...item,
-                  text: message,
-                  status: 'error',
-                }
-              : item,
-          ),
-        )
-        store.setError(message)
-        toast.error(message)
+        if (e instanceof Error && e.name === 'AbortError') {
+          store.setStreaming(false)
+          store.setStatus('', '')
+          const current = useChatStore.getState().messages
+          store.setMessages(
+            current.map((item) =>
+              item.id === aiPlaceholder.id
+                ? { ...item, text: 'Cancelled.', status: 'error' }
+                : item,
+            ),
+          )
+        } else {
+          const message =
+            e instanceof Error ? e.message : 'Failed to process chat.'
+          const current = useChatStore.getState().messages
+          store.setMessages(
+            current.map((item) =>
+              item.id === aiPlaceholder.id
+                ? {
+                    ...item,
+                    text: message,
+                    status: 'error',
+                  }
+                : item,
+            ),
+          )
+          store.setError(message)
+          toast.error(message)
+        }
       } finally {
         setSending(false)
       }
@@ -428,9 +623,29 @@ export function ChatView() {
       store.activeSessionId,
       store.sessions,
       user,
-      selectedIntegrationId,
+      handleSseEvent,
     ],
   )
+
+  /* ----- retry last failed turn ----- */
+  const handleRetry = useCallback(() => {
+    const chat = useChatStore.getState()
+    const msgs = chat.messages
+    // Find the last user message; drop it + the trailing error AI bubble,
+    // then re-send the same text (handleSend re-adds both fresh).
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].sender === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx === -1) return
+    const text = msgs[lastUserIdx].text
+    chat.setMessages(msgs.slice(0, lastUserIdx))
+    chat.setError(null)
+    void handleSend(text)
+  }, [handleSend])
 
   /* ----- textarea enter-to-send ----- */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -458,13 +673,7 @@ export function ChatView() {
   /* ---------------------------------------------------------------- */
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] min-h-[520px] gap-3">
-      <div
-        className={cn(
-          'grid flex-1 min-h-0 gap-3',
-          chatShellGridClass(),
-        )}
-      >
+    <div className="flex h-full gap-3">
         {/* ---------- Sidebar (desktop) ---------- */}
         <aside
           className={cn(
@@ -487,65 +696,53 @@ export function ChatView() {
         </aside>
 
         {/* ---------- Center ---------- */}
-        <div className="flex min-w-0 flex-col rounded-lg border bg-card overflow-hidden">
-          {/* chat topbar */}
-          <header className="flex items-center justify-between gap-2 px-3 md:px-4 h-12 border-b bg-card/80 backdrop-blur">
-            <div className="flex items-center gap-2 min-w-0">
-              {/* mobile: open session sheet */}
-              <Sheet
-                open={mobileSidebarOpen}
-                onOpenChange={setMobileSidebarOpen}
+        <div className="flex-1 flex min-w-0 flex-col rounded-lg border bg-card overflow-hidden relative">
+          {/* mobile: floating session list button */}
+          <Sheet
+            open={mobileSidebarOpen}
+            onOpenChange={setMobileSidebarOpen}
+          >
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden absolute top-2 left-2 z-10 h-8 w-8"
+                aria-label="Open session list"
               >
-                <SheetTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="md:hidden"
-                    aria-label="Buka daftar sesi"
-                  >
-                    <MessageSquarePlus className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="left" className="w-72 p-0">
-                  <SheetHeader className="px-4 pt-4">
-                    <SheetTitle>Sesi Chat</SheetTitle>
-                  </SheetHeader>
-                  <div className="flex-1 min-h-0 mt-2">
-                    <SessionListPanel
-                      sessions={store.sessions}
-                      activeId={store.activeSessionId}
-                      loading={loadingList}
-                      deletingId={deletingSessionId}
-                      collapsed={false}
-                      onSelect={async (id) => {
-                        await selectSession(id)
-                        setMobileSidebarOpen(false)
-                      }}
-                      onNew={createSession}
-                      onDelete={(id) => void deleteSession(id)}
-                    />
-                  </div>
-                </SheetContent>
-              </Sheet>
-
-              <Brain className="h-4 w-4 text-primary shrink-0" />
-              <span className="text-sm font-medium truncate">
-                ryasai
-              </span>
-            </div>
-
-            <DeliveryBadge />
-          </header>
+                <MessageSquarePlus className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="px-4 pt-4">
+                <SheetTitle>Chat Sessions</SheetTitle>
+              </SheetHeader>
+              <div className="flex-1 min-h-0 mt-2">
+                <SessionListPanel
+                  sessions={store.sessions}
+                  activeId={store.activeSessionId}
+                  loading={loadingList}
+                  deletingId={deletingSessionId}
+                  collapsed={false}
+                  onSelect={async (id) => {
+                    await selectSession(id)
+                    setMobileSidebarOpen(false)
+                  }}
+                  onNew={createSession}
+                  onDelete={(id) => void deleteSession(id)}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
 
           {/* messages */}
           <div
             ref={scrollContainerRef}
-            className="flex-1 overflow-y-auto px-3 md:px-4 py-4"
+            className={cn('flex-1 p-4 space-y-3', hasMessages && !loadingSession && 'overflow-y-auto')}
           >
             {loadingSession ? (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground gap-2">
+              <div className="flex items-center justify-center h-full text-xs text-muted-foreground gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Memuat percakapan...
+                Loading conversation...
               </div>
             ) : !hasMessages ? (
               <EmptyState
@@ -554,286 +751,101 @@ export function ChatView() {
                 }}
               />
             ) : (
-              <div className="space-y-4 w-full max-w-4xl mx-auto">
+              <>
+                {store.error && (
+                  <Alert variant="destructive" className="py-2">
+                    <TriangleAlert />
+                    <AlertTitle>Failed to process</AlertTitle>
+                    <AlertDescription className="flex items-center justify-between gap-3">
+                      <span className="text-xs">{store.error}</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs"
+                        onClick={handleRetry}
+                      >
+                        Try Again
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {store.messages.map((m) => (
                   <MessageBubble key={m.id} message={m} />
                 ))}
+                {pipelineVisible &&
+                  pipeline.tool !== 'pending' &&
+                  currentTool && (
+                    <ToolExecutionCard
+                      toolType={currentTool}
+                      status={pipeline.tool}
+                      startedAt={toolStartTime}
+                    />
+                  )}
                 <div ref={messagesEndRef} />
-              </div>
+              </>
             )}
           </div>
 
-          {/* status banner */}
-          {isStreaming && (
-            <StatusBanner
-              status={store.currentStatus}
-              message={store.currentStatusMessage}
-            />
-          )}
+          {/* tool execution pipeline (fades out 2s after streaming ends) */}
+          <div
+            className={cn(
+              'grid transition-all duration-300 ease-out',
+              pipelineVisible
+                ? 'grid-rows-[1fr] opacity-100'
+                : 'grid-rows-[0fr] opacity-0',
+            )}
+          >
+            <div className="overflow-hidden">
+              <ToolPipeline pipeline={pipeline} />
+            </div>
+          </div>
 
           {/* input area */}
-          <div className="border-t bg-card/80 backdrop-blur px-3 md:px-4 py-3 space-y-2">
-            {/* integration selector + warning row */}
-            <div className="grid gap-2 sm:grid-cols-[minmax(220px,auto)_minmax(0,1fr)] sm:items-center">
-              <Select
-                value={selectedIntegrationId}
-                onValueChange={setSelectedIntegrationId}
-              >
-                <SelectTrigger className="h-8 w-full gap-2 text-xs sm:w-[264px]">
-                  <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Sumber jawaban" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO_INTEGRATION_VALUE}>
-                    {AUTO_INTEGRATION_LABEL}
-                  </SelectItem>
-                  {integrations.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name} · {i.provider}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <span className="min-w-0 text-xs text-muted-foreground">
-                Router memilih Knowledge, Database, REST API, atau Chat.
-              </span>
-            </div>
-
-            {/* input row */}
-            <div className="flex items-end gap-2">
+          <div className="p-3 border-t">
+            <div className="flex items-center gap-2 h-[84px] bg-input rounded-lg px-3">
               <Textarea
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Tulis pertanyaan..."
+                placeholder="Type a question..."
                 rows={1}
-                className="min-h-[40px] max-h-40 resize-none"
+                className="flex-1 bg-transparent border-0 resize-none focus-visible:ring-0 focus-visible:ring-offset-0 text-xs min-h-[40px] max-h-[60px]"
                 disabled={isStreaming || sending}
               />
-              <Button
-                onClick={() => void handleSend()}
-                disabled={!canSend}
-                size="icon"
-                className="h-10 w-10 shrink-0"
-                aria-label="Kirim pesan"
-              >
-                {sending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Session list panel                                                  */
-/* ------------------------------------------------------------------ */
-
-function SessionListPanel({
-  sessions,
-  activeId,
-  loading,
-  onSelect,
-  onNew,
-  onDelete,
-  deletingId,
-  collapsed,
-  onCollapsedChange,
-}: {
-  sessions: ChatSessionItem[]
-  activeId: string | null
-  loading: boolean
-  onSelect: (id: string) => void
-  onNew: () => void
-  onDelete: (id: string) => void
-  deletingId?: string | null
-  collapsed?: boolean
-  onCollapsedChange?: (collapsed: boolean) => void
-}) {
-  const expanded = !collapsed
-  const canCollapse = !!onCollapsedChange
-  const setExpanded = (next: boolean | ((value: boolean) => boolean)) => {
-    const value = typeof next === 'function' ? next(expanded) : next
-    onCollapsedChange?.(!value)
-  }
-
-  if (collapsed) {
-    return (
-      <div className="flex h-full flex-col items-center gap-2 py-2">
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color,transform] duration-200 hover:translate-x-0.5 hover:bg-muted hover:text-foreground"
-          aria-label="Buka daftar sesi"
-          aria-expanded={false}
-        >
-          <PanelLeftOpen className="h-4 w-4" />
-        </button>
-        <Button
-          onClick={onNew}
-          size="icon"
-          variant="default"
-          className="h-10 w-10"
-          aria-label="Sesi baru"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
-        <div className="mt-1 rounded-md border bg-muted/40 px-1.5 py-1 text-[10px] font-medium text-muted-foreground">
-          {sessions.length}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="border-b">
-        <button
-          type="button"
-          onClick={() => canCollapse && setExpanded((v) => !v)}
-          className={cn(
-            'group flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-[background-color,color] duration-200',
-            canCollapse && 'hover:bg-muted/70',
-          )}
-          aria-expanded={expanded}
-        >
-          <div className="min-w-0">
-            <div className="text-sm font-medium">Sesi Chat</div>
-            <div className="text-xs text-muted-foreground">
-              {sessions.length} sesi tersimpan
-            </div>
-          </div>
-          {canCollapse && (
-            <PanelLeftClose className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:-translate-x-0.5" />
-          )}
-        </button>
-      </div>
-
-      <div className="p-3 border-b">
-        <Button
-          onClick={onNew}
-          size="sm"
-          className="w-full"
-          variant="default"
-        >
-          <Plus className="h-4 w-4" />
-          Sesi Baru
-        </Button>
-      </div>
-
-      {expanded ? (
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="p-2 space-y-1">
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-xs text-muted-foreground gap-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Memuat...
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="text-center py-8 text-xs text-muted-foreground">
-              Belum ada sesi.
-              <br />
-              Klik “Sesi Baru” untuk memulai.
-            </div>
-          ) : (
-            sessions.map((s) => {
-              const active = s.id === activeId
-              const count = s._count?.messages ?? 0
-              const deleting = deletingId === s.id
-              return (
-                <div
-                  key={s.id}
-                  className={cn(
-                    'group rounded-lg px-3 py-2 cursor-pointer transition-colors',
-                    active
-                      ? 'bg-primary/10 ring-1 ring-primary/30'
-                      : 'hover:bg-muted',
-                  )}
-                  onClick={() => onSelect(s.id)}
+              {isStreaming ? (
+                <Button
+                  onClick={() => abortControllerRef.current?.abort()}
+                  className="h-12 w-12 shrink-0 rounded-xl p-0"
+                  variant="destructive"
+                  aria-label="Stop"
                 >
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div
-                        className={cn(
-                          'line-clamp-2 break-words text-sm font-medium leading-snug',
-                          active ? 'text-primary' : 'text-foreground',
-                        )}
-                      >
-                        {s.title || 'Tanpa Judul'}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {formatDistanceToNow(new Date(s.createdAt), {
-                          addSuffix: false,
-                          locale: idLocale,
-                        })}{' '}
-                        lalu
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      {count > 0 && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] px-1.5 py-0 h-4"
-                        >
-                          {count}
-                        </Badge>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDelete(s.id)
-                        }}
-                        disabled={deleting}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-60"
-                        aria-label="Hapus sesi"
-                      >
-                        {deleting ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })
-          )}
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void handleSend()}
+                  disabled={!canSend}
+                  className="h-12 w-12 shrink-0 rounded-xl bg-primary hover:bg-primary/90 p-0"
+                  aria-label="Send message"
+                >
+                  {sending ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
-      </ScrollArea>
-      ) : (
-        <div className="flex-1 min-h-0 px-3 py-4 text-xs text-muted-foreground">
-          Daftar sesi disembunyikan. Klik header untuk membuka kembali.
-        </div>
-      )}
     </div>
   )
 }
+
+
 
 /* ------------------------------------------------------------------ */
 /* Connection badge                                                    */
-/* ------------------------------------------------------------------ */
-
-function DeliveryBadge() {
-  return (
-    <Badge
-      variant="outline"
-      className="text-[11px] gap-1.5 py-0.5 border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300"
-    >
-      <Server className="h-3 w-3" />
-      REST API
-    </Badge>
-  )
-}
-
 /* ------------------------------------------------------------------ */
 /* Empty state                                                         */
 /* ------------------------------------------------------------------ */
@@ -841,83 +853,144 @@ function DeliveryBadge() {
 function EmptyState({ onPickPrompt }: { onPickPrompt: (p: string) => void }) {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8">
-      <div className="flex items-center justify-center h-14 w-14 rounded-lg border bg-background text-primary mb-4">
-        <Brain className="h-8 w-8" />
+      <div className="flex items-center justify-center h-14 w-14 rounded-xl bg-primary/10 text-primary mb-4">
+        <Bot className="h-7 w-7" />
       </div>
-      <h3 className="text-lg font-semibold">Mulai percakapan dengan ryasai</h3>
-      <p className="text-sm text-muted-foreground mt-1 max-w-md">
-        Tanyakan data perusahaan, dokumen, kebijakan, atau status operasional.
-        Router akan memilih jalur RAG, SQL, REST API, atau chat umum.
-      </p>
-
-      <div className="mt-6 w-full max-w-lg">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-2">
-          <Sparkles className="h-3.5 w-3.5" />
-          Coba pertanyaan berikut
-        </div>
-        <div className="grid sm:grid-cols-2 gap-2">
-          {SUGGESTED_PROMPTS.map((p, idx) => (
-            <button
-              key={p}
-              onClick={() => onPickPrompt(p)}
-              className={cn(
-                'text-left text-sm px-3 py-2 rounded-lg border bg-background hover:bg-accent hover:text-accent-foreground transition-colors',
-                idx > 1 && 'hidden sm:block',
-              )}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+      <div className="text-sm font-semibold text-foreground">Start a conversation with ryasai</div>
+      <div className="text-xs text-muted-foreground mt-1 max-w-md">
+        Ask about company data, documents, policies, or operational status.
+        The router will choose RAG, SQL, REST API, or general chat.
+      </div>
+      <div className="flex flex-wrap gap-2 mt-5 justify-center max-w-md">
+        {SUGGESTED_PROMPTS.map((p) => (
+          <button
+            key={p}
+            onClick={() => onPickPrompt(p)}
+            className="text-[11px] px-3 py-1.5 rounded-lg border border-border hover:bg-primary/10 hover:border-primary/30 transition-colors flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <Sparkles className="h-3 w-3 text-primary" />
+            {p}
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
 /* ------------------------------------------------------------------ */
-/* Status banner                                                       */
+/* Tool execution pipeline                                             */
 /* ------------------------------------------------------------------ */
 
-function StatusBanner({
+const STEP_TONE: Record<StepStatus, string> = {
+  pending: 'bg-muted/40 text-muted-foreground/50 border border-border/50',
+  running: 'bg-primary/20 text-primary border border-primary/40 animate-pulse',
+  done: 'bg-success/15 text-success border border-success/30',
+  error: 'bg-destructive/15 text-destructive border border-destructive/30',
+}
+
+function PipelineStep({
+  label,
+  icon: Icon,
   status,
-  message,
 }: {
-  status: string
-  message?: string
+  label: string
+  icon: typeof Loader2
+  status: StepStatus
 }) {
-  const meta = STATUS_META[status] ?? STATUS_META.routing
-  const isError = status === 'error'
-  const Icon = meta.icon
   return (
     <div
       className={cn(
-        'flex items-center gap-2 px-4 py-2 text-xs border-t',
-        isError
-          ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'
-          : 'bg-muted/40 text-muted-foreground',
+        'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium whitespace-nowrap',
+        STEP_TONE[status],
       )}
     >
-      {!isError && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-      <Icon className={cn('h-3.5 w-3.5', meta.tone)} />
-      <span className="truncate">
-        {message?.trim() ? message : meta.label}
-      </span>
+      <Icon className="h-3 w-3 shrink-0" />
+      {label}
+      {status === 'running' && (
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+      )}
+      {status === 'done' && <Check className="h-3 w-3 shrink-0" />}
+      {status === 'error' && <X className="h-3 w-3 shrink-0" />}
     </div>
   )
 }
+
+function ToolPipeline({ pipeline }: { pipeline: PipelineState }) {
+  const toolIcon = TOOL_ICON[pipeline.toolType] ?? Server
+  const toolLabel = pipeline.toolType
+    ? TOOL_SHORT[pipeline.toolType] ?? pipeline.toolType
+    : 'Tool'
+  const steps: { key: string; label: string; icon: typeof Loader2; status: StepStatus }[] = [
+    { key: 'thinking', label: 'Analysis', icon: Brain, status: pipeline.thinking },
+    { key: 'tool', label: toolLabel, icon: toolIcon, status: pipeline.tool },
+    { key: 'answer', label: 'Answer', icon: Sparkles, status: pipeline.answer },
+  ]
+  return (
+    <div className="flex items-center gap-1.5 px-3 md:px-4 py-2 bg-muted/30 overflow-x-auto">
+      {steps.map((s, i) => (
+        <Fragment key={s.key}>
+          <PipelineStep
+            label={s.label}
+            icon={s.icon}
+            status={s.status}
+          />
+          {i < steps.length - 1 && (
+            <span className="text-muted-foreground/50 text-xs shrink-0">→</span>
+          )}
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Data source badge                                                   */
+/* ------------------------------------------------------------------ */
+
+function DataSourceBadge({ toolType }: { toolType: string }) {
+  const meta = TOOL_BADGE[toolType]
+  if (!meta) return null
+  const Icon = meta.icon
+  return (
+    <div className="mb-1.5">
+      <Badge
+        variant="outline"
+        className={cn('text-[10px] gap-1 py-0.5', meta.className)}
+      >
+        <Icon className="h-3 w-3" />
+        {meta.label}
+      </Badge>
+     </div>
+   )
+ }
 
 /* ------------------------------------------------------------------ */
 /* Message bubble                                                      */
 /* ------------------------------------------------------------------ */
+
+// ponytail: local-time HH:MM, no Intl dependency
+function formatTime(iso: string | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
 
 // Memoized so a streaming token (which only changes the last message's object
 // reference) doesn't re-render / re-parse markdown for every other message.
 const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMessageItem }) {
   if (message.sender === 'user') {
     return (
-      <div className="flex min-w-0 justify-end">
-        <div className="max-w-[min(85%,44rem)] overflow-hidden rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-sm shadow-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-          {message.text}
+      <div className="group flex min-w-0 justify-end">
+        <div className="max-w-[70%]">
+          <div className="overflow-hidden rounded-2xl bg-primary/20 text-foreground px-4 py-2.5 text-xs whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            {message.text}
+          </div>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[10px] text-muted-foreground mt-1 text-right">
+            {formatTime(message.createdAt)}
+          </div>
         </div>
       </div>
     )
@@ -938,101 +1011,22 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
     isAiMessageStreaming(message) && (!message.text || message.text.length === 0)
 
   return (
-    <div className="flex justify-start gap-3">
+    <div className="group flex justify-start gap-3">
       <div className="flex-shrink-0 mt-0.5">
-        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10 text-primary">
-          <Brain className="h-4 w-4" />
+        <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/20 text-primary">
+          <Bot className="h-4 w-4" />
         </div>
       </div>
       <div className="min-w-0 flex-1 max-w-[min(100%,52rem)]">
-          <Card className="overflow-hidden py-3 gap-3 shadow-none bg-background">
+          {!isStreaming && message.toolType && TOOL_BADGE[message.toolType] && (
+            <DataSourceBadge toolType={message.toolType} />
+          )}
+          <Card className="overflow-hidden py-3 gap-3 shadow-none bg-transparent border-0">
           <CardContent className="min-w-0 px-4 pt-0 pb-0">
             {isStreaming ? (
-              <TypingDots />
+              <ThinkingCard />
             ) : (
-              <div className="prose-chat min-w-0 text-sm leading-relaxed break-words [overflow-wrap:anywhere]">
-                <ReactMarkdown
-                  components={{
-                    h1: ({ children }) => (
-                      <h3 className="text-base font-semibold mt-3 mb-1.5">
-                        {children}
-                      </h3>
-                    ),
-                    h2: ({ children }) => (
-                      <h4 className="text-sm font-semibold mt-3 mb-1.5">
-                        {children}
-                      </h4>
-                    ),
-                    h3: ({ children }) => (
-                      <h5 className="text-sm font-semibold mt-2 mb-1">
-                        {children}
-                      </h5>
-                    ),
-                    p: ({ children }) => (
-                      <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc pl-5 my-1.5 space-y-0.5">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal pl-5 my-1.5 space-y-0.5">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children }) => <li>{children}</li>,
-                    code: ({ children, className }) => {
-                      const isBlock = (className ?? '').includes('language-')
-                      if (isBlock) {
-                        return (
-                          <pre className="max-w-full bg-muted/60 border rounded-md p-2 my-2 overflow-x-auto text-xs">
-                            <code>{children}</code>
-                          </pre>
-                        )
-                      }
-                      return (
-                        <code className="bg-muted/60 px-1 py-0.5 rounded text-xs font-mono break-words whitespace-normal">
-                          {children}
-                        </code>
-                      )
-                    },
-                    pre: ({ children }) => <>{children}</>,
-                    a: ({ children, href }) => (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary underline underline-offset-2"
-                      >
-                        {children}
-                      </a>
-                    ),
-                    table: ({ children }) => (
-                      <div className="overflow-x-auto my-2">
-                        <table className="w-full text-xs border-collapse">
-                          {children}
-                        </table>
-                      </div>
-                    ),
-                    th: ({ children }) => (
-                      <th className="border px-2 py-1 bg-muted/50 text-left font-semibold">
-                        {children}
-                      </th>
-                    ),
-                    td: ({ children }) => (
-                      <td className="border px-2 py-1">{children}</td>
-                    ),
-                    blockquote: ({ children }) => (
-                      <blockquote className="border-l-2 border-primary/40 pl-3 italic text-muted-foreground my-2">
-                        {children}
-                      </blockquote>
-                    ),
-                  }}
-                >
-                  {message.text}
-                </ReactMarkdown>
-              </div>
+              <ChatMarkdown content={message.text} variant="agentic" />
             )}
           </CardContent>
 
@@ -1055,11 +1049,14 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
             <CardContent className="px-4 pt-0">
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Database className="h-3 w-3" />
-                Sumber: {message.integration.name}
+                Source: {message.integration.name}
               </div>
             </CardContent>
           )}
         </Card>
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[10px] text-muted-foreground mt-1">
+          {formatTime(message.createdAt)}
+        </div>
       </div>
     </div>
   )
@@ -1078,16 +1075,101 @@ function isAiMessageStreaming(message: ChatMessageItem): boolean {
 }
 
 /* ------------------------------------------------------------------ */
-/* Typing dots                                                         */
+/* Thinking card (streaming placeholder)                               */
 /* ------------------------------------------------------------------ */
 
-function TypingDots() {
+function ThinkingCard() {
   return (
-    <div className="flex items-center gap-1 py-1.5" aria-label="AI sedang mengetik">
-      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.3s]" />
-      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.15s]" />
-      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" />
-      <span className="ml-2 text-xs text-muted-foreground">Menyusun jawaban...</span>
+    <div
+      className="rounded-2xl border border-border bg-muted px-4 py-3"
+      aria-label="AI is thinking"
+    >
+      <div className="flex items-center gap-2 text-xs text-foreground">
+        <Brain className="h-4 w-4 text-primary" />
+        <span>Thinking</span>
+        <span className="inline-flex items-end gap-0.5">
+          <span className="h-1 w-1 rounded-full bg-primary [animation:typing-dot_1.4s_ease-in-out_infinite] [animation-delay:-0.32s]" />
+          <span className="h-1 w-1 rounded-full bg-primary [animation:typing-dot_1.4s_ease-in-out_infinite] [animation-delay:-0.16s]" />
+          <span className="h-1 w-1 rounded-full bg-primary [animation:typing-dot_1.4s_ease-in-out_infinite]" />
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Tool execution card (inline while a tool runs)                      */
+/* ------------------------------------------------------------------ */
+
+function ToolExecutionCard({
+  toolType,
+  status,
+  startedAt,
+}: {
+  toolType: string
+  status: StepStatus
+  startedAt: number | null
+}) {
+  const Icon = TOOL_ICON[toolType] ?? Server
+  const name = TOOL_SHORT[toolType] ?? toolType
+  const desc = TOOL_META[toolType]?.label ?? `Running ${toolType}...`
+  const borderTone =
+    status === 'running'
+      ? 'border-info/60'
+      : status === 'done'
+        ? 'border-success/60'
+        : status === 'error'
+          ? 'border-destructive/60'
+          : 'border-border'
+  const badgeTone =
+    status === 'running'
+      ? 'bg-info/15 text-info'
+      : status === 'done'
+        ? 'bg-success/15 text-success'
+        : status === 'error'
+          ? 'bg-destructive/15 text-destructive'
+          : 'bg-muted text-muted-foreground'
+  const badgeText =
+    status === 'running'
+      ? 'Running'
+      : status === 'done'
+        ? 'Success'
+        : status === 'error'
+          ? 'Failed'
+          : 'Pending'
+  return (
+    <div
+      className={cn(
+        'rounded-sm border p-[18px] bg-muted flex items-start gap-3',
+        borderTone,
+      )}
+    >
+      <div className="shrink-0 mt-0.5">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium text-foreground">{name}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-[10px] font-medium',
+            badgeTone,
+          )}
+        >
+          {badgeText}
+        </span>
+        {startedAt && (
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(startedAt).toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -1097,65 +1179,85 @@ function TypingDots() {
 /* ------------------------------------------------------------------ */
 
 function CitationList({ citations }: { citations: Citation[] }) {
+  const [open, setOpen] = useState(true)
   return (
-    <div className="mt-1 min-w-0 pt-3 border-t">
-      <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
-        <FileText className="h-3.5 w-3.5" />
-        Sumber Data
-      </div>
-      <div className="min-w-0 space-y-2">
-        {citations.map((c, idx) => {
-          const isDb = c.type === 'DATABASE'
-          return (
-            <div
-              key={idx}
-              className="min-w-0 overflow-hidden rounded-lg border bg-background/60 px-3 py-2"
-            >
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'w-fit text-[10px] gap-1',
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-1 min-w-0 rounded-lg bg-secondary/50 p-3">
+      <CollapsibleTrigger className="flex min-w-0 w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <FileText className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 truncate">Sources ({citations.length})</span>
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 ml-auto transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="min-w-0 space-y-2 mt-2">
+          {citations.map((c, idx) => {
+            const isDb = c.type === 'DATABASE'
+            const score =
+              typeof c.score === 'number' ? Math.round(c.score * 100) : null
+            return (
+              <div
+                key={idx}
+                className="min-w-0 overflow-hidden rounded-lg border bg-background/60 px-3 py-2"
+              >
+                <div className="grid min-w-0 gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'w-fit text-[10px] gap-1',
                     isDb
-                      ? 'border-teal-300 bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-300'
-                      : 'border-violet-300 bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:border-violet-800 dark:text-violet-300',
+                      ? 'border-info/30 bg-info/15 text-info'
+                      : 'border-primary/30 bg-primary/15 text-primary',
+                    )}
+                  >
+                    {isDb ? (
+                      <Database className="h-3 w-3" />
+                    ) : (
+                      <FileText className="h-3 w-3" />
+                    )}
+                    {c.type}
+                  </Badge>
+                  <span className="min-w-0 break-words text-xs font-medium [overflow-wrap:anywhere]">
+                    {c.source}
+                  </span>
+                  {score !== null && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-muted-foreground shrink-0"
+                    >
+                      relevance {score}%
+                    </Badge>
                   )}
-                >
-                  {isDb ? (
-                    <Database className="h-3 w-3" />
-                  ) : (
-                    <FileText className="h-3 w-3" />
-                  )}
-                  {c.type}
-                </Badge>
-                <span className="min-w-0 break-words text-xs font-medium [overflow-wrap:anywhere]">
-                  {c.source}
-                </span>
-              </div>
+                </div>
 
-              {c.query_used && c.query_used.trim().length > 0 && (
-                <details className="mt-2 group">
-                  <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground select-none flex items-center gap-1">
-                    <span className="group-open:rotate-90 transition-transform">
-                      ▸
-                    </span>
-                    {citationDetailLabel(c.type)}
-                  </summary>
-                  <pre className="mt-1.5 max-w-full rounded-md bg-muted/60 border p-2 overflow-x-auto text-[11px] font-mono leading-relaxed">
-                    <code>{c.query_used}</code>
-                  </pre>
-                  {c.snippet && (
-                    <p className="mt-1.5 rounded-md border bg-muted/30 p-2 text-[11px] leading-relaxed text-muted-foreground">
-                      {c.snippet}
-                    </p>
-                  )}
-                </details>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
+                {c.snippet && (
+                  <p className="mt-2 rounded-md border bg-muted/30 p-2 text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+                    {c.snippet}
+                  </p>
+                )}
+
+                {c.query_used && c.query_used.trim().length > 0 && (
+                  <details className="mt-2 group">
+                    <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground select-none flex items-center gap-1">
+                      <span className="group-open:rotate-90 transition-transform">
+                        ▸
+                      </span>
+                      {citationDetailLabel(c.type)}
+                    </summary>
+                    <pre className="mt-1.5 max-w-full rounded-md bg-muted/60 border p-2 overflow-x-auto text-[11px] font-mono leading-relaxed">
+                      <code>{c.query_used}</code>
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -1180,9 +1282,9 @@ function ChartRenderer({ data }: { data: ChartData }) {
     <div className="mt-1 pt-3 border-t">
       <Card className="shadow-none">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
+          <CardTitle className="text-xs flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
-            Visualisasi Data Hasil Kueri
+            Query Result Data Visualization
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -22,20 +22,13 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
 
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat menguji koneksi LLM.' },
-        { status: 403 },
-      )
-    }
-
     const body = (await req.json().catch(() => ({}))) as {
       baseUrl?: string
       apiKey?: string
     }
 
     // Resolve baseUrl: provided > stored.
-    const stored = await getLlmRuntimeConfig(user.companyId)
+    const stored = await getLlmRuntimeConfig()
     let baseUrl: string
     try {
       baseUrl = normalizeBaseUrl(body.baseUrl ?? stored?.baseUrl ?? '')
@@ -65,25 +58,29 @@ export async function POST(req: NextRequest) {
     const models = await fetchProviderModels({ baseUrl, apiKey })
 
     // Cache into the config row if one exists; create a stub otherwise.
-    await db.llmConfig.upsert({
-      where: { companyId: user.companyId },
-      update: {
-        availableModels: JSON.stringify(models),
-        lastModelSyncAt: new Date(),
-      },
-      create: {
-        companyId: user.companyId,
-        provider: 'OPENAI_COMPATIBLE',
-        baseUrl,
-        model: models[0] ?? '',
-        encryptedApiKey: encryptConfig({ apiKey }),
-        availableModels: JSON.stringify(models),
-        lastModelSyncAt: new Date(),
-      },
-    })
+    const existing = await db.llmConfig.findFirst()
+    if (existing) {
+      await db.llmConfig.update({
+        where: { id: existing.id },
+        data: {
+          availableModels: JSON.stringify(models),
+          lastModelSyncAt: new Date(),
+        },
+      })
+    } else {
+      await db.llmConfig.create({
+        data: {
+          provider: 'OPENAI_COMPATIBLE',
+          baseUrl,
+          model: models[0] ?? '',
+          encryptedApiKey: encryptConfig({ apiKey }),
+          availableModels: JSON.stringify(models),
+          lastModelSyncAt: new Date(),
+        },
+      })
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'LLM_MODELS_SYNC',
       severity: 'info',

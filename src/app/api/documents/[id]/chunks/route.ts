@@ -16,7 +16,7 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const { id } = await ctx.params
     const { searchParams } = new URL(req.url)
 
@@ -29,7 +29,7 @@ export async function GET(
 
     // Make sure the document belongs to the active company before paginating.
     const doc = await db.document.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, name: true, _count: { select: { chunks: true } } },
     })
     if (!doc) {

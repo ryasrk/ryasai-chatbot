@@ -3,113 +3,142 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ENTERPRISE BLUE — oklch palette, @theme inline + var(--*) indirection.
+   Added beyond user spec: --info, --sidebar-*, --hover — required by
+   shadcn sidebar.tsx, badge.tsx, and views (chat/security/knowledge/plugins/
+   integration-api/session-list-panel) that the design.md sessions wired to
+   these tokens. Without them those components have unstyled utilities. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-hover: var(--hover);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: 14px;
+  --radius-md: 16px;
+  --radius-lg: 18px;
+  --radius-xl: 20px;
 }
 
 :root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 16px;
+  --background: oklch(0.98 0.01 250);
+  --foreground: oklch(0.20 0.03 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.20 0.03 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.20 0.03 260);
+  --primary: oklch(0.55 0.20 255);
+  --primary-foreground: oklch(0.98 0.01 250);
+  --secondary: oklch(0.96 0.02 255);
+  --secondary-foreground: oklch(0.30 0.03 260);
+  --muted: oklch(0.96 0.01 250);
+  --muted-foreground: oklch(0.55 0.02 260);
+  --accent: oklch(0.60 0.22 290);
+  --accent-foreground: oklch(0.98 0.01 290);
+  --destructive: oklch(0.55 0.24 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+  --success: oklch(0.60 0.20 145);
+  --success-foreground: oklch(0.98 0.01 145);
+  --warning: oklch(0.65 0.18 65);
+  --warning-foreground: oklch(0.20 0.03 65);
+  --info: oklch(0.55 0.20 240);
+  --info-foreground: oklch(0.98 0.01 240);
+  --border: oklch(0.90 0.01 255);
+  --input: oklch(0.90 0.01 255);
+  --ring: oklch(0.55 0.20 255);
+  --sidebar: oklch(0.97 0.01 255);
+  --sidebar-foreground: oklch(0.30 0.03 260);
+  --sidebar-primary: oklch(0.55 0.20 255);
+  --sidebar-primary-foreground: oklch(0.98 0.01 250);
+  --sidebar-accent: oklch(0.95 0.02 255);
+  --sidebar-accent-foreground: oklch(0.20 0.03 260);
+  --sidebar-border: oklch(0.90 0.01 255);
+  --sidebar-ring: oklch(0.55 0.20 255);
+  --hover: oklch(0.93 0.01 255);
+  --chart-1: oklch(0.55 0.20 255);
+  --chart-2: oklch(0.60 0.22 290);
+  --chart-3: oklch(0.60 0.20 145);
+  --chart-4: oklch(0.65 0.18 65);
+  --chart-5: oklch(0.55 0.24 27);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0.15 0.02 260);
+  --foreground: oklch(0.95 0.01 250);
+  --card: oklch(0.20 0.02 260);
+  --card-foreground: oklch(0.95 0.01 250);
+  --popover: oklch(0.20 0.02 260);
+  --popover-foreground: oklch(0.95 0.01 250);
+  --primary: oklch(0.65 0.20 255);
+  --primary-foreground: oklch(0.15 0.02 260);
+  --secondary: oklch(0.25 0.02 260);
+  --secondary-foreground: oklch(0.90 0.01 250);
+  --muted: oklch(0.25 0.02 260);
+  --muted-foreground: oklch(0.65 0.02 250);
+  --accent: oklch(0.65 0.22 290);
+  --accent-foreground: oklch(0.15 0.02 260);
+  --destructive: oklch(0.65 0.24 27);
+  --destructive-foreground: oklch(0.15 0.02 27);
+  --success: oklch(0.65 0.20 145);
+  --success-foreground: oklch(0.15 0.02 145);
+  --warning: oklch(0.70 0.18 65);
+  --warning-foreground: oklch(0.15 0.03 65);
+  --info: oklch(0.65 0.20 240);
+  --info-foreground: oklch(0.15 0.02 240);
+  --border: oklch(0.30 0.02 260);
+  --input: oklch(0.30 0.02 260);
+  --ring: oklch(0.65 0.20 255);
+  --sidebar: oklch(0.18 0.02 260);
+  --sidebar-foreground: oklch(0.90 0.01 250);
+  --sidebar-primary: oklch(0.65 0.20 255);
+  --sidebar-primary-foreground: oklch(0.15 0.02 260);
+  --sidebar-accent: oklch(0.25 0.02 260);
+  --sidebar-accent-foreground: oklch(0.95 0.01 250);
+  --sidebar-border: oklch(0.30 0.02 260);
+  --sidebar-ring: oklch(0.65 0.20 255);
+  --hover: oklch(0.22 0.02 260);
+  --chart-1: oklch(0.65 0.20 255);
+  --chart-2: oklch(0.65 0.22 290);
+  --chart-3: oklch(0.65 0.20 145);
+  --chart-4: oklch(0.70 0.18 65);
+  --chart-5: oklch(0.65 0.24 27);
 }
 
 @layer base {
@@ -119,76 +148,76 @@
   body {
     @apply bg-background text-foreground;
   }
-}
-
-/* ===========================================================================
-   Production UI standard
-   - restrained surfaces for admin workflows
-   - 8px default radius through shadcn tokens
-   - no decorative animated background in the application shell
-   =========================================================================== */
-
-@keyframes aurora-pan {
-  0% {
-    transform: translate3d(-4%, -3%, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(3%, 2%, 0) scale(1.08);
-  }
-  100% {
-    transform: translate3d(-2%, 4%, 0) scale(1.02);
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
   }
 }
 
-@keyframes float-slow {
-  0%,
-  100% {
-    transform: translateY(0);
+@keyframes typing-dot {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
   }
-  50% {
-    transform: translateY(-7px);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
+  40% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-@keyframes pulse-glow {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 0.9;
-  }
+@keyframes view-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.aurora-field {
-  display: none;
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-.dark .aurora-field {
-  display: none;
+/* View transition — smooth fade + slight rise on menu/tab switch */
+.view-fade {
+  animation: view-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Legacy alias kept safe for older views while matching the production surface. */
-.glass {
-  background: var(--card);
-  border: 1px solid var(--border);
+/* Card entrance — subtle scale for dialogs, modals, popovers */
+.scale-in {
+  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.glow-ring {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 18%, transparent);
+/* Glass card — theme-agnostic glassmorphism surface (adapts to any theme/mode) */
+.glass-card {
+  background: color-mix(in oklab, var(--card) 75%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px color-mix(in oklab, var(--foreground) 8%, transparent);
+  transition: transform 250ms ease, box-shadow 250ms ease;
+}
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 70px color-mix(in oklab, var(--foreground) 12%, transparent);
 }
 
-.text-shimmer {
-  color: var(--foreground);
+/* Tab content transition — smooth fade when switching tabs */
+[data-slot="tabs-content"] {
+  animation: view-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dialog/AlertDialog entrance — smooth scale-in */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"] {
+  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Interactive feedback — smooth state transitions on hover/active */
+button,
+[role="button"],
+a {
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out, opacity 150ms ease-out;
 }
 
 .text-security-disc {
@@ -213,10 +242,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora-field,
-  .text-shimmer {
-    animation: none;
-  }
   *,
   *::before,
   *::after {

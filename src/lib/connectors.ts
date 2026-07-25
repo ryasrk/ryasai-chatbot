@@ -13,15 +13,21 @@
  * later only means registering a new subclass in `ConnectorRegistry.getConnector`.
  */
 import { db } from '@/lib/db'
+import { getDbProtocolFamily } from '@/lib/db-provider-presets'
 
 export interface ReflectedColumn {
   name: string
   type: string
+  primaryKey?: boolean
+  notNull?: boolean
+  foreignKey?: string
+  distinctValues?: string[]
 }
 export interface ReflectedTable {
   tableName: string
   columns: ReflectedColumn[]
   rowCount?: number
+  sampleRow?: QueryRow
 }
 export interface QueryRow {
   [column: string]: unknown
@@ -90,9 +96,10 @@ export class SqliteDemoConnector implements BaseDatabaseConnector {
   async fetchSchema(): Promise<ReflectedTable[]> {
     await ensureDemoSchema()
     const tables: ReflectedTable[] = []
+
+    // Pass 1 — basic column info with pk + notnull from PRAGMA
     for (const t of DEMO_TABLES) {
-      // PRAGMA + table names cannot be parameterised — use Unsafe with the validated constant.
-      const cols = await db.$queryRawUnsafe<{ name: string; type: string }[]>(
+      const cols = await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
         `PRAGMA table_info(${t});`,
       )
       const countRow = await db.$queryRawUnsafe<{ c: number }[]>(
@@ -100,10 +107,69 @@ export class SqliteDemoConnector implements BaseDatabaseConnector {
       )
       tables.push({
         tableName: t,
-        columns: cols.map((c) => ({ name: String(c.name), type: String(c.type) })),
+        columns: cols.map((c) => ({
+          name: String(c.name),
+          type: String(c.type),
+          primaryKey: Number(c.pk) > 0,
+          notNull: Number(c.notnull) === 1,
+        })),
         rowCount: Number(countRow[0]?.c ?? 0),
       })
     }
+
+    // Pass 2 — infer FKs from {prefix}_id naming convention
+    for (const table of tables) {
+      for (const col of table.columns) {
+        if (col.primaryKey || !col.name.endsWith('_id')) continue
+        const prefix = col.name.slice(0, -3)
+        const candidates = [prefix, `${prefix}s`, `demo_${prefix}`, `demo_${prefix}s`]
+        for (const candidate of candidates) {
+          const refTable = tables.find((t) => t.tableName === candidate)
+          if (refTable) {
+            const pkCol = refTable.columns.find((c) => c.primaryKey)
+            if (pkCol) col.foreignKey = `${refTable.tableName}.${pkCol.name}`
+            break
+          }
+        }
+      }
+    }
+
+    // Pass 3 — sample distinct values for low-cardinality TEXT columns
+    for (const table of tables) {
+      if (!table.rowCount || table.rowCount > 10000) continue
+      for (const col of table.columns) {
+        if (col.primaryKey || col.foreignKey) continue
+        const upperType = col.type.toUpperCase()
+        if (!upperType.includes('TEXT') && !upperType.includes('VARCHAR') && !upperType.includes('CHAR')) continue
+        try {
+          const distinctRows = await db.$queryRawUnsafe<{ v: string | null }[]>(
+            `SELECT DISTINCT "${col.name}" AS v FROM "${table.tableName}" LIMIT 21;`,
+          )
+          if (distinctRows.length <= 20) {
+            col.distinctValues = distinctRows
+              .map((r) => (r.v === null ? 'NULL' : String(r.v)))
+              .filter((v) => v !== 'NULL')
+          }
+        } catch {
+          // skip on error — non-fatal
+        }
+      }
+    }
+
+    // Pass 4 — fetch 1 sample row per table for LLM format understanding
+    for (const table of tables) {
+      if (!table.rowCount || table.rowCount === 0) continue
+      try {
+        const colNames = table.columns.map((c) => `"${c.name}"`).join(', ')
+        const rows = await db.$queryRawUnsafe<QueryRow[]>(
+          `SELECT ${colNames} FROM "${table.tableName}" LIMIT 1;`,
+        )
+        if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
+      } catch {
+        // skip on error — non-fatal
+      }
+    }
+
     return tables
   }
 
@@ -141,16 +207,20 @@ export class ConnectorRegistry {
 
   getConnector(integrationId: string, provider: string, decryptedConfig: Record<string, unknown>): BaseDatabaseConnector {
     if (!this._pools.has(integrationId)) {
+      const family = getDbProtocolFamily(provider)
       let connector: BaseDatabaseConnector
-      switch (provider) {
+      switch (family) {
         case 'SQLITE_DEMO':
           connector = new SqliteDemoConnector(decryptedConfig)
           break
         case 'POSTGRESQL':
         case 'MYSQL':
         case 'MSSQL':
-          // In the sandbox we cannot reach these; fall back to the demo connector
-          // so the end-to-end experience still works. (Factory point preserved.)
+        case 'MONGODB':
+        case 'CLICKHOUSE':
+        case 'SNOWFLAKE':
+        case 'ORACLE':
+          // ponytail: sandbox can't reach external DBs, all map to demo connector.
           connector = new SqliteDemoConnector(decryptedConfig)
           break
         default:
@@ -216,10 +286,34 @@ export async function ensureDemoSchema(): Promise<void> {
 /** Build a compact schema description string for the LLM Text-to-SQL prompt. */
 export function describeSchema(tables: ReflectedTable[]): string {
   return tables
-    .map(
-      (t) =>
-        `TABLE ${t.tableName} (${t.rowCount ?? '?'} rows)\n  ` +
-        t.columns.map((c) => `${c.name} ${c.type}`).join(', '),
-    )
+    .map((t) => {
+      const pkCols = t.columns.filter((c) => c.primaryKey).map((c) => c.name)
+      const pkLabel = pkCols.length > 0 ? `  PK: ${pkCols.join(', ')}` : ''
+      const header = `TABLE ${t.tableName} (${t.rowCount ?? '?'} rows)${pkLabel}`
+      const cols = t.columns
+        .map((c) => {
+          let line = `  ${c.name} ${c.type}`
+          if (c.primaryKey) line += ' PRIMARY KEY'
+          else if (c.notNull) line += ' NOT NULL'
+          if (c.foreignKey) line += ` -> ${c.foreignKey}`
+          if (c.distinctValues && c.distinctValues.length > 0) {
+            line += `  -- values: ${c.distinctValues.join(', ')}`
+          }
+          return line
+        })
+        .join('\n')
+      let sample = ''
+      if (t.sampleRow) {
+        const parts = t.columns
+          .filter((c) => t.sampleRow![c.name] !== undefined && t.sampleRow![c.name] !== null)
+          .map((c) => {
+            const v = t.sampleRow![c.name]
+            const sv = typeof v === 'string' ? `'${v.length > 40 ? v.slice(0, 37) + '...' : v}'` : String(v)
+            return `${c.name}=${sv}`
+          })
+        if (parts.length > 0) sample = `  -- sample: ${parts.join(', ')}`
+      }
+      return `${header}\n${cols}${sample ? '\n' + sample : ''}`
+    })
     .join('\n\n')
 }

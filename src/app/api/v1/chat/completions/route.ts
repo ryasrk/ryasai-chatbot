@@ -29,21 +29,28 @@ interface ChatCompletionPayload {
   }>
 }
 
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders })
+}
+
 export async function POST(req: NextRequest) {
   const started = Date.now()
-  let companyId: string | null = null
   let apiKeyId: string | null = null
 
   try {
     const identity = await requireExternalApiKey(req)
-    companyId = identity.companyId
     apiKeyId = identity.apiKeyId
 
     const body = (await req.json().catch(() => ({}))) as ChatCompletionBody
     const question = latestUserMessage(body.messages ?? [])
     if (!question) {
       await writeApiLog({
-        companyId,
         apiKeyId,
         status: 400,
         latencyMs: Date.now() - started,
@@ -51,18 +58,17 @@ export async function POST(req: NextRequest) {
       })
       return NextResponse.json(
         { ok: false, error: 'messages harus berisi minimal satu role=user.' },
-        { status: 400 },
+        { status: 400, headers: corsHeaders },
       )
     }
 
     const admin = await db.user.findFirst({
-      where: { companyId, role: 'admin', isActive: true },
+      where: { isActive: true },
       orderBy: { createdAt: 'asc' },
       select: { id: true },
     })
     if (!admin) {
       await writeApiLog({
-        companyId,
         apiKeyId,
         status: 500,
         latencyMs: Date.now() - started,
@@ -70,15 +76,14 @@ export async function POST(req: NextRequest) {
       })
       return NextResponse.json(
         { ok: false, error: 'Admin singleton tidak ditemukan.' },
-        { status: 500 },
+        { status: 500, headers: corsHeaders },
       )
     }
 
     const session = body.session_id
-      ? await findSession(body.session_id, companyId)
+      ? await findSession(body.session_id)
       : await db.chatSession.create({
           data: {
-            companyId,
             userId: admin.id,
             title: question.slice(0, 60) || 'External API Chat',
           },
@@ -86,7 +91,6 @@ export async function POST(req: NextRequest) {
 
     if (!session) {
       await writeApiLog({
-        companyId,
         apiKeyId,
         status: 404,
         latencyMs: Date.now() - started,
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
       })
       return NextResponse.json(
         { ok: false, error: 'Session tidak ditemukan.' },
-        { status: 404 },
+        { status: 404, headers: corsHeaders },
       )
     }
 
@@ -107,15 +111,31 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    const recentMessages = await db.chatMessage.findMany({
+      where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { sender: true, text: true },
+    })
+    const chatHistory = recentMessages
+      .reverse()
+      .filter((m) => m.text && m.text.trim())
+      .map((m) => ({
+        role: (m.sender === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.text,
+      }))
+
     const completion = await runNonStreamingChatCompletion({
       question,
-      companyId,
       userId: admin.id,
+      sessionId: session.id,
+      chatHistory,
     })
 
     const aiMessage = await db.chatMessage.create({
       data: {
         sessionId: session.id,
+        userId: admin.id,
         sender: 'ai',
         text: completion.answer,
         status: 'complete',
@@ -130,7 +150,6 @@ export async function POST(req: NextRequest) {
       completion.toolRuns.map((toolRun) =>
         db.toolRun.create({
           data: {
-            companyId: identity.companyId,
             chatMessageId: aiMessage.id,
             restApiEndpointId: toolRun.restApiEndpointId,
             type: toolRun.type,
@@ -151,7 +170,12 @@ export async function POST(req: NextRequest) {
       ),
     )
 
-    await writeApiLog({ companyId, apiKeyId, status: 200, latencyMs })
+    await db.chatSession.update({
+      where: { id: session.id },
+      data: { updatedAt: new Date() },
+    })
+
+    await writeApiLog({ apiKeyId, status: 200, latencyMs })
 
     const payload: ChatCompletionPayload = {
       id: `chatcmpl_${aiMessage.id}`,
@@ -172,64 +196,86 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.stream) {
-      return new NextResponse(
-        buildSseDataStream([
-          {
-            id: payload.id,
-            object: 'chat.completion.chunk',
-            created: payload.created,
-            model: payload.model,
-            session_id: payload.session_id,
-            choices: [
-              {
-                index: 0,
-                delta: { content: payload.answer },
-                finish_reason: null,
-              },
-            ],
-            citations: payload.citations,
-            chart_data: payload.chart_data,
-            tool_runs: payload.tool_runs,
-          },
-          {
-            id: payload.id,
-            object: 'chat.completion.chunk',
-            created: payload.created,
-            model: payload.model,
-            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-          },
-        ]),
-        {
-          headers: {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-cache, no-transform',
-            Connection: 'keep-alive',
-          },
+      const completionId = `chatcmpl_${aiMessage.id}`
+      const created = Math.floor(Date.now() / 1000)
+      const model = body.model ?? 'default'
+      const encoder = new TextEncoder()
+
+      const sseStream = new ReadableStream({
+        async start(controller) {
+          try {
+            const words = completion.answer.match(/\S+\s*/g) ?? []
+            for (const word of words) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: completionId,
+                    object: 'chat.completion.chunk',
+                    created,
+                    model,
+                    choices: [{ index: 0, delta: { content: word }, finish_reason: null }],
+                  })}\n\n`,
+                ),
+              )
+              await new Promise((resolve) => setTimeout(resolve, 10))
+            }
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: completionId,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  session_id: session.id,
+                  choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                  citations: completion.citations,
+                  chart_data: completion.chartData,
+                  tool_runs: toolRuns.map((toolRun) => ({
+                    id: toolRun.id,
+                    type: toolRun.type,
+                    status: toolRun.status,
+                    latency_ms: toolRun.latencyMs,
+                    rest_api_endpoint_id: toolRun.restApiEndpointId,
+                  })),
+                })}\n\n`,
+              ),
+            )
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+          } catch {
+            // client disconnected mid-stream
+          }
         },
-      )
+      })
+
+      return new NextResponse(sseStream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          ...corsHeaders,
+        },
+      })
     }
 
-    return NextResponse.json(payload)
+    return NextResponse.json(payload, { headers: corsHeaders })
   } catch (e) {
-    if (companyId) {
-      const status = statusForExternalChatError(e)
-      await writeApiLog({
-        companyId,
-        apiKeyId,
-        status,
-        latencyMs: Date.now() - started,
-        errorMessage: e instanceof Error ? e.message : 'External chat failed',
-      })
-      if (status === 503) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              'AI provider belum dikonfigurasi. Buka AI Configuration dan isi endpoint model API sebelum menggunakan chat completion.',
-          },
-          { status },
-        )
-      }
+    const status = statusForExternalChatError(e)
+    await writeApiLog({
+      apiKeyId,
+      status,
+      latencyMs: Date.now() - started,
+      errorMessage: e instanceof Error ? e.message : 'External chat failed',
+    })
+    if (status === 503) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'AI provider belum dikonfigurasi. Buka AI Configuration dan isi endpoint model API sebelum menggunakan chat completion.',
+        },
+        { status, headers: corsHeaders },
+      )
     }
     return handleApiError(e, 'Gagal memproses chat completion eksternal.')
   }
@@ -261,15 +307,14 @@ function latestUserMessage(messages: Array<{ role?: string; content?: string }>)
   return ''
 }
 
-async function findSession(sessionId: string, companyId: string) {
+async function findSession(sessionId: string) {
   return db.chatSession.findFirst({
-    where: { id: sessionId, companyId },
+    where: { id: sessionId },
     select: { id: true },
   })
 }
 
 async function writeApiLog(args: {
-  companyId: string
   apiKeyId: string | null
   status: number
   latencyMs: number
@@ -277,7 +322,6 @@ async function writeApiLog(args: {
 }) {
   await db.apiRequestLog.create({
     data: {
-      companyId: args.companyId,
       apiKeyId: args.apiKeyId,
       endpoint: 'POST /api/v1/chat/completions',
       status: args.status,

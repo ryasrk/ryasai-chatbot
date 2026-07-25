@@ -1,4 +1,4 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 /**
  * Knowledge + Chat spec.

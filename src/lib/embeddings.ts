@@ -71,14 +71,15 @@ export function parseEmbeddingResponse(
 }
 
 export async function getEmbeddingRuntimeConfig(
-  companyId: string,
 ): Promise<EmbeddingRuntimeConfig | null> {
-  const row = await db.llmConfig.findUnique({ where: { companyId } })
+  const row = await db.llmConfig.findFirst({
+    where: { purpose: 'chat' },
+  }) ?? await db.llmConfig.findFirst()
   if (!row) return null
 
   const provider = normalizeEmbeddingProvider(row.embeddingProvider ?? row.provider)
   const baseUrl = normalizeBaseUrl(row.embeddingBaseUrl ?? row.baseUrl)
-  const model = (row.embeddingModel ?? '').trim()
+  const model = (row.embeddingModel ?? 'text-embedding-3-small').trim()
   if (!model) return null
 
   let apiKey = ''
@@ -87,7 +88,8 @@ export async function getEmbeddingRuntimeConfig(
     try {
       const cfg = decryptConfig(encrypted)
       apiKey = typeof cfg.apiKey === 'string' ? cfg.apiKey : ''
-    } catch {
+    } catch (e) {
+      console.warn('[embeddings] decryptConfig failed:', e)
       apiKey = ''
     }
   }
@@ -133,11 +135,10 @@ export function parseEmbeddingJson(raw: string | null | undefined): number[] | n
 }
 
 export async function embedDocumentChunks(args: {
-  companyId: string
   documentId: string
   batchSize?: number
 }): Promise<{ embedded: number; skipped: number; provider: string | null; model: string | null }> {
-  const config = await getEmbeddingRuntimeConfig(args.companyId)
+  const config = await getEmbeddingRuntimeConfig()
   if (!config) return { embedded: 0, skipped: 0, provider: null, model: null }
 
   const chunks = await db.documentChunk.findMany({
@@ -150,14 +151,13 @@ export async function embedDocumentChunks(args: {
       document: {
         select: {
           id: true,
-          companyId: true,
           name: true,
           category: true,
         },
       },
     },
   })
-  const vectorConfig = await getVectorStoreRuntimeConfig(args.companyId)
+  const vectorConfig = await getVectorStoreRuntimeConfig()
   if (vectorConfig) await ensureVectorCollection(vectorConfig)
 
   let embedded = 0
@@ -176,7 +176,6 @@ export async function embedDocumentChunks(args: {
             chunkId: chunk.id,
             vector,
             payload: {
-              companyId: chunk.document.companyId,
               documentId: chunk.document.id,
               documentName: chunk.document.name,
               category: chunk.document.category ?? null,
@@ -207,7 +206,6 @@ export async function embedDocumentChunks(args: {
 }
 
 export async function embedCompanyDocuments(args: {
-  companyId: string
   documentId?: string
 }): Promise<{
   documents: number
@@ -218,7 +216,6 @@ export async function embedCompanyDocuments(args: {
 }> {
   const docs = await db.document.findMany({
     where: {
-      companyId: args.companyId,
       status: 'ready',
       ...(args.documentId ? { id: args.documentId } : {}),
     },
@@ -232,7 +229,6 @@ export async function embedCompanyDocuments(args: {
   let model: string | null = null
   for (const doc of docs) {
     const result = await embedDocumentChunks({
-      companyId: args.companyId,
       documentId: doc.id,
     })
     embedded += result.embedded

@@ -1,8 +1,7 @@
 // =====================================================================
 // ryasai — Prisma Schema
-// Adapted from "DOKUMEN SPESIFIKASI TEKNIS" (PostgreSQL) to SQLite.
-// Implements: multi-tenancy, RBAC, AES-256-GCM encrypted integrations,
-// RAG document store, chat history, audit logs, query history.
+// Single-tenant, admin-only. No company/roleId isolation.
+// AES-256-GCM encrypted integrations, RAG, chat history, audit logs.
 // =====================================================================
 
 generator client {
@@ -15,62 +14,30 @@ datasource db {
 }
 
 // ------------------------------------------------------------------
-// 4.1  Tenant / Company
-// ------------------------------------------------------------------
-model Company {
-  id          String   @id @default(cuid())
-  name        String
-  industry    String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  users        User[]
-  integrations Integration[]
-  documents    Document[]
-  chatSessions ChatSession[]
-  auditLogs    AuditLog[]
-  llmConfig    LlmConfig?
-  appConfig    AppConfig?
-  restApiConnectors RestApiConnector[]
-  restApiRequestLogs RestApiRequestLog[]
-  toolRuns     ToolRun[]
-  apiKeys      ApiKey[]
-  apiRequestLogs ApiRequestLog[]
-  vectorStoreConfig VectorStoreConfig?
-  smartMappings SmartMapping[]
-}
-
-// ------------------------------------------------------------------
-// 4.1  User with RBAC (admin / manager / staff)
+// User — admin only, no roles
 // ------------------------------------------------------------------
 model User {
   id           String   @id @default(cuid())
-  companyId    String
   email        String   @unique
   name         String
   passwordHash String
-  role         String   @default("staff") // admin | manager | staff
   avatarColor  String   @default("oklch(0.55 0.18 250)")
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   chatSessions ChatSession[]
   auditLogs    AuditLog[]
   messages     ChatMessage[]
   queries      QueryHistory[]
-
-  @@index([companyId])
+  agentRuns    AgentRun[]
 }
 
 // ------------------------------------------------------------------
-// 3.1 / 3.2  Dynamic Connector — encrypted config blob
+// Dynamic Connector — encrypted config blob
 // ------------------------------------------------------------------
 model Integration {
   id              String   @id @default(cuid())
-  companyId       String
   name            String
   type            String   // DATABASE | API
   provider        String   // POSTGRESQL | MYSQL | MSSQL | REST_API | SQLITE_DEMO
@@ -81,21 +48,18 @@ model Integration {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   schemas       IntegrationSchema[]
   queryHistory  QueryHistory[]
   chatMessages  ChatMessage[]
-
-  @@index([companyId])
 }
 
-// Cached reflected schema (tables + columns) for Text-to-SQL prompts
 model IntegrationSchema {
   id            String   @id @default(cuid())
   integrationId String
   tableName     String
-  columns       String   // JSON: [{name,type}]
+  columns       String   // JSON: [{name,type,pk,notnull,fk,distinctValues}]
   rowCount      Int?
+  sampleRow     String?  // JSON: {col: value} — 1 representative row for LLM format understanding
   reflectedAt   DateTime @default(now())
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
@@ -104,11 +68,11 @@ model IntegrationSchema {
 }
 
 // ------------------------------------------------------------------
-// LLM provider configuration — encrypted API key per tenant
+// LLM provider configuration — multiple configs (chat vs agent)
 // ------------------------------------------------------------------
 model LlmConfig {
   id              String   @id @default(cuid())
-  companyId       String   @unique
+  purpose         String   @default("chat") @unique // chat | agent
   provider        String   @default("OPENAI_COMPATIBLE")
   baseUrl         String
   encryptedApiKey String
@@ -119,38 +83,34 @@ model LlmConfig {
   embeddingBaseUrl         String?
   encryptedEmbeddingApiKey String?
   embeddingModel           String?
-  embeddingAvailableModels String?  // JSON: string[]
+  embeddingAvailableModels String?
   lastEmbeddingModelSyncAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
 }
 
 // ------------------------------------------------------------------
-// 3.3  RAG — documents & semantic chunks
+// RAG — documents & semantic chunks
 // ------------------------------------------------------------------
 model Document {
-  id          String   @id @default(cuid())
-  companyId   String
-  name        String
-  type        String   // pdf | docx | xlsx | txt | md
-  sizeBytes   Int
-  mimeType    String
-  status      String   @default("processing") // processing | ready | error
-  category    String?  // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
-  description String?
-  contentText String   // full extracted text (for RAG context)
-  uploadPath  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  type           String    // pdf | docx | xlsx | txt | md
+  sizeBytes      Int
+  mimeType       String
+  status         String    @default("processing") // processing | ready | error
+  isEnabled      Boolean   @default(true)
+  category       String?   // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
+  description    String?
+  contentText    String
+  uploadPath     String?
+  cognifyStatus  String?   // null | processing | completed | failed
+  cognifyError   String?
+  cognifiedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  company Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   chunks  DocumentChunk[]
-
-  @@index([companyId])
 }
 
 model DocumentChunk {
@@ -159,8 +119,8 @@ model DocumentChunk {
   chunkIndex Int
   content    String
   tokenCount Int?
-  keywords   String?  // simple keyword tags for retrieval
-  embeddingJson      String?  // JSON number[] generated through external API
+  keywords   String?
+  embeddingJson      String?
   embeddingProvider  String?
   embeddingModel     String?
   embeddedAt         DateTime?
@@ -173,11 +133,10 @@ model DocumentChunk {
 }
 
 // ------------------------------------------------------------------
-// Hybrid RAG — external vector database config
+// Hybrid RAG — external vector database config (singleton)
 // ------------------------------------------------------------------
 model VectorStoreConfig {
   id              String   @id @default(cuid())
-  companyId       String   @unique
   provider        String   @default("INTERNAL") // INTERNAL | QDRANT | MILVUS
   baseUrl         String?
   encryptedApiKey String?
@@ -187,54 +146,26 @@ model VectorStoreConfig {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
   @@index([provider])
 }
 
 // ------------------------------------------------------------------
-// Smart Mapping AI — source/entity/field map approved by admin
+// Smart Mapping AI — source/entity/field map
 // ------------------------------------------------------------------
-model SmartMapping {
-  id            String   @id @default(cuid())
-  companyId     String
-  sourceType    String   // DATABASE | REST_API | DOCUMENT | MANUAL
-  sourceId      String?
-  sourceName    String
-  entityType    String
-  routingHint   String   // SQL | RAG | REST | CHAT
-  fieldsJson    String   // JSON: [{source, canonical}]
-  synonymsJson  String   // JSON: string[]
-  status        String   @default("active") // active | draft | disabled
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
-  @@index([sourceType])
-  @@index([sourceId])
-  @@index([routingHint])
-  @@index([status])
-}
-
 // ------------------------------------------------------------------
-// 5.2  Chat sessions & messages (streaming protocol)
+// Chat sessions & messages
 // ------------------------------------------------------------------
 model ChatSession {
   id        String   @id @default(cuid())
-  companyId String
   userId    String
   title     String   @default("Sesi Baru")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
+  agentRuns AgentRun[]
 
-  @@index([companyId])
   @@index([userId])
 }
 
@@ -244,9 +175,9 @@ model ChatMessage {
   userId     String?
   sender     String   // user | ai | system
   text       String
-  status     String?  // executing_sql | rag_retrieving | generating | complete | error
-  citations  String?  // JSON array of {type,source,query_used}
-  chartData  String?  // JSON for Recharts if SQL result is chartable
+  status     String?
+  citations  String?
+  chartData  String?
   createdAt  DateTime @default(now())
 
   session     ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -256,31 +187,34 @@ model ChatMessage {
   toolRuns    ToolRun[]
 
   @@index([sessionId])
+  @@index([userId])
+  @@index([integrationId])
 }
 
 // ------------------------------------------------------------------
-// Production core — singleton setup/config for dedicated deployment
+// AppConfig — singleton setup/config
 // ------------------------------------------------------------------
 model AppConfig {
   id                  String   @id @default(cuid())
-  companyId           String   @unique
   setupCompleted      Boolean  @default(false)
   organizationName    String?
   brandingJson        String?
   productionChecklist String?
   promptSettings      String?
+  cogneeEnabled       Boolean  @default(false)
+  cogneeDbProvider    String?  // 'local' | 'postgres'
+  cogneeDbUrl         String?
+  cogneeBatchSize     Int      @default(50)
+  cogneeMaxRetries    Int      @default(3)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 // ------------------------------------------------------------------
-// Production core — REST API connector registry and whitelist
+// REST API connector registry and whitelist
 // ------------------------------------------------------------------
 model RestApiConnector {
   id                  String   @id @default(cuid())
-  companyId           String
   name                String
   baseUrl             String
   authType            String   @default("NONE") // NONE | BEARER | API_KEY_HEADER
@@ -290,11 +224,8 @@ model RestApiConnector {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   endpoints   RestApiEndpoint[]
   requestLogs RestApiRequestLog[]
-
-  @@index([companyId])
 }
 
 model RestApiEndpoint {
@@ -320,7 +251,6 @@ model RestApiEndpoint {
 
 model RestApiRequestLog {
   id              String   @id @default(cuid())
-  companyId       String
   connectorId     String
   endpointId      String?
   statusCode      Int?
@@ -330,21 +260,18 @@ model RestApiRequestLog {
   errorMessage    String?
   createdAt       DateTime @default(now())
 
-  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   connector RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
   endpoint  RestApiEndpoint?  @relation(fields: [endpointId], references: [id], onDelete: SetNull)
 
-  @@index([companyId])
   @@index([connectorId])
   @@index([endpointId])
 }
 
 // ------------------------------------------------------------------
-// Production core — tool execution and external API observability
+// Tool execution and external API observability
 // ------------------------------------------------------------------
 model ToolRun {
   id                String   @id @default(cuid())
-  companyId         String
   chatMessageId     String?
   restApiEndpointId String?
   type              String   // RAG | SQL | REST_API | CHAT
@@ -355,11 +282,9 @@ model ToolRun {
   errorMessage      String?
   createdAt         DateTime @default(now())
 
-  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   chatMessage     ChatMessage?     @relation(fields: [chatMessageId], references: [id], onDelete: SetNull)
   restApiEndpoint RestApiEndpoint? @relation(fields: [restApiEndpointId], references: [id], onDelete: SetNull)
 
-  @@index([companyId])
   @@index([chatMessageId])
   @@index([restApiEndpointId])
   @@index([type])
@@ -368,7 +293,6 @@ model ToolRun {
 
 model ApiKey {
   id                    String    @id @default(cuid())
-  companyId             String
   label                 String
   keyPrefix             String
   keyHash               String
@@ -380,17 +304,14 @@ model ApiKey {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requestLogs ApiRequestLog[]
 
-  @@index([companyId])
   @@index([keyPrefix])
   @@index([isActive])
 }
 
 model ApiRequestLog {
   id           String   @id @default(cuid())
-  companyId    String
   apiKeyId     String?
   endpoint     String
   status       Int
@@ -399,37 +320,34 @@ model ApiRequestLog {
   errorMessage String?
   createdAt    DateTime @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  apiKey  ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
 
-  @@index([companyId])
   @@index([apiKeyId])
   @@index([endpoint])
 }
 
 // ------------------------------------------------------------------
-// 7    Audit logs (security events, guardrail blocks, etc.)
+// Audit logs
 // ------------------------------------------------------------------
 model AuditLog {
   id        String   @id @default(cuid())
-  companyId String
   userId    String?
-  action    String   // INTEGRATION_CREATE | GUARDRAIL_BLOCK | SQL_EXECUTE | DOC_UPLOAD | LOGIN ...
+  action    String
   severity  String   @default("info") // info | warning | critical
   detail    String   // JSON string
   ipAddress String?
   createdAt DateTime @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([companyId])
   @@index([userId])
   @@index([severity])
+  @@index([createdAt])
+  @@index([action])
 }
 
 // ------------------------------------------------------------------
-// 7    Query history (Text-to-SQL executed queries)
+// Query history (Text-to-SQL executed queries)
 // ------------------------------------------------------------------
 model QueryHistory {
   id            String   @id @default(cuid())
@@ -448,4 +366,84 @@ model QueryHistory {
 
   @@index([integrationId])
   @@index([userId])
+}
+
+// ------------------------------------------------------------------
+// Plugin/tool manifest registry
+// ------------------------------------------------------------------
+model Plugin {
+  id            String   @id @default(cuid())
+  toolId        String   @unique
+  name          String  
+  description   String
+  manifestJson  String
+  isEnabled     Boolean  @default(false)
+  category      String   @default("general")
+  subcategory   String   @default("general")
+  keywords      String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isEnabled])
+  @@index([category])
+}
+
+// ------------------------------------------------------------------
+// Scheduled/triggered runs (cron + prompt)
+// ------------------------------------------------------------------
+model ScheduledRun {
+  id          String    @id @default(cuid())
+  name        String
+  cronExpr    String
+  prompt      String
+  isActive    Boolean   @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  lastResult  String?
+  notificationConfigId String?
+  notificationConfig  NotificationConfig? @relation(fields: [notificationConfigId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([nextRunAt])
+  @@index([notificationConfigId])
+}
+
+model NotificationConfig {
+  id             String   @id @default(cuid())
+  name           String
+  type           String   // webhook | email | telegram
+  encryptedConfig String  // AES-256-GCM encrypted JSON: {type,url,token} | {type,smtpHost,...} | {type,botToken,chatId}
+  isActive       Boolean  @default(true)
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  scheduledRuns ScheduledRun[]
+
+  @@index([isActive])
+}
+
+// ------------------------------------------------------------------
+// Agentic multi-step run tracking
+// ------------------------------------------------------------------
+model AgentRun {
+  id           String   @id @default(cuid())
+  userId       String?
+  sessionId    String?
+  question     String
+  planJson     String
+  status       String   // planning | executing | complete | error
+  resultJson   String?
+  errorMessage String?
+  latencyMs    Int?
+  createdAt    DateTime @default(now())
+
+  user    User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([userId])
+  @@index([sessionId])
 }

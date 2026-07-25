@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 
 interface RouteContext {
@@ -9,16 +9,10 @@ interface RouteContext {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat mencabut API key.' },
-        { status: 403 },
-      )
-    }
 
     const { id } = await ctx.params
     const existing = await db.apiKey.findFirst({
-      where: { id, companyId: user.companyId },
+      where: { id },
       select: { id: true, label: true, keyPrefix: true, revokedAt: true },
     })
     if (!existing) {
@@ -41,10 +35,18 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
         isActive: true,
         revokedAt: true,
       },
+    }).catch((e: unknown) => {
+      if (isPrismaNotFound(e)) return null
+      throw e
     })
+    if (!item) {
+      return NextResponse.json(
+        { ok: false, error: 'API key tidak ditemukan.' },
+        { status: 404 },
+      )
+    }
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'API_KEY_REVOKE',
       severity: 'warning',

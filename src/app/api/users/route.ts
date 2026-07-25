@@ -9,16 +9,15 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
 
     const users = await db.user.findMany({
-      where: { companyId: user.companyId },
-      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+      where: {},
+      orderBy: [{ name: 'asc' }],
       select: {
         id: true,
         name: true,
         email: true,
-        role: true,
         avatarColor: true,
         isActive: true,
         createdAt: true,

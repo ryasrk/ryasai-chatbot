@@ -128,24 +128,41 @@ export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: 
 }
 
 export async function retrieveRelevantChunks(args: {
-  companyId: string
   query: string
   topK: number
-}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number }> {
+}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number; graphContext: string }> {
   const queryTokens = tokenize(args.query)
   if (queryTokens.length === 0) {
-    return { chunks: [], queryTokens: [], candidatesScanned: 0 }
+    return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
   }
 
-  const queryEmbedding = await resolveQueryEmbedding(args.companyId, args.query)
+  // Run graph recall in parallel with vector/lexical retrieval
+  const [retrievalResult, graphContext] = await Promise.all([
+    retrieveFromVectorAndLexical(args.query, args.topK, queryTokens),
+    recallGraphContext(args.query),
+  ])
+
+  return {
+    chunks: retrievalResult.chunks,
+    queryTokens,
+    candidatesScanned: retrievalResult.candidatesScanned,
+    graphContext,
+  }
+}
+
+async function retrieveFromVectorAndLexical(
+  query: string,
+  topK: number,
+  queryTokens: string[],
+): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
+  const queryEmbedding = await resolveQueryEmbedding(query)
   const vectorScores = await resolveVectorScores({
-    companyId: args.companyId,
     vector: queryEmbedding?.vector ?? null,
-    topK: args.topK,
+    topK,
   })
   const candidates = vectorScores.size > 0
-    ? await loadVectorCandidateChunks(args.companyId, [...vectorScores.keys()])
-    : await loadLexicalCandidateChunks(args.companyId, queryTokens, args.topK)
+    ? await loadVectorCandidateChunks([...vectorScores.keys()])
+    : await loadLexicalCandidateChunks(queryTokens, topK)
 
   const scored: RetrievedChunk[] = []
   let candidatesScanned = 0
@@ -176,9 +193,17 @@ export async function retrieveRelevantChunks(args: {
   }
 
   return {
-    chunks: selectTopRetrievedChunks(scored, args.topK),
-    queryTokens,
+    chunks: selectTopRetrievedChunks(scored, topK),
     candidatesScanned,
+  }
+}
+
+async function recallGraphContext(query: string): Promise<string> {
+  try {
+    const { recallKnowledgeGraph } = await import('@/lib/cognee')
+    return await recallKnowledgeGraph({ query, topK: 5 })
+  } catch {
+    return ''
   }
 }
 
@@ -248,36 +273,35 @@ export function applyVectorStoreScore(
 }
 
 async function resolveQueryEmbedding(
-  companyId: string,
   query: string,
 ): Promise<{ vector: number[]; model: string } | null> {
   try {
-    const config = await getEmbeddingRuntimeConfig(companyId)
+    const config = await getEmbeddingRuntimeConfig()
     if (!config) return null
     const [embedding] = await embedTexts(config, [query])
     return embedding ? { vector: embedding, model: config.model } : null
-  } catch {
+  } catch (e) {
+    console.warn('[rag] resolveQueryEmbedding failed:', e)
     return null
   }
 }
 
 async function resolveVectorScores(args: {
-  companyId: string
   vector: number[] | null
   topK: number
 }): Promise<Map<string, number>> {
   if (!args.vector) return new Map()
   try {
-    const config = await getVectorStoreRuntimeConfig(args.companyId)
+    const config = await getVectorStoreRuntimeConfig()
     if (!config) return new Map()
     const hits = await searchVectorStore({
       config,
-      companyId: args.companyId,
       vector: args.vector,
       limit: Math.max(args.topK * 8, 16),
     })
     return new Map(hits.map((hit) => [hit.chunkId, hit.score]))
-  } catch {
+  } catch (e) {
+    console.warn('[rag] resolveVectorScores failed:', e)
     return new Map()
   }
 }
@@ -294,13 +318,12 @@ interface CandidateChunk {
 }
 
 async function loadVectorCandidateChunks(
-  companyId: string,
   chunkIds: string[],
 ): Promise<CandidateChunk[]> {
   const rows = await db.documentChunk.findMany({
     where: {
       id: { in: chunkIds },
-      document: { companyId, status: 'ready' },
+      document: { status: 'ready', isEnabled: true },
     },
     select: {
       id: true,
@@ -327,13 +350,14 @@ async function loadVectorCandidateChunks(
     }))
 }
 
-async function loadAllCandidateChunks(companyId: string): Promise<CandidateChunk[]> {
+async function loadAllCandidateChunks(): Promise<CandidateChunk[]> {
   const docs = await db.document.findMany({
-    where: { companyId, status: 'ready' },
+    where: { status: 'ready', isEnabled: true },
     select: {
       id: true,
       name: true,
       chunks: {
+        take: 500,
         select: {
           id: true,
           chunkIndex: true,
@@ -360,18 +384,16 @@ async function loadAllCandidateChunks(companyId: string): Promise<CandidateChunk
 }
 
 async function loadLexicalCandidateChunks(
-  companyId: string,
   queryTokens: string[],
   topK: number,
 ): Promise<CandidateChunk[]> {
   const ftsIds = await searchFtsChunkIds({
-    companyId,
     queryTokens,
     limit: Math.max(topK * 12, 32),
   })
   return ftsIds.length > 0
-    ? loadVectorCandidateChunks(companyId, ftsIds)
-    : loadAllCandidateChunks(companyId)
+    ? loadVectorCandidateChunks(ftsIds)
+    : loadAllCandidateChunks()
 }
 
 function countPhraseHits(contentTokens: string[], queryTokens: string[]): number {
@@ -487,7 +509,8 @@ export async function extractFileText(
     try {
       const text = await file.text()
       return { text: text ?? '', isPlaceholder: false }
-    } catch {
+    } catch (e) {
+      console.warn('[rag] extractFileText read failed:', e)
       return {
         text: `[Text document: ${name}, ${size} bytes. Read failed.]`,
         isPlaceholder: true,

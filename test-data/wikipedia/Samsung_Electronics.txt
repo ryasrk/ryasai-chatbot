@@ -1,0 +1,324 @@
+Samsung Electronics
+
+Samsung Electronics Co., Ltd. (SEC; stylized as SΛMSUNG; Korean: 삼성전자; RR: Samseong jeonja; lit. 'Tristar Electronics') is a South Korean multinational major appliance and consumer electronics corporation founded in 1969 and headquartered in Yeongtong District, Suwon, South Korea. It is the pinnacle of the Samsung chaebol, accounting for 70% of the group's revenue in 2012, and has played a key role in the group's corporate governance due to cross ownership. It is majority-owned by foreign investors.
+As of 2023, Samsung Electronics is the world's fourth-largest technology company by revenue and its market capitalization stood at US$1.025 trillion, the 12th largest in the world. It has been the largest vendor of smartphones since 2012. Samsung is known most notably for its Samsung Galaxy brand consisting of phones such as its flagship Galaxy S series, popular midrange Galaxy A series, budget Galaxy M series as well as the premium Galaxy Fold and Galaxy Flip series. The company pioneered the phablet form factor with the former Galaxy Note family. Samsung produces tablets consisting of the Galaxy Tab A series and Galaxy Tab S series. It has been the largest television manufacturer since 2006, both of which include related software and services like Samsung Pay and TV Plus. Samsung is a supplier of hospitality televisions for hotels and businesses which includes dedicated software that can be personalised to each business and is a supplier of displays for stadiums and venues. Samsung is also a major vendor of washing machines, refrigerators, computer monitors and soundbars.
+
+Samsung Electronics is also a major manufacturer of electronic components such as lithium-ion batteries, semiconductors, image sensors, camera modules, and displays for clients such as Apple, Sony, HTC, and Nokia. It is the world's largest semiconductor memory manufacturer and, from 2017 to 2018, was the largest semiconductor company in the world, briefly dethroning Intel, the decades-long champion. Samsung Electronics has assembly plants and sales networks in 76 countries and employs more than 260,000 people.
+
+
+== History ==
+
+
+=== 1969–1987: early years ===
+Samsung Electric Industries was established as an industrial part of Samsung Group on 13 January 1969 in Suwon, South Korea. At the time, Samsung Group was known to the South Korean public as a trading company specialized in fertilizers and sweeteners. Despite the lack of technology and resources, falling shorter even than the domestic competitors, Samsung Group improved its footing in the manufacturing industry by cooperating with the Japanese companies, a decision that led to a significant amount of anti-Japanese public outcry and huge backlashes from the competitors fearing the outright subordination of the industry by the Japanese. The strategy was able to take off only after the government and Samsung declared that the company would exclusively focus on exports. Toshio Iue, the founder of Sanyo, played a role as an advisor to Lee Byung-chul, Samsung's founder, who was a novice in the electronics business. In December of the same year, Samsung Electric established a joint venture named Samsung-Sanyo Electric with Sanyo and Sumitomo Corporation. This is the direct predecessor of today's Samsung Electronics.
+The joint venture's early products were electronic and electrical appliances including televisions, calculators, refrigerators, air conditioners, and washing machines. In 1970, Samsung established the joint venture Samsung-NEC with Japan's NEC Corporation and Sumitomo Corporation to manufacture home appliances and audiovisual devices. Samsung-NEC later became Samsung SDI, the group's display and battery business unit. In 1973, Samsung and Sanyo created Samsung-Sanyo Parts, the predecessor of Samsung Electro-Mechanics. By 1981, Samsung Electric had manufactured over 10 million black-and-white televisions.
+In 1974, Samsung Group expanded into the semiconductor business by acquiring Korea Semiconductor, which was on the verge of bankruptcy while building one of the first chip-making facilities in the country at the time. Soon after, Korea Telecommunications, an electronic switching system producer and a Samsung Group company, took over the semiconductor business and became Samsung Semiconductor & Communications.
+In February 1983, Lee, along with the board of the Samsung industry and corporation agreement and help by sponsoring the event, made an announcement later dubbed the "Tokyo declaration", in which he declared that Samsung intended to become a dynamic random-access memory (DRAM) vendor. One year later, Samsung announced that it had successfully developed a 64 kb DRAM, reducing the technological gap between the companies from first-world countries and the young electronics maker from more than a decade to approximately four years. In the process, Samsung used technologies imported from Micron Technology of the U.S. for the development of DRAM and Sharp Corporation of Japan for its SRAM and ROM. In 1988, Samsung Electric Industries merged with Samsung Semiconductor & Communications to form Samsung Electronics, as before that, they had not been one company and had not been a leading corporation together, but they were not rivals, as they had been in talks for a time until they finally merged.
+In the 1980s and early 1990s, Samsung sold personal computers under the Leading Technology brand. However, the equipment was manufactured by Samsung, and the FCC filings from this period typically refer to Samsung products.
+
+
+=== 1988–2000: component manufacturing and design strategy ===
+In 1988, Samsung Electronics launched its first mobile phone in the South Korean market. Sales were initially poor, and by the early 1990s, Motorola held a market share of over 60 percent in the country's mobile phone market compared to just 10 percent for Samsung. Samsung struggled with poor quality and brand image issues into the mid-1990s, and exit from the sector was a frequent topic of discussion within the company.
+Lee Kun-Hee decided that Samsung needed to change its strategy. The company shelved the production of many under-selling product lines and instead pursued a process of designing and manufacturing components and investing in new technologies for other companies. In addition, Samsung outlined a 10-year plan to shrug off its image as a "budget brand" and to challenge Sony as the world's largest consumer electronics manufacturer. It was hoped that, in this way, Samsung would gain an understanding of how products are made and give a technological lead sometime in the future. This patient vertical integration strategy of manufacturing components has borne fruit for Samsung in the late 2000s.
+A complementary brand leadership strategy was also initiated by chairman Lee when he declared 1996 to be the "Year of Design Revolution" at Samsung. His objective was to build Samsung design capabilities as a competitive asset and transform the company into a global brand-design leader. However, this effort required major changes in corporate culture, processes, and systems. By integrating a comprehensive design management system and strategy into the corporate culture, Samsung was successful in developing an award-winning product design portfolio by the late 1990s, resulting in significant brand equity growth.
+As Samsung shifted away from consumer markets, the company devised a plan to sponsor major sporting events. One such sponsorship was for the 1998 Winter Olympics held in Nagano, Japan.
+As a chaebol, Samsung Group wielded wealth that allowed the company to invest and develop new technology rather than build products at a level that would not have a detrimental impact on Samsung's finances.
+Samsung had a number of technological breakthroughs, particularly in the field of memory which are commonplace in most electrical products today. This includes the world's first 64 MB DRAM in 1992, 256 MB DRAM in 1994, and 1 GB DRAM in 1996.
+
+
+=== 2000–present ===
+
+From 2000 to 2003, Samsung maintained a net earnings growth of over 5%, even as 16 of South Korea's 30 largest companies collapsed following the 1997 Asian financial crisis. In 2004, Samsung developed the world's first 8 GB NAND flash memory chip, and a manufacturing deal was struck with Apple in 2005. A deal to supply Apple with memory chips was sealed in 2005. 
+In 2005, Samsung surpassed its Japanese rival, Sony, for the first time, becoming the 20th most popular global consumer brand according to Interbrand rankings. In 2007, Samsung overtook Motorola to become the world's second-largest smartphone manufacturer. By 2009 with Solstice line and its derivative models, Samsung achieved $117bn in revenue, overtaking Hewlett-Packard to become the world's largest technology company by sales.
+However, Samsung faced legal challenges in 2009 and 2010 when the U.S. and the EU fined the company—along with other memory chip manufacturers—for involvement in a price-fixing scheme that occurred between 1999 and 2002. In 2010, Samsung was granted immunity from prosecution by the EU for acting as an informant during the investigation into the LCD price-fixing cartel, leading to the implication of other companies, including LG Display and HannStar.
+Despite its continuous growth, Samsung has been portrayed as financially insecure. In 2010, after returning from temporary retirement, chairman Lee Kun-hee expressed concern about the company's future, stating, "Samsung Electronics' future is not guaranteed, as most of our flagship products will be obsolete within ten years."
+In 2011, Samsung sold its hard disk drive (HDD) operations to Seagate Technology for $1.4 billion in cash and stock. In 2012, Kwon Oh-hyun was appointed CEO of Samsung Electronics. He announced his resignation in 2017, citing an "unprecedented crisis." His departure signaled the transition to a leadership structure with three co-CEOs, which lasted until 2021, when Kyung Kye-Hyun and Han Jong-hee were appointed as new CEOs after a company-wide reorganization.
+
+In 2014, Samsung made headlines by introducing the Galaxy S4, a new entry in its Galaxy smartphone series, and successfully tested enhanced 5G technology. From 2014 onward, Samsung expanded its presence in technology markets. In April 2014, Samsung launched the Galaxy S5, followed by the Galaxy S6 and Galaxy S6 Edge in 2015, both of which featured a significant redesign and introduced the concept of curved screens. The same year, Samsung also entered the rapidly growing Internet of Things (IoT) market by acquiring the smart home company SmartThings.
+In 2016, Samsung faced one of its most publicized crises when its Galaxy Note 7 devices began to overheat and catch fire due to defective batteries. This led to a global recall of the product and a temporary halt in production. Despite the setback, Samsung recovered by launching successful products such as the Galaxy S8 and Galaxy Note 8 in 2017, which helped restore consumer confidence. During this time, Samsung continued its push into new markets. In November 2016, it announced its acquisition of Harman International Industries for $8bn, marking a major step into the automotive technology sector, particularly in connected car solutions.
+In 2017, Samsung reported record profits driven by its semiconductor business, particularly memory chips. By 2018, the company had solidified its position as one of the leading global manufacturers of semiconductors, overtaking Intel as the world's largest semiconductor supplier. In 2021, Samsung announced plans to invest $17bn to build a new semiconductor manufacturing facility in Taylor, Texas, part of its strategy to expand its chip production capabilities amid the global semiconductor shortage.
+On 20 May 2022, US President Joe Biden met with South Korean President Yoon Suk-yeol at the Samsung Electronics semiconductor complex in Pyeongtaek, South Korea. The two leaders spoke of the importance of the semiconductor industry and on strengthening the technological innovations between the two countries.
+At CES 2024, Samsung demonstrated Ballie, an AI-powered home robot designed to assist with daily tasks, monitor pets, and integrate with smart home appliances.
+Samsung has been working to meet sustainability goals and reduce its environmental impact. In 2023, the company announced a partnership with British Gas to integrate its services into Samsung's SmartThings app, helping users reduce energy consumption through smarter home management. As part of the partnership, British Gas began offering Samsung's energy-efficient heat pumps to support the UK's 2050 net-zero goals. In 2024, Samsung continues to be a leader in consumer electronics, semiconductors, and AI development, shaping technology through its innovations in smart homes, connected devices, and sustainable energy solutions.
+Samsung Electronics has become the largest shareholder of South Korea's Rainbow Robotics in 2025.
+On 25 March 2025, Samsung Electronics co-CEO Han Jong-hee died from a heart attack at the age of 63. This resulted in Jun Young-hyun, who was appointed a CEO just a week before Han Jong-hee's death, becoming the company's sole leader.
+In the first quarter of 2026, Samsung posted an operating profit of $36.15 billion, exceeding the total profit for the previous year. This was primarily due to strong demand for Samsung semiconductors to support the expansion of AI infrastructure by big tech companies. Profits of $200 billion are expected for the full year, prompting the Samsung Workers' Union to call for a profit-sharing scheme for employees.
+Following the profit report, the Samsung labor union required the company to make the decision to abolish caps on performance bonuses and institutionalize them in line with actual performance. The union had begun bargaining about their wage since the December 2025. The union required 15% of the yearly profit as a compensation, which amounted to 40 trillion won. On April 17, at a ceremony declaring its status as the majority union, the Samsung Electronics labor union warned that an all-out strike could result in losses of up to 30 trillion won. On April 23, the Samsung Electronics labor union held a rally attended by approximately 40,000 people, demanding the abolition of the cap on performance bonuses and warning of an all-out strike. On the same day, the labor union filed a notice with the Yongsan Police Station in Seoul stating that it would hold a rally at around 1:00 p.m. on the 21st of next month in front of Chairman Lee Jae-yong's residence in Hannam-dong. It was found out that the union had planned to occupy the workplace afterward. It was confirmed that on April 30, the labor union at Samsung Electronics was recognized by the government as the majority union, a status that serves as a prerequisite for obtaining the legal right to strike. On May 8, with just over 10 days remaining before Samsung Electronics' planned general strike, labor and management agreed to resume negotiations. On May 13, Samsung Electronics and its labor union failed to narrow their differences over bonus payments even on the second and final day of post-negotiation mediation for wage talks, resulting in the breakdown of negotiations.
+In July 2026, Samsung Electronics announced the creation of the Robotics eXperience division, which reports directly to the company's chief executive and oversees its robotics strategy, core-technology development and commercialization. Samsung also planned to establish robotics research hubs in the United States, China and Japan. Executive vice-president Lee Dongkun, formerly responsible for robotics strategy at Hyundai Motor Group, was appointed to lead the division's Robotics Strategy Team.
+
+
+== Logo history ==
+
+
+== Corporate governance ==
+
+
+=== Ownership ===
+Around 44% of Samsung Electronics' shares are held by the general public, around 38% are held by institutions, and insiders held around 4% of shares. The largest shareholders in early 2024 were:
+
+After the completion of inheritance tax payments in April 2026, the shares held by the Lee family were:
+
+
+=== Management and board of directors ===
+
+Samsung usually reshuffles management every December.
+In December 2010, Samsung switched its management system from a single CEO-system under Choi Gee-sung to a two-person management team including Gee-sung and Lee Jae-Yong, who serves as the chief operating officer and president. In June 2012, Samsung appointed Kwon Oh-Hyun as CEO of the company. Samsung also reorganized its overseas marketing bases in line with changes in the market, including a combined European regional subsidiary, and a combined Chinese-Taiwanese regional subsidiary.
+The company added a new digital imaging business division in 2010, which consists of eight divisions, including the existing display, IT solutions, consumer electronics, wireless, networking, semiconductor, and LCD divisions. It also merged consumer electronics and air conditioners under the consumer electronics business division. The set-top boxes business was merged with the Visual Display Business division.
+The company underwent reorganization in 2023. Among the eight divisions, the network division and the digital imaging division experienced new appointments, while the remaining divisions were maintained in accordance with their results.
+In November 2025, TM Roh was appointed Co-CEO, Head of Device eXperience (DX) Division.
+The following reflects the changes in leadership at that point:
+
+As of 2026, Samsung Electronics' Board of directors consisted of the following members:
+
+
+=== Global reputation ===
+In April 2024, PricewaterhouseCoopers ranked Samsung Electronics 21st on their global top 100 companies by market capitalization.
+In January 2025, Samsung Electronics was ranked first in the 'Best Global Brands' by YouGov, a market research firm.
+
+
+== Corporate affairs ==
+
+
+=== Business trends ===
+The key trends for Samsung Electronics are (as of the financial year ending 31 December):
+
+
+== Operations ==
+
+The company focuses on four areas: digital media, semiconductors, telecommunication networks, and LCD digital appliances. The digital-media business area covers computer devices such as laptop computers; digital displays such as televisions and computer monitors; consumer entertainment devices such as DVD players, MP3 players, and digital camcorders; home appliances such as refrigerators, air conditioners, air purifiers, washing machines, microwave ovens, vacuum cleaners and robot vacuum cleaners.
+
+The semiconductor-business area includes semiconductor chips such as SDRAM, SRAM, NAND flash memory; smart cards; mobile application development, mobile application processors; mobile TV receivers; RF transceivers; CMOS Image sensors, Smart Card IC, MP3 IC, DVD/Blu-ray Disc/HD DVD Player SOC, and multi-chip package (MCP). The telecommunication-network-business area includes multi-service DSLAMs and fax machines; cellular devices such as mobile phones, PDA phones, and hybrid devices called mobile intelligent terminals (MITs); and satellite receivers. The LCD business area focuses on producing TFT-LCD and organic light-emitting diode (OLED) panels for laptops, desktop monitors, and televisions. Samsung Print was established in 2009 as a separate entity to focus on B2B sales and released a broad range of multifunctional devices, printers, and more. In 2017, Samsung's printing business was sold to HP.
+
+
+== Products ==
+Samsung Electronics produces LCD and LED panels, mobile phones, memory chips, NAND flash, solid-state drives, televisions, digital cinema screens, laptops and many more products. The company previously produced hard-drives and printers.
+Samsung consistently invests in innovation. In 2021, the World Intellectual Property Organization (WIPO)'s annual World Intellectual Property Indicators report ranked Samsung's number of patent applications published under the PCT System as 2nd in the world, with 3,093 patent applications being published during 2020. This position is up from its previous ranking as 3rd in 2019 with 2,334 applications.
+
+
+=== LCD and OLED panels ===
+
+By 2004 Samsung was the world's-largest manufacturer of OLEDs, with a 40 percent market share worldwide and as of 2018 has a 98% share of the global AMOLED market. The company generated $100.2 million out of the total $475 million revenues in the global OLED market in 2006. As of 2006, it held more than 600 American patents and more than 2,800 international patents, making it the largest owner of AMOLED technology patents.
+Samsung's current AMOLED smartphones use its Super AMOLED trademark, with the Samsung Wave S8500 and Samsung i9000 Galaxy S being launched in June 2010. In January 2011, it announced its Super AMOLED Plus displays – which offer several advances over the older Super AMOLED displays – real stripe matrix (50 percent more sub pixels), thinner form factor, brighter image and an 18 percent reduction in energy consumption.
+In October 2007, Samsung introducing a ten-millimeter thick, 40-inch LCD television panel, followed in October 2008 by the world's first 7.9-mm panel. Samsung developed panels for 24-inch LCD monitors (3.5 mm) and 12.1-inch laptops (1.64 mm). In 2009, Samsung succeeded in developing a panel for forty-inch LED televisions, with a thickness of 3.9 millimeters (0.15 inch). Dubbed the "Needle Slim", the panel is as thick (or thin) as two coins put together. This is about a twelfth of the conventional LCD panel whose thickness is approximately 50 millimeters (1.97 inches).
+While reducing the thickness substantially, the company maintained the performance of previous models, including Full HD 1080p resolution, 120 Hz refresh rate, and 5000:1 contrast ratio. On 6 September 2013, Samsung launched its 55-inch curved OLED TV (model KE55S9C) in the United Kingdom with John Lewis.
+In October 2013, Samsung disseminated a press release for its curved display technology with the Galaxy Round smartphone model. The press release described the product as the "world's first commercialized full HD Super AMOLED flexible display". The manufacturer explains that users can check information such as time and battery life when the home screen is off, and can receive information from the screen by tilting the device.
+In 2020, Samsung Display said it was exiting the LCD business.
+
+
+=== Mobile and smart phones ===
+
+Samsung's mobile cell business began with a car phone in 1984, while its first handheld mobile phone called the SH-100 was made in 1988, which worked on the country's AMPS 800 network. In 1995, Samsung overtook Motorola to become the largest in South Korea in the mobile phone market. The company expanded to other markets during this period. In 1998, Samsung became the largest vendor in major CDMA markets such as South America and Hong Kong, while being overall the 7th largest manufacturer in the world. In 1999, the company became the 5th largest manufacturer of cell phones in the world with a share of 5 percent.
+In 1999/2000, Samsung released the first ever "MP3 phone", the SCH-M210, released in GSM as SGH-M100 and as SPH-M100 in PCS CDMA in the US. The company's first smartphone was the Samsung SPH-i300 in 2001. During the early 2000s Samsung popularised the clamshell ("flip phone") design, and the SGH-T100 was the first ever "true color" mobile phone and the firm's first to sell over 10 million handsets. In the mid-2000s the SGH-D500 popularised the slider form factor, and later slider products such as the E250 were hits. In 2006 Samsung's X820 with a depth of 6.9 mm was the thinnest phone, and for many years its successor U100 would remain the skinniest at just 5.9 mm. In 2007 it launched the slate style touchscreen phone F700 which would precede its increasingly relevant touch phones such as Tocco and Omnia. Samsung overtook declining Motorola to become the world's second largest mobile phone marker during 2007.
+Presently, Samsung's flagship mobile handset line is the Galaxy S series of smartphones, which many consider a direct competitor of the iPhone. It was initially launched in Singapore, Malaysia and South Korea in June 2010, followed by the United States in July. It sold more than one million units within the first 45 days on sale in the United States.
+While many other handset manufacturers focused on one or two operating systems, Samsung for a time used several of them: Symbian, Windows Phone, Linux-based LiMo, and Samsung's proprietary TouchWiz, Bada and Tizen. By 2013 Samsung had dropped all operating systems except Android phone and Windows Phone. That year Samsung released at least 43 Android phones or tablets and two Windows Phones.
+At the end of the third quarter of 2010, the company had surpassed the 70 million unit mark in shipped phones, giving it a global market share of 22 percent, trailing Nokia by 12 percent. Overall, the company sold 280 million mobile phones in 2010, corresponding to a market share of 20.2 percent. The company overtook Apple in worldwide smartphone sales during the third quarter 2011, with a total market share of 23.8 percent, compared to Apple's 14.6 percent share. Samsung became the world's largest smartphone manufacturer in 2012, with the sales of 95 million in the first quarter.
+During the third quarter of 2013, Samsung's smartphone sales improved in emerging markets such as India and the Middle East, where cheaper handsets were most popular. As of October 2013, the company offers 40 smartphone models on its US website.
+In 2019, Samsung announced that it has ended production of mobile phones in China, due to lack of Chinese demand. As of 2019 Samsung employs over 200,000 employees in the Hanoi-area of Vietnam to produce smartphones, while outsourcing some manufacturing to China and manufacturing large portions of its phones in India.
+In May 2022, Samsung Electronics announced the company had expanded the Samsung Knox enterprise mobile security platform with the introduction of Samsung Knox Guard. It allows companies to quickly make phones unusable to potentially deter theft and reduce risk of fraud and data breaches.
+In February 2023, Samsung launched the Galaxy S23 series. The lineup presented a custom Snapdragon 8 Gen 2 Mobile Platform optimized for Samsung use.
+
+
+=== Semiconductors ===
+
+Samsung Electronics has been the world's largest memory chip manufacturer since 1993, and the largest semiconductor company between 2017 and 2018. Samsung Semiconductor division manufactures various semiconductor devices, including semiconductor nodes, MOSFET transistors, integrated circuit chips, and semiconductor memory.
+Since the early 1990s, Samsung Electronics has commercially introduced a number of new memory technologies. They commercially introduced SDRAM (synchronous dynamic random-access memory) in 1992, and later DDR SDRAM (double data rate SDRAM) and GDDR (graphics DDR) SGRAM (synchronous graphics RAM) in 1998. In 2009, Samsung started mass-producing 30 nm-class NAND flash memory, and in 2010 succeeded in mass-producing 30 nm class DRAM and 20 nm class NAND flash, both of which were for the first time in the world. They also commercially introduced TLC (triple-level cell) NAND flash memory in 2010, V-NAND flash in 2013, LPDDR4 SDRAM in 2013, HBM2 in 2016, GDDR6 in January 2018, and LPDDR5 in June 2018.
+Another area which the company has had significant business in for years is the foundry segment. It had begun investment in the foundry business since 2006, and positioned it as one of the strategic pillars for semiconductor growth. Since then, Samsung has been a leader in semiconductor device fabrication. Samsung began mass-production of a 20 nm class semiconductor manufacturing process in 2010, followed by a 10 nm class FinFET process in 2013, and 7 nm FinFET nodes in 2018. They also began production of the first 5 nm nodes in late 2018, followed by 3 nm GAAFET nodes in 2021, and 2nm nodes in 2025.
+According to market research firm Gartner, during the second quarter of 2010, Samsung Electronics took the top position in the DRAM segment due to brisk sales of the item on the world market. Gartner analysts said in their report, "Samsung cemented its leading position by taking a 35-percent market share. All the other suppliers had minimal change in their shares." The company took the top slot in the ranking, followed by Hynix, Elpida, and Micron, said Gartner.
+In 2010, market researcher IC Insights predicted that Samsung would become the world's-biggest semiconductor chip supplier by 2014, surpassing Intel. For the ten-year period from 1999 to 2009, Samsung's compound annual growth rate in semiconductor revenues was 13.5 percent, compared with 3.4 percent for Intel. For 2015, IC Insights and Gartner announced that Samsung was the fourth largest chip manufacturer in the world. Samsung eventually surpassed Intel to become the world's largest semiconductor company in 2017.
+By the second quarter of 2020 the company had planned to start mass production of 5 nm chips using Extreme ultraviolet lithography (EUV) and aimed to become a leader in EUV process use.
+On 30 November 2021, it was announced that the company would be producing new auto chips for Volkswagen vehicles. The logic chips will be used in entertainment systems to provide 5G telecommunications to meet the increased demand for high-definition video while traveling.
+The Xi'an China facility, which has been running since 2014, produced approximately 40 percent of Samsung Electronics NAND flash memory chips as of 2021.
+In 2024, Samsung was to receive billions of dollars in CHIPS and Science Act funding for semiconductor facilities in Taylor, Texas.
+
+
+=== Solid-state drives ===
+
+In 2016, Samsung also launched to market a 15.36 TB SSD with a price tag of US$10,000 using a SAS interface, using a 2.5-inch form factor but with the thickness of 3.5-inch drives. This was the first time a commercially available SSD had more capacity than the largest currently available HDD. In 2018, Samsung introduced to market a 30.72 TB SSD using a SAS interface. Samsung introduced an M.2 NVMe SSD with read speeds of 3500 MB/s and write speeds of 3300 MB/s in the same year. In 2019, Samsung introduced SSDs capable of 8 GB/s sequential read and write speeds and 1.5 million IOPS, capable of moving data from damaged chips to undamaged chips, to allow the SSD to continue working normally, albeit at a lower capacity.
+Samsung's consumer SSD lineup currently consists of the 9100 PRO, 990 PRO, 990 EVO Plus, 980 PRO, 980, 970 PRO, 970 EVO plus, 970 EVO, 960 PRO, 960 EVO, 950 PRO, 860 QVO, 860 PRO, 860 EVO, 850 PRO, 850 EVO, and the 750 EVO. The SSDs models beginning with a 9 use an NVM Express interface and the rest use a Serial ATA interface. Samsung also produces consumer portable SSDs using a USB-C USB 3.1 Gen 2 connector. The drives offer read speeds of up to 14.800 MB/s and write speeds of up to 13.400 MB/s and are available as 500 GB, 1 TB, 2 TB,4 TB and 8 TB models.
+Like many other SSD producers, Samsung's SSDs use NAND flash memory produced by Samsung Electronics.
+
+
+=== Hard-drives ===
+
+In the area of storage media, in 2009 Samsung achieved a ten percent world market share, driven by the introduction of a new hard disk drive capable of storing 250 Gb per 2.5-inch disk. In 2010, the company started marketing the 320 Gb-per-disk HDD, the largest in the industry. In addition, it was focusing more on selling external hard disk drives. Following financial losses, the hard disk division was sold to Seagate in 2011 in return for a 9.6% ownership stake in Seagate.
+
+
+=== Televisions ===
+
+In 2009, Samsung sold around 31 million flat-panel televisions, enabling to it to maintain the world's largest market share for a fourth consecutive year.
+Samsung launched its first full HD 3D LED television in March 2010. Samsung had showcased the product at the 2010 International Consumer Electronics Show (CES 2010) held in Las Vegas.
+Samsung sold more than one million 3D televisions within six months of its launch. This is the figure close to what many market researchers forecast for the year's worldwide 3D television sales (1.23 million units). It also debuted the 3D Home Theater (HT-C6950W) that allows the user to enjoy 3D image and surround sound at the same time. With the launch of 3D Home Theater, Samsung became the first company in the industry to have the full line of 3D offerings, including 3D television, 3D Blu-ray player, 3D content, and 3D glasses.
+In 2007, Samsung introduced the "Internet TV", enabling the viewer to receive information from the Internet while at the same time watching conventional television programming. Samsung later developed "Smart LED TV" (now renamed to "Samsung Smart TV"), which additionally supports downloaded smart television apps. In 2008, the company launched the Power Infolink service, followed in 2009 by a whole new Internet@TV. In 2010, it started marketing the 3D television while unveiling the upgraded Internet@TV 2010, which offers free (or for-fee) download of applications from its Samsung Apps Store, in addition to existing services such as news, weather, stock market, YouTube videos, and movies.
+Samsung Apps offers for-fee premium services in a few countries including Korea and the United States. The services will be custom-tailored for each region. Samsung plans to offer family-oriented applications such as health care programs and digital picture frames as well as games. Samsung's range of smart TVs include the apps ITV Player and motion controlled games such as Angry Birds. Since 2015, Samsung's proprietary FAST streaming service Samsung TV Plus was pre-installed to the smart TVs.
+
+
+=== Computing ===
+
+In 1983 Samsung's first computer, the 8bit SPC-1000 Desktop Computer, was released. In 1994 the first Samsung laptop, the SPC5800/5900 series, was launched, featuring a 486 processor. In 1996 the Sens 810 Notebook was introduced with the innovative curved butterfly keyboard designed for easier typing. In 2002 the Sens Q760 was the first laptop with an integrated media docking station for connecting external devices. 
+In 2005 the M70 Notebook featured a removable 19-inch screen that could be used separately. 
+In 2006 the Sens Q35 was the first notebook PC to integrate Wi-MAX technology. Evolution and Legacy. Samsung's laptop line evolved with various series, including the three-digit naming scheme, the lettered A, T, P, Q, V series, and later the Samsung Notebook 9. 
+Samsung also released specialized models like the Series 7 Plate PC, a Windows-based high-performance Slate PC, and the first Samsung Chromebook. 
+Currently Samsung produces Chromebook and Windows laptops such as the Galaxy Chromebook Plus and the Galaxy Book 5 Pro.
+
+
+=== Monitors ===
+
+The company started as a budget display monitor brand in the 1980s, producing cathode ray tube (CRT) monitors for computers, from which it then evolved. By the end of the decade, Samsung had become the world's largest monitor manufacturer, selling over 8 million monitors by 1989.
+During the 1990s to the 2000s, Samsung started producing LCD monitors using TFT technology to which it still emphasizes on the budget market against the competition while at the same time starting to also focus on catering to the middle and upper markets through partnership with brands such as NEC and Sony via a joint venture.
+ As it grew and became more advanced, it later on acquired the joint venture corporations to form the current Samsung OLED and S-LCD Corporation respectively from its former joint venture partners.
+
+
+==== Tizen ====
+As of 2015, Samsung smart televisions and smart monitors run an operating system customized from the open-source Linux-based Tizen OS. Given Samsung's high market share in the smart television market, approximately 20% of smart televisions sold worldwide in 2018 run Tizen.
+In 2019, Samsung announced that they will be bringing the Apple TV app (formally iTunes Movies and TV Shows app) and AirPlay 2 support to its 2019 and 2018 smart TVs (via firmware update).
+
+
+==== Odyssey ====
+Samsung's Odyssey gaming monitors are designed for professional gamers and gaming enthusiasts. As of 2022, the Odyssey range consists of 4 main series, each with different resolutions, refresh rates and aspect ratios.
+At the CES 2022, Samsung showed the Odyssey Neo G8, the world's first 4K monitor with a refresh rate of 240 Hz. It features a 32-inch mini LED 1000R curved display with 1,196 local dimming zones that supports HDR10+ with a peak brightness of up to 2,000 nits, and is G-Sync- and FreeSync-certified. It was released on 6 June 2022, at an MSRP of $1,500.
+
+
+=== Printers ===
+In the past, Samsung produced printers for both consumers and business use, including mono-laser printers, color laser printers, multifunction printers, and enterprise-use high-speed digital multi-function printer models. They exited the printer business and sold its printer division to HP in Fall 2017. In 2010, the company introduced the world's smallest mono-laser printer ML-1660 and color laser multifunction printer CLX-3185.
+
+
+=== Audio ===
+
+In 2017, Samsung acquired Harman International. Harman makes high fidelity audio products under many brand names such as AKG, AMX, Becker, Crown, Harman Kardon, Infinity, JBL, Lexicon, dbx, DigiTech, Mark Levinson, Martin, Revel, Soundcraft, Studer, Arcam, Bang & Olufsen and BSS Audio.
+In May 2025, Harman agreed to the acquirement of Bowers & Wilkins, Marantz, Denon, Polk Audio, Definitive Technology, Classé, HEOS and Boston Acoustics as Masimo sells its consumer audio business.
+
+
+=== Cameras ===
+
+Samsung has introduced several models of digital cameras and camcorders including the WB550 camera, the ST550 dual-LCD-mounted camera, and the HMX-H106 (64 GB SSD-mounted full HD camcorder). In 2014, the company took the second place in the mirrorless camera segment. Since then, the company has focused more on higher-priced items. In 2010, the company launched the NX10, the next-generation interchangeable lens camera.
+
+
+=== Other ===
+Samsung entered the MP3 player (digital audio player, DAP) market in 1999 with its Yepp line. In the initial years the company struggled to gain a foothold because of emerging Korean startups iRiver, Cowon and Mpio. However, by 2006, it had gained a significant share in the domestic market as well as Russia and parts of the Middle East, South East Asia and Europe. It was also starting to increase penetration in the U.S. (albeit significantly lower than the market leader, Apple). Samsung launched the world's-smallest DivX MP3 player, the R1, in 2009.
+In 2015, Samsung announced a proposal for a constellation of 4600 satellites orbiting Earth at 1,400 kilometers (900 mi) altitude that could bring 200 gigabytes per month of internet data to "each of the world's 5 billion people". The proposal has not yet advanced to full development. If built, such a constellation would compete with previously announced satellite constellations currently under development by OneWeb and SpaceX.
+On 13 July 2017, an LED screen for digital cinema developed by Samsung Electronics with GDC Technology Limited was publicly demonstrated on one screen at Lotte Cinema World Tower in Seoul.
+
+
+== Design ==
+In the early 1990s, Samsung began considering the importance of physical design in its products. When chairman Lee declared 1996 'The Year of Design Revolution', a comprehensive global design program was initiated with the goal of design being a strategic asset and competitive advantage for the company. Located in the company's high-rise headquarters in Gangnam (south of Seoul) the corporate design center includes more than 900 full-time designers. In 1971 there were only a few designers in the whole company, whose number rose to 1,600 by 2015. In addition to the corporate design center in Seoul, there are design centers located in Tokyo, San Francisco and London.
+The company overhauls its design over a two-year cycle. For the first year, it scrutinizes design trends of the world, followed by product strategies. It then maps out new design plans during the second year.
+Since 2006, it has won as many as 210 awards from international design institutions. It received the iF (International Forum) and IDEA design awards. Working with partners, Samsung was the winner in eight categories in the 2009 IDEA awards, hence receiving the most awards.
+In the 2010 iF Material Awards, the company won the Gold Award for five of its products including the external hard disk drive. The iF Material Awards are given by the International Forum Design GmbH of Hannover, a design award for design materials and process technologies. In 2010, the German company selected a total of 42 products in the areas of home appliance, furniture, and industrial design. Samsung won the awards in five categories including external hard disk, full-touch screen phone, "side-by-side" refrigerator, compact digital camera, and laser printer toner.
+
+
+== Stores ==
+
+Samsung runs Samsung Experience Store retail locations throughout the world. These locations primarily sell Samsung Galaxy devices, though they can feature other Samsung-owned brands as well.
+
+
+=== Korea ===
+Samsung has various service stores throughout all of South Korea, which have showcases of various Samsung products available for purchase, and also have repair centers for those items. It also has stores dedicated to the installation of large household appliances such as TVs, dishwashers, and refrigerators. It also has stores just for the sale and repair of its memory products, such as the SSDs. These stores do not feature Samsung's own Samsung Experience Store name and
+branding.
+
+
+== Market share for major products ==
+
+
+== Major clients ==
+
+
+=== Relationship with Apple Inc. ===
+
+Despite recent litigation activity, Samsung and Apple have been described as frenemies who share a love–hate relationship. Samsung is a major supplier for Apple – first providing memory for the early iPod devices in 2005, and Apple is a key customer for Samsung – in 2012 its component sales were thought to be worth in the region of $8 billion revenue to Samsung – to the point where Apple CEO Tim Cook originally opposed litigation against Samsung wary of the company's critical component supply chain for Apple.
+In April 2011, Apple Inc. announced that it was suing Samsung over the design of its Galaxy range of mobile phones. The lawsuit was filed on 15 April 2011 and alleges that Samsung infringed on Apple's trademarks and patents of the iPhone and iPad. Samsung issued a counterclaim against Apple of patent infringement. In August 2011, at The Regional Court of Düsseldorf, Apple was granted a preliminary injunction against the sale and marketing of the Samsung Galaxy Tab 10.1 across the whole of Europe excluding the Netherlands. The ban has been temporarily lifted in the European Union, with the exclusion of Germany, while it is investigated whether or not the original injunction was appropriate.
+On 31 August 2012, the Tokyo District Court ruled Samsung Electronics' mobile devices did not violate an Apple patent. The case only addressed Apple's patent that allows mobile devices and personal computers to synchronize or share data with each other and is not comparable with the U.S. court case ruled on 24 August. On 18 October 2012, the U.K. High Court ruled that Samsung did not infringe Apple's design patents. Apple was forced to issue a court-ordered apology to Samsung on its official U.K. website.
+
+
+=== Relationship with Best Buy Co, Inc. ===
+
+Best Buy and Samsung joined to create the Samsung Experience Shop, a store that allows customers to test the company's products, and get training in mobile products they already own. In summer 2013, more than 1,400 Best Buy and Best Buy Mobile stores have established the Samsung Experience Shop. About 460 square feet of space are dedicated for the SES, with the company's placement at Best Buy's entrance, as well as its sign visible in any part of the store. The purpose of the Samsung Experience Shop is to make Samsung's products, i.e. the Galaxy, more accessible to customers.
+The first Samsung Experience Shops began appearing across Best Buy locations in the United States in May 2013. In May 2014, Best Buy announced its plans to add 500 new Samsung Entertainment Experience Shops. While the previous Samsung Experience locations focused primarily on showcasing and providing support for Samsung's Galaxy smartphones, cameras, and tablets, these new locations will showcase and support the company's home theater products.
+Unlike the Samsung Experience Shop, the Samsung Entertainment Experience will be run by Samsung trained Best Buy associates. The new centers are expected to finish being made in the U.S. by January 2015.
+
+
+== Criticism and controversies ==
+
+
+=== Environmental record ===
+All Samsung mobile phones and MP3 players introduced on the market after April 2010 are free from polyvinyl chloride (PVC) and brominated flame retardants (BFRs).
+The company is listed in Greenpeace's Guide to Greener Electronics, which rates electronics companies on policies and practices to reduce their impact on the climate, produce greener products, and make their operations more sustainable. In November 2011, Samsung was ranked seventh out of 15 leading electronics manufacturers with a score of 4.1/10. In the newly re-launched guide, Samsung moved down two places (occupying fifth position in October 2010), but scored maximum points for providing verified data and its greenhouse gas emissions. It also scored well for its Sustainable Operations, with the guide praising its relatively good e-waste take-back programme and information. However, the company was criticized for not setting an ambitious target to increase its use of renewable energy and for belonging to a trade association which has commented against energy efficiency standards.
+In June 2004, Samsung was one of the first major electronics companies to publicly commit to eliminate PVC and BFRs from new models of all their products. However, the company failed to meet its deadlines to be PVC- and BFRs-free, and published new phase out dates. In March 2010, Greenpeace activists protested at the company's Benelux headquarters for what they called Samsung's "broken promises".
+The company has been awarded as one of global top-ten companies in the Carbon Disclosure Leadership Index (CDLI). It was the only Asian company among top ten companies. In addition, the company is listed in Dow Jones Sustainability Index (DJSI).
+The company's achievement ratio of products approaching the Global Ecolabel level ("Good Eco-Products" within the company) is 11 percentage points above the 2010 goal (80 percent). In the first half of 2010, Samsung earned the Global Ecolabel for its 2,134 models, thereby becoming the world's number-one company in terms of the number of products meeting Global Ecolabel standards.
+The company is also improving its effort to recover and recycle electronic wastes. The number of wastes salvaged throughout 60 countries during 2009 was as much as 240,000 tons. The "Samsung Recycling Direct" program, the company's voluntary recycling program under way in the United States, was expanded to Canada.
+In 2008, the company was praised for its recycling effort by the U.S. advocacy group Electronics Take Back Coalition as the "best eco-friendly recycling program". In 2023, the U.S. Environmental Protection Agency (EPA) awarded the company its 10th consecutive Sustainable Excellence Award in the manufacturer's category.
+
+
+=== Litigation and safety issues ===
+
+
+==== Worker safety ====
+Many employees working in Samsung's semiconductor facilities have developed various forms of cancers. Initially, Samsung denied being responsible for the illnesses. Although Samsung is known to disfavor trade unions, these sick workers organized in the group SHARPS (Supporters for the Health And Rights of People in the Semiconductor Industry). The crowdfunded film Another Promise was produced in 2013 to depict the fight for compensation of the victims, as well as the documentary The Empire of Shame. In May 2014, Samsung offered an apology and compensation to workers who became ill. The company subsequently did not follow all the recommendations of a specially appointed mediation committee, paid several families outside of a scheme to be agreed on and required them to drop all further charges, prompting SHARPS to continue legal and public action. The quarrel was mostly resolved upon a public apology issued by Samsung in November 2018.
+
+
+==== DRAM price fixing ====
+
+In December 2010, the European Commission fined six LCD panel producers, including Samsung, a total of €648 million for operating as a cartel. The company received a full reduction of the potential fine for being the first firm to assist EU anti-trust authorities.
+On 19 October 2011, Samsung was fined €145.73 million for being part of a price cartel of ten companies for DRAMs, which lasted from 1 July 1998 to 15 June 2002. Like most of the other members of the cartel, the company received a 10% reduction for acknowledging the facts to investigators. Samsung had to pay 90% of its share of the settlement, but Micron avoided payment as a result of having initially revealed the case to investigators. Micron remains the only company that avoided all payments from reduction under the settlement notice.
+In Canada, the price fix was investigated in 2002. A recession started to occur that year, and the price fix ended. However, in 2014, the Canadian government reopened the case and investigated silently after the EU's success. Sufficient evidence was found and presented to Samsung and two other manufacturers during a class action lawsuit hearing. The companies agreed upon a $120 million agreement, with $40 million as a fine, and $80 million to be paid back to Canadian citizens who purchased a computer, printer, MP3 player, gaming console or camera between April 1999 and June 2002.
+
+
+==== Apple lawsuit ====
+
+On 15 April 2011, Apple sued Samsung in the United States District Court for the Northern District of California, alleging that several of Samsung's Android phones and tablets, including the Nexus S, Epic 4G, Galaxy S 4G, and Galaxy Tab, infringed on Apple's intellectual property: its patents, trademarks, user interface and style. Apple's complaint included specific federal claims for patent infringement, false designation of origin, unfair competition, and trademark infringement, as well as state-level claims for unfair competition, common law trademark infringement, and unjust enrichment.
+On 24 August 2012, the jury returned a verdict largely favorable to Apple. It found that Samsung had willfully infringed on Apple's design and utility patents, and had also diluted Apple's trade dresses related to the iPhone. The jury awarded Apple $1.049 billion in damages and Samsung zero damages in its countersuit. The jury found that Samsung infringed Apple's patents on iPhone's "Bounce-Back Effect" (US Patent No.7,469,381), "On-screen Navigation" (US Patent No.7,844,915), and "Tap To Zoom" (US Patent No.7,864,163), and design patents that cover iPhone's features such as the "home button, rounded corners and tapered edges" (US$593087) and "On-Screen Icons" (US$604305).
+
+
+==== Product safety ====
+Despite its phones' popularity, numerous explosions of them have been reported. A Swiss teenager was left with second and third degree burns on her thigh due to her Galaxy S3's explosion, followed by two more Galaxy S3 explosions in Switzerland and Ireland. A South Korean student's Galaxy S2 battery exploded in 2012.
+Samsung's Galaxy S4 also led to several accidents. A house in Hong Kong was allegedly set on fire by an S4 in July 2013, followed by minor S4 burn incidents in Pakistan and Russia. A minor fire was also reported in Newbury, United Kingdom in October 2013.
+Some users of the phone have also reported swelling batteries and overheating; Samsung has offered affected customers new batteries, free of charge. In December 2013, a Canadian uploaded a YouTube video describing his S4 combusting. Samsung then asked the uploader to sign a legal document requiring him to remove the video, remain silent about the agreement, and surrender any future claims against the company to receive a replacement. No further response from Samsung was received afterwards. There were a few more reported Galaxy S4 explosions in India and the UAE.
+
+
+==== Galaxy Note 7 ====
+
+On 31 August 2016, it was reported that Samsung was delaying shipments of the Galaxy Note 7 in some regions to perform "additional tests being conducted for product quality"; this came alongside user reports of batteries exploding while charging. On 2 September, Samsung suspended sales of the Note 7 and announced a worldwide "product exchange program" in which customers would be able to exchange their Note 7 for another Note 7, a Galaxy S7, or an S7 Edge (the price difference being refunded). They would also receive a gift card from a participating carrier. On 1 September, the company released a statement saying it had received 35 reports of battery failure, which, according to an unnamed Samsung official, "account for less than 0.2 percent of the entire volume sold". Although it has been referred to as a product recall by the media, it was not an official government-issued recall by an organization such as the U.S. Consumer Product Safety Commission (CPSC), and only a voluntary measure. The CPSC did issue an official recall notice on 15 September 2016, and stated that Samsung received at least 92 reports of the batteries overheating in the U.S., including 26 reports of burns and 55 reports of property damage.
+After some replacement Note 7 phones also caught fire, Samsung announced on 11 October 2016 that it would permanently end production of the Note 7 in the interest of customer safety. However, Samsung was hoping to recover from the lost sales from the Note 7 with the introduction of new colors such as the Blue Coral and Black Pearl color for the Galaxy S7 edge.
+On 14 October 2016, the U.S. Federal Aviation Administration and the Department of Transportation's Pipeline and Hazardous Materials Safety Administration banned the Note 7 from being taken aboard any airline flight, even if powered off. Qantas, Virgin Australia and Singapore Airlines also banned the carriage of Note 7s on their aircraft with effect from midnight on 15 October. Mexico's largest airlines Aeromexico, Interjet, Volaris and VivaAerobus all banned the handset.
+
+
+==== Washing machines ====
+On 4 November 2016, Samsung recalled 2.8 million top-load washing machines sold at home appliance stores between 2011 and 2016 because the machine's top could unexpectedly detach from the chassis during use due to excessive vibration.
+
+
+==== Consumer privacy lawsuit ====
+In December 2025, Texas Attorney General Ken Paxton filed a lawsuit against Samsung and four other smart TV manufacturers, alleging that the companies were illegally "spying on Texans by secretly recording what consumers watch in their own homes" using automated content recognition (ACR) technology.
+
+
+=== Patents challenged ===
+Following the grant to Samsung of U.S. Patent No. 9,675,229 and its European counterpart, EP 2963515, titled Cleaning robot and method for controlling the same, the patents were challenged by Igor Paromtchik through an ex parte reexamination in the United States and opposition proceedings in Europe. These patents described technologies used in Samsung's POWERbot robot vacuum cleaners. The European patent was revoked in March 2024. The U.S. patent ceased to be in force in June 2025 due to non-payment of maintenance fees, approximately ten years before the end of its full statutory term.
+
+
+=== Advertisements on smart televisions ===
+In 2015, users on the website Reddit began reporting that some Samsung Smart TVs would display advertisements for Pepsi products during movies when viewed through the Plex application. Plex denied responsibility for the ads and Samsung told blog Gigaom that it was investigating the matter.
+In March 2016, soccer star Pelé filed a lawsuit against Samsung in the United States District Court for the Northern District of Illinois, seeking $30 million in damages, claiming violations under the Lanham Act for false endorsement and a state law claim for violation of his right of publicity. The suit alleged that, at one point, Samsung and Pelé came close to entering into a licensing agreement for Pelé to appear in a Samsung advertising campaign; Samsung abruptly pulled out of the negotiations. The October 2015 Samsung ad in question included a partial face shot of a man who allegedly "very closely resembles" Pelé, and also a superimposed ultra-high-definition television screen next to the image of the man featuring a "modified bicycle or scissors-kick", perfected and famously used by Pelé.
+In December 2016, Samsung forced an update to its Smart TV line, which resulted in advertisements being displayed in menus on the updated devices.
+
+
+=== Viral marketing ===
+On 1 April 2013, several documents were shown on TaiwanSamsungLeaks.org saying that the advertising company OpenTide (Taiwan) and its parent company Samsung were hiring students to attack its competitors by spreading harmful comments and biased opinions/reviews about the products of other phone manufacturers, such as Sony and HTC, in several famous forums and websites in Taiwan to improve its brand image. Hacker "0xb", the uploader of the documents, said that they were intercepted from an email between OpenTide and Samsung. Four days later, the Taiwan division of Samsung Electronics made an announcement stating it would "stop all online marketing strategies which involves publishing and replying in online forums". It was widely reported by the Taiwanese media. Taiwan later fined Samsung Electronics for the smear campaign.
+
+
+=== Samsung's Response to the Russian Market Post-2022 Invasion of Ukraine ===
+After Russia's 2022 invasion of Ukraine, Samsung's response to the Russian market was inconsistent, revealing mixed signals. Initially, the company halted shipments to Russia, seemingly aligning with international pressure. However, Samsung maintained a presence via gray imports through other Customs Union countries like Armenia and Belarus.
+Despite donating $6 million for humanitarian aid, Samsung continued sourcing Russian metals  and considered leasing its Kaluga factory to local businesses instead of leaving. By 2023, Samsung had resumed marketing activities in Russia, indicating instability and raising doubts about the company's commitment to international sanctions.
+
+
+=== National Samsung Electronics Union 2024 Worker Strikes ===
+
+On 5 June 2024, The National Samsung Electronics Union announced their first historic strike of roughly 28,000 workers on June 7. Negotiations failed to satisfy workers who are asking for a 6.5% raise. On 1 July 2024, the union announced that it would launch a 3-day strike from 8–10 July after negotiations fell short, with the majority of the workers striking from manufacturing states and in-production development. The strike was converted into an indefinite strike due to lack of response from management. The strike ended on 1 August, under institutional pressure and falling numbers, though the union said it intended to continue fighting for its demands with other tactics.
+
+
+== References ==
+
+
+== External links ==
+
+Official website 
+Samsung Electronics Official Global Blog
+Samsung Members Community

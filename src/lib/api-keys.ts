@@ -36,7 +36,6 @@ export function maskApiKey(prefix: string): string {
 
 export interface ExternalApiIdentity {
   apiKeyId: string
-  companyId: string
   label: string
 }
 
@@ -52,15 +51,48 @@ export async function requireExternalApiKey(
   const token = getBearerToken(req)
   if (!token) throw new UnauthorizedError('API key wajib dikirim sebagai Bearer token.')
 
-  const candidates = await db.apiKey.findMany({
-    where: { isActive: true, revokedAt: null },
-    select: { id: true, companyId: true, label: true, keyHash: true },
-  })
+  // ponytail: prefix-based narrowing — extract first 13 chars (KEY_PREFIX + 8) to filter
+  // candidates before hashing. Falls back to all keys if prefix is too short.
+  const prefix = token.slice(0, 13)
+  const candidates = prefix.length >= 13
+    ? await db.apiKey.findMany({
+        where: { isActive: true, revokedAt: null, keyPrefix: prefix },
+        select: { id: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
+      })
+    : await db.apiKey.findMany({
+        where: { isActive: true, revokedAt: null },
+        select: { id: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
+      })
 
   const matched = candidates.find((candidate) =>
     verifyApiKey(token, candidate.keyHash),
   )
   if (!matched) throw new UnauthorizedError('API key tidak valid atau sudah dicabut.')
+
+  // Rate limit enforcement
+  if (matched.requestLimitPerMinute || matched.dailyRequestLimit) {
+    const now = new Date()
+    const oneMinuteAgo = new Date(now.getTime() - 60_000)
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+
+    if (matched.requestLimitPerMinute) {
+      const recentCount = await db.apiRequestLog.count({
+        where: { apiKeyId: matched.id, createdAt: { gte: oneMinuteAgo } },
+      })
+      if (recentCount >= matched.requestLimitPerMinute) {
+        throw new UnauthorizedError('Rate limit per menit tercapai. Coba lagi nanti.')
+      }
+    }
+
+    if (matched.dailyRequestLimit) {
+      const dailyCount = await db.apiRequestLog.count({
+        where: { apiKeyId: matched.id, createdAt: { gte: oneDayAgo } },
+      })
+      if (dailyCount >= matched.dailyRequestLimit) {
+        throw new UnauthorizedError('Batas harian tercapai. Coba lagi besok.')
+      }
+    }
+  }
 
   await db.apiKey.update({
     where: { id: matched.id },
@@ -69,7 +101,6 @@ export async function requireExternalApiKey(
 
   return {
     apiKeyId: matched.id,
-    companyId: matched.companyId,
     label: matched.label,
   }
 }

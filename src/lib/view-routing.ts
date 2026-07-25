@@ -5,7 +5,11 @@ export const VIEW_KEYS = [
   'knowledge',
   'ai-config',
   'prompt-tools',
+  'integration-api',
   'security',
+  'agentic',
+  'plugins',
+  'schedules',
   'settings',
 ] as const
 

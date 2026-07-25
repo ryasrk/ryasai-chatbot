@@ -3,7 +3,6 @@ import { decryptConfig } from '@/lib/crypto'
 
 export interface LlmRuntimeConfig {
   id: string
-  companyId: string
   provider: string
   baseUrl: string
   apiKey: string
@@ -35,18 +34,24 @@ export function normalizeBaseUrl(raw: string): string {
     throw new Error('Base URL harus menggunakan http atau https.')
   }
   if (isBlockedHost(url.hostname)) {
-    // SSRF guard: block cloud-metadata / link-local targets. Localhost and
-    // private ranges stay allowed (legit for local LLMs like Ollama / internal gateways).
     throw new Error('Base URL menuju host internal yang diblokir.')
   }
   return url.toString().replace(/\/+$/, '')
 }
 
-/** Block link-local (169.254.0.0/16 — AWS/GCP/Azure metadata) + 0.0.0.0. */
-function isBlockedHost(hostname: string): boolean {
+export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  if (/^169\.254\./.test(h)) return true
+  if (h === 'localhost') return true
+  if (h === '::1' || h === '::') return true
+  if (/^127\./.test(h)) return true
   if (/^0\.0\.0\.0$/.test(h)) return true
+  if (/^169\.254\./.test(h)) return true
+  if (/^10\./.test(h)) return true
+  if (/^192\.168\./.test(h)) return true
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)) return true
+  if (/^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./.test(h)) return true
+  if (/^fd[0-9a-f]/.test(h)) return true
+  if (/^fe[89ab][0-9a-f]/.test(h)) return true
   return false
 }
 
@@ -74,13 +79,13 @@ function decryptApiKey(encryptedApiKey: string): string {
   return apiKey
 }
 
-export async function getLlmRuntimeConfig(companyId?: string): Promise<LlmRuntimeConfig | null> {
-  if (!companyId) return null
-  const row = await db.llmConfig.findUnique({ where: { companyId } })
+export async function getLlmRuntimeConfig(): Promise<LlmRuntimeConfig | null> {
+  const row = await db.llmConfig.findFirst({
+    where: { purpose: 'chat' },
+  }) ?? await db.llmConfig.findFirst()
   if (!row) return null
   return {
     id: row.id,
-    companyId: row.companyId,
     provider: row.provider,
     baseUrl: row.baseUrl,
     apiKey: decryptApiKey(row.encryptedApiKey),
@@ -88,8 +93,25 @@ export async function getLlmRuntimeConfig(companyId?: string): Promise<LlmRuntim
   }
 }
 
-export async function getPublicLlmConfig(companyId: string): Promise<PublicLlmConfig> {
-  const row = await db.llmConfig.findUnique({ where: { companyId } })
+export async function getAgentLlmConfig(): Promise<LlmRuntimeConfig | null> {
+  const row = await db.llmConfig.findFirst({
+    where: { purpose: 'agent' },
+  })
+  if (!row) {
+    // Fallback to chat config if agent config not set
+    return getLlmRuntimeConfig()
+  }
+  return {
+    id: row.id,
+    provider: row.provider,
+    baseUrl: row.baseUrl,
+    apiKey: decryptApiKey(row.encryptedApiKey),
+    model: row.model,
+  }
+}
+
+export async function getPublicLlmConfig(): Promise<PublicLlmConfig> {
+  const row = await db.llmConfig.findFirst()
   if (!row) {
     return {
       configured: false,
@@ -112,7 +134,8 @@ export async function getPublicLlmConfig(companyId: string): Promise<PublicLlmCo
   let apiKeyMasked: string | null = null
   try {
     apiKeyMasked = maskSecret(decryptApiKey(row.encryptedApiKey))
-  } catch {
+  } catch (e) {
+    console.warn('[llm-config] decryptApiKey failed:', e)
     apiKeyMasked = '••••'
   }
 
@@ -120,7 +143,8 @@ export async function getPublicLlmConfig(companyId: string): Promise<PublicLlmCo
   if (row.encryptedEmbeddingApiKey) {
     try {
       embeddingApiKeyMasked = maskSecret(decryptApiKey(row.encryptedEmbeddingApiKey))
-    } catch {
+    } catch (e) {
+      console.warn('[llm-config] decryptEmbeddingApiKey failed:', e)
       embeddingApiKeyMasked = '••••'
     }
   }
@@ -135,7 +159,7 @@ export async function getPublicLlmConfig(companyId: string): Promise<PublicLlmCo
     lastModelSyncAt: row.lastModelSyncAt?.toISOString() ?? null,
     embeddingProvider: row.embeddingProvider ?? 'OPENAI_COMPATIBLE',
     embeddingBaseUrl: row.embeddingBaseUrl ?? row.baseUrl,
-    embeddingModel: row.embeddingModel ?? '',
+    embeddingModel: row.embeddingModel ?? 'text-embedding-3-small',
     embeddingApiKeyMasked,
     embeddingAvailableModels: parseModels(row.embeddingAvailableModels),
     lastEmbeddingModelSyncAt: row.lastEmbeddingModelSyncAt?.toISOString() ?? null,
@@ -161,7 +185,6 @@ export async function fetchProviderModels(args: {
   })
 
   if (!res.ok) {
-    // Don't reflect the upstream body — it can leak internal service details (SSRF).
     throw new Error(`Gagal mengambil model (HTTP ${res.status}).`)
   }
 

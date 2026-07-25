@@ -41,7 +41,6 @@ export async function POST(req: NextRequest) {
     const user = await getActiveUser()
 
     const retrieval = await retrieveRelevantChunks({
-      companyId: user.companyId,
       query,
       topK,
     })
@@ -56,7 +55,6 @@ export async function POST(req: NextRequest) {
     }))
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'RAG_SEARCH',
       severity: 'info',

@@ -3,8 +3,7 @@
  * Run with: `bun run scripts/seed.ts`
  *
  * Creates:
- *   - 1 Company (tenant)
- *   - 3 Users (admin / manager / staff) with RBAC
+ *   - 1 Admin User
  *   - 1 Sample Integration (ERP Produksi — SQLITE_DEMO provider)
  *   - 4 Sample SOP / policy documents with chunks for RAG
  */
@@ -21,34 +20,19 @@ const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin12345'
 async function main() {
   console.log('🌱 Seeding ryasai database...')
 
-  // 1. Company -------------------------------------------------------------
-  const company = await db.company.upsert({
-    where: { id: 'cmp-001' },
-    update: { name: 'ryasai', industry: 'Artificial Intelligence', isActive: true },
-    create: {
-      id: 'cmp-001',
-      name: 'ryasai',
-      industry: 'Artificial Intelligence',
-      isActive: true,
-    },
-  })
-
-  // 2. Users (RBAC) --------------------------------------------------------
+  // 1. Users ----------------------------------------------------------------
   const users = [
-    { id: 'usr-admin', email: 'admin@ryas.ai', name: 'Ryas Admin', role: 'admin', color: 'oklch(0.55 0.18 250)' },
-    { id: 'usr-manager', email: 'manager@ryas.ai', name: 'Ryas Manager', role: 'manager', color: 'oklch(0.6 0.16 160)' },
-    { id: 'usr-staff', email: 'staff@ryas.ai', name: 'Ryas Staff', role: 'staff', color: 'oklch(0.65 0.2 70)' },
+    { id: 'usr-admin', email: 'admin@ryas.ai', name: 'Ryas Admin', color: 'oklch(0.55 0.18 250)' },
+    { id: 'usr-manager', email: 'manager@ryas.ai', name: 'Ryas Manager', color: 'oklch(0.6 0.16 160)' },
+    { id: 'usr-staff', email: 'staff@ryas.ai', name: 'Ryas Staff', color: 'oklch(0.65 0.2 70)' },
   ]
-  for (const u of users) {
-    const isAdmin = u.role === 'admin'
-    const email = isAdmin && adminEmailOverride ? adminEmailOverride : u.email
-    const password = isAdmin ? adminPassword : 'user12345'
+  for (const [i, u] of users.entries()) {
+    const email = i === 0 && adminEmailOverride ? adminEmailOverride : u.email
+    const password = i === 0 ? adminPassword : 'user12345'
     await db.user.upsert({
       where: { email },
       update: {
         name: u.name,
-        role: u.role,
-        companyId: company.id,
         isActive: true,
         avatarColor: u.color,
         passwordHash: hashPassword(password),
@@ -57,8 +41,6 @@ async function main() {
         id: u.id,
         email,
         name: u.name,
-        role: u.role,
-        companyId: company.id,
         passwordHash: hashPassword(password),
         avatarColor: u.color,
         isActive: true,
@@ -66,7 +48,7 @@ async function main() {
     })
   }
 
-  // 3. Integration (encrypted config) --------------------------------------
+  // 2. Integration (encrypted config) --------------------------------------
   const enc = encryptConfig({
     host: 'erp-db.ryas.ai',
     port: 5432,
@@ -85,7 +67,6 @@ async function main() {
     },
     create: {
       id: 'int-erp-001',
-      companyId: company.id,
       name: 'Database ERP Produksi Utama',
       type: 'DATABASE',
       provider: 'SQLITE_DEMO',
@@ -94,7 +75,7 @@ async function main() {
     },
   })
 
-  // 4. Reflect schema + cache it -------------------------------------------
+  // 3. Reflect schema + cache it -------------------------------------------
   await ensureDemoSchema()
   const connector = connectorRegistry.getConnector(integration.id, integration.provider, {
     host: 'demo',
@@ -125,14 +106,13 @@ async function main() {
   })
   console.log(`   ↳ schema cached. Preview:\n${describeSchema(tables).split('\n').slice(0, 4).join('\n')} ...`)
 
-  // 5. Sample documents + chunks (RAG knowledge base) ----------------------
+  // 4. Sample documents + chunks (RAG knowledge base) ----------------------
   const docs = buildSampleDocs()
   await db.documentChunk.deleteMany({})
-  await db.document.deleteMany({ where: { companyId: company.id } })
+  await db.document.deleteMany({})
   for (const d of docs) {
     const doc = await db.document.create({
       data: {
-        companyId: company.id,
         name: d.name,
         type: d.type,
         sizeBytes: d.content.length,
@@ -157,25 +137,98 @@ async function main() {
   }
   console.log(`   ↳ inserted ${docs.length} documents with chunks`)
 
-  // 6. Sample audit log entries --------------------------------------------
+  // 5. REST API connector + endpoints ---------------------------------------
+  await db.restApiEndpoint.deleteMany({})
+  await db.restApiConnector.deleteMany({})
+  const restConnector = await db.restApiConnector.create({
+    data: {
+      id: 'conn-rest-001',
+      name: 'JSONPlaceholder API',
+      baseUrl: 'https://jsonplaceholder.typicode.com',
+      authType: 'NONE',
+      isActive: true,
+      timeoutMs: 15000,
+    },
+  })
+  const endpoints = [
+    { method: 'GET', path: '/users', description: 'Daftar semua user', isEnabled: true },
+    { method: 'GET', path: '/users/{id}', description: 'Detail user by ID', isEnabled: true },
+    { method: 'GET', path: '/posts', description: 'Daftar semua post', isEnabled: true },
+    { method: 'GET', path: '/posts/{id}', description: 'Detail post by ID', isEnabled: true },
+    { method: 'GET', path: '/comments', description: 'Daftar semua comment', isEnabled: true },
+  ]
+  for (const ep of endpoints) {
+    await db.restApiEndpoint.create({
+      data: { connectorId: restConnector.id, ...ep },
+    })
+  }
+  console.log(`   ↳ inserted REST connector with ${endpoints.length} endpoints`)
+
+  // 6. Plugin ----------------------------------------------------------------
+  await db.plugin.deleteMany({})
+  await db.plugin.create({
+    data: {
+      toolId: 'weather',
+      name: 'Weather Plugin',
+      description: 'Cek cuaca berdasarkan nama kota',
+      manifestJson: JSON.stringify({
+        paramDescription: '{ "input": "nama kota" }',
+        executorType: 'webhook',
+        endpoint: 'https://jsonplaceholder.typicode.com/posts/1',
+        method: 'GET',
+        authType: 'NONE',
+        timeoutMs: 10000,
+        description: 'Simulasi plugin weather — returns placeholder data',
+      }),
+      isEnabled: true,
+    },
+  })
+  console.log('   ↳ inserted 1 plugin (weather)')
+
+  // 7. Scheduled run ---------------------------------------------------------
+  await db.scheduledRun.deleteMany({})
+  await db.scheduledRun.create({
+    data: {
+      name: 'Ringkasan Penjualan Harian',
+      cronExpr: '0 9 * * *',
+      prompt: 'Tampilkan ringkasan penjualan hari ini dari database ERP',
+      isActive: true,
+      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  })
+  console.log('   ↳ inserted 1 scheduled run')
+
+  // 8. API Key for external testing -----------------------------------------
+  const { generateApiKey } = await import('../src/lib/api-keys')
+  await db.apiKey.deleteMany({})
+  const generated = generateApiKey()
+  await db.apiKey.create({
+    data: {
+      label: 'E2E Test Key',
+      keyPrefix: generated.prefix,
+      keyHash: generated.hash,
+      requestLimitPerMinute: 100,
+      dailyRequestLimit: 10000,
+    },
+  })
+  console.log(`   ↳ inserted API key: ${generated.plainText}`)
+
+  // 9. Sample audit log entries --------------------------------------------
   await db.auditLog.createMany({
     data: [
       {
-        companyId: company.id,
         userId: 'usr-admin',
         action: 'INTEGRATION_CREATE',
         severity: 'info',
         detail: JSON.stringify({ integrationId: integration.id, name: integration.name, provider: integration.provider }),
       },
       {
-        companyId: company.id,
         userId: 'usr-admin',
         action: 'SYSTEM_INIT',
         severity: 'info',
         detail: JSON.stringify({ message: 'Sistem ryasai diinisialisasi.' }),
       },
       {
-        companyId: company.id,
         action: 'GUARDRAIL_BLOCK',
         severity: 'critical',
         detail: JSON.stringify({ reason: 'Contoh: percobaan prompt injection terdeteksi & diblokir saat testing awal.' }),
@@ -184,9 +237,12 @@ async function main() {
   })
 
   console.log('\n✅ Seed complete.')
-  console.log('   Company :', company.name)
-  console.log('   Users   :', users.map((u) => `${u.email} (${u.role})`).join(', '))
+  console.log('   Users      :', users.map((u) => u.email).join(', '))
   console.log('   Integration:', integration.name)
+  console.log('   REST       :', restConnector.name, `(${endpoints.length} endpoints)`)
+  console.log('   Plugin     : weather')
+  console.log('   Schedule   : Ringkasan Penjualan Harian (0 9 * * *)')
+  console.log('   API Key    : see above')
 }
 
 function extractKeywords(text: string): string {

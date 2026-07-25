@@ -16,10 +16,10 @@ const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'SQL
 
 export async function GET(_req: NextRequest) {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
 
     const integrations = await db.integration.findMany({
-      where: { companyId: user.companyId },
+      where: {},
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -108,13 +108,37 @@ export async function POST(req: NextRequest) {
     }
     const { name, type, provider, config } = validation
 
-    // Encrypt config (AES-256-GCM) before persistence — spec §4.2
-    const encryptedConfig = encryptConfig(config as Record<string, unknown>)
+    // Test connection BEFORE persisting — no orphan rows on failure
+    const tempId = `temp_${Date.now()}`
+    let reflectedTables: ReflectedTable[] = []
+    try {
+      const connector = connectorRegistry.getConnector(
+        tempId,
+        provider,
+        config as Record<string, unknown>,
+      )
+      const testOk = await connector.testConnection()
+      if (!testOk) {
+        connectorRegistry.drop(tempId)
+        return NextResponse.json(
+          { ok: false, error: 'Koneksi gagal. Periksa kredensial dan jaringan.' },
+          { status: 400 },
+        )
+      }
+      reflectedTables = await connector.fetchSchema()
+      connectorRegistry.drop(tempId)
+    } catch (e) {
+      connectorRegistry.drop(tempId)
+      return NextResponse.json(
+        { ok: false, error: e instanceof Error ? e.message : 'Kesalahan tidak dikenal saat koneksi.' },
+        { status: 400 },
+      )
+    }
 
-    // Create the integration row (status=active by default; will be updated after test).
+    // Persist only on successful connection
+    const encryptedConfig = encryptConfig(config as Record<string, unknown>)
     const integration = await db.integration.create({
       data: {
-        companyId: user.companyId,
         name,
         type,
         provider,
@@ -123,45 +147,17 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Spec §3.1: build connector + test connection + reflect schema
-    let lastTestOk = false
-    let testMessage = ''
-    let reflectedTables: ReflectedTable[] = []
-    try {
-      const connector = connectorRegistry.getConnector(
-        integration.id,
-        provider,
-        config as Record<string, unknown>,
-      )
-      lastTestOk = await connector.testConnection()
-      if (lastTestOk) {
-        reflectedTables = await connector.fetchSchema()
-        // cache schema rows
-        if (reflectedTables.length > 0) {
-          await db.integrationSchema.deleteMany({ where: { integrationId: integration.id } }).catch(() => {})
-          await db.integrationSchema.createMany({
-            data: reflectedTables.map((t) => ({
-              integrationId: integration.id,
-              tableName: t.tableName,
-              columns: JSON.stringify(t.columns ?? []),
-              rowCount: t.rowCount ?? null,
-            })),
-          })
-        }
-        testMessage = `Koneksi berhasil. ${reflectedTables.length} tabel terdeteksi.`
-      } else {
-        testMessage = 'Koneksi gagal — periksa kredensial / jaringan.'
-        await db.integration.update({
-          where: { id: integration.id },
-          data: { status: 'error' },
-        })
-      }
-    } catch (e) {
-      lastTestOk = false
-      testMessage = e instanceof Error ? e.message : 'Kesalahan tidak dikenal saat koneksi.'
-      await db.integration.update({
-        where: { id: integration.id },
-        data: { status: 'error' },
+    // Cache schema rows
+    if (reflectedTables.length > 0) {
+      await db.integrationSchema.deleteMany({ where: { integrationId: integration.id } }).catch(() => {})
+      await db.integrationSchema.createMany({
+        data: reflectedTables.map((t) => ({
+          integrationId: integration.id,
+          tableName: t.tableName,
+          columns: JSON.stringify(t.columns ?? []),
+          rowCount: t.rowCount ?? null,
+          sampleRow: t.sampleRow ? JSON.stringify(t.sampleRow) : null,
+        })),
       })
     }
 
@@ -169,22 +165,21 @@ export async function POST(req: NextRequest) {
       where: { id: integration.id },
       data: {
         lastTestedAt: new Date(),
-        lastTestOk,
+        lastTestOk: true,
       },
     })
 
     // Audit — spec §7
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'INTEGRATION_CREATE',
-      severity: lastTestOk ? 'info' : 'warning',
+      severity: 'info',
       detail: {
         integrationId: integration.id,
         name,
         type,
         provider,
-        lastTestOk,
+        lastTestOk: true,
         tablesReflected: reflectedTables.length,
       },
     })
@@ -197,11 +192,11 @@ export async function POST(req: NextRequest) {
           name,
           type,
           provider,
-          status: lastTestOk ? 'active' : 'error',
+          status: 'active',
           lastTestedAt: new Date(),
-          lastTestOk,
+          lastTestOk: true,
           tableCount: reflectedTables.length,
-          message: testMessage,
+          message: `Koneksi berhasil. ${reflectedTables.length} tabel terdeteksi.`,
         },
       },
       { status: 201 },

@@ -8,7 +8,7 @@ import { writeAudit, handleApiError } from '@/lib/session'
 /**
  * POST /api/setup/admin (public, but 409 once setupCompleted)
  *   Body: { name, email, password (min 8 chars) }
- *   Creates the singleton Company + AppConfig if missing, upserts the admin
+ *   Creates the singleton AppConfig if missing, upserts the admin
  *   user with a scrypt hash, auto-logs-in (sets the session cookie), and writes
  *   a SETUP_ADMIN_CREATED audit.
  */
@@ -26,34 +26,25 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    let company = await db.company.findFirst()
-    if (!company) company = await db.company.create({ data: { name: 'Organisasi Saya' } })
-    await db.appConfig.upsert({
-      where: { companyId: company.id },
-      create: { companyId: company.id },
-      update: {},
-    })
+    let appConfig = await db.appConfig.findFirst()
+    if (!appConfig) appConfig = await db.appConfig.create({ data: {} })
 
     const user = await db.user.upsert({
       where: { email: input.email },
       create: {
         email: input.email,
         name: input.name,
-        role: 'admin',
-        companyId: company.id,
         passwordHash: hashPassword(input.password),
         isActive: true,
       },
       update: {
         name: input.name,
-        role: 'admin',
         passwordHash: hashPassword(input.password),
         isActive: true,
       },
     })
 
     await writeAudit({
-      companyId: company.id,
       userId: user.id,
       action: 'SETUP_ADMIN_CREATED',
       detail: { email: user.email },

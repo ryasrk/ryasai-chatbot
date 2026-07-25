@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { encryptConfig } from '@/lib/crypto'
+import { isBlockedHost } from '@/lib/llm-config'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 
 interface CreateConnectorBody {
@@ -13,9 +14,9 @@ interface CreateConnectorBody {
 
 export async function GET() {
   try {
-    const user = await getActiveUser()
+    await getActiveUser()
     const items = await db.restApiConnector.findMany({
-      where: { companyId: user.companyId },
+      where: {},
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -39,12 +40,6 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
-      return NextResponse.json(
-        { ok: false, error: 'Hanya admin yang dapat membuat REST connector.' },
-        { status: 403 },
-      )
-    }
 
     const body = (await req.json().catch(() => ({}))) as CreateConnectorBody
     const parsed = parseConnectorInput(body)
@@ -54,7 +49,6 @@ export async function POST(req: NextRequest) {
 
     const connector = await db.restApiConnector.create({
       data: {
-        companyId: user.companyId,
         name: parsed.name,
         baseUrl: parsed.baseUrl,
         authType: parsed.authType,
@@ -74,7 +68,6 @@ export async function POST(req: NextRequest) {
     })
 
     await writeAudit({
-      companyId: user.companyId,
       userId: user.userId,
       action: 'REST_CONNECTOR_CREATE',
       severity: 'warning',
@@ -104,6 +97,9 @@ function parseConnectorInput(body: CreateConnectorBody):
     const url = new URL((body.baseUrl ?? '').trim())
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       return { error: 'Base URL harus menggunakan http atau https.' }
+    }
+    if (isBlockedHost(url.hostname)) {
+      return { error: 'Base URL menuju host internal yang diblokir.' }
     }
     baseUrl = url.toString().replace(/\/$/, '')
   } catch {
