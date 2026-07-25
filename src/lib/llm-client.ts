@@ -6,9 +6,34 @@
 import { getLlmRuntimeConfig, getAgentLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { db } from '@/lib/db'
 
+export interface LlmToolCall {
+  id: string
+  name: string
+  arguments: string
+}
+
 export interface LlmMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_calls?: LlmToolCall[]
+  tool_call_id?: string
+  name?: string
+}
+
+export interface LlmToolDef {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+  }
+}
+
+export interface LlmToolResult {
+  id: string
+  name: string
+  result: string
+  isError?: boolean
 }
 
 export interface LlmUsage {
@@ -114,8 +139,11 @@ function buildAnthropicBody(
   messages: LlmMessage[],
   temperature: number,
   stream: boolean = false,
+  tools?: LlmToolDef[],
 ): Record<string, unknown> {
-  const systemParts = messages.filter((m) => m.role === 'system').map((m) => m.content)
+  const systemParts = messages
+    .filter((m) => m.role === 'system')
+    .map((m) => m.content ?? '')
   const nonSystem = messages.filter((m) => m.role !== 'system')
   const body: Record<string, unknown> = {
     max_tokens: MAX_TOKENS_ANTHROPIC,
@@ -123,9 +151,29 @@ function buildAnthropicBody(
     messages: nonSystem.map((m) => ({ role: m.role, content: m.content })),
   }
   if (systemParts.length > 0) {
-    body.system = systemParts.join('\n\n')
+    body.system = [
+      {
+        type: 'text',
+        text: systemParts.join('\n\n'),
+        cache_control: { type: 'ephemeral' },
+      },
+    ]
   }
   if (stream) body.stream = true
+  if (tools && tools.length > 0) {
+    const anthropicTools: Array<{
+      name: string
+      description: string
+      input_schema: Record<string, unknown>
+      cache_control?: { type: string }
+    }> = tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }))
+    anthropicTools[anthropicTools.length - 1].cache_control = { type: 'ephemeral' }
+    body.tools = anthropicTools
+  }
   return body
 }
 
@@ -163,16 +211,30 @@ function readErrorBody(res: Response): Promise<string> {
 // Public transport: chatOnce + chatStream
 // ---------------------------------------------------------------------------
 
-/** Non-streaming completion. Returns trimmed content. */
+/** Non-streaming completion. Returns trimmed content, or tool_calls when tools are provided. */
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature?: number,
+  purpose?: string,
+): Promise<string>
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number | undefined,
+  purpose: string | undefined,
+  tools: LlmToolDef[],
+): Promise<string | LlmToolCall[]>
 export async function chatOnce(
   cfg: LlmRuntimeConfig,
   messages: LlmMessage[],
   temperature: number = 0,
   purpose: string = 'chat',
-): Promise<string> {
+  tools?: LlmToolDef[],
+): Promise<string | LlmToolCall[]> {
   const t0 = Date.now()
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
-    const body = buildAnthropicBody(messages, temperature)
+    const body = buildAnthropicBody(messages, temperature, false, tools)
     body.model = cfg.model
     const res = await fetchWithRetry(`${cfg.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -189,8 +251,22 @@ export async function chatOnce(
       throw new Error(`LLM error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
     }
     const data = (await res.json()) as {
-      content?: Array<{ type?: string; text?: string }>
+      content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>
       usage?: { input_tokens?: number; output_tokens?: number }
+    }
+    const toolUseBlocks = data.content?.filter((c) => c.type === 'tool_use')
+    if (toolUseBlocks && toolUseBlocks.length > 0) {
+      const toolCalls: LlmToolCall[] = toolUseBlocks.map((b) => ({
+        id: b.id ?? '',
+        name: b.name ?? '',
+        arguments: JSON.stringify(b.input ?? {}),
+      }))
+      logLlmUsage(purpose, cfg, {
+        promptTokens: data.usage?.input_tokens ?? 0,
+        completionTokens: data.usage?.output_tokens ?? 0,
+        totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+      }, Date.now() - t0)
+      return toolCalls
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
     logLlmUsage(purpose, cfg, {
@@ -202,7 +278,11 @@ export async function chatOnce(
   }
 
   // OpenAI-compatible — no max_tokens, let provider default apply
+  // ponytail: OpenAI prompt caching is automatic, no code change needed.
   const body: Record<string, unknown> = { model: cfg.model, messages, temperature }
+  if (tools && tools.length > 0) {
+    body.tools = tools
+  }
   const res = await fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -217,27 +297,48 @@ export async function chatOnce(
     throw new Error(`LLM error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
   }
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
+    choices?: Array<{
+      message?: {
+        content?: string
+        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>
+      }
+    }>
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  }
+  const choice = data.choices?.[0]
+  if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
+    const toolCalls: LlmToolCall[] = choice.message.tool_calls.map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: tc.function.arguments,
+    }))
+    logLlmUsage(purpose, cfg, {
+      promptTokens: data.usage?.prompt_tokens ?? 0,
+      completionTokens: data.usage?.completion_tokens ?? 0,
+      totalTokens: data.usage?.total_tokens ?? 0,
+    }, Date.now() - t0)
+    return toolCalls
   }
   logLlmUsage(purpose, cfg, {
     promptTokens: data.usage?.prompt_tokens ?? 0,
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
   }, Date.now() - t0)
-  return (data.choices?.[0]?.message?.content ?? '').trim()
+  return (choice?.message?.content ?? '').trim()
 }
 
 /** Streaming completion. Yields token strings. */
+// ponytail: streaming tool calls not supported — text only, add when needed.
 export async function* chatStream(
   cfg: LlmRuntimeConfig,
   messages: LlmMessage[],
   temperature: number = 0,
   purpose: string = 'chat',
+  tools?: LlmToolDef[],
 ): AsyncGenerator<string, void, unknown> {
   const t0 = Date.now()
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
-    const body = buildAnthropicBody(messages, temperature, true)
+    const body = buildAnthropicBody(messages, temperature, true, tools)
     body.model = cfg.model
     const res = await fetch(`${cfg.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -289,6 +390,9 @@ export async function* chatStream(
     temperature,
     stream: true,
     stream_options: { include_usage: true },
+  }
+  if (tools && tools.length > 0) {
+    body.tools = tools
   }
   const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',

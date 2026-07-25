@@ -5,6 +5,7 @@
  */
 import { db } from '@/lib/db'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
+import { listMcpTools } from '@/lib/mcp-client'
 
 export interface ToolDef {
   id: string
@@ -55,9 +56,10 @@ export function getTool(id: string): ToolDef | undefined {
  * Only top-K plugins relevant to the query are injected into context.
  */
 export async function getAvailableTools(query?: string): Promise<ToolDef[]> {
+  let pluginTools: ToolDef[]
   if (!query) {
     const plugins = await db.plugin.findMany({ where: { isEnabled: true } })
-    const pluginTools: ToolDef[] = plugins.map((p) => ({
+    pluginTools = plugins.map((p) => ({
       id: `plugin:${p.toolId}`,
       description: p.description,
       paramDescription: parseParamDescription(p.manifestJson),
@@ -65,19 +67,31 @@ export async function getAvailableTools(query?: string): Promise<ToolDef[]> {
       category: p.category,
       subcategory: p.subcategory,
     }))
-    return [...BUILT_IN_TOOLS, ...pluginTools]
+  } else {
+    const relevantPlugins = await selectRelevantPlugins({ query, topK: 5 })
+    pluginTools = relevantPlugins.map((p) => ({
+      id: `plugin:${p.toolId}`,
+      description: p.description,
+      paramDescription: parseParamDescription(p.manifestJson),
+      requiresDataSource: 'none' as const,
+      category: p.category,
+      subcategory: p.subcategory,
+    }))
   }
 
-  const relevantPlugins = await selectRelevantPlugins({ query, topK: 5 })
-  const pluginTools: ToolDef[] = relevantPlugins.map((p) => ({
-    id: `plugin:${p.toolId}`,
-    description: p.description,
-    paramDescription: parseParamDescription(p.manifestJson),
+  // ponytail: listMcpTools has a 60s TTL cache + .catch(() => []) so an MCP
+  // server outage never breaks tool listing — graceful degradation.
+  const mcpTools = await listMcpTools().catch(() => [])
+  const mcpToolDefs: ToolDef[] = mcpTools.map((t) => ({
+    id: `mcp:${t.serverId}:${t.toolName}`,
+    description: t.description || `${t.serverName} · ${t.toolName}`,
+    paramDescription: JSON.stringify(t.inputSchema),
     requiresDataSource: 'none' as const,
-    category: p.category,
-    subcategory: p.subcategory,
+    category: 'mcp',
+    subcategory: 'mcp',
   }))
-  return [...BUILT_IN_TOOLS, ...pluginTools]
+
+  return [...BUILT_IN_TOOLS, ...pluginTools, ...mcpToolDefs]
 }
 
 function parseParamDescription(manifestJson: string): string {

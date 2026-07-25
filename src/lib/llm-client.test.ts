@@ -80,7 +80,7 @@ describe('chatOnce', () => {
     expect(headers['anthropic-version']).toBe('2023-06-01')
   })
 
-  test('Anthropic → concatenates ALL system messages into top-level system field', async () => {
+  test('Anthropic → concatenates ALL system messages into top-level system field with cache_control', async () => {
     const fetchMock = mock(() =>
       Promise.resolve(jsonResponse({ content: [{ type: 'text', text: 'ok' }] })),
     )
@@ -95,8 +95,9 @@ describe('chatOnce', () => {
 
     const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
     const body = JSON.parse(sentInit.body as string)
-    expect(body.system).toBe('s1\n\ns2\n\ns3')
-    // non-system messages go to messages[], without system ones
+    expect(body.system).toEqual([
+      { type: 'text', text: 's1\n\ns2\n\ns3', cache_control: { type: 'ephemeral' } },
+    ])
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }])
   })
 

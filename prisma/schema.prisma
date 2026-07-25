@@ -392,6 +392,25 @@ model Plugin {
 }
 
 // ------------------------------------------------------------------
+// MCP (Model Context Protocol) server registry — external tool servers
+// ------------------------------------------------------------------
+model McpServer {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  transport   String   @default("stdio") // stdio | sse | http
+  command     String   @default("") // for stdio: executable to run
+  args        String   @default("[]") // JSON array of command args
+  url         String   @default("") // for sse/http: server endpoint
+  envJson     String   @default("{}") // AES-256-GCM encrypted JSON of env vars
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isEnabled])
+}
+
+// ------------------------------------------------------------------
 // Scheduled/triggered runs (cron + prompt)
 // ------------------------------------------------------------------
 model ScheduledRun {

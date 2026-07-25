@@ -12,7 +12,10 @@ import { generateAnswer, generateChat } from '@/lib/ai'
 import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
+import { callMcpTool } from '@/lib/mcp-client'
 import { db } from '@/lib/db'
+import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
+import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import type { ToolDef } from '@/lib/tool-registry'
 
 // ---------------------------------------------------------------------------
@@ -48,12 +51,119 @@ const MAX_STEPS = 6
 // Plan query — ask the LLM to produce a multi-step plan
 // ---------------------------------------------------------------------------
 
+const PLAN_STEP_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    tool: { type: 'string', description: 'Tool ID from the available tools list' },
+    input: {
+      type: 'object',
+      description: 'Parameters for the tool',
+      additionalProperties: true,
+    },
+    needsSynthesis: {
+      type: 'boolean',
+      description: 'Whether results need synthesis into a single answer',
+    },
+  },
+  required: ['tool', 'input'],
+}
+
+// ponytail: native function calling is one-shot (single tool call), so this
+// only produces single-step plans. Multi-step plans fall back to planQuery's
+// manual JSON prompt. Add multi-step when providers support sequential calls.
+export async function planQueryWithTools(args: {
+  question: string
+  availableTools: ToolDef[]
+  sessionId?: string
+  chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
+}): Promise<Plan | null> {
+  try {
+    const cfg = await getLlmRuntimeConfig()
+    if (!cfg) return null
+
+    const toolList = args.availableTools
+      .map((t) => `${t.id}: ${t.description}`)
+      .join('\n')
+
+    const memoryContext = await recallContext({
+      query: args.question,
+      sessionId: args.sessionId,
+    })
+
+    const historyText = args.chatHistory && args.chatHistory.length > 0
+      ? args.chatHistory.slice(-10).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 2000)}`).join('\n')
+      : ''
+
+    const systemPrompt =
+      'You are an enterprise AI planner. Create a plan to answer the user\'s question. ' +
+      `Select one tool from the available list. Maximum ${MAX_STEPS} steps. ` +
+      'Call the execute_step function with the tool ID, input parameters, and whether synthesis is needed.'
+
+    const userMessage =
+      `Question: ${args.question}\n\n` +
+      `Available tools:\n${toolList}\n\n` +
+      (memoryContext ? `Memory from prior interactions:\n${memoryContext}\n\n` : '') +
+      (historyText ? `Prior conversation history:\n${historyText}\n\n` : '') +
+      `Plan the first step.`
+
+    const tools: LlmToolDef[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'execute_step',
+          description: 'Execute one step of the plan using the specified tool',
+          parameters: PLAN_STEP_SCHEMA,
+        },
+      },
+    ]
+
+    const result = await llmChatOnce(
+      cfg,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      0,
+      'planner',
+      tools,
+    )
+
+    if (!Array.isArray(result) || result.length === 0) return null
+
+    const stepData = JSON.parse(result[0].arguments) as {
+      tool: string
+      input?: Record<string, unknown>
+      needsSynthesis?: boolean
+    }
+
+    const toolIds = new Set(args.availableTools.map((t) => t.id))
+    if (!toolIds.has(stepData.tool)) return null
+
+    const input: Record<string, string> = {}
+    if (stepData.input && typeof stepData.input === 'object') {
+      for (const [k, v] of Object.entries(stepData.input)) {
+        input[k] = String(v)
+      }
+    }
+
+    return {
+      steps: [{ id: 'step1', tool: stepData.tool, input, dependsOn: [] }],
+      needsSynthesis: stepData.needsSynthesis ?? false,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function planQuery(args: {
   question: string
   availableTools: ToolDef[]
   sessionId?: string
   chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
 }): Promise<Plan> {
+  const toolPlan = await planQueryWithTools(args)
+  if (toolPlan) return toolPlan
+
   const toolList = args.availableTools
     .map((t) => `- ${t.id}: ${t.description} | params: ${t.paramDescription}`)
     .join('\n')
@@ -151,6 +261,21 @@ function stringifyEntries(record: Record<string, unknown>): Record<string, strin
     result[key] = String(value)
   }
   return result
+}
+
+// MCP tools expect typed JSON values (numbers, booleans, arrays) but the
+// planner normalizes all step inputs to strings. Parse each value back to its
+// JSON type where possible; leave as string when it isn't valid JSON.
+function coerceMcpInput(input: Record<string, string>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(input)) {
+    try {
+      out[k] = JSON.parse(v)
+    } catch {
+      out[k] = v
+    }
+  }
+  return out
 }
 
 /**
@@ -269,6 +394,21 @@ export async function executePlan(args: {
     args.onStatus?.(step.id, step.tool, 'running')
 
     try {
+      if (step.tool.startsWith('mcp:')) {
+        // mcp:<serverId>:<toolName> — serverId is a cuid (no colons); toolName
+        // may theoretically contain colons, so rejoin the remainder.
+        const parts = step.tool.split(':')
+        const serverId = parts[1]
+        const toolName = parts.slice(2).join(':')
+        const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
+        results.push({
+          stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
+          error: result.error, latencyMs: Date.now() - started,
+        })
+        args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+        continue
+      }
+
       if (step.tool.startsWith('plugin:')) {
         const toolId = step.tool.slice('plugin:'.length)
         const plugin = await db.plugin.findFirst({
@@ -393,9 +533,11 @@ export async function synthesizeAnswer(args: {
     return 'Maaf, tidak ada langkah yang berhasil dijalankan.'
   }
 
-  const hasPluginStep = args.plan.steps.some((s) => s.tool.startsWith('plugin:'))
+  const hasExternalToolStep = args.plan.steps.some(
+    (s) => s.tool.startsWith('plugin:') || s.tool.startsWith('mcp:'),
+  )
 
-  if (!args.plan.needsSynthesis && successful.length === 1 && !hasPluginStep) {
+  if (!args.plan.needsSynthesis && successful.length === 1 && !hasExternalToolStep) {
     return successful[0].output
   }
 
