@@ -176,7 +176,7 @@ const PLUGINS: PluginSeed[] = [
   },
 ]
 
-async function main() {
+export async function seedPlugins() {
   console.log('Seeding plugins...')
   await db.plugin.deleteMany({})
   let created = 0
@@ -200,10 +200,14 @@ async function main() {
   }
 
   console.log(`\nDone: ${created} plugins registered, all enabled`)
-  await db.$disconnect()
 }
 
 main().catch((e) => {
   console.error(e)
   process.exit(1)
 })
+
+async function main() {
+  await seedPlugins()
+  await db.$disconnect()
+}

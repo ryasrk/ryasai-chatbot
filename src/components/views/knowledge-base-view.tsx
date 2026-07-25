@@ -171,19 +171,12 @@ export function KnowledgeBaseView() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [, setRebuildingEmbeddings] = useState(false)
   const [, setRebuildingFts] = useState(false)
-  // Request-id guard: only the latest category fetch may write docs, so rapid
-  // tab switches can't let a slow earlier response overwrite the wrong tab.
-  const fetchIdRef = useRef(0)
 
-  const fetchDocs = useCallback(async (cat: string = 'ALL') => {
-    const reqId = ++fetchIdRef.current
+  const fetchDocs = useCallback(async () => {
     setLoading(true)
     try {
-      const url =
-        cat === 'ALL' ? '/api/documents' : `/api/documents?category=${cat}`
-      const res = await fetch(url, { cache: 'no-store' })
+      const res = await fetch('/api/documents', { cache: 'no-store' })
       const json = await res.json()
-      if (reqId !== fetchIdRef.current) return // superseded by a newer request
       if (res.ok && Array.isArray(json.documents)) {
         setDocs(json.documents as DocumentItem[])
       } else {
@@ -193,13 +186,13 @@ export function KnowledgeBaseView() {
       toast.error('Network error while loading documents.')
       console.error(e)
     } finally {
-      if (reqId === fetchIdRef.current) setLoading(false)
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchDocs(activeCat)
-  }, [activeCat, fetchDocs])
+    fetchDocs()
+  }, [fetchDocs])
 
   const handleDelete = async (id: string) => {
     setDeletingId(id)
@@ -213,7 +206,7 @@ export function KnowledgeBaseView() {
             : `Document deleted. ${json.chunkCountRemoved ?? 0} chunks also deleted.`,
         )
         if (detailTarget?.id === id) setDetailTarget(null)
-        await fetchDocs(activeCat)
+        await fetchDocs()
       } else {
         toast.error(json.error ?? 'Failed to delete document.')
       }
@@ -276,7 +269,7 @@ export function KnowledgeBaseView() {
       toast.success('Embeddings processed.', {
         description: `${json.data.embedded ?? 0} chunks embedded, ${json.data.skipped ?? 0} skipped.`,
       })
-      await fetchDocs(activeCat)
+      await fetchDocs()
     } catch (e) {
       toast.error('Failed to rebuild embeddings', {
         description: e instanceof Error ? e.message : undefined,
@@ -451,7 +444,7 @@ export function KnowledgeBaseView() {
         existingCategories={existingCategories}
         onUploaded={() => {
           setUploadOpen(false)
-          fetchDocs(activeCat)
+          fetchDocs()
         }}
       />
 

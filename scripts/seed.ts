@@ -166,37 +166,9 @@ async function main() {
 
   // 6. Plugin ----------------------------------------------------------------
   await db.plugin.deleteMany({})
-  const plugins = [
-    { toolId: 'weather', name: 'Weather Plugin', description: 'Cek cuaca berdasarkan nama kota', category: 'utility', subcategory: 'weather', keywords: 'cuaca,weather,suhu,temperature,hujan,rain,forecast,prakiraan,angin,wind' },
-    { toolId: 'translate', name: 'Translate Plugin', description: 'Terjemahkan teks antar bahasa', category: 'utility', subcategory: 'translation', keywords: 'translate,terjemah,translation,bahasa,language' },
-    { toolId: 'calculator', name: 'Calculator Plugin', description: 'Kalkulator matematika', category: 'utility', subcategory: 'calculator', keywords: 'calculate,hitung,kalkulator,math,matematika,arithmetic,sqrt,sum,percentage,persentase' },
-    { toolId: 'docsearch', name: 'Doc Search Plugin', description: 'Cari dokumentasi bahasa pemrograman', category: 'utility', subcategory: 'documentation', keywords: 'documentation,doc,syntax,code,programming,example,contoh,snippet,function,method,error,debug,how,cara,react,vue,python,javascript,typescript,hook' },
-    { toolId: 'datetime', name: 'DateTime Plugin', description: 'Informasi tanggal dan waktu', category: 'utility', subcategory: 'datetime', keywords: 'tanggal,date,time,waktu,jam,now,sekarang,current' },
-    { toolId: 'news', name: 'News Plugin', description: 'Berita terbaru', category: 'utility', subcategory: 'news', keywords: 'berita,news,headline,artikel,terkini,latest' },
-  ]
-  for (const p of plugins) {
-    await db.plugin.create({
-      data: {
-        toolId: p.toolId,
-        name: p.name,
-        description: p.description,
-        category: p.category,
-        subcategory: p.subcategory,
-        keywords: p.keywords,
-        manifestJson: JSON.stringify({
-          paramDescription: '{ "input": "query string" }',
-          executorType: 'webhook',
-          endpoint: 'https://jsonplaceholder.typicode.com/posts/1',
-          method: 'GET',
-          authType: 'NONE',
-          timeoutMs: 10000,
-          description: `Simulasi plugin ${p.toolId}`,
-        }),
-        isEnabled: true,
-      },
-    })
-  }
-  console.log(`   ↳ inserted ${plugins.length} plugins`)
+  const { seedPlugins } = await import('./seed-plugins')
+  await seedPlugins()
+  console.log(`   ↳ inserted ${await db.plugin.count()} plugins`)
 
   // 7. Scheduled run ---------------------------------------------------------
   await db.scheduledRun.deleteMany({})
@@ -253,7 +225,7 @@ async function main() {
   console.log('   Users      :', users.map((u) => u.email).join(', '))
   console.log('   Integration:', integration.name)
   console.log('   REST       :', restConnector.name, `(${endpoints.length} endpoints)`)
-  console.log('   Plugin     : weather, translate, calculator, docsearch, datetime, news')
+  console.log('   Plugin     : 9 prebuilt (weather, datetime, timezone, translate, calculator, news, docsearch, web_search, url_fetch)')
   console.log('   Schedule   : Ringkasan Penjualan Harian (0 9 * * *)')
   console.log('   API Key    : see above')
 }
