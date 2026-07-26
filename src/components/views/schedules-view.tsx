@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+import { cn } from '@/lib/utils'
 
-import { describeCron, formatRelativeTime, previewNextRuns, SCHEDULE_PRESETS } from '@/lib/cron-describe'
+import { describeCron, formatRelativeTime, previewNextRuns } from '@/lib/cron-describe'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
@@ -16,6 +17,13 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -42,6 +50,34 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+
+type RepeatType = 'daily' | 'weekdays' | 'weekends' | 'custom'
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function buildCron(time: string, repeat: RepeatType, selectedDays: number[]): string {
+  const [h, m] = time.split(':').map(Number)
+  const hh = h ?? 0
+  const mm = m ?? 0
+  if (repeat === 'daily') return `${mm} ${hh} * * *`
+  if (repeat === 'weekdays') return `${mm} ${hh} * * 1-5`
+  if (repeat === 'weekends') return `${mm} ${hh} * * 0,6`
+  if (repeat === 'custom' && selectedDays.length > 0) return `${mm} ${hh} * * ${selectedDays.sort().join(',')}`
+  return `${mm} ${hh} * * *`
+}
+
+function parseCron(expr: string): { time: string; repeat: RepeatType; selectedDays: number[] } {
+  const parts = expr.trim().split(/\s+/)
+  if (parts.length < 5) return { time: '09:00', repeat: 'daily', selectedDays: [] }
+  const mm = parts[0]
+  const hh = parts[1]
+  const dow = parts[4]
+  const time = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  if (dow === '*') return { time, repeat: 'daily', selectedDays: [] }
+  if (dow === '1-5') return { time, repeat: 'weekdays', selectedDays: [] }
+  if (dow === '0,6' || dow === '6,0') return { time, repeat: 'weekends', selectedDays: [] }
+  const days = dow.split(',').map(Number).filter((n) => !isNaN(n))
+  return { time, repeat: 'custom', selectedDays: days }
+}
 
 interface Schedule {
   id: string
@@ -79,6 +115,9 @@ export function SchedulesView() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Schedule | null>(null)
   const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true })
+  const [scheduleTime, setScheduleTime] = useState('09:00')
+  const [repeatType, setRepeatType] = useState<RepeatType>('daily')
+  const [selectedDays, setSelectedDays] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -111,18 +150,30 @@ export function SchedulesView() {
   function openCreate() {
     setEditing(null)
     setForm({ name: '', cronExpr: '', prompt: '', isActive: true })
+    setScheduleTime('09:00')
+    setRepeatType('daily')
+    setSelectedDays([])
     setDialogOpen(true)
   }
 
   function openEdit(s: Schedule) {
     setEditing(s)
+    const parsed = parseCron(s.cronExpr)
     setForm({ name: s.name, cronExpr: s.cronExpr, prompt: s.prompt, isActive: s.isActive })
+    setScheduleTime(parsed.time)
+    setRepeatType(parsed.repeat)
+    setSelectedDays(parsed.selectedDays)
     setDialogOpen(true)
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.cronExpr.trim() || !form.prompt.trim()) {
+    const cronExpr = buildCron(scheduleTime, repeatType, selectedDays)
+    if (!form.name.trim() || !cronExpr.trim() || !form.prompt.trim()) {
       toast.error('All fields are required.')
+      return
+    }
+    if (repeatType === 'custom' && selectedDays.length === 0) {
+      toast.error('Select at least one day.')
       return
     }
     setSaving(true)
@@ -132,7 +183,7 @@ export function SchedulesView() {
       const method = isEdit ? 'PATCH' : 'POST'
       const body: Record<string, unknown> = {
         name: form.name.trim(),
-        cronExpr: form.cronExpr.trim(),
+        cronExpr,
         prompt: form.prompt.trim(),
         isActive: form.isActive,
       }
@@ -375,48 +426,82 @@ export function SchedulesView() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Cron Expression</Label>
-              <Input
-                value={form.cronExpr}
-                onChange={(e) => setForm({ ...form, cronExpr: e.target.value })}
-                placeholder="0 9 * * *"
-                className="h-8 text-xs font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                Format: minute hour day month weekday (0-59 0-23 1-31 1-12 0-6)
-              </p>
-              {form.cronExpr && (
-                <p className="text-xs text-muted-foreground">
-                  {describeCron(form.cronExpr)}
-                </p>
-              )}
-              <div className="max-h-[200px] overflow-y-auto rounded-none border border-border/70 p-2">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {SCHEDULE_PRESETS.map((p) => (
-                    <button
-                      key={p.expr}
-                      type="button"
-                      onClick={() => setForm({ ...form, cronExpr: p.expr })}
-                      className="text-left rounded-none border border-border/70 px-2 py-1.5 hover:bg-accent transition-colors"
-                    >
-                      <div className="text-xs font-medium">{p.label}</div>
-                      <div className="text-xs text-muted-foreground">{p.description}</div>
-                    </button>
-                  ))}
-                </div>
+              <Label className="text-xs">Schedule</Label>
+              <div className="flex items-center gap-3 rounded-none border border-border/70 p-3 bg-muted/20">
+                <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="h-9 text-2xl font-light tracking-wide bg-transparent border-0 focus:outline-none cursor-pointer"
+                />
+                <div className="flex-1" />
+                <Select
+                  value={repeatType}
+                  onValueChange={(v) => {
+                    setRepeatType(v as RepeatType)
+                    if (v !== 'custom') setSelectedDays([])
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Every day</SelectItem>
+                    <SelectItem value="weekdays">Weekdays (Mon–Fri)</SelectItem>
+                    <SelectItem value="weekends">Weekends (Sat–Sun)</SelectItem>
+                    <SelectItem value="custom">Custom days...</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              {form.cronExpr && describeCron(form.cronExpr) !== 'Invalid cron expression' && (
-                <div className="rounded-none border border-border/70 bg-muted/20 p-2 space-y-1">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Next 5 Executions</div>
-                  {previewNextRuns(form.cronExpr).map((run, i) => (
-                    <div key={i} className="text-xs flex items-center gap-2">
-                      <span className="text-muted-foreground">{i + 1}.</span>
-                      <span>{format(run, 'dd MMM yyyy, HH:mm')}</span>
-                      <span className="text-muted-foreground">({formatRelativeTime(run.toISOString())})</span>
-                    </div>
-                  ))}
+              {repeatType === 'custom' && (
+                <div className="flex gap-1.5 flex-wrap">
+                  {WEEKDAYS.map((day, i) => {
+                    const active = selectedDays.includes(i)
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDays((prev) =>
+                            active ? prev.filter((d) => d !== i) : [...prev, i]
+                          )
+                        }}
+                        className={cn(
+                          'h-8 w-12 text-xs rounded-md border transition-colors',
+                          active
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-card text-muted-foreground border-border/70 hover:bg-accent'
+                        )}
+                      >
+                        {day}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
+              {(() => {
+                const cronExpr = buildCron(scheduleTime, repeatType, selectedDays)
+                return (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {describeCron(cronExpr)} &nbsp; <code className="font-mono text-[10px] bg-muted/40 px-1 py-0.5 rounded">{cronExpr}</code>
+                    </p>
+                    {describeCron(cronExpr) !== 'Invalid cron expression' && (
+                      <div className="rounded-none border border-border/70 bg-muted/20 p-2 space-y-1">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Next 5 Executions</div>
+                        {previewNextRuns(cronExpr).map((run, i) => (
+                          <div key={i} className="text-xs flex items-center gap-2">
+                            <span className="text-muted-foreground">{i + 1}.</span>
+                            <span>{format(run, 'dd MMM yyyy, HH:mm')}</span>
+                            <span className="text-muted-foreground">({formatRelativeTime(run.toISOString())})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Prompt</Label>
