@@ -260,6 +260,17 @@ function McpServersTab() {
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  // ponytail: Quick Add by URL — create + test an SSE/HTTP MCP server in one
+  // shot without opening the full add dialog. Reuses McpTestResultBlock for
+  // inline results. The POST/test flow is the same as handleSave's test step.
+  const [quickUrl, setQuickUrl] = useState('')
+  const [quickConnecting, setQuickConnecting] = useState(false)
+  const [quickResult, setQuickResult] = useState<{
+    status: 'testing' | 'success' | 'error'
+    tools?: Array<{ name: string; description: string }>
+    error?: string
+  } | null>(null)
+
   const fetchServers = useCallback(async () => {
     setLoading(true)
     try {
@@ -457,6 +468,65 @@ function McpServersTab() {
     }
   }
 
+  async function handleQuickConnect() {
+    const raw = quickUrl.trim()
+    if (!raw) {
+      toast.error('Paste an MCP URL first.')
+      return
+    }
+    let parsed: URL
+    try {
+      parsed = new URL(raw)
+    } catch {
+      toast.error('Invalid URL.')
+      return
+    }
+    const transport = raw.toLowerCase().includes('/sse') ? 'sse' : 'http'
+    setQuickConnecting(true)
+    setQuickResult({ status: 'testing' })
+    try {
+      const res = await fetch('/api/mcp/servers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: parsed.hostname,
+          description: 'Quick-added via URL',
+          transport,
+          command: '',
+          args: [],
+          url: raw,
+          envVars: {},
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) {
+        setQuickResult({ status: 'error', error: data.error || 'Failed to create server.' })
+        return
+      }
+      fetchServers()
+      const id = data.server?.id
+      if (!id) {
+        setQuickResult(null)
+        return
+      }
+      const testRes = await fetch(`/api/mcp/servers/${id}/test`, { method: 'POST' })
+      const testData = await testRes.json()
+      if (testData.ok) {
+        setQuickResult({ status: 'success', tools: testData.tools ?? [] })
+        setQuickUrl('')
+      } else {
+        setQuickResult({ status: 'error', error: testData.error || 'Connection test failed.' })
+      }
+    } catch (e) {
+      setQuickResult({
+        status: 'error',
+        error: e instanceof Error ? e.message : 'Connection failed.',
+      })
+    } finally {
+      setQuickConnecting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -467,6 +537,30 @@ function McpServersTab() {
 
   return (
     <div className="space-y-3">
+      {/* Quick Add by URL — paste an MCP endpoint URL and connect in one step */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 rounded-md border border-border/60 p-2">
+          <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <Input
+            value={quickUrl}
+            onChange={(e) => setQuickUrl(e.target.value)}
+            placeholder="Paste MCP URL (…/sse or …/mcp) for quick connect"
+            className="h-7 text-xs flex-1 border-0 shadow-none focus-visible:ring-0"
+            onKeyDown={(e) => { if (e.key === 'Enter' && !quickConnecting) handleQuickConnect() }}
+          />
+          <Button
+            size="sm"
+            onClick={handleQuickConnect}
+            disabled={quickConnecting || !quickUrl.trim()}
+            className="h-7 text-xs gap-1.5 shrink-0"
+          >
+            {quickConnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+            Connect
+          </Button>
+        </div>
+        {quickResult && <McpTestResultBlock result={quickResult} />}
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />

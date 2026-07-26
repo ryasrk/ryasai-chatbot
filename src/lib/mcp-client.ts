@@ -144,7 +144,9 @@ export async function testMcpServer(
     const msg = e instanceof Error ? e.message : String(e)
     console.warn(`[mcp] test failed for "${row.name}":`, msg)
     await safeClose(client)
-    return { ok: false, error: msg }
+    // ponytail: include the connection target so the user sees what failed.
+    const target = row.transport === 'stdio' ? row.command : row.url
+    return { ok: false, error: target ? `${target}: ${msg}` : msg }
   }
 }
 

@@ -278,17 +278,27 @@ async function executeAdminAction(message: string, userId: string): Promise<Admi
     return { handled: true, output: `Document "${doc.name}" ${action ? 'enabled' : 'disabled'} for RAG retrieval.` }
   }
 
-  // Agentic MCP setup — "add/install/set up mcp server [name] [for/at ...]"
+  // Agentic MCP setup — triggered by:
+  //   1. "add/install/set up mcp server [name]" (keyword-driven)
+  //   2. URL + (mcp|install|add|connect) keyword — "install this: https://…"
+  //   3. Bare URL that looks like an MCP endpoint (/sse, /mcp, /api/mcp)
+  const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
+  const bareMcpUrl = message.match(/https?:\/\/[^\s]*\/(?:sse|mcp|api\/mcp)[^\s]*/i)?.[0]
   const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:an?\s+)?(?:mcp\s+server|mcps?\b)/i)
-  if (mcpMatch) {
+  const urlWithKeyword = !!(urlInMessage && (lower.includes('mcp') || lower.includes('install') || lower.includes('add') || lower.includes('connect')))
+  if (mcpMatch || urlWithKeyword || bareMcpUrl) {
     const knownNames = Object.keys(MCP_PACKAGES)
     const nameMatch = knownNames.find((n) => lower.includes(n))
     const namedMatch = message.match(/(?:called|named)\s+([A-Za-z0-9_-]+)/i)
-    const serverName = nameMatch
+    let serverName = nameMatch
       ? nameMatch.charAt(0).toUpperCase() + nameMatch.slice(1)
-      : namedMatch?.[1] ?? `MCP-${new Date().toISOString().slice(11, 19)}`
+      : namedMatch?.[1] ?? ''
+    // ponytail: for URL-based installs with no explicit name, use hostname.
+    if (!serverName && urlInMessage) {
+      try { serverName = new URL(urlInMessage).hostname } catch { serverName = '' }
+    }
+    if (!serverName) serverName = `MCP-${new Date().toISOString().slice(11, 19)}`
 
-    const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
     let transport: 'stdio' | 'sse' | 'http' = 'stdio'
     let command = ''
     let args: string[] = []
