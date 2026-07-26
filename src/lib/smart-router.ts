@@ -34,6 +34,52 @@ const STOPWORDS = new Set([
   'tell', 'give', 'me', 'my', 'our', 'your', 'their', 'his', 'her', 'its',
 ])
 
+// ponytail: common Indonesian→English data-term synonyms. NOT database names —
+// these are generic translation mappings so the schema keyword matcher can
+// find English column names (population, city, name) when the user asks in
+// Indonesian (populasi, kota, nama). Keep this small — it's a fallback, not
+// a full dictionary. Add entries when testing reveals gaps.
+const SYNONYMS: Record<string, string[]> = {
+  negara: ['country'],
+  negara2: ['country'],
+  kota: ['city'],
+  populasi: ['population'],
+  penduduk: ['population'],
+  bahasa: ['language'],
+  benua: ['continent'],
+  wilayah: ['region'],
+  jumlah: ['count', 'total', 'sum'],
+  rata: ['avg', 'average'],
+  tertinggi: ['max', 'highest', 'top'],
+  terendah: ['min', 'lowest', 'bottom'],
+  terbesar: ['max', 'largest', 'biggest'],
+  terkecil: ['min', 'smallest'],
+  terbanyak: ['max', 'most'],
+  terdikit: ['min', 'fewest', 'least'],
+  pelanggan: ['customer'],
+  produk: ['product'],
+  pesanan: ['order'],
+  gudang: ['warehouse', 'inventory'],
+  gaji: ['salary'],
+  karyawan: ['employee'],
+  faktur: ['invoice'],
+  pendapatan: ['revenue', 'income'],
+  film: ['film', 'movie'],
+  artis: ['artist'],
+  album: ['album'],
+  lagu: ['track', 'song'],
+  genre: ['genre'],
+}
+
+function expandWithSynonyms(tokens: string[]): string[] {
+  const expanded = [...tokens]
+  for (const token of tokens) {
+    const syns = SYNONYMS[token]
+    if (syns) expanded.push(...syns)
+  }
+  return expanded
+}
+
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -92,6 +138,7 @@ export async function smartRoute(args: {
   preferredIntegrationId?: string
 }): Promise<SmartRouteResult> {
   const tokens = tokenize(args.question)
+  const expandedTokens = expandWithSynonyms(tokens)
 
   const [schemaMeta, endpointMeta, docMeta, perfData, similarity, pluginRelevant] = await Promise.all([
     loadSchemaMetadata(),
@@ -103,11 +150,11 @@ export async function smartRoute(args: {
   ])
 
   // ponytail: detect explicit integration mentions in the question ("World Geography DB", "Chinook", etc.)
-  const mentionedIntegration = await detectMentionedIntegration(args.question)
+  const mentionedIntegration = await detectMentionedIntegration(args.question, expandedTokens)
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores: ToolScore[] = tools.map((tool) => {
-    const schemaScore = scoreSchemaMatch(tool, tokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
+    const schemaScore = scoreSchemaMatch(tool, expandedTokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
     const perf = perfData[tool] ?? NEUTRAL_PERF
     const perfScore = perf.successRate
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
@@ -165,7 +212,7 @@ export async function smartRoute(args: {
   let integrationId: string | undefined
   if (decision === 'SQL' && args.hasIntegrations) {
     // ponytail: priority order — explicit mention > user-selected > schema match
-    integrationId = mentionedIntegration ?? args.preferredIntegrationId ?? (await pickBestIntegration(tokens))
+    integrationId = mentionedIntegration ?? args.preferredIntegrationId ?? (await pickBestIntegration(expandedTokens))
   }
 
   return { decision, reason, scores, integrationId, llmUsed }
@@ -391,42 +438,69 @@ async function loadSimilarityBoost(
   return boosts
 }
 
-// ponytail: detect when the user explicitly mentions a database by name.
-// e.g. "Di World Geography DB" → matches "World Geography DB" integration.
-// This overrides schema-based integration selection.
-async function detectMentionedIntegration(question: string): Promise<string | undefined> {
+// ponytail: detect when the user explicitly mentions a database by name or
+// by its table/column names. Fully dynamic — pulls integration names + schema
+// keywords from the DB, no hardcoded provider keywords. When the user says
+// "Di World Geography DB" or "which country has the most cities", the schema
+// keywords (country, city, population, etc.) uniquely identify the integration.
+async function detectMentionedIntegration(question: string, tokens: string[]): Promise<string | undefined> {
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
-    select: { id: true, name: true, provider: true },
+    include: { schemas: { select: { tableName: true, columns: true } } },
   })
+  if (integrations.length === 0) return undefined
+  if (integrations.length === 1) return undefined // only one — no ambiguity to resolve
+
   const lower = question.toLowerCase()
+  // ponytail: tokens are passed in (already expanded with synonyms)
+
+  // Priority 1: explicit integration name match ("World Geography DB", "Chinook")
   for (const integ of integrations) {
     const nameLower = integ.name.toLowerCase()
-    // Match full name or significant words from the name
     if (lower.includes(nameLower)) return integ.id
-    // Match on key words (skip common words like "db", "database")
+    // Match significant words from the name (skip generic words)
     const significantWords = nameLower.split(/\s+/).filter(
-      (w) => w.length >= 4 && !['db', 'database', 'data', 'store', 'media'].includes(w),
+      (w) => w.length >= 4 && !STOPWORDS.has(w) && !['db', 'database', 'data', 'store', 'media'].includes(w),
     )
     if (significantWords.length >= 2 && significantWords.every((w) => lower.includes(w))) {
       return integ.id
     }
-    // Match on provider type keywords
-    if (integ.provider === 'SQLITE_WORLD' && (lower.includes('world') || lower.includes('geography') || lower.includes('country') || lower.includes('negara') || lower.includes('city') || lower.includes('language'))) {
-      return integ.id
+  }
+
+  // Priority 2: schema keyword match — score each integration by how many
+  // question tokens match its table names + column names. The integration
+  // with the highest unique keyword overlap wins. This is dynamic — works
+  // for any database without hardcoding domain keywords.
+  const scored = integrations.map((integ) => {
+    const schemaKeywords = new Set<string>()
+    for (const s of integ.schemas) {
+      schemaKeywords.add(s.tableName.toLowerCase())
+      try {
+        const cols = JSON.parse(s.columns) as Array<{ name?: string }>
+        for (const c of cols) {
+          if (c.name) schemaKeywords.add(c.name.toLowerCase())
+        }
+      } catch { /* skip */ }
     }
-    if (integ.provider === 'SQLITE_CHINOOK' && (lower.includes('chinook') || lower.includes('music') || lower.includes('artist') || lower.includes('album') || lower.includes('track'))) {
-      return integ.id
+    let matches = 0
+    for (const token of tokens) {
+      // Direct match
+      if (schemaKeywords.has(token)) { matches++; continue }
+      // Partial match (token contains or is contained by a schema keyword)
+      for (const kw of schemaKeywords) {
+        if (kw.length >= 4 && (kw.includes(token) || token.includes(kw))) {
+          matches++
+          break
+        }
+      }
     }
-    if (integ.provider === 'SQLITE_PAGILA' && (lower.includes('pagila') || lower.includes('movie') || lower.includes('film') || lower.includes('rental'))) {
-      return integ.id
-    }
-    if (integ.provider === 'CLICKHOUSE' && (lower.includes('clickhouse') || lower.includes('covid') || lower.includes('hackernews') || lower.includes('hacker news'))) {
-      return integ.id
-    }
-    if (integ.provider === 'SQLITE_DEMO' && (lower.includes('erp') || lower.includes('inventory') || lower.includes('warehouse') || lower.includes('gudang'))) {
-      return integ.id
-    }
+    return { id: integ.id, name: integ.name, score: matches, keywordCount: schemaKeywords.size }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+  // Only return if there's a clear winner (top score > 0 and > 2x the second)
+  if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score * 2)) {
+    return scored[0].id
   }
   return undefined
 }
