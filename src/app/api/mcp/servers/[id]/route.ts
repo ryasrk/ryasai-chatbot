@@ -21,6 +21,8 @@ interface PatchBody {
   url?: string
   envVars?: Record<string, unknown>
   isEnabled?: boolean
+  chatEnabled?: boolean
+  agenticEnabled?: boolean
 }
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
@@ -56,11 +58,15 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       url?: string
       envJson?: string
       isEnabled?: boolean
+      chatEnabled?: boolean
+      agenticEnabled?: boolean
     } = {}
 
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.description === 'string') data.description = body.description.trim()
     if (typeof body.isEnabled === 'boolean') data.isEnabled = body.isEnabled
+    if (typeof body.chatEnabled === 'boolean') data.chatEnabled = body.chatEnabled
+    if (typeof body.agenticEnabled === 'boolean') data.agenticEnabled = body.agenticEnabled
     if (typeof body.command === 'string') data.command = body.command.trim()
 
     if (typeof body.args !== 'undefined') {
@@ -111,7 +117,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     }
 
     const updated = await db.mcpServer
-      .update({ where: { id }, data, select: { id: true, name: true, transport: true } })
+      .update({ where: { id }, data, select: { id: true, name: true, transport: true, chatEnabled: true, agenticEnabled: true } })
       .catch((e: unknown) => {
         if (isPrismaNotFound(e)) return null
         throw e
@@ -129,7 +135,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       detail: { id: updated.id, name: updated.name, changes: Object.keys(data) },
     })
 
-    return NextResponse.json({ ok: true, server: { id: updated.id, name: updated.name, transport: updated.transport } })
+    return NextResponse.json({ ok: true, server: { id: updated.id, name: updated.name, transport: updated.transport, chatEnabled: updated.chatEnabled, agenticEnabled: updated.agenticEnabled } })
   } catch (e) {
     return handleApiError(e, 'Gagal memperbarui MCP server.')
   }

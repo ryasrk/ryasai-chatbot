@@ -615,9 +615,10 @@ async function preparePluginStream(args: {
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
   const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 })
-  if (relevant.length === 0) return prepareChatStream(args)
+  const chatRelevant = relevant.filter((p) => p.chatEnabled)
+  if (chatRelevant.length === 0) return prepareChatStream(args)
 
-  const plugin = await db.plugin.findFirst({ where: { toolId: relevant[0].toolId, isEnabled: true } })
+  const plugin = await db.plugin.findFirst({ where: { toolId: chatRelevant[0].toolId, isEnabled: true } })
   if (!plugin) return prepareChatStream(args)
 
   const result = await executePlugin({
@@ -1191,9 +1192,10 @@ async function runPluginBranch(args: {
 }): Promise<CompletionResult> {
   const started = Date.now()
   const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 })
-  if (relevant.length === 0) return runChatBranch(args)
+  const chatRelevant = relevant.filter((p) => p.chatEnabled)
+  if (chatRelevant.length === 0) return runChatBranch(args)
 
-  const plugin = await db.plugin.findFirst({ where: { toolId: relevant[0].toolId, isEnabled: true } })
+  const plugin = await db.plugin.findFirst({ where: { toolId: chatRelevant[0].toolId, isEnabled: true } })
   if (!plugin) return runChatBranch(args)
 
   const result = await executePlugin({

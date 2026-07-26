@@ -8,6 +8,8 @@ export interface ScoredPlugin {
   manifestJson: string
   category: string
   subcategory: string
+  chatEnabled: boolean
+  agenticEnabled: boolean
   score: number
 }
 
@@ -142,6 +144,8 @@ export async function selectRelevantPlugins(args: {
       manifestJson: p.manifestJson,
       category: p.category,
       subcategory: p.subcategory,
+      chatEnabled: p.chatEnabled,
+      agenticEnabled: p.agenticEnabled,
       score,
     }
   })
@@ -171,6 +175,8 @@ export async function getAllPluginsGrouped(): Promise<Record<string, Record<stri
       manifestJson: p.manifestJson,
       category: p.category,
       subcategory: p.subcategory,
+      chatEnabled: p.chatEnabled,
+      agenticEnabled: p.agenticEnabled,
       score: 0,
     })
   }

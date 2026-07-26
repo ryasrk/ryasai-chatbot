@@ -219,7 +219,7 @@ export function DashboardView() {
         </Card>
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs">Recent Activity</CardTitle>
@@ -265,6 +265,62 @@ export function DashboardView() {
           </Card>
           <CogneeStatusBar />
         </div>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-xs">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+              Scheduled Runs
+            </CardTitle>
+            <CardDescription className="text-xs">Latest automated executions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.recentScheduledRuns.length === 0 ? (
+              <div className="rounded-md border border-dashed py-4 text-center text-xs text-muted-foreground">
+                No scheduled runs yet.
+              </div>
+            ) : (
+              <ul className="divide-y rounded-md border">
+                {data.recentScheduledRuns.map((r, i) => {
+                  const ok = (() => {
+                    try {
+                      const p = JSON.parse(r.lastResult ?? '') as Record<string, unknown>
+                      return !('error' in p)
+                    } catch {
+                      return null
+                    }
+                  })()
+                  const preview = (() => {
+                    try {
+                      const p = JSON.parse(r.lastResult ?? '') as Record<string, unknown>
+                      if (typeof p.answer === 'string') return p.answer
+                      if (typeof p.error === 'string') return p.error
+                      return ''
+                    } catch {
+                      return r.lastResult ?? ''
+                    }
+                  })()
+                  return (
+                    <li key={i} className="px-2.5 py-1.5 flex items-start gap-2">
+                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 w-[58px] mt-0.5">
+                        {r.lastRunAt ? format(new Date(r.lastRunAt), 'MM-dd HH:mm') : '—'}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="truncate text-xs font-medium block">{r.name}</span>
+                        <span className="line-clamp-2 text-[10px] text-muted-foreground">{preview}</span>
+                      </div>
+                      {ok !== null && (
+                        <Badge variant={ok ? 'default' : 'destructive'} className="text-[10px] shrink-0">
+                          {ok ? 'OK' : 'Err'}
+                        </Badge>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">

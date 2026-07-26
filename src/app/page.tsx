@@ -52,7 +52,7 @@ const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string }[] =
   { key: 'knowledge', label: 'Knowledge', icon: FileText, desc: 'Documents and RAG' },
   { key: 'ai-config', label: 'AI Configuration', icon: Brain, desc: 'Provider, model, embedding' },
   { key: 'prompt-tools', label: 'Prompt & Tools', icon: Wrench, desc: 'System prompt and routing' },
-  { key: 'plugins', label: 'Plugins', icon: Puzzle, desc: 'External tool registry' },
+  { key: 'plugins', label: 'Tools', icon: Puzzle, desc: 'MCP servers and custom tools' },
   { key: 'schedules', label: 'Schedules', icon: Clock, desc: 'Automated scheduled runs' },
   { key: 'security', label: 'Monitoring', icon: ShieldCheck, desc: 'Audit and guardrails' },
   { key: 'integration-api', label: 'Integration API', icon: Plug, desc: 'API keys and request logs' },

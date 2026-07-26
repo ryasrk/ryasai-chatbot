@@ -16,6 +16,8 @@ interface CreatePluginBody {
   manifest?: PluginManifest
   category?: string
   keywords?: string
+  chatEnabled?: boolean
+  agenticEnabled?: boolean
 }
 
 export async function GET() {
@@ -31,6 +33,8 @@ export async function GET() {
         description: true,
         manifestJson: true,
         isEnabled: true,
+        chatEnabled: true,
+        agenticEnabled: true,
         category: true,
         subcategory: true,
         keywords: true,
@@ -48,6 +52,8 @@ export async function GET() {
         description: p.description,
         manifest: manifest ? maskPluginManifest(manifest) : null,
         isEnabled: p.isEnabled,
+        chatEnabled: p.chatEnabled,
+        agenticEnabled: p.agenticEnabled,
         category: p.category,
         subcategory: p.subcategory,
         keywords: p.keywords,
@@ -107,6 +113,8 @@ export async function POST(req: NextRequest) {
         description,
         manifestJson: JSON.stringify(manifest),
         isEnabled: false,
+        chatEnabled: typeof body.chatEnabled === 'boolean' ? body.chatEnabled : true,
+        agenticEnabled: typeof body.agenticEnabled === 'boolean' ? body.agenticEnabled : true,
         category: (body.category ?? 'general').trim() || 'general',
         keywords: (body.keywords ?? '').trim(),
       },
@@ -116,6 +124,8 @@ export async function POST(req: NextRequest) {
         name: true,
         description: true,
         isEnabled: true,
+        chatEnabled: true,
+        agenticEnabled: true,
         createdAt: true,
       },
     })

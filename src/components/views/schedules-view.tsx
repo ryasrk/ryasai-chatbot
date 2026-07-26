@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X } from 'lucide-react'
+import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -122,6 +122,7 @@ export function SchedulesView() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [outputSchedule, setOutputSchedule] = useState<Schedule | null>(null)
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
@@ -362,6 +363,17 @@ export function SchedulesView() {
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex items-center justify-end gap-1">
+                          {s.lastResult && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => setOutputSchedule(s)}
+                              title="View Output"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -428,13 +440,17 @@ export function SchedulesView() {
             <div className="space-y-1.5">
               <Label className="text-xs">Schedule</Label>
               <div className="flex items-center gap-3 rounded-none border border-border/70 p-3 bg-muted/20">
-                <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
-                <input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  className="h-9 text-2xl font-light tracking-wide bg-transparent border-0 focus:outline-none cursor-pointer"
-                />
+                <label className="cursor-pointer">
+                  <span className="text-2xl font-light tracking-wide hover:text-primary transition-colors">
+                    {scheduleTime}
+                  </span>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="sr-only"
+                  />
+                </label>
                 <div className="flex-1" />
                 <Select
                   value={repeatType}
@@ -568,6 +584,64 @@ export function SchedulesView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={outputSchedule !== null} onOpenChange={(open) => { if (!open) setOutputSchedule(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              {outputSchedule?.name} — Last Execution
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {outputSchedule ? fmtDate(outputSchedule.lastRunAt) : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {outputSchedule?.lastResult && (
+            <ScheduleOutputBody lastResult={outputSchedule.lastResult} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ScheduleOutputBody({ lastResult }: { lastResult: string }) {
+  const status = lastStatusFromResult(lastResult)
+  let answer = ''
+  let error = ''
+  try {
+    const parsed = JSON.parse(lastResult) as Record<string, unknown>
+    if (typeof parsed.answer === 'string') answer = parsed.answer
+    if (typeof parsed.error === 'string') error = parsed.error
+  } catch {
+    answer = lastResult
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Status:</span>
+        {status === 'success' ? (
+          <Badge className="text-xs bg-success/15 text-success border-success/20 gap-1">
+            <Check className="h-3 w-3" />
+            Success
+          </Badge>
+        ) : status === 'error' ? (
+          <Badge className="text-xs bg-destructive/15 text-destructive border-destructive/20 gap-1">
+            <X className="h-3 w-3" />
+            Failed
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </div>
+      {error ? (
+        <pre className="whitespace-pre-wrap rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
+          {error}
+        </pre>
+      ) : (
+        <pre className="whitespace-pre-wrap rounded-md border bg-muted/20 p-2.5 text-xs">
+          {answer || '(empty)'}
+        </pre>
+      )}
     </div>
   )
 }

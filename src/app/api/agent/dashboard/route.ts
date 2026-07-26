@@ -348,7 +348,7 @@ export async function POST(req: NextRequest) {
           }
 
           // 2. Not an admin action — use multi-step planner
-          const availableTools = await getAvailableTools(message)
+          const availableTools = await getAvailableTools(message, 'agentic')
           const fmtOpts: Intl.DateTimeFormatOptions = { timeZone: tz, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }
           const sessionStart = sessionCreatedAt.toLocaleString('en-US', fmtOpts)
           const currentTime = new Date().toLocaleString('en-US', fmtOpts)

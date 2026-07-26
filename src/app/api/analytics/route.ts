@@ -145,6 +145,14 @@ export async function GET() {
       count: g._count._all,
     }))
 
+    // ---- recent scheduled runs (completed) ------------------------------
+    const recentScheduledRuns = await db.scheduledRun.findMany({
+      where: { lastRunAt: { not: null } },
+      orderBy: { lastRunAt: 'desc' },
+      take: 5,
+      select: { name: true, lastRunAt: true, lastResult: true },
+    })
+
     return NextResponse.json({
       totals: {
         integrations,
@@ -160,6 +168,7 @@ export async function GET() {
       auditBySeverity,
       integrationsByProvider,
       documentsByCategory,
+      recentScheduledRuns,
     })
   } catch (err) {
     return handleApiError(err, 'Gagal memuat data analitik.')

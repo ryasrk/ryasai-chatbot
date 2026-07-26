@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
 
-    const availableTools = await getAvailableTools(question)
+    const availableTools = await getAvailableTools(question, 'agentic')
 
     // 1) Plan
     agentRun = await db.agentRun.create({

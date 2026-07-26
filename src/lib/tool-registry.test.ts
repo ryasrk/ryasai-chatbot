@@ -6,6 +6,8 @@ const mockPluginFindMany = mock(async () => [
     description: 'Get weather for a city',
     manifestJson: JSON.stringify({ paramDescription: '{ "city": "name" }' }),
     isEnabled: true,
+    chatEnabled: true,
+    agenticEnabled: true,
     category: 'external' as string | null,
     subcategory: 'weather' as string | null,
   },
@@ -18,6 +20,8 @@ const mockSelectRelevantPlugins = mock(async () => [
     manifestJson: JSON.stringify({ paramDescription: '{ "text": "string", "to": "lang" }' }),
     category: 'external',
     subcategory: 'language',
+    chatEnabled: true,
+    agenticEnabled: true,
   },
 ])
 
@@ -25,8 +29,15 @@ const mockListMcpTools = mock(async () => [
   { serverId: 'srv1', serverName: 'FileServer', toolName: 'read_file', description: 'Read a file', inputSchema: { type: 'object' } },
 ])
 
+const mockMcpServerFindMany = mock(async () => [
+  { id: 'srv1', chatEnabled: true, agenticEnabled: true },
+])
+
 mock.module('@/lib/db', () => ({
-  db: { plugin: { findMany: mockPluginFindMany } },
+  db: {
+    plugin: { findMany: mockPluginFindMany },
+    mcpServer: { findMany: mockMcpServerFindMany },
+  },
 }))
 mock.module('@/lib/plugin-selector', () => ({
   selectRelevantPlugins: mockSelectRelevantPlugins,
@@ -41,6 +52,7 @@ beforeEach(() => {
   mockPluginFindMany.mockClear()
   mockSelectRelevantPlugins.mockClear()
   mockListMcpTools.mockClear()
+  mockMcpServerFindMany.mockClear()
 })
 
 describe('getTool', () => {
@@ -85,7 +97,7 @@ describe('getAvailableTools without query', () => {
 
   test('plugin with invalid manifest JSON → default paramDescription', async () => {
     mockPluginFindMany.mockImplementationOnce(async () => [
-      { toolId: 'broken', description: 'bad manifest', manifestJson: 'not-json', isEnabled: true, category: null, subcategory: null },
+      { toolId: 'broken', description: 'bad manifest', manifestJson: 'not-json', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: null, subcategory: null },
     ])
     const tools = await getAvailableTools()
     const broken = tools.find((t) => t.id === 'plugin:broken')

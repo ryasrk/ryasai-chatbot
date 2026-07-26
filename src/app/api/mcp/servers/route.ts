@@ -16,6 +16,8 @@ interface CreateBody {
   url?: string
   envVars?: Record<string, unknown>
   isEnabled?: boolean
+  chatEnabled?: boolean
+  agenticEnabled?: boolean
 }
 
 function validateTransportConfig(body: CreateBody): { ok: true } | { ok: false; error: string } {
@@ -73,6 +75,8 @@ export function sanitizeServer(row: {
   url: string
   envJson: string
   isEnabled: boolean
+  chatEnabled: boolean
+  agenticEnabled: boolean
   createdAt: Date
   updatedAt: Date
 }) {
@@ -86,6 +90,8 @@ export function sanitizeServer(row: {
     url: row.url,
     hasEnvVars: row.envJson && row.envJson !== '{}',
     isEnabled: row.isEnabled,
+    chatEnabled: row.chatEnabled,
+    agenticEnabled: row.agenticEnabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -130,6 +136,8 @@ export async function POST(req: NextRequest) {
         url: transport === 'stdio' ? '' : (body.url ?? '').trim(),
         envJson: encodeEnv(body.envVars),
         isEnabled: body.isEnabled ?? true,
+        chatEnabled: typeof body.chatEnabled === 'boolean' ? body.chatEnabled : true,
+        agenticEnabled: typeof body.agenticEnabled === 'boolean' ? body.agenticEnabled : true,
       },
       select: {
         id: true,
@@ -141,6 +149,8 @@ export async function POST(req: NextRequest) {
         url: true,
         envJson: true,
         isEnabled: true,
+        chatEnabled: true,
+        agenticEnabled: true,
         createdAt: true,
         updatedAt: true,
       },

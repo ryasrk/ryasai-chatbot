@@ -40,6 +40,8 @@ interface PatchBody {
   name?: string
   description?: string
   isEnabled?: boolean
+  chatEnabled?: boolean
+  agenticEnabled?: boolean
   manifest?: PluginManifest
   category?: string
   keywords?: string
@@ -63,6 +65,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       name?: string
       description?: string
       isEnabled?: boolean
+      chatEnabled?: boolean
+      agenticEnabled?: boolean
       manifestJson?: string
       category?: string
       keywords?: string
@@ -71,6 +75,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.description === 'string') data.description = body.description.trim()
     if (typeof body.isEnabled === 'boolean') data.isEnabled = body.isEnabled
+    if (typeof body.chatEnabled === 'boolean') data.chatEnabled = body.chatEnabled
+    if (typeof body.agenticEnabled === 'boolean') data.agenticEnabled = body.agenticEnabled
     if (typeof body.category === 'string' && body.category.trim()) data.category = body.category.trim()
     if (typeof body.keywords === 'string') data.keywords = body.keywords.trim()
 
@@ -102,7 +108,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const updated = await db.plugin.update({
       where: { id: existing.id },
       data,
-      select: { id: true, toolId: true, name: true, description: true, isEnabled: true, updatedAt: true },
+      select: { id: true, toolId: true, name: true, description: true, isEnabled: true, chatEnabled: true, agenticEnabled: true, updatedAt: true },
     }).catch((e: unknown) => {
       if (isPrismaNotFound(e)) return null
       throw e

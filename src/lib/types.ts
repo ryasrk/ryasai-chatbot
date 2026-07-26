@@ -118,6 +118,7 @@ export interface AnalyticsData {
   auditBySeverity: { info: number; warning: number; critical: number }
   integrationsByProvider: { provider: string; count: number }[]
   documentsByCategory: { category: string; count: number }[]
+  recentScheduledRuns: { name: string; lastRunAt: string | null; lastResult: string | null }[]
 }
 
 export interface QueryResult {

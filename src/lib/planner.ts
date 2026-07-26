@@ -412,7 +412,7 @@ export async function executePlan(args: {
       if (step.tool.startsWith('plugin:')) {
         const toolId = step.tool.slice('plugin:'.length)
         const plugin = await db.plugin.findFirst({
-          where: { toolId, isEnabled: true },
+          where: { toolId, isEnabled: true, agenticEnabled: true },
         })
         if (!plugin) {
           results.push({

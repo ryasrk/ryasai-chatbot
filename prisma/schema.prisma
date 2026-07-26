@@ -381,6 +381,8 @@ model Plugin {
   description   String
   manifestJson  String
   isEnabled     Boolean  @default(false)
+  chatEnabled    Boolean  @default(true)
+  agenticEnabled Boolean  @default(true)
   category      String   @default("general")
   subcategory   String   @default("general")
   keywords      String   @default("")
@@ -404,6 +406,8 @@ model McpServer {
   url         String   @default("") // for sse/http: server endpoint
   envJson     String   @default("{}") // AES-256-GCM encrypted JSON of env vars
   isEnabled   Boolean  @default(true)
+  chatEnabled    Boolean  @default(true)
+  agenticEnabled Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
