@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
+import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { toast } from 'sonner'
@@ -16,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { chatSessionPanelWidthClass } from '@/lib/chat-layout'
 import { SessionListPanel, type SessionListItem } from '@/components/ui/session-list-panel'
 import { ChatMarkdown } from '@/components/ui/markdown'
+import { MessageSquarePlus } from 'lucide-react'
 
 interface ToolCard {
   stepId: string
@@ -72,6 +80,7 @@ export function AgenticView() {
   const [sessionRailCollapsed, setSessionRailCollapsed] = useState(false)
   const [confirmationRequired, setConfirmationRequired] = useState(false)
   const [confirmationMessage, setConfirmationMessage] = useState('')
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const idRef = useRef(0)
@@ -319,7 +328,49 @@ export function AgenticView() {
       </aside>
 
       {/* Chat panel */}
-      <div className="flex-1 flex flex-col min-w-0 rounded-lg border bg-card overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 rounded-lg border bg-card overflow-hidden relative">
+        {/* mobile/portrait: floating session list button */}
+        <Sheet
+          open={mobileSidebarOpen}
+          onOpenChange={setMobileSidebarOpen}
+        >
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden absolute top-2 left-2 z-10 h-8 w-8"
+              aria-label="Open agent sessions"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-72 p-0">
+            <SheetHeader className="px-4 pt-4">
+              <SheetTitle>Agent Sessions</SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 min-h-0 mt-2">
+              <SessionListPanel
+                sessions={sessions}
+                activeId={conversationId}
+                loading={loadingSessions}
+                deletingId={deletingSessionId}
+                collapsed={false}
+                onSelect={(id) => {
+                  void selectSession(id)
+                  setMobileSidebarOpen(false)
+                }}
+                onNew={() => {
+                  newSession()
+                  setMobileSidebarOpen(false)
+                }}
+                onDelete={(id) => void deleteSession(id)}
+                title="Agent Sessions"
+                emptyHint="No agent sessions yet."
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+
         {/* Conversation area */}
         <div className={cn('flex-1 p-4 space-y-3', messages.length > 0 && 'overflow-y-auto')}>
           {messages.length === 0 ? (
