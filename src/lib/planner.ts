@@ -13,6 +13,7 @@ import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
 import { callMcpTool } from '@/lib/mcp-client'
+import { executeAdminTool } from '@/lib/admin-tools'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
@@ -173,14 +174,23 @@ export async function planQuery(args: {
     sessionId: args.sessionId,
   })
 
-  const systemPrompt =
-    'You are an enterprise AI planner. Create a multi-step plan to answer the user\'s question. ' +
-    'Select tools from the available list. Each step may depend on a prior step via dependsOn. ' +
-    `Maximum ${MAX_STEPS} steps. For simple questions, 1 step is enough. ` +
-    'needsSynthesis=true if results from multiple steps need to be combined into one answer. ' +
-    'needsSynthesis=false if one step is enough to answer. ' +
-    'Answer ONLY with JSON without markdown code fence:\n' +
-    '{"steps":[{"id":"step1","tool":"<tool_id>","input":{...},"dependsOn":[]}],"needsSynthesis":true|false}'
+    const systemPrompt =
+      'You are an enterprise AI planner. Create a multi-step plan to answer the user\'s question. ' +
+      'Select tools from the available list. Each step may depend on a prior step via dependsOn. ' +
+      `Maximum ${MAX_STEPS} steps. For simple questions, 1 step is enough. ` +
+      'needsSynthesis=true if results from multiple steps need to be combined into one answer. ' +
+      'needsSynthesis=false if one step is enough to answer. ' +
+      'IMPORTANT RULES:\n' +
+      '- If the user asks to search the web, look up information, find a person/topic, or get news, use the plugin:web_search tool — NEVER use chat for these.\n' +
+      '- If the user asks to read/fetch a specific article or URL, use plugin:url_fetch.\n' +
+      '- If the user asks to translate text, use plugin:translate.\n' +
+      '- If the user asks for weather, use plugin:weather.\n' +
+      '- If the user asks for calculations, use plugin:calculator.\n' +
+      '- Only use the chat tool for greetings, opinions, or questions that truly need no external data.\n' +
+      '- Only use sql if the question is about structured data in connected databases (sales, inventory, customers).\n' +
+      '- Only use rag if the question is about company documents (SOPs, policies, guidelines).\n' +
+      'Answer ONLY with JSON without markdown code fence:\n' +
+      '{"steps":[{"id":"step1","tool":"<tool_id>","input":{...},"dependsOn":[]}],"needsSynthesis":true|false}'
 
   const historyText = args.chatHistory && args.chatHistory.length > 0
     ? args.chatHistory.slice(-10).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 2000)}`).join('\n')
@@ -389,11 +399,35 @@ export async function executePlan(args: {
   const results: PlanStepResult[] = []
   const sorted = topoSort(args.plan.steps)
 
+  // ponytail: check if the user confirmed — planner passes this via the message context
+  const isConfirmed = args.plan.steps.some((s) =>
+    s.input.confirm === 'yes' || s.input.confirmed === 'yes' || s.input.confirm === 'true',
+  )
+
   for (const step of sorted) {
     const started = Date.now()
     args.onStatus?.(step.id, step.tool, 'running')
 
     try {
+      // Admin tools — platform management (generate API key, show monitoring, etc.)
+      if (step.tool.startsWith('admin:')) {
+        const result = await executeAdminTool(step.tool, step.input, args.userId, isConfirmed)
+        if (result.confirmationRequired) {
+          results.push({
+            stepId: step.id, tool: step.tool, ok: false, output: '',
+            error: result.confirmationRequired.message, latencyMs: Date.now() - started,
+          })
+          args.onStatus?.(step.id, step.tool, 'error')
+          continue
+        }
+        results.push({
+          stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
+          error: result.ok ? undefined : result.output, latencyMs: Date.now() - started,
+        })
+        args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+        continue
+      }
+
       if (step.tool.startsWith('mcp:')) {
         // mcp:<serverId>:<toolName> — serverId is a cuid (no colons); toolName
         // may theoretically contain colons, so rejoin the remainder.

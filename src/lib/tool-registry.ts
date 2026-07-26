@@ -47,6 +47,103 @@ export const BUILT_IN_TOOLS: ToolDef[] = [
   },
 ]
 
+// ponytail: admin tools — registered so the LLM planner decides when to use them,
+// not hardcoded regex. Side-effectful tools (generate_api_key, set_prompt, toggle_*)
+// require user confirmation before executing.
+export const ADMIN_TOOLS: ToolDef[] = [
+  {
+    id: 'admin:generate_api_key',
+    description: 'Generate a new API key for external API access. Use when the user asks to create, generate, or make an API key.',
+    paramDescription: '{ "label": "optional name for the key" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:show_monitoring',
+    description: 'Show system monitoring metrics (tool runs, latency, failed requests, integrations, documents) for the last 24 hours.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:show_audit_log',
+    description: 'Show recent audit log entries (last 10 security events).',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:list_integrations',
+    description: 'List all registered database integrations with their provider and status.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:list_plugins',
+    description: 'List all registered plugins with their tool ID and status.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:list_schedules',
+    description: 'List all scheduled runs with their cron expression and next run time.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:show_prompt',
+    description: 'Show the current system prompt and tool toggle status (SQL, RAG, REST on/off).',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:set_prompt',
+    description: 'Update the system prompt. REQUIRES user confirmation. Use when the user asks to change, set, or update the system prompt.',
+    paramDescription: '{ "prompt": "the new system prompt text" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:toggle_tool',
+    description: 'Enable or disable a built-in tool (SQL, RAG, or REST). REQUIRES user confirmation. Use when the user asks to turn on/off a tool.',
+    paramDescription: '{ "tool": "sql|rag|rest", "action": "enable|disable" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:toggle_integration',
+    description: 'Enable or disable a database integration by name or ID. REQUIRES user confirmation.',
+    paramDescription: '{ "integration": "name or ID", "action": "enable|disable" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:toggle_document',
+    description: 'Enable or disable a document for RAG retrieval by name or ID. REQUIRES user confirmation.',
+    paramDescription: '{ "document": "name or ID", "action": "enable|disable" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:routing_scores',
+    description: 'Show the smart router routing scores and circuit breaker status for each tool.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:reindex_status',
+    description: 'Show the current knowledge base document count and reindex status.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+]
+
 export function getTool(id: string): ToolDef | undefined {
   return BUILT_IN_TOOLS.find((t) => t.id === id)
 }
@@ -108,7 +205,10 @@ export async function getAvailableTools(
       subcategory: 'mcp',
     }))
 
-  return [...BUILT_IN_TOOLS, ...pluginTools, ...mcpToolDefs]
+  // ponytail: admin tools only injected for agentic context (not chat).
+  const adminTools = context === 'agentic' ? ADMIN_TOOLS : []
+
+  return [...BUILT_IN_TOOLS, ...adminTools, ...pluginTools, ...mcpToolDefs]
 }
 
 type ContextFlags = { chatEnabled: boolean; agenticEnabled: boolean }

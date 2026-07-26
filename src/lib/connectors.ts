@@ -67,27 +67,40 @@ const DEMO_TABLES = [
   'demo_employees',
 ] as const
 
+// ponytail: Chinook sample database tables (digital media store — artists, albums, tracks, customers, invoices)
+const CHINOOK_TABLES = [
+  'Artist', 'Album', 'Track', 'Genre', 'MediaType',
+  'Playlist', 'PlaylistTrack', 'Customer', 'Employee',
+  'Invoice', 'InvoiceLine',
+] as const
+
 // Allowlist set (lower-cased). The demo connector only ever owns these tables —
 // any FROM/JOIN target outside it is rejected before $queryRawUnsafe runs.
 const DEMO_TABLE_SET = new Set(DEMO_TABLES.map((t) => t.toLowerCase()))
+const CHINOOK_TABLE_SET = new Set(CHINOOK_TABLES.map((t) => t.toLowerCase()))
 
 /**
  * Defence-in-depth table allowlist. Extracts every FROM/JOIN table reference
- * and rejects the SQL unless ALL of them are demo tables. This prevents a
- * prompt-injected SELECT from reading the app's own tables (User, Session,
+ * and rejects the SQL unless ALL of them are in the allowed set. This prevents
+ * a prompt-injected SELECT from reading the app's own tables (User, Session,
  * LlmConfig, Integration, sqlite_master, …) which live in the SAME SQLite file.
  */
-function assertDemoTablesOnly(sql: string): void {
+function assertTablesOnly(sql: string, allowed: Set<string>): void {
   const re = /\b(?:from|join)\s+["`]?([A-Za-z_][\w]*)["`]?/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(sql)) !== null) {
     const tbl = m[1].toLowerCase()
-    if (!DEMO_TABLE_SET.has(tbl)) {
+    if (!allowed.has(tbl)) {
       throw new Error(
-        `Security violation: table access outside allowlist (${m[1]}). Only demo_ tables are allowed.`,
+        `Security violation: table access outside allowlist (${m[1]}). Allowed: ${[...allowed].join(', ')}`,
       )
     }
   }
+}
+
+// ponytail: keep the old function name as a thin wrapper for backward compat
+function assertDemoTablesOnly(sql: string): void {
+  assertTablesOnly(sql, DEMO_TABLE_SET)
 }
 
 export class SqliteDemoConnector implements BaseDatabaseConnector {
@@ -210,6 +223,66 @@ function normaliseRow(r: QueryRow): QueryRow {
 }
 
 // ---------------------------------------------------------------------------
+// Chinook SQLite Connector — queries the Chinook sample database tables
+// (Artist, Album, Track, Customer, Invoice, etc.) stored in the same custom.db.
+// Used for integration testing with real data (275 artists, 3503 tracks, 412 invoices).
+// ---------------------------------------------------------------------------
+
+export class ChinookSqliteConnector implements BaseDatabaseConnector {
+  readonly provider = 'SQLITE_CHINOOK'
+  constructor(private _config: Record<string, unknown>) {}
+
+  async testConnection(): Promise<boolean> {
+    const count = await db.$queryRawUnsafe<{ count: number }[]>('SELECT COUNT(*) as count FROM Artist LIMIT 1')
+    return count.length > 0
+  }
+
+  async fetchSchema(): Promise<ReflectedTable[]> {
+    const tables: ReflectedTable[] = []
+    for (const tableName of CHINOOK_TABLES) {
+      const cols = await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+        `PRAGMA table_info("${tableName}")`,
+      )
+      if (cols.length === 0) continue
+      const colDefs = cols.map((c) => ({
+        name: c.name,
+        type: c.type,
+        primaryKey: c.pk === 1,
+        notNull: c.notnull === 1,
+      }))
+      let rowCount = 0
+      try {
+        const r = await db.$queryRawUnsafe<{ cnt: number }[]>(`SELECT COUNT(*) as cnt FROM "${tableName}"`)
+        rowCount = Number(r[0]?.cnt ?? 0)
+      } catch { /* skip */ }
+      tables.push({
+        tableName,
+        columns: colDefs,
+        rowCount,
+      })
+    }
+    // Load sample rows
+    for (const table of tables) {
+      if (!table.rowCount || table.rowCount === 0) continue
+      try {
+        const colNames = table.columns.map((c) => `"${c.name}"`).join(', ')
+        const rows = await db.$queryRawUnsafe<QueryRow[]>(`SELECT ${colNames} FROM "${table.tableName}" LIMIT 1;`)
+        if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
+      } catch { /* skip */ }
+    }
+    return tables
+  }
+
+  async executeQuery(sql: string): Promise<QueryResult> {
+    assertTablesOnly(sql, CHINOOK_TABLE_SET)
+    const start = Date.now()
+    const rows = await db.$queryRawUnsafe<QueryRow[]>(sql)
+    const exec = Date.now() - start
+    return { rows: rows.map((r) => normaliseRow(r)), rowCount: rows.length, executionMs: exec }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registry  (spec §3.2)
 // ---------------------------------------------------------------------------
 
@@ -223,6 +296,9 @@ export class ConnectorRegistry {
       switch (family) {
         case 'SQLITE_DEMO':
           connector = new SqliteDemoConnector(decryptedConfig)
+          break
+        case 'SQLITE_CHINOOK':
+          connector = new ChinookSqliteConnector(decryptedConfig)
           break
         case 'POSTGRESQL':
           connector = new PostgresConnector(decryptedConfig)

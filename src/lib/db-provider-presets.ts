@@ -1,4 +1,4 @@
-export type DbProtocolFamily = 'POSTGRESQL' | 'MYSQL' | 'MSSQL' | 'MONGODB' | 'CLICKHOUSE' | 'SNOWFLAKE' | 'ORACLE' | 'SQLITE_DEMO'
+export type DbProtocolFamily = 'POSTGRESQL' | 'MYSQL' | 'MSSQL' | 'MONGODB' | 'CLICKHOUSE' | 'SNOWFLAKE' | 'ORACLE' | 'SQLITE_DEMO' | 'SQLITE_CHINOOK'
 
 export interface DbProviderPreset {
   id: string
@@ -12,7 +12,8 @@ export interface DbProviderPreset {
 }
 
 export const DB_PROVIDER_PRESETS: DbProviderPreset[] = [
-  { id: 'SQLITE_DEMO', label: 'SQLite Demo (Internal)', family: 'SQLITE_DEMO', defaultPort: 0, hint: 'Sample dataset ERP untuk testing', connectionFormat: 'internal' },
+  { id: 'SQLITE_DEMO', label: 'SQLite Demo (ERP Sample)', family: 'SQLITE_DEMO', defaultPort: 0, hint: 'Internal sample ERP dataset for testing', connectionFormat: 'internal' },
+  { id: 'SQLITE_CHINOOK', label: 'SQLite Chinook (Media Store)', family: 'SQLITE_CHINOOK', defaultPort: 0, hint: 'Chinook sample database — artists, albums, tracks, customers, invoices', connectionFormat: 'internal' },
   { id: 'POSTGRESQL', label: 'PostgreSQL', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Database relasional open-source', connectionFormat: 'host:port/db' },
   { id: 'MYSQL', label: 'MySQL / MariaDB', family: 'MYSQL', defaultPort: 3306, hint: 'Database relasional populer', connectionFormat: 'host:port/db' },
   { id: 'MSSQL', label: 'Microsoft SQL Server', family: 'MSSQL', defaultPort: 1433, hint: 'Database enterprise Microsoft', connectionFormat: 'host:port/db' },

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
@@ -116,6 +116,7 @@ export function SchedulesView() {
   const [editing, setEditing] = useState<Schedule | null>(null)
   const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true })
   const [scheduleTime, setScheduleTime] = useState('09:00')
+  const timeInputRef = useRef<HTMLInputElement>(null)
   const [repeatType, setRepeatType] = useState<RepeatType>('daily')
   const [selectedDays, setSelectedDays] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
@@ -440,15 +441,19 @@ export function SchedulesView() {
             <div className="space-y-1.5">
               <Label className="text-xs">Schedule</Label>
               <div className="flex items-center gap-3 rounded-none border border-border/70 p-3 bg-muted/20">
-                <label className="relative cursor-pointer inline-flex">
-                  <span className="text-2xl font-light tracking-wide hover:text-primary transition-colors">
+                <label className="cursor-pointer">
+                  <span
+                    className="text-2xl font-light tracking-wide hover:text-primary transition-colors"
+                    onClick={() => timeInputRef.current?.showPicker?.()}
+                  >
                     {scheduleTime}
                   </span>
                   <input
+                    ref={timeInputRef}
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    className="sr-only"
                   />
                 </label>
                 <div className="flex-1" />
