@@ -118,18 +118,33 @@ export async function callMcpTool(
 export async function testMcpServer(
   serverId: string,
 ): Promise<{ ok: boolean; toolCount?: number; tools?: Array<{ name: string; description: string }>; error?: string }> {
-  const conn = await getConnection(serverId)
-  if (!conn) return { ok: false, error: 'Tidak dapat terhubung ke MCP server.' }
+  const row = await db.mcpServer.findUnique({ where: { id: serverId } })
+  if (!row) return { ok: false, error: 'MCP server not found.' }
+  if (!row.isEnabled) return { ok: false, error: 'MCP server is disabled.' }
+
+  const transport = buildTransport(row)
+  if (!transport) return { ok: false, error: `Invalid transport config (command: ${row.command || 'empty'}, url: ${row.url || 'empty'}).` }
+
+  const client = new Client(
+    { name: 'ryasai-chatbot', version: '1.0.0' },
+    { capabilities: {} },
+  )
+
   try {
-    const { tools } = await conn.client.listTools()
+    await client.connect(transport)
+    const { tools } = await client.listTools()
+    const conn: CachedConnection = { client, serverName: row.name, failed: false }
+    connections.set(serverId, conn)
     return {
       ok: true,
       toolCount: tools.length,
       tools: tools.map((t) => ({ name: t.name, description: t.description ?? '' })),
     }
   } catch (e) {
-    conn.failed = true
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn(`[mcp] test failed for "${row.name}":`, msg)
+    await safeClose(client)
+    return { ok: false, error: msg }
   }
 }
 

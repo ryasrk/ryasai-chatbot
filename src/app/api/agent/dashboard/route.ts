@@ -305,7 +305,11 @@ async function executeAdminAction(message: string, userId: string): Promise<Admi
         const pkg = MCP_PACKAGES[nameMatch].pkg
         args = runner === 'npx' ? ['-y', pkg] : [pkg]
         const pathMatch = message.match(/(?:for|at|path|dir|directory)\s+(\/[^\s]+)/i)
-        if (pathMatch) args.push(pathMatch[1])
+        if (pathMatch) {
+          args.push(pathMatch[1])
+        } else if (nameMatch === 'filesystem') {
+          args.push('/tmp')
+        }
         const connMatch = message.match(/(postgresql?:\/\/[^\s)]+|postgres:\/\/[^\s)]+)/i)
         if (connMatch) args.push(connMatch[1])
       } else {
