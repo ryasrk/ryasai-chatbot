@@ -74,10 +74,25 @@ const CHINOOK_TABLES = [
   'Invoice', 'InvoiceLine',
 ] as const
 
+// ponytail: World DB tables (countries, cities, languages — from postgresDBSamples)
+const WORLD_TABLES = [
+  'city', 'country', 'countrylanguage',
+] as const
+
+// ponytail: Pagila DB tables (movie rental — from postgresDBSamples, prefixed with pagila_)
+const PAGILA_TABLES = [
+  'pagila_actor', 'pagila_category', 'pagila_film', 'pagila_film_actor', 'pagila_film_category',
+  'pagila_address', 'pagila_city', 'pagila_country', 'pagila_customer',
+  'pagila_inventory', 'pagila_language', 'pagila_payment', 'pagila_rental',
+  'pagila_staff', 'pagila_store',
+] as const
+
 // Allowlist set (lower-cased). The demo connector only ever owns these tables —
 // any FROM/JOIN target outside it is rejected before $queryRawUnsafe runs.
 const DEMO_TABLE_SET = new Set(DEMO_TABLES.map((t) => t.toLowerCase()))
 const CHINOOK_TABLE_SET = new Set(CHINOOK_TABLES.map((t) => t.toLowerCase()))
+const WORLD_TABLE_SET = new Set(WORLD_TABLES.map((t) => t.toLowerCase()))
+const PAGILA_TABLE_SET = new Set(PAGILA_TABLES.map((t) => t.toLowerCase()))
 
 /**
  * Defence-in-depth table allowlist. Extracts every FROM/JOIN table reference
@@ -283,6 +298,67 @@ export class ChinookSqliteConnector implements BaseDatabaseConnector {
 }
 
 // ---------------------------------------------------------------------------
+// Generic SQLite sample connector — shared by World DB and Pagila.
+// Only differs from ChinookSqliteConnector in the table allowlist.
+// ---------------------------------------------------------------------------
+
+class GenericSqliteConnector implements BaseDatabaseConnector {
+  readonly provider: string
+  private _tableSet: Set<string>
+  private _tables: readonly string[]
+
+  constructor(provider: string, tables: readonly string[], tableSet: Set<string>, _config: Record<string, unknown>) {
+    this.provider = provider
+    this._tables = tables
+    this._tableSet = tableSet
+  }
+
+  async testConnection(): Promise<boolean> {
+    return true
+  }
+
+  async fetchSchema(): Promise<ReflectedTable[]> {
+    const tables: ReflectedTable[] = []
+    for (const tableName of this._tables) {
+      const cols = await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+        `PRAGMA table_info("${tableName}")`,
+      )
+      if (cols.length === 0) continue
+      const colDefs = cols.map((c) => ({
+        name: c.name,
+        type: c.type,
+        primaryKey: c.pk === 1,
+        notNull: c.notnull === 1,
+      }))
+      let rowCount = 0
+      try {
+        const r = await db.$queryRawUnsafe<{ cnt: number }[]>(`SELECT COUNT(*) as cnt FROM "${tableName}"`)
+        rowCount = Number(r[0]?.cnt ?? 0)
+      } catch { /* skip */ }
+      tables.push({ tableName, columns: colDefs, rowCount })
+    }
+    // Load sample rows
+    for (const table of tables) {
+      if (!table.rowCount || table.rowCount === 0) continue
+      try {
+        const colNames = table.columns.map((c) => `"${c.name}"`).join(', ')
+        const rows = await db.$queryRawUnsafe<QueryRow[]>(`SELECT ${colNames} FROM "${table.tableName}" LIMIT 1;`)
+        if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
+      } catch { /* skip */ }
+    }
+    return tables
+  }
+
+  async executeQuery(sql: string): Promise<QueryResult> {
+    assertTablesOnly(sql, this._tableSet)
+    const start = Date.now()
+    const rows = await db.$queryRawUnsafe<QueryRow[]>(sql)
+    const exec = Date.now() - start
+    return { rows: rows.map((r) => normaliseRow(r)), rowCount: rows.length, executionMs: exec }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Registry  (spec §3.2)
 // ---------------------------------------------------------------------------
 
@@ -299,6 +375,12 @@ export class ConnectorRegistry {
           break
         case 'SQLITE_CHINOOK':
           connector = new ChinookSqliteConnector(decryptedConfig)
+          break
+        case 'SQLITE_WORLD':
+          connector = new GenericSqliteConnector('SQLITE_WORLD', WORLD_TABLES, WORLD_TABLE_SET, decryptedConfig)
+          break
+        case 'SQLITE_PAGILA':
+          connector = new GenericSqliteConnector('SQLITE_PAGILA', PAGILA_TABLES, PAGILA_TABLE_SET, decryptedConfig)
           break
         case 'POSTGRESQL':
           connector = new PostgresConnector(decryptedConfig)
