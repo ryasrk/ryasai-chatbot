@@ -20,6 +20,7 @@ import ZAI from 'z-ai-web-dev-sdk'
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce as llmChatOnce, chatStream as llmChatStream } from '@/lib/llm-client'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
+import { db } from '@/lib/db'
 
 let _zai: Awaited<ReturnType<typeof ZAI.create>> | null = null
 
@@ -125,6 +126,15 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
         .join('\n')
     : ''
 
+  const [tableSchemas, documents, restEndpoints] = await Promise.all([
+    db.integrationSchema.findMany({ where: { integration: { status: 'active' } }, select: { tableName: true } }),
+    db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true } }),
+    db.restApiEndpoint.findMany({ where: { isEnabled: true }, select: { path: true, description: true } }),
+  ])
+  const tableNames = tableSchemas.map((t) => t.tableName)
+  const docNames = documents.map((d) => (d.category ? `${d.name} [${d.category}]` : d.name))
+  const apiPaths = restEndpoints.map((e) => e.path)
+
   const decisionRaw = await chatOnce(
     [
       {
@@ -132,10 +142,10 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
         content:
           'Anda adalah router AI enterprise. Tentukan JALUR penanganan untuk pesan user. ' +
           'Jawab HANYA dengan satu kata: SQL, RAG, REST, CHAT, atau CONTEXTUAL_CHAT.\n' +
-          '- SQL: pertanyaan tentang data terstruktur (stok, penjualan, pelanggan, invoice, angka, total, daftar dari database).\n' +
-          '- RAG: pertanyaan tentang kebijakan, SOP, dokumen, prosedur, panduan, regulasi, atau teks non-struktural.\n' +
-          '- REST: pertanyaan yang perlu memanggil endpoint REST API whitelisted pada sistem eksternal.\n' +
-          '- CHAT: sapaan, basa-basi, atau pertanyaan umum tanpa butuh data internal.\n' +
+          '- SQL: pertanyaan tentang data terstruktur (stok, penjualan, pelanggan, invoice, angka, total, daftar dari database; customers/sales/data/numbers).\n' +
+          '- RAG: pertanyaan tentang kebijakan, SOP, dokumen, prosedur, panduan, regulasi, atau teks non-struktural; policy/terms/faq/guide.\n' +
+          '- REST: pertanyaan yang perlu memanggil endpoint REST API whitelisted pada sistem eksternal; API/endpoint/layanan/service.\n' +
+          '- CHAT: sapaan, basa-basi, atau pertanyaan umum tanpa butuh data internal; general/greeting.\n' +
           '- CONTEXTUAL_CHAT: user merujuk ke percakapan sebelumnya ATAU memberikan informasi/fakta baru.\n' +
           '  Contoh CONTEXTUAL_CHAT:\n' +
           '  - "sebutkan lagi jawabanmu" → CONTEXTUAL_CHAT (bukan SQL)\n' +
@@ -153,6 +163,9 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
         content:
           `Pertanyaan: "${ctx.question}"\n` +
           `Konteks: integrasi database tersedia=${ctx.hasIntegrations}, dokumen knowledge base tersedia=${ctx.hasDocuments}, REST API tersedia=${ctx.hasRestApis ?? false}.\n` +
+          (tableNames.length > 0 ? `Tabel database: ${tableNames.slice(0, 30).join(', ')}\n` : '') +
+          (docNames.length > 0 ? `Dokumen: ${docNames.slice(0, 30).join(', ')}\n` : '') +
+          (apiPaths.length > 0 ? `REST API: ${apiPaths.slice(0, 20).join(', ')}\n` : '') +
           (ctx.memoryContext ? `Memori interaksi sebelumnya:\n${ctx.memoryContext}\n` : '') +
           (hasHistory ? `Riwayat percakapan sebelumnya:\n${historyText}\n` : '') +
           `Jawab hanya SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT.`,

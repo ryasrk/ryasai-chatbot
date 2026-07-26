@@ -92,7 +92,7 @@ User query
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (194 pass, 8 skip, 0 fail)
+bun run test         # unit tests (335 pass, 8 skip, 0 fail)
 bun run e2e          # Playwright (4 specs, mock LLM)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
@@ -107,14 +107,14 @@ bash reset.sh        # reset DB + re-seed
 ```
 src/
 ├── app/
-│   ├── api/              # 60 API routes
-│   ├── page.tsx          # Main SPA (16 views)
+│   ├── api/              # 65 API routes
+│   ├── page.tsx          # Main SPA (12 views)
 │   ├── layout.tsx        # Root layout (theme init)
 │   ├── error.tsx         # Route-level error boundary
 │   └── global-error.tsx  # Root error boundary
 ├── components/
 │   ├── ui/               # shadcn/ui primitives
-│   └── views/            # 16 feature views
+│   └── views/            # 12 feature views
 ├── lib/
 │   ├── ai.ts             # LLM client, router, SQL gen, answer gen
 │   ├── llm-client.ts     # Unified transport (OpenAI + Anthropic)
@@ -132,7 +132,7 @@ src/
 │   └── ...
 ├── middleware.ts         # Edge auth
 prisma/
-└── schema.prisma         # 23 models
+└── schema.prisma         # 24 models
 mini-services/
 └── scheduler/            # Cron worker
 scripts/

@@ -365,7 +365,8 @@ async function loadSimilarityBoost(
 
   const boosts: Record<string, number> = { SQL: 0, RAG: 0, REST: 0, CHAT: 0, PLUGIN: 0 }
   for (const run of recentRuns) {
-    const runTokens = tokenize(run.inputSummary)
+    const cleanSummary = (run.inputSummary ?? '').replace(/^\[Session started:[^\]]*\]\s*\[Current time:[^\]]*\]\s*/i, '').trim()
+    const runTokens = tokenize(cleanSummary)
     if (runTokens.length === 0) continue
     const overlap = tokens.filter((t) => runTokens.includes(t)).length
     if (overlap === 0) continue

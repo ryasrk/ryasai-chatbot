@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 // --- Mocks for requireExternalApiKey tests (must precede import) ---
 const mockApiKeyFindMany = mock<(args: any) => Promise<any[]>>(async () => [] as any[])
-const mockApiKeyUpdate = mock<(args: { where: { id: string }; data: { lastUsedAt: Date } }) => Promise<{}>>(async () => ({}))
+const mockApiKeyUpdate = mock<(args: { where: { id: string }; data: { lastUsedAt: Date } }) => Promise<void>>(async () => undefined)
 const mockApiRequestLogCount = mock<(args: any) => Promise<number>>(async () => 0)
 
 mock.module('@/lib/db', () => ({
@@ -33,7 +33,7 @@ beforeEach(() => {
   mockApiKeyUpdate.mockClear()
   mockApiRequestLogCount.mockClear()
   mockApiKeyFindMany.mockImplementation(async () => [] as any[])
-  mockApiKeyUpdate.mockImplementation(async () => ({}))
+  mockApiKeyUpdate.mockImplementation(async () => undefined)
   mockApiRequestLogCount.mockImplementation(async () => 0)
 })
 

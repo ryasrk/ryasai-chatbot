@@ -391,9 +391,11 @@ async function loadLexicalCandidateChunks(
     queryTokens,
     limit: Math.max(topK * 12, 32),
   })
-  return ftsIds.length > 0
-    ? loadVectorCandidateChunks(ftsIds)
-    : loadAllCandidateChunks()
+  let candidates = ftsIds.length > 0 ? await loadVectorCandidateChunks(ftsIds) : []
+  if (candidates.length === 0) {
+    candidates = await loadAllCandidateChunks()
+  }
+  return candidates
 }
 
 function countPhraseHits(contentTokens: string[], queryTokens: string[]): number {

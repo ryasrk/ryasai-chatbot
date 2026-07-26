@@ -139,6 +139,8 @@ async function main() {
     })
   }
   console.log(`   ↳ inserted ${docs.length} documents with chunks`)
+  await rebuildFts()
+  console.log('   ↳ FTS index rebuilt')
 
   // 5. REST API connector + endpoints ---------------------------------------
   await db.restApiEndpoint.deleteMany({})

@@ -60,6 +60,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       integrationId = integration.id
     }
 
+    const recentMessages = await db.chatMessage.findMany({
+      where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { sender: true, text: true, createdAt: true },
+    })
+
     const userMessage = await db.chatMessage.create({
       data: {
         sessionId: session.id,
@@ -67,13 +74,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         sender: 'user',
         text,
       },
-    })
-
-    const recentMessages = await db.chatMessage.findMany({
-      where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: { sender: true, text: true, createdAt: true },
     })
     const tz = body.timezone || 'UTC'
     const chatHistory: ChatHistoryEntry[] = recentMessages
