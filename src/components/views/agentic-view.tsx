@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { chatSessionPanelWidthClass } from '@/lib/chat-layout'
+import { extractError } from '@/lib/extract-error'
 import { SessionListPanel, type SessionListItem } from '@/components/ui/session-list-panel'
 import { ChatMarkdown } from '@/components/ui/markdown'
 import { MessageSquarePlus } from 'lucide-react'
@@ -185,8 +186,8 @@ export function AgenticView() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed' }))
-        toast.error(err.error ?? 'Request failed')
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: err.error ?? 'Request failed.' } : m)))
+        toast.error(extractError(err.error, 'Request failed'))
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: extractError(err.error, 'Request failed.') } : m)))
         return
       }
 

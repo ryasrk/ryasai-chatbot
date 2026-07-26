@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
+import { extractError } from '@/lib/extract-error'
 
 const STEPS = ['Admin Account', 'LLM API', 'Test Model', 'Document', 'Data Source', 'Test Chat'] as const
 
@@ -353,7 +354,7 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
       const res = await fetch('/api/documents', { method: 'POST', body: form })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error ?? 'Failed to upload')
+        toast.error(extractError(err.error, 'Failed to upload'))
         return
       }
       setUploaded(true)

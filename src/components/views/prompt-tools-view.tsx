@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { extractError } from '@/lib/extract-error'
 
 interface PromptSettings {
   systemPrompt: string
@@ -113,7 +114,7 @@ export function PromptToolsView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        throw new Error(json?.error ?? 'Failed to save.')
+        throw new Error(extractError(json?.error, 'Failed to save.'))
       }
       if (json.settings) setSettings(json.settings as PromptSettings)
       setDirty(false)

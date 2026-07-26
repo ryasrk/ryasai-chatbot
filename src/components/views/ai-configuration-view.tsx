@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { PublicLlmConfig } from '@/lib/types'
+import { extractError } from '@/lib/extract-error'
 
 /**
  * AI Configuration view — provider, model, and embedding settings.
@@ -95,7 +96,7 @@ export function AIConfigurationView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        throw new Error(json?.error ?? 'Failed to fetch models.')
+        throw new Error(extractError(json?.error, 'Failed to fetch models.'))
       }
       const list: string[] = json.data.models ?? []
       setModels(list)
@@ -132,7 +133,7 @@ export function AIConfigurationView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        throw new Error(json?.error ?? 'Failed to save.')
+        throw new Error(extractError(json?.error, 'Failed to save.'))
       }
       if (json.data) {
         setCfg(json.data)

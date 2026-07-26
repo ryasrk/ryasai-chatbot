@@ -62,6 +62,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { extractError } from '@/lib/extract-error'
 
 interface ApiKeyRow {
   id: string
@@ -938,7 +939,7 @@ function ApiKeysPanel() {
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to create API key.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to create API key.'))
       setNewKey(json.apiKey)
       setLabel('')
       setRateLimit('')
@@ -961,7 +962,7 @@ function ApiKeysPanel() {
       const res = await fetch(`/api/settings/api-keys/${id}`, { method: 'DELETE' })
       if (!res.ok && res.status !== 404) {
         const json = await res.json().catch(() => ({}))
-        throw new Error(json.error ?? 'Failed to revoke API key.')
+        throw new Error(extractError(json.error, 'Failed to revoke API key.'))
       }
       toast.success('API key revoked.')
       await load(false)

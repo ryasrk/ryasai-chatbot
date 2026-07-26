@@ -68,6 +68,7 @@ import { cn } from '@/lib/utils'
 import type { DocumentItem } from '@/lib/types'
 import { VECTOR_STORE_PRESETS, getVectorStorePreset } from '@/lib/db-provider-presets'
 import { CogneeCard } from '@/components/views/cognee-card'
+import { extractError } from '@/lib/extract-error'
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -183,7 +184,7 @@ export function KnowledgeBaseView() {
         setDocs(json.documents as DocumentItem[])
       } else {
         setLoadError(true)
-        toast.error(json.error ?? 'Failed to load document list.')
+        toast.error(extractError(json.error, 'Failed to load document list.'))
       }
     } catch (e) {
       setLoadError(true)
@@ -212,7 +213,7 @@ export function KnowledgeBaseView() {
         if (detailTarget?.id === id) setDetailTarget(null)
         await fetchDocs()
       } else {
-        toast.error(json.error ?? 'Failed to delete document.')
+        toast.error(extractError(json.error, 'Failed to delete document.'))
       }
     } catch (e) {
       toast.error('Network error while deleting.')
@@ -240,7 +241,7 @@ export function KnowledgeBaseView() {
         setDocs((prev) =>
           prev.map((d) => (d.id === id ? { ...d, isEnabled: !checked } : d)),
         )
-        toast.error(json.error ?? 'Failed to change document status.')
+        toast.error(extractError(json.error, 'Failed to change document status.'))
         return
       }
       toast.success(
@@ -268,7 +269,7 @@ export function KnowledgeBaseView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        throw new Error(json.error ?? 'Failed to rebuild embeddings.')
+        throw new Error(extractError(json.error, 'Failed to rebuild embeddings.'))
       }
       toast.success('Embeddings processed.', {
         description: `${json.data.embedded ?? 0} chunks embedded, ${json.data.skipped ?? 0} skipped.`,
@@ -288,7 +289,7 @@ export function KnowledgeBaseView() {
     try {
       const res = await fetch('/api/documents/fts/rebuild', { method: 'POST' })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to rebuild FTS.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to rebuild FTS.'))
       toast.success('BM25 index processed.', {
         description: `${json.data.indexed ?? 0} chunks added to lexical index.`,
       })
@@ -560,7 +561,7 @@ function VectorStorePanel() {
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to save.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to save.'))
       setApiKey('')
       toast.success('Vector DB configuration saved.')
     } catch (e) {
@@ -577,7 +578,7 @@ function VectorStorePanel() {
     try {
       const res = await fetch('/api/vector-store', { method: 'POST' })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to test vector DB.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to test vector DB.'))
       toast.success('Vector DB ready.', {
         description: json.data?.collectionName ?? json.data?.provider,
       })
@@ -934,7 +935,7 @@ function UploadDialog({
           )}.`,
         )
       } else {
-        toast.error(json.error ?? 'Failed to upload document.')
+        toast.error(extractError(json.error, 'Failed to upload document.'))
       }
     } catch (e) {
       toast.error('Network error while uploading.')
@@ -1166,7 +1167,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
             Math.max(1, Math.ceil((j.document.chunkCount ?? 0) / 20)),
           )
         } else {
-          setError(j.error ?? 'Failed to load document details.')
+          setError(extractError(j.error, 'Failed to load document details.'))
         }
       })
       .catch(() => {
@@ -1192,7 +1193,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
         setPage(nextPage)
         setTotalPages(j.totalPages ?? totalPages)
       } else {
-        toast.error(j.error ?? 'Failed to load chunks.')
+        toast.error(extractError(j.error, 'Failed to load chunks.'))
       }
     } catch {
       toast.error('Network error while loading chunks.')

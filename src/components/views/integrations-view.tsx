@@ -97,6 +97,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { extractError } from '@/lib/extract-error'
 import type { Integration, QueryResult } from '@/lib/types'
 import { DB_PROVIDER_PRESETS, getDbProviderPreset } from '@/lib/db-provider-presets'
 
@@ -258,7 +259,7 @@ export function IntegrationsView() {
         setItems(json.data as Integration[])
       } else {
         setLoadError(true)
-        toast.error(json.error ?? 'Failed to load integration list.')
+        toast.error(extractError(json.error, 'Failed to load integration list.'))
       }
     } catch (e) {
       setLoadError(true)
@@ -281,7 +282,7 @@ export function IntegrationsView() {
       if (res.ok && json.ok) {
         setRestItems(json.items ?? [])
       } else {
-        toast.error(json.error ?? 'Failed to load REST API connectors.')
+        toast.error(extractError(json.error, 'Failed to load REST API connectors.'))
       }
     } catch (e) {
       toast.error('Network error while loading REST API connectors.')
@@ -301,7 +302,7 @@ export function IntegrationsView() {
       const res = await fetch(`/api/integrations/${id}/test`, { method: 'POST' })
       const json = await res.json()
       if (!res.ok) {
-        toast.error(json.error ?? 'Failed to test connection.')
+        toast.error(extractError(json.error, 'Failed to test connection.'))
       } else if (json.ok) {
         toast.success(
           `Connection successful. ${json.tablesCount ?? 0} tables available.`,
@@ -329,7 +330,7 @@ export function IntegrationsView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        toast.error(json.error ?? 'Failed to change integration status.')
+        toast.error(extractError(json.error, 'Failed to change integration status.'))
         return
       }
       toast.success(
@@ -353,7 +354,7 @@ export function IntegrationsView() {
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        toast.error(json.error ?? 'Failed to change REST connector status.')
+        toast.error(extractError(json.error, 'Failed to change REST connector status.'))
         return
       }
       toast.success(
@@ -383,7 +384,7 @@ export function IntegrationsView() {
         if (queryTarget?.id === id) setQueryTarget(null)
         await fetchList()
       } else {
-        toast.error(json.error ?? 'Failed to delete integration.')
+        toast.error(extractError(json.error, 'Failed to delete integration.'))
       }
     } catch (e) {
       toast.error('Network error while deleting.')
@@ -445,7 +446,7 @@ export function IntegrationsView() {
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to create connector.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to create connector.'))
       toast.success('REST API connector created.')
       setRestName('')
       setRestBaseUrl('')
@@ -846,7 +847,7 @@ function IntegrationCard({
       if (res.ok && json.ok) {
         setConfig(json.data.config as MaskedConfig)
       } else {
-        toast.error(json.error ?? 'Failed to load configuration.')
+        toast.error(extractError(json.error, 'Failed to load configuration.'))
       }
     } catch {
       toast.error('Network error while loading configuration.')
@@ -1120,7 +1121,7 @@ function CreateIntegrationDialog({
         setErrors({})
         onCreated()
       } else {
-        toast.error(json.error ?? 'Failed to create integration.')
+        toast.error(extractError(json.error, 'Failed to create integration.'))
       }
     } catch (e) {
       toast.error('Network error while creating integration.')
@@ -1581,7 +1582,7 @@ function SchemaViewerContent({
         const j = await r.json()
         if (cancelled) return
         if (r.ok && j.ok) setData(j.data as SchemaData)
-        else setError(j.error ?? 'Failed to load schema.')
+        else setError(extractError(j.error, 'Failed to load schema.'))
       })
       .catch(() => {
         if (!cancelled) setError('Network error while loading schema.')
@@ -1877,7 +1878,7 @@ function RestConnectorContent({
       if (res.ok && json.ok) {
         setDetail(json.data as RestConnectorDetail)
       } else {
-        setError(json.error ?? 'Failed to load REST connector.')
+        setError(extractError(json.error, 'Failed to load REST connector.'))
       }
     } catch (e) {
       console.error(e)
@@ -1900,7 +1901,7 @@ function RestConnectorContent({
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
-        toast.error(json.error ?? 'Failed to change status.')
+        toast.error(extractError(json.error, 'Failed to change status.'))
         return
       }
       toast.success(checked ? 'REST connector enabled.' : 'REST connector disabled.')
@@ -1930,7 +1931,7 @@ function RestConnectorContent({
         }),
       })
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to add endpoint.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to add endpoint.'))
       toast.success('Endpoint whitelist added.')
       setPath('')
       setDescription('')
@@ -1978,7 +1979,7 @@ function RestConnectorContent({
       const json = await res.json()
       setTestResult(json)
       if (res.ok && json.ok) toast.success('REST endpoint tested successfully.')
-      else toast.error(json.error ?? 'REST endpoint failed to test.')
+      else toast.error(extractError(json.error, 'REST endpoint failed to test.'))
     } catch (e) {
       console.error(e)
       toast.error('Network error while testing endpoint.')
@@ -1995,7 +1996,7 @@ function RestConnectorContent({
         { method: 'DELETE' },
       )
       const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Failed to delete endpoint.')
+      if (!res.ok || !json.ok) throw new Error(extractError(json.error, 'Failed to delete endpoint.'))
       toast.success('Endpoint whitelist deleted.')
       await fetchDetail()
       onChanged()
@@ -2297,9 +2298,11 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
         })
       } else {
         setErrorMsg(
-          json.error ??
+          extractError(
+            json.error,
             json.reason ??
-            'Sorry, an error occurred while processing the query.',
+              'Sorry, an error occurred while processing the query.',
+          ),
         )
       }
     } catch (e) {
