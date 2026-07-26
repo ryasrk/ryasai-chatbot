@@ -48,6 +48,7 @@ import {
   Loader2,
   MessageSquare,
   MessageSquarePlus,
+  Plug,
   Send,
   Server,
   Sparkles,
@@ -139,6 +140,11 @@ const TOOL_META: Record<
     icon: Globe,
     tone: 'text-success',
   },
+  PLUGIN: {
+    label: 'Querying external tool...',
+    icon: Plug,
+    tone: 'text-warning',
+  },
   CHAT: {
     label: 'Composing answer...',
     icon: MessageSquare,
@@ -151,6 +157,7 @@ const TOOL_ICON: Record<string, typeof Loader2> = {
   SQL: Database,
   RAG: FileText,
   REST_API: Globe,
+  PLUGIN: Plug,
   CHAT: MessageSquare,
 }
 
@@ -158,6 +165,7 @@ const TOOL_SHORT: Record<string, string> = {
   SQL: 'Query SQL',
   RAG: 'Knowledge Base',
   REST_API: 'REST API',
+  PLUGIN: 'Plugin',
   CHAT: 'Chat',
 }
 
@@ -180,6 +188,11 @@ const TOOL_BADGE: Record<
     label: 'REST API',
     icon: Globe,
     className: 'border-success/30 bg-success/15 text-success',
+  },
+  PLUGIN: {
+    label: 'Plugin',
+    icon: Plug,
+    className: 'border-warning/30 bg-warning/15 text-warning',
   },
 }
 

@@ -233,17 +233,6 @@ async function main() {
   console.log('   API Key    : see above')
 }
 
-function extractKeywords(text: string): string {
-  const stop = new Set(['yang','dan','atau','untuk','pada','dari','ke','dalam','ini','itu','dengan','adalah','akan','tidak','juga','oleh','sebagai','agar','ataupun','the','a','an','of','to','in','on','for','and','or'])
-  const words = text.toLowerCase().match(/[a-zà-ÿ]+/g) ?? []
-  const freq = new Map<string, number>()
-  for (const w of words) {
-    if (w.length < 4 || stop.has(w)) continue
-    freq.set(w, (freq.get(w) ?? 0) + 1)
-  }
-  return Array.from(freq.entries()).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([w])=>w).join(',')
-}
-
 function buildSampleDocs() {
   return [
     {

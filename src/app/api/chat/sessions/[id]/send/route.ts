@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<string, string> = {
   RAG: 'Searching relevant documents...',
   REST_API: 'Calling REST API...',
   CHAT: 'Composing answer...',
+  PLUGIN: 'Querying external tool...',
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx) {

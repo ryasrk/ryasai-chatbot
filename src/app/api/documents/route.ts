@@ -7,9 +7,8 @@ import {
   extractFileText,
   extractKeywords,
 } from '@/lib/rag'
-import { embedDocumentChunks } from '@/lib/embeddings'
 import { upsertChunkFts } from '@/lib/rag-fts'
-import { cognifyDocument } from '@/lib/cognee'
+import { enqueueOrSync } from '@/lib/job-processor'
 
 export const runtime = 'nodejs'
 
@@ -171,20 +170,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const embedding = await embedDocumentChunks({
-      documentId: doc.id,
-    }).catch((error) => ({
-      embedded: 0,
-      skipped: chunks.length,
-      provider: null,
-      model: error instanceof Error ? error.message : 'embedding failed',
-    }))
-
-    void cognifyDocument({
-      documentId: doc.id,
-      documentName: doc.name,
-      chunks: chunks.map((content, idx) => ({ content, chunkIndex: idx })),
-    }).catch(() => null)
+    // ponytail: heavy processing (embeddings + cognify) moved to background queue.
+    // Falls back to synchronous when Redis is down — graceful degradation.
+    await enqueueOrSync('document-embed', { type: 'document-embed', documentId: doc.id })
+    void enqueueOrSync('document-cognify', { type: 'document-cognify', documentId: doc.id }).catch(() => null)
 
     await writeAudit({
       userId: user.userId,
@@ -198,7 +187,7 @@ export async function POST(req: NextRequest) {
         sizeBytes: doc.sizeBytes,
         chunkCount: chunks.length,
         isPlaceholder,
-        embedding,
+        jobsQueued: true,
       },
     })
 

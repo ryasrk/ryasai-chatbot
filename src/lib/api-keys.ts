@@ -37,6 +37,7 @@ export function maskApiKey(prefix: string): string {
 export interface ExternalApiIdentity {
   apiKeyId: string
   label: string
+  requestLimitPerMinute: number | null
 }
 
 export function getBearerToken(req: NextRequest): string | null {
@@ -102,5 +103,6 @@ export async function requireExternalApiKey(
   return {
     apiKeyId: matched.id,
     label: matched.label,
+    requestLimitPerMinute: matched.requestLimitPerMinute,
   }
 }

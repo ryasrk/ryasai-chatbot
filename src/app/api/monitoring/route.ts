@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { checkRedisHealth } from '@/lib/redis'
 
 /**
  * GET /api/monitoring → aggregated observability data:
@@ -54,12 +55,15 @@ export async function GET() {
         }),
       ])
 
+    const redisHealth = await checkRedisHealth()
+
     return NextResponse.json({
       ok: true,
       toolRuns,
       failedApiRequests,
       restApiErrors,
       blockedSql,
+      redis: { connected: redisHealth.connected, latencyMs: redisHealth.latencyMs },
       stats: {
         toolRunCount24h,
         avgToolLatencyMs24h: Math.round(latencyAgg._avg.latencyMs ?? 0),

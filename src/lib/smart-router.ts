@@ -17,6 +17,7 @@
  */
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
+import { selectRelevantPlugins, type ScoredPlugin } from '@/lib/plugin-selector'
 
 const STOPWORDS = new Set([
   'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'pada', 'dengan', 'ini', 'itu',
@@ -91,17 +92,18 @@ export async function smartRoute(args: {
 }): Promise<SmartRouteResult> {
   const tokens = tokenize(args.question)
 
-  const [schemaMeta, endpointMeta, docMeta, perfData, similarity] = await Promise.all([
+  const [schemaMeta, endpointMeta, docMeta, perfData, similarity, pluginRelevant] = await Promise.all([
     loadSchemaMetadata(),
     loadEndpointMetadata(),
     loadDocumentMetadata(),
     loadPerformanceMetrics(),
     loadSimilarityBoost(tokens),
+    selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 }),
   ])
 
-  const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT']
+  const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores: ToolScore[] = tools.map((tool) => {
-    const schemaScore = scoreSchemaMatch(tool, tokens, schemaMeta, endpointMeta, docMeta)
+    const schemaScore = scoreSchemaMatch(tool, tokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
     const perf = perfData[tool] ?? NEUTRAL_PERF
     const perfScore = perf.successRate
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
@@ -170,6 +172,7 @@ function scoreSchemaMatch(
   schemaMeta: string[],
   endpointMeta: string[],
   docMeta: string[],
+  pluginRelevant: ScoredPlugin[] = [],
 ): number {
   if (tokens.length === 0) return 0
 
@@ -180,6 +183,8 @@ function scoreSchemaMatch(
       return keywordOverlap(tokens, endpointMeta)
     case 'RAG':
       return keywordOverlap(tokens, docMeta)
+    case 'PLUGIN':
+      return pluginRelevant.length > 0 ? pluginRelevant[0].score : 0
     case 'CHAT':
     case 'CONTEXTUAL_CHAT':
       return 0.1
@@ -220,6 +225,8 @@ function checkAvailability(
       return hasDocuments ? 1 : 0
     case 'REST':
       return hasRestApis ? 1 : 0
+    case 'PLUGIN':
+      return 1
     case 'CHAT':
     case 'CONTEXTUAL_CHAT':
       return 1
@@ -306,7 +313,7 @@ async function loadDocumentMetadata(): Promise<string[]> {
 
 async function loadPerformanceMetrics(): Promise<Record<string, PerfMetrics>> {
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-  const types = ['SQL', 'RAG', 'REST_API', 'CHAT']
+  const types = ['SQL', 'RAG', 'REST_API', 'CHAT', 'PLUGIN']
   const result: Record<string, PerfMetrics> = {}
 
   for (const type of types) {
@@ -356,7 +363,7 @@ async function loadSimilarityBoost(
     select: { type: true, inputSummary: true },
   })
 
-  const boosts: Record<string, number> = { SQL: 0, RAG: 0, REST: 0, CHAT: 0 }
+  const boosts: Record<string, number> = { SQL: 0, RAG: 0, REST: 0, CHAT: 0, PLUGIN: 0 }
   for (const run of recentRuns) {
     const runTokens = tokenize(run.inputSummary)
     if (runTokens.length === 0) continue
@@ -432,7 +439,7 @@ export async function getRoutingScores(): Promise<{
     loadPerformanceMetrics(),
   ])
 
-  const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT']
+  const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores = tools.map((tool) => {
     const schemaScore = scoreSchemaMatch(tool, [], schemaMeta, endpointMeta, docMeta)
     const perf = perfData[tool] ?? NEUTRAL_PERF

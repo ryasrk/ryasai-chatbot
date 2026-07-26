@@ -29,12 +29,14 @@ import {
 } from '@/lib/rest-api-connectors'
 import { getPromptSettings } from '@/lib/prompt-settings'
 import { recallContext, rememberChatTurn } from '@/lib/cognee'
+import { selectRelevantPlugins } from '@/lib/plugin-selector'
+import { executePlugin } from '@/lib/plugin-registry'
 import type { ChartData, Citation } from '@/lib/types'
 
 type ToolRunStatus = 'success' | 'error' | 'blocked'
 
 export interface PendingToolRun {
-  type: 'RAG' | 'SQL' | 'REST_API' | 'CHAT'
+  type: 'RAG' | 'SQL' | 'REST_API' | 'CHAT' | 'PLUGIN'
   status: ToolRunStatus
   latencyMs?: number
   inputSummary: string
@@ -152,6 +154,7 @@ export async function runNonStreamingChatCompletion(args: {
   if (decision === 'SQL') result = await runSqlBranch(branchArgs)
   else if (decision === 'RAG') result = await runRagBranch(branchArgs)
   else if (decision === 'REST') result = await runRestBranch(branchArgs)
+  else if (decision === 'PLUGIN') result = await runPluginBranch(branchArgs)
   else if (decision === 'CONTEXTUAL_CHAT' && contextualContext) {
     result = await runContextualChatBranch({ ...branchArgs, context: contextualContext })
   } else {
@@ -267,6 +270,7 @@ export async function runStreamingChatCompletion(args: {
   if (decision === 'SQL') return await prepareSqlStream(branchArgs)
   if (decision === 'RAG') return await prepareRagStream(branchArgs)
   if (decision === 'REST') return await prepareRestStream(branchArgs)
+  if (decision === 'PLUGIN') return await preparePluginStream(branchArgs)
   if (decision === 'CONTEXTUAL_CHAT' && contextualContext) {
     return await prepareContextualChatStream({ ...branchArgs, context: contextualContext })
   }
@@ -603,6 +607,66 @@ async function prepareRestStream(args: {
   }
 }
 
+async function preparePluginStream(args: {
+  question: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<StreamingCompletionResult> {
+  const started = Date.now()
+  const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 })
+  if (relevant.length === 0) return prepareChatStream(args)
+
+  const plugin = await db.plugin.findFirst({ where: { toolId: relevant[0].toolId, isEnabled: true } })
+  if (!plugin) return prepareChatStream(args)
+
+  const result = await executePlugin({
+    plugin: { manifestJson: plugin.manifestJson, toolId: plugin.toolId },
+    input: JSON.stringify({ question: args.question, query: args.question }),
+  })
+
+  if (!result.ok) {
+    return {
+      toolRuns: [{
+        type: 'PLUGIN',
+        status: 'error',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        errorMessage: result.error,
+      }],
+      citations: [],
+      chartData: null,
+      stream: streamChat(
+        `Plugin ${plugin.name} failed: ${result.error}. ${args.question}`,
+        args.memoryContext, args.systemPromptPrefix, args.chatHistory,
+      ),
+    }
+  }
+
+  const context = `Plugin ${plugin.name} returned:\n${result.output}\n\nUser question: ${args.question}`
+  const stream = streamAnswer({
+    question: args.question,
+    context,
+    source: 'CHAT',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+
+  return {
+    toolRuns: [{
+      type: 'PLUGIN',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(result.output),
+    }],
+    citations: [],
+    chartData: null,
+    stream,
+  }
+}
+
 export function chooseAvailableDecision(
   decision: RouteDecision,
   available: {
@@ -612,6 +676,7 @@ export function chooseAvailableDecision(
   },
 ): RouteDecision {
   if (decision === 'CONTEXTUAL_CHAT') return 'CONTEXTUAL_CHAT'
+  if (decision === 'PLUGIN') return 'PLUGIN'
   if (decision === 'SQL' && !available.hasIntegrations) return 'CHAT'
   if (decision === 'RAG' && !available.hasDocuments) return 'CHAT'
   if (decision === 'REST' && !available.hasRestApis) return 'CHAT'
@@ -1115,6 +1180,63 @@ async function runRestBranch(args: {
         restApiEndpointId: endpoint.id,
       },
     ],
+  }
+}
+
+async function runPluginBranch(args: {
+  question: string
+  systemPromptPrefix?: string
+  memoryContext?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<CompletionResult> {
+  const started = Date.now()
+  const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 })
+  if (relevant.length === 0) return runChatBranch(args)
+
+  const plugin = await db.plugin.findFirst({ where: { toolId: relevant[0].toolId, isEnabled: true } })
+  if (!plugin) return runChatBranch(args)
+
+  const result = await executePlugin({
+    plugin: { manifestJson: plugin.manifestJson, toolId: plugin.toolId },
+    input: JSON.stringify({ question: args.question, query: args.question }),
+  })
+
+  if (!result.ok) {
+    return {
+      answer: `Maaf, plugin ${plugin.name} gagal dijalankan: ${result.error}`,
+      citations: [],
+      chartData: null,
+      toolRuns: [{
+        type: 'PLUGIN',
+        status: 'error',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        errorMessage: result.error,
+      }],
+    }
+  }
+
+  const context = `Plugin ${plugin.name} returned:\n${result.output}\n\nUser question: ${args.question}`
+  const answer = await generateAnswer({
+    question: args.question,
+    context,
+    source: 'CHAT',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+  })
+
+  return {
+    answer,
+    citations: [],
+    chartData: null,
+    toolRuns: [{
+      type: 'PLUGIN',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(result.output),
+    }],
   }
 }
 

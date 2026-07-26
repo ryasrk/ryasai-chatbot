@@ -19,6 +19,7 @@
 import ZAI from 'z-ai-web-dev-sdk'
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce as llmChatOnce, chatStream as llmChatStream } from '@/lib/llm-client'
+import { selectRelevantPlugins } from '@/lib/plugin-selector'
 
 let _zai: Awaited<ReturnType<typeof ZAI.create>> | null = null
 
@@ -98,7 +99,7 @@ async function* chatStream(
 // Public API
 // ---------------------------------------------------------------------------
 
-export type RouteDecision = 'SQL' | 'RAG' | 'REST' | 'CHAT' | 'CONTEXTUAL_CHAT'
+export type RouteDecision = 'SQL' | 'RAG' | 'REST' | 'CHAT' | 'CONTEXTUAL_CHAT' | 'PLUGIN'
 
 export interface RoutingContext {
   question: string
@@ -169,6 +170,14 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
         : raw.startsWith('REST')
           ? 'REST'
           : 'CHAT'
+  // ponytail: lightweight plugin check — keyword match only, no LLM call.
+  // If a relevant plugin exists, route to PLUGIN so tool-router executes it.
+  if (decision === 'CHAT') {
+    const relevant = await selectRelevantPlugins({ query: ctx.question, topK: 1, minScore: 0.05 })
+    if (relevant.length > 0) {
+      return { decision: 'PLUGIN', reason: `Plugin ${relevant[0].name} relevan (score ${relevant[0].score.toFixed(2)})` }
+    }
+  }
   return { decision, reason: `Router LLM memilih ${decision}` }
 }
 

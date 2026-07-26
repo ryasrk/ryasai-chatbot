@@ -5,6 +5,7 @@ import { handleApiError, writeAudit } from '@/lib/session'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { planQuery, executePlan, synthesizeAnswer } from '@/lib/planner'
 import { rememberChatTurn } from '@/lib/cognee'
+import { rateLimit } from '@/lib/redis'
 
 async function writeApiLog(args: {
   apiKeyId: string | null
@@ -36,6 +37,17 @@ export async function POST(req: NextRequest) {
   try {
     const identity = await requireExternalApiKey(req)
     apiKeyId = identity.apiKeyId
+
+    // ponytail: Redis burst-protection rate limit — falls back to DB-based limiting
+    // in requireExternalApiKey when Redis is down (rateLimit returns null).
+    const rl = await rateLimit(`api:${apiKeyId}`, identity.requestLimitPerMinute ?? 60)
+    if (rl && !rl.allowed) {
+      await writeApiLog({ apiKeyId, status: 429, latencyMs: Date.now() - started, errorMessage: 'Rate limit exceeded' })
+      return NextResponse.json(
+        { ok: false, error: 'Rate limit exceeded' },
+        { status: 429, headers: { 'X-RateLimit-Remaining': '0' } },
+      )
+    }
 
     const body = (await req.json().catch(() => ({}))) as AgentRunBody
     const question = (body.question ?? '').trim()

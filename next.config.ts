@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   reactStrictMode: true,
-  serverExternalPackages: ["@cognee/cognee-ts", "@cognee/neon-linux-x64-gnu"],
+  serverExternalPackages: ["@cognee/cognee-ts", "@cognee/neon-linux-x64-gnu", "ioredis", "bullmq"],
 };
 
 export default nextConfig;

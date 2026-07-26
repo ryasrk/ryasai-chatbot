@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError } from '@/lib/session'
 import { runNonStreamingChatCompletion, runStreamingChatCompletion } from '@/lib/tool-router'
+import { rateLimit } from '@/lib/redis'
 
 interface ChatCompletionBody {
   model?: string
@@ -46,6 +47,17 @@ export async function POST(req: NextRequest) {
   try {
     const identity = await requireExternalApiKey(req)
     apiKeyId = identity.apiKeyId
+
+    // ponytail: Redis burst-protection rate limit — falls back to DB-based limiting
+    // in requireExternalApiKey when Redis is down (rateLimit returns null).
+    const rl = await rateLimit(`api:${apiKeyId}`, identity.requestLimitPerMinute ?? 60)
+    if (rl && !rl.allowed) {
+      await writeApiLog({ apiKeyId, status: 429, latencyMs: Date.now() - started, errorMessage: 'Rate limit exceeded' })
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        { status: 429, headers: { 'X-RateLimit-Remaining': '0', ...corsHeaders } },
+      )
+    }
 
     const body = (await req.json().catch(() => ({}))) as ChatCompletionBody
     const question = latestUserMessage(body.messages ?? [])
