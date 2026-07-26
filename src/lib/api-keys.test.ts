@@ -57,6 +57,18 @@ describe('api key utilities', () => {
   test('masks by prefix', () => {
     expect(maskApiKey('ryas_abc12345')).toBe('ryas_abc12345...')
   })
+
+  test('verifyApiKey returns false for different-length hash', () => {
+    expect(verifyApiKey('ryas_test', 'short')).toBe(false)
+  })
+
+  test('hashApiKey produces deterministic 64-char hex', () => {
+    const h1 = hashApiKey('ryas_key_1')
+    const h2 = hashApiKey('ryas_key_1')
+    expect(h1).toBe(h2)
+    expect(h1).toHaveLength(64)
+    expect(h1).toMatch(/^[0-9a-f]+$/)
+  })
 })
 
 describe('getBearerToken', () => {
@@ -131,10 +143,10 @@ describe('requireExternalApiKey', () => {
     // ponytail: db query filters isActive:true, revokedAt:null — revoked keys never appear
     mockApiKeyFindMany.mockImplementation(async () => [])
 
-    const req = new NextRequest('http://localhost/', {
+    const revokedReq = new NextRequest('http://localhost/', {
       headers: { Authorization: 'Bearer ryas_revoked_key' },
     })
-    await expect(requireExternalApiKey(req)).rejects.toThrow('invalid or has been revoked')
+    await expect(requireExternalApiKey(revokedReq)).rejects.toThrow('invalid or has been revoked')
   })
 
   test('per-minute rate limit exceeded → throws 429-style message', async () => {
@@ -216,5 +228,32 @@ describe('requireExternalApiKey', () => {
     })
     const identity = await requireExternalApiKey(req)
     expect(identity.apiKeyId).toBe('key-ok')
+  })
+
+  test('short token (< 13 chars) → falls back to all-keys scan, still invalid', async () => {
+    mockApiKeyFindMany.mockImplementation(async () => [])
+    const req = new NextRequest('http://localhost/', {
+      headers: { Authorization: 'Bearer ryas' },
+    })
+    await expect(requireExternalApiKey(req)).rejects.toThrow('invalid or has been revoked')
+  })
+
+  test('no rate limits configured → skips count checks, succeeds', async () => {
+    const key = generateApiKey()
+    mockApiKeyFindMany.mockImplementation(async () => [
+      {
+        id: 'key-nolimit',
+        label: 'no-limit',
+        keyHash: key.hash,
+        requestLimitPerMinute: null,
+        dailyRequestLimit: null,
+      },
+    ])
+    const req = new NextRequest('http://localhost/', {
+      headers: { Authorization: `Bearer ${key.plainText}` },
+    })
+    const identity = await requireExternalApiKey(req)
+    expect(identity.apiKeyId).toBe('key-nolimit')
+    expect(mockApiRequestLogCount).not.toHaveBeenCalled()
   })
 })

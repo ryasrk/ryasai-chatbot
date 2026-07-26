@@ -89,6 +89,7 @@ export async function smartRoute(args: {
   hasDocuments: boolean
   hasRestApis: boolean
   memoryContext?: string
+  preferredIntegrationId?: string
 }): Promise<SmartRouteResult> {
   const tokens = tokenize(args.question)
 
@@ -100,6 +101,9 @@ export async function smartRoute(args: {
     loadSimilarityBoost(tokens),
     selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 }),
   ])
+
+  // ponytail: detect explicit integration mentions in the question ("World Geography DB", "Chinook", etc.)
+  const mentionedIntegration = await detectMentionedIntegration(args.question)
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores: ToolScore[] = tools.map((tool) => {
@@ -160,7 +164,8 @@ export async function smartRoute(args: {
 
   let integrationId: string | undefined
   if (decision === 'SQL' && args.hasIntegrations) {
-    integrationId = await pickBestIntegration(tokens)
+    // ponytail: priority order — explicit mention > user-selected > schema match
+    integrationId = mentionedIntegration ?? args.preferredIntegrationId ?? (await pickBestIntegration(tokens))
   }
 
   return { decision, reason, scores, integrationId, llmUsed }
@@ -254,11 +259,18 @@ function buildReason(
 async function loadSchemaMetadata(): Promise<string[]> {
   const schemas = await db.integrationSchema.findMany({
     where: { integration: { status: 'active' } },
-    select: { tableName: true, columns: true },
+    select: { tableName: true, columns: true, integration: { select: { name: true, provider: true } } },
   })
   const keywords: string[] = []
   for (const s of schemas) {
     keywords.push(s.tableName.toLowerCase())
+    // ponytail: include integration name words so "world" or "chinook" in the question
+    // boosts SQL routing toward the right integration
+    if (s.integration?.name) {
+      for (const word of s.integration.name.toLowerCase().split(/\s+/)) {
+        if (word.length >= 3) keywords.push(word)
+      }
+    }
     try {
       const cols = JSON.parse(s.columns) as Array<{ name?: string; type?: string }>
       for (const c of cols) {
@@ -379,6 +391,46 @@ async function loadSimilarityBoost(
   return boosts
 }
 
+// ponytail: detect when the user explicitly mentions a database by name.
+// e.g. "Di World Geography DB" → matches "World Geography DB" integration.
+// This overrides schema-based integration selection.
+async function detectMentionedIntegration(question: string): Promise<string | undefined> {
+  const integrations = await db.integration.findMany({
+    where: { status: 'active' },
+    select: { id: true, name: true, provider: true },
+  })
+  const lower = question.toLowerCase()
+  for (const integ of integrations) {
+    const nameLower = integ.name.toLowerCase()
+    // Match full name or significant words from the name
+    if (lower.includes(nameLower)) return integ.id
+    // Match on key words (skip common words like "db", "database")
+    const significantWords = nameLower.split(/\s+/).filter(
+      (w) => w.length >= 4 && !['db', 'database', 'data', 'store', 'media'].includes(w),
+    )
+    if (significantWords.length >= 2 && significantWords.every((w) => lower.includes(w))) {
+      return integ.id
+    }
+    // Match on provider type keywords
+    if (integ.provider === 'SQLITE_WORLD' && (lower.includes('world') || lower.includes('geography') || lower.includes('country') || lower.includes('negara') || lower.includes('city') || lower.includes('language'))) {
+      return integ.id
+    }
+    if (integ.provider === 'SQLITE_CHINOOK' && (lower.includes('chinook') || lower.includes('music') || lower.includes('artist') || lower.includes('album') || lower.includes('track'))) {
+      return integ.id
+    }
+    if (integ.provider === 'SQLITE_PAGILA' && (lower.includes('pagila') || lower.includes('movie') || lower.includes('film') || lower.includes('rental'))) {
+      return integ.id
+    }
+    if (integ.provider === 'CLICKHOUSE' && (lower.includes('clickhouse') || lower.includes('covid') || lower.includes('hackernews') || lower.includes('hacker news'))) {
+      return integ.id
+    }
+    if (integ.provider === 'SQLITE_DEMO' && (lower.includes('erp') || lower.includes('inventory') || lower.includes('warehouse') || lower.includes('gudang'))) {
+      return integ.id
+    }
+  }
+  return undefined
+}
+
 export async function pickBestIntegration(
   tokens: string[],
 ): Promise<string | undefined> {
@@ -410,8 +462,11 @@ export async function pickBestIntegration(
   })
 
   scored.sort((a, b) => b.score - a.score)
+  // ponytail: when no schema keywords match, return undefined instead of
+  // defaulting to the oldest integration. This lets the caller's preferred
+  // integration (from UI selection) take priority.
   if (scored[0].score === 0) {
-    return integrations.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0].id
+    return undefined
   }
   return scored[0].id
 }

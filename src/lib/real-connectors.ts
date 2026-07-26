@@ -37,7 +37,7 @@ interface DbConfig {
   ssl?: boolean
 }
 
-function readDbConfig(c: Record<string, unknown>): DbConfig {
+export function readDbConfig(c: Record<string, unknown>): DbConfig {
   return {
     host: String(c.host ?? c.server ?? 'localhost'),
     port: Number(c.port ?? 0) || 0,
@@ -51,7 +51,7 @@ function readDbConfig(c: Record<string, unknown>): DbConfig {
 
 // ponytail: duplicated from connectors.ts to avoid a circular import.
 // Handles Date/BigInt/Buffer → JSON-safe values for the LLM + SSE transport.
-function normaliseRow(r: QueryRow): QueryRow {
+export function normaliseRow(r: QueryRow): QueryRow {
   const out: QueryRow = {}
   for (const [k, v] of Object.entries(r)) {
     if (v instanceof Date) out[k] = v.toISOString()
@@ -64,7 +64,7 @@ function normaliseRow(r: QueryRow): QueryRow {
   return out
 }
 
-async function loadDriver(name: string): Promise<Record<string, unknown>> {
+export async function loadDriver(name: string): Promise<Record<string, unknown>> {
   try {
     return (await import(name)) as Record<string, unknown>
   } catch (e) {

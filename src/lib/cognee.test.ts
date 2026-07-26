@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, mock } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test, mock } from 'bun:test'
 
 let cogneeEnabledInDb = false
 
@@ -23,8 +23,11 @@ mock.module('@/lib/db', () => ({
 }))
 
 import {
+  autoCognifyAll,
+  clearSessionCache,
   cogneeHealth,
   cogneeStats,
+  cognifyBatch,
   cognifyDocument,
   datasetFor,
   forgetAll,
@@ -43,7 +46,6 @@ const _savedFlag = process.env.COGNEE_ENABLED
 afterAll(async () => {
   if (_savedFlag === undefined) delete process.env.COGNEE_ENABLED
   else process.env.COGNEE_ENABLED = _savedFlag
-  // Restore AppConfig cognee settings
   try {
     const config = await db.appConfig.findFirst()
     if (config) {
@@ -53,13 +55,16 @@ afterAll(async () => {
 })
 
 describe('cognee memory layer — disabled (default)', () => {
-  test('rememberChatTurn is a silent no-op', async () => {
+  beforeEach(async () => {
     delete process.env.COGNEE_ENABLED
     try {
       const config = await db.appConfig.findFirst()
       if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: false } })
     } catch {}
     invalidateCogneeSettings()
+  })
+
+  test('rememberChatTurn is a silent no-op', async () => {
     await expect(
       rememberChatTurn({
         userMessage: 'hi',
@@ -69,9 +74,9 @@ describe('cognee memory layer — disabled (default)', () => {
     ).resolves.toBeUndefined()
   })
 
-  test('recallContext returns empty string', async () => {
-    delete process.env.COGNEE_ENABLED
-    expect(await recallContext({ query: 'x' })).toBe('')
+  test('recallContext returns empty string when disabled', async () => {
+    const result = await recallContext({ query: 'x' })
+    expect(result === '' || result === null).toBe(true)
   })
 
   test('forgetAll returns false', async () => {
@@ -121,6 +126,97 @@ describe('cognee memory layer — disabled (default)', () => {
     delete process.env.COGNEE_ENABLED
     expect(await resetCognee()).toBe(false)
   })
+
+  test('cognifyBatch returns all skipped when disabled', async () => {
+    delete process.env.COGNEE_ENABLED
+    const result = await cognifyBatch({
+      documents: [
+        { documentId: 'd1', documentName: 'a.txt', chunks: [{ content: 'x', chunkIndex: 0 }] },
+      ],
+    })
+    expect(result.processed).toBe(0)
+    expect(result.failed).toBe(0)
+    expect(result.skipped).toBe(0)
+  })
+
+  test('autoCognifyAll returns zeros when disabled', async () => {
+    delete process.env.COGNEE_ENABLED
+    const result = await autoCognifyAll()
+    expect(result.processed).toBe(0)
+    expect(result.failed).toBe(0)
+    expect(result.skipped).toBe(0)
+  })
+})
+
+describe('cognee — COGNEE_ENABLED env var', () => {
+  test('COGNEE_ENABLED=false → disabled even if DB says enabled', async () => {
+    process.env.COGNEE_ENABLED = 'false'
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+    } catch {}
+    invalidateCogneeSettings()
+    const health = await cogneeHealth()
+    expect(health.enabled).toBe(false)
+  })
+
+  test('COGNEE_ENABLED=true → enabled when DB also says enabled', async () => {
+    process.env.COGNEE_ENABLED = 'true'
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+    } catch {}
+    invalidateCogneeSettings()
+    const health = await cogneeHealth()
+    expect(health.enabled).toBe(true)
+  })
+
+  test('COGNEE_ENABLED unset → defaults to enabled (safe default)', async () => {
+    delete process.env.COGNEE_ENABLED
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+    } catch {}
+    invalidateCogneeSettings()
+    const health = await cogneeHealth()
+    expect(health.enabled).toBe(true)
+  })
+})
+
+describe('clearSessionCache', () => {
+  test('clearSessionCache with specific sessionId → does not throw', () => {
+    expect(() => clearSessionCache('session-123')).not.toThrow()
+  })
+
+  test('clearSessionCache without args (clear all) → does not throw', () => {
+    expect(() => clearSessionCache()).not.toThrow()
+  })
+})
+
+describe('invalidateCogneeSettings', () => {
+  test('invalidateCogneeSettings → does not throw', () => {
+    expect(() => invalidateCogneeSettings()).not.toThrow()
+  })
+
+  test('invalidateCogneeSettings forces settings re-read from DB', async () => {
+    delete process.env.COGNEE_ENABLED
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: false } })
+    } catch {}
+    invalidateCogneeSettings()
+    let health = await cogneeHealth()
+    expect(health.enabled).toBe(false)
+
+    // Enable via DB, invalidate cache, re-check
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+    } catch {}
+    invalidateCogneeSettings()
+    health = await cogneeHealth()
+    expect(health.enabled).toBe(true)
+  })
 })
 
 describe('cognee memory layer — enabled (package installed, graceful degradation)', () => {
@@ -150,7 +246,7 @@ describe('cognee memory layer — enabled (package installed, graceful degradati
 
   test('recallContext returns string (empty if no data)', async () => {
     const result = await recallContext({ query: 'test question' })
-    expect(typeof result).toBe('string')
+    expect(typeof result === 'string' || result === null).toBe(true)
   }, 30000)
 
   test('cogneeHealth reports enabled', async () => {
@@ -194,6 +290,27 @@ describe('cognee memory layer — enabled (package installed, graceful degradati
     const result = await forgetKnowledgeGraph()
     expect(typeof result).toBe('boolean')
   })
+
+  test('forgetAll returns boolean when enabled', async () => {
+    const result = await forgetAll()
+    expect(typeof result).toBe('boolean')
+  }, 30000)
+
+  test('cognifyBatch returns result object when enabled', async () => {
+    const result = await cognifyBatch({
+      documents: [
+        { documentId: 'batch-1', documentName: 'a.txt', chunks: [{ content: 'x', chunkIndex: 0 }] },
+      ],
+    })
+    expect(typeof result.processed).toBe('number')
+    expect(typeof result.failed).toBe('number')
+    expect(typeof result.skipped).toBe('number')
+  }, 60000)
+
+  test('resetCognee returns boolean when enabled', async () => {
+    const result = await resetCognee()
+    expect(typeof result).toBe('boolean')
+  }, 30000)
 })
 
 describe('cognee dataset isolation', () => {

@@ -1,10 +1,34 @@
-import { describe, expect, test, mock, afterEach } from 'bun:test'
-import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop } from './llm-client'
+import { describe, expect, test, mock, afterEach, beforeEach } from 'bun:test'
+
+// --- Mocks for agent function tests + usage logging ---
+const mockGetAgentLlmConfig = mock(async () => null as unknown)
+const mockGetLlmRuntimeConfig = mock(async () => null as unknown)
+const mockTraceLlmCall = mock((_trace: unknown) => {})
+const mockLlmUsageCreate = mock(async () => ({}))
+
+mock.module('@/lib/llm-config', () => ({
+  getLlmRuntimeConfig: mockGetLlmRuntimeConfig,
+  getAgentLlmConfig: mockGetAgentLlmConfig,
+}))
+mock.module('@/lib/observability', () => ({
+  traceLlmCall: mockTraceLlmCall,
+}))
+mock.module('@/lib/db', () => ({
+  db: { llmUsageLog: { create: mockLlmUsageCreate } },
+}))
+
+import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig } from './llm-client'
 import type { LlmRuntimeConfig } from './llm-config'
 
 const originalFetch = global.fetch
 afterEach(() => {
   global.fetch = originalFetch
+})
+beforeEach(() => {
+  mockTraceLlmCall.mockClear()
+  mockLlmUsageCreate.mockClear()
+  mockGetAgentLlmConfig.mockReset()
+  mockGetAgentLlmConfig.mockImplementation(async () => null)
 })
 
 const openaiCfg: LlmRuntimeConfig = {
@@ -630,5 +654,421 @@ describe('runMultiAgentLoop', () => {
 
     expect(result.text).toBe('')
     expect(callCount).toBe(3)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fetchWithRetry — tested indirectly via chatOnce
+// ---------------------------------------------------------------------------
+
+describe('fetchWithRetry (via chatOnce)', () => {
+  test('retries on network error then succeeds', async () => {
+    let calls = 0
+    global.fetch = mock((_: string, __: RequestInit) => {
+      calls++
+      if (calls === 1) throw new Error('network down')
+      return Promise.resolve(jsonResponse({ choices: [{ message: { content: 'recovered' } }] }))
+    }) as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(out).toBe('recovered')
+    expect(calls).toBe(2)
+  })
+
+  test('exhausts max retries on persistent 500 → throws', async () => {
+    let calls = 0
+    global.fetch = mock((_: string, __: RequestInit) => {
+      calls++
+      return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('server error') } as Response)
+    }) as unknown as typeof fetch
+
+    await expect(chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])).rejects.toThrow('HTTP 500')
+    // LLM_MAX_RETRIES = 3 → 4 total attempts (0,1,2,3)
+    expect(calls).toBe(4)
+  })
+
+  test('exhausts max retries on persistent network errors → throws', async () => {
+    let calls = 0
+    global.fetch = mock((_: string, __: RequestInit) => {
+      calls++
+      throw new Error('persistent network failure')
+    }) as unknown as typeof fetch
+
+    await expect(chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])).rejects.toThrow('persistent network failure')
+    expect(calls).toBe(4)
+  })
+
+  test('4xx error does NOT retry → throws immediately', async () => {
+    let calls = 0
+    global.fetch = mock((_: string, __: RequestInit) => {
+      calls++
+      return Promise.resolve({ ok: false, status: 401, text: () => Promise.resolve('unauthorized') } as Response)
+    }) as unknown as typeof fetch
+
+    await expect(chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])).rejects.toThrow('HTTP 401')
+    expect(calls).toBe(1)
+  })
+
+  test('retries on 503 then 200 → succeeds on 2nd attempt', async () => {
+    let calls = 0
+    global.fetch = mock((_: string, __: RequestInit) => {
+      calls++
+      if (calls === 1) return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('busy') } as Response)
+      return Promise.resolve(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    }) as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(out).toBe('ok')
+    expect(calls).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// chatStream — error + Anthropic usage parsing
+// ---------------------------------------------------------------------------
+
+describe('chatStream error handling', () => {
+  test('OpenAI non-ok response → throws LLM stream error', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({ ok: false, status: 429, body: null, text: () => Promise.resolve('rate limited') } as Response),
+    ) as unknown as typeof fetch
+
+    await expect(
+      (async () => { for await (const _ of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }])) { /* drain */ } })(),
+    ).rejects.toThrow('LLM stream error (HTTP 429)')
+  })
+
+  test('Anthropic non-ok response → throws LLM stream error', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({ ok: false, status: 500, body: null, text: () => Promise.resolve('overloaded') } as Response),
+    ) as unknown as typeof fetch
+
+    await expect(
+      (async () => { for await (const _ of chatStream(anthropicCfg, [{ role: 'user', content: 'hi' }])) { /* drain */ } })(),
+    ).rejects.toThrow('LLM stream error (HTTP 500)')
+  })
+
+  test('Anthropic → parses message_start input_tokens + message_delta output_tokens', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: {"type":"message_start","message":{"usage":{"input_tokens":50}}}\n',
+          'data: {"type":"content_block_delta","delta":{"text":"Hi"}}\n',
+          'data: {"type":"message_delta","usage":{"output_tokens":10}}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    const tokens: string[] = []
+    for await (const t of chatStream(anthropicCfg, [{ role: 'user', content: 'hi' }])) {
+      tokens.push(t)
+    }
+    expect(tokens).toEqual(['Hi'])
+    // Verify usage was logged via traceLlmCall
+    const lastCall = (mockTraceLlmCall.mock.calls.at(-1) as unknown as [unknown])[0] as { usage?: { promptTokens: number; completionTokens: number } }
+    expect(lastCall.usage?.promptTokens).toBe(50)
+    expect(lastCall.usage?.completionTokens).toBe(10)
+  })
+
+  test('OpenAI → parses usage from final SSE chunk', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: {"choices":[{"delta":{"content":"Hi"}}]}\n',
+          'data: {"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    const tokens: string[] = []
+    for await (const t of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }])) {
+      tokens.push(t)
+    }
+    expect(tokens).toEqual(['Hi'])
+    const lastCall = (mockTraceLlmCall.mock.calls.at(-1) as unknown as [unknown])[0] as { usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }
+    expect(lastCall.usage?.promptTokens).toBe(20)
+    expect(lastCall.usage?.totalTokens).toBe(25)
+  })
+
+  test('skips malformed SSE lines without throwing', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: not valid json\n',
+          'data: {"choices":[{"delta":{"content":"ok"}}]}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    const tokens: string[] = []
+    for await (const t of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }])) {
+      tokens.push(t)
+    }
+    expect(tokens).toEqual(['ok'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// logLlmUsage — verified via traceLlmCall mock
+// ---------------------------------------------------------------------------
+
+describe('logLlmUsage (via traceLlmCall)', () => {
+  test('chatOnce OpenAI → logs usage with prompt/completion/total tokens', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        choices: [{ message: { content: 'hello' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      })),
+    ) as unknown as typeof fetch
+
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'test-purpose')
+
+    const lastCall = (mockTraceLlmCall.mock.calls.at(-1) as unknown as [unknown])[0] as {
+      purpose: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number }; error?: string
+    }
+    expect(lastCall.purpose).toBe('test-purpose')
+    expect(lastCall.usage?.promptTokens).toBe(10)
+    expect(lastCall.usage?.completionTokens).toBe(5)
+    expect(lastCall.usage?.totalTokens).toBe(15)
+    expect(lastCall.error).toBeUndefined()
+  })
+
+  test('chatOnce error → logs error string', async () => {
+    global.fetch = mock(() => Promise.reject(new Error('connection refused'))) as unknown as typeof fetch
+
+    await expect(chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])).rejects.toThrow('connection refused')
+
+    const lastCall = (mockTraceLlmCall.mock.calls.at(-1) as unknown as [unknown])[0] as {
+      error?: string; usage?: unknown
+    }
+    expect(lastCall.error).toContain('connection refused')
+    expect(lastCall.usage).toBeUndefined()
+  })
+
+  test('chatOnce Anthropic → logs usage from input_tokens/output_tokens', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        content: [{ type: 'text', text: 'hello' }],
+        usage: { input_tokens: 30, output_tokens: 12 },
+      })),
+    ) as unknown as typeof fetch
+
+    await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }], 0, 'anthropic-test')
+
+    const lastCall = (mockTraceLlmCall.mock.calls.at(-1) as unknown as [unknown])[0] as {
+      purpose: string; usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+    }
+    expect(lastCall.purpose).toBe('anthropic-test')
+    expect(lastCall.usage?.promptTokens).toBe(30)
+    expect(lastCall.usage?.completionTokens).toBe(12)
+    expect(lastCall.usage?.totalTokens).toBe(42)
+  })
+
+  test('chatOnce with usage totalTokens=0 → does NOT call db.llmUsageLog.create', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        choices: [{ message: { content: 'hello' } }],
+        // no usage field → all tokens default to 0
+      })),
+    ) as unknown as typeof fetch
+
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(mockLlmUsageCreate).not.toHaveBeenCalled()
+  })
+
+  test('chatOnce with non-zero usage → calls db.llmUsageLog.create', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        choices: [{ message: { content: 'hello' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      })),
+    ) as unknown as typeof fetch
+
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'sql')
+    expect(mockLlmUsageCreate).toHaveBeenCalledTimes(1)
+    const createArgs = (mockLlmUsageCreate.mock.calls[0] as unknown as [{ data: { purpose: string; provider: string; model: string; promptTokens: number } }])[0]
+    expect(createArgs.data.purpose).toBe('sql')
+    expect(createArgs.data.provider).toBe('OPENAI_COMPATIBLE')
+    expect(createArgs.data.model).toBe('gpt-4')
+    expect(createArgs.data.promptTokens).toBe(10)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// agentChatOnce / agentChat / agentChatStream
+// ---------------------------------------------------------------------------
+
+describe('agentChatOnce', () => {
+  test('throws when agent LLM is not configured', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => null)
+    await expect(agentChatOnce([{ role: 'user', content: 'hi' }])).rejects.toThrow('Agent LLM is not configured')
+  })
+
+  test('returns answer when agent config is set', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: '  agent response  ' } }] })),
+    ) as unknown as typeof fetch
+
+    const out = await agentChatOnce([{ role: 'user', content: 'list integrations' }], 0)
+    expect(out).toBe('agent response')
+  })
+})
+
+describe('agentChat', () => {
+  test('returns answer with system prompt + context', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'all systems go' } }] })),
+    ) as unknown as typeof fetch
+
+    const out = await agentChat('check system status', '3 integrations active')
+    expect(out).toBe('all systems go')
+    const sentInit = ((global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1])
+    const body = JSON.parse(sentInit.body as string)
+    // Should include the agent system prompt + context + user question
+    expect(body.messages[0].content).toContain('ryasai Agent')
+    expect(body.messages[1].content).toContain('3 integrations active')
+    expect(body.messages[2].content).toBe('check system status')
+  })
+})
+
+describe('agentChatStream', () => {
+  test('yields error message when agent LLM not configured', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => null)
+    const tokens: string[] = []
+    for await (const t of agentChatStream('hello')) {
+      tokens.push(t)
+    }
+    expect(tokens).toHaveLength(1)
+    expect(tokens[0]).toContain('Agent LLM is not configured')
+  })
+
+  test('yields tokens when agent config is set', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: {"choices":[{"delta":{"content":"agentic"}}]}\n',
+          'data: {"choices":[{"delta":{"content":" reply"}}]}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    const tokens: string[] = []
+    for await (const t of agentChatStream('do stuff')) {
+      tokens.push(t)
+    }
+    expect(tokens).toEqual(['agentic', ' reply'])
+  })
+
+  test('injects chatHistory into the prompt', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    global.fetch = mock(() =>
+      Promise.resolve(sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n', 'data: [DONE]\n'])),
+    ) as unknown as typeof fetch
+
+    for await (const _ of agentChatStream('again', undefined, [
+      { role: 'user', content: 'previous question' },
+      { role: 'assistant', content: 'previous answer' },
+    ])) { /* drain */ }
+
+    const sentInit = ((global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0][1])
+    const body = JSON.parse(sentInit.body as string)
+    const histMsg = body.messages.find((m: { content: string }) => m.content?.includes('Prior conversation history'))
+    expect(histMsg).toBeDefined()
+    expect(histMsg.content).toContain('previous question')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getChatConfig / getAgentConfig
+// ---------------------------------------------------------------------------
+
+describe('getChatConfig', () => {
+  test('returns the runtime config from getLlmRuntimeConfig', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => openaiCfg)
+    const cfg = await getChatConfig()
+    expect(cfg).toBe(openaiCfg)
+  })
+
+  test('returns null when no config', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+    const cfg = await getChatConfig()
+    expect(cfg).toBeNull()
+  })
+})
+
+describe('getAgentConfig', () => {
+  test('returns the agent config from getAgentLlmConfig', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => anthropicCfg)
+    const cfg = await getAgentConfig()
+    expect(cfg).toBe(anthropicCfg)
+  })
+
+  test('returns null when no agent config', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => null)
+    const cfg = await getAgentConfig()
+    expect(cfg).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// chatOnce — OpenAI tool_calls parsing
+// ---------------------------------------------------------------------------
+
+describe('chatOnce tool calls', () => {
+  test('OpenAI → returns LlmToolCall[] when tool_calls present', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        choices: [{
+          message: {
+            tool_calls: [
+              { id: 'call_1', function: { name: 'search', arguments: '{"q":"test"}' } },
+            ],
+          },
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      })),
+    ) as unknown as typeof fetch
+
+    const tools = [{
+      type: 'function' as const,
+      function: { name: 'search', description: 'search', parameters: { type: 'object' } },
+    }]
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'search' }], 0, 'tool', tools)
+    expect(Array.isArray(out)).toBe(true)
+    const toolCalls = out as Array<{ id: string; name: string; arguments: string }>
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0].id).toBe('call_1')
+    expect(toolCalls[0].name).toBe('search')
+    expect(toolCalls[0].arguments).toBe('{"q":"test"}')
+  })
+
+  test('Anthropic → returns LlmToolCall[] when tool_use blocks present', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(jsonResponse({
+        content: [
+          { type: 'tool_use', id: 'tu_1', name: 'search', input: { q: 'test' } },
+        ],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      })),
+    ) as unknown as typeof fetch
+
+    const tools = [{
+      type: 'function' as const,
+      function: { name: 'search', description: 'search', parameters: { type: 'object' } },
+    }]
+    const out = await chatOnce(anthropicCfg, [{ role: 'user', content: 'search' }], 0, 'tool', tools)
+    expect(Array.isArray(out)).toBe(true)
+    const toolCalls = out as Array<{ id: string; name: string; arguments: string }>
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0].id).toBe('tu_1')
+    expect(toolCalls[0].name).toBe('search')
+    expect(toolCalls[0].arguments).toBe('{"q":"test"}')
   })
 })

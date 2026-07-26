@@ -13,6 +13,7 @@ import {
   describeSchema,
   type ReflectedTable,
   SqliteDemoConnector,
+  ChinookSqliteConnector,
   ConnectorRegistry,
   resetDemoSchemaBootstrap,
 } from './connectors'
@@ -96,6 +97,29 @@ describe('describeSchema', () => {
     expect(out).toContain("desc='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA...'")
     expect(out).not.toContain(longStr + "'")
   })
+
+  test('skips null/undefined values in sample row', () => {
+    const tables: ReflectedTable[] = [
+      {
+        tableName: 't',
+        rowCount: 1,
+        columns: [
+          { name: 'id', type: 'INTEGER', primaryKey: true },
+          { name: 'opt', type: 'TEXT' },
+          { name: 'name', type: 'TEXT' },
+        ],
+        sampleRow: { id: 1, opt: null, name: 'foo' },
+      },
+    ]
+    const out = describeSchema(tables)
+    expect(out).toContain('id=1')
+    expect(out).toContain("name='foo'")
+    expect(out).not.toContain('opt=null')
+  })
+
+  test('empty tables array → empty string', () => {
+    expect(describeSchema([])).toBe('')
+  })
 })
 
 // DDL test runs before fetch/execute tests so _bootstrapped is still false.
@@ -150,6 +174,153 @@ describe('SqliteDemoConnector.executeQuery', () => {
       c.executeQuery('SELECT * FROM demo_products JOIN User ON 1=1'),
     ).rejects.toThrow()
   })
+
+  test('allows JOIN between two demo tables', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ id: 1 }])
+    const c = new SqliteDemoConnector({})
+    const result = await c.executeQuery(
+      'SELECT * FROM demo_orders JOIN demo_customers ON demo_orders.customer_id = demo_customers.id LIMIT 1',
+    )
+    expect(result.rowCount).toBe(1)
+  })
+
+  test('normalises bigint rows to numbers', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ count: BigInt(42) }])
+    const c = new SqliteDemoConnector({})
+    const result = await c.executeQuery('SELECT COUNT(*) as count FROM demo_products')
+    expect(typeof result.rows[0].count).toBe('number')
+    expect(result.rows[0].count).toBe(42)
+  })
+
+  test('normalises Date rows to ISO strings', async () => {
+    const d = new Date('2026-01-01T00:00:00Z')
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ created: d }])
+    const c = new SqliteDemoConnector({})
+    const result = await c.executeQuery('SELECT * FROM demo_products LIMIT 1')
+    expect(result.rows[0].created).toBe(d.toISOString())
+  })
+})
+
+describe('ChinookSqliteConnector', () => {
+  test('provider is SQLITE_CHINOOK', () => {
+    const c = new ChinookSqliteConnector({})
+    expect(c.provider).toBe('SQLITE_CHINOOK')
+  })
+
+  test('testConnection → true when Artist table responds', async () => {
+    const c = new ChinookSqliteConnector({})
+    const ok = await c.testConnection()
+    expect(ok).toBe(true)
+  })
+
+  test('fetchSchema → returns tables with columns from PRAGMA', async () => {
+    const c = new ChinookSqliteConnector({})
+    const schema = await c.fetchSchema()
+    expect(schema.length).toBeGreaterThan(0)
+    expect(schema[0].columns.length).toBeGreaterThan(0)
+    const firstCol = schema[0].columns[0]
+    expect(firstCol.name).toBe('id')
+    expect(firstCol.primaryKey).toBe(true)
+  })
+
+  test('executeQuery → allows Chinook tables (Artist)', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ name: 'AC/DC' }])
+    const c = new ChinookSqliteConnector({})
+    const result = await c.executeQuery('SELECT * FROM Artist LIMIT 1')
+    expect(result.rowCount).toBe(1)
+    expect(result.rows[0].name).toBe('AC/DC')
+  })
+
+  test('executeQuery → allows JOIN between Chinook tables', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ title: 'Album1' }])
+    const c = new ChinookSqliteConnector({})
+    const result = await c.executeQuery(
+      'SELECT Album.Title FROM Album JOIN Artist ON Album.ArtistId = Artist.ArtistId LIMIT 1',
+    )
+    expect(result.rowCount).toBe(1)
+  })
+
+  test('executeQuery → rejects non-Chinook table (User)', async () => {
+    const c = new ChinookSqliteConnector({})
+    await expect(c.executeQuery('SELECT * FROM User')).rejects.toThrow('allowlist')
+  })
+
+  test('executeQuery → rejects demo table (not in Chinook allowlist)', async () => {
+    const c = new ChinookSqliteConnector({})
+    await expect(c.executeQuery('SELECT * FROM demo_products')).rejects.toThrow('allowlist')
+  })
+
+  test('executeQuery → rejects sqlite_master', async () => {
+    const c = new ChinookSqliteConnector({})
+    await expect(c.executeQuery('SELECT * FROM sqlite_master')).rejects.toThrow('allowlist')
+  })
+})
+
+describe('assertTablesOnly via connectors (table allowlist security)', () => {
+  test('mixed-case table name matches allowlist (case-insensitive)', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ name: 'x' }])
+    const c = new ChinookSqliteConnector({})
+    const result = await c.executeQuery('SELECT * FROM artist LIMIT 1')
+    expect(result.rowCount).toBe(1)
+  })
+
+  test('backtick-quoted table name matches allowlist', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ name: 'x' }])
+    const c = new ChinookSqliteConnector({})
+    const result = await c.executeQuery('SELECT * FROM `Artist` LIMIT 1')
+    expect(result.rowCount).toBe(1)
+  })
+})
+
+describe('GenericSqliteConnector (World + Pagila)', () => {
+  test('SQLITE_WORLD provider → connector with WORLD tables', () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('world-1', 'SQLITE_WORLD', {})
+    expect(c).toBeDefined()
+    expect(c.provider).toBe('SQLITE_WORLD')
+  })
+
+  test('SQLITE_PAGILA provider → connector with PAGILA tables', () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('pagila-1', 'SQLITE_PAGILA', {})
+    expect(c).toBeDefined()
+    expect(c.provider).toBe('SQLITE_PAGILA')
+  })
+
+  test('World connector testConnection → true', async () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('world-2', 'SQLITE_WORLD', {})
+    const ok = await c.testConnection()
+    expect(ok).toBe(true)
+  })
+
+  test('World connector executeQuery → allows city table', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ Name: 'Jakarta' }])
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('world-3', 'SQLITE_WORLD', {})
+    const result = await c.executeQuery('SELECT * FROM city LIMIT 1')
+    expect(result.rowCount).toBe(1)
+  })
+
+  test('World connector executeQuery → rejects non-world table', async () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('world-4', 'SQLITE_WORLD', {})
+    await expect(c.executeQuery('SELECT * FROM User')).rejects.toThrow('allowlist')
+  })
+
+  test('Pagila connector executeQuery → allows pagila_actor table', async () => {
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ first_name: 'Penelope' }])
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('pagila-2', 'SQLITE_PAGILA', {})
+    const result = await c.executeQuery('SELECT * FROM pagila_actor LIMIT 1')
+    expect(result.rowCount).toBe(1)
+  })
+
+  test('Pagila connector executeQuery → rejects demo table', async () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('pagila-3', 'SQLITE_PAGILA', {})
+    await expect(c.executeQuery('SELECT * FROM demo_products')).rejects.toThrow('allowlist')
+  })
 })
 
 describe('ConnectorRegistry', () => {
@@ -159,11 +330,36 @@ describe('ConnectorRegistry', () => {
     expect(c.provider).toBe('SQLITE_DEMO')
   })
 
+  test('SQLITE_CHINOOK provider → ChinookSqliteConnector instance', () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('chinook-reg', 'SQLITE_CHINOOK', {})
+    expect(c.provider).toBe('SQLITE_CHINOOK')
+  })
+
   test('POSTGRESQL provider → PostgresConnector instance', () => {
     const reg = new ConnectorRegistry()
     const c = reg.getConnector('i2', 'POSTGRESQL', {})
     expect(c).toBeDefined()
     expect(c.provider).toBe('POSTGRESQL')
+  })
+
+  test('MYSQL provider → MysqlConnector instance', () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('i2b', 'MYSQL', {})
+    expect(c).toBeDefined()
+    expect(c.provider).toBe('MYSQL')
+  })
+
+  test('MSSQL provider → MssqlConnector instance', () => {
+    const reg = new ConnectorRegistry()
+    const c = reg.getConnector('i2c', 'MSSQL', {})
+    expect(c).toBeDefined()
+    expect(c.provider).toBe('MSSQL')
+  })
+
+  test('unsupported provider → throws', () => {
+    const reg = new ConnectorRegistry()
+    expect(() => reg.getConnector('i2d', 'ORACLE', {})).toThrow('not supported')
   })
 
   test('caches connector by integrationId (same instance)', () => {
@@ -178,6 +374,18 @@ describe('ConnectorRegistry', () => {
     const c1 = reg.getConnector('i4', 'SQLITE_DEMO', {})
     reg.drop('i4')
     const c2 = reg.getConnector('i4', 'SQLITE_DEMO', {})
+    expect(c1).not.toBe(c2)
+  })
+
+  test('drop on non-existent id → no throw', () => {
+    const reg = new ConnectorRegistry()
+    expect(() => reg.drop('never-existed')).not.toThrow()
+  })
+
+  test('different integrationIds → different instances', () => {
+    const reg = new ConnectorRegistry()
+    const c1 = reg.getConnector('a1', 'SQLITE_DEMO', {})
+    const c2 = reg.getConnector('a2', 'SQLITE_DEMO', {})
     expect(c1).not.toBe(c2)
   })
 })

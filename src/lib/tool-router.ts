@@ -43,7 +43,7 @@ const log = scopedLogger('tool-router')
 const SQL_MAX_CONCURRENT = 3
 const _sqlSemaphores = new Map<string, { running: number; queue: Array<() => void> }>()
 
-function withSqlConcurrency<T>(integrationId: string, fn: () => Promise<T>): Promise<T> {
+export function withSqlConcurrency<T>(integrationId: string, fn: () => Promise<T>): Promise<T> {
   let sem = _sqlSemaphores.get(integrationId)
   if (!sem) {
     sem = { running: 0, queue: [] }
@@ -154,6 +154,7 @@ export async function runNonStreamingChatCompletion(args: {
       hasDocuments: documentCount > 0,
       hasRestApis: restEndpointCount > 0,
       memoryContext,
+      preferredIntegrationId: args.integrationId,
     })
     decision = routed.decision
     resolvedIntegrationId = routed.integrationId ?? args.integrationId
@@ -330,6 +331,7 @@ export async function runStreamingChatCompletion(args: {
       hasDocuments: documentCount > 0,
       hasRestApis: restEndpointCount > 0,
       memoryContext,
+      preferredIntegrationId: args.integrationId,
     })
     decision = routed.decision
     resolvedIntegrationId = routed.integrationId ?? args.integrationId
@@ -1144,7 +1146,7 @@ async function runSqlBranch(args: {
 }
 
 // ponytail: sanitize SQL error — strip credentials, connection strings, and schema-internal noise.
-function sanitizeSqlError(msg: string): string {
+export function sanitizeSqlError(msg: string): string {
   return msg
     .replace(/postgres:\/\/[^\s]+/g, 'postgres://***')
     .replace(/mysql:\/\/[^\s]+/g, 'mysql://***')
@@ -1512,7 +1514,7 @@ function safeJson(text: string): unknown | null {
   }
 }
 
-function summarize(value: string): string {
+export function summarize(value: string): string {
   return value.length > 1000 ? `${value.slice(0, 1000)}...` : value
 }
 
