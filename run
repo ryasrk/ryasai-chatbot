@@ -1,0 +1,9 @@
+▲ Next.js 16.1.3 (Turbopack)
+- Local:         http://localhost:3005
+- Network:       http://10.255.255.254:3005
+- Environments: .env
+
+✓ Starting...
+⨯ Unable to acquire lock at /home/ryasr/ryasai/Chatbot/.next/dev/lock, is another instance of next dev running?
+  Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
+[?25h

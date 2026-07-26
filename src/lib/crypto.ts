@@ -20,17 +20,14 @@
 import crypto from 'crypto'
 import { getEncryptionKey } from '@/lib/config'
 
-function getKey(): Buffer {
-  return getEncryptionKey()
-}
-
-const KEY = getKey()
+// ponytail: lazy key — read at call time so tests can set env vars after import.
+function key(): Buffer { return getEncryptionKey() }
 
 /** Encrypt an arbitrary JSON-serialisable config object → hex string. */
 export function encryptConfig(config: Record<string, unknown>): string {
   const nonce = crypto.randomBytes(12)
   const data = Buffer.from(JSON.stringify(config), 'utf-8')
-  const cipher = crypto.createCipheriv('aes-256-gcm', KEY, nonce)
+  const cipher = crypto.createCipheriv('aes-256-gcm', key(), nonce)
   const ct = Buffer.concat([cipher.update(data), cipher.final()])
   const tag = cipher.getAuthTag()
   // hex(nonce || ciphertext || tag)  — tag is 16 bytes
@@ -43,7 +40,7 @@ export function decryptConfig(encryptedHex: string): Record<string, unknown> {
   const nonce = buf.subarray(0, 12)
   const tag = buf.subarray(buf.length - 16)
   const ct = buf.subarray(12, buf.length - 16)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', KEY, nonce)
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), nonce)
   decipher.setAuthTag(tag)
   const pt = Buffer.concat([decipher.update(ct), decipher.final()])
   return JSON.parse(pt.toString('utf-8'))
@@ -71,7 +68,7 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
 // which allowed trivial impersonation (IDs leak via /api/me/users). It is now a
 // `userId.signature` token; the server only trusts `userId` if the HMAC verifies.
 function sessionHmac(userId: string): string {
-  return crypto.createHmac('sha256', getKey()).update(userId).digest('base64url')
+  return crypto.createHmac('sha256', key()).update(userId).digest('base64url')
 }
 
 /** Sign a user id into a verifiable session token. */

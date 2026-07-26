@@ -1,7 +1,8 @@
 import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
 
-const isPostgres = getDbProvider() === 'postgresql'
+// ponytail: lazy check so mock.module('@/lib/db-provider') works in tests.
+const isPostgres = () => getDbProvider() === 'postgresql'
 
 export function buildFtsMatchQuery(tokens: string[]): string {
   return tokens
@@ -20,7 +21,7 @@ export function normalizeFtsRows(rows: Array<{ chunkId: string; rank: number }>)
 }
 
 export async function ensureRagFtsTable() {
-  if (isPostgres) {
+  if (isPostgres()) {
     await db.$executeRawUnsafe(`ALTER TABLE "DocumentChunk" ADD COLUMN IF NOT EXISTS tsv tsvector`)
     await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DocumentChunk_tsv_idx" ON "DocumentChunk" USING GIN(tsv)`)
     return
@@ -37,7 +38,7 @@ export async function upsertChunkFts(args: {
   keywords?: string | null
 }) {
   await ensureRagFtsTable()
-  if (isPostgres) {
+  if (isPostgres()) {
     await db.$executeRawUnsafe(
       `UPDATE "DocumentChunk" SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, '')) WHERE id = $1`,
       args.chunkId,
@@ -60,7 +61,7 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
     where: { document: { status: 'ready', isEnabled: true } },
     select: { id: true, content: true, keywords: true },
   })
-  if (isPostgres) {
+  if (isPostgres()) {
     await db.$executeRawUnsafe(`
       UPDATE "DocumentChunk"
       SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, ''))
@@ -86,7 +87,7 @@ export async function searchFtsChunkIds(args: {
   queryTokens: string[]
   limit: number
 }): Promise<string[]> {
-  if (isPostgres) {
+  if (isPostgres()) {
     const query = args.queryTokens.join(' ').trim()
     if (!query) return []
     try {

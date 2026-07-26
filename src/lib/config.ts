@@ -61,25 +61,29 @@ function parseCorsOrigins(raw: string): string[] {
     .filter(Boolean)
 }
 
+// ponytail: getters so env vars can be set in tests after import (ES module hoisting prevents pre-import assignment).
 export const serverConfig = {
-  isProduction: process.env.NODE_ENV === 'production',
-  isTest: process.env.NODE_ENV === 'test',
+  get isProduction() { return process.env.NODE_ENV === 'production' },
+  get isTest() { return process.env.NODE_ENV === 'test' },
 
   /** socket.io chat mini-service port. */
-  wsPort: optionalInt('WS_PORT', 3003),
+  get wsPort() { return optionalInt('WS_PORT', 3003) },
 
   /** Prisma query logging (noisy + leaks params). Off by default. */
-  dbQueryLog: optionalBool('DB_QUERY_LOG', false),
+  get dbQueryLog() { return optionalBool('DB_QUERY_LOG', false) },
 
   /**
    * Demo auth fallback: when no session cookie is present, impersonate the first
    * admin so the demo UI works without a login screen. Must be OFF in production.
    * Defaults to OFF; enable explicitly with AUTH_DEMO_FALLBACK=true.
    */
-  authDemoFallback: optionalBool('AUTH_DEMO_FALLBACK', false),
+  get authDemoFallback() { return optionalBool('AUTH_DEMO_FALLBACK', false) },
 
   /** WebSocket CORS allow-list (comma-separated). Empty list = reflect Origin. */
-  wsCorsOrigins: parseCorsOrigins(optionalString('WS_CORS_ORIGIN', '')),
+  get wsCorsOrigins() { return parseCorsOrigins(optionalString('WS_CORS_ORIGIN', '')) },
 
-  logRetentionDays: optionalInt('LOG_RETENTION_DAYS', 90),
+  get logRetentionDays() { return optionalInt('LOG_RETENTION_DAYS', 90) },
 } as const
+
+/** Reset the getEncryptionKey cache — call in test beforeAll when changing env vars. */
+export function resetEncryptionKeyCache() { _key = null }

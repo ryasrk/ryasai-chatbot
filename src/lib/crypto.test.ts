@@ -1,16 +1,15 @@
-import { describe, expect, test, mock } from 'bun:test'
+import { describe, expect, test, beforeAll } from 'bun:test'
 import crypto from 'crypto'
 
 // ponytail: fixed test key — deterministic, no env dependency.
 const TEST_KEY = Buffer.from('a'.repeat(64), 'hex')
 
-// Must be set up before importing crypto.ts, which resolves KEY at module load.
-mock.module('@/lib/config', () => ({
-  getEncryptionKey: () => TEST_KEY,
-  serverConfig: { authDemoFallback: false, isTest: true, isProduction: false },
-}))
+process.env.ENCRYPTION_SECRET_KEY = 'a'.repeat(64)
 
+import { resetEncryptionKeyCache } from './config'
 import { encryptConfig, decryptConfig, maskConfig, signSession, verifySession } from './crypto'
+
+beforeAll(() => { resetEncryptionKeyCache() })
 
 describe('encryptConfig / decryptConfig round-trip', () => {
   test('simple object round-trips', () => {

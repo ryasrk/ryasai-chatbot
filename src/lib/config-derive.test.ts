@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, beforeAll } from 'bun:test'
 import crypto from 'crypto'
 
 // Different env from config.test.ts — fresh module instance per file.
@@ -6,7 +6,9 @@ delete process.env.AUTH_DEMO_FALLBACK
 delete process.env.WS_CORS_ORIGIN
 process.env.ENCRYPTION_SECRET_KEY = 'my-secret-passphrase'
 
-import { getEncryptionKey, serverConfig } from './config'
+import { getEncryptionKey, serverConfig, resetEncryptionKeyCache } from './config'
+
+beforeAll(() => { resetEncryptionKeyCache() })
 
 describe('getEncryptionKey — passphrase derivation', () => {
   test('non-hex passphrase → SHA-256 derived 32-byte key', () => {

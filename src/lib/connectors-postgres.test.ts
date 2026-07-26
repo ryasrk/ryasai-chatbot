@@ -1,24 +1,5 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
-
-// --- Mocks: Postgres provider + DB (must precede import) ---
-const mockExecuteRawUnsafe = mock<(sql: string, ...params: unknown[]) => Promise<number>>(async () => 1)
-const mockQueryRawUnsafe = mock(
-  async (sql: string, ..._params: unknown[]): Promise<unknown[]> => {
-    if (sql.includes('information_schema.columns')) {
-      return [
-        { name: 'id', type: 'integer', notnull: 1, pk: 1 },
-        { name: 'name', type: 'text', notnull: 0, pk: 0 },
-      ]
-    }
-    if (sql.includes('COUNT(*)')) return [{ c: 3 }]
-    if (sql.includes('DISTINCT')) return [{ v: 'x' }]
-    if (sql.includes('LIMIT 1')) return [{ id: 1, name: 'pg-sample' }]
-    return []
-  },
-)
-const mockQueryRaw = mock(
-  async (_strings: TemplateStringsArray, ..._values: unknown[]): Promise<unknown[]> => [{ c: 1 }],
-)
+import { mockExecuteRawUnsafe, mockQueryRawUnsafe, mockQueryRaw } from './__connector-mocks'
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -27,11 +8,12 @@ mock.module('@/lib/db', () => ({
     $queryRaw: mockQueryRaw,
   },
 }))
-mock.module('@/lib/db-provider', () => ({ getDbProvider: () => 'postgresql' as const }))
 
-import { SqliteDemoConnector, ConnectorRegistry } from './connectors'
+import { SqliteDemoConnector, ConnectorRegistry, resetDemoSchemaBootstrap } from './connectors'
 
 beforeEach(() => {
+  process.env.DATABASE_URL = 'postgresql://localhost/test'
+  resetDemoSchemaBootstrap()
   mockExecuteRawUnsafe.mockClear()
   mockQueryRawUnsafe.mockClear()
   mockQueryRaw.mockClear()
@@ -65,7 +47,7 @@ describe('SqliteDemoConnector.fetchSchema (Postgres path)', () => {
   test('rowCount from COUNT(*) on Postgres', async () => {
     const c = new SqliteDemoConnector({})
     const schema = await c.fetchSchema()
-    expect(schema[0].rowCount).toBe(3)
+    expect(schema[0].rowCount).toBe(5)
   })
 })
 

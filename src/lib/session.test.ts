@@ -1,12 +1,6 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 // --- Mutable mock state (reset between tests via beforeEach) ---
-const mockServerConfig = {
-  authDemoFallback: false,
-  isTest: true,
-  isProduction: false,
-}
-
 const mockVerifySession = mock<(token: string | undefined | null) => string | null>(
   () => null,
 )
@@ -21,9 +15,6 @@ mock.module('next/headers', () => ({
 mock.module('@/lib/crypto', () => ({
   verifySession: mockVerifySession,
 }))
-mock.module('@/lib/config', () => ({
-  serverConfig: mockServerConfig,
-}))
 mock.module('@/lib/db', () => ({
   db: {
     user: { findUnique: mockUserFindUnique, findFirst: mockUserFindFirst },
@@ -34,7 +25,7 @@ mock.module('@/lib/db', () => ({
 import { handleApiError, writeAudit, getActiveUser, UnauthorizedError } from './session'
 
 beforeEach(() => {
-  mockServerConfig.authDemoFallback = false
+  process.env.AUTH_DEMO_FALLBACK = 'false'
   mockVerifySession.mockImplementation(() => null)
   mockCookieGet.mockImplementation(() => undefined)
   mockUserFindUnique.mockImplementation(async () => null)
@@ -150,14 +141,14 @@ describe('getActiveUser', () => {
   })
 
   test('invalid cookie + AUTH_DEMO_FALLBACK=false → throws UnauthorizedError', async () => {
-    mockServerConfig.authDemoFallback = false
+    process.env.AUTH_DEMO_FALLBACK = 'false'
     mockCookieGet.mockImplementation(() => undefined)
 
     await expect(getActiveUser()).rejects.toThrow('Tidak ada sesi aktif')
   })
 
   test('no cookie + AUTH_DEMO_FALLBACK=true → returns first active user', async () => {
-    mockServerConfig.authDemoFallback = true
+    process.env.AUTH_DEMO_FALLBACK = 'true'
     mockCookieGet.mockImplementation(() => undefined)
     mockUserFindFirst.mockImplementation(async () => ({
       id: 'demo-user',
@@ -172,7 +163,7 @@ describe('getActiveUser', () => {
   })
 
   test('no cookie + AUTH_DEMO_FALLBACK=true + no users → throws Error', async () => {
-    mockServerConfig.authDemoFallback = true
+    process.env.AUTH_DEMO_FALLBACK = 'true'
     mockCookieGet.mockImplementation(() => undefined)
     mockUserFindFirst.mockImplementation(async () => null)
 
@@ -180,7 +171,7 @@ describe('getActiveUser', () => {
   })
 
   test('expired/invalid cookie signature + fallback disabled → throws', async () => {
-    mockServerConfig.authDemoFallback = false
+    process.env.AUTH_DEMO_FALLBACK = 'false'
     mockCookieGet.mockImplementation(() => ({ value: 'tampered.token' }))
     mockVerifySession.mockImplementation(() => null)
 

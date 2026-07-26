@@ -5,16 +5,18 @@ process.env.AUTH_DEMO_FALLBACK = 'true'
 process.env.WS_CORS_ORIGIN = 'http://a.com, http://b.com'
 // ENCRYPTION_SECRET_KEY intentionally unset for the first test.
 
-import { getEncryptionKey, serverConfig } from './config'
+import { getEncryptionKey, serverConfig, resetEncryptionKeyCache } from './config'
 
 describe('getEncryptionKey', () => {
   test('missing env → throws with env var name', () => {
     delete process.env.ENCRYPTION_SECRET_KEY
+    resetEncryptionKeyCache()
     expect(() => getEncryptionKey()).toThrow('ENCRYPTION_SECRET_KEY')
   })
 
   test('64-hex string → 32-byte buffer used directly', () => {
     process.env.ENCRYPTION_SECRET_KEY = 'ab'.repeat(32)
+    resetEncryptionKeyCache()
     const key = getEncryptionKey()
     expect(key.length).toBe(32)
     expect(key.equals(Buffer.from('ab'.repeat(32), 'hex'))).toBe(true)

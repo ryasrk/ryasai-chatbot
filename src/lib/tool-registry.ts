@@ -127,11 +127,15 @@ function passesContext(flags: ContextFlags, context: 'chat' | 'agentic' | undefi
 }
 
 async function loadMcpContextFlags(): Promise<Map<string, ContextFlags>> {
-  const rows = await db.mcpServer.findMany({
-    where: { isEnabled: true },
-    select: { id: true, chatEnabled: true, agenticEnabled: true },
-  })
-  return new Map(rows.map((r) => [r.id, { chatEnabled: r.chatEnabled, agenticEnabled: r.agenticEnabled }]))
+  try {
+    const rows = await db.mcpServer.findMany({
+      where: { isEnabled: true },
+      select: { id: true, chatEnabled: true, agenticEnabled: true },
+    })
+    return new Map(rows.map((r) => [r.id, { chatEnabled: r.chatEnabled, agenticEnabled: r.agenticEnabled }]))
+  } catch {
+    return new Map()
+  }
 }
 
 function parseParamDescription(manifestJson: string): string {

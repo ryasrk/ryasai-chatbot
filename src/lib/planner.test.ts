@@ -1,6 +1,5 @@
-import { test, expect, describe, mock, beforeEach } from 'bun:test'
+import { test, expect, describe, mock, beforeEach, afterEach } from 'bun:test'
 
-// --- Mocks for executePlan / planQueryWithTools / synthesizeAnswer ---
 const mockRunNonStreaming = mock(async () => ({
   answer: 'mock-answer',
   citations: [] as unknown[],
@@ -11,7 +10,6 @@ const mockRunNonStreaming = mock(async () => ({
 
 const mockGenerateAnswer = mock(async () => 'synthesized-answer')
 const mockGenerateChat = mock(async () => 'fixed-question')
-const mockChatOnce = mock(async () => [] as unknown[])
 const mockPluginFindFirst = mock(async () => null) as unknown as ReturnType<typeof mock>
 const mockExecutePlugin = mock(async () => ({ ok: true, output: 'plugin-output', error: null, latencyMs: 10 }))
 const mockCallMcpTool = mock(async () => ({ ok: true, output: 'mcp-output', error: null }))
@@ -27,11 +25,8 @@ mock.module('@/lib/cognee', () => ({
   recallContext: async () => null,
   rememberChatTurn: async () => undefined,
 }))
-mock.module('@/lib/llm-client', () => ({
-  chatOnce: mockChatOnce,
-}))
 mock.module('@/lib/llm-config', () => ({
-  getLlmRuntimeConfig: async () => ({ baseUrl: 'http://x', apiKey: 'k', model: 'm' }),
+  getLlmRuntimeConfig: async () => ({ id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm' }),
 }))
 mock.module('@/lib/db', () => ({
   db: { plugin: { findFirst: mockPluginFindFirst } },
@@ -53,11 +48,26 @@ const TOOLS: ToolDef[] = [
   { id: 'chat', description: 'General chat', paramDescription: '{}', requiresDataSource: 'none' },
 ]
 
+const originalFetch = global.fetch
+
+function openaiToolCallResponse(args: string) {
+  return Promise.resolve(new Response(JSON.stringify({
+    choices: [{ message: { tool_calls: [{ id: 'c1', type: 'function', function: { name: 'execute_step', arguments: args } }] } }],
+    usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+  }), { headers: { 'content-type': 'application/json' } }))
+}
+
+function openaiTextResponse(text: string) {
+  return Promise.resolve(new Response(JSON.stringify({
+    choices: [{ message: { content: text } }],
+    usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+  }), { headers: { 'content-type': 'application/json' } }))
+}
+
 beforeEach(() => {
   mockRunNonStreaming.mockClear()
   mockGenerateAnswer.mockClear()
   mockGenerateChat.mockClear()
-  mockChatOnce.mockClear()
   mockPluginFindFirst.mockClear()
   mockExecutePlugin.mockClear()
   mockCallMcpTool.mockClear()
@@ -70,6 +80,11 @@ beforeEach(() => {
   }))
   mockGenerateAnswer.mockImplementation(async () => 'synthesized-answer')
   mockGenerateChat.mockImplementation(async () => 'fixed-question')
+  global.fetch = mock(async () => openaiTextResponse('no tools')) as unknown as typeof fetch
+})
+
+afterEach(() => {
+  global.fetch = originalFetch
 })
 
 describe('topoSort', () => {
@@ -256,9 +271,10 @@ describe('executePlan', () => {
 
 describe('planQueryWithTools', () => {
   test('LLM returns tool_call → single-step plan built from arguments', async () => {
-    mockChatOnce.mockImplementationOnce(async () => [
-      { arguments: JSON.stringify({ tool: 'sql', input: { question: 'sales' }, needsSynthesis: false }) },
-    ])
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(
+      JSON.stringify({ tool: 'sql', input: { question: 'sales' }, needsSynthesis: false })
+    ))
     const plan = await planQueryWithTools({
       question: 'show me sales',
       availableTools: TOOLS,
@@ -270,7 +286,8 @@ describe('planQueryWithTools', () => {
   })
 
   test('LLM returns empty tool_calls → null (fallback)', async () => {
-    mockChatOnce.mockImplementationOnce(async () => [])
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools needed'))
     const plan = await planQueryWithTools({
       question: 'hello',
       availableTools: TOOLS,
@@ -279,9 +296,10 @@ describe('planQueryWithTools', () => {
   })
 
   test('LLM returns unknown tool id → null', async () => {
-    mockChatOnce.mockImplementationOnce(async () => [
-      { arguments: JSON.stringify({ tool: 'nonexistent', input: {} }) },
-    ])
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(
+      JSON.stringify({ tool: 'nonexistent', input: {} })
+    ))
     const plan = await planQueryWithTools({
       question: 'test',
       availableTools: TOOLS,

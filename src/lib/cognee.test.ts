@@ -1,4 +1,27 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test, mock } from 'bun:test'
+
+let cogneeEnabledInDb = false
+
+mock.module('@/lib/db', () => ({
+  db: {
+    llmConfig: { findFirst: async () => null },
+    appConfig: {
+      findFirst: async () => ({ id: '1', cogneeEnabled: cogneeEnabledInDb }),
+      update: async (args: any) => { if (args?.data?.cogneeEnabled !== undefined) cogneeEnabledInDb = args.data.cogneeEnabled; return {} },
+      create: async (args: any) => { if (args?.data?.cogneeEnabled !== undefined) cogneeEnabledInDb = args.data.cogneeEnabled; return {} },
+    },
+    document: {
+      groupBy: async () => [],
+      findUnique: async () => null,
+      update: async () => ({}),
+      updateMany: async () => ({ count: 0 }),
+      findMany: async () => [],
+      count: async () => 0,
+    },
+    documentChunk: { findMany: async () => [] },
+  },
+}))
+
 import {
   cogneeHealth,
   cogneeStats,

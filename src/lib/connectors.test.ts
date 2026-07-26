@@ -1,24 +1,5 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
-
-// --- DB mock (must precede import) ---
-const mockExecuteRawUnsafe = mock<(sql: string, ...params: unknown[]) => Promise<number>>(async () => 1)
-const mockQueryRawUnsafe = mock(
-  async (sql: string, ..._params: unknown[]): Promise<unknown[]> => {
-    if (sql.includes('PRAGMA')) {
-      return [
-        { name: 'id', type: 'INTEGER', notnull: 1, pk: 1 },
-        { name: 'name', type: 'TEXT', notnull: 0, pk: 0 },
-      ]
-    }
-    if (sql.includes('COUNT(*)')) return [{ c: 5 }]
-    if (sql.includes('DISTINCT')) return [{ v: 'active' }, { v: 'pending' }]
-    if (sql.includes('LIMIT 1')) return [{ id: 1, name: 'sample' }]
-    return []
-  },
-)
-const mockQueryRaw = mock(
-  async (_strings: TemplateStringsArray, ..._values: unknown[]): Promise<unknown[]> => [{ c: 1 }],
-)
+import { mockExecuteRawUnsafe, mockQueryRawUnsafe, mockQueryRaw } from './__connector-mocks'
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -27,16 +8,18 @@ mock.module('@/lib/db', () => ({
     $queryRaw: mockQueryRaw,
   },
 }))
-mock.module('@/lib/db-provider', () => ({ getDbProvider: () => 'sqlite' as const }))
 
 import {
   describeSchema,
   type ReflectedTable,
   SqliteDemoConnector,
   ConnectorRegistry,
+  resetDemoSchemaBootstrap,
 } from './connectors'
 
 beforeEach(() => {
+  delete process.env.DATABASE_URL
+  resetDemoSchemaBootstrap()
   mockExecuteRawUnsafe.mockClear()
   mockQueryRawUnsafe.mockClear()
   mockQueryRaw.mockClear()
@@ -132,7 +115,7 @@ describe('SqliteDemoConnector.fetchSchema (SQLite path)', () => {
     const c = new SqliteDemoConnector({})
     const schema = await c.fetchSchema()
     expect(schema).toHaveLength(8)
-    expect(schema[0].tableName).toBe('demo_warehouses')
+    expect(schema[0].tableName).toBe('demo_products')
     const col = schema[0].columns.find((x) => x.name === 'id')
     expect(col?.primaryKey).toBe(true)
     const nameCol = schema[0].columns.find((x) => x.name === 'name')

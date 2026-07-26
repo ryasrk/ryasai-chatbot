@@ -1,4 +1,14 @@
-import { test, expect, describe, beforeEach } from 'bun:test'
+import { test, expect, describe, mock, beforeEach } from 'bun:test'
+
+mock.module('@/lib/db', () => ({
+  db: {
+    mcpServer: {
+      findUnique: async () => null,
+      findMany: async () => [],
+    },
+  },
+}))
+
 import {
   callMcpTool,
   testMcpServer,

@@ -1,4 +1,20 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, mock } from 'bun:test'
+
+const TEST_PLUGINS = [
+  { id: 'p1', toolId: 'weather', name: 'Weather', description: 'Get weather forecast for a city', keywords: 'cuaca,weather,suhu,temperature,hujan,rain,forecast,prakiraan,wind,angin,humidity,lembab,jakarta', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'weather', manifestJson: '{}' },
+  { id: 'p2', toolId: 'translate', name: 'Translate', description: 'Translate text between languages', keywords: 'translate,terjemah,translation,bahasa,language,english,indonesia', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'translation', manifestJson: '{}' },
+  { id: 'p3', toolId: 'calculator', name: 'Calculator', description: 'Calculate math expressions', keywords: 'calculate,calculator,hitung,kalkulator,math,matematika,arithmetic,sum,add,subtract,multiply,divide,sqrt,power', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'calculator', manifestJson: '{}' },
+  { id: 'p4', toolId: 'docsearch', name: 'DocSearch', description: 'Search documentation and code examples', keywords: 'documentation,doc,syntax,code,programming,search,example,react,vue,python,javascript,typescript,useEffect,hook', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'documentation', manifestJson: '{}' },
+  { id: 'p5', toolId: 'datetime', name: 'DateTime', description: 'Get current date and time', keywords: 'tanggal,date,time,waktu,jam,hari,bulan,tahun,now,sekarang,current,datetime', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'datetime', manifestJson: '{}' },
+  { id: 'p6', toolId: 'news', name: 'News', description: 'Get latest news headlines', keywords: 'news,berita,headline,artikel,indonesia,world,dunia,terkini,latest', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'news', manifestJson: '{}' },
+]
+
+mock.module('@/lib/db', () => ({
+  db: {
+    plugin: { findMany: async () => TEST_PLUGINS },
+  },
+}))
+
 import { selectRelevantPlugins } from './plugin-selector'
 
 describe('plugin-selector', () => {
