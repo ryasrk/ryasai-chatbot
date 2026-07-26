@@ -284,7 +284,7 @@ async function executeAdminAction(message: string, userId: string): Promise<Admi
   //   3. Bare URL that looks like an MCP endpoint (/sse, /mcp, /api/mcp)
   const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
   const bareMcpUrl = message.match(/https?:\/\/[^\s]*\/(?:sse|mcp|api\/mcp)[^\s]*/i)?.[0]
-  const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:an?\s+)?(?:mcp\s+server|mcps?\b)/i)
+  const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:[\w-]+\s+)?(?:mcp\s+server|mcps?\b)/i)
   const urlWithKeyword = !!(urlInMessage && (lower.includes('mcp') || lower.includes('install') || lower.includes('add') || lower.includes('connect')))
   if (mcpMatch || urlWithKeyword || bareMcpUrl) {
     const knownNames = Object.keys(MCP_PACKAGES)

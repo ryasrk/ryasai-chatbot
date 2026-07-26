@@ -202,12 +202,14 @@ export async function seedPlugins() {
   console.log(`\nDone: ${created} plugins registered, all enabled`)
 }
 
-main().catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
-
 async function main() {
   await seedPlugins()
   await db.$disconnect()
+}
+
+if (import.meta.main) {
+  main().catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
 }
