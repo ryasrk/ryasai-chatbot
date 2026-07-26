@@ -1,0 +1,72 @@
+[
+  {
+    "id": "chinook-079",
+    "error": "Missing expected values: 0, no, none",
+    "sql": "SELECT g.Name AS genre FROM Genre g WHERE NOT EXISTS (SELECT 1 FROM Track t WHERE t.GenreId = g.GenreId) ORDER BY g.Name"
+  },
+  {
+    "id": "chinook-081",
+    "error": "Missing expected values: 0, no, none, all customers",
+    "sql": "SELECT c.FirstName, c.LastName FROM Customer c WHERE c.CustomerId NOT IN (SELECT DISTINCT CustomerId FROM Invoice) ORDER BY c.LastName"
+  },
+  {
+    "id": "pagila-061",
+    "error": "Missing expected values: Action",
+    "sql": "SELECT f.title, c.name AS category FROM pagila_film f JOIN pagila_film_category fc ON f.film_id = fc.film_id JOIN pagila_category c ON fc.category_id = c.category_id LIMIT 10"
+  },
+  {
+    "id": "world-068",
+    "error": "Missing expected values: India",
+    "sql": "SELECT name, gnp FROM country WHERE continent = 'Asia' AND gnp > 500000"
+  },
+  {
+    "id": "erp-015",
+    "error": "Missing expected values: West Jakarta",
+    "sql": "SELECT location FROM demo_warehouses"
+  },
+  {
+    "id": "erp-035",
+    "error": "Missing expected values: Jakarta Main Warehouse",
+    "sql": "SELECT i.sku, w.name AS warehouse_name, i.quantity FROM demo_inventory i JOIN demo_warehouses w ON i.warehouse_id = w.id"
+  },
+  {
+    "id": "erp-063",
+    "error": "Missing expected values: Jakarta Main Warehouse",
+    "sql": "SELECT name FROM demo_warehouses WHERE capacity > (SELECT AVG(capacity) FROM demo_warehouses)"
+  },
+  {
+    "id": "erp-080",
+    "error": "Missing expected values: Jakarta Main Warehouse",
+    "sql": "SELECT name, capacity FROM demo_warehouses ORDER BY capacity DESC LIMIT 3"
+  },
+  {
+    "id": "erp-099",
+    "error": "Missing expected values: Jakarta Main Warehouse",
+    "sql": "SELECT w.name, SUM(i.quantity) AS total_stock FROM demo_warehouses w JOIN demo_inventory i ON w.id = i.warehouse_id GROUP BY w.name ORDER BY total_stock DESC"
+  },
+  {
+    "id": "clickhouse-008",
+    "error": "Missing expected values: torvalds",
+    "sql": "SELECT login, name, company, location FROM `default`.`actors` WHERE login = 'torvalds' LIMIT 1"
+  },
+  {
+    "id": "clickhouse-032",
+    "error": "Missing expected values: US",
+    "sql": "SELECT date, sum(new_confirmed) AS daily_cases FROM `default`.`covid` WHERE location_key = 'US' GROUP BY date ORDER BY date LIMIT 100"
+  },
+  {
+    "id": "clickhouse-045",
+    "error": "Missing expected values: US",
+    "sql": "SELECT toYYYYMM(date) AS ym, sum(new_confirmed) AS total_cases FROM `default`.`covid` WHERE location_key = 'US' GROUP BY ym ORDER BY ym LIMIT 100"
+  },
+  {
+    "id": "clickhouse-050",
+    "error": "Missing expected values: US",
+    "sql": "SELECT date, new_confirmed, new_deceased, new_tested FROM `default`.`covid` WHERE location_key = 'US' ORDER BY date DESC LIMIT 100"
+  },
+  {
+    "id": "clickhouse-064",
+    "error": "Missing expected values: US",
+    "sql": "SELECT date, cumulative_confirmed FROM `default`.`covid` WHERE location_key = 'US' ORDER BY cumulative_confirmed DESC LIMIT 10"
+  }
+]
