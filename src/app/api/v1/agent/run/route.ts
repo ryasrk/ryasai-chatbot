@@ -56,10 +56,10 @@ export async function POST(req: NextRequest) {
         apiKeyId,
         status: 400,
         latencyMs: Date.now() - started,
-        errorMessage: 'question wajib diisi.',
+        errorMessage: 'question is required.',
       })
       return NextResponse.json(
-        { ok: false, error: 'question wajib diisi.' },
+        { ok: false, error: 'question is required.' },
         { status: 400 },
       )
     }
@@ -151,6 +151,6 @@ export async function POST(req: NextRequest) {
       latencyMs: Date.now() - started,
       errorMessage: String(e),
     })
-    return handleApiError(e, 'Agent run gagal.')
+    return handleApiError(e, 'Agent run failed.')
   }
 }

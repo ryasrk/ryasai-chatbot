@@ -21,31 +21,31 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'enterprise',
     name: 'Enterprise Blue',
-    description: 'Biru profesional, ungu AI, aksesibilitas tinggi',
+    description: 'Professional blue, AI purple, high accessibility',
     swatch: ['#2563EB', '#7C3AED', '#E8EEF7'],
   },
   {
     id: 'midnight',
     name: 'Midnight',
-    description: 'Biru malam dengan aksen sian',
+    description: 'Night blue with cyan accents',
     swatch: ['#1E40AF', '#06B6D4', '#0F1B33'],
   },
   {
     id: 'forest',
     name: 'Forest',
-    description: 'Hijau zamrud dengan aksen lime',
+    description: 'Emerald green with lime accents',
     swatch: ['#059669', '#84CC16', '#ECFDF5'],
   },
   {
     id: 'slate',
     name: 'Slate',
-    description: 'Baja abu-abu dengan aksen violet',
+    description: 'Steel gray with violet accents',
     swatch: ['#475569', '#7C3AED', '#F1F5F9'],
   },
   {
     id: 'sandstone',
     name: 'Sandstone',
-    description: 'Terracotta hangat dengan aksen emas',
+    description: 'Warm terracotta with gold accents',
     swatch: ['#C2410C', '#D97706', '#FDF8F3'],
   },
 ]

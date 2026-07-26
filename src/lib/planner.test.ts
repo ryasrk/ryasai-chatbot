@@ -240,7 +240,7 @@ describe('executePlan', () => {
     }
     const results = await executePlan({ plan, userId: 'u1' })
     expect(results[0].ok).toBe(false)
-    expect(results[0].error).toContain('tidak ditemukan')
+    expect(results[0].error).toContain('not found')
   })
 
   test('mcp step → executes via callMcpTool', async () => {
@@ -341,7 +341,7 @@ describe('synthesizeAnswer', () => {
       ],
       plan,
     })
-    expect(answer).toContain('tidak ada langkah')
+    expect(answer).toContain('no steps completed')
     expect(mockGenerateAnswer).not.toHaveBeenCalled()
   })
 

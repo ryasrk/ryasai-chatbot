@@ -97,7 +97,7 @@ export async function callMcpTool(
   args: Record<string, unknown>,
 ): Promise<{ ok: boolean; output: string; error?: string }> {
   const conn = await getConnection(serverId)
-  if (!conn) return { ok: false, output: '', error: 'MCP server tidak tersedia atau nonaktif.' }
+  if (!conn) return { ok: false, output: '', error: 'MCP server unavailable or inactive.' }
   try {
     const result = (await conn.client.callTool({
       name: toolName,
@@ -105,7 +105,7 @@ export async function callMcpTool(
     })) as unknown as McpCallResult
     const output = extractText(result.content)
     if (result.isError) {
-      return { ok: false, output: '', error: output || 'MCP tool mengembalikan error.' }
+      return { ok: false, output: '', error: output || 'MCP tool returned an error.' }
     }
     return { ok: true, output }
   } catch (e) {

@@ -155,7 +155,7 @@ export async function smartRoute(args: {
 
   if (best.finalScore === 0 && !llmUsed) {
     decision = 'CHAT'
-    reason = 'Semua tool unavailable atau circuit breaker tripped — fallback ke CHAT'
+    reason = 'All tools unavailable or circuit breaker tripped — falling back to CHAT'
   }
 
   let integrationId: string | undefined

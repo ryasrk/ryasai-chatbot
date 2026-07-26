@@ -417,7 +417,7 @@ export async function executePlan(args: {
         if (!plugin) {
           results.push({
             stepId: step.id, tool: step.tool, ok: false, output: '',
-            error: `Plugin ${step.tool} tidak ditemukan atau nonaktif.`,
+            error: `Plugin ${step.tool} not found or inactive.`,
             latencyMs: Date.now() - started,
           })
           args.onStatus?.(step.id, step.tool, 'error')
@@ -503,8 +503,8 @@ async function selfCorrect(args: {
     const originalQuestion =
       args.step.input.question ?? args.step.input.query ?? args.step.input.message ?? args.step.input.input ?? ''
     const fixedQuestion = await generateChat(
-      `Pertanyaan asli: "${originalQuestion}" gagal dengan error: "${args.error}". ` +
-      `Reformulasikan pertanyaan agar lebih spesifik dan dapat dijawab. Jawab HANYA pertanyaan yang diperbaiki, tanpa penjelasan.`,
+      `Original question: "${originalQuestion}" failed with error: "${args.error}". ` +
+      `Reformulate the question to be more specific and answerable. Answer ONLY the reformulated question, without explanation.`,
     )
     if (!fixedQuestion.trim() || fixedQuestion.trim() === originalQuestion.trim()) return null
     const completion = await runNonStreamingChatCompletion({
@@ -530,7 +530,7 @@ export async function synthesizeAnswer(args: {
   const successful = args.stepResults.filter((r) => r.ok)
 
   if (successful.length === 0) {
-    return 'Maaf, tidak ada langkah yang berhasil dijalankan.'
+    return 'Sorry, no steps completed successfully.'
   }
 
   const hasExternalToolStep = args.plan.steps.some(

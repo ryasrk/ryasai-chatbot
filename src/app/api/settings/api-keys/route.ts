@@ -35,7 +35,7 @@ export async function GET() {
       })),
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat API keys.')
+    return handleApiError(e, 'Failed to load API keys.')
   }
 }
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const label = (body.label ?? '').trim()
     if (!label) {
       return NextResponse.json(
-        { ok: false, error: 'Label API key wajib diisi.' },
+        { ok: false, error: 'API key label is required.' },
         { status: 400 },
       )
     }
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     )
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat API key.')
+    return handleApiError(e, 'Failed to create API key.')
   }
 }
 

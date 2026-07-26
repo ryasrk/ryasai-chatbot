@@ -1,35 +1,21 @@
 /**
- * AI Client — wraps z-ai-web-dev-sdk (sandbox default) OR a configured
- * OpenAI-compatible endpoint (when an admin sets one via /api/llm-config).
- * ----------------------------------------------------------------------------
- * Server-only. Mirrors spec §7 (`app/ai/agent.py`) — temperature=0 for
+ * AI Client — routes completions to a configured OpenAI/Anthropic-compatible
+ * endpoint (set via /api/llm-config). Fail-closed: throws when no LLM is
+ * configured. Mirrors spec §7 (`app/ai/agent.py`) — temperature=0 for
  * deterministic Text-to-SQL.
- *
- * Backend selection (resolveBackend):
- *   - If a LlmConfig exists, route completions to `${baseUrl}/chat/completions`
- *     with that key+model.
- *   - Otherwise fall back to the z-ai-web-dev-sdk (sandbox default).
  *
  * Responsibilities:
  *   - routeQuery(): decide whether a user question needs SQL, RAG, or chit-chat.
  *   - generateSql(): Text-to-SQL given a reflected schema + question.
  *   - generateAnswer(): final NL answer from SQL rows / RAG context.
- *   - streamAnswer(): token-by-token streaming for the WebSocket service.
+ *   - streamAnswer(): token-by-token streaming for the HTTP SSE pipeline.
  */
-import ZAI from 'z-ai-web-dev-sdk'
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce as llmChatOnce, chatStream as llmChatStream } from '@/lib/llm-client'
+import { scopedLogger } from '@/lib/logger'
+const log = scopedLogger('ai')
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
-
-let _zai: Awaited<ReturnType<typeof ZAI.create>> | null = null
-
-export async function getAI() {
-  if (!_zai) {
-    _zai = await ZAI.create()
-  }
-  return _zai
-}
 
 // ---------------------------------------------------------------------------
 // Backend resolution + shared completion helpers
@@ -46,39 +32,26 @@ interface ChatOpts {
   purpose?: string
 }
 
-type Backend =
-  | { mode: 'custom'; cfg: LlmRuntimeConfig }
-  | { mode: 'zai'; ai: Awaited<ReturnType<typeof ZAI.create>> }
-
-let _zaiFallbackWarned = false
-
-async function resolveBackend(): Promise<Backend> {
-  const cfg = await getLlmRuntimeConfig()
-  if (cfg && cfg.baseUrl && cfg.apiKey) return { mode: 'custom', cfg }
-  if (!_zaiFallbackWarned) {
-    _zaiFallbackWarned = true
-    console.warn(
-      '[ai] No custom LLM configured — falling back to z-ai-web-dev-sdk sandbox. ' +
-      'Configure LLM settings in Settings → AI Config for production use.',
+class LlmNotConfiguredError extends Error {
+  constructor() {
+    super(
+      'LLM is not configured. Open Settings → AI Configuration and set the endpoint + API key before using Chat.',
     )
+    this.name = 'LlmNotConfiguredError'
   }
-  return { mode: 'zai', ai: await getAI() }
+}
+
+async function resolveBackend(): Promise<{ cfg: LlmRuntimeConfig }> {
+  const cfg = await getLlmRuntimeConfig()
+  if (cfg && cfg.baseUrl && cfg.apiKey) return { cfg }
+  throw new LlmNotConfiguredError()
 }
 
 /** Non-streaming completion. Returns the trimmed message content. */
 async function chatOnce(messages: ChatMessage[], opts: ChatOpts = {}): Promise<string> {
-  const backend = await resolveBackend()
+  const { cfg } = await resolveBackend()
   const temperature = opts.temperature ?? 0
-
-  if (backend.mode === 'custom') {
-    return llmChatOnce(backend.cfg, messages, temperature, opts.purpose ?? 'chat')
-  }
-
-  const completion = await backend.ai.chat.completions.create({
-    messages,
-    thinking: { type: 'disabled' },
-  } as Parameters<typeof backend.ai.chat.completions.create>[0])
-  return (completion.choices[0]?.message?.content ?? '').trim()
+  return llmChatOnce(cfg, messages, temperature, opts.purpose ?? 'chat')
 }
 
 /** Streaming completion — yields token chunks. */
@@ -86,23 +59,9 @@ async function* chatStream(
   messages: ChatMessage[],
   opts: ChatOpts = {},
 ): AsyncGenerator<string, void, unknown> {
-  const backend = await resolveBackend()
+  const { cfg } = await resolveBackend()
   const temperature = opts.temperature ?? 0
-
-  if (backend.mode === 'custom') {
-    yield* llmChatStream(backend.cfg, messages, temperature, opts.purpose ?? 'chat')
-    return
-  }
-
-  const stream = await backend.ai.chat.completions.create({
-    messages,
-    thinking: { type: 'disabled' },
-    stream: true,
-  } as Parameters<typeof backend.ai.chat.completions.create>[0])
-  for await (const chunk of stream as unknown as AsyncIterable<{ choices?: Array<{ delta?: { content?: string } }> }>) {
-    const token = chunk.choices?.[0]?.delta?.content
-    if (token) yield token
-  }
+  yield* llmChatStream(cfg, messages, temperature, opts.purpose ?? 'chat')
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +90,7 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
   const hasHistory = ctx.chatHistory && ctx.chatHistory.length > 0
   const historyText = hasHistory
     ? ctx.chatHistory!.slice(-8)
-        .map((m) => `${m.role === 'user' ? 'User' : 'Asisten'}: ${m.content.slice(0, 400)}`)
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 400)}`)
         .join('\n')
     : ''
 
@@ -149,35 +108,35 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
       {
         role: 'system',
         content:
-          'Anda adalah router AI enterprise. Tentukan JALUR penanganan untuk pesan user. ' +
-          'Jawab HANYA dengan satu kata: SQL, RAG, REST, CHAT, atau CONTEXTUAL_CHAT.\n' +
-          '- SQL: pertanyaan tentang data terstruktur (stok, penjualan, pelanggan, invoice, angka, total, daftar dari database; customers/sales/data/numbers).\n' +
-          '- RAG: pertanyaan tentang kebijakan, SOP, dokumen, prosedur, panduan, regulasi, atau teks non-struktural; policy/terms/faq/guide.\n' +
-          '- REST: pertanyaan yang perlu memanggil endpoint REST API whitelisted pada sistem eksternal; API/endpoint/layanan/service.\n' +
-          '- CHAT: sapaan, basa-basi, atau pertanyaan umum tanpa butuh data internal; general/greeting.\n' +
-          '- CONTEXTUAL_CHAT: user merujuk ke percakapan sebelumnya ATAU memberikan informasi/fakta baru.\n' +
-          '  Contoh CONTEXTUAL_CHAT:\n' +
-          '  - "sebutkan lagi jawabanmu" → CONTEXTUAL_CHAT (bukan SQL)\n' +
-          '  - "produk apa yang saya tanyakan tadi?" → CONTEXTUAL_CHAT (bukan SQL)\n' +
-          '  - "berapa harganya?" (tanpa sebut produk) → CONTEXTUAL_CHAT (bukan SQL, karena "harganya" = harga dari produk yang dibahas sebelumnya)\n' +
-          '  - "produk terlaris adalah SKU-902 dengan 5800 unit" → CONTEXTUAL_CHAT (bukan SQL, karena user memberi tahu fakta, bukan bertanya)\n' +
-          '  - "saya mau bilang bahwa..." → CONTEXTUAL_CHAT\n' +
-          '  Contoh SQL/RAG (bukan CONTEXTUAL_CHAT):\n' +
-          '  - "berapa stok SKU-902?" → SQL (sebut produk spesifik + minta data)\n' +
-          '  - "apa prosedur stock opname?" → RAG (tanya dokumen)\n' +
-          '  ATURAN PENTING: jika pesan TIDAK diakhiri tanda tanya DAN mengandung kata "adalah/yaitu/ialah/merupakan", kemungkinan besar itu adalah statement → CONTEXTUAL_CHAT.',
+          'You are an enterprise AI router. Determine the handling ROUTE for the user message. ' +
+          'Answer ONLY with one word: SQL, RAG, REST, CHAT, or CONTEXTUAL_CHAT.\n' +
+          '- SQL: questions about structured data (stock, sales, customers, invoices, numbers, totals, lists from the database; customers/sales/data/numbers).\n' +
+          '- RAG: questions about policies, SOPs, documents, procedures, guidelines, regulations, or non-structural text; policy/terms/faq/guide.\n' +
+          '- REST: questions that need to call whitelisted REST API endpoints on external systems; API/endpoint/service.\n' +
+          '- CHAT: greetings, small talk, or general questions that do not need internal data; general/greeting.\n' +
+          '- CONTEXTUAL_CHAT: the user refers to a previous conversation OR provides new information/facts.\n' +
+          '  Examples of CONTEXTUAL_CHAT:\n' +
+          '  - "mention your answer again" → CONTEXTUAL_CHAT (not SQL)\n' +
+          '  - "what product did I ask about earlier?" → CONTEXTUAL_CHAT (not SQL)\n' +
+          '  - "how much does it cost?" (without mentioning a product) → CONTEXTUAL_CHAT (not SQL, because "it" = the cost of the product discussed earlier)\n' +
+          '  - "the best-selling product is SKU-902 with 5800 units" → CONTEXTUAL_CHAT (not SQL, because the user is stating a fact, not asking)\n' +
+          '  - "I want to say that..." → CONTEXTUAL_CHAT\n' +
+          '  Examples of SQL/RAG (not CONTEXTUAL_CHAT):\n' +
+          '  - "what is the stock of SKU-902?" → SQL (specific product mentioned + asking for data)\n' +
+          '  - "what is the stock opname procedure?" → RAG (asking about a document)\n' +
+          '  IMPORTANT RULE: if the message does NOT end with a question mark AND contains the words "is/that is/namely", it is likely a statement → CONTEXTUAL_CHAT.',
       },
       {
         role: 'user',
         content:
-          `Pertanyaan: "${ctx.question}"\n` +
-          `Konteks: integrasi database tersedia=${ctx.hasIntegrations}, dokumen knowledge base tersedia=${ctx.hasDocuments}, REST API tersedia=${ctx.hasRestApis ?? false}.\n` +
-          (tableNames.length > 0 ? `Tabel database: ${tableNames.slice(0, 30).join(', ')}\n` : '') +
-          (docNames.length > 0 ? `Dokumen: ${docNames.slice(0, 30).join(', ')}\n` : '') +
-          (apiPaths.length > 0 ? `REST API: ${apiPaths.slice(0, 20).join(', ')}\n` : '') +
-          (ctx.memoryContext ? `Memori interaksi sebelumnya:\n${ctx.memoryContext}\n` : '') +
-          (hasHistory ? `Riwayat percakapan sebelumnya:\n${historyText}\n` : '') +
-          `Jawab hanya SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT.`,
+          `Question: "${ctx.question}"\n` +
+          `Context: database integrations available=${ctx.hasIntegrations}, knowledge base documents available=${ctx.hasDocuments}, REST APIs available=${ctx.hasRestApis ?? false}.\n` +
+          (tableNames.length > 0 ? `Database tables: ${tableNames.slice(0, 30).join(', ')}\n` : '') +
+          (docNames.length > 0 ? `Documents: ${docNames.slice(0, 30).join(', ')}\n` : '') +
+          (apiPaths.length > 0 ? `REST APIs: ${apiPaths.slice(0, 20).join(', ')}\n` : '') +
+          (ctx.memoryContext ? `Memory from prior interactions:\n${ctx.memoryContext}\n` : '') +
+          (hasHistory ? `Prior conversation history:\n${historyText}\n` : '') +
+          `Answer only SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT.`,
       },
     ],
     { purpose: 'router' },
@@ -197,10 +156,10 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
   if (decision === 'CHAT') {
     const relevant = await selectRelevantPlugins({ query: ctx.question, topK: 1, minScore: 0.05 })
     if (relevant.length > 0) {
-      return { decision: 'PLUGIN', reason: `Plugin ${relevant[0].name} relevan (score ${relevant[0].score.toFixed(2)})` }
+      return { decision: 'PLUGIN', reason: `Plugin ${relevant[0].name} is relevant (score ${relevant[0].score.toFixed(2)})` }
     }
   }
-  return { decision, reason: `Router LLM memilih ${decision}` }
+  return { decision, reason: `Router LLM selected ${decision}` }
 }
 
 /**
@@ -219,23 +178,23 @@ export async function generateSql(args: {
       {
         role: 'system',
         content:
-          `Anda adalah ahli ${args.provider} Text-to-SQL. ` +
-          'Tugas: ubah pertanyaan natural menjadi SATU kueri SELECT yang valid & efisien. ' +
-          'ATURAN:\n' +
-          '1. HANYA boleh SELECT. DILARANG INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE.\n' +
-          '2. Selalu sertakan LIMIT jika relevan (maksimal 100 baris).\n' +
-          '3. Gunakan hanya tabel & kolom yang ada di skema berikut.\n' +
-          '4. Format jawaban sebagai JSON: {"sql": "...", "explanation": "..."}.\n' +
-          '5. Jangan bungkus dengan markdown code fence.',
+          `You are an expert ${args.provider} Text-to-SQL specialist. ` +
+          'Your task: convert a natural language question into ONE valid & efficient SELECT query. ' +
+          'RULES:\n' +
+          '1. ONLY SELECT is allowed. INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE are FORBIDDEN.\n' +
+          '2. Always include LIMIT when relevant (maximum 100 rows).\n' +
+          '3. Use only tables & columns that exist in the following schema.\n' +
+          '4. Format your answer as JSON: {"sql": "...", "explanation": "..."}.\n' +
+          '5. Do not wrap with markdown code fence.',
       },
       {
         role: 'user',
         content:
-          `Dialek: ${args.provider}\n` +
-          `Skema database:\n${args.schemaDescription}\n\n` +
-          `Pertanyaan user: ${args.question}\n\n` +
-          (args.memoryContext ? `Memori: query serupa sebelumnya berhasil dengan:\n${args.memoryContext}\n\n` : '') +
-          `Berikan JSON {"sql": "...", "explanation": "..."}.`,
+          `Dialect: ${args.provider}\n` +
+          `Database schema:\n${args.schemaDescription}\n\n` +
+          `User question: ${args.question}\n\n` +
+          (args.memoryContext ? `Memory: a similar query previously succeeded with:\n${args.memoryContext}\n\n` : '') +
+          `Provide JSON {"sql": "...", "explanation": "..."}.`,
       },
     ],
     { purpose: 'sql' },
@@ -249,7 +208,7 @@ function parseSqlJson(raw: string): { sql: string; explanation: string } {
     const obj = JSON.parse(cleaned)
     return { sql: String(obj.sql ?? '').trim(), explanation: String(obj.explanation ?? '').trim() }
   } catch {
-    return { sql: cleaned, explanation: 'Kueri dihasilkan oleh LLM.' }
+    return { sql: cleaned, explanation: 'Query generated by LLM.' }
   }
 }
 
@@ -351,13 +310,13 @@ export interface RestCallPlan {
 }
 
 export const REST_ROUTER_SYSTEM_PROMPT =
-  'Anda adalah router REST API enterprise. Pilih SATU endpoint whitelisted paling relevan untuk menjawab pertanyaan user. ' +
-  'Jangan membuat path baru. Gunakan endpointId persis dari daftar. ' +
-  'sampleResponse hanya contoh struktur, bukan data final untuk menjawab user. ' +
-  'Explanation cukup jelaskan alasan memilih endpoint dan parameter yang dikirim. ' +
-  'Jangan kirim query atau body jika parameterSchema kosong atau tidak menyebut parameter itu. ' +
-  'Jawab HANYA JSON tanpa markdown: {"endpointId":"...","query":{},"body":null,"explanation":"..."}.\n' +
-  'Gunakan query untuk parameter URL sederhana. Gunakan body hanya untuk method non-GET jika memang diperlukan.'
+  'You are an enterprise REST API router. Select the ONE most relevant whitelisted endpoint to answer the user question. ' +
+  'Do not create new paths. Use the endpointId exactly from the list. ' +
+  'sampleResponse is only an example structure, not final data to answer the user. ' +
+  'The explanation should briefly describe the reason for selecting the endpoint and the parameters sent. ' +
+  'Do not send query or body if parameterSchema is empty or does not mention that parameter. ' +
+  'Answer ONLY JSON without markdown: {"endpointId":"...","query":{},"body":null,"explanation":"..."}.\n' +
+  'Use query for simple URL parameters. Use body only for non-GET methods when truly needed.'
 
 export async function generateRestCall(args: {
   question: string
@@ -373,15 +332,15 @@ export async function generateRestCall(args: {
       {
         role: 'user',
         content:
-          `Pertanyaan user: ${args.question}\n\n` +
-          (args.memoryContext ? `Memori: request serupa sebelumnya:\n${args.memoryContext}\n\n` : '') +
-          `Endpoint whitelisted:\n${args.endpoints
+          `User question: ${args.question}\n\n` +
+          (args.memoryContext ? `Memory: a similar previous request:\n${args.memoryContext}\n\n` : '') +
+          `Whitelisted endpoints:\n${args.endpoints
             .map(
               (endpoint) =>
                 `- id=${endpoint.id}; connector=${endpoint.connectorName}; method=${endpoint.method}; path=${endpoint.path}; description=${endpoint.description ?? '-'}; parameterSchema=${endpoint.parameterSchema ?? '-'}; sampleResponse=${endpoint.sampleResponse ?? '-'}`,
             )
             .join('\n')}\n\n` +
-          'Berikan JSON pilihan endpoint.',
+          'Provide the JSON endpoint selection.',
       },
     ],
     { purpose: 'rest' },

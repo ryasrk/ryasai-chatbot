@@ -32,6 +32,6 @@ export async function POST() {
     })
     return NextResponse.json({ ok: true, message: 'FTS rebuild completed', data: result })
   } catch (e) {
-    return handleApiError(e, 'Gagal rebuild FTS.', 500)
+    return handleApiError(e, 'Failed to rebuild FTS.', 500)
   }
 }

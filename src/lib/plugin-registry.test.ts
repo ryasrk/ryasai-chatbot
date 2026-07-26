@@ -114,7 +114,7 @@ describe('executePlugin', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain('tidak valid')
+    expect(result.error).toContain('Invalid')
   })
 })
 

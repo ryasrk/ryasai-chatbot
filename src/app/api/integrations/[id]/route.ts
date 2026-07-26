@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     if (!integration) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -67,7 +67,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat detail integrasi.')
+    return handleApiError(e, 'Failed to load integration details.')
   }
 }
 
@@ -88,7 +88,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -98,7 +98,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       const s = body.status.toLowerCase()
       if (s !== 'active' && s !== 'inactive' && s !== 'error') {
         return NextResponse.json(
-          { ok: false, error: "Status harus 'active', 'inactive', atau 'error'." },
+          { ok: false, error: "Status must be 'active', 'inactive', or 'error'." },
           { status: 400 },
         )
       }
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { ok: false, error: 'No fields provided for update.' },
         { status: 400 },
       )
     }
@@ -124,7 +124,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     })
     if (!updated) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -146,7 +146,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui integrasi.')
+    return handleApiError(e, 'Failed to update integration.')
   }
 }
 
@@ -161,7 +161,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -172,7 +172,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     const result = await db.integration.deleteMany({ where: { id } })
     if (result.count === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -186,7 +186,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json({ ok: true, data: { id, deleted: true } })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus integrasi.')
+    return handleApiError(e, 'Failed to delete integration.')
   }
 }
 

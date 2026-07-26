@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
     const body = (await req.json().catch(() => ({}))) as { title?: string }
-    const title = body.title?.trim() || `[Agent] ${new Date().toLocaleString('id-ID')}`
+    const title = body.title?.trim() || `[Agent] ${new Date().toLocaleString('en-US')}`
 
     const session = await db.chatSession.create({
       data: {
@@ -56,6 +56,6 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ ok: true, session })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat sesi agentic.')
+    return handleApiError(e, 'Failed to create agentic session.')
   }
 }

@@ -8,17 +8,17 @@ export async function POST(req: NextRequest) {
   try {
     await getActiveUser()
     const { url } = (await req.json().catch(() => ({}))) as { url?: string }
-    if (!url) return NextResponse.json({ error: 'url wajib diisi.' }, { status: 400 })
+    if (!url) return NextResponse.json({ error: 'url is required.' }, { status: 400 })
 
     let parsed: URL
     try {
       parsed = new URL(url)
     } catch {
-      return NextResponse.json({ error: 'URL tidak valid.' }, { status: 400 })
+      return NextResponse.json({ error: 'URL is invalid.' }, { status: 400 })
     }
 
     if (isBlockedHost(parsed.hostname)) {
-      return NextResponse.json({ error: 'Host diblokir.' }, { status: 403 })
+      return NextResponse.json({ error: 'Host is blocked.' }, { status: 403 })
     }
 
     const res = await fetch(url, {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (!res.ok) {
-      return NextResponse.json({ error: `Fetch gagal: HTTP ${res.status}` }, { status: 502 })
+      return NextResponse.json({ error: `Fetch failed: HTTP ${res.status}` }, { status: 502 })
     }
 
     const html = await res.text()
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const article = reader.parse()
 
     if (!article || !article.textContent) {
-      return NextResponse.json({ error: 'Tidak bisa ekstrak konten.' }, { status: 422 })
+      return NextResponse.json({ error: 'Could not extract content.' }, { status: 422 })
     }
 
     const content = article.textContent.trim().slice(0, 10000)
@@ -50,6 +50,6 @@ export async function POST(req: NextRequest) {
       length: content.length,
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal fetch URL.')
+    return handleApiError(e, 'Failed to fetch URL.')
   }
 }

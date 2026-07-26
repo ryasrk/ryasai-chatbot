@@ -61,7 +61,7 @@ export function normalizeManifest(input: unknown): PluginManifest | { error: str
   const result = PluginManifestSchema.safeParse(coerced)
   if (!result.success) {
     const first = result.error.issues[0]
-    return { error: first ? `Manifest tidak valid: ${first.path.join('.')} — ${first.message}` : 'Manifest tidak valid.' }
+    return { error: first ? `Invalid manifest: ${first.path.join('.')} — ${first.message}` : 'Invalid manifest.' }
   }
   const m = result.data as PluginManifest
 
@@ -69,13 +69,13 @@ export function normalizeManifest(input: unknown): PluginManifest | { error: str
   try {
     const url = new URL(m.endpoint)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return { error: 'Endpoint harus menggunakan http atau https.' }
+      return { error: 'Endpoint must use http or https.' }
     }
     if (isBlockedHost(url.hostname)) {
-      return { error: 'Endpoint menuju host internal yang diblokir.' }
+      return { error: 'Endpoint points to a blocked internal host.' }
     }
   } catch {
-    return { error: 'Endpoint webhook tidak valid.' }
+    return { error: 'Invalid webhook endpoint.' }
   }
 
   return m
@@ -111,7 +111,7 @@ export async function executePlugin(args: {
 }): Promise<{ ok: boolean; output: string; error?: string; latencyMs: number }> {
   const manifest = parsePluginManifest(args.plugin.manifestJson)
   if (!manifest) {
-    return { ok: false, output: '', error: 'Plugin manifest tidak valid.', latencyMs: 0 }
+    return { ok: false, output: '', error: 'Invalid plugin manifest.', latencyMs: 0 }
   }
 
   // Decrypt credentials (stored encrypted at rest via encryptPluginCredentials)
@@ -185,7 +185,7 @@ export async function executePlugin(args: {
       return {
         ok: false,
         output: '',
-        error: `Plugin timeout setelah ${manifest.timeoutMs || 15000}ms.`,
+        error: `Plugin timeout after ${manifest.timeoutMs || 15000}ms.`,
         latencyMs,
       }
     }

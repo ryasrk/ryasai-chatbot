@@ -22,10 +22,10 @@ export default function GlobalError({
       >
         <div style={{ textAlign: 'center', padding: '1rem', maxWidth: '28rem' }}>
           <h1 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-            Kesalahan Sistem
+            System Error
           </h1>
           <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '1.5rem' }}>
-            {error.message || 'Terjadi kesalahan sistem yang tidak terduga.'}
+            {error.message || 'An unexpected system error occurred.'}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -40,7 +40,7 @@ export default function GlobalError({
               cursor: 'pointer',
             }}
           >
-            Muat Ulang
+            Reload
           </button>
         </div>
       </body>

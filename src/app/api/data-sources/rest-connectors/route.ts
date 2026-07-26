@@ -33,7 +33,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, items })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat REST API connectors.')
+    return handleApiError(e, 'Failed to load REST API connectors.')
   }
 }
 
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: connector }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat REST API connector.')
+    return handleApiError(e, 'Failed to create REST API connector.')
   }
 }
 
@@ -90,25 +90,25 @@ function parseConnectorInput(body: CreateConnectorBody):
     }
   | { error: string } {
   const name = (body.name ?? '').trim()
-  if (!name) return { error: 'Nama connector wajib diisi.' }
+  if (!name) return { error: 'Connector name is required.' }
 
   let baseUrl: string
   try {
     const url = new URL((body.baseUrl ?? '').trim())
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return { error: 'Base URL harus menggunakan http atau https.' }
+      return { error: 'Base URL must use http or https.' }
     }
     if (isBlockedHost(url.hostname)) {
-      return { error: 'Base URL menuju host internal yang diblokir.' }
+      return { error: 'Base URL points to a blocked internal host.' }
     }
     baseUrl = url.toString().replace(/\/$/, '')
   } catch {
-    return { error: 'Base URL tidak valid.' }
+    return { error: 'Base URL is invalid.' }
   }
 
   const authType = (body.authType ?? 'NONE').trim().toUpperCase()
   if (authType !== 'NONE' && authType !== 'BEARER' && authType !== 'API_KEY_HEADER') {
-    return { error: 'Auth type harus NONE, BEARER, atau API_KEY_HEADER.' }
+    return { error: 'Auth type must be NONE, BEARER, or API_KEY_HEADER.' }
   }
 
   const timeoutMs =

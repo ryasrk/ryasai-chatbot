@@ -19,7 +19,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!connector) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -31,7 +31,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!endpoint) {
       return NextResponse.json(
-        { ok: false, error: 'Endpoint tidak ditemukan.' },
+        { ok: false, error: 'Endpoint not found.' },
         { status: 404 },
       )
     }
@@ -53,6 +53,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, data: { id: endpoint.id, deleted: true } })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus endpoint whitelist.')
+    return handleApiError(e, 'Failed to delete endpoint whitelist.')
   }
 }

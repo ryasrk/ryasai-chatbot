@@ -32,7 +32,7 @@ export async function sendNotification(args: {
   try {
     config = decryptConfig(args.configEncrypted)
   } catch {
-    return { ok: false, error: 'Konfigurasi notifikasi tidak valid.', latencyMs: 0 }
+    return { ok: false, error: 'Invalid notification configuration.', latencyMs: 0 }
   }
 
   const type = config.type as string
@@ -42,7 +42,7 @@ export async function sendNotification(args: {
     if (type === 'email') return await sendEmail(config, args.message, args.title, started)
     return {
       ok: false,
-      error: `Tipe notifikasi tidak dikenal: ${type}`,
+      error: `Unknown notification type: ${type}`,
       latencyMs: Date.now() - started,
     }
   } catch (e) {
@@ -64,7 +64,7 @@ async function sendWebhook(
   const token = config.token as string | undefined
   const signatureSecret = config.signatureSecret as string | undefined
   const body = JSON.stringify({
-    title: title ?? 'Notifikasi ryasai',
+    title: title ?? 'ryasai notification',
     message,
     timestamp: new Date().toISOString(),
   })
@@ -117,7 +117,7 @@ async function sendEmail(
 ): Promise<NotificationResult> {
   return {
     ok: false,
-    error: 'Email notification memerlukan konfigurasi SMTP. Gunakan webhook atau telegram untuk sekarang.',
+    error: 'Email notification requires SMTP configuration. Use webhook or telegram for now.',
     latencyMs: Date.now() - started,
   }
 }
@@ -143,7 +143,7 @@ export async function sendNotificationWithRetry(args: {
     if (lastResult.ok) return lastResult
 
     // Don't retry on config errors (decryption failed) — only on delivery failures
-    if (lastResult.error?.includes('tidak valid') || lastResult.error?.includes('tidak dikenal')) {
+    if (lastResult.error?.includes('Invalid notification configuration') || lastResult.error?.includes('Unknown notification type')) {
       return lastResult
     }
 

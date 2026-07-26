@@ -1,6 +1,6 @@
 # ryasai — Enterprise AI Assistant
 
-Self-hosted, single-tenant AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for Indonesian enterprises that need data-grounded AI with security guardrails.
+Self-hosted, single-tenant AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails.
 
 ## Quick Start
 
@@ -29,8 +29,8 @@ Default login: `admin@ryas.ai` / `admin12345`
 - **Database**: Prisma 6 + SQLite (Postgres-ready — see `docs/postgres-migration.md`)
 - **Runtime**: Bun (dev/test) · Node standalone (prod build)
 - **UI**: Tailwind 4 · shadcn/ui · 5 theme system
-- **AI**: OpenAI-compatible + Anthropic-native LLM providers
-- **Memory**: Cognee integration (optional, disabled by default)
+- **AI**: OpenAI-compatible + Anthropic-native LLM providers (fail-closed — no sandbox fallback)
+- **Memory**: Cognee integration (enabled by default, graceful degradation when unavailable)
 
 ## Features
 
@@ -50,18 +50,36 @@ Default login: `admin@ryas.ai` / `admin12345`
 
 ### Security
 - AES-256-GCM encryption for all credentials
+- Session fixation defense (sessionVersion + HMAC, invalidated on re-login)
+- 30min inactivity timeout
 - Edge auth middleware (cookie-based session)
+- Rate limiting (POST/PUT/DELETE/PATCH, per-route, Edge-safe in-memory)
 - SQL AST guardrails (mutation block, LIMIT cap)
 - SSRF blocklist (RFC1918, link-local, CGNAT, ULA)
+- Plugin manifest Zod validation at registration
+- Webhook HMAC-SHA256 signature verification
 - API keys (hashed, prefix-based O(1) lookup, rate-limited)
-- Audit logging for all security-relevant actions
+- Audit logging (fail-closed on critical severity)
+- Env schema validation at startup (Zod, prod-only)
 - Fail-closed auth (no demo fallback by default)
 
 ### Observability
+- Structured JSON logger (`src/lib/logger.ts` — scoped, leveled, no Pino dep)
 - LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat)
 - Tool run metrics (latency, success rate, circuit breaker)
 - Monitoring dashboard (24h stats, failed requests, blocked SQL)
 - Audit log (GUARDRAIL_BLOCK, SQL_EXECUTE, API_KEY_GENERATED, etc.)
+- Log retention (daily cleanup, 90-day default via scheduler)
+- Health endpoints: `/api/v1/health` (liveness) + `/api/health` (DB + Redis checks)
+
+### Reliability
+- LLM retry with exponential backoff (3 retries, 500ms*2^attempt)
+- 30s LLM timeout, 120s stream timeout
+- Per-integration SQL concurrency limiter (3 concurrent max)
+- Webhook retry with exponential backoff (3 retries, 2s*2^n)
+- RAG query cache (1min TTL, invalidated on document changes)
+- RAG LLM reranker (opt-in via `RAG_LLM_RERANK=true`)
+- Multi-tool DAG execution (opt-in via `allowMultiStepDag` flag)
 
 ## Architecture
 
@@ -92,7 +110,7 @@ User query
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (335 pass, 8 skip, 0 fail)
+bun run test         # unit tests (418 pass, 8 skip, 0 fail)
 bun run e2e          # Playwright (4 specs, mock LLM)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
@@ -152,7 +170,10 @@ Copy `.env.example` to `.env` and configure:
 | `ENCRYPTION_SECRET_KEY` | Yes | 64-char random string for AES-256-GCM |
 | `ADMIN_INITIAL_PASSWORD` | Yes | Initial admin password (change after first login) |
 | `AUTH_DEMO_FALLBACK` | No | `false` by default (fail-closed) |
-| `COGNEE_ENABLED` | No | `true` to enable memory layer |
+| `COGNEE_ENABLED` | No | `true` by default (graceful degradation when cognee unavailable) |
+| `RAG_LLM_RERANK` | No | `true` to enable LLM reranker for RAG results |
+| `LOG_LEVEL` | No | `debug`/`info`/`warn`/`error` (default `info`) |
+| `LOG_RETENTION_DAYS` | No | Log retention period (default 90) |
 | `PORT` | No | Dev server port (default 3000) |
 
 ## License

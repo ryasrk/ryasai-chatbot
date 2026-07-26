@@ -9,6 +9,8 @@
  * The retrieval function in `search/route.ts` documents this clearly.
  */
 import { db } from '@/lib/db'
+import { scopedLogger } from '@/lib/logger'
+const log = scopedLogger('rag')
 import {
   combineHybridScore,
   cosineSimilarity,
@@ -127,6 +129,31 @@ export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: 
   return selected
 }
 
+// ---------------------------------------------------------------------------
+// Query-level cache — avoids re-scoring all chunks for repeat questions.
+// ponytail: in-memory Map with TTL, per-instance not distributed.
+// Ceiling: cleared on server restart. Cache key includes topK so different
+// topK values don't collide. Upgrade to Redis when deploying >1 instance.
+// ---------------------------------------------------------------------------
+
+const RAG_CACHE_TTL_MS = 60_000 // 1 minute — short TTL so new docs appear fast
+const RAG_CACHE_MAX = 200
+const _ragCache = new Map<string, { result: Awaited<ReturnType<typeof retrieveRelevantChunks>>; ts: number }>()
+
+function ragCacheKey(query: string, topK: number): string {
+  return `${topK}:${query.slice(0, 500).toLowerCase().trim()}`
+}
+
+// ponytail: invalidate cache when documents are added/removed. Called from
+// document upload + delete routes. Simple clear-all is fine at current scale.
+export function invalidateRagCache(): void {
+  _ragCache.clear()
+}
+
+// ---------------------------------------------------------------------------
+// Retrieval
+// ---------------------------------------------------------------------------
+
 export async function retrieveRelevantChunks(args: {
   query: string
   topK: number
@@ -134,6 +161,13 @@ export async function retrieveRelevantChunks(args: {
   const queryTokens = tokenize(args.query)
   if (queryTokens.length === 0) {
     return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
+  }
+
+  // ponytail: check cache first — avoids re-scoring all chunks for repeat questions
+  const cacheKey = ragCacheKey(args.query, args.topK)
+  const cached = _ragCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < RAG_CACHE_TTL_MS) {
+    return cached.result
   }
 
   // ponytail: when RAG_LLM_RERANK=true, retrieve 3x candidates for LLM reranking.
@@ -151,12 +185,21 @@ export async function retrieveRelevantChunks(args: {
     ? await rerankWithLlm(args.query, retrievalResult.chunks, args.topK)
     : retrievalResult.chunks
 
-  return {
+  const result = {
     chunks: finalChunks,
     queryTokens,
     candidatesScanned: retrievalResult.candidatesScanned,
     graphContext,
   }
+
+  // ponytail: cache the result — evict oldest when at capacity
+  if (_ragCache.size >= RAG_CACHE_MAX) {
+    const oldest = _ragCache.keys().next().value
+    if (oldest) _ragCache.delete(oldest)
+  }
+  _ragCache.set(cacheKey, { result, ts: Date.now() })
+
+  return result
 }
 
 // ponytail: LLM reranker — asks the LLM to rank chunks by relevance to the query.
@@ -218,7 +261,7 @@ async function rerankWithLlm(
 
     return reranked
   } catch (e) {
-    console.warn('[rag] LLM rerank failed, using original order:', e instanceof Error ? e.message : e)
+    log.warn('LLM rerank failed, using original order', { error: e instanceof Error ? e.message : String(e) })
     return chunks.slice(0, topK)
   }
 }
@@ -354,7 +397,7 @@ async function resolveQueryEmbedding(
     const [embedding] = await embedTexts(config, [query])
     return embedding ? { vector: embedding, model: config.model } : null
   } catch (e) {
-    console.warn('[rag] resolveQueryEmbedding failed:', e)
+    log.warn('resolveQueryEmbedding failed', { error: e instanceof Error ? e.message : String(e) })
     return null
   }
 }
@@ -374,7 +417,7 @@ async function resolveVectorScores(args: {
     })
     return new Map(hits.map((hit) => [hit.chunkId, hit.score]))
   } catch (e) {
-    console.warn('[rag] resolveVectorScores failed:', e)
+    log.warn('resolveVectorScores failed', { error: e instanceof Error ? e.message : String(e) })
     return new Map()
   }
 }
@@ -585,7 +628,7 @@ export async function extractFileText(
       const text = await file.text()
       return { text: text ?? '', isPlaceholder: false }
     } catch (e) {
-      console.warn('[rag] extractFileText read failed:', e)
+      log.warn('extractFileText read failed', { error: e instanceof Error ? e.message : String(e) })
       return {
         text: `[Text document: ${name}, ${size} bytes. Read failed.]`,
         isPlaceholder: true,

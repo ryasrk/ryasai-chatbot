@@ -832,7 +832,7 @@ export async function agentChatOnce(
 ): Promise<string> {
   const cfg = await getAgentConfig()
   if (!cfg) {
-    throw new Error('Agent LLM belum dikonfigurasi. Set LLM config dengan purpose=agent di Settings.')
+    throw new Error('Agent LLM is not configured. Set LLM config with purpose=agent in Settings.')
   }
   return chatOnce(cfg, messages as LlmMessage[], temperature)
 }
@@ -845,7 +845,7 @@ export async function agentChat(
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
   ]
   if (context) {
-    messages.push({ role: 'system', content: `Konteks sistem:\n${context}` })
+    messages.push({ role: 'system', content: `System context:\n${context}` })
   }
   messages.push({ role: 'user', content: question })
   return agentChatOnce(messages)

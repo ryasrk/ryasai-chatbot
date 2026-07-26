@@ -13,6 +13,6 @@ export async function GET() {
     const state = await getSetupState(db)
     return NextResponse.json({ ok: true, ...state })
   } catch (e) {
-    return handleApiError(e, 'Gagal membaca status setup.')
+    return handleApiError(e, 'Failed to read setup status.')
   }
 }

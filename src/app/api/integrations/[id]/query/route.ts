@@ -13,7 +13,7 @@
  *   6. If blocked: GUARDRAIL_BLOCK audit (critical), return { ok:false, reason, generatedSql }.
  *   7. If ok: connector.executeQuery(sanitizedSql), record QueryHistory, write SQL_EXECUTE
  *      audit log, return { ok:true, sql, rows, rowCount, executionMs }.
- *   8. Graceful Indonesian error messages per spec §8.
+ *   8. Graceful English error messages per spec §8.
  *
  * Server-only route handler. No 'use client'.
  */
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     if (!naturalQuery) {
       return NextResponse.json(
-        { ok: false, error: 'Pertanyaan tidak boleh kosong.' },
+        { ok: false, error: 'Question cannot be empty.' },
         { status: 400 },
       )
     }
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     if (!integration) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         {
           ok: false,
           error:
-            'Maaf, koneksi ke Database ERP Anda terputus. Silakan hubungi admin atau aktifkan kembali integrasi ini di halaman Integrations.',
+            'Sorry, the connection to your ERP Database is disconnected. Please contact admin or re-enable this integration on the Integrations page.',
         },
         { status: 409 },
       )
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         {
           ok: false,
           error:
-            'Skema database belum direfleksikan. Silakan jalankan uji koneksi terlebih dahulu agar sistem dapat memetakan tabel & kolom.',
+            'Database schema has not been reflected. Please run a connection test first so the system can map tables & columns.',
         },
         { status: 409 },
       )
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         {
           ok: false,
           error:
-            'Maaf, layanan AI sedang tidak dapat memproses pertanyaan Anda. Silakan coba beberapa saat lagi.',
+            'Sorry, the AI service is currently unable to process your question. Please try again later.',
         },
         { status: 502 },
       )
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json(
         {
           ok: false,
-          reason: guard.reason ?? 'Kueri ditolak oleh guardrail keamanan.',
+          reason: guard.reason ?? 'Query rejected by security guardrail.',
           generatedSql,
         },
         { status: 403 },
@@ -218,8 +218,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         {
           ok: false,
           error: tableMissing
-            ? 'Tabel database tidak ditemukan. Skema mungkin sudah kedaluwarsa. Silakan jalankan uji koneksi ulang di halaman Integrations untuk memperbarui skema.'
-            : 'Maaf, kueri gagal dieksekusi. Silakan coba pertanyaan yang berbeda atau hubungi admin.',
+            ? 'Database table not found. The schema may be outdated. Please re-run the connection test on the Integrations page to update the schema.'
+            : 'Sorry, the query failed to execute. Please try a different question or contact admin.',
           sql: sanitizedSql,
         },
         { status: tableMissing ? 409 : 502 },
@@ -228,7 +228,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
   } catch (e) {
     return handleApiError(
       e,
-      'Maaf, terjadi kesalahan tak terduga saat memproses permintaan Anda. Silakan coba lagi.',
+      'Sorry, an unexpected error occurred while processing your request. Please try again.',
     )
   }
 }

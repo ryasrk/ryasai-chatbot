@@ -18,13 +18,13 @@ export default function Error({
           <div className="flex justify-center">
             <AlertCircle className="size-10 text-destructive" />
           </div>
-          <CardTitle className="mt-2">Terjadi Kesalahan</CardTitle>
+          <CardTitle className="mt-2">An Error Occurred</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            {error.message || 'Terjadi kesalahan yang tidak terduga.'}
+            {error.message || 'An unexpected error occurred.'}
           </p>
-          <Button onClick={() => reset()}>Coba Lagi</Button>
+          <Button onClick={() => reset()}>Try Again</Button>
         </CardContent>
       </Card>
     </div>

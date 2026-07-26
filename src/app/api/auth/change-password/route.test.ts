@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 class MockUnauthorizedError extends Error {
   readonly code = 'UNAUTHORIZED'
-  constructor(msg = 'Tidak ada sesi aktif.') {
+  constructor(msg = 'No active session.') {
     super(msg)
     this.name = 'UnauthorizedError'
   }
@@ -78,7 +78,7 @@ describe('POST /api/auth/change-password', () => {
     expect(res.status).toBe(401)
     const body = await res.json()
     expect(body.ok).toBe(false)
-    expect(body.error).toContain('Password lama salah')
+    expect(body.error).toContain('Current password is incorrect')
     expect(mockUserUpdate).not.toHaveBeenCalled()
   })
 
@@ -86,14 +86,14 @@ describe('POST /api/auth/change-password', () => {
     const res = await POST(makeReq({ currentPassword: '', newPassword: '' }) as any)
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('wajib diisi')
+    expect(body.error).toContain('are required')
   })
 
   test('new password < 8 chars → 400', async () => {
     const res = await POST(makeReq({ currentPassword: 'oldPass123', newPassword: 'short' }) as any)
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toContain('minimal 8 karakter')
+    expect(body.error).toContain('at least 8 characters')
   })
 
   test('user not found in DB → 404', async () => {

@@ -14,7 +14,7 @@ export async function GET() {
     const settings = await getPromptSettings(db)
     return NextResponse.json({ ok: true, settings })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat pengaturan prompt.')
+    return handleApiError(e, 'Failed to load prompt settings.')
   }
 }
 
@@ -40,6 +40,6 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ ok: true, settings: merged })
   } catch (e) {
-    return handleApiError(e, 'Gagal menyimpan pengaturan prompt.')
+    return handleApiError(e, 'Failed to save prompt settings.')
   }
 }

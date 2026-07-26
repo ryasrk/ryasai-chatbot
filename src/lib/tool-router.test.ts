@@ -27,15 +27,15 @@ describe('tool router helpers', () => {
 
   test('builds a bar chart from label and numeric rows', () => {
     const chart = buildChartDataFromRows([
-      { category: 'Aksesoris', total: 12 },
-      { category: 'Elektronik', total: 8 },
+      { category: 'Accessories', total: 12 },
+      { category: 'Electronics', total: 8 },
     ])
 
     expect(chart).toEqual({
       type: 'bar',
       data: [
-        { category: 'Aksesoris', total: 12 },
-        { category: 'Elektronik', total: 8 },
+        { category: 'Accessories', total: 12 },
+        { category: 'Electronics', total: 8 },
       ],
       xKey: 'category',
       yKeys: ['total'],
@@ -44,14 +44,14 @@ describe('tool router helpers', () => {
 
   test('parses REST call selection JSON without markdown fences', () => {
     const parsed = parseRestCallJson(
-      '```json\n{"endpointId":"ep_1","query":{"limit":5},"body":null,"explanation":"ambil customer"}\n```',
+      '```json\n{"endpointId":"ep_1","query":{"limit":5},"body":null,"explanation":"get customers"}\n```',
     )
 
     expect(parsed).toEqual({
       endpointId: 'ep_1',
       query: { limit: 5 },
       body: null,
-      explanation: 'ambil customer',
+      explanation: 'get customers',
     })
   })
 
@@ -59,13 +59,13 @@ describe('tool router helpers', () => {
     const citation = buildDocumentCitation({
       documentName: 'SOP.md',
       chunkIndex: 3,
-      content: 'SLA pembayaran invoice maksimal 14 hari.',
+      content: 'SLA payment invoice maximum 14 days.',
       score: 8,
     })
 
     expect(citation.source).toBe('SOP.md')
     expect(citation.query_used).toBe('chunk #3')
-    expect(citation.snippet).toContain('SLA pembayaran')
+    expect(citation.snippet).toContain('SLA payment')
     expect(citation.score).toBe(8)
   })
 })

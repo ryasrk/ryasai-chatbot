@@ -9,5 +9,5 @@ export function chatSessionPanelWidthClass(sessionRailCollapsed: boolean) {
 }
 
 export function citationDetailLabel(type: string) {
-  return type === 'DATABASE' ? 'Lihat kueri SQL' : 'Lihat detail sumber'
+  return type === 'DATABASE' ? 'View SQL query' : 'View source details'
 }

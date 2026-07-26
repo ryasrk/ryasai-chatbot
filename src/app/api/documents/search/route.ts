@@ -75,6 +75,6 @@ export async function POST(req: NextRequest) {
       candidatesScanned: retrieval.candidatesScanned,
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal mencari dokumen.')
+    return handleApiError(e, 'Failed to search documents.')
   }
 }

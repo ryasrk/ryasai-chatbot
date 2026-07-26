@@ -81,7 +81,7 @@ function assertDemoTablesOnly(sql: string): void {
     const tbl = m[1].toLowerCase()
     if (!DEMO_TABLE_SET.has(tbl)) {
       throw new Error(
-        `Pelanggaran Keamanan: akses tabel di luar allowlist (${m[1]}). Hanya tabel demo_ yang diizinkan.`,
+        `Security violation: table access outside allowlist (${m[1]}). Only demo_ tables are allowed.`,
       )
     }
   }
@@ -232,7 +232,7 @@ export class ConnectorRegistry {
           connector = new SqliteDemoConnector(decryptedConfig)
           break
         default:
-          throw new Error(`Provider ${provider} tidak didukung.`)
+          throw new Error(`Provider ${provider} is not supported.`)
       }
       this._pools.set(integrationId, connector)
     }
@@ -281,13 +281,13 @@ export async function ensureDemoSchema(): Promise<void> {
   const c = await db.$queryRaw<{ c: number }[]>`SELECT COUNT(*) as c FROM demo_products;`
   if (Number(c[0]?.c) > 0) return
 
-  await db.$executeRawUnsafe(`INSERT INTO demo_warehouses (id, name, location, capacity) VALUES (1, 'Gudang Utama Jakarta', 'Jakarta Barat', 50000), (2, 'Gudang Surabaya', 'Surabaya', 30000), (3, 'Gudang Bandung', 'Bandung', 20000)`)
+  await db.$executeRawUnsafe(`INSERT INTO demo_warehouses (id, name, location, capacity) VALUES (1, 'Jakarta Main Warehouse', 'West Jakarta', 50000), (2, 'Surabaya Warehouse', 'Surabaya', 30000), (3, 'Bandung Warehouse', 'Bandung', 20000)`)
 
-  await db.$executeRawUnsafe(`INSERT INTO demo_products (sku, name, category, unit_price, cost, is_active) VALUES ('SKU-901', 'Laptop Enterprise 14"', 'Elektronik', 18500000, 15200000, 1), ('SKU-902', 'Mouse Wireless Pro', 'Aksesoris', 285000, 190000, 1), ('SKU-903', 'Keyboard Mekanik', 'Aksesoris', 750000, 520000, 1), ('SKU-904', 'Monitor 27" 4K', 'Elektronik', 4200000, 3350000, 1), ('SKU-905', 'SSD NVMe 1TB', 'Penyimpanan', 1450000, 1100000, 1), ('SKU-906', 'Webcam HD 1080p', 'Aksesoris', 395000, 260000, 1), ('SKU-907', 'Headset Noise Cancel', 'Audio', 1290000, 880000, 1), ('SKU-908', 'Docking Station USB-C', 'Aksesoris', 1850000, 1350000, 1), ('SKU-909', 'Router WiFi 6', 'Jaringan', 1450000, 980000, 1), ('SKU-910', 'UPS 1500VA', 'Power', 1750000, 1200000, 1)`)
+  await db.$executeRawUnsafe(`INSERT INTO demo_products (sku, name, category, unit_price, cost, is_active) VALUES ('SKU-901', 'Laptop Enterprise 14"', 'Electronics', 18500000, 15200000, 1), ('SKU-902', 'Mouse Wireless Pro', 'Accessories', 285000, 190000, 1), ('SKU-903', 'Mechanical Keyboard', 'Accessories', 750000, 520000, 1), ('SKU-904', 'Monitor 27" 4K', 'Electronics', 4200000, 3350000, 1), ('SKU-905', 'SSD NVMe 1TB', 'Storage', 1450000, 1100000, 1), ('SKU-906', 'Webcam HD 1080p', 'Accessories', 395000, 260000, 1), ('SKU-907', 'Headset Noise Cancel', 'Audio', 1290000, 880000, 1), ('SKU-908', 'Docking Station USB-C', 'Accessories', 1850000, 1350000, 1), ('SKU-909', 'Router WiFi 6', 'Networking', 1450000, 980000, 1), ('SKU-910', 'UPS 1500VA', 'Power', 1750000, 1200000, 1)`)
 
   await db.$executeRawUnsafe(`INSERT INTO demo_inventory (sku, warehouse_id, quantity, reorder_level, last_updated) VALUES ('SKU-901', 1, 1420, 100, '2026-06-01'), ('SKU-901', 2, 340, 100, '2026-06-01'), ('SKU-902', 1, 5800, 500, '2026-06-01'), ('SKU-902', 2, 2100, 500, '2026-06-01'), ('SKU-903', 1, 1200, 200, '2026-06-01'), ('SKU-904', 1, 450, 80, '2026-06-01'), ('SKU-904', 3, 180, 80, '2026-06-01'), ('SKU-905', 1, 3200, 300, '2026-06-01'), ('SKU-906', 1, 2750, 300, '2026-06-01'), ('SKU-907', 1, 890, 150, '2026-06-01'), ('SKU-908', 2, 540, 100, '2026-06-01'), ('SKU-909', 1, 1120, 200, '2026-06-01'), ('SKU-910', 3, 95, 100, '2026-06-01')`)
 
-  await db.$executeRawUnsafe(`INSERT INTO demo_customers (id, name, email, segment, city, total_spent) VALUES (1, 'PT Maju Bersama', 'procurement@majubersama.co.id', 'Enterprise', 'Jakarta', 145000000), (2, 'CV Sentosa Jaya', 'beli@sentosajaya.id', 'SMB', 'Bandung', 28500000), (3, 'PT Global Teknologi', 'it@globaltek.id', 'Enterprise', 'Surabaya', 98000000), (4, 'UD Berkah Mandiri', 'admin@berkahmandiri.com', 'SMB', 'Semarang', 12300000), (5, 'PT Sinar Digital', 'ops@sinar.digital', 'Enterprise', 'Jakarta', 67500000), (6, 'CV Karya Abadi', 'po@karyaabadi.id', 'SMB', 'Yogyakarta', 18900000), (7, 'PT Nusantara Raya', 'proc@nusantararaya.co.id', 'Enterprise', 'Medan', 53000000)`)
+  await db.$executeRawUnsafe(`INSERT INTO demo_customers (id, name, email, segment, city, total_spent) VALUES (1, 'PT Forward Together', 'proc@forwardtogether.co.id', 'Enterprise', 'Jakarta', 145000000), (2, 'CV Prosperous Success', 'purchases@prosperoussuccess.id', 'SMB', 'Bandung', 28500000), (3, 'PT Global Technology', 'it@globaltech.id', 'Enterprise', 'Surabaya', 98000000), (4, 'UD Independent Blessing', 'admin@independentblessing.com', 'SMB', 'Semarang', 12300000), (5, 'PT Digital Light', 'ops@digitallight.digital', 'Enterprise', 'Jakarta', 67500000), (6, 'CV Eternal Creation', 'po@eternalcreation.id', 'SMB', 'Yogyakarta', 18900000), (7, 'PT Great Nusantara', 'proc@greatnusantara.co.id', 'Enterprise', 'Medan', 53000000)`)
 
   await db.$executeRawUnsafe(`INSERT INTO demo_orders (id, customer_id, order_date, status, total_amount) VALUES (1001, 1, '2026-05-12', 'delivered', 18500000), (1002, 3, '2026-05-15', 'delivered', 8400000), (1003, 5, '2026-05-18', 'shipped', 4200000), (1004, 1, '2026-05-22', 'delivered', 1450000), (1005, 2, '2026-05-25', 'delivered', 855000), (1006, 7, '2026-05-28', 'shipped', 1290000), (1007, 3, '2026-06-02', 'processing', 3700000), (1008, 5, '2026-06-05', 'delivered', 5800000), (1009, 6, '2026-06-08', 'processing', 1850000), (1010, 1, '2026-06-10', 'delivered', 22500000)`)
 

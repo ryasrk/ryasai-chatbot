@@ -8,6 +8,6 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit') ?? '50'), 1), 100)
     return NextResponse.json({ ok: true, traces: getRecentTraces(limit) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat traces.')
+    return handleApiError(e, 'Failed to load traces.')
   }
 }

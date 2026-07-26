@@ -25,6 +25,6 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, items: logs })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat request logs.')
+    return handleApiError(e, 'Failed to load request logs.')
   }
 }

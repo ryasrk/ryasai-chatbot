@@ -53,8 +53,8 @@ export interface VectorStorePreset {
 
 export const VECTOR_STORE_PRESETS: VectorStorePreset[] = [
   { id: 'INTERNAL', label: 'Internal (SQLite)', backend: 'INTERNAL', baseUrlPlaceholder: '', needsApiKey: false, defaultVectorSize: 1536 },
-  { id: 'QDRANT', label: 'Qdrant (Lokal)', backend: 'QDRANT', baseUrlPlaceholder: 'http://localhost:6333', needsApiKey: false, defaultVectorSize: 1536 },
-  { id: 'QDRANT_CLOUD', label: 'Qdrant Cloud', backend: 'QDRANT', baseUrlPlaceholder: 'https://cluster-id.qdrant.tech:6333', needsApiKey: true, defaultVectorSize: 1536, hint: 'API key wajib untuk Qdrant Cloud' },
+  { id: 'QDRANT', label: 'Qdrant (Local)', backend: 'QDRANT', baseUrlPlaceholder: 'http://localhost:6333', needsApiKey: false, defaultVectorSize: 1536 },
+  { id: 'QDRANT_CLOUD', label: 'Qdrant Cloud', backend: 'QDRANT', baseUrlPlaceholder: 'https://cluster-id.qdrant.tech:6333', needsApiKey: true, defaultVectorSize: 1536, hint: 'API key required for Qdrant Cloud' },
   { id: 'MILVUS', label: 'Milvus', backend: 'MILVUS', baseUrlPlaceholder: 'http://localhost:19530', needsApiKey: false, defaultVectorSize: 1536 },
 ]
 

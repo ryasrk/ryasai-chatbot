@@ -2,7 +2,7 @@ import { describe, expect, test, mock } from 'bun:test'
 
 class MockUnauthorizedError extends Error {
   readonly code = 'UNAUTHORIZED'
-  constructor(msg = 'Tidak ada sesi aktif.') {
+  constructor(msg = 'No active session.') {
     super(msg)
     this.name = 'UnauthorizedError'
   }
@@ -20,7 +20,7 @@ mock.module('@/lib/api-keys', () => ({
   requireExternalApiKey: async (req: Request) => {
     const raw = req.headers.get('authorization') ?? ''
     const token = raw.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
-    if (!token) throw new MockUnauthorizedError('API key wajib dikirim sebagai Bearer token.')
+    if (!token) throw new MockUnauthorizedError('API key must be sent as Bearer token.')
     return { apiKeyId: 'key1', label: 'test' }
   },
   getBearerToken: (req: Request) => {
@@ -51,7 +51,7 @@ describe('external chat completion error classification', () => {
   test('returns 503 when no LLM provider is configured', () => {
     expect(
       statusForExternalChatError(
-        new Error('Configuration file not found or invalid. Please create .z-ai-config.'),
+        new Error('LLM not configured. Open Settings → AI Configuration and set up endpoint + API key before using Chat.'),
       ),
     ).toBe(503)
   })

@@ -64,7 +64,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, plugins: items })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat daftar plugin.')
+    return handleApiError(e, 'Failed to load plugin list.')
   }
 }
 
@@ -76,11 +76,11 @@ export async function POST(req: NextRequest) {
 
     const toolId = (body.toolId ?? '').trim()
     if (!toolId) {
-      return NextResponse.json({ ok: false, error: 'toolId wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'toolId is required.' }, { status: 400 })
     }
     const name = (body.name ?? '').trim()
     if (!name) {
-      return NextResponse.json({ ok: false, error: 'Nama plugin wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Plugin name is required.' }, { status: 400 })
     }
     const description = (body.description ?? '').trim()
 
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     })
     if (existing) {
       return NextResponse.json(
-        { ok: false, error: `Plugin dengan toolId "${toolId}" sudah ada.` },
+        { ok: false, error: `Plugin with toolId "${toolId}" already exists.` },
         { status: 409 },
       )
     }
@@ -139,6 +139,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: plugin }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat plugin.')
+    return handleApiError(e, 'Failed to create plugin.')
   }
 }

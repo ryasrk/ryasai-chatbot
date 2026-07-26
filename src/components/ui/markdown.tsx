@@ -19,10 +19,10 @@ function CodeBlock({ children, language }: { children: string; language?: string
     try {
       await navigator.clipboard.writeText(children)
       setCopied(true)
-      toast.success('Kode disalin')
+      toast.success('Code copied')
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast.error('Gagal menyalin')
+      toast.error('Failed to copy')
     }
   }
   return (
@@ -34,7 +34,7 @@ function CodeBlock({ children, language }: { children: string; language?: string
         <button
           onClick={handleCopy}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted"
-          aria-label="Salin kode"
+          aria-label="Copy code"
         >
           {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
         </button>

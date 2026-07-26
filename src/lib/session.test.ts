@@ -47,7 +47,7 @@ describe('handleApiError', () => {
     const res = handleApiError(new UnauthorizedError(), 'fallback')
     expect(res.status).toBe(401)
     const body = await res.json()
-    expect(body.error).toBe('Tidak ada sesi aktif.')
+    expect(body.error).toBe('No active session.')
   })
 
   test('Generic Error → 500 with fallback message', async () => {
@@ -147,7 +147,7 @@ describe('getActiveUser', () => {
     process.env.AUTH_DEMO_FALLBACK = 'false'
     mockCookieGet.mockImplementation(() => undefined)
 
-    await expect(getActiveUser()).rejects.toThrow('Tidak ada sesi aktif')
+    await expect(getActiveUser()).rejects.toThrow('No active session')
   })
 
   test('no cookie + AUTH_DEMO_FALLBACK=true → returns first active user', async () => {

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     const input = normalizeLoginInput(await req.json().catch(() => null))
     if (!input) {
       return NextResponse.json(
-        { error: 'Email dan password wajib diisi.' },
+        { error: 'Email and password are required.' },
         { status: 400 },
       )
     }
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         })
       }
       // Generic message: never reveal whether the email exists.
-      return NextResponse.json({ error: 'Email atau password salah.' }, { status: 401 })
+      return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 })
     }
 
     await writeAudit({
@@ -72,6 +72,6 @@ export async function POST(req: NextRequest) {
     })
     return res
   } catch (e) {
-    return handleApiError(e, 'Gagal memproses login.')
+    return handleApiError(e, 'Failed to process login.')
   }
 }

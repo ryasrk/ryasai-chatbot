@@ -85,7 +85,7 @@ describe('sendNotification', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.error).toContain('tidak dikenal')
+    expect(result.error).toContain('Unknown notification type')
     expect(result.error).toContain('fax')
   })
 })

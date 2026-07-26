@@ -17,7 +17,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'API key tidak ditemukan.' },
+        { ok: false, error: 'API key not found.' },
         { status: 404 },
       )
     }
@@ -41,7 +41,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!item) {
       return NextResponse.json(
-        { ok: false, error: 'API key tidak ditemukan.' },
+        { ok: false, error: 'API key not found.' },
         { status: 404 },
       )
     }
@@ -55,6 +55,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, item })
   } catch (e) {
-    return handleApiError(e, 'Gagal mencabut API key.')
+    return handleApiError(e, 'Failed to revoke API key.')
   }
 }

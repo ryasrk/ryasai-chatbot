@@ -11,7 +11,7 @@ export async function GET() {
     })
     return NextResponse.json({ ok: true, schedules })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat scheduled runs.')
+    return handleApiError(e, 'Failed to load scheduled runs.')
   }
 }
 
@@ -27,18 +27,18 @@ export async function POST(req: NextRequest) {
 
     const name = (body.name ?? '').trim()
     if (!name) {
-      return NextResponse.json({ ok: false, error: 'Nama wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Name is required.' }, { status: 400 })
     }
     const cronExpr = (body.cronExpr ?? '').trim()
     if (!parseCron(cronExpr)) {
       return NextResponse.json(
-        { ok: false, error: 'Cron expression tidak valid. Gunakan format 5-field: min hour dom month dow.' },
+        { ok: false, error: 'Invalid cron expression. Use 5-field format: min hour dom month dow.' },
         { status: 400 },
       )
     }
     const prompt = (body.prompt ?? '').trim()
     if (!prompt) {
-      return NextResponse.json({ ok: false, error: 'Prompt wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Prompt is required.' }, { status: 400 })
     }
 
     const nextRunAt = nextRun(cronExpr, new Date())
@@ -61,6 +61,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, schedule }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat scheduled run.')
+    return handleApiError(e, 'Failed to create scheduled run.')
   }
 }

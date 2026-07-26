@@ -80,6 +80,6 @@ export async function GET() {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat data monitoring.')
+    return handleApiError(e, 'Failed to load monitoring data.')
   }
 }

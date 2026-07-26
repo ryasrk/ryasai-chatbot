@@ -60,11 +60,11 @@ describe('isBlockedHost', () => {
 
   test('normalizeBaseUrl rejects blocked hosts', () => {
     expect(() => normalizeBaseUrl('http://169.254.169.254/latest/meta-data/')).toThrow(
-      /diblokir/,
+      /blocked internal host/,
     )
-    expect(() => normalizeBaseUrl('http://127.0.0.1:8080')).toThrow(/diblokir/)
-    expect(() => normalizeBaseUrl('http://10.0.0.1')).toThrow(/diblokir/)
-    expect(() => normalizeBaseUrl('http://192.168.1.1')).toThrow(/diblokir/)
-    expect(() => normalizeBaseUrl('http://localhost:3000')).toThrow(/diblokir/)
+    expect(() => normalizeBaseUrl('http://127.0.0.1:8080')).toThrow(/blocked internal host/)
+    expect(() => normalizeBaseUrl('http://10.0.0.1')).toThrow(/blocked internal host/)
+    expect(() => normalizeBaseUrl('http://192.168.1.1')).toThrow(/blocked internal host/)
+    expect(() => normalizeBaseUrl('http://localhost:3000')).toThrow(/blocked internal host/)
   })
 })

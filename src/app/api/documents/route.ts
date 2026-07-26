@@ -6,6 +6,7 @@ import {
   detectDocType,
   extractFileText,
   extractKeywords,
+  invalidateRagCache,
 } from '@/lib/rag'
 import { upsertChunkFts } from '@/lib/rag-fts'
 import { enqueueOrSync } from '@/lib/job-processor'
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents: data, total: data.length })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat daftar dokumen.')
+    return handleApiError(e, 'Failed to load document list.')
   }
 }
 
@@ -158,6 +159,7 @@ export async function POST(req: NextRequest) {
     await db.documentChunk.createMany({
       data: chunkRows,
     })
+    invalidateRagCache()
     const persistedChunks = await db.documentChunk.findMany({
       where: { documentId: doc.id },
       select: { id: true, content: true, keywords: true },
@@ -219,6 +221,6 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     )
   } catch (e) {
-    return handleApiError(e, 'Gagal mengunggah dokumen.')
+    return handleApiError(e, 'Failed to upload document.')
   }
 }

@@ -48,7 +48,7 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json({ ok: true, data })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat daftar integrasi.')
+    return handleApiError(e, 'Failed to load integration list.')
   }
 }
 
@@ -73,21 +73,21 @@ export function validateCreateIntegrationInput(body: CreateBody) {
   const config = body.config ?? {}
 
   if (!name) {
-    return { ok: false as const, status: 400, error: 'Nama integrasi wajib diisi.' }
+    return { ok: false as const, status: 400, error: 'Integration name is required.' }
   }
   if (type !== 'DATABASE') {
     return {
       ok: false as const,
       status: 400,
       error:
-        "Endpoint /api/integrations khusus database. Untuk REST API gunakan /api/data-sources/rest-connectors.",
+        "Endpoint /api/integrations is database-only. For REST API use /api/data-sources/rest-connectors.",
     }
   }
   if (!ALLOWED_DATABASE_PROVIDERS.has(provider)) {
     return {
       ok: false as const,
       status: 400,
-      error: `Provider database tidak didukung. Pilihan: ${[...ALLOWED_DATABASE_PROVIDERS].join(', ')}`,
+      error: `Database provider not supported. Options: ${[...ALLOWED_DATABASE_PROVIDERS].join(', ')}`,
     }
   }
 
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       if (!testOk) {
         connectorRegistry.drop(tempId)
         return NextResponse.json(
-          { ok: false, error: 'Koneksi gagal. Periksa kredensial dan jaringan.' },
+          { ok: false, error: 'Connection failed. Check credentials and network.' },
           { status: 400 },
         )
       }
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       connectorRegistry.drop(tempId)
       return NextResponse.json(
-        { ok: false, error: e instanceof Error ? e.message : 'Kesalahan tidak dikenal saat koneksi.' },
+        { ok: false, error: e instanceof Error ? e.message : 'Unknown error during connection.' },
         { status: 400 },
       )
     }
@@ -196,12 +196,12 @@ export async function POST(req: NextRequest) {
           lastTestedAt: new Date(),
           lastTestOk: true,
           tableCount: reflectedTables.length,
-          message: `Koneksi berhasil. ${reflectedTables.length} tabel terdeteksi.`,
+          message: `Connection successful. ${reflectedTables.length} tables detected.`,
         },
       },
       { status: 201 },
     )
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat integrasi.')
+    return handleApiError(e, 'Failed to create integration.')
   }
 }

@@ -23,27 +23,27 @@ interface CreateBody {
 function validateTransportConfig(body: CreateBody): { ok: true } | { ok: false; error: string } {
   const transport = (body.transport ?? '').trim()
   if (!VALID_TRANSPORTS.has(transport)) {
-    return { ok: false, error: 'transport harus "stdio", "sse", atau "http".' }
+    return { ok: false, error: 'transport must be "stdio", "sse", or "http".' }
   }
   if (transport === 'stdio') {
     if (!body.command || !body.command.trim()) {
-      return { ok: false, error: 'command wajib diisi untuk transport stdio.' }
+      return { ok: false, error: 'command is required for stdio transport.' }
     }
   } else {
     if (!body.url || !body.url.trim()) {
-      return { ok: false, error: 'url wajib diisi untuk transport sse/http.' }
+      return { ok: false, error: 'url is required for sse/http transport.' }
     }
     let url: URL
     try {
       url = new URL(body.url.trim())
     } catch {
-      return { ok: false, error: 'url tidak valid.' }
+      return { ok: false, error: 'url is invalid.' }
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return { ok: false, error: 'url harus menggunakan http atau https.' }
+      return { ok: false, error: 'url must use http or https.' }
     }
     if (isBlockedHost(url.hostname)) {
-      return { ok: false, error: 'url menuju host internal yang diblokir.' }
+      return { ok: false, error: 'url points to a blocked internal host.' }
     }
   }
   return { ok: true }
@@ -106,7 +106,7 @@ export async function GET() {
     })
     return NextResponse.json({ ok: true, servers: servers.map(sanitizeServer) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat daftar MCP server.')
+    return handleApiError(e, 'Failed to load MCP server list.')
   }
 }
 
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
 
     const name = (body.name ?? '').trim()
     if (!name) {
-      return NextResponse.json({ ok: false, error: 'Nama MCP server wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'MCP server name is required.' }, { status: 400 })
     }
 
     const check = validateTransportConfig(body)
@@ -166,6 +166,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, server: sanitizeServer(server) }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat MCP server.')
+    return handleApiError(e, 'Failed to create MCP server.')
   }
 }

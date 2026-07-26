@@ -56,6 +56,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, summary, results })
   } catch (e) {
-    return handleApiError(e, 'Gagal menjalankan evaluasi RAG.')
+    return handleApiError(e, 'Failed to run RAG evaluation.')
   }
 }

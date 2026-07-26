@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
   try {
     const state = await getSetupState(db)
     if (state.setupCompleted) {
-      return NextResponse.json({ error: 'Setup sudah selesai.' }, { status: 409 })
+      return NextResponse.json({ error: 'Setup already completed.' }, { status: 409 })
     }
     const input = normalizeSetupAdminInput(await req.json().catch(() => null))
     if (!input) {
       return NextResponse.json(
-        { error: 'Nama, email, dan password (min. 8 karakter) wajib diisi.' },
+        { error: 'Name, email, and password (min. 8 characters) are required.' },
         { status: 400 },
       )
     }
@@ -60,6 +60,6 @@ export async function POST(req: NextRequest) {
     })
     return res
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat akun admin.')
+    return handleApiError(e, 'Failed to create admin account.')
   }
 }

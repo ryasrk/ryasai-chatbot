@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     if (!integration) {
       return NextResponse.json(
-        { ok: false, error: 'Integrasi tidak ditemukan.' },
+        { ok: false, error: 'Integration not found.' },
         { status: 404 },
       )
     }
@@ -56,7 +56,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat skema integrasi.')
+    return handleApiError(e, 'Failed to load integration schema.')
   }
 }
 

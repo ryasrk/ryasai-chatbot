@@ -16,13 +16,13 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     if (!schedule) {
       return NextResponse.json(
-        { ok: false, error: 'Scheduled run tidak ditemukan.' },
+        { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
     }
     return NextResponse.json({ ok: true, schedule })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat scheduled run.')
+    return handleApiError(e, 'Failed to load scheduled run.')
   }
 }
 
@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Scheduled run tidak ditemukan.' },
+        { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
     }
@@ -65,7 +65,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       const cronExpr = body.cronExpr!.trim()
       if (!parseCron(cronExpr)) {
         return NextResponse.json(
-          { ok: false, error: 'Cron expression tidak valid.' },
+          { ok: false, error: 'Invalid cron expression.' },
           { status: 400 },
         )
       }
@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { ok: false, error: 'No fields provided for update.' },
         { status: 400 },
       )
     }
@@ -99,7 +99,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
     if (!updated) {
       return NextResponse.json(
-        { ok: false, error: 'Scheduled run tidak ditemukan.' },
+        { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
     }
@@ -113,7 +113,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, schedule: updated })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui scheduled run.')
+    return handleApiError(e, 'Failed to update scheduled run.')
   }
 }
 
@@ -128,7 +128,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Scheduled run tidak ditemukan.' },
+        { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
     }
@@ -136,7 +136,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const result = await db.scheduledRun.deleteMany({ where: { id } })
     if (result.count === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Scheduled run tidak ditemukan.' },
+        { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
     }
@@ -150,6 +150,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, deleted: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus scheduled run.')
+    return handleApiError(e, 'Failed to delete scheduled run.')
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 class MockUnauthorizedError extends Error {
   readonly code = 'UNAUTHORIZED'
-  constructor(msg = 'Tidak ada sesi aktif.') {
+  constructor(msg = 'No active session.') {
     super(msg)
     this.name = 'UnauthorizedError'
   }
@@ -11,7 +11,7 @@ class MockUnauthorizedError extends Error {
 const mockRequireExternalApiKey = mock(async (req: Request) => {
   const raw = req.headers.get('authorization') ?? ''
   const token = raw.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
-  if (!token) throw new MockUnauthorizedError('API key wajib dikirim sebagai Bearer token.')
+  if (!token) throw new MockUnauthorizedError('API key must be sent as Bearer token.')
   return { apiKeyId: 'key1', label: 'test', requestLimitPerMinute: 60 }
 })
 const mockRateLimit = mock(async (): Promise<{ allowed: boolean; remaining: number } | null> => null) // null = Redis down → DB fallback

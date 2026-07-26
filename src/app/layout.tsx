@@ -18,10 +18,10 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "ryasai",
   description:
-    "ryasai — platform AI perusahaan untuk knowledge, query engine, integrasi database dinamis, RAG, dan guardrails keamanan.",
+    "ryasai — enterprise AI platform for knowledge, query engine, dynamic database integration, RAG, and security guardrails.",
   keywords: [
     "ryasai",
-    "AI perusahaan",
+    "Enterprise AI",
     "Text-to-SQL",
     "RAG",
     "Knowledge Base",
@@ -36,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>

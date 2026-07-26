@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     if (!key) {
       return NextResponse.json(
-        { ok: false, error: 'API key tidak ditemukan.' },
+        { ok: false, error: 'API key not found.' },
         { status: 404 },
       )
     }
@@ -43,6 +43,6 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, items: logs })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat request logs.')
+    return handleApiError(e, 'Failed to load request logs.')
   }
 }

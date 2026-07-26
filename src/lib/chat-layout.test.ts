@@ -9,7 +9,7 @@ describe('chat layout helpers', () => {
   })
 
   test('uses source detail label for document citations', () => {
-    expect(citationDetailLabel('DOCUMENT')).toBe('Lihat detail sumber')
-    expect(citationDetailLabel('DATABASE')).toBe('Lihat kueri SQL')
+    expect(citationDetailLabel('DOCUMENT')).toBe('View source details')
+    expect(citationDetailLabel('DATABASE')).toBe('View SQL query')
   })
 })

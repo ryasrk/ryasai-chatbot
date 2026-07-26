@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     if (!connector) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -38,7 +38,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     return NextResponse.json({ ok: true, items })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat endpoint REST connector.')
+    return handleApiError(e, 'Failed to load REST connector endpoints.')
   }
 }
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     })
     if (!connector) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const method = (body.method ?? '').trim().toUpperCase()
     if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       return NextResponse.json(
-        { ok: false, error: 'Method harus GET, POST, PUT, PATCH, atau DELETE.' },
+        { ok: false, error: 'Method must be GET, POST, PUT, PATCH, or DELETE.' },
         { status: 400 },
       )
     }
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const path = normalizeEndpointPath(body.path ?? '')
     if (path === '/') {
       return NextResponse.json(
-        { ok: false, error: 'Path endpoint wajib diisi.' },
+        { ok: false, error: 'Endpoint path is required.' },
         { status: 400 },
       )
     }
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, data: item }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat endpoint whitelist.')
+    return handleApiError(e, 'Failed to create endpoint whitelist.')
   }
 }
 

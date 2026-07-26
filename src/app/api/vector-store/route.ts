@@ -32,7 +32,7 @@ export async function GET() {
           },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat konfigurasi vector DB.')
+    return handleApiError(e, 'Failed to load vector DB configuration.')
   }
 }
 
@@ -83,7 +83,7 @@ export async function PUT(req: NextRequest) {
     })
     return GET()
   } catch (e) {
-    return handleApiError(e, 'Gagal menyimpan konfigurasi vector DB.')
+    return handleApiError(e, 'Failed to save vector DB configuration.')
   }
 }
 
@@ -95,6 +95,6 @@ export async function POST() {
     await ensureVectorCollection(config)
     return NextResponse.json({ ok: true, data: { provider: config.provider, collectionName: config.collectionName } })
   } catch (e) {
-    return handleApiError(e, 'Gagal menguji vector DB.', 502)
+    return handleApiError(e, 'Failed to test vector DB.', 502)
   }
 }

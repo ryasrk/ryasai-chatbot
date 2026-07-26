@@ -26,6 +26,6 @@ export async function GET() {
 
     return NextResponse.json({ items: users })
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat daftar pengguna.')
+    return handleApiError(err, 'Failed to load user list.')
   }
 }

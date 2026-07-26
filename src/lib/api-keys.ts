@@ -50,7 +50,7 @@ export async function requireExternalApiKey(
   req: NextRequest,
 ): Promise<ExternalApiIdentity> {
   const token = getBearerToken(req)
-  if (!token) throw new UnauthorizedError('API key wajib dikirim sebagai Bearer token.')
+  if (!token) throw new UnauthorizedError('API key must be sent as a Bearer token.')
 
   // ponytail: prefix-based narrowing — extract first 13 chars (KEY_PREFIX + 8) to filter
   // candidates before hashing. Falls back to all keys if prefix is too short.
@@ -68,7 +68,7 @@ export async function requireExternalApiKey(
   const matched = candidates.find((candidate) =>
     verifyApiKey(token, candidate.keyHash),
   )
-  if (!matched) throw new UnauthorizedError('API key tidak valid atau sudah dicabut.')
+  if (!matched) throw new UnauthorizedError('API key is invalid or has been revoked.')
 
   // Rate limit enforcement
   if (matched.requestLimitPerMinute || matched.dailyRequestLimit) {
@@ -81,7 +81,7 @@ export async function requireExternalApiKey(
         where: { apiKeyId: matched.id, createdAt: { gte: oneMinuteAgo } },
       })
       if (recentCount >= matched.requestLimitPerMinute) {
-        throw new UnauthorizedError('Rate limit per menit tercapai. Coba lagi nanti.')
+        throw new UnauthorizedError('Rate limit per minute reached. Try again later.')
       }
     }
 
@@ -90,7 +90,7 @@ export async function requireExternalApiKey(
         where: { apiKeyId: matched.id, createdAt: { gte: oneDayAgo } },
       })
       if (dailyCount >= matched.dailyRequestLimit) {
-        throw new UnauthorizedError('Batas harian tercapai. Coba lagi besok.')
+        throw new UnauthorizedError('Daily limit reached. Try again tomorrow.')
       }
     }
   }

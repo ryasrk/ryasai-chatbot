@@ -13,7 +13,7 @@ describe('RAG chunking', () => {
     const content = Array.from(
       { length: 180 },
       (_, index) =>
-        `Kalimat audit RAG nomor ${index} membahas prosedur eskalasi incident keamanan, retensi dokumen, dan SLA pembayaran invoice enterprise.`,
+        `RAG audit sentence number ${index} discusses security incident escalation procedures, document retention, and enterprise invoice payment SLA.`,
     ).join(' ')
 
     const chunks = chunkText(content)
@@ -38,13 +38,13 @@ describe('RAG chunking', () => {
   })
 
   test('phrase match scores higher than scattered token match', () => {
-    const queryTokens = tokenize('SLA pembayaran invoice enterprise')
+    const queryTokens = tokenize('SLA payment invoice enterprise')
     const phrase = scoreChunk(queryTokens, {
-      content: 'SLA pembayaran invoice enterprise wajib selesai 14 hari.',
-      keywords: 'sla,pembayaran,invoice',
+      content: 'SLA payment invoice enterprise must be completed within 14 days.',
+      keywords: 'sla,payment,invoice',
     })
     const scattered = scoreChunk(queryTokens, {
-      content: 'SLA operasional. Pembayaran vendor. Invoice lama. Enterprise umum.',
+      content: 'Operational SLA. Vendor payment. Old invoice. General enterprise.',
       keywords: '',
     })
 

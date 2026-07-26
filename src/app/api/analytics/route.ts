@@ -171,6 +171,6 @@ export async function GET() {
       recentScheduledRuns,
     })
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat data analitik.')
+    return handleApiError(err, 'Failed to load analytics data.')
   }
 }

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Only 'user' messages are accepted here (see header comment).
     if (sender !== 'user') {
       return NextResponse.json(
-        { error: "Endpoint ini hanya menerima sender 'user'." },
+        { error: "This endpoint only accepts sender 'user'." },
         { status: 400 }
       )
     }
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const text = typeof body?.text === 'string' ? body.text : ''
     if (text.length === 0) {
       return NextResponse.json(
-        { error: 'text wajib diisi.' },
+        { error: 'text is required.' },
         { status: 400 }
       )
     }
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       })
       if (!owned) {
         return NextResponse.json(
-          { error: 'Integrasi tidak valid untuk perusahaan ini.' },
+          { error: 'Integration is not valid for this company.' },
           { status: 400 }
         )
       }
@@ -101,6 +101,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     return NextResponse.json(message, { status: 201 })
   } catch (err) {
-    return handleApiError(err, 'Gagal menyimpan pesan.')
+    return handleApiError(err, 'Failed to save message.')
   }
 }

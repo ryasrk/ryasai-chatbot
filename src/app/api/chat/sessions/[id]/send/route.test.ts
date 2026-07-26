@@ -5,7 +5,7 @@ describe('internal chat send error classification', () => {
   test('returns 503 when the LLM provider is unavailable', () => {
     expect(
       statusForInternalChatError(
-        new Error('Configuration file not found or invalid. Please create .z-ai-config.'),
+        new Error('LLM not configured. Open Settings → AI Configuration and set up endpoint + API key before using Chat.'),
       ),
     ).toBe(503)
   })

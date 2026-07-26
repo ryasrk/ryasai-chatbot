@@ -501,7 +501,7 @@ export async function POST(req: NextRequest) {
 
           const synthesisContext = results.map(r => `Step ${r.stepId} (${r.tool}): ${r.output ?? r.error}`).join('\n')
           let fullAnswer = ''
-          // ponytail: streamAnswer includes z-ai-web-dev-sdk fallback (no LLM config → sandbox).
+          // ponytail: streamAnswer routes to configured LLM endpoint (fail-closed if unconfigured).
           // source 'SQL' is a neutral generic label for multi-source synthesis context.
           for await (const token of streamAnswer({ question: contextualizedMessage, context: synthesisContext, source: 'SQL', chatHistory })) {
             fullAnswer += token

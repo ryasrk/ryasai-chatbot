@@ -54,6 +54,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items, total, page, pageSize })
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat audit log.')
+    return handleApiError(err, 'Failed to load audit log.')
   }
 }

@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     })
     if (!connector) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -52,7 +52,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat REST connector.')
+    return handleApiError(e, 'Failed to load REST connector.')
   }
 }
 
@@ -67,7 +67,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -88,14 +88,14 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         const url = parseBaseUrl(body.baseUrl)
         if (!url) {
           return NextResponse.json(
-            { ok: false, error: 'Base URL tidak valid.' },
+            { ok: false, error: 'Base URL is invalid.' },
             { status: 400 },
           )
         }
         data.baseUrl = url
       } catch (e) {
         return NextResponse.json(
-          { ok: false, error: e instanceof Error ? e.message : 'Base URL tidak valid.' },
+          { ok: false, error: e instanceof Error ? e.message : 'Base URL is invalid.' },
           { status: 400 },
         )
       }
@@ -104,7 +104,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       const authType = body.authType.trim().toUpperCase()
       if (authType !== 'NONE' && authType !== 'BEARER' && authType !== 'API_KEY_HEADER') {
         return NextResponse.json(
-          { ok: false, error: 'Auth type harus NONE, BEARER, atau API_KEY_HEADER.' },
+          { ok: false, error: 'Auth type must be NONE, BEARER, or API_KEY_HEADER.' },
           { status: 400 },
         )
       }
@@ -121,7 +121,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { ok: false, error: 'No fields provided for update.' },
         { status: 400 },
       )
     }
@@ -149,7 +149,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui REST connector.')
+    return handleApiError(e, 'Failed to update REST connector.')
   }
 }
 
@@ -164,7 +164,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'REST connector tidak ditemukan.' },
+        { ok: false, error: 'REST connector not found.' },
         { status: 404 },
       )
     }
@@ -180,7 +180,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, data: { id: existing.id, deleted: true } })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus REST connector.')
+    return handleApiError(e, 'Failed to delete REST connector.')
   }
 }
 
@@ -193,7 +193,7 @@ function parseBaseUrl(raw: string): string | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
   if (isBlockedHost(url.hostname)) {
-    throw new Error('Base URL menuju host internal yang diblokir.')
+    throw new Error('Base URL points to a blocked internal host.')
   }
   return url.toString().replace(/\/$/, '')
 }

@@ -66,10 +66,10 @@ export async function POST(req: NextRequest) {
         apiKeyId,
         status: 400,
         latencyMs: Date.now() - started,
-        errorMessage: 'messages harus berisi minimal satu role=user.',
+        errorMessage: 'messages must contain at least one role=user.',
       })
       return NextResponse.json(
-        { ok: false, error: 'messages harus berisi minimal satu role=user.' },
+        { ok: false, error: 'messages must contain at least one role=user.' },
         { status: 400, headers: corsHeaders },
       )
     }
@@ -84,10 +84,10 @@ export async function POST(req: NextRequest) {
         apiKeyId,
         status: 500,
         latencyMs: Date.now() - started,
-        errorMessage: 'Admin singleton tidak ditemukan.',
+        errorMessage: 'Admin singleton not found.',
       })
       return NextResponse.json(
-        { ok: false, error: 'Admin singleton tidak ditemukan.' },
+        { ok: false, error: 'Admin singleton not found.' },
         { status: 500, headers: corsHeaders },
       )
     }
@@ -106,10 +106,10 @@ export async function POST(req: NextRequest) {
         apiKeyId,
         status: 404,
         latencyMs: Date.now() - started,
-        errorMessage: 'Session tidak ditemukan.',
+        errorMessage: 'Session not found.',
       })
       return NextResponse.json(
-        { ok: false, error: 'Session tidak ditemukan.' },
+        { ok: false, error: 'Session not found.' },
         { status: 404, headers: corsHeaders },
       )
     }
@@ -351,19 +351,19 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error:
-            'AI provider belum dikonfigurasi. Buka AI Configuration dan isi endpoint model API sebelum menggunakan chat completion.',
+            'AI provider not configured. Open AI Configuration and fill in the model API endpoint before using chat completion.',
         },
         { status, headers: corsHeaders },
       )
     }
-    return handleApiError(e, 'Gagal memproses chat completion eksternal.')
+    return handleApiError(e, 'Failed to process external chat completion.')
   }
 }
 
 export function statusForExternalChatError(error: unknown): number {
   const message = error instanceof Error ? error.message : String(error)
   if (
-    message.includes('Configuration file not found') ||
+    message.includes('LLM not configured') ||
     message.includes('LLM error') ||
     message.includes('LLM stream error')
   ) {

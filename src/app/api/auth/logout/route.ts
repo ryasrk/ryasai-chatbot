@@ -23,6 +23,6 @@ export async function POST() {
     res.cookies.set('x-active-user', '', { httpOnly: true, maxAge: 0, path: '/' })
     return res
   } catch (e) {
-    return handleApiError(e, 'Gagal logout.')
+    return handleApiError(e, 'Failed to log out.')
   }
 }

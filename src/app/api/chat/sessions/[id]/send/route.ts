@@ -249,7 +249,7 @@ export function statusForInternalChatError(error: unknown): number {
 
   const message = error instanceof Error ? error.message : String(error)
   if (
-    message.includes('Configuration file not found') ||
+    message.includes('LLM not configured') ||
     message.includes('LLM error') ||
     message.includes('LLM stream error')
   ) {

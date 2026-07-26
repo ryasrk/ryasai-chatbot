@@ -1,7 +1,7 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Last updated 2026-07-25. All PLAN.md phases P0–P5 + S4 complete.
+> Last updated 2026-07-26. All PLAN.md phases P0–P5 + S4 complete. Language standardized to English.
 
 ---
 
@@ -10,11 +10,12 @@
 | | |
 |---|---|
 | Path | `/home/ryasr/ryasai/Chatbot` |
-| Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · SQLite · Bun · Socket.io · Tailwind 4 · shadcn/ui |
+| Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · SQLite · Bun · Tailwind 4 · shadcn/ui |
 | Runtime | Bun for dev/test, Node standalone for prod build |
-| Domain | Multi-tenant enterprise AI assistant: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
-| Status | **Production ready** (2026-07-02): fail-closed auth, 61 unit tests + 4 e2e green, standalone build verified |
-| Version | 0.2.0 |
+| Domain | Single-tenant enterprise AI assistant: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
+| Status | **Production ready** (2026-07-26): fail-closed auth, 418 unit tests green, standalone build verified |
+| Version | 0.3.0 |
+| Language | English (standardized — all UI, errors, system prompts, comments in English) |
 
 ---
 
@@ -36,19 +37,22 @@
 - `ToolRun`, `RestApiRequestLog`, `ApiRequestLog`, `ApiKey`, `AuditLog`, `QueryHistory`, `SmartMapping`, `AppConfig`.
 
 **AI pipeline (`src/lib/ai.ts` + `src/lib/tool-router.ts`)**
-- `resolveBackend`: per-tenant OpenAI-compatible endpoint OR sandbox `z-ai-web-dev-sdk` fallback.
+- `resolveBackend`: configured OpenAI/Anthropic-compatible endpoint. Fail-closed: throws `LlmNotConfiguredError` when no LLM configured (z-ai-web-dev-sdk removed).
 - `routeQuery`: LLM router → `SQL | RAG | REST | CHAT` (temp=0, deterministic).
 - `generateSql`: Text-to-SQL with schema description, JSON output.
 - `generateAnswer` / `streamAnswer`: NL synthesis from context.
 - `generateRestCall`: picks one whitelisted endpoint + builds query/body.
 - Tool-toggle enforcement from `promptSettings` (admin can disable SQL/RAG/REST).
+- `allowMultiStepDag` flag: when true, calls planner → executePlan → synthesizeAnswer for multi-tool queries.
 
-**RAG (`src/lib/rag.ts`, 536 lines — the strongest subsystem)**
+**RAG (`src/lib/rag.ts`, 675 lines — the strongest subsystem)**
 - Hybrid retrieval: lexical (keyword overlap + phrase hits) + semantic (cosine on stored embeddings) + external vector store (Qdrant/Milvus) + FTS (BM25-style via `rag-fts.ts`).
 - Candidate selection: vector store hits → FTS chunk IDs → fallback to all chunks.
 - Score fusion: `combineHybridScore(lexicalTotal, semanticSimilarity)`.
 - Per-document cap (`maxPerDocument=2`) for diversity.
 - Chunking: double-newline split + hard ceiling (1400 chars, 180 overlap).
+- Query-level cache (in-memory, 1min TTL, 200 entries) — invalidated on document upload/delete.
+- LLM reranker (opt-in `RAG_LLM_RERANK=true`): retrieves 3x candidates, LLM ranks by relevance.
 
 **Guardrails (`src/lib/guardrails.ts`)**
 - AST-walk (pure TS, mirrors spec's `sqlglot`): rejects DML/DDL, transaction control, system procs, comments, statement chaining, `INTO`, `LOAD_FILE`, system tables.
@@ -741,3 +745,44 @@ Query → tokenize → load schema/endpoint/doc metadata + ToolRun history + sim
 **Repo cleanup**: Deleted 26 unused files (worklog.md, DOKUMEN docx ×2, agent-ctx, .zscripts, design-comps, docs/superpowers, .gitkeep, download/). Created README.md. Updated PRODUCT.md, PLAN.md, CLAUDE.md.
 
 **Verification**: tsc 0 · lint 0 errors 9 warnings (all exhaustive-deps) · tests 194 pass 8 skip 0 fail · git clean.
+
+### 2026-07-26 — Security hardening, rate limiting, z-ai removal, English standardization
+
+**Security & reliability fixes (18 issues across 17 files + 3 new files)**:
+
+New files:
+- `src/lib/env-schema.ts` — Zod env validation at app startup (prod-only, fail-closed)
+- `src/lib/rate-limit.ts` — Redis + in-memory rate limit helper for route handlers
+- `src/lib/logger.ts` — Structured JSON logger (no Pino dep, stdlib console + levels)
+- `src/app/api/health/route.ts` — Detailed health endpoint (DB + Redis connectivity checks)
+
+Modified (key changes):
+- `session.ts` — Session fixation fix: `sessionVersion` in User schema + cookie HMAC, incremented on login, checked on verify. 30min inactivity timeout (in-memory Map).
+- `crypto.ts` — `signSession(userId, sessionVersion)` → 3-part token. `verifySession` accepts legacy 2-part + new 3-part. `extractSessionVersion` helper.
+- `login/route.ts` — Increments `sessionVersion` on login, signs with new version (invalidates all prior cookies).
+- `llm-client.ts` — MAX_RETRIES 1→3, linear→exponential backoff (500ms*2^attempt), timeout 60s→30s.
+- `notifications.ts` — HMAC-SHA256 `X-Signature-256` header when `signatureSecret` configured. `sendNotificationWithRetry` wrapper (3 retries, 2s*2^n backoff).
+- `plugin-registry.ts` — Zod schema replaces manual validation.
+- `middleware.ts` — In-memory rate limiting (POST/PUT/DELETE/PATCH only, per-route buckets, Edge-safe). GET not limited (read-only, no security benefit).
+- `tool-router.ts` — `allowMultiStepDag` flag (planner integration). `withSqlConcurrency` semaphore (3 concurrent per integration). Structured SQL/REST errors with hints.
+- `rag.ts` — Query-level cache (1min TTL, 200 entries, invalidated on doc upload/delete). LLM reranker (opt-in `RAG_LLM_RERANK=true`).
+- `cognee.ts` — `COGNEE_ENABLED` default true (was false). Session-level semantic cache (Map, 1min TTL, 100 entries/session).
+- `env-schema.ts` + `instrumentation.ts` — `validateEnv()` on boot.
+- `scheduler/index.ts` — `sendNotification` → `sendNotificationWithRetry`. Log retention (daily cleanup, 90-day default).
+- `prisma/schema.prisma` — `User.sessionVersion Int @default(0)`, `AppConfig.cogneeEnabled @default(true)`.
+
+**z-ai-web-dev-sdk removed**:
+- `ai.ts` — `resolveBackend()` now throws `LlmNotConfiguredError` (fail-closed) instead of falling back to sandbox SDK.
+- `package.json` — `z-ai-web-dev-sdk` dependency removed.
+- Error classifiers + tests updated to match new `LlmNotConfiguredError` message.
+
+**English standardization (~146 replacements across 34 files)**:
+- `src/lib/` — 28 files, ~93 replacements (error messages, system prompts, guardrail messages, notification text, session errors, plugin validation).
+- `src/components/ + src/app/` — 6 files, ~53 replacements (setup wizard, markdown UI, error pages, layout metadata, integration API view).
+- `src/app/api/` — already clean (agent dashboard regex patterns intentionally match Indonesian user input).
+- Functional data (STOP_WORDS, keyword arrays in rag/plugin-selector/smart-router) left as-is — tokenization data, not UI text.
+
+**Structured logger wired into hot paths**:
+- `rag.ts`, `tool-router.ts`, `ai.ts`, `session.ts` — `console.log/warn/error` → `scopedLogger` with JSON output.
+
+**Verification**: tsc 2 pre-existing errors (api-keys.test.ts redeclared variable) · lint 0 errors 19 pre-existing warnings · bun test src/ 418 pass 8 skip 0 fail (1 pre-existing mock isolation fail in query route test).

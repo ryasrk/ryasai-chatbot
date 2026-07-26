@@ -3,6 +3,8 @@ import { serverConfig } from '@/lib/config'
 import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { scopedLogger } from '@/lib/logger'
+const log = scopedLogger('session')
 
 export interface ActiveUser {
   userId: string
@@ -12,7 +14,7 @@ export interface ActiveUser {
 
 export class UnauthorizedError extends Error {
   readonly code = 'UNAUTHORIZED'
-  constructor(message = 'Tidak ada sesi aktif.') {
+  constructor(message = 'No active session.') {
     super(message)
     this.name = 'UnauthorizedError'
   }
@@ -45,7 +47,7 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
   if (e instanceof UnauthorizedError) {
     return NextResponse.json({ error: e.message }, { status: 401 })
   }
-  console.error('[api]', e)
+  log.error('API error', { error: e instanceof Error ? e.message : String(e) })
   return NextResponse.json({ error: fallback }, { status })
 }
 
@@ -57,7 +59,7 @@ export async function getActiveUser(): Promise<ActiveUser> {
     // ponytail: inactivity timeout — reject if user has been idle >30min
     if (isInactivityExpired(userId)) {
       _lastActivity.delete(userId)
-      throw new UnauthorizedError('Sesi kedaluwarsa karena tidak aktif. Silakan login kembali.')
+      throw new UnauthorizedError('Session expired due to inactivity. Please log in again.')
     }
 
     const u = await db.user.findUnique({
@@ -77,8 +79,8 @@ export async function getActiveUser(): Promise<ActiveUser> {
   }
 
   if (!serverConfig.isTest) {
-    console.warn(
-      '[session] AUTH_DEMO_FALLBACK is enabled — impersonating the first user. ' +
+    log.warn(
+      'AUTH_DEMO_FALLBACK is enabled — impersonating the first user. ' +
         'Disable in production by setting AUTH_DEMO_FALLBACK=false.',
     )
   }

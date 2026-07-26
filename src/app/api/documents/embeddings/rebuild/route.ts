@@ -42,6 +42,6 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ ok: true, message: 'Embedding rebuild completed', data: result })
   } catch (e) {
-    return handleApiError(e, 'Gagal rebuild embeddings.', 502)
+    return handleApiError(e, 'Failed to rebuild embeddings.', 502)
   }
 }

@@ -19,7 +19,7 @@ export async function GET() {
     const data = await getPublicLlmConfig()
     return NextResponse.json({ ok: true, data })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat konfigurasi LLM.')
+    return handleApiError(e, 'Failed to load LLM configuration.')
   }
 }
 
@@ -61,7 +61,7 @@ export async function PUT(req: NextRequest) {
       }
     } catch (e) {
       return NextResponse.json(
-        { ok: false, error: e instanceof Error ? e.message : 'Base URL tidak valid.' },
+        { ok: false, error: e instanceof Error ? e.message : 'Base URL is invalid.' },
         { status: 400 },
       )
     }
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest) {
     // apiKey is required on first create; on update, a blank value keeps the existing key.
     if (!apiKey && !existing) {
       return NextResponse.json(
-        { ok: false, error: 'API key wajib diisi pada konfigurasi pertama.' },
+        { ok: false, error: 'API key is required on first configuration.' },
         { status: 400 },
       )
     }
@@ -125,6 +125,6 @@ export async function PUT(req: NextRequest) {
     const data = await getPublicLlmConfig()
     return NextResponse.json({ ok: true, data })
   } catch (e) {
-    return handleApiError(e, 'Gagal menyimpan konfigurasi LLM.')
+    return handleApiError(e, 'Failed to save LLM configuration.')
   }
 }

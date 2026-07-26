@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       where: { id },
     })
     if (!plugin) {
-      return NextResponse.json({ ok: false, error: 'Plugin tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
     const manifest = parsePluginManifest(plugin.manifestJson)
     return NextResponse.json({
@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat plugin.')
+    return handleApiError(e, 'Failed to load plugin.')
   }
 }
 
@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       select: { id: true, toolId: true, name: true, manifestJson: true },
     })
     if (!existing) {
-      return NextResponse.json({ ok: false, error: 'Plugin tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
 
     const body = (await req.json().catch(() => ({}))) as PatchBody
@@ -100,7 +100,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { ok: false, error: 'No fields provided for update.' },
         { status: 400 },
       )
     }
@@ -114,7 +114,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       throw e
     })
     if (!updated) {
-      return NextResponse.json({ ok: false, error: 'Plugin tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
 
     await writeAudit({
@@ -126,7 +126,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, plugin: updated })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui plugin.')
+    return handleApiError(e, 'Failed to update plugin.')
   }
 }
 
@@ -140,12 +140,12 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
       select: { id: true, toolId: true, name: true },
     })
     if (!existing) {
-      return NextResponse.json({ ok: false, error: 'Plugin tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
 
     const result = await db.plugin.deleteMany({ where: { id } })
     if (result.count === 0) {
-      return NextResponse.json({ ok: false, error: 'Plugin tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
 
     await writeAudit({
@@ -157,6 +157,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, deleted: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus plugin.')
+    return handleApiError(e, 'Failed to delete plugin.')
   }
 }

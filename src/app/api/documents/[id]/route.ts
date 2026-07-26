@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
+import { invalidateRagCache } from '@/lib/rag'
 
 export const runtime = 'nodejs'
 
@@ -77,7 +78,7 @@ export async function GET(
       },
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat detail dokumen.')
+    return handleApiError(e, 'Failed to load document details.')
   }
 }
 
@@ -113,7 +114,7 @@ export async function PATCH(
 
     if (typeof body.isEnabled !== 'boolean') {
       return NextResponse.json(
-        { error: 'Field isEnabled (boolean) wajib diisi.' },
+        { error: 'Field isEnabled (boolean) is required.' },
         { status: 400 },
       )
     }
@@ -154,7 +155,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, data: updated })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui dokumen.')
+    return handleApiError(e, 'Failed to update document.')
   }
 }
 
@@ -184,6 +185,7 @@ export async function DELETE(
     }
 
     await db.document.delete({ where: { id: existing.id } })
+    invalidateRagCache()
 
     void forgetKnowledgeGraph()
 
@@ -206,6 +208,6 @@ export async function DELETE(
       chunkCountRemoved: existing._count.chunks,
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus dokumen.')
+    return handleApiError(e, 'Failed to delete document.')
   }
 }

@@ -45,13 +45,13 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const config = await db.notificationConfig.findFirst({ where: { id } })
     if (!config) {
       return NextResponse.json(
-        { ok: false, error: 'Konfigurasi notifikasi tidak ditemukan.' },
+        { ok: false, error: 'Notification configuration not found.' },
         { status: 404 },
       )
     }
     return NextResponse.json({ ok: true, config: maskRow(config) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat konfigurasi notifikasi.')
+    return handleApiError(e, 'Failed to load notification configuration.')
   }
 }
 
@@ -66,7 +66,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Konfigurasi notifikasi tidak ditemukan.' },
+        { ok: false, error: 'Notification configuration not found.' },
         { status: 404 },
       )
     }
@@ -92,7 +92,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       const type = body.type!.trim()
       if (!VALID_TYPES.has(type)) {
         return NextResponse.json(
-          { ok: false, error: 'Tipe tidak valid. Gunakan: webhook | email | telegram.' },
+          { ok: false, error: 'Invalid type. Use: webhook | email | telegram.' },
           { status: 400 },
         )
       }
@@ -120,7 +120,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' },
+        { ok: false, error: 'No fields provided for update.' },
         { status: 400 },
       )
     }
@@ -133,7 +133,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       })
     if (!updated) {
       return NextResponse.json(
-        { ok: false, error: 'Konfigurasi notifikasi tidak ditemukan.' },
+        { ok: false, error: 'Notification configuration not found.' },
         { status: 404 },
       )
     }
@@ -147,7 +147,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, config: maskRow(updated) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui konfigurasi notifikasi.')
+    return handleApiError(e, 'Failed to update notification configuration.')
   }
 }
 
@@ -162,7 +162,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     })
     if (!existing) {
       return NextResponse.json(
-        { ok: false, error: 'Konfigurasi notifikasi tidak ditemukan.' },
+        { ok: false, error: 'Notification configuration not found.' },
         { status: 404 },
       )
     }
@@ -171,7 +171,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const result = await db.notificationConfig.deleteMany({ where: { id } })
     if (result.count === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Konfigurasi notifikasi tidak ditemukan.' },
+        { ok: false, error: 'Notification configuration not found.' },
         { status: 404 },
       )
     }
@@ -185,6 +185,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, deleted: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus konfigurasi notifikasi.')
+    return handleApiError(e, 'Failed to delete notification configuration.')
   }
 }

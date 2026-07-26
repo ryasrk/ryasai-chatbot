@@ -151,10 +151,10 @@ function AdminStep({ onNext }: { onNext: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Buat akun admin pertama. Anda akan otomatis masuk setelah akun dibuat.
+        Create the first admin account. You will be automatically logged in after the account is created.
       </p>
       <div className="space-y-2">
-        <Label htmlFor="setup-name">Nama</Label>
+        <Label htmlFor="setup-name">Name</Label>
         <Input
           id="setup-name"
           required
@@ -189,7 +189,7 @@ function AdminStep({ onNext }: { onNext: () => void }) {
       {error && <p className="text-xs text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={submitting}>
         {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Buat Akun & Lanjut
+        Create Account & Continue
       </Button>
     </form>
   )
@@ -218,12 +218,12 @@ function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void })
         }),
       })
       if (!res.ok) {
-        toast.error('Gagal menyimpan konfigurasi LLM')
+        toast.error('Failed to save LLM configuration')
         return
       }
-      toast.success('Konfigurasi LLM tersimpan')
+      toast.success('LLM configuration saved')
     } catch {
-      toast.error('Gagal menyimpan konfigurasi LLM')
+      toast.error('Failed to save LLM configuration')
       return
     } finally {
       setSaving(false)
@@ -234,8 +234,8 @@ function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void })
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Hubungkan penyedia LLM (OpenAI-compatible). Anda bisa melewati langkah ini dan mengaturnya
-        nanti di AI Configuration.
+        Connect an LLM provider (OpenAI-compatible). You can skip this step and configure it
+        later in AI Configuration.
       </p>
       <div className="space-y-2">
         <Label htmlFor="llm-base">Base URL</Label>
@@ -268,14 +268,14 @@ function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void })
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev} disabled={saving}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali
+          Back
         </Button>
         <Button variant="outline" className="flex-1" onClick={onNext} disabled={saving}>
-          Lewati
+          Skip
         </Button>
         <Button className="flex-1" onClick={handleSave} disabled={saving}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Simpan & Lanjut
+          Save & Continue
         </Button>
       </div>
     </div>
@@ -295,10 +295,10 @@ function TestModelStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
     try {
       const res = await fetch('/api/llm-config/models', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Gagal')
+      if (!res.ok) throw new Error(data?.error || 'Failed')
       setModelCount(Array.isArray(data?.data?.models) ? data.data.models.length : 0)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Gagal')
+      setError(e instanceof Error ? e.message : 'Failed')
     } finally {
       setSyncing(false)
     }
@@ -307,31 +307,31 @@ function TestModelStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Verifikasi koneksi LLM dengan menyinkronkan daftar model.
+        Verify the LLM connection by syncing the model list.
       </p>
       {modelCount !== null && (
         <div className="flex items-center gap-2 text-xs text-emerald-600">
           <CheckCircle2 className="h-4 w-4" />
-          {modelCount} model tersedia.
+          {modelCount} models available.
         </div>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali
+          Back
         </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
-          Lewati
+          Skip
         </Button>
         <Button className="flex-1" onClick={handleSync} disabled={syncing}>
           {syncing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Tes Koneksi
+          Test Connection
         </Button>
       </div>
       {modelCount !== null && (
         <Button variant="ghost" className="w-full" onClick={onNext}>
-          Lanjut →
+          Continue →
         </Button>
       )}
     </div>
@@ -353,13 +353,13 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
       const res = await fetch('/api/documents', { method: 'POST', body: form })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error ?? 'Gagal mengunggah')
+        toast.error(err.error ?? 'Failed to upload')
         return
       }
       setUploaded(true)
-      toast.success('Dokumen diunggah')
+      toast.success('Document uploaded')
     } catch {
-      toast.error('Gagal mengunggah dokumen')
+      toast.error('Failed to upload document')
     } finally {
       setUploading(false)
     }
@@ -368,8 +368,8 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Unggah dokumen pertama untuk knowledge base (RAG). Anda bisa melewati dan mengunggahnya
-        nanti di Knowledge.
+        Upload the first document for the knowledge base (RAG). You can skip and upload it
+        later in Knowledge.
       </p>
       <Input
         id={inputId}
@@ -384,20 +384,20 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
       {uploaded && (
         <div className="flex items-center gap-2 text-xs text-emerald-600">
           <CheckCircle2 className="h-4 w-4" />
-          Dokumen terunggah dan sedang diindeks.
+          Document uploaded and indexing.
         </div>
       )}
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev} disabled={uploading}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali
+          Back
         </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
-          Lewati
+          Skip
         </Button>
         {uploaded && (
           <Button className="flex-1" onClick={onNext}>
-            Lanjut →
+            Continue →
           </Button>
         )}
       </div>
@@ -411,17 +411,17 @@ function DataSourceStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => 
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Data Sources (database SQL dan REST API) dapat dikonfigurasi setelah setup selesai melalui
-        menu Data Sources. Anda dapat menghubungkan PostgreSQL, MySQL, atau REST endpoint untuk
-        memberikan asisten akses baca ke data internal Anda.
+        Data Sources (SQL databases and REST APIs) can be configured after setup is complete via
+        the Data Sources menu. You can connect PostgreSQL, MySQL, or REST endpoints to give the
+        assistant read access to your internal data.
       </p>
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali
+          Back
         </Button>
         <Button className="flex-1" onClick={onNext}>
-          Mengerti, Lanjut →
+          Got it, Continue →
         </Button>
       </div>
     </div>
@@ -452,9 +452,9 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: message }),
       })
-      if (!sendRes.ok) throw new Error('Gagal')
+      if (!sendRes.ok) throw new Error('Failed')
       const data = await sendRes.json()
-      setReply(data?.aiMessage?.content ?? '(kosong)')
+      setReply(data?.aiMessage?.content ?? '(empty)')
       setWarned(false)
     } catch {
       setWarned(true)
@@ -466,14 +466,14 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        Tes satu percakapan untuk memastikan LLM merespons. Anda bisa menyelesaikan setup bahkan
-        jika tes ini gagal.
+        Test a conversation to ensure the LLM responds. You can complete setup even if this test
+        fails.
       </p>
       <div className="space-y-2">
-        <Label htmlFor="test-msg">Pesan</Label>
+        <Label htmlFor="test-msg">Message</Label>
         <Textarea
           id="test-msg"
-          placeholder="Halo, tes koneksi."
+          placeholder="Hello, connection test."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           disabled={sending}
@@ -481,26 +481,26 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
       </div>
       <Button className="w-full" onClick={handleSend} disabled={sending || !message.trim()}>
         {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Kirim Tes
+        Send Test
       </Button>
       {reply && (
         <div className="rounded-md border bg-muted/40 p-3 text-sm">
-          <span className="font-medium">Balasan: </span>
+          <span className="font-medium">Reply: </span>
           {reply}
         </div>
       )}
       {warned && (
         <p className="text-xs text-amber-600">
-          Tes chat gagal — pastikan konfigurasi LLM benar. Anda tetap dapat menyelesaikan setup.
+          Chat test failed — make sure the LLM configuration is correct. You can still complete setup.
         </p>
       )}
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev} disabled={sending}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Kembali
+          Back
         </Button>
         <Button className="flex-1" variant={warned ? 'destructive' : 'default'} onClick={onFinish}>
-          Selesai
+          Finish
         </Button>
       </div>
     </div>

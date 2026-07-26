@@ -31,11 +31,11 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params
     const server = await db.mcpServer.findUnique({ where: { id } })
     if (!server) {
-      return NextResponse.json({ ok: false, error: 'MCP server tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
     return NextResponse.json({ ok: true, server: sanitizeServer(server) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat MCP server.')
+    return handleApiError(e, 'Failed to load MCP server.')
   }
 }
 
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params
     const existing = await db.mcpServer.findUnique({ where: { id } })
     if (!existing) {
-      return NextResponse.json({ ok: false, error: 'MCP server tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
 
     const body = (await req.json().catch(() => ({}))) as PatchBody
@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const transport = typeof body.transport === 'string' ? body.transport.trim() : undefined
     if (transport) {
       if (!VALID_TRANSPORTS.has(transport)) {
-        return NextResponse.json({ ok: false, error: 'transport harus "stdio", "sse", atau "http".' }, { status: 400 })
+        return NextResponse.json({ ok: false, error: 'transport must be "stdio", "sse", or "http".' }, { status: 400 })
       }
       data.transport = transport
     }
@@ -88,13 +88,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         try {
           url = new URL(urlRaw)
         } catch {
-          return NextResponse.json({ ok: false, error: 'url tidak valid.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'url is invalid.' }, { status: 400 })
         }
         if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-          return NextResponse.json({ ok: false, error: 'url harus menggunakan http atau https.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'url must use http or https.' }, { status: 400 })
         }
         if (isBlockedHost(url.hostname)) {
-          return NextResponse.json({ ok: false, error: 'url menuju host internal yang diblokir.' }, { status: 400 })
+          return NextResponse.json({ ok: false, error: 'url points to a blocked internal host.' }, { status: 400 })
         }
       }
       data.url = urlRaw
@@ -113,7 +113,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     }
 
     if (Object.keys(data).length === 0) {
-      return NextResponse.json({ ok: false, error: 'Tidak ada field yang dikirim untuk diperbarui.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'No fields provided for update.' }, { status: 400 })
     }
 
     const updated = await db.mcpServer
@@ -123,7 +123,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         throw e
       })
     if (!updated) {
-      return NextResponse.json({ ok: false, error: 'MCP server tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
 
     // Drop the cached connection + tool list so the next call reconnects fresh.
@@ -137,7 +137,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, server: { id: updated.id, name: updated.name, transport: updated.transport, chatEnabled: updated.chatEnabled, agenticEnabled: updated.agenticEnabled } })
   } catch (e) {
-    return handleApiError(e, 'Gagal memperbarui MCP server.')
+    return handleApiError(e, 'Failed to update MCP server.')
   }
 }
 
@@ -150,7 +150,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
       select: { id: true, name: true },
     })
     if (!existing) {
-      return NextResponse.json({ ok: false, error: 'MCP server tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
 
     await db.mcpServer.delete({ where: { id } }).catch((e: unknown) => {
@@ -168,6 +168,6 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ ok: true, deleted: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal menghapus MCP server.')
+    return handleApiError(e, 'Failed to delete MCP server.')
   }
 }

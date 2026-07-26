@@ -105,7 +105,7 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse | null 
   if (result.ok) return null
   return NextResponse.json(
     {
-      error: 'Rate limit tercapai. Coba lagi nanti.',
+      error: 'Rate limit reached. Try again later.',
       retryAfter: result.retryAfter,
     },
     {

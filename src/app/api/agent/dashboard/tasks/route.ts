@@ -10,12 +10,12 @@ export async function GET(req: NextRequest) {
     const taskId = searchParams.get('taskId')
     if (taskId) {
       const task = getTask(taskId)
-      if (!task) return NextResponse.json({ error: 'Task tidak ditemukan.' }, { status: 404 })
+      if (!task) return NextResponse.json({ error: 'Task not found.' }, { status: 404 })
       return NextResponse.json({ ok: true, task })
     }
     return NextResponse.json({ ok: true, tasks: listTasks(20) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat tasks.')
+    return handleApiError(e, 'Failed to load tasks.')
   }
 }
 
@@ -28,9 +28,9 @@ export async function POST(req: NextRequest) {
       const taskId = enqueue('chat', { question: body.question, userId: user.userId })
       return NextResponse.json({ ok: true, taskId, message: 'Task queued. Poll GET /api/agent/dashboard/tasks?taskId=... for status.' })
     }
-    return NextResponse.json({ error: 'Type dan question wajib diisi.' }, { status: 400 })
+    return NextResponse.json({ error: 'Type and question are required.' }, { status: 400 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat task.')
+    return handleApiError(e, 'Failed to create task.')
   }
 }
 

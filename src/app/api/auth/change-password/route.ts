@@ -22,20 +22,20 @@ export async function POST(req: NextRequest) {
     const newPassword = body.newPassword ?? ''
     if (!currentPassword || !newPassword) {
       return NextResponse.json(
-        { ok: false, error: 'Password lama dan baru wajib diisi.' },
+        { ok: false, error: 'Current and new password are required.' },
         { status: 400 },
       )
     }
     if (newPassword.length < 8) {
       return NextResponse.json(
-        { ok: false, error: 'Password baru minimal 8 karakter.' },
+        { ok: false, error: 'New password must be at least 8 characters.' },
         { status: 400 },
       )
     }
 
     const dbUser = await db.user.findUnique({ where: { id: user.userId } })
     if (!dbUser) {
-      return NextResponse.json({ ok: false, error: 'User tidak ditemukan.' }, { status: 404 })
+      return NextResponse.json({ ok: false, error: 'User not found.' }, { status: 404 })
     }
 
     if (!verifyPassword(currentPassword, dbUser.passwordHash)) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         detail: { reason: 'wrong current password' },
       })
       return NextResponse.json(
-        { ok: false, error: 'Password lama salah.' },
+        { ok: false, error: 'Current password is incorrect.' },
         { status: 401 },
       )
     }
@@ -65,6 +65,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal mengubah password.')
+    return handleApiError(e, 'Failed to change password.')
   }
 }

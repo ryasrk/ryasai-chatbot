@@ -7,10 +7,10 @@ describe('AI answer prompt helpers', () => {
   })
 
   test('treats REST sample responses as schema examples, not final data', () => {
-    expect(REST_ROUTER_SYSTEM_PROMPT).toContain('sampleResponse hanya contoh struktur')
+    expect(REST_ROUTER_SYSTEM_PROMPT).toContain('sampleResponse is only an example structure')
   })
 
   test('does not invent REST parameters without a parameter schema', () => {
-    expect(REST_ROUTER_SYSTEM_PROMPT).toContain('Jangan kirim query atau body jika parameterSchema kosong')
+    expect(REST_ROUTER_SYSTEM_PROMPT).toContain('Do not send query or body if parameterSchema is empty')
   })
 })

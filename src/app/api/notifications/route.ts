@@ -43,7 +43,7 @@ export async function GET() {
     })
     return NextResponse.json({ ok: true, configs: configs.map(maskRow) })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat konfigurasi notifikasi.')
+    return handleApiError(e, 'Failed to load notification configuration.')
   }
 }
 
@@ -59,19 +59,19 @@ export async function POST(req: NextRequest) {
 
     const name = (body.name ?? '').trim()
     if (!name) {
-      return NextResponse.json({ ok: false, error: 'Nama wajib diisi.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Name is required.' }, { status: 400 })
     }
     const type = (body.type ?? '').trim()
     if (!VALID_TYPES.has(type)) {
       return NextResponse.json(
-        { ok: false, error: 'Tipe tidak valid. Gunakan: webhook | email | telegram.' },
+        { ok: false, error: 'Invalid type. Use: webhook | email | telegram.' },
         { status: 400 },
       )
     }
     const config = body.config
     if (!config || typeof config !== 'object' || Object.keys(config).length === 0) {
       return NextResponse.json(
-        { ok: false, error: 'Config wajib diisi.' },
+        { ok: false, error: 'Config is required.' },
         { status: 400 },
       )
     }
@@ -93,6 +93,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, config: maskRow(created) }, { status: 201 })
   } catch (e) {
-    return handleApiError(e, 'Gagal membuat konfigurasi notifikasi.')
+    return handleApiError(e, 'Failed to create notification configuration.')
   }
 }

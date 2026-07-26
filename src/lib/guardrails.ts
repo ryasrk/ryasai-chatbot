@@ -63,7 +63,7 @@ function tokenize(sql: string): string[] {
 export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult {
   const detected: string[] = []
   if (!generatedSql || !generatedSql.trim()) {
-    return { ok: false, sanitized: '', reason: 'Kueri kosong.' }
+    return { ok: false, sanitized: '', reason: 'Empty query.' }
   }
 
   // 1. Dangerous pattern pre-scan
@@ -76,14 +76,14 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     return {
       ok: false,
       sanitized: '',
-      reason: `Pelanggaran Keamanan: pola berbahaya terdeteksi — ${detected.join(', ')}.`,
+      reason: `Security violation: dangerous pattern detected — ${detected.join(', ')}.`,
       detectedNodes: detected,
     }
   }
 
   const tokens = tokenize(generatedSql)
   if (tokens.length === 0) {
-    return { ok: false, sanitized: '', reason: 'Tokenisasi gagal.' }
+    return { ok: false, sanitized: '', reason: 'Tokenization failed.' }
   }
 
   // 2. Leading keyword must be SELECT or WITH (CTE) — everything else rejected.
@@ -92,7 +92,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     return {
       ok: false,
       sanitized: '',
-      reason: `Hanya SELECT/WITH yang diizinkan. Ditemukan: ${head}.`,
+      reason: `Only SELECT/WITH is allowed. Found: ${head}.`,
       detectedNodes: [head],
     }
   }
@@ -125,7 +125,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     return {
       ok: false,
       sanitized: '',
-      reason: `Pelanggaran Keamanan: AI dilarang melakukan modifikasi data (${detected.join(', ')}).`,
+      reason: `Security violation: AI is not allowed to modify data (${detected.join(', ')}).`,
       detectedNodes: detected,
     }
   }
@@ -139,7 +139,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     return {
       ok: false,
       sanitized: '',
-      reason: 'Pelanggaran Keamanan: multiple statements terdeteksi.',
+      reason: 'Security violation: multiple statements detected.',
       detectedNodes: [';'],
     }
   }

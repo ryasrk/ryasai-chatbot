@@ -67,6 +67,6 @@ export async function GET(
       chunks,
     })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat daftar chunk dokumen.')
+    return handleApiError(e, 'Failed to load document chunks.')
   }
 }

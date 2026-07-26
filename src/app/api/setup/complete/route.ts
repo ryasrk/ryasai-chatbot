@@ -23,6 +23,6 @@ export async function POST() {
     })
     return NextResponse.json({ ok: true })
   } catch (e) {
-    return handleApiError(e, 'Gagal menyelesaikan setup.')
+    return handleApiError(e, 'Failed to complete setup.')
   }
 }

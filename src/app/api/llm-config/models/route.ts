@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       baseUrl = normalizeBaseUrl(body.baseUrl ?? stored?.baseUrl ?? '')
     } catch (e) {
       return NextResponse.json(
-        { ok: false, error: e instanceof Error ? e.message : 'Base URL tidak valid.' },
+        { ok: false, error: e instanceof Error ? e.message : 'Base URL is invalid.' },
         { status: 400 },
       )
     }
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
     if (!apiKey) {
       return NextResponse.json(
-        { ok: false, error: 'API key diperlukan untuk mengambil daftar model.' },
+        { ok: false, error: 'API key is required to fetch the model list.' },
         { status: 400 },
       )
     }
@@ -89,6 +89,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, data: { models, count: models.length } })
   } catch (e) {
-    return handleApiError(e, 'Gagal mengambil daftar model.', 502)
+    return handleApiError(e, 'Failed to fetch model list.', 502)
   }
 }

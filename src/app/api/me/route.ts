@@ -6,6 +6,6 @@ export async function GET() {
     const user = await getActiveUser()
     return NextResponse.json(user)
   } catch (err) {
-    return handleApiError(err, 'Gagal memuat data pengguna aktif.')
+    return handleApiError(err, 'Failed to load active user data.')
   }
 }

@@ -75,7 +75,7 @@ export function middleware(req: NextRequest) {
       bucket.count += 1
       if (bucket.count > limit) {
         return NextResponse.json(
-          { error: 'Rate limit tercapai. Coba lagi nanti.' },
+          { error: 'Rate limit reached. Try again later.' },
           {
             status: 429,
             headers: {

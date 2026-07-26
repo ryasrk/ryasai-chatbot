@@ -7,6 +7,6 @@ export async function GET() {
     const data = await getRoutingScores()
     return Response.json({ ok: true, ...data })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat routing scores.')
+    return handleApiError(e, 'Failed to load routing scores.')
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 class MockUnauthorizedError extends Error {
   readonly code = 'UNAUTHORIZED'
-  constructor(msg = 'Tidak ada sesi aktif.') {
+  constructor(msg = 'No active session.') {
     super(msg)
     this.name = 'UnauthorizedError'
   }

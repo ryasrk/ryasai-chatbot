@@ -34,6 +34,8 @@ import { executePlugin } from '@/lib/plugin-registry'
 import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import type { ChartData, Citation } from '@/lib/types'
+import { scopedLogger } from '@/lib/logger'
+const log = scopedLogger('tool-router')
 
 // ponytail: per-integration SQL concurrency limiter — in-memory semaphore.
 // Ceiling: per-instance, not distributed. Max 3 concurrent queries per integration
@@ -269,7 +271,7 @@ async function runMultiStepDag(args: {
       toolRuns,
     }
   } catch (e) {
-    console.warn('[tool-router] multi-step DAG failed, falling back to single-tool:', e instanceof Error ? e.message : e)
+    log.warn('multi-step DAG failed, falling back to single-tool', { error: e instanceof Error ? e.message : String(e) })
     return null
   }
 }
@@ -1022,7 +1024,7 @@ async function runSqlBranch(args: {
     })
     return {
       answer:
-        'Pertanyaan ditolak karena sistem mendeteksi kueri yang berisiko terhadap data perusahaan.',
+        'The question was rejected because the system detected a risky query against company data.',
       citations: [],
       chartData: null,
       integrationId: integration.id,
@@ -1124,7 +1126,7 @@ async function runSqlBranch(args: {
       },
     })
     return {
-      answer: `Maaf, kueri ke database gagal dieksekusi.\n\nError: ${sanitizeSqlError(errorMessage)}\n\nSaran: coba pertanyaan yang lebih spesifik, atau periksa apakah tabel kolom yang ditanyakan tersedia di integrasi ini.`,
+      answer: `Sorry, the database query failed to execute.\n\nError: ${sanitizeSqlError(errorMessage)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
       citations: [],
       chartData: null,
       integrationId: integration.id,
@@ -1190,7 +1192,7 @@ async function runRestBranch(args: {
   const selected = endpointOptions.find((endpoint) => endpoint.id === plan.endpointId)
   if (!selected) {
     return {
-      answer: 'Maaf, AI tidak dapat memilih endpoint REST yang sesuai dari whitelist.',
+      answer: 'Sorry, the AI could not select a matching REST endpoint from the whitelist.',
       citations: [],
       chartData: null,
       toolRuns: [
@@ -1232,7 +1234,7 @@ async function runRestBranch(args: {
 
   if (!result.ok) {
     return {
-      answer: 'Maaf, request ke REST API gagal dijalankan. Periksa koneksi dan endpoint whitelist.',
+      answer: 'Sorry, the REST API request failed to execute. Check the connection and whitelisted endpoints.',
       citations: [],
       chartData: null,
       toolRuns: [
@@ -1318,7 +1320,7 @@ async function runPluginBranch(args: {
 
   if (!result.ok) {
     return {
-      answer: `Maaf, plugin ${plugin.name} gagal dijalankan: ${result.error}`,
+      answer: `Sorry, plugin ${plugin.name} failed to execute: ${result.error}`,
       citations: [],
       chartData: null,
       toolRuns: [{
@@ -1444,7 +1446,7 @@ function unavailableDataSourceResult(
   started: number,
 ): CompletionResult {
   return {
-    answer: 'Sumber data yang dibutuhkan belum tersedia atau belum dikonfigurasi aktif.',
+    answer: 'The required data source is not yet available or not configured as active.',
     citations: [],
     chartData: null,
     toolRuns: [

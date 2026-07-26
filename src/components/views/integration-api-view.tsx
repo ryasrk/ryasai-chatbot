@@ -296,7 +296,7 @@ const CHAT_RESPONSE_BODY = `{
 
 const CHAT_SSE_EXAMPLE = `data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1721812345,"model":"ryasai","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1721812345,"model":"ryasai","choices":[{"index":0,"delta":{"content":"Halo"},"finish_reason":null}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1721812345,"model":"ryasai","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1721812345,"model":"ryasai","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
 
@@ -910,7 +910,7 @@ function ApiKeysPanel() {
       const data = (await res.json()) as { items: ApiKeyRow[] }
       setItems(data.items ?? [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kesalahan.')
+      setError(e instanceof Error ? e.message : 'Error.')
     } finally {
       if (showSkeleton) setLoading(false)
     }

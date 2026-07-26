@@ -7,6 +7,6 @@ export async function GET() {
     await getActiveUser()
     return NextResponse.json({ ok: true, stats: getTraceStats() })
   } catch (e) {
-    return handleApiError(e, 'Gagal memuat trace stats.')
+    return handleApiError(e, 'Failed to load trace stats.')
   }
 }

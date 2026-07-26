@@ -110,7 +110,7 @@ describe('requireExternalApiKey', () => {
 
   test('missing Authorization header → throws UnauthorizedError', async () => {
     const req = new NextRequest('http://localhost/')
-    await expect(requireExternalApiKey(req)).rejects.toThrow('API key wajib')
+    await expect(requireExternalApiKey(req)).rejects.toThrow('API key must be')
   })
 
   test('wrong API key → throws UnauthorizedError', async () => {
@@ -127,17 +127,14 @@ describe('requireExternalApiKey', () => {
     const req = new NextRequest('http://localhost/', {
       headers: { Authorization: 'Bearer ryas_a_different_key' },
     })
-    await expect(requireExternalApiKey(req)).rejects.toThrow('tidak valid')
-  })
-
-  test('revoked key (isActive=false) → not in candidates → throws', async () => {
+    await expect(requireExternalApiKey(req)).rejects.toThrow('invalid or has been revoked')
     // ponytail: db query filters isActive:true, revokedAt:null — revoked keys never appear
     mockApiKeyFindMany.mockImplementation(async () => [])
 
     const req = new NextRequest('http://localhost/', {
       headers: { Authorization: 'Bearer ryas_revoked_key' },
     })
-    await expect(requireExternalApiKey(req)).rejects.toThrow('tidak valid')
+    await expect(requireExternalApiKey(req)).rejects.toThrow('invalid or has been revoked')
   })
 
   test('per-minute rate limit exceeded → throws 429-style message', async () => {
@@ -156,7 +153,7 @@ describe('requireExternalApiKey', () => {
     const req = new NextRequest('http://localhost/', {
       headers: { Authorization: `Bearer ${key.plainText}` },
     })
-    await expect(requireExternalApiKey(req)).rejects.toThrow('Rate limit per menit')
+    await expect(requireExternalApiKey(req)).rejects.toThrow('Rate limit per minute')
   })
 
   test('daily limit exceeded → throws daily limit message', async () => {
@@ -176,7 +173,7 @@ describe('requireExternalApiKey', () => {
     const req = new NextRequest('http://localhost/', {
       headers: { Authorization: `Bearer ${key.plainText}` },
     })
-    await expect(requireExternalApiKey(req)).rejects.toThrow('Batas harian')
+    await expect(requireExternalApiKey(req)).rejects.toThrow('Daily limit')
   })
 
   test('updates lastUsedAt on successful auth', async () => {

@@ -31,10 +31,10 @@ export function normalizeBaseUrl(raw: string): string {
   if (!trimmed) return ''
   const url = new URL(trimmed)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Base URL harus menggunakan http atau https.')
+    throw new Error('Base URL must use http or https.')
   }
   if (isBlockedHost(url.hostname)) {
-    throw new Error('Base URL menuju host internal yang diblokir.')
+    throw new Error('Base URL points to a blocked internal host.')
   }
   return url.toString().replace(/\/+$/, '')
 }
@@ -74,7 +74,7 @@ function decryptApiKey(encryptedApiKey: string): string {
   const config = decryptConfig(encryptedApiKey)
   const apiKey = config.apiKey
   if (typeof apiKey !== 'string' || !apiKey.trim()) {
-    throw new Error('API key LLM tidak valid.')
+    throw new Error('Invalid LLM API key.')
   }
   return apiKey
 }
@@ -173,7 +173,7 @@ export async function fetchProviderModels(args: {
 }): Promise<string[]> {
   const baseUrl = normalizeBaseUrl(args.baseUrl)
   const apiKey = args.apiKey.trim()
-  if (!apiKey) throw new Error('API key wajib diisi untuk mengambil daftar model.')
+  if (!apiKey) throw new Error('API key is required to fetch the model list.')
 
   const res = await fetch(`${baseUrl}/models`, {
     method: 'GET',
@@ -185,7 +185,7 @@ export async function fetchProviderModels(args: {
   })
 
   if (!res.ok) {
-    throw new Error(`Gagal mengambil model (HTTP ${res.status}).`)
+    throw new Error(`Failed to fetch models (HTTP ${res.status}).`)
   }
 
   const payload = (await res.json()) as {
