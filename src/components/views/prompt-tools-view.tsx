@@ -253,7 +253,7 @@ export function PromptToolsView() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('navigate-view', { detail: 'integrations' }))}
+                    onClick={() => window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'integrations' } }))}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                   >
                     Manage <ExternalLink className="h-3 w-3" />

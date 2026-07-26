@@ -69,10 +69,10 @@ export interface LlmResponseFormat {
 }
 
 const MAX_TOKENS_ANTHROPIC = 4096
-const LLM_TIMEOUT_MS = 60000
+const LLM_TIMEOUT_MS = 30000
 const STREAM_TIMEOUT_MS = 120000
-const MAX_RETRIES = 1
-const RETRY_BACKOFF_MS = 1000
+const MAX_RETRIES = 3
+const RETRY_BACKOFF_BASE_MS = 500
 
 function previewMessages(messages: LlmMessage[]): string {
   const m = messages[0]
@@ -274,14 +274,14 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
       const res = await fetch(url, init)
       if (res.status >= 500 && attempt < MAX_RETRIES) {
         lastError = new Error(`LLM error (HTTP ${res.status}).`)
-        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS))
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_BASE_MS * 2 ** attempt))
         continue
       }
       return res
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
       if (attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS))
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_BASE_MS * 2 ** attempt))
         continue
       }
     }

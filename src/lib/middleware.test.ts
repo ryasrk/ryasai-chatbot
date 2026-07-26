@@ -2,12 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { middleware, config } from '../middleware'
 import type { NextRequest } from 'next/server'
 
-function mockReq(pathname: string, cookie?: string): NextRequest {
+function mockReq(pathname: string, cookie?: string, method: string = 'GET'): NextRequest {
   return {
     nextUrl: { pathname },
+    method,
     cookies: {
       get: (name: string) => (name === 'x-active-user' ? { value: cookie } : undefined),
     },
+    headers: new Headers(),
   } as unknown as NextRequest
 }
 
@@ -32,8 +34,13 @@ describe('middleware function', () => {
     expect(body.error).toBe('Unauthorized')
   })
 
-  test('with cookie on protected api path → passes through', () => {
-    const res = middleware(mockReq('/api/keys', 'userId.sig'))
+  test('with cookie on protected api path GET → passes through (GET not rate limited)', () => {
+    const res = middleware(mockReq('/api/keys', 'userId.sig', 'GET'))
+    expect(res.status).toBe(200)
+  })
+
+  test('with cookie on protected api path POST → passes through under limit', () => {
+    const res = middleware(mockReq('/api/keys', 'userId.sig', 'POST'))
     expect(res.status).toBe(200)
   })
 

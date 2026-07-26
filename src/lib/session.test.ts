@@ -14,6 +14,7 @@ mock.module('next/headers', () => ({
 }))
 mock.module('@/lib/crypto', () => ({
   verifySession: mockVerifySession,
+  extractSessionVersion: () => 0,
 }))
 mock.module('@/lib/db', () => ({
   db: {
@@ -121,6 +122,7 @@ describe('getActiveUser', () => {
       name: 'Admin',
       email: 'admin@test.com',
       isActive: true,
+      sessionVersion: 0,
     }))
 
     const user = await getActiveUser()
@@ -135,6 +137,7 @@ describe('getActiveUser', () => {
       name: 'Admin',
       email: 'admin@test.com',
       isActive: false,
+      sessionVersion: 0,
     }))
 
     await expect(getActiveUser()).rejects.toThrow()

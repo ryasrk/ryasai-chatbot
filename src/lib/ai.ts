@@ -50,9 +50,18 @@ type Backend =
   | { mode: 'custom'; cfg: LlmRuntimeConfig }
   | { mode: 'zai'; ai: Awaited<ReturnType<typeof ZAI.create>> }
 
+let _zaiFallbackWarned = false
+
 async function resolveBackend(): Promise<Backend> {
   const cfg = await getLlmRuntimeConfig()
   if (cfg && cfg.baseUrl && cfg.apiKey) return { mode: 'custom', cfg }
+  if (!_zaiFallbackWarned) {
+    _zaiFallbackWarned = true
+    console.warn(
+      '[ai] No custom LLM configured — falling back to z-ai-web-dev-sdk sandbox. ' +
+      'Configure LLM settings in Settings → AI Config for production use.',
+    )
+  }
   return { mode: 'zai', ai: await getAI() }
 }
 

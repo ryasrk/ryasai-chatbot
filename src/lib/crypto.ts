@@ -66,29 +66,44 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
 // ---------------------------------------------------------------------------
 // The active-user cookie used to be plain JSON trusting `userId` verbatim,
 // which allowed trivial impersonation (IDs leak via /api/me/users). It is now a
-// `userId.signature` token; the server only trusts `userId` if the HMAC verifies.
-function sessionHmac(userId: string): string {
-  return crypto.createHmac('sha256', key()).update(userId).digest('base64url')
+// `userId.sessionVersion.signature` token; the server only trusts `userId` if
+// the HMAC verifies AND the sessionVersion matches the user's current version
+// in DB. Incrementing sessionVersion on login invalidates all prior cookies.
+function sessionHmac(payload: string): string {
+  return crypto.createHmac('sha256', key()).update(payload).digest('base64url')
 }
 
-/** Sign a user id into a verifiable session token. */
-export function signSession(userId: string): string {
-  return `${userId}.${sessionHmac(userId)}`
+/** Sign a user id + session version into a verifiable session token. */
+export function signSession(userId: string, sessionVersion: number = 0): string {
+  const payload = `${userId}.${sessionVersion}`
+  return `${payload}.${sessionHmac(payload)}`
 }
 
 /** Verify a session token and return the user id, or null if invalid/unsigned. */
 export function verifySession(token: string | undefined | null): string | null {
   if (!token) return null
-  const idx = token.lastIndexOf('.')
-  if (idx < 1) return null
-  const userId = token.slice(0, idx)
-  const sig = token.slice(idx + 1)
-  const expected = sessionHmac(userId)
+  const parts = token.split('.')
+  // ponytail: accept both 2-part (legacy, no version) and 3-part (with version) tokens.
+  // Legacy tokens are rejected once users re-login (version mismatch in session.ts).
+  if (parts.length < 2) return null
+  const sig = parts[parts.length - 1]
+  const payload = parts.slice(0, -1).join('.')
+  const expected = sessionHmac(payload)
   if (sig.length !== expected.length) return null
   try {
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
   } catch {
     return null
   }
-  return userId
+  // Return userId (first part) — version check happens in session.ts against DB
+  return parts[0]
+}
+
+/** Extract the session version from a token (for DB comparison). Returns 0 for legacy tokens. */
+export function extractSessionVersion(token: string | undefined | null): number {
+  if (!token) return 0
+  const parts = token.split('.')
+  if (parts.length < 3) return 0
+  const v = Number.parseInt(parts[1], 10)
+  return Number.isFinite(v) ? v : 0
 }

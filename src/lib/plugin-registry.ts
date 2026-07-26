@@ -9,6 +9,7 @@
 import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
+import { z } from 'zod'
 
 export interface PluginManifest {
   paramDescription: string
@@ -21,6 +22,19 @@ export interface PluginManifest {
   description: string
 }
 
+// ponytail: Zod schema — single source of truth for manifest validation.
+// Reused by parsePluginManifest (loose, for execution) and normalizeManifest (strict, for registration).
+const PluginManifestSchema = z.object({
+  paramDescription: z.string().default(''),
+  executorType: z.literal('webhook'),
+  endpoint: z.string().url(),
+  method: z.enum(['GET', 'POST']).transform((s) => s.toUpperCase()),
+  authType: z.enum(['NONE', 'BEARER', 'API_KEY_HEADER']),
+  authCredentials: z.string().optional(),
+  timeoutMs: z.number().finite().int().min(1000).max(120000).default(15000),
+  description: z.string().default(''),
+})
+
 /** Safe JSON parse + field validation. Returns null on invalid input. */
 export function parsePluginManifest(json: string): PluginManifest | null {
   let parsed: unknown
@@ -29,73 +43,42 @@ export function parsePluginManifest(json: string): PluginManifest | null {
   } catch {
     return null
   }
-  if (typeof parsed !== 'object' || parsed === null) return null
-  const m = parsed as Record<string, unknown>
-  if (typeof m.endpoint !== 'string' || !m.endpoint) return null
-  if (typeof m.method !== 'string') return null
-  if (m.authType !== 'NONE' && m.authType !== 'BEARER' && m.authType !== 'API_KEY_HEADER') return null
-  if (m.executorType !== 'webhook') return null
-  return {
-    paramDescription: typeof m.paramDescription === 'string' ? m.paramDescription : '',
-    executorType: 'webhook',
-    endpoint: m.endpoint,
-    method: String(m.method).toUpperCase(),
-    authType: m.authType,
-    authCredentials: typeof m.authCredentials === 'string' ? m.authCredentials : undefined,
-    timeoutMs:
-      typeof m.timeoutMs === 'number' && Number.isFinite(m.timeoutMs) ? m.timeoutMs : 15000,
-    description: typeof m.description === 'string' ? m.description : '',
-  }
+  const result = PluginManifestSchema.safeParse(parsed)
+  if (!result.success) return null
+  return result.data as PluginManifest
 }
 
 /**
  * Validate + normalize a manifest from user input (POST/PATCH body).
- * Stricter than parsePluginManifest: rejects bad URLs, wrong methods.
+ * Stricter than parsePluginManifest: rejects bad URLs, wrong methods, SSRF hosts.
  * Returns { error } on invalid, or a clean PluginManifest on valid.
  */
 export function normalizeManifest(input: unknown): PluginManifest | { error: string } {
-  if (!input || typeof input !== 'object') return { error: 'Manifest plugin wajib diisi.' }
-  const m = input as Record<string, unknown>
+  // Method comes in as arbitrary string — coerce to uppercase before enum check.
+  const coerced = input && typeof input === 'object'
+    ? { ...(input as Record<string, unknown>), method: String((input as Record<string, unknown>).method ?? '').trim().toUpperCase() }
+    : input
+  const result = PluginManifestSchema.safeParse(coerced)
+  if (!result.success) {
+    const first = result.error.issues[0]
+    return { error: first ? `Manifest tidak valid: ${first.path.join('.')} — ${first.message}` : 'Manifest tidak valid.' }
+  }
+  const m = result.data as PluginManifest
 
-  if (m.executorType !== 'webhook') return { error: 'executorType harus "webhook".' }
-
-  let endpoint: string
+  // SSRF + protocol check (Zod's z.string().url() allows http/https only, but double-check host)
   try {
-    const url = new URL(String(m.endpoint ?? '').trim())
+    const url = new URL(m.endpoint)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       return { error: 'Endpoint harus menggunakan http atau https.' }
     }
     if (isBlockedHost(url.hostname)) {
       return { error: 'Endpoint menuju host internal yang diblokir.' }
     }
-    endpoint = url.toString()
   } catch {
     return { error: 'Endpoint webhook tidak valid.' }
   }
 
-  const method = String(m.method ?? '').trim().toUpperCase()
-  if (method !== 'GET' && method !== 'POST') return { error: 'Method harus GET atau POST.' }
-
-  const authType = String(m.authType ?? 'NONE').trim().toUpperCase()
-  if (authType !== 'NONE' && authType !== 'BEARER' && authType !== 'API_KEY_HEADER') {
-    return { error: 'authType harus NONE, BEARER, atau API_KEY_HEADER.' }
-  }
-
-  const timeoutMs =
-    typeof m.timeoutMs === 'number' && Number.isFinite(m.timeoutMs)
-      ? Math.min(Math.max(Math.floor(m.timeoutMs), 1000), 120000)
-      : 15000
-
-  return {
-    paramDescription: typeof m.paramDescription === 'string' ? m.paramDescription : '',
-    executorType: 'webhook',
-    endpoint,
-    method,
-    authType,
-    authCredentials: typeof m.authCredentials === 'string' ? m.authCredentials : undefined,
-    timeoutMs,
-    description: typeof m.description === 'string' ? m.description : '',
-  }
+  return m
 }
 
 /** Encrypt a plain credential string for storage inside manifestJson. */

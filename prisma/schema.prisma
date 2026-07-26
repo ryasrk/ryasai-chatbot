@@ -20,14 +20,15 @@ datasource db {
 // User — admin only, no roles
 // ------------------------------------------------------------------
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  avatarColor  String   @default("oklch(0.55 0.18 250)")
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  passwordHash    String
+  avatarColor     String   @default("oklch(0.55 0.18 250)")
+  isActive        Boolean  @default(true)
+  sessionVersion  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   chatSessions ChatSession[]
   auditLogs    AuditLog[]
@@ -204,7 +205,7 @@ model AppConfig {
   brandingJson        String?
   productionChecklist String?
   promptSettings      String?
-  cogneeEnabled       Boolean  @default(false)
+  cogneeEnabled       Boolean  @default(true)
   cogneeDbProvider    String?  // 'local' | 'postgres'
   cogneeDbUrl         String?
   cogneeBatchSize     Int      @default(50)

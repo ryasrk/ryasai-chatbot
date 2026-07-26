@@ -440,7 +440,7 @@ export function SchedulesView() {
             <div className="space-y-1.5">
               <Label className="text-xs">Schedule</Label>
               <div className="flex items-center gap-3 rounded-none border border-border/70 p-3 bg-muted/20">
-                <label className="cursor-pointer">
+                <label className="relative cursor-pointer inline-flex">
                   <span className="text-2xl font-light tracking-wide hover:text-primary transition-colors">
                     {scheduleTime}
                   </span>
@@ -448,7 +448,7 @@ export function SchedulesView() {
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
-                    className="sr-only"
+                    className="absolute inset-0 opacity-0 cursor-pointer"
                   />
                 </label>
                 <div className="flex-1" />

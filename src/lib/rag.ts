@@ -136,17 +136,90 @@ export async function retrieveRelevantChunks(args: {
     return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
   }
 
+  // ponytail: when RAG_LLM_RERANK=true, retrieve 3x candidates for LLM reranking.
+  // Ceiling: adds 1 LLM call per RAG query (~500ms latency). Off by default.
+  const rerankEnabled = process.env.RAG_LLM_RERANK === 'true'
+  const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
+
   // Run graph recall in parallel with vector/lexical retrieval
   const [retrievalResult, graphContext] = await Promise.all([
-    retrieveFromVectorAndLexical(args.query, args.topK, queryTokens),
+    retrieveFromVectorAndLexical(args.query, retrievalTopK, queryTokens),
     recallGraphContext(args.query),
   ])
 
+  const finalChunks = rerankEnabled
+    ? await rerankWithLlm(args.query, retrievalResult.chunks, args.topK)
+    : retrievalResult.chunks
+
   return {
-    chunks: retrievalResult.chunks,
+    chunks: finalChunks,
     queryTokens,
     candidatesScanned: retrievalResult.candidatesScanned,
     graphContext,
+  }
+}
+
+// ponytail: LLM reranker — asks the LLM to rank chunks by relevance to the query.
+// Returns top-K after reranking. Falls back to original order on any error.
+async function rerankWithLlm(
+  query: string,
+  chunks: RetrievedChunk[],
+  topK: number,
+): Promise<RetrievedChunk[]> {
+  if (chunks.length <= topK) return chunks
+  if (chunks.length === 0) return chunks
+
+  try {
+    const { getLlmRuntimeConfig } = await import('@/lib/llm-config')
+    const { chatOnce } = await import('@/lib/llm-client')
+    const cfg = await getLlmRuntimeConfig()
+    if (!cfg) return chunks.slice(0, topK)
+
+    const chunkList = chunks
+      .map((c, i) => `[${i}] ${c.content.slice(0, 300)}`)
+      .join('\n\n')
+
+    const systemPrompt =
+      'You are a retrieval reranker. Given a query and text chunks, rank them by relevance. ' +
+      'Answer ONLY with a JSON array of chunk indices, most relevant first. Example: [2, 0, 4, 1, 3]'
+
+    const userMessage = `Query: ${query}\n\nChunks:\n${chunkList}\n\nRank these chunks by relevance to the query. Output JSON array of indices only.`
+
+    const raw = await chatOnce(
+      cfg,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      0,
+      'rag-rerank',
+    )
+
+    // Parse the JSON array of indices
+    const match = raw.match(/\[[\d\s,]+\]/)
+    if (!match) return chunks.slice(0, topK)
+    const indices = JSON.parse(match[0]) as number[]
+    if (!Array.isArray(indices) || indices.length === 0) return chunks.slice(0, topK)
+
+    const reranked: RetrievedChunk[] = []
+    for (const idx of indices) {
+      if (typeof idx === 'number' && idx >= 0 && idx < chunks.length) {
+        reranked.push(chunks[idx])
+        if (reranked.length >= topK) break
+      }
+    }
+    // Fallback: if reranking produced fewer than topK, fill from remaining chunks
+    if (reranked.length < topK) {
+      const used = new Set(indices.filter((i) => i >= 0 && i < chunks.length))
+      for (let i = 0; i < chunks.length && reranked.length < topK; i++) {
+        if (!used.has(i)) reranked.push(chunks[i])
+      }
+    }
+
+    return reranked
+  } catch (e) {
+    console.warn('[rag] LLM rerank failed, using original order:', e instanceof Error ? e.message : e)
+    return chunks.slice(0, topK)
   }
 }
 

@@ -37,15 +37,18 @@ const SETTINGS_TTL = 10000 // 10s cache
 async function getCogneeSettings(): Promise<CogneeSettings> {
   if (_cachedSettings && Date.now() - _settingsAt < SETTINGS_TTL) return _cachedSettings
 
-  // Check env var first (backward compat), then DB
-  const envEnabled = process.env.COGNEE_ENABLED === 'true'
+  // Check env var first (backward compat), then DB.
+  // ponytail: default to true when neither env nor DB explicitly disables —
+  // cognee.init fails gracefully if @cognee/cognee-ts can't start, so enabling
+  // by default is safe (falls back to no-op).
+  const envEnabled = process.env.COGNEE_ENABLED !== 'false'
 
   let settings: CogneeSettings
   try {
     const config = await db.appConfig.findFirst()
     if (config) {
       settings = {
-        enabled: envEnabled || config.cogneeEnabled,
+        enabled: envEnabled && config.cogneeEnabled,
         dbProvider: (config.cogneeDbProvider === 'postgres' ? 'postgres' : 'local'),
         dbUrl: config.cogneeDbUrl ?? process.env.COGNEE_DB_URL ?? null,
         batchSize: config.cogneeBatchSize || parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
@@ -219,6 +222,59 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Session-level semantic cache — avoids re-querying cognee for repeat questions
+// in the same session. ponytail: in-memory Map with TTL, per-instance not distributed.
+// Ceiling: cleared on server restart. Upgrade to Redis-backed cache if needed.
+// ---------------------------------------------------------------------------
+
+const SESSION_CACHE_TTL = 60000 // 1 minute
+const SESSION_CACHE_MAX = 100 // max entries per session
+const _sessionCache = new Map<string, Map<string, { result: string; ts: number }>>()
+
+function sessionCacheKey(query: string): string {
+  // ponytail: simple hash — query is short, crypto is overkill
+  return query.slice(0, 200).toLowerCase().trim()
+}
+
+function getSessionCache(sessionId: string): Map<string, { result: string; ts: number }> {
+  let cache = _sessionCache.get(sessionId)
+  if (!cache) {
+    cache = new Map()
+    _sessionCache.set(sessionId, cache)
+  }
+  return cache
+}
+
+function getCachedRecall(sessionId: string, query: string): string | null {
+  const cache = getSessionCache(sessionId)
+  const key = sessionCacheKey(query)
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.ts > SESSION_CACHE_TTL) {
+    cache.delete(key)
+    return null
+  }
+  return entry.result
+}
+
+function setCachedRecall(sessionId: string, query: string, result: string): void {
+  const cache = getSessionCache(sessionId)
+  const key = sessionCacheKey(query)
+  // ponytail: evict oldest when at capacity (Map preserves insertion order)
+  if (cache.size >= SESSION_CACHE_MAX) {
+    const oldest = cache.keys().next().value
+    if (oldest) cache.delete(oldest)
+  }
+  cache.set(key, { result, ts: Date.now() })
+}
+
+/** Clear the session cache — call when a session is deleted. */
+export function clearSessionCache(sessionId?: string): void {
+  if (sessionId) _sessionCache.delete(sessionId)
+  else _sessionCache.clear()
+}
+
+// ---------------------------------------------------------------------------
 // Recall (graph + session)
 // ---------------------------------------------------------------------------
 
@@ -230,12 +286,23 @@ export async function recallContext(args: {
   const c = await getCogneeClient()
   if (!c) return ''
 
+  // ponytail: check session cache first — avoids cognee round-trip for repeat questions
+  if (args.sessionId) {
+    const cached = getCachedRecall(args.sessionId, args.query)
+    if (cached !== null) return cached
+  }
+
   const graphResult = await recallFromGraph(c, args.query)
   const sessionResult = args.sessionId
     ? await recallFromSession(c, args.query, args.sessionId)
     : ''
 
   const merged = [sessionResult, graphResult].filter(Boolean).join('\n')
+
+  if (args.sessionId && merged) {
+    setCachedRecall(args.sessionId, args.query, merged)
+  }
+
   return merged
 }
 

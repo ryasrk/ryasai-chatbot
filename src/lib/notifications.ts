@@ -2,6 +2,9 @@
  * notifications — delivers scheduled-run results to configured channels.
  * ===========================================================================
  * webhook:   POST JSON {title, message, timestamp} to URL (optional Bearer).
+ *            If signatureSecret is set, signs body with HMAC-SHA256 and sends
+ *            X-Signature-256 header (Stripe/GitHub convention) so receivers
+ *            can verify sender authenticity.
  * telegram:  sendMessage to chat_id via Bot API.
  * email:     stub — requires SMTP setup (nodemailer not installed). Returns
  *            a clear error so callers can fall back to webhook/telegram.
@@ -10,6 +13,7 @@
  * `type` field is packed into the encrypted blob so sendNotification only
  * needs the encrypted string.
  */
+import crypto from 'crypto'
 import { decryptConfig } from '@/lib/crypto'
 
 export interface NotificationResult {
@@ -58,17 +62,25 @@ async function sendWebhook(
 ): Promise<NotificationResult> {
   const url = config.url as string
   const token = config.token as string | undefined
+  const signatureSecret = config.signatureSecret as string | undefined
+  const body = JSON.stringify({
+    title: title ?? 'Notifikasi ryasai',
+    message,
+    timestamp: new Date().toISOString(),
+  })
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+  // ponytail: HMAC-SHA256 signature when secret is configured — receiver verifies with same secret.
+  if (signatureSecret) {
+    const sig = crypto.createHmac('sha256', signatureSecret).update(body).digest('hex')
+    headers['X-Signature-256'] = `sha256=${sig}`
+  }
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      title: title ?? 'Notifikasi ryasai',
-      message,
-      timestamp: new Date().toISOString(),
-    }),
+    headers,
+    body,
     signal: AbortSignal.timeout(15000),
   })
   const latencyMs = Date.now() - started
@@ -108,4 +120,38 @@ async function sendEmail(
     error: 'Email notification memerlukan konfigurasi SMTP. Gunakan webhook atau telegram untuk sekarang.',
     latencyMs: Date.now() - started,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Retry wrapper — exponential backoff for transient failures.
+// ponytail: in-memory retry (no BullMQ). Ceiling: retries are lost on server
+// restart. Upgrade to BullMQ-based retry queue when durability is needed.
+// ---------------------------------------------------------------------------
+
+const NOTIFICATION_MAX_RETRIES = 3
+const NOTIFICATION_BACKOFF_BASE_MS = 2000
+
+export async function sendNotificationWithRetry(args: {
+  configEncrypted: string
+  message: string
+  title?: string
+}): Promise<NotificationResult> {
+  let lastResult: NotificationResult = { ok: false, error: 'No attempt made.', latencyMs: 0 }
+
+  for (let attempt = 0; attempt <= NOTIFICATION_MAX_RETRIES; attempt++) {
+    lastResult = await sendNotification(args)
+    if (lastResult.ok) return lastResult
+
+    // Don't retry on config errors (decryption failed) — only on delivery failures
+    if (lastResult.error?.includes('tidak valid') || lastResult.error?.includes('tidak dikenal')) {
+      return lastResult
+    }
+
+    if (attempt < NOTIFICATION_MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, NOTIFICATION_BACKOFF_BASE_MS * 2 ** attempt))
+    }
+  }
+
+  console.warn('[notifications] all retries exhausted:', lastResult.error)
+  return lastResult
 }

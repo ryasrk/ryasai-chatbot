@@ -52,11 +52,18 @@ export async function POST(req: NextRequest) {
       detail: { email: user.email },
     })
 
+    // ponytail: session fixation defense — increment sessionVersion to invalidate prior cookies.
+    const updated = await db.user.update({
+      where: { id: user.id },
+      data: { sessionVersion: { increment: 1 } },
+      select: { sessionVersion: true },
+    })
+
     const res = NextResponse.json({
       ok: true,
       user: { userId: user.id, name: user.name, email: user.email },
     })
-    res.cookies.set('x-active-user', signSession(user.id), {
+    res.cookies.set('x-active-user', signSession(user.id, updated.sessionVersion), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',

@@ -14,7 +14,7 @@
 import { db } from '../../src/lib/db'
 import { nextRun } from '../../src/lib/cron'
 import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
-import { sendNotification, type NotificationResult } from '../../src/lib/notifications'
+import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
 
 const POLL_INTERVAL_SEC =
@@ -239,7 +239,7 @@ async function executeRun(run: {
         } catch {
           answer = ''
         }
-        notification = await sendNotification({
+        notification = await sendNotificationWithRetry({
           configEncrypted: cfg.encryptedConfig,
           message: answer || run.prompt,
           title: run.name,

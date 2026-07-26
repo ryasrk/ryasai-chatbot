@@ -31,7 +31,43 @@ import { getPromptSettings } from '@/lib/prompt-settings'
 import { recallContext, rememberChatTurn } from '@/lib/cognee'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
+import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
+import { getAvailableTools } from '@/lib/tool-registry'
 import type { ChartData, Citation } from '@/lib/types'
+
+// ponytail: per-integration SQL concurrency limiter — in-memory semaphore.
+// Ceiling: per-instance, not distributed. Max 3 concurrent queries per integration
+// to prevent database lock contention. Upgrade to Redis-backed semaphore when scaling.
+const SQL_MAX_CONCURRENT = 3
+const _sqlSemaphores = new Map<string, { running: number; queue: Array<() => void> }>()
+
+function withSqlConcurrency<T>(integrationId: string, fn: () => Promise<T>): Promise<T> {
+  let sem = _sqlSemaphores.get(integrationId)
+  if (!sem) {
+    sem = { running: 0, queue: [] }
+    _sqlSemaphores.set(integrationId, sem)
+  }
+  return new Promise<T>((resolve, reject) => {
+    const run = async () => {
+      sem!.running += 1
+      try {
+        const result = await fn()
+        resolve(result)
+      } catch (e) {
+        reject(e)
+      } finally {
+        sem!.running -= 1
+        const next = sem!.queue.shift()
+        if (next) next()
+      }
+    }
+    if (sem.running < SQL_MAX_CONCURRENT) {
+      run()
+    } else {
+      sem.queue.push(run)
+    }
+  })
+}
 
 type ToolRunStatus = 'success' | 'error' | 'blocked'
 
@@ -64,7 +100,17 @@ export async function runNonStreamingChatCompletion(args: {
   integrationId?: string
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
+  allowMultiStepDag?: boolean
 }): Promise<CompletionResult> {
+  // ponytail: multi-step DAG path — when flag is set, use planner instead of single-tool router.
+  // Ceiling: planner makes 1+ LLM calls (plan + execute + synthesize), higher latency than single-tool.
+  // Use for complex questions that need multiple tools (e.g. "Q1 sales AND the SOP for that product").
+  if (args.allowMultiStepDag) {
+    const dagResult = await runMultiStepDag(args)
+    if (dagResult) return dagResult
+    // Fall through to single-tool if planner fails (graceful degradation)
+  }
+
   const memoryContext = await recallContext({
     query: args.question,
     sessionId: args.sessionId,
@@ -169,6 +215,63 @@ export async function runNonStreamingChatCompletion(args: {
   })
 
   return result
+}
+
+// ponytail: multi-step DAG — plan → execute → synthesize.
+// Returns null when planner fails or produces a single-step CHAT plan (fall back to single-tool router).
+async function runMultiStepDag(args: {
+  question: string
+  userId: string
+  sessionId?: string
+  chatHistory?: ChatHistoryEntry[]
+}): Promise<CompletionResult | null> {
+  try {
+    const availableTools = await getAvailableTools(args.question, 'chat')
+    if (availableTools.length === 0) return null
+
+    const plan = await planQuery({
+      question: args.question,
+      availableTools,
+      sessionId: args.sessionId,
+      chatHistory: args.chatHistory,
+    })
+
+    // Single-step CHAT plan = no benefit over single-tool router, skip
+    if (plan.steps.length === 1 && plan.steps[0].tool === 'chat' && !plan.needsSynthesis) {
+      return null
+    }
+
+    const results: PlanStepResult[] = await executePlan({
+      plan,
+      userId: args.userId,
+      sessionId: args.sessionId,
+    })
+
+    const answer = await synthesizeAnswer({
+      question: args.question,
+      stepResults: results,
+      plan,
+    })
+
+    const toolRuns: PendingToolRun[] = results.map((r) => ({
+      type: r.tool.startsWith('plugin:') ? 'PLUGIN' : r.tool.startsWith('mcp:') ? 'PLUGIN' : (r.tool.toUpperCase() as PendingToolRun['type']),
+      status: r.ok ? 'success' : 'error',
+      latencyMs: r.latencyMs,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(r.output),
+      errorMessage: r.error,
+    }))
+
+    return {
+      answer,
+      citations: [],
+      chartData: null,
+      toolRuns,
+    }
+  } catch (e) {
+    console.warn('[tool-router] multi-step DAG failed, falling back to single-tool:', e instanceof Error ? e.message : e)
+    return null
+  }
 }
 
 export interface StreamingCompletionResult {
@@ -459,7 +562,7 @@ async function prepareSqlStream(args: {
   )
 
   try {
-    const result = await connector.executeQuery(sql)
+    const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
     const context = JSON.stringify(result.rows, null, 2)
     const chartData = buildChartDataFromRows(result.rows)
     const stream = streamAnswer({
@@ -943,7 +1046,7 @@ async function runSqlBranch(args: {
   )
 
   try {
-    const result = await connector.executeQuery(sql)
+    const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
     await db.queryHistory.create({
       data: {
         integrationId: integration.id,
@@ -1021,7 +1124,7 @@ async function runSqlBranch(args: {
       },
     })
     return {
-      answer: 'Maaf, kueri ke database gagal dieksekusi. Silakan coba pertanyaan yang lebih spesifik.',
+      answer: `Maaf, kueri ke database gagal dieksekusi.\n\nError: ${sanitizeSqlError(errorMessage)}\n\nSaran: coba pertanyaan yang lebih spesifik, atau periksa apakah tabel kolom yang ditanyakan tersedia di integrasi ini.`,
       citations: [],
       chartData: null,
       integrationId: integration.id,
@@ -1036,6 +1139,16 @@ async function runSqlBranch(args: {
       ],
     }
   }
+}
+
+// ponytail: sanitize SQL error — strip credentials, connection strings, and schema-internal noise.
+function sanitizeSqlError(msg: string): string {
+  return msg
+    .replace(/postgres:\/\/[^\s]+/g, 'postgres://***')
+    .replace(/mysql:\/\/[^\s]+/g, 'mysql://***')
+    .replace(/password\s*=\s*[^\s;]+/gi, 'password=***')
+    .replace(/user\s*=\s*[^\s;]+/gi, 'user=***')
+    .slice(0, 300)
 }
 
 async function runRestBranch(args: {
@@ -1298,7 +1411,7 @@ async function executeRestRequest(args: {
     if (!response.ok) {
       return {
         ok: false,
-        error: `REST API returned HTTP ${response.status}.`,
+        error: `REST API returned HTTP ${response.status} (${response.statusText || 'Unknown'}). Endpoint: ${args.method} ${args.path}.`,
         latencyMs,
       }
     }

@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { serverConfig } from '@/lib/config'
-import { verifySession } from '@/lib/crypto'
+import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
@@ -18,6 +18,29 @@ export class UnauthorizedError extends Error {
   }
 }
 
+// ponytail: in-memory inactivity tracker — per-instance, not distributed.
+// Ceiling: cleared on server restart (users re-authenticate). 30min timeout.
+// Upgrade to Redis-backed tracker when deploying >1 instance.
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
+const _lastActivity = new Map<string, number>()
+
+function isInactivityExpired(userId: string): boolean {
+  const last = _lastActivity.get(userId)
+  if (!last) return false // first request or after restart — allow
+  return Date.now() - last > INACTIVITY_TIMEOUT_MS
+}
+
+function touchActivity(userId: string): void {
+  _lastActivity.set(userId, Date.now())
+  // Evict stale entries periodically
+  if (_lastActivity.size > 1000) {
+    const now = Date.now()
+    for (const [k, t] of _lastActivity) {
+      if (now - t > INACTIVITY_TIMEOUT_MS) _lastActivity.delete(k)
+    }
+  }
+}
+
 export function handleApiError(e: unknown, fallback: string, status = 500) {
   if (e instanceof UnauthorizedError) {
     return NextResponse.json({ error: e.message }, { status: 401 })
@@ -28,13 +51,23 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
 
 export async function getActiveUser(): Promise<ActiveUser> {
   const store = await cookies()
-  const userId = verifySession(store.get('x-active-user')?.value)
+  const token = store.get('x-active-user')?.value
+  const userId = verifySession(token)
   if (userId) {
+    // ponytail: inactivity timeout — reject if user has been idle >30min
+    if (isInactivityExpired(userId)) {
+      _lastActivity.delete(userId)
+      throw new UnauthorizedError('Sesi kedaluwarsa karena tidak aktif. Silakan login kembali.')
+    }
+
     const u = await db.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, isActive: true },
+      select: { id: true, name: true, email: true, isActive: true, sessionVersion: true },
     })
-    if (u && u.isActive) {
+    // ponytail: session fixation defense — reject tokens with stale session version.
+    // Old cookies (pre-login) have version 0 or a prior version; new logins increment it.
+    if (u && u.isActive && u.sessionVersion === extractSessionVersion(token)) {
+      touchActivity(userId)
       return { userId: u.id, name: u.name, email: u.email }
     }
   }
