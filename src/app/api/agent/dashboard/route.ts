@@ -8,11 +8,38 @@ import { getRoutingScores } from '@/lib/smart-router'
 import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { streamAnswer } from '@/lib/ai'
+import { testMcpServer, invalidateMcpToolsCache } from '@/lib/mcp-client'
 
 interface AdminActionResult {
   handled: boolean
   output?: string
+  toolName?: string
   confirmationRequired?: { action: string; message: string }
+}
+
+// ponytail: lightweight known-names map for agentic MCP setup. Covers the
+// common @modelcontextprotocol/server-* packages + a few uvx ones. Unknown
+// names fall through to the package-name pattern. Add entries as needed.
+const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx' }> = {
+  filesystem: { pkg: '@modelcontextprotocol/server-filesystem', runner: 'npx' },
+  'google-drive': { pkg: '@modelcontextprotocol/server-google-drive', runner: 'npx' },
+  'google-maps': { pkg: '@modelcontextprotocol/server-google-maps', runner: 'npx' },
+  postgres: { pkg: '@modelcontextprotocol/server-postgres', runner: 'npx' },
+  postgresql: { pkg: '@modelcontextprotocol/server-postgres', runner: 'npx' },
+  sqlite: { pkg: 'mcp-server-sqlite', runner: 'uvx' },
+  brave: { pkg: '@modelcontextprotocol/server-brave-search', runner: 'npx' },
+  'brave-search': { pkg: '@modelcontextprotocol/server-brave-search', runner: 'npx' },
+  fetch: { pkg: 'mcp-server-fetch', runner: 'uvx' },
+  puppeteer: { pkg: '@modelcontextprotocol/server-puppeteer', runner: 'npx' },
+  memory: { pkg: '@modelcontextprotocol/server-memory', runner: 'npx' },
+  'sequential-thinking': { pkg: '@modelcontextprotocol/server-sequential-thinking', runner: 'npx' },
+  github: { pkg: '@modelcontextprotocol/server-github', runner: 'npx' },
+  gitlab: { pkg: '@modelcontextprotocol/server-gitlab', runner: 'npx' },
+  aws: { pkg: '@modelcontextprotocol/server-aws', runner: 'npx' },
+  slack: { pkg: '@modelcontextprotocol/server-slack', runner: 'npx' },
+  stripe: { pkg: '@modelcontextprotocol/server-stripe', runner: 'npx' },
+  sentry: { pkg: '@modelcontextprotocol/server-sentry', runner: 'npx' },
+  time: { pkg: '@modelcontextprotocol/server-time', runner: 'npx' },
 }
 
 async function executeAdminAction(message: string, userId: string): Promise<AdminActionResult> {
@@ -251,6 +278,87 @@ async function executeAdminAction(message: string, userId: string): Promise<Admi
     return { handled: true, output: `Document "${doc.name}" ${action ? 'enabled' : 'disabled'} for RAG retrieval.` }
   }
 
+  // Agentic MCP setup — "add/install/set up mcp server [name] [for/at ...]"
+  const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:an?\s+)?(?:mcp\s+server|mcps?\b)/i)
+  if (mcpMatch) {
+    const knownNames = Object.keys(MCP_PACKAGES)
+    const nameMatch = knownNames.find((n) => lower.includes(n))
+    const namedMatch = message.match(/(?:called|named)\s+([A-Za-z0-9_-]+)/i)
+    const serverName = nameMatch
+      ? nameMatch.charAt(0).toUpperCase() + nameMatch.slice(1)
+      : namedMatch?.[1] ?? `MCP-${new Date().toISOString().slice(11, 19)}`
+
+    const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
+    let transport: 'stdio' | 'sse' | 'http' = 'stdio'
+    let command = ''
+    let args: string[] = []
+    let url = ''
+
+    if (urlInMessage) {
+      transport = lower.includes('sse') ? 'sse' : 'http'
+      url = urlInMessage
+    } else {
+      transport = 'stdio'
+      const runner = lower.includes('uvx') ? 'uvx' : (nameMatch ? MCP_PACKAGES[nameMatch].runner : 'npx')
+      command = runner
+      if (nameMatch) {
+        const pkg = MCP_PACKAGES[nameMatch].pkg
+        args = runner === 'npx' ? ['-y', pkg] : [pkg]
+        const pathMatch = message.match(/(?:for|at|path|dir|directory)\s+(\/[^\s]+)/i)
+        if (pathMatch) args.push(pathMatch[1])
+        const connMatch = message.match(/(postgresql?:\/\/[^\s)]+|postgres:\/\/[^\s)]+)/i)
+        if (connMatch) args.push(connMatch[1])
+      } else {
+        const pkgToken = `@modelcontextprotocol/server-${serverName.toLowerCase()}`
+        args = runner === 'npx' ? ['-y', pkgToken] : [pkgToken]
+      }
+    }
+
+    const created = await db.mcpServer.create({
+      data: {
+        name: serverName,
+        description: `Installed via agentic setup`,
+        transport,
+        command,
+        args: JSON.stringify(args),
+        url,
+        envJson: '{}',
+        isEnabled: true,
+        chatEnabled: true,
+        agenticEnabled: true,
+      },
+    })
+    invalidateMcpToolsCache()
+    await writeAudit({
+      userId, action: 'MCP_SERVER_CREATE', severity: 'warning',
+      detail: { id: created.id, name: serverName, transport, via: 'agentic' },
+    })
+
+    const testResult = await testMcpServer(created.id)
+    invalidateMcpToolsCache()
+
+    if (testResult.ok) {
+      const toolLines = (testResult.tools ?? []).map(
+        (t) => `  - ${t.name}${t.description ? `: ${t.description}` : ''}`,
+      )
+      const configLine = transport === 'stdio'
+        ? `Command: ${command} ${args.join(' ')}`
+        : `URL: ${url}`
+      return {
+        handled: true,
+        toolName: 'mcp_setup',
+        output: `MCP server "${serverName}" installed and connected.\nTransport: ${transport}\n${configLine}\nTools found: ${testResult.toolCount ?? 0}${
+          toolLines.length > 0 ? '\n' + toolLines.join('\n') : ''
+        }`,
+      }
+    }
+    return {
+      handled: true,
+      toolName: 'mcp_setup',
+      output: `MCP server "${serverName}" was created but the connection test failed.\nTransport: ${transport}\nError: ${testResult.error}\n\nEdit the configuration in the Tools view to fix the issue.`,
+    }
+  }
+
   return { handled: false }
 }
 
@@ -327,8 +435,9 @@ export async function POST(req: NextRequest) {
               return
             }
             if (adminResult.output) {
-              send('tool_start', { stepId: 'admin', tool: 'admin.action', input: { message } })
-              send('tool_end', { stepId: 'admin', tool: 'admin.action', output: adminResult.output, status: 'success', latencyMs: 0 })
+              const toolName = adminResult.toolName ?? 'admin.action'
+              send('tool_start', { stepId: 'admin', tool: toolName, input: { message } })
+              send('tool_end', { stepId: 'admin', tool: toolName, output: adminResult.output, status: 'success', latencyMs: 0 })
               send('answer', { content: adminResult.output })
               send('done', { conversationId })
 
@@ -341,7 +450,7 @@ export async function POST(req: NextRequest) {
                 sessionId: conversationId,
                 userMessage: message,
                 aiMessage: adminResult.output,
-                toolRuns: [{ type: 'admin.action', status: 'success', latencyMs: 0 }],
+                toolRuns: [{ type: toolName, status: 'success', latencyMs: 0 }],
               })
               return
             }

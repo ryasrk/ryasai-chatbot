@@ -117,12 +117,16 @@ export async function callMcpTool(
 
 export async function testMcpServer(
   serverId: string,
-): Promise<{ ok: boolean; toolCount?: number; error?: string }> {
+): Promise<{ ok: boolean; toolCount?: number; tools?: Array<{ name: string; description: string }>; error?: string }> {
   const conn = await getConnection(serverId)
   if (!conn) return { ok: false, error: 'Tidak dapat terhubung ke MCP server.' }
   try {
     const { tools } = await conn.client.listTools()
-    return { ok: true, toolCount: tools.length }
+    return {
+      ok: true,
+      toolCount: tools.length,
+      tools: tools.map((t) => ({ name: t.name, description: t.description ?? '' })),
+    }
   } catch (e) {
     conn.failed = true
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

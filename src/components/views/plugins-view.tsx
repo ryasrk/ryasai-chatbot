@@ -18,10 +18,9 @@ import {
   ChevronLeft,
   Check,
   Server,
-  Store,
+  AlertTriangle,
   MessageSquare,
   Bot,
-  ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -117,18 +116,6 @@ interface McpServerRow {
   updatedAt: string
 }
 
-interface McpCatalogEntry {
-  name: string
-  description: string
-  category: string
-  transport: 'stdio' | 'sse' | 'http'
-  command?: string
-  args?: string[]
-  url?: string
-  installInstructions: string
-  repoUrl: string
-}
-
 interface TestResult {
   ok: boolean
   output: string
@@ -137,20 +124,11 @@ interface TestResult {
 }
 
 // ---------------------------------------------------------------------------
-// Main view — 3 tabs
+// Main view — 2 tabs (MCP Servers + Custom Tools)
 // ---------------------------------------------------------------------------
 
 export function PluginsView() {
-  const [tab, setTab] = useState('browse')
-
-  useEffect(() => {
-    function onSwitch(e: Event) {
-      const detail = (e as CustomEvent<string>).detail
-      setTab(detail ?? 'mcp')
-    }
-    window.addEventListener('mcp-switch-tab', onSwitch)
-    return () => window.removeEventListener('mcp-switch-tab', onSwitch)
-  }, [])
+  const [tab, setTab] = useState('mcp')
 
   return (
     <div className="space-y-3">
@@ -159,16 +137,13 @@ export function PluginsView() {
         <div>
           <h2 className="text-sm font-semibold">Tools &amp; Integrations</h2>
           <p className="text-xs text-muted-foreground">
-            MCP servers, custom webhook tools, and marketplace browsing.
+            MCP servers and custom webhook tools.
           </p>
         </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="min-h-[500px]">
         <TabsList className="w-max">
-          <TabsTrigger value="browse" className="gap-1.5 text-xs">
-            <Store className="h-3.5 w-3.5" /> Browse MCP
-          </TabsTrigger>
           <TabsTrigger value="mcp" className="gap-1.5 text-xs">
             <Server className="h-3.5 w-3.5" /> MCP Servers
           </TabsTrigger>
@@ -177,9 +152,6 @@ export function PluginsView() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="browse" className="mt-3">
-          <BrowseMcpTab />
-        </TabsContent>
         <TabsContent value="mcp" className="mt-3">
           <McpServersTab />
         </TabsContent>
@@ -256,152 +228,7 @@ function TogglePopup({
 }
 
 // ---------------------------------------------------------------------------
-// Tab 1 — Browse MCP marketplace catalog
-// ---------------------------------------------------------------------------
-
-function BrowseMcpTab() {
-  const [catalog, setCatalog] = useState<McpCatalogEntry[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [catFilter, setCatFilter] = useState('all')
-
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch('/api/mcp/catalog')
-        const data = await res.json()
-        if (cancelled) return
-        if (data.ok) {
-          setCatalog(data.catalog)
-          setCategories(data.categories)
-        }
-      } catch {
-        // ponytail: static catalog, network failure is non-fatal
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [])
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return catalog.filter((e) => {
-      if (catFilter !== 'all' && e.category !== catFilter) return false
-      if (!q) return true
-      return [e.name, e.description, e.category].join(' ').toLowerCase().includes(q)
-    })
-  }, [catalog, search, catFilter])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search MCP servers…"
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
-        <Select value={catFilter} onValueChange={setCatFilter}>
-          <SelectTrigger className="h-8 w-full text-xs sm:w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="text-xs">All Categories</SelectItem>
-            {categories.map((c) => (
-              <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((entry) => (
-          <Card key={entry.name} className="rounded-lg border p-4 flex flex-col gap-2.5">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{entry.name}</p>
-                <Badge variant="secondary" className="text-xs mt-0.5">{entry.category}</Badge>
-              </div>
-              <Badge className="text-xs bg-primary/15 text-primary border-primary/20 shrink-0 uppercase">
-                {entry.transport}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">
-              {entry.description}
-            </p>
-            <code className="font-mono text-xs text-muted-foreground truncate block">
-              {entry.installInstructions}
-            </code>
-            <div className="flex items-center gap-1 pt-1 border-t border-border/40 mt-auto">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() => {
-                  // ponytail: dispatch two events — switch tab + pre-fill dialog.
-                  // Simpler than shared state lifting across sibling tabs.
-                  window.dispatchEvent(new CustomEvent('mcp-switch-tab', { detail: 'mcp' }))
-                  window.dispatchEvent(new CustomEvent('mcp-add-from-catalog', { detail: entry }))
-                }}
-              >
-                <Plus className="h-3 w-3" /> Add
-              </Button>
-              <a
-                href={entry.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                Repo <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {filtered.length === 0 && (
-        <Card className="rounded-lg border">
-          <CardContent className="py-16 flex flex-col items-center justify-center gap-3">
-            <Store className="h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No matching MCP servers</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        Click <span className="font-medium">Add</span> to pre-fill the MCP server form in the MCP Servers tab.
-      </p>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs gap-1.5"
-        onClick={() => {
-          window.dispatchEvent(new CustomEvent('mcp-switch-tab', { detail: 'mcp' }))
-        }}
-      >
-        Skip — configure manually <ChevronRight className="h-3.5 w-3.5" />
-      </Button>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Tab 2 — MCP Servers (configured instances)
+// Tab 1 — MCP Servers (configured instances)
 // ---------------------------------------------------------------------------
 
 const EMPTY_MCP_FORM = {
@@ -423,6 +250,11 @@ function McpServersTab() {
   const [editing, setEditing] = useState<McpServerRow | null>(null)
   const [form, setForm] = useState({ ...EMPTY_MCP_FORM })
   const [saving, setSaving] = useState(false)
+  const [mcpTestResult, setMcpTestResult] = useState<{
+    status: 'testing' | 'success' | 'error'
+    tools?: Array<{ name: string; description: string }>
+    error?: string
+  } | null>(null)
 
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -445,27 +277,6 @@ function McpServersTab() {
     fetchServers()
   }, [fetchServers])
 
-  // ponytail: listen for catalog "Add" events from BrowseMcpTab. Parent
-  // handles the tab switch; we just open the dialog pre-filled.
-  useEffect(() => {
-    function onAddFromCatalog(e: Event) {
-      const entry = (e as CustomEvent<McpCatalogEntry>).detail
-      setEditing(null)
-      setForm({
-        name: entry.name,
-        description: entry.description,
-        transport: entry.transport,
-        command: entry.command ?? '',
-        args: entry.args ? entry.args.join('\n') : '',
-        url: entry.url ?? '',
-        envVars: '',
-      })
-      setDialogOpen(true)
-    }
-    window.addEventListener('mcp-add-from-catalog', onAddFromCatalog)
-    return () => window.removeEventListener('mcp-add-from-catalog', onAddFromCatalog)
-  }, [])
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return servers
@@ -477,6 +288,7 @@ function McpServersTab() {
   function openCreate() {
     setEditing(null)
     setForm({ ...EMPTY_MCP_FORM })
+    setMcpTestResult(null)
     setDialogOpen(true)
   }
 
@@ -496,6 +308,7 @@ function McpServersTab() {
       url: s.url,
       envVars: '',
     })
+    setMcpTestResult(null)
     setDialogOpen(true)
   }
 
@@ -514,6 +327,7 @@ function McpServersTab() {
     }
 
     setSaving(true)
+    setMcpTestResult({ status: 'testing' })
     try {
       const argsArr = form.args.split('\n').map((a) => a.trim()).filter(Boolean)
       const envVars: Record<string, string> = {}
@@ -545,15 +359,39 @@ function McpServersTab() {
         body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (data.ok) {
-        toast.success(isEdit ? 'MCP server updated.' : 'MCP server added.')
-        setDialogOpen(false)
-        fetchServers()
-      } else {
+      if (!data.ok) {
         toast.error(data.error || 'Failed to save MCP server.')
+        setMcpTestResult(null)
+        return
+      }
+
+      toast.success(isEdit ? 'MCP server updated.' : 'MCP server added.')
+      fetchServers()
+
+      // Agentic installation: test the connection and report tools inline.
+      const createdId = isEdit ? editing!.id : data.server?.id
+      if (!createdId) {
+        setMcpTestResult(null)
+        setDialogOpen(false)
+        return
+      }
+      try {
+        const testRes = await fetch(`/api/mcp/servers/${createdId}/test`, { method: 'POST' })
+        const testData = await testRes.json()
+        if (testData.ok) {
+          setMcpTestResult({ status: 'success', tools: testData.tools ?? [] })
+        } else {
+          setMcpTestResult({ status: 'error', error: testData.error || 'Connection test failed.' })
+        }
+      } catch (e) {
+        setMcpTestResult({
+          status: 'error',
+          error: e instanceof Error ? e.message : 'Connection test failed.',
+        })
       }
     } catch {
       toast.error('Failed to save MCP server.')
+      setMcpTestResult(null)
     } finally {
       setSaving(false)
     }
@@ -806,7 +644,20 @@ function McpServersTab() {
             </div>
           </div>
 
-          <DialogFooter>
+          {mcpTestResult && (
+            <McpTestResultBlock result={mcpTestResult} />
+          )}
+
+          <DialogFooter className="flex !justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setDialogOpen(false); setMcpTestResult(null) }}
+              disabled={saving}
+              className="h-7 text-xs"
+            >
+              {mcpTestResult ? 'Close' : 'Cancel'}
+            </Button>
             <Button
               size="sm"
               onClick={handleSave}
@@ -814,7 +665,7 @@ function McpServersTab() {
               className="h-7 text-xs gap-1.5"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Save
+              {mcpTestResult?.status === 'error' ? 'Retry' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -846,7 +697,7 @@ function McpServersTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 3 — Custom Tools (existing webhook plugins)
+// Tab 2 — Custom Tools (existing webhook plugins)
 // ---------------------------------------------------------------------------
 
 const PREDEFINED_CATEGORIES = [
@@ -1676,6 +1527,52 @@ function CustomToolsTab() {
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+function McpTestResultBlock({ result }: {
+  result: { status: 'testing' | 'success' | 'error'; tools?: Array<{ name: string; description: string }>; error?: string }
+}) {
+  if (result.status === 'testing') {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border/60 p-2.5">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Installing and detecting tools...</span>
+      </div>
+    )
+  }
+  if (result.status === 'error') {
+    return (
+      <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+          <span className="text-xs font-medium text-destructive">Connection failed</span>
+        </div>
+        <p className="text-xs text-destructive">{result.error}</p>
+        <p className="text-xs text-muted-foreground">Edit the config to fix, then click Retry.</p>
+      </div>
+    )
+  }
+  const tools = result.tools ?? []
+  return (
+    <div className="space-y-1.5 rounded-md border border-success/30 bg-success/5 p-2.5">
+      <div className="flex items-center gap-2">
+        <Check className="h-3.5 w-3.5 text-success" />
+        <span className="text-xs font-medium text-success">
+          Connected! Found {tools.length} tool{tools.length === 1 ? '' : 's'}:
+        </span>
+      </div>
+      {tools.length > 0 && (
+        <ul className="space-y-1 max-h-[140px] overflow-auto [scrollbar-width:thin]">
+          {tools.map((t) => (
+            <li key={t.name} className="text-xs">
+              <code className="font-mono text-foreground">{t.name}</code>
+              {t.description && <span className="text-muted-foreground"> — {t.description}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function TestResultBlock({ result }: { result: TestResult }) {
   return (
