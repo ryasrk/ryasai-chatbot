@@ -486,3 +486,100 @@ export class MssqlConnector implements BaseDatabaseConnector {
     this._pool = null
   }
 }
+
+// ---------------------------------------------------------------------------
+// ClickHouseConnector — uses @clickhouse/client
+// ClickHouse is a columnar OLAP database. It uses HTTP (not TCP) and has
+// a different SQL dialect (no LIMIT by default, uses LIMIT N instead).
+// The guardrails already enforce SELECT-only + LIMIT 100, which is compatible.
+// ---------------------------------------------------------------------------
+
+export class ClickHouseConnector implements BaseDatabaseConnector {
+  readonly provider = 'CLICKHOUSE'
+  private _client: any = null
+  constructor(private _config: Record<string, unknown>) {}
+
+  private async client(): Promise<any> {
+    if (!this._client) {
+      const ch = await loadDriver('@clickhouse/client')
+      const c = readDbConfig(this._config)
+      const createClient = ch.createClient as (opts: Record<string, unknown>) => unknown
+      this._client = createClient({
+        url: `https://${c.host}:${c.port || 8123}`,
+        database: c.database || 'default',
+        username: c.user,
+        password: c.password,
+        // ponytail: no clickhouse_settings — some servers (play.clickhouse.com) are readonly
+      })
+    }
+    return this._client
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const cl = await this.client()
+      const rs = await cl.query({ query: 'SELECT 1 AS ok', format: 'JSONEachRow' })
+      const text = await rs.text()
+      return text.includes('"ok"')
+    } catch {
+      return false
+    }
+  }
+
+  async fetchSchema(): Promise<ReflectedTable[]> {
+    const cl = await this.client()
+    const db = this.dbName()
+    // ponytail: batch schema reflection — single query for all tables + columns.
+    // The playground has a 100 queries/hour quota, so per-table queries would exhaust it fast.
+    const rs = await cl.query({
+      query: `SELECT t.name AS table_name, t.engine AS engine, c.name AS col_name, c.type AS col_type, c.position AS col_pos, c.is_in_primary_key AS pk FROM system.tables t LEFT JOIN system.columns c ON t.database = c.database AND t.name = c.table WHERE t.database = '${db}' AND t.engine NOT LIKE '%Materialized%' ORDER BY t.name, c.position FORMAT JSONEachRow`,
+      format: 'JSONEachRow',
+    })
+    const text = await rs.text()
+    const rows = text.trim().split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
+
+    // Group rows by table
+    const tableMap = new Map<string, { engine: string; columns: any[] }>()
+    for (const r of rows) {
+      if (!tableMap.has(r.table_name)) {
+        tableMap.set(r.table_name, { engine: r.engine, columns: [] })
+      }
+      if (r.col_name) {
+        tableMap.get(r.table_name)!.columns.push({
+          name: r.col_name,
+          type: r.col_type,
+          primaryKey: r.pk === 1,
+          notNull: !String(r.col_type).includes('Nullable'),
+        })
+      }
+    }
+
+    const result: ReflectedTable[] = []
+    for (const [tableName, info] of tableMap) {
+      result.push({
+        tableName,
+        columns: info.columns,
+        rowCount: 0, // ponytail: skip count() on 70 tables — too many queries for playground quota
+      })
+    }
+    return result
+  }
+
+  async executeQuery(sql: string): Promise<QueryResult> {
+    const cl = await this.client()
+    const start = Date.now()
+    const rs = await cl.query({ query: sql, format: 'JSONEachRow' })
+    const text = await rs.text()
+    const exec = Date.now() - start
+    const rows: QueryRow[] = text.trim().split('\n').filter(Boolean).map((l: string) => JSON.parse(l))
+    return { rows: rows.map((r) => normaliseRow(r)), rowCount: rows.length, executionMs: exec }
+  }
+
+  async close(): Promise<void> {
+    this._client = null
+  }
+
+  private dbName(): string {
+    return String((this._config as Record<string, unknown>).database ?? 'default')
+  }
+}

@@ -15,7 +15,7 @@
 import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
 import { getDbProtocolFamily } from '@/lib/db-provider-presets'
-import { PostgresConnector, MysqlConnector, MssqlConnector } from './real-connectors'
+import { PostgresConnector, MysqlConnector, MssqlConnector, ClickHouseConnector } from './real-connectors'
 
 const isPostgres = () => getDbProvider() === 'postgresql'
 
@@ -311,10 +311,7 @@ export class ConnectorRegistry {
           break
         case 'MONGODB':
         case 'CLICKHOUSE':
-        case 'SNOWFLAKE':
-        case 'ORACLE':
-          // ponytail: not in scope — demo connector stub until real drivers land.
-          connector = new SqliteDemoConnector(decryptedConfig)
+          connector = new ClickHouseConnector(decryptedConfig)
           break
         default:
           throw new Error(`Provider ${provider} is not supported.`)
