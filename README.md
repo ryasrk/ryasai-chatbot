@@ -37,9 +37,10 @@ Default login: `admin@ryas.ai` / `admin12345`
 ### Core AI Pipeline
 - **Smart Router**: Self-adjusting load balancer (schema + performance + latency + similarity + circuit breaker)
 - **Text-to-SQL**: AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
-- **Hybrid RAG**: Lexical + semantic + FTS + external vector store (Qdrant/Milvus)
+- **Real DB Connectors**: Postgres (pg Pool), MySQL (mysql2 Pool), MSSQL (mssql ConnectionPool) — dynamic driver loading, 30s timeout, schema reflection
+- **Hybrid RAG**: Lexical + semantic + FTS + external vector store (Qdrant/Milvus) + LLM reranker (opt-in) + query cache (1min TTL)
 - **REST Connector**: Whitelisted endpoints with parameter schema
-- **Streaming Chat**: Real SSE token streaming (not fake word-by-word)
+- **Streaming Chat**: Real SSE token streaming with mid-stream error frames + 120s idle watchdog
 
 ### Super-App Capabilities
 - **Agentic Planner**: Multi-step DAG execution with self-correction
@@ -65,8 +66,10 @@ Default login: `admin@ryas.ai` / `admin12345`
 
 ### Observability
 - Structured JSON logger (`src/lib/logger.ts` — scoped, leveled, no Pino dep)
+- Typed error responses (`{ error: { code, message, hint? } }` — 16 error codes via `src/lib/errors.ts`)
 - LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat)
 - Tool run metrics (latency, success rate, circuit breaker)
+- RAG cache metrics (`getRagCacheStats()` — hits, misses, hit rate)
 - Monitoring dashboard (24h stats, failed requests, blocked SQL)
 - Audit log (GUARDRAIL_BLOCK, SQL_EXECUTE, API_KEY_GENERATED, etc.)
 - Log retention (daily cleanup, 90-day default via scheduler)
@@ -110,7 +113,7 @@ User query
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (418 pass, 8 skip, 0 fail)
+bun run test         # unit tests (403 pass, 8 skip, 0 fail)
 bun run e2e          # Playwright (4 specs, mock LLM)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
@@ -144,8 +147,11 @@ src/
 │   ├── rag.ts            # Hybrid retrieval
 │   ├── rag-fts.ts        # FTS5 full-text search
 │   ├── guardrails.ts     # SQL AST validation
-│   ├── connectors.ts     # DB connector registry
+│   ├── connectors.ts     # DB connector registry (Postgres/MySQL/MSSQL + demo)
+│   ├── real-connectors.ts # Real DB connectors (pg/mysql2/mssql drivers)
 │   ├── cognee.ts         # Memory + knowledge graph
+│   ├── errors.ts         # Typed error system (16 codes, AppError class)
+│   ├── constants.ts      # Centralized magic numbers
 │   ├── notifications.ts  # Webhook/email/Telegram
 │   └── ...
 ├── middleware.ts         # Edge auth

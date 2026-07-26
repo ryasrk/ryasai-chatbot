@@ -15,6 +15,11 @@
  */
 import crypto from 'crypto'
 import { decryptConfig } from '@/lib/crypto'
+import {
+  NOTIFICATION_MAX_RETRIES,
+  NOTIFICATION_BACKOFF_BASE_MS,
+  NOTIFICATION_TIMEOUT_MS,
+} from '@/lib/constants'
 
 export interface NotificationResult {
   ok: boolean
@@ -81,7 +86,7 @@ async function sendWebhook(
     method: 'POST',
     headers,
     body,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(NOTIFICATION_TIMEOUT_MS),
   })
   const latencyMs = Date.now() - started
   if (!res.ok) return { ok: false, error: `Webhook HTTP ${res.status}`, latencyMs }
@@ -101,7 +106,7 @@ async function sendTelegram(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(NOTIFICATION_TIMEOUT_MS),
   })
   const latencyMs = Date.now() - started
   if (!res.ok) return { ok: false, error: `Telegram API HTTP ${res.status}`, latencyMs }
@@ -127,9 +132,6 @@ async function sendEmail(
 // ponytail: in-memory retry (no BullMQ). Ceiling: retries are lost on server
 // restart. Upgrade to BullMQ-based retry queue when durability is needed.
 // ---------------------------------------------------------------------------
-
-const NOTIFICATION_MAX_RETRIES = 3
-const NOTIFICATION_BACKOFF_BASE_MS = 2000
 
 export async function sendNotificationWithRetry(args: {
   configEncrypted: string

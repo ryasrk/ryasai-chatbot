@@ -6,6 +6,12 @@
 import { getLlmRuntimeConfig, getAgentLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { db } from '@/lib/db'
 import { traceLlmCall } from '@/lib/observability'
+import {
+  LLM_TIMEOUT_MS,
+  LLM_STREAM_TIMEOUT_MS,
+  LLM_MAX_RETRIES,
+  LLM_RETRY_BACKOFF_BASE_MS,
+} from '@/lib/constants'
 
 export interface LlmToolCall {
   id: string
@@ -69,10 +75,6 @@ export interface LlmResponseFormat {
 }
 
 const MAX_TOKENS_ANTHROPIC = 4096
-const LLM_TIMEOUT_MS = 30000
-const STREAM_TIMEOUT_MS = 120000
-const MAX_RETRIES = 3
-const RETRY_BACKOFF_BASE_MS = 500
 
 function previewMessages(messages: LlmMessage[]): string {
   const m = messages[0]
@@ -269,19 +271,19 @@ function buildAnthropicBody(
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
   let lastError: Error | null = null
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     try {
       const res = await fetch(url, init)
-      if (res.status >= 500 && attempt < MAX_RETRIES) {
+      if (res.status >= 500 && attempt < LLM_MAX_RETRIES) {
         lastError = new Error(`LLM error (HTTP ${res.status}).`)
-        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_BASE_MS * 2 ** attempt))
+        await new Promise((r) => setTimeout(r, LLM_RETRY_BACKOFF_BASE_MS * 2 ** attempt))
         continue
       }
       return res
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
-      if (attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_BASE_MS * 2 ** attempt))
+      if (attempt < LLM_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, LLM_RETRY_BACKOFF_BASE_MS * 2 ** attempt))
         continue
       }
     }
@@ -465,7 +467,7 @@ export async function* chatStream(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(LLM_STREAM_TIMEOUT_MS),
     })
     if (!res.ok || !res.body) {
       const errText = await readErrorBody(res)
@@ -520,7 +522,7 @@ export async function* chatStream(
       Authorization: `Bearer ${cfg.apiKey}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(STREAM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(LLM_STREAM_TIMEOUT_MS),
   })
   if (!res.ok || !res.body) {
     const errText = await readErrorBody(res)

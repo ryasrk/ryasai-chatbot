@@ -25,6 +25,14 @@ import {
   extractPdfTextFromBuffer,
   extractXlsxTextFromBuffer,
 } from '@/lib/document-parsers'
+import {
+  RAG_CHUNK_SIZE,
+  RAG_CHUNK_OVERLAP,
+  RAG_MAX_PER_DOCUMENT,
+  RAG_CACHE_TTL_MS,
+  RAG_CACHE_MAX_ENTRIES,
+  RAG_MAX_CHUNKS_PER_UPLOAD,
+} from '@/lib/constants'
 
 /** Indonesian + English stopword set (lowercased). */
 export const STOPWORDS = new Set<string>([
@@ -113,7 +121,7 @@ export function sortRetrievedChunks<T extends { score: number; chunkIndex: numbe
 export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: number; documentId: string }>(
   rows: T[],
   topK: number,
-  maxPerDocument = 2,
+  maxPerDocument = RAG_MAX_PER_DOCUMENT,
 ): T[] {
   const selected: T[] = []
   const perDocument = new Map<string, number>()
@@ -136,9 +144,16 @@ export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: 
 // topK values don't collide. Upgrade to Redis when deploying >1 instance.
 // ---------------------------------------------------------------------------
 
-const RAG_CACHE_TTL_MS = 60_000 // 1 minute — short TTL so new docs appear fast
-const RAG_CACHE_MAX = 200
 const _ragCache = new Map<string, { result: Awaited<ReturnType<typeof retrieveRelevantChunks>>; ts: number }>()
+
+// ponytail: cache hit/miss counters — per-instance, not distributed.
+let _cacheHits = 0
+let _cacheMisses = 0
+
+export function getRagCacheStats(): { hits: number; misses: number; hitRate: number } {
+  const total = _cacheHits + _cacheMisses
+  return { hits: _cacheHits, misses: _cacheMisses, hitRate: total === 0 ? 0 : _cacheHits / total }
+}
 
 function ragCacheKey(query: string, topK: number): string {
   return `${topK}:${query.slice(0, 500).toLowerCase().trim()}`
@@ -167,6 +182,8 @@ export async function retrieveRelevantChunks(args: {
   const cacheKey = ragCacheKey(args.query, args.topK)
   const cached = _ragCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < RAG_CACHE_TTL_MS) {
+    _cacheHits += 1
+    log.debug('RAG cache hit', { query: args.query.slice(0, 50), topK: args.topK })
     return cached.result
   }
 
@@ -192,8 +209,11 @@ export async function retrieveRelevantChunks(args: {
     graphContext,
   }
 
+  _cacheMisses += 1
+  log.debug('RAG cache miss', { query: args.query.slice(0, 50), topK: args.topK, candidatesScanned: retrievalResult.candidatesScanned })
+
   // ponytail: cache the result — evict oldest when at capacity
-  if (_ragCache.size >= RAG_CACHE_MAX) {
+  if (_ragCache.size >= RAG_CACHE_MAX_ENTRIES) {
     const oldest = _ragCache.keys().next().value
     if (oldest) _ragCache.delete(oldest)
   }
@@ -261,6 +281,7 @@ async function rerankWithLlm(
 
     return reranked
   } catch (e) {
+    // ponytail: graceful degradation — falls back to original order when LLM reranker unavailable
     log.warn('LLM rerank failed, using original order', { error: e instanceof Error ? e.message : String(e) })
     return chunks.slice(0, topK)
   }
@@ -276,6 +297,7 @@ async function retrieveFromVectorAndLexical(
     vector: queryEmbedding?.vector ?? null,
     topK,
   })
+  // ponytail: graceful degradation — falls back to lexical search when vector store unavailable
   const candidates = vectorScores.size > 0
     ? await loadVectorCandidateChunks([...vectorScores.keys()])
     : await loadLexicalCandidateChunks(queryTokens, topK)
@@ -315,6 +337,7 @@ async function retrieveFromVectorAndLexical(
 }
 
 async function recallGraphContext(query: string): Promise<string> {
+  // ponytail: graceful degradation — falls back to empty string when cognee unavailable
   try {
     const { recallKnowledgeGraph } = await import('@/lib/cognee')
     return await recallKnowledgeGraph({ query, topK: 5 })
@@ -391,6 +414,7 @@ export function applyVectorStoreScore(
 async function resolveQueryEmbedding(
   query: string,
 ): Promise<{ vector: number[]; model: string } | null> {
+  // ponytail: graceful degradation — falls back to lexical-only scoring when embedding API unavailable
   try {
     const config = await getEmbeddingRuntimeConfig()
     if (!config) return null
@@ -406,6 +430,7 @@ async function resolveVectorScores(args: {
   vector: number[] | null
   topK: number
 }): Promise<Map<string, number>> {
+  // ponytail: graceful degradation — falls back to empty scores (lexical fallback) when vector store unavailable
   if (!args.vector) return new Map()
   try {
     const config = await getVectorStoreRuntimeConfig()
@@ -473,7 +498,7 @@ async function loadAllCandidateChunks(): Promise<CandidateChunk[]> {
       id: true,
       name: true,
       chunks: {
-        take: 500,
+        take: RAG_MAX_CHUNKS_PER_UPLOAD,
         select: {
           id: true,
           chunkIndex: true,
@@ -536,8 +561,8 @@ function containsTokenPhrase(contentTokens: string[], phrase: string[]): boolean
   return false
 }
 
-const DEFAULT_MAX_CHUNK_CHARS = 1400
-const DEFAULT_OVERLAP_CHARS = 180
+const DEFAULT_MAX_CHUNK_CHARS = RAG_CHUNK_SIZE
+const DEFAULT_OVERLAP_CHARS = RAG_CHUNK_OVERLAP
 
 /**
  * Split text into semantic-ish chunks on double-newlines, with a hard ceiling

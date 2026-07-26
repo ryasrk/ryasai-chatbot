@@ -152,11 +152,35 @@ export async function POST(req: NextRequest) {
 
       const sseStream = new ReadableStream({
         async start(controller) {
+          // ponytail: closed flag guards enqueues after a timeout/error close.
+          let closed = false
+          const safeEnqueue = (chunk: Uint8Array) => {
+            if (closed) return
+            try { controller.enqueue(chunk) } catch { closed = true }
+          }
+          const safeClose = () => {
+            if (closed) return
+            closed = true
+            try { controller.close() } catch { /* already closed */ }
+          }
           let fullAnswer = ''
           try {
+            // 120s idle watchdog — no token in 120s → typed LLM_TIMEOUT + close.
+            let timedOut = false
+            const IDLE_TIMEOUT_MS = 120_000
+            const onIdleTimeout = () => {
+              timedOut = true
+              safeEnqueue(encoder.encode(`data: ${JSON.stringify({ error: { code: 'LLM_TIMEOUT', message: 'Stream timed out — no data received for 120s. Please try again.' } })}\n\n`))
+              safeEnqueue(encoder.encode('data: [DONE]\n\n'))
+              safeClose()
+            }
+            let idleTimer: ReturnType<typeof setTimeout> | null = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
             for await (const token of streaming.stream) {
+              if (timedOut) break
+              if (idleTimer) clearTimeout(idleTimer)
+              idleTimer = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
               fullAnswer += token
-              controller.enqueue(
+              safeEnqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
                     id: completionId,
@@ -167,6 +191,11 @@ export async function POST(req: NextRequest) {
                   })}\n\n`,
                 ),
               )
+            }
+            if (idleTimer) clearTimeout(idleTimer)
+            if (timedOut) {
+              await writeApiLog({ apiKeyId, status: 504, latencyMs: Date.now() - started, errorMessage: 'Stream idle timeout (120s)' })
+              return
             }
 
             const aiMessage = await db.chatMessage.create({
@@ -214,7 +243,7 @@ export async function POST(req: NextRequest) {
 
             await writeApiLog({ apiKeyId, status: 200, latencyMs })
 
-            controller.enqueue(
+            safeEnqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
                   id: completionId,
@@ -235,24 +264,16 @@ export async function POST(req: NextRequest) {
                 })}\n\n`,
               ),
             )
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-            controller.close()
+            safeEnqueue(encoder.encode('data: [DONE]\n\n'))
+            safeClose()
           } catch (e) {
-            const message = e instanceof Error ? e.message : 'Stream failed.'
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({
-                  id: completionId,
-                  object: 'chat.completion.chunk',
-                  created,
-                  model,
-                  choices: [{ index: 0, delta: { content: `[error: ${message}]` }, finish_reason: 'stop' }],
-                })}\n\n`,
-              ),
-            )
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-            await writeApiLog({ apiKeyId, status: 503, latencyMs: Date.now() - started, errorMessage: message })
-            controller.close()
+            if (!closed) {
+              const message = e instanceof Error ? e.message : 'Stream failed.'
+              safeEnqueue(encoder.encode(`data: ${JSON.stringify({ error: { code: 'LLM_ERROR', message } })}\n\n`))
+              safeEnqueue(encoder.encode('data: [DONE]\n\n'))
+              await writeApiLog({ apiKeyId, status: 503, latencyMs: Date.now() - started, errorMessage: message })
+              safeClose()
+            }
           }
         },
       })

@@ -52,9 +52,10 @@ describe('SqliteDemoConnector.fetchSchema (Postgres path)', () => {
 })
 
 describe('ConnectorRegistry (Postgres)', () => {
-  test('MYSQL family → demo connector (sandbox)', () => {
+  test('MYSQL family → MysqlConnector instance', () => {
     const reg = new ConnectorRegistry()
     const c = reg.getConnector('pg1', 'MYSQL', {})
     expect(c).toBeDefined()
+    expect(c.provider).toBe('MYSQL')
   })
 })

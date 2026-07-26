@@ -36,39 +36,44 @@ beforeEach(() => {
 })
 
 describe('handleApiError', () => {
-  test('UnauthorizedError → 401 with correct message', async () => {
+  test('UnauthorizedError → 401 with typed UNAUTHORIZED code', async () => {
     const res = handleApiError(new UnauthorizedError('no session'), 'fallback')
     expect(res.status).toBe(401)
     const body = await res.json()
-    expect(body.error).toBe('no session')
+    expect(body.error.code).toBe('UNAUTHORIZED')
+    expect(body.error.message).toBe('no session')
   })
 
   test('UnauthorizedError uses default message', async () => {
     const res = handleApiError(new UnauthorizedError(), 'fallback')
     expect(res.status).toBe(401)
     const body = await res.json()
-    expect(body.error).toBe('No active session.')
+    expect(body.error.code).toBe('UNAUTHORIZED')
+    expect(body.error.message).toBe('No active session.')
   })
 
-  test('Generic Error → 500 with fallback message', async () => {
+  test('Generic Error → 500 with typed INTERNAL_ERROR code + fallback message', async () => {
     const res = handleApiError(new Error('boom'), 'Something went wrong')
     expect(res.status).toBe(500)
     const body = await res.json()
-    expect(body.error).toBe('Something went wrong')
+    expect(body.error.code).toBe('INTERNAL_ERROR')
+    expect(body.error.message).toBe('Something went wrong')
   })
 
   test('Generic Error → custom status', async () => {
     const res = handleApiError(new Error('bad'), 'Bad request', 400)
     expect(res.status).toBe(400)
     const body = await res.json()
-    expect(body.error).toBe('Bad request')
+    expect(body.error.code).toBe('INTERNAL_ERROR')
+    expect(body.error.message).toBe('Bad request')
   })
 
-  test('non-Error value → 500 with fallback', async () => {
+  test('non-Error value → 500 with typed INTERNAL_ERROR + fallback', async () => {
     const res = handleApiError('string error', 'fallback')
     expect(res.status).toBe(500)
     const body = await res.json()
-    expect(body.error).toBe('fallback')
+    expect(body.error.code).toBe('INTERNAL_ERROR')
+    expect(body.error.message).toBe('fallback')
   })
 })
 

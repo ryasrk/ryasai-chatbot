@@ -113,6 +113,7 @@ let _ownerId: string | null = null
 const INIT_RETRY_MS = 30000 // retry init after 30s if it failed
 
 async function getCogneeClient(): Promise<any> {
+  // ponytail: graceful degradation — returns null when cognee SDK init fails, callers fall back to no-op
   if (_cognee) return _cognee
   if (_initFailed && Date.now() - _initFailedAt < INIT_RETRY_MS) return null
   if (_warming) return null
@@ -202,6 +203,7 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (!(await isCogneeEnabled())) return
   const c = await getCogneeClient()
   if (!c) return
+  // ponytail: graceful degradation — fire-and-forget, swallows errors when cognee SDK fails
   try {
     const text = JSON.stringify({
       type: 'chat_turn',
@@ -307,6 +309,7 @@ export async function recallContext(args: {
 }
 
 async function recallFromGraph(c: any, query: string): Promise<string> {
+  // ponytail: graceful degradation — falls back to empty string when each cognee search strategy fails
   const strategies = [
     { searchType: 'SUMMARIES', topK: 5 },
     { searchType: 'CHUNKS', topK: 5 },
@@ -337,6 +340,7 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
 }
 
 async function recallFromSession(c: any, query: string, sessionId: string): Promise<string> {
+  // ponytail: graceful degradation — falls back to empty string when cognee session search fails
   try {
     const result = await c.search(query, {
       sessionId,
@@ -376,6 +380,7 @@ export async function cognifyDocument(args: {
     .join('\n\n')
 
   // Add data to dataset first — this creates the dataset record
+  // ponytail: graceful degradation — falls back to failed status when cognee add/cognify fails
   try {
     await c.add([{ type: 'text', text }], dataset)
   } catch (err) {
@@ -559,6 +564,7 @@ export async function recallKnowledgeGraph(args: {
   const c = await getCogneeClient()
   if (!c) return ''
 
+  // ponytail: graceful degradation — falls back to empty string when cognee graph search fails
   const topK = args.topK ?? 5
   const strategies = [
     { searchType: 'SUMMARIES', topK },
@@ -664,6 +670,7 @@ export async function forgetAll(): Promise<boolean> {
   if (!(await isCogneeEnabled())) return false
   const c = await getCogneeClient()
   if (!c) return false
+  // ponytail: graceful degradation — returns false when cognee forget fails, does not throw
   try {
     await c.forget({ kind: 'all' })
     // Reset all document cognify statuses
@@ -681,6 +688,7 @@ export async function forgetKnowledgeGraph(): Promise<boolean> {
   if (!(await isCogneeEnabled())) return false
   const c = await getCogneeClient()
   if (!c) return false
+  // ponytail: graceful degradation — returns false when cognee forget fails, does not throw
   try {
     await c.forget({ kind: 'dataset', dataset: { name: kbDatasetFor() } })
     // Reset document cognify statuses for KB dataset

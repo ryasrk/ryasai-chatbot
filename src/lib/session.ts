@@ -4,6 +4,8 @@ import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { scopedLogger } from '@/lib/logger'
+import { AppError } from '@/lib/errors'
+import { SESSION_INACTIVITY_TIMEOUT_MS } from '@/lib/constants'
 const log = scopedLogger('session')
 
 export interface ActiveUser {
@@ -23,13 +25,12 @@ export class UnauthorizedError extends Error {
 // ponytail: in-memory inactivity tracker — per-instance, not distributed.
 // Ceiling: cleared on server restart (users re-authenticate). 30min timeout.
 // Upgrade to Redis-backed tracker when deploying >1 instance.
-const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
 const _lastActivity = new Map<string, number>()
 
 function isInactivityExpired(userId: string): boolean {
   const last = _lastActivity.get(userId)
   if (!last) return false // first request or after restart — allow
-  return Date.now() - last > INACTIVITY_TIMEOUT_MS
+  return Date.now() - last > SESSION_INACTIVITY_TIMEOUT_MS
 }
 
 function touchActivity(userId: string): void {
@@ -38,17 +39,29 @@ function touchActivity(userId: string): void {
   if (_lastActivity.size > 1000) {
     const now = Date.now()
     for (const [k, t] of _lastActivity) {
-      if (now - t > INACTIVITY_TIMEOUT_MS) _lastActivity.delete(k)
+      if (now - t > SESSION_INACTIVITY_TIMEOUT_MS) _lastActivity.delete(k)
     }
   }
 }
 
 export function handleApiError(e: unknown, fallback: string, status = 500) {
   if (e instanceof UnauthorizedError) {
-    return NextResponse.json({ error: e.message }, { status: 401 })
+    return NextResponse.json(
+      { error: { code: 'UNAUTHORIZED' as const, message: e.message } },
+      { status: 401 },
+    )
   }
-  log.error('API error', { error: e instanceof Error ? e.message : String(e) })
-  return NextResponse.json({ error: fallback }, { status })
+  if (e instanceof AppError) {
+    return NextResponse.json(
+      { error: { code: e.code, message: e.message, hint: e.hint } },
+      { status: e.statusCode },
+    )
+  }
+  log.error('Unhandled API error', { error: e instanceof Error ? e.message : String(e) })
+  return NextResponse.json(
+    { error: { code: 'INTERNAL_ERROR' as const, message: fallback } },
+    { status },
+  )
 }
 
 export async function getActiveUser(): Promise<ActiveUser> {

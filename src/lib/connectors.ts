@@ -15,6 +15,7 @@
 import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
 import { getDbProtocolFamily } from '@/lib/db-provider-presets'
+import { PostgresConnector, MysqlConnector, MssqlConnector } from './real-connectors'
 
 const isPostgres = () => getDbProvider() === 'postgresql'
 
@@ -46,6 +47,8 @@ export interface BaseDatabaseConnector {
   testConnection(): Promise<boolean>
   fetchSchema(): Promise<ReflectedTable[]>
   executeQuery(sql: string): Promise<QueryResult>
+  // ponytail: optional — only real connectors with pools implement this.
+  close?(): Promise<void>
 }
 
 // ---------------------------------------------------------------------------
@@ -222,13 +225,19 @@ export class ConnectorRegistry {
           connector = new SqliteDemoConnector(decryptedConfig)
           break
         case 'POSTGRESQL':
+          connector = new PostgresConnector(decryptedConfig)
+          break
         case 'MYSQL':
+          connector = new MysqlConnector(decryptedConfig)
+          break
         case 'MSSQL':
+          connector = new MssqlConnector(decryptedConfig)
+          break
         case 'MONGODB':
         case 'CLICKHOUSE':
         case 'SNOWFLAKE':
         case 'ORACLE':
-          // ponytail: sandbox can't reach external DBs, all map to demo connector.
+          // ponytail: not in scope — demo connector stub until real drivers land.
           connector = new SqliteDemoConnector(decryptedConfig)
           break
         default:
@@ -240,7 +249,10 @@ export class ConnectorRegistry {
   }
 
   drop(integrationId: string) {
+    const c = this._pools.get(integrationId)
     this._pools.delete(integrationId)
+    // ponytail: fire-and-forget pool cleanup — keeps drop() sync for existing callers.
+    if (c?.close) c.close().catch(() => {})
   }
 }
 

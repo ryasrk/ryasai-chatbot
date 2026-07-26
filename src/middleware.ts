@@ -1,4 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_DEFAULT,
+  RATE_LIMIT_CHAT,
+  RATE_LIMIT_LOGIN,
+  RATE_LIMIT_AGENT,
+  RATE_LIMIT_UPLOAD,
+} from '@/lib/constants'
 
 const PUBLIC_API_PATHS = new Set([
   '/api',
@@ -18,24 +26,22 @@ const RATE_LIMITED_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH'])
 // ponytail: in-memory rate limiting — Edge-safe, per-instance.
 // Ceiling: not distributed (each instance counts independently). Upgrade to
 // Redis-backed rate limiting when deploying >1 instance. Reset every 60s.
-const RATE_WINDOW_MS = 60_000
 const RATE_BUCKETS = new Map<string, { count: number; resetAt: number }>()
-const DEFAULT_LIMIT = 60
 const ROUTE_LIMITS: Array<[string, number]> = [
-  ['/api/chat/sessions', 30], // chat POST = LLM call (expensive)
-  ['/api/v1/chat/completions', 30],
-  ['/api/v1/agent/run', 20],
-  ['/api/agent/dashboard', 20],
-  ['/api/auth/login', 10], // brute force protection
-  ['/api/documents', 20], // upload/processing
-  ['/api/integrations', 20], // connection testing
+  ['/api/chat/sessions', RATE_LIMIT_CHAT], // chat POST = LLM call (expensive)
+  ['/api/v1/chat/completions', RATE_LIMIT_CHAT],
+  ['/api/v1/agent/run', RATE_LIMIT_AGENT],
+  ['/api/agent/dashboard', RATE_LIMIT_AGENT],
+  ['/api/auth/login', RATE_LIMIT_LOGIN], // brute force protection
+  ['/api/documents', RATE_LIMIT_UPLOAD], // upload/processing
+  ['/api/integrations', RATE_LIMIT_UPLOAD], // connection testing
 ]
 
 function limitFor(pathname: string): { limit: number; route: string } {
   for (const [prefix, limit] of ROUTE_LIMITS) {
     if (pathname.startsWith(prefix)) return { limit, route: prefix }
   }
-  return { limit: DEFAULT_LIMIT, route: '/api/_default' }
+  return { limit: RATE_LIMIT_DEFAULT, route: '/api/_default' }
 }
 
 function rateLimitKey(req: NextRequest, route: string): string {
@@ -66,7 +72,7 @@ export function middleware(req: NextRequest) {
     const now = Date.now()
     const bucket = RATE_BUCKETS.get(key)
     if (!bucket || now > bucket.resetAt) {
-      RATE_BUCKETS.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
+      RATE_BUCKETS.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
       // Evict stale buckets periodically
       if (RATE_BUCKETS.size > 1000) {
         for (const [k, b] of RATE_BUCKETS) if (now > b.resetAt) RATE_BUCKETS.delete(k)

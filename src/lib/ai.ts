@@ -16,6 +16,7 @@ import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('ai')
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
+import { LlmNotConfiguredError } from '@/lib/errors'
 
 // ---------------------------------------------------------------------------
 // Backend resolution + shared completion helpers
@@ -30,15 +31,6 @@ interface ChatMessage {
 interface ChatOpts {
   temperature?: number
   purpose?: string
-}
-
-class LlmNotConfiguredError extends Error {
-  constructor() {
-    super(
-      'LLM is not configured. Open Settings → AI Configuration and set the endpoint + API key before using Chat.',
-    )
-    this.name = 'LlmNotConfiguredError'
-  }
 }
 
 async function resolveBackend(): Promise<{ cfg: LlmRuntimeConfig }> {

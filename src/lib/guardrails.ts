@@ -13,6 +13,8 @@
  *   5. Force a LIMIT 100 safety cap if no LIMIT is present.
  *   6. Whitelist only `SELECT` (with optional WITH/CTE) as the leading keyword.
  */
+import { SQL_MAX_LIMIT } from '@/lib/constants'
+
 export interface GuardrailResult {
   ok: boolean
   sanitized: string
@@ -31,7 +33,6 @@ const MUTATION_KEYWORDS = new Set([
 ])
 
 /** Hard row cap (spec §4.3). Named constant — a safety policy, not env config. */
-const MAX_LIMIT = 100
 
 const DANGEROUS_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /--/, label: 'inline comment (--)' },
@@ -144,17 +145,17 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     }
   }
 
-  // Clamp any existing LIMIT n / LIMIT n OFFSET m down to MAX_LIMIT.
+  // Clamp any existing LIMIT n / LIMIT n OFFSET m down to SQL_MAX_LIMIT.
   compiled = compiled.replace(
     /\bLIMIT\s+(\d+)(?:\s+OFFSET\s+(\d+))?/gi,
     (_m, n, off) => {
-      const clamped = Math.min(Number(n), MAX_LIMIT)
+      const clamped = Math.min(Number(n), SQL_MAX_LIMIT)
       return off !== undefined ? `LIMIT ${clamped} OFFSET ${off}` : `LIMIT ${clamped}`
     },
   )
   // If (still) no LIMIT, append the cap.
   if (!/\bLIMIT\b/i.test(compiled)) {
-    compiled = `${compiled} LIMIT ${MAX_LIMIT}`
+    compiled = `${compiled} LIMIT ${SQL_MAX_LIMIT}`
   }
   compiled = `${compiled};`
 

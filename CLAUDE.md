@@ -786,3 +786,40 @@ Modified (key changes):
 - `rag.ts`, `tool-router.ts`, `ai.ts`, `session.ts` — `console.log/warn/error` → `scopedLogger` with JSON output.
 
 **Verification**: tsc 2 pre-existing errors (api-keys.test.ts redeclared variable) · lint 0 errors 19 pre-existing warnings · bun test src/ 418 pass 8 skip 0 fail (1 pre-existing mock isolation fail in query route test).
+
+### 2026-07-26 — Real DB connectors, typed errors, streaming resilience, constants extraction
+
+**Real database connectors** (`src/lib/real-connectors.ts` — new, 488 lines):
+- `PostgresConnector` — uses `pg` Pool for connection pooling, `information_schema` schema reflection, 30s query timeout.
+- `MysqlConnector` — uses `mysql2/promise` Pool, `information_schema` reflection, 30s timeout.
+- `MssqlConnector` — uses `mssql` ConnectionPool, `INFORMATION_SCHEMA` reflection, `requestTimeout` enforcement.
+- All use dynamic `loadDriver()` import — app works without drivers installed, fails with clear error when that provider is used.
+- `connectors.ts` updated: POSTGRESQL/MYSQL/MSSQL cases now use real connectors (was all mapped to SqliteDemoConnector).
+- MONGODB/CLICKHOUSE/SNOWFLAKE/ORACLE still map to demo (not in scope).
+
+**Typed error system** (`src/lib/errors.ts` — new):
+- `ErrorCode` union (16 codes: UNAUTHORIZED, FORBIDDEN, NOT_FOUND, VALIDATION_ERROR, RATE_LIMITED, LLM_NOT_CONFIGURED, LLM_ERROR, LLM_TIMEOUT, GUARDRAIL_BLOCK, SQL_ERROR, REST_ERROR, PLUGIN_ERROR, MCP_ERROR, CONFIG_ERROR, SETUP_REQUIRED, INTERNAL_ERROR).
+- `AppError` class with `code`, `hint`, `statusCode`, `cause`.
+- `defaultStatusForCode()` — maps error codes to HTTP status.
+- `toTypedError()` — converts any error to typed response shape.
+- `session.ts` `handleApiError()` now emits `{ error: { code, message, hint? } }` (was `{ error: string }`). All 64 routes using `handleApiError()` automatically get typed errors.
+
+**Streaming error resilience**:
+- `send/route.ts` (internal chat) — 120s idle watchdog sends `LLM_TIMEOUT` SSE error frame before close. Mid-stream catch sends `LLM_ERROR` frame. `safeClose()` guard prevents enqueue-after-close.
+- `v1/chat/completions/route.ts` (external API) — same 120s watchdog + `LLM_ERROR` frame + `data: [DONE]` close. `safeEnqueue()` guard.
+
+**Centralized constants** (`src/lib/constants.ts` — new):
+- All magic numbers extracted: SQL_MAX_LIMIT, RAG_CHUNK_SIZE/OVERLAP/MAX_PER_DOCUMENT/CACHE_TTL/MAX_ENTRIES/MAX_CHUNKS_PER_UPLOAD, RATE_LIMIT_WINDOW/DEFAULT/CHAT/LOGIN/AGENT/UPLOAD, LLM_TIMEOUT/STREAM_TIMEOUT/MAX_RETRIES/RETRY_BACKOFF_BASE, SESSION_INACTIVITY_TIMEOUT/COOKIE_MAX_AGE, SQL_MAX_CONCURRENT_PER_INTEGRATION, NOTIFICATION_MAX_RETRIES/BACKOFF_BASE/TIMEOUT, WEBHOOK_RESPONSE_CAP, COGNEE_SESSION_CACHE_TTL/MAX, LOG_RETENTION_DAYS_DEFAULT.
+- 6 files updated to import from constants.ts: guardrails.ts, rag.ts, middleware.ts, llm-client.ts, session.ts, notifications.ts.
+
+**RAG cache metrics**:
+- `_cacheHits`/`_cacheMisses` counters in `rag.ts`.
+- `getRagCacheStats()` export → `{ hits, misses, hitRate }`.
+- `log.debug` on cache hit/miss with query + topK.
+
+**Graceful degradation verification**:
+- All cognee callsites (8 in cognee.ts) confirmed to have try-catch with graceful fallback.
+- All vector store callsites (5 in rag.ts) confirmed to fall back to lexical search.
+- `// ponytail: graceful degradation` comments added at each callsite.
+
+**Verification**: tsc 2 pre-existing errors (api-keys.test.ts) + 1 fixed (real-connectors.ts mssql cast) · lint 0 errors 19 warnings · bun test src/ 403 pass 8 skip 1 pre-existing fail.

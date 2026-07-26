@@ -95,9 +95,23 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
+        // ponytail: closed flag guards enqueues after a timeout/error close —
+        // controller.enqueue on a closed controller throws, which would escape
+        // the async start() and surface as an unhandled rejection.
+        let closed = false
         const send = (event: string, data: unknown) => {
-          controller.enqueue(encoder.encode(`event: ${event}\n`))
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+          if (closed) return
+          try {
+            controller.enqueue(encoder.encode(`event: ${event}\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+          } catch {
+            closed = true
+          }
+        }
+        const safeClose = () => {
+          if (closed) return
+          closed = true
+          try { controller.close() } catch { /* already closed */ }
         }
 
         try {
@@ -144,12 +158,31 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             })
           }
 
-          // 5. Stream tokens.
+          // 5. Stream tokens — with a 120s idle watchdog.
+          //    If no token arrives within 120s, send a typed LLM_TIMEOUT error
+          //    frame and close. The underlying fetch also has its own 120s total
+          //    timeout (STREAM_TIMEOUT_MS), so a hung stream eventually aborts.
           let fullAnswer = ''
+          let timedOut = false
+          const IDLE_TIMEOUT_MS = 120_000
+          const onIdleTimeout = () => {
+            timedOut = true
+            send('error', {
+              code: 'LLM_TIMEOUT',
+              message: 'Stream timed out — no data received for 120s. Please try again.',
+            })
+            safeClose()
+          }
+          let idleTimer: ReturnType<typeof setTimeout> | null = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
           for await (const token of streaming.stream) {
+            if (timedOut) break
+            if (idleTimer) clearTimeout(idleTimer)
+            idleTimer = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
             fullAnswer += token
             send('token', { content: token })
           }
+          if (idleTimer) clearTimeout(idleTimer)
+          if (timedOut) return // skip persistence — partial answer must not be saved as complete
 
           // 6. Persist AI message + ToolRuns + update session.
           const aiMessage = await db.chatMessage.create({
@@ -208,26 +241,29 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // 8. Done.
           send('done', { messageId: aiMessage.id, latencyMs: Date.now() - started })
         } catch (e) {
-          const status = statusForInternalChatError(e)
-          if (status === 503) {
-            await persistAssistantError({
-              sessionId: session.id,
-              userId: user.userId,
-              message: text,
-            }).catch(() => {
-              /* best effort only */
-            })
-            send('error', {
-              message:
-                'AI provider is not configured. Open Settings > AI Configuration and set the model API endpoint before using Chat.',
-            })
-          } else {
-            const message =
-              e instanceof Error ? e.message : 'An internal error occurred.'
-            send('error', { message })
+          if (!closed) {
+            const status = statusForInternalChatError(e)
+            if (status === 503) {
+              await persistAssistantError({
+                sessionId: session.id,
+                userId: user.userId,
+                message: text,
+              }).catch(() => {
+                /* best effort only */
+              })
+              send('error', {
+                code: 'LLM_NOT_CONFIGURED',
+                message:
+                  'AI provider is not configured. Open Settings > AI Configuration and set the model API endpoint before using Chat.',
+              })
+            } else {
+              const message =
+                e instanceof Error ? e.message : 'An internal error occurred.'
+              send('error', { code: 'LLM_ERROR', message })
+            }
           }
         } finally {
-          controller.close()
+          safeClose()
         }
       },
     })

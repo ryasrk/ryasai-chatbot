@@ -159,11 +159,11 @@ describe('ConnectorRegistry', () => {
     expect(c.provider).toBe('SQLITE_DEMO')
   })
 
-  test('POSTGRESQL provider → maps to demo connector (sandbox limitation)', () => {
+  test('POSTGRESQL provider → PostgresConnector instance', () => {
     const reg = new ConnectorRegistry()
     const c = reg.getConnector('i2', 'POSTGRESQL', {})
     expect(c).toBeDefined()
-    expect(c.provider).toBe('SQLITE_DEMO')
+    expect(c.provider).toBe('POSTGRESQL')
   })
 
   test('caches connector by integrationId (same instance)', () => {
