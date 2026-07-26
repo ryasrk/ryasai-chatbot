@@ -99,12 +99,21 @@ interface ToolScore {
   reason: string
 }
 
+export interface AmbiguousIntegration {
+  integrationId: string
+  integrationName: string
+  score: number
+}
+
 export interface SmartRouteResult {
   decision: RouteDecision
   reason: string
   scores: ToolScore[]
   integrationId?: string
   llmUsed: boolean
+  // ponytail: when multiple integrations match equally, list them so the
+  // caller can ask the user to clarify which database they mean.
+  ambiguousIntegrations?: AmbiguousIntegration[]
 }
 
 interface PerfMetrics {
@@ -150,7 +159,10 @@ export async function smartRoute(args: {
   ])
 
   // ponytail: detect explicit integration mentions in the question ("World Geography DB", "Chinook", etc.)
-  const mentionedIntegration = await detectMentionedIntegration(args.question, expandedTokens)
+  // Returns { integrationId } for a clear winner, { ambiguous } when multiple match equally.
+  const mentionResult = await detectMentionedIntegration(args.question, expandedTokens)
+  const mentionedIntegration = mentionResult?.integrationId
+  const mentionedAmbiguous = mentionResult?.ambiguous
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores: ToolScore[] = tools.map((tool) => {
@@ -210,12 +222,24 @@ export async function smartRoute(args: {
   }
 
   let integrationId: string | undefined
+  let ambiguousIntegrations: AmbiguousIntegration[] | undefined
   if (decision === 'SQL' && args.hasIntegrations) {
-    // ponytail: priority order — explicit mention > user-selected > schema match
-    integrationId = mentionedIntegration ?? args.preferredIntegrationId ?? (await pickBestIntegration(expandedTokens))
+    // ponytail: priority order — explicit name mention > user-selected > schema match
+    if (mentionedIntegration) {
+      integrationId = mentionedIntegration
+    } else if (mentionedAmbiguous && mentionedAmbiguous.length > 1) {
+      // Explicit mention was ambiguous (e.g. "customer" matches multiple DBs)
+      ambiguousIntegrations = mentionedAmbiguous
+    } else if (args.preferredIntegrationId) {
+      integrationId = args.preferredIntegrationId
+    } else {
+      const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens)
+      integrationId = pickResult?.integrationId
+      ambiguousIntegrations = pickResult?.ambiguous
+    }
   }
 
-  return { decision, reason, scores, integrationId, llmUsed }
+  return { decision, reason, scores, integrationId, llmUsed, ambiguousIntegrations }
 }
 
 function scoreSchemaMatch(
@@ -443,7 +467,10 @@ async function loadSimilarityBoost(
 // keywords from the DB, no hardcoded provider keywords. When the user says
 // "Di World Geography DB" or "which country has the most cities", the schema
 // keywords (country, city, population, etc.) uniquely identify the integration.
-async function detectMentionedIntegration(question: string, tokens: string[]): Promise<string | undefined> {
+async function detectMentionedIntegration(
+  question: string,
+  tokens: string[],
+): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
     include: { schemas: { select: { tableName: true, columns: true } } },
@@ -457,13 +484,13 @@ async function detectMentionedIntegration(question: string, tokens: string[]): P
   // Priority 1: explicit integration name match ("World Geography DB", "Chinook")
   for (const integ of integrations) {
     const nameLower = integ.name.toLowerCase()
-    if (lower.includes(nameLower)) return integ.id
+    if (lower.includes(nameLower)) return { integrationId: integ.id }
     // Match significant words from the name (skip generic words)
     const significantWords = nameLower.split(/\s+/).filter(
       (w) => w.length >= 4 && !STOPWORDS.has(w) && !['db', 'database', 'data', 'store', 'media'].includes(w),
     )
     if (significantWords.length >= 2 && significantWords.every((w) => lower.includes(w))) {
-      return integ.id
+      return { integrationId: integ.id }
     }
   }
 
@@ -498,22 +525,33 @@ async function detectMentionedIntegration(question: string, tokens: string[]): P
   })
 
   scored.sort((a, b) => b.score - a.score)
-  // Only return if there's a clear winner (top score > 0 and > 2x the second)
-  if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score * 2)) {
-    return scored[0].id
+  // Only return if there's a clear winner (top score > 0 and > 1.5x the second)
+  if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score * 1.5)) {
+    return { integrationId: scored[0].id }
+  }
+  // Ambiguous: top 2 integrations have similar scores (within 80%)
+  if (scored[0].score > 0 && scored[1] && scored[1].score >= scored[0].score * 0.8) {
+    const topScore = scored[0].score
+    const ambiguous = scored
+      .filter((s) => s.score >= topScore * 0.8)
+      .map((s) => ({ integrationId: s.id, integrationName: s.name, score: s.score }))
+    return { ambiguous }
   }
   return undefined
 }
 
-export async function pickBestIntegration(
+// ponytail: pickBestIntegration with ambiguity detection.
+// Returns { integrationId } when there's a clear winner,
+// or { ambiguous } when multiple integrations match equally — caller asks user to clarify.
+async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
-): Promise<string | undefined> {
+): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
     include: { schemas: { select: { tableName: true, columns: true } } },
   })
   if (integrations.length === 0) return undefined
-  if (integrations.length === 1) return integrations[0].id
+  if (integrations.length === 1) return { integrationId: integrations[0].id }
 
   const scored = integrations.map((integ) => {
     const allNames: string[] = []
@@ -536,13 +574,37 @@ export async function pickBestIntegration(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  // ponytail: when no schema keywords match, return undefined instead of
-  // defaulting to the oldest integration. This lets the caller's preferred
-  // integration (from UI selection) take priority.
-  if (scored[0].score === 0) {
-    return undefined
+
+  // No matches at all — return undefined (caller's preferred integration takes priority)
+  if (scored[0].score === 0) return undefined
+
+  // Clear winner: top score is > 1.5x the second
+  if (scored.length === 1 || scored[0].score > scored[1].score * 1.5) {
+    return { integrationId: scored[0].id }
   }
-  return scored[0].id
+
+  // Ambiguous: top 2 integrations have very similar scores (within 20%)
+  // Only flag as ambiguous when it's genuinely unclear — not when one is
+  // clearly better but not 2x better.
+  const topScore = scored[0].score
+  const secondScore = scored[1].score
+  if (secondScore >= topScore * 0.8) {
+    const ambiguous = scored
+      .filter((s) => s.score >= topScore * 0.8)
+      .map((s) => ({ integrationId: s.id, integrationName: s.name, score: s.score }))
+    return { ambiguous }
+  }
+
+  // Not ambiguous — top is clearly better but not 1.5x. Pick the top.
+  return { integrationId: scored[0].id }
+}
+
+// ponytail: keep the old export for backward compat (tests, routing scores endpoint)
+export async function pickBestIntegration(
+  tokens: string[],
+): Promise<string | undefined> {
+  const result = await pickBestIntegrationWithAmbiguity(tokens)
+  return result?.integrationId
 }
 
 export async function getRoutingScores(): Promise<{

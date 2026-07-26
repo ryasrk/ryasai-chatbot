@@ -158,6 +158,18 @@ export async function runNonStreamingChatCompletion(args: {
     })
     decision = routed.decision
     resolvedIntegrationId = routed.integrationId ?? args.integrationId
+    // ponytail: when routing is ambiguous (multiple integrations match equally),
+    // ask the user to clarify instead of guessing.
+    if (routed.ambiguousIntegrations && routed.ambiguousIntegrations.length > 1) {
+      const names = routed.ambiguousIntegrations.map((a) => a.integrationName)
+      const list = names.map((n, i) => `${i + 1}. ${n}`).join('\n')
+      return {
+        answer: `I found multiple databases that could answer this question. Which one do you mean?\n\n${list}\n\nPlease specify the database name or select it from the dropdown.`,
+        citations: [],
+        chartData: null,
+        toolRuns: [],
+      }
+    }
   }
 
   decision = chooseAvailableDecision(decision, {
@@ -335,6 +347,19 @@ export async function runStreamingChatCompletion(args: {
     })
     decision = routed.decision
     resolvedIntegrationId = routed.integrationId ?? args.integrationId
+    // ponytail: ambiguous integration — return clarification stream
+    if (routed.ambiguousIntegrations && routed.ambiguousIntegrations.length > 1) {
+      const names = routed.ambiguousIntegrations.map((a) => a.integrationName)
+      const list = names.map((n, i) => `${i + 1}. ${n}`).join('\n')
+      const clarification = `I found multiple databases that could answer this question. Which one do you mean?\n\n${list}\n\nPlease specify the database name or select it from the dropdown.`
+      async function* clarifyStream() { yield clarification }
+      return {
+        stream: clarifyStream(),
+        toolRuns: [],
+        citations: [],
+        chartData: null,
+      }
+    }
   }
 
   decision = chooseAvailableDecision(decision, {
