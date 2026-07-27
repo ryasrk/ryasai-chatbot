@@ -64,9 +64,9 @@ function renderView(view: ViewKey) {
     case 'dashboard':
       return <DashboardView />
     case 'chat':
-      return <ChatView />
     case 'agentic':
-      return <AgenticView />
+      // Rendered separately as persistent mounted views
+      return null
     case 'integrations':
       return <IntegrationsView />
     case 'knowledge':
@@ -217,9 +217,20 @@ export default function Home() {
               view === 'chat' || view === 'agentic' ? 'overflow-hidden' : 'overflow-y-auto',
               'p-4 md:p-6',
             )}>
-              <div className="view-fade h-full" key={view} suppressHydrationWarning>
-                {renderView(view)}
+              {/* Stateful views: always mounted, hidden when inactive.
+                  Preserves SSE streams + chat state across menu switches. */}
+              <div className={cn('h-full', view === 'chat' ? 'block' : 'hidden')}>
+                <ChatView />
               </div>
+              <div className={cn('h-full', view === 'agentic' ? 'block' : 'hidden')}>
+                <AgenticView />
+              </div>
+              {/* Other views: mount on demand with fade animation. */}
+              {view !== 'chat' && view !== 'agentic' && (
+                <div className="view-fade h-full" key={view} suppressHydrationWarning>
+                  {renderView(view)}
+                </div>
+              )}
             </div>
           </main>
         </div>
