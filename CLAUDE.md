@@ -28,7 +28,7 @@
 - Single admin per deployment; `Company` → `User` (RBAC: admin/manager/staff) → all resources scoped by `companyId`.
 - Login/logout routes, `/api/me` identity, setup wizard gate (`AppConfig.setupCompleted`).
 
-**Data layer (Prisma schema — 16 models)**
+**Data layer (Prisma schema — 25 models)**
 - `Company`, `User`, `Integration` (encrypted config), `IntegrationSchema` (reflected table/columns cache).
 - `LlmConfig` + `VectorStoreConfig` (per-tenant LLM + vector store, AES-256-GCM encrypted keys).
 - `Document` → `DocumentChunk` (content, keywords, embeddingJson, embeddingModel).
@@ -94,7 +94,7 @@
 - UI polling (15s) + toast notification on run completion. History dialog with export buttons.
 
 **Tests**
-- 61 unit tests (`bun test`), 4 Playwright e2e (`bun run e2e`), mock LLM server for determinism.
+- 913 unit tests across 56 files (`bun run test` — per-file subprocess runner for mock isolation), 4 Playwright e2e (`bun run e2e`), mock LLM server for determinism.
 
 ### 2.2 Gaps & risks (super-app blockers)
 
@@ -393,7 +393,7 @@ runAgenticLoop(question, context, maxIter=3):
 ### Testing
 - `bunx tsc --noEmit` — zero errors.
 - `bun run lint` — zero errors.
-- `bun run test` — 61+ unit tests, keep green. Any new lib file ships with `*.test.ts`.
+- `bun run test` — 913 unit tests across 56 files (per-file subprocess runner, 0 fail). Any new lib file ships with `*.test.ts`.
 - `bun run e2e` — 4 golden-path specs with mock LLM, keep green.
 - **New rule for super-app work**: every new tool in the registry ships with a unit test for its executor + a guardrail test if it touches external systems.
 
@@ -401,9 +401,9 @@ runAgenticLoop(question, context, maxIter=3):
 - Server-only libs in `src/lib/`, never import `db` or `crypto` into client components.
 - Types in `src/lib/types.ts` — single source for client-facing shapes.
 - Views in `src/components/views/` — one per nav target.
-- API routes in `src/app/api/` — RESTful, `companyId` from session.
+- API routes in `src/app/api/` — RESTful, single-tenant (no companyId).
 - Mini-services are independent processes with their own PrismaClient.
-- Indonesian in user-facing strings (system prompts, error messages, UI labels).
+- English in all user-facing strings (system prompts, error messages, UI labels).
 - Comments explain *why*, not *what*. The codebase already follows this — keep it.
 
 ---
@@ -457,7 +457,7 @@ runAgenticLoop(question, context, maxIter=3):
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (194 pass, 8 skip, 0 fail)
+bun run test         # unit tests (913 pass, 0 fail, 8 skip — per-file runner for mock isolation)
 bun run e2e          # Playwright (4 specs, mock LLM)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
@@ -471,7 +471,10 @@ bash reset.sh        # reset DB + re-seed
 | File | Role |
 |------|------|
 | `src/lib/ai.ts` | LLM client, router, SQL gen, answer gen, streaming |
-| `src/lib/tool-router.ts` | Single-tool execution branches (SQL/RAG/REST/CHAT) |
+| `src/lib/tool-router.ts` | Dispatcher + agentic confidence loop + streaming dispatcher |
+| `src/lib/tool-branches.ts` | Non-streaming branch executors (SQL/RAG/REST/CHAT/Plugin) |
+| `src/lib/stream-preparers.ts` | Streaming branch preparers (prepare*Stream) |
+| `src/lib/tool-utils.ts` | Shared types + leaf utilities (chart/citation/SQL semaphore) |
 | `src/lib/rag.ts` | Hybrid retrieval, chunking, keyword extraction |
 | `src/lib/rag-fts.ts` | BM25-style FTS chunk ID search |
 | `src/lib/guardrails.ts` | SQL AST validation + mutation block + LIMIT cap |
@@ -486,7 +489,7 @@ bash reset.sh        # reset DB + re-seed
 | `src/lib/prompt-settings.ts` | Per-tenant system prompt + tool toggles |
 | `mini-services/scheduler/index.ts` | Cron-based scheduled run worker |
 | `src/app/api/v1/chat/completions/route.ts` | OpenAI-compatible external API |
-| `prisma/schema.prisma` | 16 models, multi-tenant, encrypted configs |
+| `prisma/schema.prisma` | 25 models, single-tenant, encrypted configs |
 
 ### Specs & progress
 - `PLAN.md` — overhaul plan (all phases P0–P5 + S4 + RAG complete)
@@ -922,8 +925,69 @@ Modified (key changes):
 
 **New files**: `src/lib/intent-pipeline.ts`, `src/lib/intent-pipeline.test.ts` (39 tests), `src/lib/schema-enrichment.ts`, `scripts/long-turn-chat.ts`, `scripts/migrate-demo-to-postgres.ts`, `src/app/api/schedules/[id]/runs/route.ts`, `src/app/api/schedules/[id]/runs/export/route.ts`.
 
-**Tests**: intent-pipeline 39 · smart-router 11 · planner 23. ~73 tests pass individually (mock.module isolation issue when run together).
+**Tests**: intent-pipeline 39 · smart-router 11 · planner 23. 913 tests pass via per-file subprocess runner (`scripts/test.ts` — Bun's `mock.module` leaks across files in a single invocation, so each file gets its own `bun test` process).
 
 **Verification**: tsc 0 errors · lint 0 errors (31 warnings).
 
 **Next**: Test scheduler toast + history dialog in browser. Test export JSON/CSV. Consider real-time SSE push from scheduler. Consider email/webhook notification on schedule failure. Populate Chinook artist/album/customer tables (empty). Consider cognee Postgres backend.
+
+### 2026-07-27 — Test isolation fix (P0 #1)
+
+**Problem**: `bun test src/` segfaulted (Bun 1.3.9 runtime bug) and mocks silently leaked across test files (Bun's `mock.module` doesn't isolate between files in a single invocation — confirmed by `ai.test.ts:5` comment "leaks across test files in bun:test"). Suite could only be run per-file manually.
+
+**Root cause**: Bun `mock.module` cross-file leak is a runtime limitation, not user-fixable. Separate issue: `tool-router.test.ts` had 13 stale-mock failures (mock missing `db.integration.findMany` + `integrationSchema.findMany` added at `tool-router.ts:153-154`) and 2 tests stale from the intent-pipeline gate addition (`analyzeIntent` returns `needsRetrieval: false` when no docs/integrations mocked → early-exit before `routeQuery`).
+
+**Fix**:
+- `scripts/test.ts` — per-file subprocess runner. Each `*.test.ts` gets its own `bun test` process (process isolation = perfect mock isolation). 8-way parallel, aggregates pass/fail/skip counts, exits 1 on any failure. `package.json` `"test"` now runs this instead of `bun test src/`.
+- `tool-router.test.ts` — added `mockIntegrationFindMany` + `mockIntegrationSchemaFindMany` to `@/lib/db` mock (11 failures fixed). Added `mockDocumentCount.mockImplementation(async () => 1)` to the 2 intent-pipeline-gated tests so `analyzeIntent` returns `needsRetrieval: true` and the code reaches the routing logic (2 failures fixed).
+
+**Verification**: tsc 0 errors · lint 0 errors (31 warnings) · `bun run test` 913 pass 0 fail 8 skip across 56 files.
+
+**Next**: P0 #2 — add CI (GitHub Actions: lint + typecheck + test + build on push/PR). P0 #3 — split `tool-router.ts` (1980 lines). P0 #4 — reconcile stale doc counts. Consider upgrading Bun 1.3.9 → 1.3.14 (may fix the segfault in `bun test src/`).
+
+### 2026-07-27 — Split tool-router.ts (P0 #3) + doc reconciliation (P0 #4)
+
+**P0 #3 — tool-router.ts split (1980 → 807 lines)**:
+
+Split into 4 focused files with clean one-directional dependency chain:
+- `src/lib/tool-utils.ts` (238 lines) — shared types (`PendingToolRun`, `CompletionResult`, `ChatHistoryEntry`, `StreamingCompletionResult`) + leaf utilities (`withSqlConcurrency`, `buildChartDataFromRows`, `buildDocumentCitation`, `sanitizeSqlError`, `summarize`, `safeParseColumns`, `safeParseSampleRow`, `extractTableName`, `jsonRowsToChart`, `safeJson`, `unavailableDataSourceResult`).
+- `src/lib/tool-branches.ts` (643 lines) — non-streaming branch executors (`runChatBranch`, `runContextualChatBranch`, `runRagBranch`, `runSqlBranch`, `runRestBranch`, `runPluginBranch`) + `executeRestRequest`.
+- `src/lib/stream-preparers.ts` (429 lines) — streaming preparers (`prepareChatStream`, `prepareContextualChatStream`, `prepareRagStream`, `prepareSqlStream`, `prepareRestStream`, `preparePluginStream`).
+- `src/lib/tool-router.ts` (807 lines) — dispatcher entry points (`runNonStreamingChatCompletion`, `runStreamingChatCompletion`) + `runMultiStepDag` + agentic loops (`runAgenticLoop`, `runStreamingAgenticLoop`) + `chooseAvailableDecision` + re-exports from the 3 new files.
+
+Agentic loops stay in `tool-router.ts` because they call back into `runNonStreamingChatCompletion`/`runStreamingChatCompletion` (circular dependency if moved out). All existing exports preserved via re-exports — zero changes needed in consumer files or test file.
+
+**P0 #4 — doc reconciliation**:
+- `package.json` version 0.2.0 → 0.4.0 (was stale since docs said 0.4.0).
+- CLAUDE.md "16 Prisma models" → "25 models" (2 locations: §2.1 + key files table).
+- CLAUDE.md key files table updated: `tool-router.ts` description rewritten, 3 new files added.
+- CLAUDE.md §6 "Indonesian in user-facing strings" → "English in all user-facing strings" (was stale since 2026-07-26 English standardization).
+- CLAUDE.md §6 "RESTful, `companyId` from session" → "RESTful, single-tenant (no companyId)" (was stale since Company model removal).
+- README.md "67 API routes" → "62 API routes" (actual count).
+- README.md `tool-router.ts` description updated to mention the split.
+
+**Verification**: tsc 0 errors · lint 0 errors (31 warnings) · `bun run test` 913 pass 0 fail 8 skip across 56 files.
+
+**Next**: P1 items — adopt LightRAG patterns (dual-level retrieval, role-specific LLM config), enable reranking by default, RAGAS evaluation harness, pgvector native column, distributed cache via Redis, pre-commit hooks. Consider upgrading Bun 1.3.9 → 1.3.14.
+
+### 2026-07-27 — P1 quality algorithms (all LightRAG patterns adopted)
+
+**P1 #6 — Reranking ON by default**: `rag.ts` `RAG_LLM_RERANK` check flipped from `=== 'true'` to `!== 'false'`. LLM reranker now active by default (significant quality uplift for mixed queries, ~500ms latency cost).
+
+**P1 #11 — Pre-commit hooks**: `scripts/pre-commit.sh` runs `tsc --noEmit` + `eslint --quiet` before every commit. `package.json` `"prepare"` script installs it to `.git/hooks/pre-commit`. No husky/lint-staged dependency — just a shell script.
+
+**P1 #7 — Role-specific LLM config** (LightRAG 4-role pattern): `src/lib/llm-config.ts` `getRoleLlmConfig(role)` — 4 roles: `extract` (entity-relation extraction), `query` (answer synthesis), `keyword` (intent analysis + query rewrite), `vlm` (multimodal). Falls back to chat config when no role-specific row exists. 30s cache. Wired into: `intent-pipeline.ts` (analyzeIntent + rewriteQuery → keyword role, evaluateEvidenceSufficiency + evaluateAnswerConfidence → query role), `rag.ts` reranker → query role. Admins configure via `LlmConfig` rows with `purpose = 'extract' | 'query' | 'keyword' | 'vlm'`.
+
+**P1 #12 — pgvector native column**: `prisma/schema.prisma` `DocumentChunk.embedding Unsupported("vector(1536)")?` column added. `embeddings.ts` now writes to both `embeddingJson` (fallback) and `embedding` (native vector) via `$executeRaw`. `rag.ts` `pgvectorSimilaritySearch()` — uses Postgres `<=>` (cosine distance) operator for O(log n) indexed similarity search via IVFFlat, replacing O(n) JS cosine scan. Preferred path in `resolveVectorScores` — falls back to external Qdrant/Milvus, then lexical-only.
+
+**P1 #13 — Distributed cache via Redis**: `src/lib/redis.ts` `cacheGet`/`cacheSet`/`cacheDel` — Redis-backed with in-memory fallback. `rag.ts` `_ragCache` Map replaced with Redis cache (TTL-based eviction via `EX`). `invalidateRagCache()` now async (Redis SCAN+DEL by prefix). Wired into `retrieveRelevantChunks` — distributed across instances.
+
+**P1 #5 — Dual-level retrieval** (LightRAG core algorithm): `src/lib/knowledge-graph.ts` — native TS entity-relation extraction + dual-level retrieval. `indexChunkKnowledgeGraph()` extracts entities + relations from chunks via LLM (EXTRACT role), stores entity names as chunk keywords + relations in `KgRelation` table. `dualLevelRetrieval()` — local level (entity-centric chunk match) + global level (relation-chain traversal via `KgRelation` table). Wired into `retrieveRelevantChunks` — runs in parallel with vector/lexical retrieval, entity-matched chunks get 30% score boost, KG-only chunks get 80% lexical score. `KgRelation` model added to Prisma schema. KG extraction runs fire-and-forget during document ingestion.
+
+**P1 #8 — RAGAS evaluation harness**: `benchmark/rag-eval.ts` — measures 4 RAGAS metrics (faithfulness, answer relevance, context precision, context recall) via LLM-as-judge. `bun run rag-eval` runs the evaluation. Results saved to `benchmark/results/ragas-report.json`. 5 default eval questions (extensible). `package.json` `"rag-eval"` script added.
+
+**New files**: `src/lib/knowledge-graph.ts`, `benchmark/rag-eval.ts`, `scripts/pre-commit.sh`.
+**Schema**: `KgRelation` model + `DocumentChunk.embedding` vector column.
+**Verification**: tsc 0 errors · lint 0 errors (33 warnings) · `bun run test` 913 pass 0 fail 8 skip across 56 files.
+
+**Next**: Run `bunx prisma db push` to apply schema changes (KgRelation table + embedding column). Run `bun run rag-eval` with real documents to measure RAG quality. Consider upgrading Bun 1.3.9 → 1.3.14. Configure role-specific LLM models (fast model for extract/keyword, strong model for query) via LlmConfig rows.

@@ -11,6 +11,7 @@ import {
 import { upsertChunkFts } from '@/lib/rag-fts'
 import { enqueueOrSync } from '@/lib/job-processor'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
+import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
 
 export const runtime = 'nodejs'
 
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
     await db.documentChunk.createMany({
       data: chunkRows,
     })
-    invalidateRagCache()
+    await invalidateRagCache()
     invalidateSourceEmbeddingCache()
     const persistedChunks = await db.documentChunk.findMany({
       where: { documentId: doc.id },
@@ -174,10 +175,12 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ponytail: heavy processing (embeddings + cognify) moved to background queue.
+    // ponytail: heavy processing (embeddings + cognify + KG extraction) moved to background.
     // Falls back to synchronous when Redis is down — graceful degradation.
     await enqueueOrSync('document-embed', { type: 'document-embed', documentId: doc.id })
     void enqueueOrSync('document-cognify', { type: 'document-cognify', documentId: doc.id }).catch(() => null)
+    // ponytail: LightRAG-style entity-relation extraction — fire-and-forget, enhances RAG with KG.
+    void Promise.all(persistedChunks.map((c) => indexChunkKnowledgeGraph({ chunkId: c.id, content: c.content }).catch(() => null)))
 
     await writeAudit({
       userId: user.userId,

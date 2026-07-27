@@ -155,7 +155,7 @@ bun run scripts/long-turn-chat.ts  # 20-turn multi-database chat test
 ```
 src/
 ├── app/
-│   ├── api/              # 67 API routes
+│   ├── api/              # 62 API routes
 │   ├── page.tsx          # Main SPA (12 views, ChatView+AgenticView always mounted)
 │   ├── layout.tsx        # Root layout (theme init)
 │   ├── error.tsx         # Route-level error boundary
@@ -167,7 +167,7 @@ src/
 │   ├── ai.ts             # LLM client, router, SQL gen, answer gen, streaming, schema enrichment
 │   ├── intent-pipeline.ts # Intent analyzer + query rewriter + query expansion
 │   ├── llm-client.ts     # Unified transport (OpenAI + Anthropic)
-│   ├── tool-router.ts    # Single-tool execution + runAgenticLoop + runStreamingAgenticLoop
+│   ├── tool-router.ts    # Dispatcher + agentic loop (split: tool-branches, stream-preparers, tool-utils)
 │   ├── smart-router.ts   # Self-adjusting load balancer + semantic scoring
 │   ├── planner.ts        # Multi-step agentic planner (parallelized executePlan)
 │   ├── schema-enrichment.ts # LLM-generated table descriptions for IntegrationSchema

@@ -1,6 +1,6 @@
 {
   "name": "ryasai-chatbot",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "set -a; . ./.env 2>/dev/null; set +a; next dev -p \"${PORT:-3000}\" 2>&1 | tee dev.log",
@@ -12,7 +12,9 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "e2e": "playwright test",
-    "test": "bun test src/ scripts/ --pass-with-no-tests"
+    "test": "bun scripts/test.ts",
+    "rag-eval": "bun benchmark/rag-eval.ts",
+    "prepare": "cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",

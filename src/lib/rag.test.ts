@@ -27,6 +27,34 @@ mock.module('@/lib/cognee', () => ({
   recallKnowledgeGraph: async () => '',
 }))
 
+// In-memory Redis mock for cache tests
+const _redisMockCache = new Map<string, string>()
+mock.module('@/lib/redis', () => ({
+  cacheGet: async (key: string) => {
+    const val = _redisMockCache.get(key)
+    return val ? JSON.parse(val) : null
+  },
+  cacheSet: async (key: string, value: unknown) => {
+    _redisMockCache.set(key, JSON.stringify(value))
+  },
+  cacheDel: async (prefix: string) => {
+    for (const key of [..._redisMockCache.keys()]) {
+      if (key.startsWith(prefix)) _redisMockCache.delete(key)
+    }
+  },
+}))
+
+// KG mock — dual-level retrieval returns empty (no KG indexed in tests)
+mock.module('@/lib/knowledge-graph', () => ({
+  dualLevelRetrieval: async () => ({
+    localChunks: [],
+    globalChunks: [],
+    allChunkIds: [],
+    matchedEntities: [],
+    graphContext: '',
+  }),
+}))
+
 // --- Imports ---
 
 import {
@@ -48,6 +76,7 @@ import { combineHybridScore, cosineSimilarity } from './embeddings'
 // --- Setup / teardown ---
 
 beforeEach(() => {
+  _redisMockCache.clear()
   invalidateRagCache()
   mockDocChunkFindMany.mockClear()
   mockDocFindMany.mockClear()

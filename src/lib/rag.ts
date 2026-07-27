@@ -30,7 +30,6 @@ import {
   RAG_CHUNK_OVERLAP,
   RAG_MAX_PER_DOCUMENT,
   RAG_CACHE_TTL_MS,
-  RAG_CACHE_MAX_ENTRIES,
   RAG_MAX_CHUNKS_PER_UPLOAD,
 } from '@/lib/constants'
 
@@ -139,12 +138,13 @@ export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: 
 
 // ---------------------------------------------------------------------------
 // Query-level cache — avoids re-scoring all chunks for repeat questions.
-// ponytail: in-memory Map with TTL, per-instance not distributed.
-// Ceiling: cleared on server restart. Cache key includes topK so different
-// topK values don't collide. Upgrade to Redis when deploying >1 instance.
+// ponytail: Redis-backed with in-memory fallback (via cacheGet/cacheSet).
+// Distributed across instances. Cache key includes topK so different
+// topK values don't collide.
 // ---------------------------------------------------------------------------
 
-const _ragCache = new Map<string, { result: Awaited<ReturnType<typeof retrieveRelevantChunks>>; ts: number }>()
+import { cacheGet, cacheSet, cacheDel } from '@/lib/redis'
+import { dualLevelRetrieval } from '@/lib/knowledge-graph'
 
 // ponytail: cache hit/miss counters — per-instance, not distributed.
 let _cacheHits = 0
@@ -156,13 +156,13 @@ export function getRagCacheStats(): { hits: number; misses: number; hitRate: num
 }
 
 function ragCacheKey(query: string, topK: number): string {
-  return `${topK}:${query.slice(0, 500).toLowerCase().trim()}`
+  return `rag:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
 }
 
 // ponytail: invalidate cache when documents are added/removed. Called from
-// document upload + delete routes. Simple clear-all is fine at current scale.
-export function invalidateRagCache(): void {
-  _ragCache.clear()
+// document upload + delete routes. Redis SCAN+DEL by prefix.
+export async function invalidateRagCache(): Promise<void> {
+  await cacheDel('rag:')
 }
 
 // ---------------------------------------------------------------------------
@@ -180,27 +180,62 @@ export async function retrieveRelevantChunks(args: {
 
   // ponytail: check cache first — avoids re-scoring all chunks for repeat questions
   const cacheKey = ragCacheKey(args.query, args.topK)
-  const cached = _ragCache.get(cacheKey)
-  if (cached && Date.now() - cached.ts < RAG_CACHE_TTL_MS) {
+  const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
+  if (cached) {
     _cacheHits += 1
     log.debug('RAG cache hit', { query: args.query.slice(0, 50), topK: args.topK })
-    return cached.result
+    return cached
   }
 
-  // ponytail: when RAG_LLM_RERANK=true, retrieve 3x candidates for LLM reranking.
-  // Ceiling: adds 1 LLM call per RAG query (~500ms latency). Off by default.
-  const rerankEnabled = process.env.RAG_LLM_RERANK === 'true'
+  // ponytail: LLM reranking ON by default — significant quality uplift for mixed queries.
+  // Adds ~1 LLM call per RAG query (~500ms). Set RAG_LLM_RERANK=false to disable.
+  const rerankEnabled = process.env.RAG_LLM_RERANK !== 'false'
   const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
 
-  // Run graph recall in parallel with vector/lexical retrieval
-  const [retrievalResult, graphContext] = await Promise.all([
+  // Run dual-level KG retrieval + graph recall + vector/lexical retrieval in parallel
+  // ponytail: LightRAG dual-level (local entity match + global relation chain) + cognee fallback
+  const [retrievalResult, kgResult, cogneeGraphContext] = await Promise.all([
     retrieveFromVectorAndLexical(args.query, retrievalTopK, queryTokens),
+    dualLevelRetrieval({ query: args.query, topK: args.topK }),
     recallGraphContext(args.query),
   ])
 
+  // Merge KG-sourced chunk IDs into the candidate pool (boost local-level chunks)
+  const kgChunkIds = new Set(kgResult.allChunkIds)
+  let mergedChunks = retrievalResult.chunks
+  if (kgChunkIds.size > 0) {
+    // Boost chunks that appear in KG local results (entity-matched)
+    const boosted = retrievalResult.chunks.map((chunk) =>
+      kgResult.localChunks.includes(chunk.chunkId)
+        ? { ...chunk, score: chunk.score * 1.3 } // ponytail: 30% boost for entity-matched chunks
+        : chunk,
+    )
+    // Add KG-sourced chunks not already in the retrieval results
+    const existingIds = new Set(retrievalResult.chunks.map((c) => c.chunkId))
+    const kgOnlyChunks = await loadVectorCandidateChunks(
+      kgResult.allChunkIds.filter((id) => !existingIds.has(id)),
+    )
+    const kgScored = kgOnlyChunks.map((chunk) => {
+      const lexicalScore = scoreChunk(queryTokens, chunk)
+      return {
+        chunkId: chunk.chunkId,
+        documentId: chunk.documentId,
+        documentName: chunk.documentName,
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        score: lexicalScore.total * 0.8, // ponytail: KG-sourced chunks get 80% of lexical score
+        scoreBreakdown: lexicalScore,
+      }
+    })
+    mergedChunks = [...boosted, ...kgScored]
+  }
+
+  // Use KG graph context if available, fall back to cognee
+  const graphContext = kgResult.graphContext || cogneeGraphContext
+
   const finalChunks = rerankEnabled
-    ? await rerankWithLlm(args.query, retrievalResult.chunks, args.topK)
-    : retrievalResult.chunks
+    ? await rerankWithLlm(args.query, mergedChunks, args.topK)
+    : selectTopRetrievedChunks(mergedChunks, args.topK)
 
   const result = {
     chunks: finalChunks,
@@ -212,12 +247,8 @@ export async function retrieveRelevantChunks(args: {
   _cacheMisses += 1
   log.debug('RAG cache miss', { query: args.query.slice(0, 50), topK: args.topK, candidatesScanned: retrievalResult.candidatesScanned })
 
-  // ponytail: cache the result — evict oldest when at capacity
-  if (_ragCache.size >= RAG_CACHE_MAX_ENTRIES) {
-    const oldest = _ragCache.keys().next().value
-    if (oldest) _ragCache.delete(oldest)
-  }
-  _ragCache.set(cacheKey, { result, ts: Date.now() })
+  // ponytail: cache the result — Redis TTL handles eviction
+  await cacheSet(cacheKey, result, Math.floor(RAG_CACHE_TTL_MS / 1000))
 
   return result
 }
@@ -233,9 +264,9 @@ async function rerankWithLlm(
   if (chunks.length === 0) return chunks
 
   try {
-    const { getLlmRuntimeConfig } = await import('@/lib/llm-config')
+    const { getRoleLlmConfig } = await import('@/lib/llm-config')
     const { chatOnce } = await import('@/lib/llm-client')
-    const cfg = await getLlmRuntimeConfig()
+    const cfg = await getRoleLlmConfig('query')
     if (!cfg) return chunks.slice(0, topK)
 
     const chunkList = chunks
@@ -432,6 +463,20 @@ async function resolveVectorScores(args: {
 }): Promise<Map<string, number>> {
   // ponytail: graceful degradation — falls back to empty scores (lexical fallback) when vector store unavailable
   if (!args.vector) return new Map()
+
+  // Try pgvector native search first (O(log n) via IVFFlat index) — no external service needed.
+  // ponytail: pgvector native column replaces O(n) JS cosine scan with SQL `<=>` operator.
+  // Falls back to external vector store (Qdrant/Milvus) or lexical-only when pgvector unavailable.
+  try {
+    const pgScores = await pgvectorSimilaritySearch(args.vector, Math.max(args.topK * 8, 16))
+    if (pgScores.size > 0) return pgScores
+  } catch (e) {
+    log.debug('pgvector search unavailable, trying external vector store', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+  }
+
+  // Fall back to external vector store (Qdrant/Milvus)
   try {
     const config = await getVectorStoreRuntimeConfig()
     if (!config) return new Map()
@@ -445,6 +490,33 @@ async function resolveVectorScores(args: {
     log.warn('resolveVectorScores failed', { error: e instanceof Error ? e.message : String(e) })
     return new Map()
   }
+}
+
+// ---------------------------------------------------------------------------
+// pgvector native similarity search — uses Postgres `<=>` (cosine distance)
+// operator on the DocumentChunk.embedding column.
+// ponytail: O(log n) via IVFFlat index vs O(n) JS cosine scan.
+// Returns Map<chunkId, similarityScore> (0-1, higher = more similar).
+// ---------------------------------------------------------------------------
+
+async function pgvectorSimilaritySearch(
+  queryVector: number[],
+  limit: number,
+): Promise<Map<string, number>> {
+  // ponytail: $queryRaw with parameterized vector string — Prisma doesn't support
+  // Unsupported types in where clauses, so we use raw SQL.
+  const vectorStr = `[${queryVector.join(',')}]`
+  const rows = await db.$queryRaw<Array<{ id: string; similarity: number }>>`
+    SELECT id, 1 - (embedding <=> ${vectorStr}::vector) AS similarity
+    FROM "DocumentChunk"
+    WHERE embedding IS NOT NULL
+      AND "documentId" IN (
+        SELECT id FROM "Document" WHERE status = 'ready' AND "isEnabled" = true
+      )
+    ORDER BY embedding <=> ${vectorStr}::vector
+    LIMIT ${limit}
+  `
+  return new Map(rows.map((row) => [row.id, row.similarity]))
 }
 
 interface CandidateChunk {

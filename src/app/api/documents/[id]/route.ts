@@ -187,7 +187,7 @@ export async function DELETE(
     }
 
     await db.document.delete({ where: { id: existing.id } })
-    invalidateRagCache()
+    await invalidateRagCache()
     invalidateSourceEmbeddingCache()
 
     void forgetKnowledgeGraph()

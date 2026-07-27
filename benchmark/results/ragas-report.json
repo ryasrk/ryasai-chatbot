@@ -1,0 +1,293 @@
+{
+  "summary": {
+    "questions": 8,
+    "avgFaithfulness": 0.95,
+    "avgAnswerRelevance": 0.8875000000000001,
+    "avgContextPrecision": 0.875,
+    "avgContextRecall": 0.9,
+    "avgLatencyMs": 4376.625
+  },
+  "results": [
+    {
+      "questionId": "rag-001",
+      "question": "Berapa termin pembayaran untuk pelanggan Enterprise?",
+      "expectedAnswer": "30 hari kalender sejak invoice diterbitkan",
+      "generatedAnswer": "Untuk **pelanggan Enterprise**, termin pembayaran adalah **30 hari kalender** sejak **invoice diterbitkan**.  \n\nSumber data: *Panduan Pengadaan IT Perusahaan* (bagian “Termin Pembayaran”).",
+      "retrievedChunks": [
+        {
+          "content": "2. TERMIN PEMBAYARAN\n- Pelanggan segmen Enterprise: termin 30 hari kalender sejak invoice diterbitkan.\n- Pelanggan segmen SMB: termin 14 hari kalender sejak invoice diterbitkan.\n- Pelanggan segmen Ret",
+          "score": 27.33,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "5. DISKON PEMBAYARAN DINI\nPembayaran yang diterima dalam 7 hari sejak invoice diterbitkan mendapat diskon 2% untuk pelanggan Enterprise dan 1,5% untuk SMB. Diskon tidak berlaku untuk pelanggan Retail.",
+          "score": 18.03,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "CATATAN\n- Piutang overdue: Rp 62.000.000 (3 invoice Enterprise, perlu ditindaklanjuti).\n- Persediaan meningkat 12% karena persiapan Q2.\n- Rasio lancar: 5,9 (sangat sehat).",
+          "score": 9.28,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "# Panduan Pengadaan IT Perusahaan",
+          "score": 5.67,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 8349
+    },
+    {
+      "questionId": "rag-002",
+      "question": "Berapa denda keterlambatan pembayaran invoice?",
+      "expectedAnswer": "1% per bulan dari nilai invoice, maksimum 5%",
+      "generatedAnswer": "Denda keterlambatan pembayaran invoice adalah:\n\n- **1% per bulan** dari **nilai invoice yang belum dibayar**\n- **Dihitung secara harian**\n- **Maksimum denda: 5%** dari nilai invoice\n\nSumber data: **Kebijakan Pembayaran Invoice — Tahun Anggaran 2026 (Bagian 4: Denda Keterlambatan)**.",
+      "retrievedChunks": [
+        {
+          "content": "4. DENDA KETERLAMBATAN\nKeterlambatan pembayaran dikenakan denda 1% per bulan dari nilai invoice yang belum dibayar, dihitung harian. Maksimum denda 5% dari nilai invoice.",
+          "score": 30.65,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "KEBIJAKAN PEMBAYARAN INVOICE — TAHUN ANGGARAN 2026",
+          "score": 15.54,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "CATATAN\n- Piutang overdue: Rp 62.000.000 (3 invoice Enterprise, perlu ditindaklanjuti).\n- Persediaan meningkat 12% karena persiapan Q2.\n- Rasio lancar: 5,9 (sangat sehat).",
+          "score": 9.44,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "## 2. Threshold Persetujuan\n- **< Rp 5.000.000**: disetujui oleh manajer departemen.\n- **Rp 5.000.000 - Rp 50.000.000**: disetujui oleh manajer departemen + manajer IT.\n- **Rp 50.000.000 - Rp 250.000.",
+          "score": 4.91,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 2714
+    },
+    {
+      "questionId": "rag-003",
+      "question": "Siapa yang menyetujui pengadaan IT di bawah Rp 5.000.000?",
+      "expectedAnswer": "Manajer departemen",
+      "generatedAnswer": "Untuk pengadaan IT **di bawah Rp 5.000.000**, persetujuan dilakukan secara **berjenjang** sesuai panduan pengadaan perusahaan—dan **Manajer wajib menyetujui PO** sebelum dikirim ke vendor.  \n\n**Sumber data:** *Panduan Pengadaan IT Perusahaan* (bagian proses persetujuan berjenjang & kewajiban persetujuan PO oleh Manajer).",
+      "retrievedChunks": [
+        {
+          "content": "# Panduan Pengadaan IT Perusahaan",
+          "score": 10.55,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        },
+        {
+          "content": "## 1. Prinsip Umum\nSetiap pengadaan perangkat IT harus melalui proses persetujuan berjenjang. Tujuannya menjamin value-for-money, keamanan, dan kompatibilitas dengan ekosistem eksisting.",
+          "score": 10.32,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        },
+        {
+          "content": "5. REORDER LEVEL\nSetiap produk memiliki reorder level. Ketika stok mencapai atau di bawah reorder level, sistem otomatis membuat permintaan pembelian. Misalnya SKU-910 (UPS 1500VA) memiliki reorder le",
+          "score": 6.3,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        },
+        {
+          "content": "KEBIJAKAN PEMBAYARAN INVOICE — TAHUN ANGGARAN 2026",
+          "score": 5.79,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 0.6,
+        "answerRelevance": 0.9,
+        "contextPrecision": 0.1,
+        "contextRecall": 0.2
+      },
+      "latencyMs": 3603
+    },
+    {
+      "questionId": "rag-004",
+      "question": "Berapa total pendapatan Q1 2026?",
+      "expectedAnswer": "Rp 1.517.000.000",
+      "generatedAnswer": "Total pendapatan **Q1 2026** adalah **Rp 1.517.000.000** (Januari Rp 425.000.000 + Februari Rp 480.000.000 + Maret Rp 612.000.000).  \n\nSumber data: bagian **PENDAPATAN** pada konteks RAG.",
+      "retrievedChunks": [
+        {
+          "content": "PENDAPATAN\n- Januari: Rp 425.000.000\n- Februari: Rp 480.000.000\n- Maret: Rp 612.000.000\n- Total Q1: Rp 1.517.000.000\n- Pertumbuhan QoQ: +18,5%\n- Pertumbuhan YoY: +24,2%",
+          "score": 13.2,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "LABA BERSIH Q1\n- Laba kotor: Rp 455.100.000\n- Laba operasional: Rp -99.400.000 (rugi operasional, ditutup oleh pendapatan lain)\n- Pendapatan lain-lain: Rp 145.000.000\n- Laba sebelum pajak: Rp 500.700.",
+          "score": 10,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "KEBIJAKAN PEMBAYARAN INVOICE — TAHUN ANGGARAN 2026",
+          "score": 6.41,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "1. DASAR HUKUM INTERNAL\nKebijakan ini mengatur seluruh siklus pembayaran invoice pelanggan, mulai dari penerbitan, pengingat, hingga penagihan. Berlaku efektif 1 Januari 2026.",
+          "score": 4.48,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 3853
+    },
+    {
+      "questionId": "rag-005",
+      "question": "Bagaimana prosedur penerimaan barang di gudang?",
+      "expectedAnswer": "Setiap kiriman diperiksa oleh minimum dua staf, pencocokan surat jalan",
+      "generatedAnswer": "Berikut prosedur penerimaan barang di gudang:\n\n1. **Barang tiba**\n   - Setiap kiriman yang masuk wajib **diperiksa oleh minimal 2 staf**.\n\n2. **Cocokkan dokumen dan fisik**\n   - Lakukan pencocokan antara:\n     - **Surat jalan**\n     - **Purchase Order (PO)**\n     - **Barang fisik** yang diterima\n\n3. **Cek selisih**\n   - Hitung selisih (kuantitas/ketidaksesuaian) terhadap dokumen.\n   - Jika **selisih lebih dari 2%**:\n     - **Tahan barang** di **zona karantina**\n     - **Laporkan ke manajer gudang dalam 1 x 24 jam**\n\n4. **Input ke sistem inventori**\n   - Barang yang **lolos verifikasi** wajib **dimasukkan ke sistem inventori pada hari yang sama**.\n\nSumber data: SOP “Penerimaan Barang” pada bagian **3. PENERIMAAN BARANG** dalam konteks yang diberikan.",
+      "retrievedChunks": [
+        {
+          "content": "3. PENERIMAAN BARANG\nSetiap kiriman yang tiba wajib diperiksa oleh minimum dua staf. Lakukan pencocokan antara surat jalan, purchase order, dan barang fisik. Jika ada selisih lebih dari 2%, tahan bara",
+          "score": 17.95,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        },
+        {
+          "content": "1. TUJUAN\nSOP ini bertujuan memastikan setiap pergerakan stok barang di gudang tercatat, terverifikasi, dan dapat ditelusuri. Kepatuhan terhadap SOP ini wajib bagi seluruh staf gudang dan manajer oper",
+          "score": 15.72,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        },
+        {
+          "content": "## 1. Prinsip Umum\nSetiap pengadaan perangkat IT harus melalui proses persetujuan berjenjang. Tujuannya menjamin value-for-money, keamanan, dan kompatibilitas dengan ekosistem eksisting.",
+          "score": 4.8,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        },
+        {
+          "content": "Vendor di luar daftar ini wajib melalui proses due diligence minimal 2 minggu.",
+          "score": 5.24,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.95,
+        "contextRecall": 1
+      },
+      "latencyMs": 4932
+    },
+    {
+      "questionId": "rag-006",
+      "question": "Vendor mana yang resmi untuk pengadaan laptop?",
+      "expectedAnswer": "PT Computech Asia dan CV Sumber Komputer",
+      "generatedAnswer": "Vendor resmi (disetujui perusahaan) untuk pengadaan **laptop** adalah:\n\n- **PT Computech Asia**\n- **CV Sumber Komputer**\n\nSumber: Dokumen “Panduan Pengadaan IT Perusahaan” (bagian **Vendor yang Disetujui**).",
+      "retrievedChunks": [
+        {
+          "content": "## 3. Vendor yang Disetujui\nBerikut vendor resmi perusahaan untuk pengadaan:\n- Laptop & Desktop: PT Computech Asia, CV Sumber Komputer\n- Networking: PT Jaringan Nusantara\n- Aksesoris: CV Aksesoris Maj",
+          "score": 26.753999999999998,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        },
+        {
+          "content": "# Panduan Pengadaan IT Perusahaan",
+          "score": 9.15,
+          "documentName": "Panduan Pengadaan IT Perusahaan.md"
+        },
+        {
+          "content": "5. REORDER LEVEL\nSetiap produk memiliki reorder level. Ketika stok mencapai atau di bawah reorder level, sistem otomatis membuat permintaan pembelian. Misalnya SKU-910 (UPS 1500VA) memiliki reorder le",
+          "score": 5.74,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        },
+        {
+          "content": "STANDAR OPERASIONAL PROSEDUR — PENGELOLAAN INVENTARIS GUDANG",
+          "score": 4.69,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 0.2,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 4381
+    },
+    {
+      "questionId": "rag-007",
+      "question": "Berapa margin bruto Q1 2026?",
+      "expectedAnswer": "30%",
+      "generatedAnswer": "Margin bruto Q1 2026 adalah **30%**.  \n\nSumber data: **HPP (Harga Pokok Penjualan) & Margin bruto Q1 dari RAG “HARGA POKOK PENJUALAN (HPP)”**.",
+      "retrievedChunks": [
+        {
+          "content": "HARGA POKOK PENJUALAN (HPP)\n- Januari: Rp 297.500.000\n- Februari: Rp 336.000.000\n- Maret: Rp 428.400.000\n- Total Q1 HPP: Rp 1.061.900.000\n- Margin bruto Q1: 30%",
+          "score": 13.08,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "LAPORAN KEUANGAN KUARTAL 1 (Q1) 2026 — RINGKASAN",
+          "score": 6.83,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "2. TERMIN PEMBAYARAN\n- Pelanggan segmen Enterprise: termin 30 hari kalender sejak invoice diterbitkan.\n- Pelanggan segmen SMB: termin 14 hari kalender sejak invoice diterbitkan.\n- Pelanggan segmen Ret",
+          "score": 4.05,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "KEBIJAKAN PEMBAYARAN INVOICE — TAHUN ANGGARAN 2026",
+          "score": 5.19,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.95,
+        "contextRecall": 1
+      },
+      "latencyMs": 3490
+    },
+    {
+      "questionId": "rag-008",
+      "question": "Kapan pengingat otomatis dikirim sebelum jatuh tempo?",
+      "expectedAnswer": "H-7 sebelum jatuh tempo",
+      "generatedAnswer": "Pengingat otomatis dikirim pada waktu berikut sebelum dan setelah jatuh tempo:\n\n- **H-7 (7 hari sebelum jatuh tempo):** pengingat ramah via email.  \n- (Tambahan setelah jatuh tempo) **H+1:** invoice overdue, **H+14:** surat peringatan pertama, **H+30:** diteruskan ke tim legal.\n\n**Sumber data:** Kebijakan *Pengingat Otomatis* pada konteks RAG.",
+      "retrievedChunks": [
+        {
+          "content": "3. PENGINGAT OTOMATIS\nSistem mengirim pengingat otomatis via email:\n- H-7 sebelum jatuh tempo (pengingat ramah)\n- H+1 setelah jatuh tempo (invoice overdue)\n- H+14 setelah jatuh tempo (surat peringatan",
+          "score": 26.7,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "1. DASAR HUKUM INTERNAL\nKebijakan ini mengatur seluruh siklus pembayaran invoice pelanggan, mulai dari penerbitan, pengingat, hingga penagihan. Berlaku efektif 1 Januari 2026.",
+          "score": 4.63,
+          "documentName": "Kebijakan Pembayaran Invoice 2026.docx"
+        },
+        {
+          "content": "CATATAN\n- Piutang overdue: Rp 62.000.000 (3 invoice Enterprise, perlu ditindaklanjuti).\n- Persediaan meningkat 12% karena persiapan Q2.\n- Rasio lancar: 5,9 (sangat sehat).",
+          "score": 3.85,
+          "documentName": "Laporan Keuangan Q1 2026.xlsx"
+        },
+        {
+          "content": "5. REORDER LEVEL\nSetiap produk memiliki reorder level. Ketika stok mencapai atau di bawah reorder level, sistem otomatis membuat permintaan pembelian. Misalnya SKU-910 (UPS 1500VA) memiliki reorder le",
+          "score": 8.26,
+          "documentName": "SOP Pengelolaan Inventaris Gudang.pdf"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 3691
+    }
+  ],
+  "timestamp": "2026-07-27T09:57:23.800Z"
+}

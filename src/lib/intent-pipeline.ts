@@ -39,7 +39,7 @@
  *   5. Verify evidence sufficiency before answering (reduces hallucination)
  */
 import { chatOnce } from '@/lib/llm-client'
-import { getLlmRuntimeConfig } from '@/lib/llm-config'
+import { getRoleLlmConfig } from '@/lib/llm-config'
 import { retrieveRelevantChunks, type RetrievedChunk } from '@/lib/rag'
 import type { ChatHistoryEntry } from '@/lib/tool-router'
 
@@ -102,7 +102,7 @@ export async function analyzeIntent(args: {
   integrationNames?: string[]
   schemaSummaries?: string[]
 }): Promise<IntentAnalysis> {
-  const cfg = await getLlmRuntimeConfig()
+  const cfg = await getRoleLlmConfig('keyword')
   if (!cfg) {
     // ponytail: no LLM configured — skip intent analysis, return default
     return {
@@ -205,7 +205,7 @@ export async function rewriteQuery(args: {
     return args.question
   }
 
-  const cfg = await getLlmRuntimeConfig()
+  const cfg = await getRoleLlmConfig('keyword')
   if (!cfg) return args.question
 
   const historyText = args.chatHistory
@@ -272,7 +272,7 @@ export async function evaluateEvidenceSufficiency(args: {
     return { sufficient: false, reason: 'Evidence too short', confidence: 0.8 }
   }
 
-  const cfg = await getLlmRuntimeConfig()
+  const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     // No LLM — assume sufficient (let the answer generator handle it)
     return { sufficient: true, reason: 'No LLM for reflection — assuming sufficient', confidence: 0 }
@@ -474,7 +474,7 @@ export async function evaluateAnswerConfidence(args: {
   question: string
   evidence: string
 }): Promise<ConfidenceResult> {
-  const cfg = await getLlmRuntimeConfig()
+  const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     // ponytail: no LLM — assume confident, don't block the answer
     return { confident: true, reason: 'no LLM configured', confidence: 1.0 }

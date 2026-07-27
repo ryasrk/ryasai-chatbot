@@ -5,6 +5,9 @@ import type { RetrievedChunk } from './rag'
 
 const mockChatOnce = mock(async () => '')
 const mockGetLlmRuntimeConfig = mock(async (): Promise<unknown> => null)
+// ponytail: role config uses the same mock — tests set implementations on mockGetLlmRuntimeConfig
+// and mockGetRoleLlmConfig mirrors it. Avoids updating 20+ mockImplementation callsites.
+const mockGetRoleLlmConfig = mockGetLlmRuntimeConfig
 const mockRetrieveRelevantChunks = mock(async (_args: { query: string; topK: number }) => ({
   chunks: [] as RetrievedChunk[],
   queryTokens: [] as string[],
@@ -19,7 +22,10 @@ mock.module('@/lib/cognee', () => ({
   recallKnowledgeGraph: async () => '',
 }))
 mock.module('@/lib/llm-client', () => ({ chatOnce: mockChatOnce }))
-mock.module('@/lib/llm-config', () => ({ getLlmRuntimeConfig: mockGetLlmRuntimeConfig }))
+mock.module('@/lib/llm-config', () => ({
+  getLlmRuntimeConfig: mockGetLlmRuntimeConfig,
+  getRoleLlmConfig: mockGetRoleLlmConfig,
+}))
 mock.module('@/lib/rag', () => ({ retrieveRelevantChunks: mockRetrieveRelevantChunks }))
 
 // --- Imports ---

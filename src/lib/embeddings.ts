@@ -187,15 +187,15 @@ export async function embedDocumentChunks(args: {
             },
           }),
         )
-        return db.documentChunk.update({
-          where: { id: chunk.id },
-          data: {
-            embeddingJson: JSON.stringify(vector),
-            embeddingProvider: config.provider,
-            embeddingModel: config.model,
-            embeddedAt: new Date(),
-          },
-        })
+        return db.$executeRaw`
+          UPDATE "DocumentChunk"
+          SET "embeddingJson" = ${JSON.stringify(vector)},
+              "embedding" = ${`[${vector.join(',')}]`}::vector,
+              "embeddingProvider" = ${config.provider},
+              "embeddingModel" = ${config.model},
+              "embeddedAt" = NOW()
+          WHERE id = ${chunk.id}
+        `
       }).filter(Boolean),
     )
     if (vectorConfig) await upsertVectorPoints(vectorConfig, vectorPoints)

@@ -52,3 +52,50 @@ export async function checkRedisHealth(): Promise<{ connected: boolean; latencyM
 export async function disconnectRedis(): Promise<void> {
   await Promise.allSettled([redis.quit(), cmd.quit()])
 }
+
+// ---------------------------------------------------------------------------
+// Distributed cache — Redis-backed with in-memory fallback.
+// ponytail: replaces per-instance Map caches (rag.ts, smart-router.ts).
+// Falls back to in-memory when Redis is down — callers don't need to handle Redis errors.
+// ---------------------------------------------------------------------------
+
+const _fallbackCache = new Map<string, string>()
+
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  try {
+    const raw = await cmd.get(key)
+    if (raw === null) return null
+    return JSON.parse(raw) as T
+  } catch {
+    // Redis down — try in-memory fallback
+    const fallback = _fallbackCache.get(key)
+    return fallback ? (JSON.parse(fallback) as T) : null
+  }
+}
+
+export async function cacheSet(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+  const raw = JSON.stringify(value)
+  try {
+    await cmd.set(key, raw, 'EX', ttlSeconds)
+  } catch {
+    // Redis down — store in-memory (no TTL eviction, but better than nothing)
+    _fallbackCache.set(key, raw)
+  }
+}
+
+export async function cacheDel(prefix: string): Promise<void> {
+  try {
+    // SCAN + DEL by prefix — avoids KEYS which blocks Redis
+    let cursor = '0'
+    do {
+      const [next, keys] = await cmd.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 100)
+      cursor = next
+      if (keys.length > 0) await cmd.del(...keys)
+    } while (cursor !== '0')
+  } catch {
+    // Redis down — clear in-memory fallback
+    for (const key of _fallbackCache.keys()) {
+      if (key.startsWith(prefix)) _fallbackCache.delete(key)
+    }
+  }
+}

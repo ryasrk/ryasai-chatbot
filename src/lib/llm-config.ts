@@ -110,6 +110,54 @@ export async function getAgentLlmConfig(): Promise<LlmRuntimeConfig | null> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Role-specific LLM config — LightRAG pattern.
+// 4 roles: EXTRACT (entity-relation extraction), QUERY (answer synthesis),
+// KEYWORD (keyword generation), VLM (multimodal).
+// Each role can have its own model (fast/cheap for extraction, strong for answers).
+// Falls back to chat config when no role-specific row exists.
+// ponytail: uses the existing `purpose` field on LlmConfig — no schema change needed.
+// Configure via LlmConfig rows with purpose = 'extract' | 'query' | 'keyword' | 'vlm'.
+// ---------------------------------------------------------------------------
+
+export type LlmRole = 'extract' | 'query' | 'keyword' | 'vlm' | 'chat' | 'agent'
+
+const _roleCache = new Map<LlmRole, { config: LlmRuntimeConfig | null; ts: number }>()
+const ROLE_CACHE_TTL = 30_000 // 30s — config rarely changes mid-session
+
+export async function getRoleLlmConfig(role: LlmRole): Promise<LlmRuntimeConfig | null> {
+  // Fast path: chat and agent use existing resolvers
+  if (role === 'chat') return getLlmRuntimeConfig()
+  if (role === 'agent') return getAgentLlmConfig()
+
+  // Check cache
+  const cached = _roleCache.get(role)
+  if (cached && Date.now() - cached.ts < ROLE_CACHE_TTL) return cached.config
+
+  // Look for a role-specific config row
+  const row = await db.llmConfig.findFirst({ where: { purpose: role } })
+  if (!row) {
+    // Fall back to chat config — role-specific is opt-in
+    const fallback = await getLlmRuntimeConfig()
+    _roleCache.set(role, { config: fallback, ts: Date.now() })
+    return fallback
+  }
+
+  const config: LlmRuntimeConfig = {
+    id: row.id,
+    provider: row.provider,
+    baseUrl: row.baseUrl,
+    apiKey: decryptApiKey(row.encryptedApiKey),
+    model: row.model,
+  }
+  _roleCache.set(role, { config, ts: Date.now() })
+  return config
+}
+
+export function invalidateRoleConfigCache(): void {
+  _roleCache.clear()
+}
+
 export async function getPublicLlmConfig(): Promise<PublicLlmConfig> {
   const row = await db.llmConfig.findFirst()
   if (!row) {

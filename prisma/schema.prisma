@@ -123,6 +123,7 @@ model DocumentChunk {
   tokenCount Int?
   keywords   String?
   embeddingJson      String?
+  embedding          Unsupported("vector(1536)")?
   embeddingProvider  String?
   embeddingModel     String?
   embeddedAt         DateTime?
@@ -132,6 +133,23 @@ model DocumentChunk {
 
   @@index([documentId])
   @@index([embeddingModel])
+}
+
+// ------------------------------------------------------------------
+// Knowledge Graph — entity-relation extraction (LightRAG dual-level retrieval)
+// ------------------------------------------------------------------
+model KgRelation {
+  id          String   @id @default(cuid())
+  chunkId     String
+  source      String
+  target      String
+  description String
+  keywords    String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([chunkId])
+  @@index([source])
+  @@index([target])
 }
 
 // ------------------------------------------------------------------

@@ -9,6 +9,8 @@ const mockDocumentCount = mock(async () => 0)
 const mockDocumentFindMany = mock(async () => [] as unknown[])
 const mockRestEndpointCount = mock(async () => 0)
 const mockIntegrationFindFirst = mock(async () => null as unknown)
+const mockIntegrationFindMany = mock(async () => [] as Array<{ name: string }>)
+const mockIntegrationSchemaFindMany = mock(async () => [] as Array<{ tableName: string; description: string | null; integration: { name: string } }>)
 const mockToolRunFindMany = mock(async () => [] as unknown[])
 const mockAuditLogCreate = mock(async () => ({}))
 const mockQueryHistoryCreate = mock(async () => ({}))
@@ -21,7 +23,8 @@ const mockVectorStoreConfigFindFirst = mock(async () => null)
 
 mock.module('@/lib/db', () => ({
   db: {
-    integration: { count: mockIntegrationCount, findFirst: mockIntegrationFindFirst },
+    integration: { count: mockIntegrationCount, findFirst: mockIntegrationFindFirst, findMany: mockIntegrationFindMany },
+    integrationSchema: { findMany: mockIntegrationSchemaFindMany },
     document: { count: mockDocumentCount, findMany: mockDocumentFindMany },
     documentChunk: { findMany: mockDocChunkFindMany },
     restApiEndpoint: { count: mockRestEndpointCount },
@@ -89,6 +92,24 @@ mock.module('@/lib/cognee', () => ({
   recallContext: mock(async () => null),
   rememberChatTurn: mock(async () => undefined),
   recallKnowledgeGraph: async () => '',
+}))
+
+// In-memory Redis mock — rag.ts imports cacheGet/cacheSet/cacheDel
+mock.module('@/lib/redis', () => ({
+  cacheGet: async () => null,
+  cacheSet: async () => {},
+  cacheDel: async () => {},
+}))
+
+// KG mock — dual-level retrieval returns empty in tests
+mock.module('@/lib/knowledge-graph', () => ({
+  dualLevelRetrieval: async () => ({
+    localChunks: [],
+    globalChunks: [],
+    allChunkIds: [],
+    matchedEntities: [],
+    graphContext: '',
+  }),
 }))
 
 const mockGetPromptSettings = mock(async () => ({
@@ -781,6 +802,7 @@ describe('runNonStreamingChatCompletion', () => {
   })
 
   test('multi-turn with chat history uses LLM routeQuery instead of smartRoute', async () => {
+    mockDocumentCount.mockImplementation(async () => 1)
     mockRouteQuery.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, reason: 'contextual' }))
     mockGenerateChat.mockImplementation(async () => 'Contextual answer')
 
@@ -796,6 +818,7 @@ describe('runNonStreamingChatCompletion', () => {
   })
 
   test('CONTEXTUAL_CHAT branch: loads prior tool runs and generates contextual answer', async () => {
+    mockDocumentCount.mockImplementation(async () => 1)
     mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
     mockToolRunFindMany.mockImplementation(async () => [
       { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
