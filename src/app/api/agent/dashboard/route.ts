@@ -5,7 +5,9 @@ import { db } from '@/lib/db'
 import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { streamAnswer } from '@/lib/ai'
-import { testMcpServer, invalidateMcpToolsCache } from '@/lib/mcp-client'
+import { testMcpServer, invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
+import { fetchMcpInstallFromUrl } from '@/lib/mcp-installer'
+import { encryptConfig, decryptConfig } from '@/lib/crypto'
 
 // ponytail: lightweight known-names map for agentic MCP setup. Covers the
 // common @modelcontextprotocol/server-* packages + a few uvx ones. Unknown
@@ -59,10 +61,31 @@ async function tryMcpSetup(message: string, lower: string, userId: string): Prom
   let command = ''
   let args: string[] = []
   let url = ''
+  let requiredEnvVars: string[] = []
 
   if (urlInMessage) {
-    transport = lower.includes('sse') ? 'sse' : 'http'
-    url = urlInMessage
+    // ponytail: URL could be a direct MCP endpoint (/sse, /mcp, /api/mcp) or a
+    // repo/docs page with install instructions. For the latter, fetch the page
+    // and parse for npx/uvx/JSON config patterns.
+    const isDirectMcpEndpoint = /\/(?:sse|mcp|api\/mcp)/i.test(urlInMessage)
+    if (isDirectMcpEndpoint) {
+      transport = lower.includes('sse') ? 'sse' : 'http'
+      url = urlInMessage
+    } else {
+      // Fetch the URL (GitHub README, docs page) and parse for install instructions
+      const install = await fetchMcpInstallFromUrl(urlInMessage)
+      if (install) {
+        transport = 'stdio'
+        command = install.command
+        args = install.args
+        if (install.name) serverName = install.name
+        requiredEnvVars = install.envVars
+      } else {
+        // Could not parse install instructions — fall back to HTTP
+        transport = 'http'
+        url = urlInMessage
+      }
+    }
   } else {
     transport = 'stdio'
     const runner = lower.includes('uvx') ? 'uvx' : (nameMatch ? MCP_PACKAGES[nameMatch].runner : 'npx')
@@ -114,17 +137,115 @@ async function tryMcpSetup(message: string, lower: string, userId: string): Prom
     const configLine = transport === 'stdio'
       ? `Command: ${command} ${args.join(' ')}`
       : `URL: ${url}`
+    const envLine = requiredEnvVars.length > 0
+      ? `\nRequired credentials: ${requiredEnvVars.join(', ')}\nTo set them, reply: set credentials for ${serverName}: ${requiredEnvVars.map((k) => `${k}=your_value`).join(', ')}`
+      : ''
     return {
       handled: true,
       output: `MCP server "${serverName}" installed and connected.\nTransport: ${transport}\n${configLine}\nTools found: ${testResult.toolCount ?? 0}${
         toolLines.length > 0 ? '\n' + toolLines.join('\n') : ''
-      }`,
+      }${envLine}`,
+    }
+  }
+  // ponytail: if the connection test failed AND we detected required env vars,
+  // the most likely cause is missing credentials — tell the user.
+  const envHint = requiredEnvVars.length > 0
+    ? `\n\nThis server requires credentials: ${requiredEnvVars.join(', ')}\nReply with: set credentials for ${serverName}: ${requiredEnvVars.map((k) => `${k}=your_value`).join(', ')}`
+    : ''
+  return {
+    handled: true,
+    output: `MCP server "${serverName}" was created but the connection test failed.\nTransport: ${transport}\nError: ${testResult.error}${envHint}\n\nEdit the configuration in the Tools view to fix the issue.`,
+  }
+}
+
+// ponytail: credential handler — detects "set credentials for X: KEY=val, KEY=val"
+// or "set GITHUB_TOKEN to ghp_xxx for X" and updates the MCP server's encrypted envJson.
+async function tryMcpCredentials(message: string, lower: string, userId: string): Promise<{ handled: boolean; output?: string }> {
+  // Pattern 1: "set credentials for <name>: KEY=val, KEY=val"
+  const credMatch = message.match(/(?:set|update|add)\s+credentials\s+for\s+["']?([\w-]+)["']?\s*[:]\s*(.+)/i)
+  // Pattern 2: "set <KEY> to <val> for <name>" (single key)
+  const singleMatch = message.match(/(?:set|update)\s+([A-Z][A-Z0-9_]+)\s+(?:to|=)\s+(\S+)\s+for\s+["']?([\w-]+)["']?/i)
+
+  let serverName: string
+  let envUpdates: Record<string, string>
+
+  if (credMatch) {
+    serverName = credMatch[1]
+    envUpdates = parseCredentialPairs(credMatch[2])
+  } else if (singleMatch) {
+    serverName = singleMatch[3]
+    envUpdates = { [singleMatch[1]]: singleMatch[2].replace(/['"`]/g, '') }
+  } else {
+    return { handled: false }
+  }
+
+  if (Object.keys(envUpdates).length === 0) return { handled: false }
+
+  // Find the server by name (case-insensitive)
+  const server = await db.mcpServer.findFirst({
+    where: { name: { contains: serverName, mode: 'insensitive' } },
+  })
+  if (!server) {
+    return {
+      handled: true,
+      output: `MCP server "${serverName}" not found. Use the Tools view to see registered servers.`,
+    }
+  }
+
+  // Merge with existing env vars (decrypt, merge, re-encrypt)
+  let existingEnv: Record<string, string> = {}
+  if (server.envJson && server.envJson !== '{}') {
+    try {
+      const dec = decryptConfig(server.envJson)
+      if (dec && typeof dec === 'object') existingEnv = dec as Record<string, string>
+    } catch {
+      // not encrypted or corrupt — start fresh
+    }
+  }
+  const merged = { ...existingEnv, ...envUpdates }
+  const encryptedEnv = encryptConfig(merged)
+
+  await db.mcpServer.update({
+    where: { id: server.id },
+    data: { envJson: encryptedEnv },
+  })
+  await disconnectMcpServer(server.id)
+  invalidateMcpToolsCache()
+  await writeAudit({
+    userId,
+    action: 'MCP_SERVER_UPDATE',
+    severity: 'warning',
+    detail: { id: server.id, name: server.name, envKeys: Object.keys(envUpdates), via: 'agentic' },
+  })
+
+  // Re-test the connection with the new credentials
+  const testResult = await testMcpServer(server.id)
+  invalidateMcpToolsCache()
+
+  const keysList = Object.keys(envUpdates).join(', ')
+  if (testResult.ok) {
+    return {
+      handled: true,
+      output: `Credentials updated for "${server.name}".\nSet: ${keysList}\nConnection test: OK (${testResult.toolCount ?? 0} tools available).`,
     }
   }
   return {
     handled: true,
-    output: `MCP server "${serverName}" was created but the connection test failed.\nTransport: ${transport}\nError: ${testResult.error}\n\nEdit the configuration in the Tools view to fix the issue.`,
+    output: `Credentials updated for "${server.name}".\nSet: ${keysList}\nConnection test failed: ${testResult.error}\n\nThe credentials were saved. Check if the values are correct or if the server needs additional configuration.`,
   }
+}
+
+function parseCredentialPairs(s: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  // Match KEY=value or KEY="value" or KEY='value' pairs separated by commas or spaces
+  const regex = /([A-Z][A-Z0-9_]+)\s*=\s*(?:"([^"]+)"|'([^']+)'|(\S+?))(?:\s*,\s*|\s+|$)/g
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(s)) !== null) {
+    const key = m[1]
+    const val = m[2] ?? m[3] ?? m[4]
+    if (val) result[key] = val.replace(/['"`]/g, '')
+  }
+  return result
 }
 
 export async function POST(req: NextRequest) {
@@ -189,6 +310,28 @@ export async function POST(req: NextRequest) {
 
         try {
           send('thinking', { content: 'Analyzing request...' })
+
+          // ponytail: MCP credential update — detect "set credentials for X: KEY=val"
+          // before MCP setup (which is for new installs) and before the LLM planner.
+          const credResult = await tryMcpCredentials(message, message.toLowerCase(), user.userId)
+          if (credResult.handled && credResult.output) {
+            const credOutput = credResult.output
+            send('tool_start', { stepId: 'mcp-cred', tool: 'mcp_credentials', input: { message: 'set credentials' } })
+            send('tool_end', { stepId: 'mcp-cred', tool: 'mcp_credentials', output: credOutput, status: 'success', latencyMs: 0 })
+            send('answer', { content: credOutput })
+            send('done', { conversationId })
+            await db.chatMessage.create({
+              data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: credOutput, status: 'complete' },
+            }).catch(() => null)
+            await db.chatSession.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }).catch(() => null)
+            await rememberChatTurn({
+              sessionId: conversationId,
+              userMessage: message,
+              aiMessage: credOutput,
+              toolRuns: [{ type: 'mcp_credentials', status: 'success', latencyMs: 0 }],
+            })
+            return
+          }
 
           // ponytail: MCP setup is URL-driven (requires parsing URLs from text),
           // so it runs as a pre-check before the LLM planner. All other admin
