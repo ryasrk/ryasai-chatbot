@@ -9,10 +9,7 @@ generator client {
 }
 
 datasource db {
-  // For Postgres: change provider to "postgresql" and set DATABASE_URL to a
-  // postgresql:// connection string. See docs/postgres-migration.md for the
-  // full migration guide (raw SQL adaptations needed in connectors.ts + rag-fts.ts).
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

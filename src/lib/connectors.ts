@@ -69,9 +69,9 @@ const DEMO_TABLES = [
 
 // ponytail: Chinook sample database tables (digital media store — artists, albums, tracks, customers, invoices)
 const CHINOOK_TABLES = [
-  'Artist', 'Album', 'Track', 'Genre', 'MediaType',
-  'Playlist', 'PlaylistTrack', 'Customer', 'Employee',
-  'Invoice', 'InvoiceLine',
+  'artist', 'album', 'track', 'genre', 'mediatype',
+  'playlist', 'playlisttrack', 'customer', 'employee',
+  'invoice', 'invoiceline',
 ] as const
 
 // ponytail: World DB tables (countries, cities, languages — from postgresDBSamples)
@@ -248,16 +248,25 @@ export class ChinookSqliteConnector implements BaseDatabaseConnector {
   constructor(private _config: Record<string, unknown>) {}
 
   async testConnection(): Promise<boolean> {
-    const count = await db.$queryRawUnsafe<{ count: number }[]>('SELECT COUNT(*) as count FROM Artist LIMIT 1')
-    return count.length > 0
+    try {
+      const count = await db.$queryRawUnsafe<{ count: number }[]>('SELECT COUNT(*) as count FROM artist LIMIT 1')
+      return count.length > 0
+    } catch {
+      return false
+    }
   }
 
   async fetchSchema(): Promise<ReflectedTable[]> {
     const tables: ReflectedTable[] = []
     for (const tableName of CHINOOK_TABLES) {
-      const cols = await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
-        `PRAGMA table_info("${tableName}")`,
-      )
+      const cols = isPostgres()
+        ? await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+            `SELECT c.column_name AS name, c.data_type AS type, CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull, CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS pk FROM information_schema.columns c LEFT JOIN (SELECT ku.column_name, ku.table_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON pk.column_name = c.column_name AND pk.table_name = c.table_name WHERE c.table_name = $1 ORDER BY c.ordinal_position`,
+            tableName,
+          )
+        : await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+            `PRAGMA table_info("${tableName}")`,
+          )
       if (cols.length === 0) continue
       const colDefs = cols.map((c) => ({
         name: c.name,
@@ -320,9 +329,14 @@ class GenericSqliteConnector implements BaseDatabaseConnector {
   async fetchSchema(): Promise<ReflectedTable[]> {
     const tables: ReflectedTable[] = []
     for (const tableName of this._tables) {
-      const cols = await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
-        `PRAGMA table_info("${tableName}")`,
-      )
+      const cols = isPostgres()
+        ? await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+            `SELECT c.column_name AS name, c.data_type AS type, CASE WHEN c.is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull, CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END AS pk FROM information_schema.columns c LEFT JOIN (SELECT ku.column_name, ku.table_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name WHERE tc.constraint_type = 'PRIMARY KEY') pk ON pk.column_name = c.column_name AND pk.table_name = c.table_name WHERE c.table_name = $1 ORDER BY c.ordinal_position`,
+            tableName,
+          )
+        : await db.$queryRawUnsafe<{ name: string; type: string; notnull: number; pk: number }[]>(
+            `PRAGMA table_info("${tableName}")`,
+          )
       if (cols.length === 0) continue
       const colDefs = cols.map((c) => ({
         name: c.name,
