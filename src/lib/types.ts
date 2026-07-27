@@ -57,6 +57,7 @@ export interface ChatMessageItem {
   createdAt: string
   integration?: { id: string; name: string } | null
   toolType?: string | null
+  toolHasResults?: boolean
 }
 
 export interface Citation {

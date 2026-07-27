@@ -27,6 +27,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
           orderBy: { createdAt: 'asc' as const },
           include: {
             integration: { select: { id: true, name: true, provider: true } },
+            toolRuns: { select: { type: true, status: true, outputSummary: true } },
           },
         },
       },
@@ -39,12 +40,23 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    // parse JSON fields on each message for the frontend
-    const messages = session.messages.map((m) => ({
-      ...m,
-      citations: m.citations ? safeParse(m.citations) : null,
-      chartData: m.chartData ? safeParse(m.chartData) : null,
-    }))
+    // parse JSON fields + derive toolType/toolHasResults from toolRuns
+    const messages = session.messages.map((m) => {
+      const toolRun = m.toolRuns?.[0]
+      const toolType = toolRun?.type && toolRun.type !== 'CHAT' ? toolRun.type : null
+      const toolHasResults =
+        !!toolRun &&
+        toolRun.status === 'success' &&
+        !!toolRun.outputSummary &&
+        toolRun.outputSummary.length > 0
+      return {
+        ...m,
+        citations: m.citations ? safeParse(m.citations) : null,
+        chartData: m.chartData ? safeParse(m.chartData) : null,
+        toolType,
+        toolHasResults,
+      }
+    })
 
     return NextResponse.json({ ...session, messages })
   } catch (err) {

@@ -22,17 +22,19 @@ export async function GET() {
 
     // ---- helpers ---------------------------------------------------------
     const days = 7
+    // ponytail: use UTC for bucket dates so the chart matches DB timestamps
+    // (which are stored in UTC). Local timezone would shift the day boundary.
     const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    today.setUTCHours(0, 0, 0, 0)
     const buckets: { date: string; count: number }[] = []
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(today)
-      d.setDate(d.getDate() - i)
+      d.setUTCDate(d.getUTCDate() - i)
       buckets.push({ date: d.toISOString().slice(0, 10), count: 0 })
     }
     const bucketMap = new Map(buckets.map((b) => [b.date, b]))
     const since = new Date(today)
-    since.setDate(since.getDate() - (days - 1))
+    since.setUTCDate(since.getUTCDate() - (days - 1))
 
     // ---- totals ----------------------------------------------------------
     const [

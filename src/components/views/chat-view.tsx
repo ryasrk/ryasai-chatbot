@@ -218,6 +218,7 @@ export function ChatView() {
   // Ref mirrors the active tool type so handleSseEvent (stable callback) can
   // stamp it onto the finalized AI message without a stale closure.
   const currentToolTypeRef = useRef<string>('')
+  const toolHasResultsRef = useRef<boolean>(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -407,8 +408,10 @@ export function ChatView() {
         }
         case 'tool_end': {
           const ok = data.status === 'success'
+          const hasResults = data.hasResults === true
+          toolHasResultsRef.current = hasResults
           setPipeline((p) => ({ ...p, tool: ok ? 'done' : 'error' }))
-          chat.setStatus(ok ? 'done' : 'error', ok ? 'Done' : 'Failed')
+          chat.setStatus(ok ? 'done' : 'error', ok ? (hasResults ? 'Done' : 'No data found') : 'Failed')
           break
         }
         case 'token': {
@@ -443,6 +446,7 @@ export function ChatView() {
           }))
           // Swap placeholder id with the real DB id, attach integration + tool type.
           const toolType = currentToolTypeRef.current || null
+          const toolHasResults = data.toolHasResults === true || toolHasResultsRef.current
           if (data.messageId || data.integration || toolType) {
             const msgs = useChatStore.getState().messages
             useChatStore.getState().setMessages(
@@ -456,6 +460,7 @@ export function ChatView() {
                         name: string
                       } | null) ?? null,
                       toolType,
+                      toolHasResults,
                     }
                   : m,
               ),
@@ -553,6 +558,7 @@ export function ChatView() {
       store.addMessage(aiPlaceholder)
       store.setStreaming(true)
       currentToolTypeRef.current = ''
+      toolHasResultsRef.current = false
       setCurrentTool('')
       setPipeline({ thinking: 'running', toolType: '', tool: 'pending', answer: 'pending' })
       setPipelineVisible(true)
@@ -1043,7 +1049,7 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
         </div>
       </div>
       <div className="min-w-0 flex-1 max-w-[min(100%,52rem)]">
-          {!isStreaming && message.toolType && TOOL_BADGE[message.toolType] && (
+          {!isStreaming && message.toolType && message.toolHasResults && TOOL_BADGE[message.toolType] && (
             <DataSourceBadge toolType={message.toolType} />
           )}
           <Card className="overflow-hidden py-3 gap-3 shadow-none bg-transparent border-0">
@@ -1069,8 +1075,8 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: ChatMe
             </CardContent>
           )}
 
-          {/* Integration footer */}
-          {message.integration && (
+          {/* Integration footer — only when tool returned results */}
+          {message.integration && message.toolHasResults && (
             <CardContent className="px-4 pt-0">
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Database className="h-3 w-3" />

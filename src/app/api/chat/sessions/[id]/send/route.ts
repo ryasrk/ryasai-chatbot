@@ -147,6 +147,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
           // 4. Emit tool execution events (skip for pure CHAT — no tool to show).
           const toolRun = streaming.toolRuns[0]
+          const toolHasResults =
+            toolRun &&
+            toolRun.type !== 'CHAT' &&
+            toolRun.status === 'success' &&
+            !!toolRun.outputSummary &&
+            toolRun.outputSummary.length > 0
           if (toolRun && toolRun.type !== 'CHAT') {
             send('tool_start', {
               tool: toolRun.type,
@@ -156,6 +162,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               tool: toolRun.type,
               status: toolRun.status,
               latencyMs: toolRun.latencyMs ?? 0,
+              hasResults: toolHasResults,
             })
           }
 
@@ -237,6 +244,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             integration: aiMessage.integration
               ? { id: aiMessage.integration.id, name: aiMessage.integration.name }
               : null,
+            toolHasResults,
           })
 
           // 8. Done.
