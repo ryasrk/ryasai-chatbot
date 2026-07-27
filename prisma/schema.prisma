@@ -430,9 +430,27 @@ model ScheduledRun {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  logs        ScheduledRunLog[]
+
   @@index([isActive])
   @@index([nextRunAt])
   @@index([notificationConfigId])
+}
+
+model ScheduledRunLog {
+  id             String   @id @default(cuid())
+  scheduledRunId String
+  status         String   // 'success' | 'error'
+  answer         String?  // full LLM answer
+  error          String?  // error message if failed
+  toolRunsJson   String?  // JSON array of tool run summaries
+  latencyMs      Int?
+  executedAt     DateTime @default(now())
+
+  scheduledRun   ScheduledRun @relation(fields: [scheduledRunId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledRunId])
+  @@index([executedAt])
 }
 
 model NotificationConfig {

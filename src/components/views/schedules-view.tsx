@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Eye } from 'lucide-react'
+import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -108,6 +108,16 @@ function lastStatusFromResult(lastResult: string | null): 'success' | 'error' | 
   }
 }
 
+interface RunHistoryItem {
+  id: string
+  status: string
+  answer: string | null
+  error: string | null
+  toolRuns: Array<{ type: string; status: string; outputSummary?: string }> | null
+  latencyMs: number | null
+  executedAt: string
+}
+
 export function SchedulesView() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,7 +133,10 @@ export function SchedulesView() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [outputSchedule, setOutputSchedule] = useState<Schedule | null>(null)
+  const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null)
+  const [historyRuns, setHistoryRuns] = useState<RunHistoryItem[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const prevLastRunMap = useRef<Map<string, string>>(new Map())
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
@@ -148,6 +161,33 @@ export function SchedulesView() {
   useEffect(() => {
     fetchSchedules()
   }, [fetchSchedules])
+
+  // ponytail: poll every 15s for schedule changes — detects when the scheduler
+  // completes a run. Shows a toast notification with the result.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/schedules', { cache: 'no-store' })
+        const data = await res.json()
+        if (!data.ok) return
+        const newSchedules: Schedule[] = data.schedules
+        for (const s of newSchedules) {
+          const prev = prevLastRunMap.current.get(s.id)
+          if (prev && s.lastRunAt && prev !== s.lastRunAt) {
+            const status = lastStatusFromResult(s.lastResult)
+            if (status === 'success') {
+              toast.success(`Schedule "${s.name}" completed successfully.`)
+            } else if (status === 'error') {
+              toast.error(`Schedule "${s.name}" failed.`)
+            }
+          }
+          if (s.lastRunAt) prevLastRunMap.current.set(s.id, s.lastRunAt)
+        }
+        setSchedules(newSchedules)
+      } catch {}
+    }, 15_000)
+    return () => clearInterval(interval)
+  }, [])
 
   function openCreate() {
     setEditing(null)
@@ -250,6 +290,29 @@ export function SchedulesView() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  async function loadHistory(s: Schedule) {
+    setHistorySchedule(s)
+    setLoadingHistory(true)
+    setHistoryRuns([])
+    try {
+      const res = await fetch(`/api/schedules/${s.id}/runs`)
+      const data = await res.json()
+      if (data.ok) {
+        setHistoryRuns(data.runs)
+      } else {
+        toast.error(data.error || 'Failed to load execution history.')
+      }
+    } catch {
+      toast.error('Failed to load execution history.')
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
+  function handleExport(s: Schedule, format: 'json' | 'csv') {
+    window.open(`/api/schedules/${s.id}/runs/export?format=${format}`, '_blank')
   }
 
   return (
@@ -364,17 +427,17 @@ export function SchedulesView() {
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex items-center justify-end gap-1">
-                          {s.lastResult && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => setOutputSchedule(s)}
-                              title="View Output"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
+                           {s.lastResult && (
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               className="h-7 w-7"
+                               onClick={() => loadHistory(s)}
+                               title="Execution History"
+                             >
+                               <History className="h-3.5 w-3.5" />
+                             </Button>
+                           )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -590,63 +653,91 @@ export function SchedulesView() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={outputSchedule !== null} onOpenChange={(open) => { if (!open) setOutputSchedule(null) }}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={historySchedule !== null} onOpenChange={(open) => { if (!open) { setHistorySchedule(null); setHistoryRuns([]) } }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {outputSchedule?.name} — Last Execution
+            <DialogTitle className="text-sm flex items-center gap-2">
+              <History className="h-4 w-4" />
+              {historySchedule?.name} — Execution History
             </DialogTitle>
             <DialogDescription className="text-xs">
-              {outputSchedule ? fmtDate(outputSchedule.lastRunAt) : ''}
+              {historySchedule ? `Cron: ${historySchedule.cronExpr}` : ''}
             </DialogDescription>
           </DialogHeader>
-          {outputSchedule?.lastResult && (
-            <ScheduleOutputBody lastResult={outputSchedule.lastResult} />
+
+          {historySchedule && (
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'json')}>
+                <Download className="h-3 w-3" />
+                Export JSON
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'csv')}>
+                <Download className="h-3 w-3" />
+                Export CSV
+              </Button>
+            </div>
           )}
+
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : historyRuns.length === 0 ? (
+              <div className="text-center py-8 text-xs text-muted-foreground">
+                No execution history yet.
+              </div>
+            ) : (
+              historyRuns.map((run) => (
+                <div key={run.id} className="rounded-md border bg-muted/20 p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {run.status === 'success' ? (
+                        <Badge className="text-xs bg-success/15 text-success border-success/20 gap-1">
+                          <Check className="h-3 w-3" />
+                          Success
+                        </Badge>
+                      ) : (
+                        <Badge className="text-xs bg-destructive/15 text-destructive border-destructive/20 gap-1">
+                          <X className="h-3 w-3" />
+                          Failed
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {fmtDate(run.executedAt)}
+                      </span>
+                      {run.latencyMs != null && (
+                        <span className="text-xs text-muted-foreground">
+                          ({(run.latencyMs / 1000).toFixed(1)}s)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {run.toolRuns && run.toolRuns.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {run.toolRuns.map((tr, i) => (
+                        <Badge key={i} variant="outline" className="text-[10px] gap-1">
+                          {tr.type}
+                          {tr.status === 'success' ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {run.error ? (
+                    <pre className="whitespace-pre-wrap rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+                      {run.error}
+                    </pre>
+                  ) : (
+                    <pre className="whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-xs max-h-[200px] overflow-y-auto">
+                      {run.answer || '(empty)'}
+                    </pre>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function ScheduleOutputBody({ lastResult }: { lastResult: string }) {
-  const status = lastStatusFromResult(lastResult)
-  let answer = ''
-  let error = ''
-  try {
-    const parsed = JSON.parse(lastResult) as Record<string, unknown>
-    if (typeof parsed.answer === 'string') answer = parsed.answer
-    if (typeof parsed.error === 'string') error = parsed.error
-  } catch {
-    answer = lastResult
-  }
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Status:</span>
-        {status === 'success' ? (
-          <Badge className="text-xs bg-success/15 text-success border-success/20 gap-1">
-            <Check className="h-3 w-3" />
-            Success
-          </Badge>
-        ) : status === 'error' ? (
-          <Badge className="text-xs bg-destructive/15 text-destructive border-destructive/20 gap-1">
-            <X className="h-3 w-3" />
-            Failed
-          </Badge>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
-      </div>
-      {error ? (
-        <pre className="whitespace-pre-wrap rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-xs text-destructive">
-          {error}
-        </pre>
-      ) : (
-        <pre className="whitespace-pre-wrap rounded-md border bg-muted/20 p-2.5 text-xs">
-          {answer || '(empty)'}
-        </pre>
-      )}
     </div>
   )
 }

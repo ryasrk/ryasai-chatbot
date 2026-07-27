@@ -282,6 +282,33 @@ async function executeRun(run: {
     return
   }
 
+  // Persist execution log — full answer + tool runs for history + export.
+  try {
+    let answer: string | null = null
+    let error: string | null = null
+    let toolRunsJson: string | null = null
+    try {
+      const parsed = JSON.parse(resultSummary) as Record<string, unknown>
+      answer = typeof parsed.answer === 'string' ? parsed.answer : null
+      error = typeof parsed.error === 'string' ? parsed.error : null
+      if (Array.isArray(parsed.toolRuns)) {
+        toolRunsJson = JSON.stringify(parsed.toolRuns)
+      }
+    } catch {}
+    await db.scheduledRunLog.create({
+      data: {
+        scheduledRunId: run.id,
+        status: success ? 'success' : 'error',
+        answer,
+        error,
+        toolRunsJson,
+        latencyMs: Date.now() - now.getTime(),
+      },
+    })
+  } catch (e) {
+    console.error(`[scheduler] failed to log execution for "${run.name}":`, e)
+  }
+
   console.log(
     `[scheduler] completed "${run.name}" → next at ${next?.toISOString() ?? 'null'}`,
   )
