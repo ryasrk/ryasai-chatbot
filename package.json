@@ -14,7 +14,10 @@
     "e2e": "playwright test",
     "test": "bun scripts/test.ts",
     "rag-eval": "bun benchmark/rag-eval.ts",
-    "prepare": "cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit"
+    "prepare": "cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit",
+    "test:coverage": "bun test --coverage",
+    "coverage": "bun test --coverage 2>&1 | tail -20",
+    "coverage:check": "c8 --check-coverage --lines 50 --functions 50 bun run test"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",
@@ -101,6 +104,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "bun-types": "^1.3.4",
+    "c8": "^10.1.3",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",

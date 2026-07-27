@@ -1,0 +1,16 @@
+{
+  "name": "@ryasai/chatbot-sdk",
+  "version": "0.1.0",
+  "description": "Type-safe SDK for building ryasai Chatbot plugin tools.",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "import": "./index.ts"
+    }
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

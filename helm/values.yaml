@@ -1,0 +1,60 @@
+# ryasai-chatbot Helm chart defaults
+# Override per-environment with -f values.<env>.yaml or --set.
+
+# -- Container image. The Next.js build produces .next/standalone/server.js
+# (output: "standalone"). The web container runs it with Bun.
+image:
+  repository: ghcr.io/ryasai/chatbot
+  tag: "0.4.0"
+  pullPolicy: IfNotPresent
+
+# -- Web deployment replicas. Single-tenant app — scale up only if stateless
+# paths (chat API) need throughput. Scheduler must stay at 1 (see below).
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 3000
+
+# -- Ingress. Disabled by default — enable per-environment and set the host.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chatbot.local
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS secrets must live in the same namespace. See Ingress docs.
+  tls: []
+
+# -- Resource requests/limits per deployment.
+resources:
+  web:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  scheduler:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+
+# -- Non-secret runtime config (mounted as a ConfigMap, envFrom).
+# These mirror the env vars read by src/lib/config.ts + mini-services/scheduler.
+config:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  COGNEE_ENABLED: "false"
+  RAG_LLM_RERANK: "true"
+  SCHEDULER_POLL_INTERVAL_SEC: "60"
+  LOG_RETENTION_DAYS: "90"
+  AUTH_DEMO_FALLBACK: "false"
+
+# -- Secret runtime config (mounted as a Secret, envFrom).
+# Supply via --set secret.*=value, a sealed-secret, or external-secrets.
+# DATABASE_URL         — Postgres connection string (external or in-cluster).
+# ENCRYPTION_SECRET_KEY — 64-char hex AES-256-GCM key (see src/lib/config.ts).
+# ADMIN_INITIAL_PASSWORD — bootstrap admin password on first boot.
+secret:
+  DATABASE_URL: ""
+  ENCRYPTION_SECRET_KEY: ""
+  ADMIN_INITIAL_PASSWORD: ""

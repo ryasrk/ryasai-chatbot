@@ -1,0 +1,26 @@
+ryasai-chatbot {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace {{ .Release.Namespace }}.
+
+Components:
+  Web       → {{ include "ryasai-chatbot.fullname" . }} Service on port {{ .Values.service.port }}
+  Scheduler → {{ include "ryasai-chatbot.fullname" . }}-scheduler (cron worker, no HTTP port)
+
+Health probes (web):
+  liveness  → /api/v1/health  (lightweight, no DB hit)
+  readiness → /api/health     (DB + Redis check)
+
+Next steps:
+  1. Set secrets (DATABASE_URL, ENCRYPTION_SECRET_KEY, ADMIN_INITIAL_PASSWORD):
+       kubectl -n {{ .Release.Namespace }} edit secret {{ include "ryasai-chatbot.fullname" . }}
+     Then restart the web pod to pick up new env vars.
+
+  2. Reach the app:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+       Ingress host: {{ .host }}
+{{- end }}
+{{- else }}
+       kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ryasai-chatbot.fullname" . }} 3000:{{ .Values.service.port }}
+{{- end }}
+
+  3. Check pod status:
+       kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ryasai-chatbot.fullname" . }}-scheduler
+  labels:
+    {{- include "ryasai-chatbot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  # Single replica only — the scheduler uses an optimistic lock to claim runs;
+  # multiple replicas are safe but redundant. Raise only if poll throughput needs it.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ryasai-chatbot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      labels:
+        {{- include "ryasai-chatbot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Cron worker — polls ScheduledRun rows, no HTTP port.
+          command: ["bun"]
+          args: ["run", "mini-services/scheduler/index.ts"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "ryasai-chatbot.fullname" . }}
+            - secretRef:
+                name: {{ include "ryasai-chatbot.fullname" . }}
+          resources:
+            {{- toYaml .Values.resources.scheduler | nindent 12 }}
