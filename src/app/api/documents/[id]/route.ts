@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
 import { invalidateRagCache } from '@/lib/rag'
+import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 
 export const runtime = 'nodejs'
 
@@ -124,6 +125,7 @@ export async function PATCH(
       data: { isEnabled: body.isEnabled },
       select: { id: true, isEnabled: true, updatedAt: true },
     })
+    invalidateSourceEmbeddingCache()
 
     // ponytail: cognifyDocument checks isCogneeEnabled internally — no-op if disabled.
     // forgetKnowledgeGraph is global (no per-doc forget in cognee API), so we only
@@ -186,6 +188,7 @@ export async function DELETE(
 
     await db.document.delete({ where: { id: existing.id } })
     invalidateRagCache()
+    invalidateSourceEmbeddingCache()
 
     void forgetKnowledgeGraph()
 

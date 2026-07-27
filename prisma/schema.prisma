@@ -64,6 +64,7 @@ model IntegrationSchema {
   columns       String   // JSON: [{name,type,pk,notnull,fk,distinctValues}]
   rowCount      Int?
   sampleRow     String?  // JSON: {col: value} — 1 representative row for LLM format understanding
+  description   String?  // LLM-generated natural language summary of this table
   reflectedAt   DateTime @default(now())
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)

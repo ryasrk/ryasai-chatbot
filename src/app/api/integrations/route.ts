@@ -11,6 +11,8 @@ import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
+import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
+import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 
 const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'SQLITE_DEMO'])
 
@@ -159,6 +161,10 @@ export async function POST(req: NextRequest) {
           sampleRow: t.sampleRow ? JSON.stringify(t.sampleRow) : null,
         })),
       })
+      invalidateSourceEmbeddingCache()
+
+      // Generate LLM descriptions for each table (fire-and-forget, non-blocking)
+      enrichSchemaDescriptions(integration.id, integration.name).catch(() => {})
     }
 
     await db.integration.update({

@@ -142,6 +142,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             integrationId,
             sessionId: session.id,
             chatHistory,
+            allowMultiStepDag: true,
           })
 
           // 4. Emit tool execution events (skip for pure CHAT — no tool to show).

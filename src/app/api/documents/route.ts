@@ -10,6 +10,7 @@ import {
 } from '@/lib/rag'
 import { upsertChunkFts } from '@/lib/rag-fts'
 import { enqueueOrSync } from '@/lib/job-processor'
+import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 
 export const runtime = 'nodejs'
 
@@ -160,6 +161,7 @@ export async function POST(req: NextRequest) {
       data: chunkRows,
     })
     invalidateRagCache()
+    invalidateSourceEmbeddingCache()
     const persistedChunks = await db.documentChunk.findMany({
       where: { documentId: doc.id },
       select: { id: true, content: true, keywords: true },

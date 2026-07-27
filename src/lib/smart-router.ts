@@ -18,6 +18,7 @@
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
 import { selectRelevantPlugins, type ScoredPlugin } from '@/lib/plugin-selector'
+import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity, type EmbeddingRuntimeConfig } from '@/lib/embeddings'
 
 const STOPWORDS = new Set([
   'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'pada', 'dengan', 'ini', 'itu',
@@ -138,6 +139,143 @@ const WEIGHTS = {
   similarity: 0.15,
 }
 
+// ponytail: source metadata embeddings cached for 5 min — sources rarely change,
+// and embedding all metadata on every query would be expensive. Invalidate when
+// integrations or documents are modified (call invalidateSourceEmbeddingCache()).
+let sourceEmbeddingCache: {
+  sql: { texts: string[]; embeddings: number[][] }
+  rag: { texts: string[]; embeddings: number[][] }
+  rest: { texts: string[]; embeddings: number[][] }
+  timestamp: number
+} | null = null
+
+const SOURCE_EMBEDDING_CACHE_TTL = 5 * 60 * 1000
+
+// ponytail: question embedding cached for 10s — within a single smartRoute call,
+// computeSemanticScore runs once per tool (5x) + pickBestIntegration. Without
+// this the question would be embedded 6x per query.
+let questionEmbeddingCache: { question: string; embedding: number[]; timestamp: number } | null = null
+const QUESTION_EMBEDDING_TTL = 10 * 1000
+
+export function invalidateSourceEmbeddingCache() {
+  sourceEmbeddingCache = null
+  questionEmbeddingCache = null
+}
+
+function safeParseColumns(raw: string): Array<{ name: string }> {
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((c: Record<string, unknown>) => ({ name: String(c?.name ?? '') }))
+  } catch { return [] }
+}
+
+async function loadSourceTextsForEmbedding(): Promise<{
+  sql: string[]
+  rag: string[]
+  rest: string[]
+}> {
+  const [schemas, docs, endpoints] = await Promise.all([
+    db.integrationSchema.findMany({
+      where: { integration: { status: 'active' } },
+      select: { tableName: true, description: true, columns: true, integration: { select: { name: true } } },
+    }),
+    db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true, description: true } }),
+    db.restApiEndpoint.findMany({ where: { isEnabled: true, connector: { isActive: true } }, select: { path: true, description: true } }),
+  ])
+
+  const sql = schemas.map((s) => {
+    const cols = safeParseColumns(s.columns).map((c) => c.name).join(', ')
+    return `${s.integration.name} table ${s.tableName}: ${s.description ?? ''}. Columns: ${cols}`
+  })
+  const rag = docs.map((d) => `${d.name} [${d.category}]: ${d.description ?? ''}`)
+  const rest = endpoints.map((e) => `${e.path}: ${e.description ?? ''}`)
+
+  return { sql, rag, rest }
+}
+
+async function getSourceEmbeddings(): Promise<{
+  sql: { texts: string[]; embeddings: number[][] }
+  rag: { texts: string[]; embeddings: number[][] }
+  rest: { texts: string[]; embeddings: number[][] }
+} | null> {
+  const now = Date.now()
+  if (sourceEmbeddingCache && now - sourceEmbeddingCache.timestamp < SOURCE_EMBEDDING_CACHE_TTL) {
+    return sourceEmbeddingCache
+  }
+
+  const config = await getEmbeddingRuntimeConfig()
+  if (!config) return null
+
+  const texts = await loadSourceTextsForEmbedding()
+
+  // ponytail: embedding API may be unavailable (404, timeout, wrong model).
+  // Catch and fall back to keyword-only scoring — semantic is additive, not critical.
+  let sqlEmb: number[][] = []
+  let ragEmb: number[][] = []
+  let restEmb: number[][] = []
+  try {
+    [sqlEmb, ragEmb, restEmb] = await Promise.all([
+      texts.sql.length > 0 ? embedTexts(config, texts.sql) : Promise.resolve([]),
+      texts.rag.length > 0 ? embedTexts(config, texts.rag) : Promise.resolve([]),
+      texts.rest.length > 0 ? embedTexts(config, texts.rest) : Promise.resolve([]),
+    ])
+  } catch (e) {
+    return null
+  }
+
+  const result = {
+    sql: { texts: texts.sql, embeddings: sqlEmb },
+    rag: { texts: texts.rag, embeddings: ragEmb },
+    rest: { texts: texts.rest, embeddings: restEmb },
+    timestamp: now,
+  }
+  sourceEmbeddingCache = result
+  return result
+}
+
+async function getQuestionEmbedding(question: string, config: EmbeddingRuntimeConfig): Promise<number[]> {
+  const now = Date.now()
+  if (questionEmbeddingCache && questionEmbeddingCache.question === question && now - questionEmbeddingCache.timestamp < QUESTION_EMBEDDING_TTL) {
+    return questionEmbeddingCache.embedding
+  }
+  try {
+    const emb = await embedTexts(config, [question])
+    const embedding = emb[0] ?? []
+    questionEmbeddingCache = { question, embedding, timestamp: now }
+    return embedding
+  } catch {
+    return []
+  }
+}
+
+async function computeSemanticScore(
+  question: string,
+  tool: RouteDecision,
+): Promise<number> {
+  const sources = await getSourceEmbeddings()
+  if (!sources) return 0
+
+  const config = await getEmbeddingRuntimeConfig()
+  if (!config) return 0
+
+  const sourceData = tool === 'SQL' ? sources.sql
+    : tool === 'RAG' ? sources.rag
+    : tool === 'REST' ? sources.rest
+    : null
+  if (!sourceData || sourceData.embeddings.length === 0) return 0
+
+  const queryEmb = await getQuestionEmbedding(question, config)
+  if (queryEmb.length === 0) return 0
+
+  let maxSim = 0
+  for (const emb of sourceData.embeddings) {
+    const sim = cosineSimilarity(queryEmb, emb)
+    if (sim > maxSim) maxSim = sim
+  }
+  return maxSim
+}
+
 export async function smartRoute(args: {
   question: string
   hasIntegrations: boolean
@@ -165,8 +303,8 @@ export async function smartRoute(args: {
   const mentionedAmbiguous = mentionResult?.ambiguous
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
-  const scores: ToolScore[] = tools.map((tool) => {
-    const schemaScore = scoreSchemaMatch(tool, expandedTokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
+  const scorePromises = tools.map(async (tool): Promise<ToolScore> => {
+    const schemaScore = await scoreSchemaMatch(tool, expandedTokens, schemaMeta, endpointMeta, docMeta, pluginRelevant, args.question)
     const perf = perfData[tool] ?? NEUTRAL_PERF
     const perfScore = perf.successRate
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
@@ -194,6 +332,7 @@ export async function smartRoute(args: {
       reason: buildReason(tool, schemaScore, perf, circuitBreakerTripped, simBoost),
     }
   })
+  const scores: ToolScore[] = await Promise.all(scorePromises)
 
   const sorted = [...scores].sort((a, b) => b.finalScore - a.finalScore)
   const best = sorted[0]
@@ -233,7 +372,7 @@ export async function smartRoute(args: {
     } else if (args.preferredIntegrationId) {
       integrationId = args.preferredIntegrationId
     } else {
-      const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens)
+      const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens, args.question)
       integrationId = pickResult?.integrationId
       ambiguousIntegrations = pickResult?.ambiguous
     }
@@ -242,7 +381,27 @@ export async function smartRoute(args: {
   return { decision, reason, scores, integrationId, llmUsed, ambiguousIntegrations }
 }
 
-function scoreSchemaMatch(
+async function scoreSchemaMatch(
+  tool: RouteDecision,
+  tokens: string[],
+  schemaMeta: string[],
+  endpointMeta: string[],
+  docMeta: string[],
+  pluginRelevant: ScoredPlugin[] = [],
+  question: string,
+): Promise<number> {
+  if (tokens.length === 0) return 0
+
+  const keywordScore = keywordScoreForTool(tool, tokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
+  const semanticScore = await computeSemanticScore(question, tool)
+
+  // ponytail: blend 40% keyword + 60% semantic. Keyword catches exact matches
+  // (table names, column names), semantic catches conceptual matches ("movies" → film table).
+  // When no embedding config available, semanticScore=0, falls back to keyword-only.
+  return keywordScore * 0.4 + semanticScore * 0.6
+}
+
+function keywordScoreForTool(
   tool: RouteDecision,
   tokens: string[],
   schemaMeta: string[],
@@ -250,8 +409,6 @@ function scoreSchemaMatch(
   docMeta: string[],
   pluginRelevant: ScoredPlugin[] = [],
 ): number {
-  if (tokens.length === 0) return 0
-
   switch (tool) {
     case 'SQL':
       return keywordOverlap(tokens, schemaMeta)
@@ -545,15 +702,44 @@ async function detectMentionedIntegration(
 // or { ambiguous } when multiple integrations match equally — caller asks user to clarify.
 async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
+  question: string,
 ): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
-    include: { schemas: { select: { tableName: true, columns: true } } },
+    include: { schemas: { select: { tableName: true, columns: true, description: true } } },
   })
   if (integrations.length === 0) return undefined
   if (integrations.length === 1) return { integrationId: integrations[0].id }
 
-  const scored = integrations.map((integ) => {
+  // ponytail: build per-integration text for semantic embedding (name + table descriptions)
+  const integTexts = integrations.map((integ) => {
+    const parts: string[] = [integ.name]
+    for (const s of integ.schemas) {
+      parts.push(`table ${s.tableName}: ${s.description ?? ''}`)
+    }
+    return parts.join('. ')
+  })
+
+  // Compute semantic scores (cosine similarity of question vs each integration text)
+  let semanticScores: number[] = integrations.map(() => 0)
+  const config = await getEmbeddingRuntimeConfig()
+  if (config && question.trim().length > 0) {
+    const queryEmb = await getQuestionEmbedding(question, config)
+    if (queryEmb.length > 0) {
+      try {
+        const integEmbs = await embedTexts(config, integTexts)
+        semanticScores = integrations.map((_, i) => {
+          const emb = integEmbs[i]
+          if (!emb || emb.length === 0) return 0
+          return cosineSimilarity(queryEmb, emb)
+        })
+      } catch {
+        // ponytail: embedding API unavailable — fall back to keyword-only
+      }
+    }
+  }
+
+  const scored = integrations.map((integ, idx) => {
     const allNames: string[] = []
     for (const s of integ.schemas) {
       allNames.push(s.tableName.toLowerCase())
@@ -570,7 +756,12 @@ async function pickBestIntegrationWithAmbiguity(
       if (nameSet.has(t)) { matches++; continue }
       if (allNames.some((n) => n.includes(t) || t.includes(n))) matches++
     }
-    return { id: integ.id, name: integ.name, score: matches }
+    const keywordScore = tokens.length > 0 ? Math.min(matches / tokens.length, 1) : 0
+    const semanticScore = semanticScores[idx] ?? 0
+    // ponytail: blend 40% keyword + 60% semantic — same ratio as scoreSchemaMatch.
+    // When no embedding config, semanticScore=0, falls back to keyword-only.
+    const score = keywordScore * 0.4 + semanticScore * 0.6
+    return { id: integ.id, name: integ.name, score }
   })
 
   scored.sort((a, b) => b.score - a.score)
@@ -602,8 +793,9 @@ async function pickBestIntegrationWithAmbiguity(
 // ponytail: keep the old export for backward compat (tests, routing scores endpoint)
 export async function pickBestIntegration(
   tokens: string[],
+  question?: string,
 ): Promise<string | undefined> {
-  const result = await pickBestIntegrationWithAmbiguity(tokens)
+  const result = await pickBestIntegrationWithAmbiguity(tokens, question ?? '')
   return result?.integrationId
 }
 
@@ -632,8 +824,8 @@ export async function getRoutingScores(): Promise<{
   ])
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
-  const scores = tools.map((tool) => {
-    const schemaScore = scoreSchemaMatch(tool, [], schemaMeta, endpointMeta, docMeta)
+  const scores = await Promise.all(tools.map(async (tool) => {
+    const schemaScore = await scoreSchemaMatch(tool, [], schemaMeta, endpointMeta, docMeta, [], '')
     const perf = perfData[tool] ?? NEUTRAL_PERF
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
     const availability = 1
@@ -657,7 +849,7 @@ export async function getRoutingScores(): Promise<{
       reason: buildReason(tool, schemaScore, perf, circuitBreakerTripped, 0),
       perfMetrics: perf,
     }
-  })
+  }))
 
   return {
     scores,

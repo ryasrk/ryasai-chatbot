@@ -293,6 +293,7 @@ export async function POST(req: NextRequest) {
       userId: admin.id,
       sessionId: session.id,
       chatHistory,
+      allowMultiStepDag: true,
     })
 
     const aiMessage = await db.chatMessage.create({

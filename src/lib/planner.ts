@@ -404,128 +404,161 @@ export async function executePlan(args: {
     s.input.confirm === 'yes' || s.input.confirmed === 'yes' || s.input.confirm === 'true',
   )
 
-  for (const step of sorted) {
-    const started = Date.now()
-    args.onStatus?.(step.id, step.tool, 'running')
+  // ponytail: group steps by dependency level. Steps at the same level have
+  // no dependencies on each other and can execute in parallel. Steps at level N
+  // depend only on steps at level < N. Ceiling: O(levels) sequential rounds,
+  // each round parallel within. For 6-step plans with 3 independent pairs,
+  // this saves ~50% vs fully sequential.
+  const levels = groupByLevel(sorted)
 
-    try {
-      // Admin tools — platform management (generate API key, show monitoring, etc.)
-      if (step.tool.startsWith('admin:')) {
-        const result = await executeAdminTool(step.tool, step.input, args.userId, isConfirmed)
-        if (result.confirmationRequired) {
-          results.push({
-            stepId: step.id, tool: step.tool, ok: false, output: '',
-            error: result.confirmationRequired.message, latencyMs: Date.now() - started,
-          })
-          args.onStatus?.(step.id, step.tool, 'error')
-          continue
-        }
-        results.push({
-          stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
-          error: result.ok ? undefined : result.output, latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
-        continue
-      }
-
-      if (step.tool.startsWith('mcp:')) {
-        // mcp:<serverId>:<toolName> — serverId is a cuid (no colons); toolName
-        // may theoretically contain colons, so rejoin the remainder.
-        const parts = step.tool.split(':')
-        const serverId = parts[1]
-        const toolName = parts.slice(2).join(':')
-        const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
-        results.push({
-          stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
-          error: result.error, latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
-        continue
-      }
-
-      if (step.tool.startsWith('plugin:')) {
-        const toolId = step.tool.slice('plugin:'.length)
-        const plugin = await db.plugin.findFirst({
-          where: { toolId, isEnabled: true, agenticEnabled: true },
-        })
-        if (!plugin) {
-          results.push({
-            stepId: step.id, tool: step.tool, ok: false, output: '',
-            error: `Plugin ${step.tool} not found or inactive.`,
-            latencyMs: Date.now() - started,
-          })
-          args.onStatus?.(step.id, step.tool, 'error')
-          continue
-        }
-        const input = JSON.stringify(step.input)
-        const result = await executePlugin({ plugin, input })
-        results.push({
-          stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
-          error: result.error, latencyMs: result.latencyMs,
-        })
-        args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
-        continue
-      }
-
-      const question =
-        step.input.question ?? step.input.query ?? step.input.message ?? step.input.input ?? ''
-      const completion = await runNonStreamingChatCompletion({
-        question,
-        userId: args.userId,
-      })
-      const hasFailedTool = completion.toolRuns.some(
-        (tr) => tr.status === 'error' || tr.status === 'blocked',
-      )
-      if (hasFailedTool) {
-        const failedRun = completion.toolRuns.find(
-          (tr) => tr.status === 'error' || tr.status === 'blocked',
-        )
-        results.push({
-          stepId: step.id,
-          tool: step.tool,
-          ok: false,
-          output: completion.answer,
-          error: failedRun?.errorMessage ?? 'Tool execution failed',
-          latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, 'error')
-      } else {
-        results.push({
-          stepId: step.id,
-          tool: step.tool,
-          ok: true,
-          output: completion.answer,
-          latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, 'done')
-      }
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e)
-      // G10: self-correction — ask LLM to fix the input, retry once
-      const corrected = await selfCorrect({
-        step, error, userId: args.userId,
-      })
-      if (corrected) {
-        results.push({
-          stepId: step.id, tool: step.tool, ok: true, output: corrected,
-          latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, 'done')
-      } else {
-        results.push({
-          stepId: step.id,
-          tool: step.tool,
-          ok: false,
-          output: '',
-          error,
-          latencyMs: Date.now() - started,
-        })
-        args.onStatus?.(step.id, step.tool, 'error')
-      }
-    }
+  for (const level of levels) {
+    const levelResults = await Promise.all(
+      level.map((step) => executeStep(step, args, isConfirmed)),
+    )
+    results.push(...levelResults)
   }
 
   return results
+}
+
+function groupByLevel(sorted: PlanStep[]): PlanStep[][] {
+  const levels: PlanStep[][] = []
+  const completedIds = new Set<string>()
+
+  while (completedIds.size < sorted.length) {
+    const currentLevel = sorted.filter((step) => {
+      if (completedIds.has(step.id)) return false
+      const deps = step.dependsOn ?? []
+      return deps.every((dep) => completedIds.has(dep))
+    })
+
+    if (currentLevel.length === 0) break
+
+    levels.push(currentLevel)
+    for (const step of currentLevel) {
+      completedIds.add(step.id)
+    }
+  }
+
+  return levels
+}
+
+async function executeStep(
+  step: PlanStep,
+  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void },
+  isConfirmed: boolean,
+): Promise<PlanStepResult> {
+  const started = Date.now()
+  args.onStatus?.(step.id, step.tool, 'running')
+
+  try {
+    // Admin tools — platform management (generate API key, show monitoring, etc.)
+    if (step.tool.startsWith('admin:')) {
+      const result = await executeAdminTool(step.tool, step.input, args.userId, isConfirmed)
+      if (result.confirmationRequired) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: result.confirmationRequired.message, latencyMs: Date.now() - started,
+        }
+      }
+      args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      return {
+        stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
+        error: result.ok ? undefined : result.output, latencyMs: Date.now() - started,
+      }
+    }
+
+    if (step.tool.startsWith('mcp:')) {
+      // mcp:<serverId>:<toolName> — serverId is a cuid (no colons); toolName
+      // may theoretically contain colons, so rejoin the remainder.
+      const parts = step.tool.split(':')
+      const serverId = parts[1]
+      const toolName = parts.slice(2).join(':')
+      const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
+      args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      return {
+        stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
+        error: result.error, latencyMs: Date.now() - started,
+      }
+    }
+
+    if (step.tool.startsWith('plugin:')) {
+      const toolId = step.tool.slice('plugin:'.length)
+      const plugin = await db.plugin.findFirst({
+        where: { toolId, isEnabled: true, agenticEnabled: true },
+      })
+      if (!plugin) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: `Plugin ${step.tool} not found or inactive.`,
+          latencyMs: Date.now() - started,
+        }
+      }
+      const input = JSON.stringify(step.input)
+      const result = await executePlugin({ plugin, input })
+      args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      return {
+        stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
+        error: result.error, latencyMs: result.latencyMs,
+      }
+    }
+
+    const question =
+      step.input.question ?? step.input.query ?? step.input.message ?? step.input.input ?? ''
+    const completion = await runNonStreamingChatCompletion({
+      question,
+      userId: args.userId,
+    })
+    const hasFailedTool = completion.toolRuns.some(
+      (tr) => tr.status === 'error' || tr.status === 'blocked',
+    )
+    if (hasFailedTool) {
+      const failedRun = completion.toolRuns.find(
+        (tr) => tr.status === 'error' || tr.status === 'blocked',
+      )
+      args.onStatus?.(step.id, step.tool, 'error')
+      return {
+        stepId: step.id,
+        tool: step.tool,
+        ok: false,
+        output: completion.answer,
+        error: failedRun?.errorMessage ?? 'Tool execution failed',
+        latencyMs: Date.now() - started,
+      }
+    }
+    args.onStatus?.(step.id, step.tool, 'done')
+    return {
+      stepId: step.id,
+      tool: step.tool,
+      ok: true,
+      output: completion.answer,
+      latencyMs: Date.now() - started,
+    }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e)
+    // G10: self-correction — ask LLM to fix the input, retry once
+    const corrected = await selfCorrect({
+      step, error, userId: args.userId,
+    })
+    if (corrected) {
+      args.onStatus?.(step.id, step.tool, 'done')
+      return {
+        stepId: step.id, tool: step.tool, ok: true, output: corrected,
+        latencyMs: Date.now() - started,
+      }
+    }
+    args.onStatus?.(step.id, step.tool, 'error')
+    return {
+      stepId: step.id,
+      tool: step.tool,
+      ok: false,
+      output: '',
+      error,
+      latencyMs: Date.now() - started,
+    }
+  }
 }
 
 async function selfCorrect(args: {

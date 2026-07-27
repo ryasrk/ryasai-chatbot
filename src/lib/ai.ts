@@ -87,11 +87,17 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
     : ''
 
   const [tableSchemas, documents, restEndpoints] = await Promise.all([
-    db.integrationSchema.findMany({ where: { integration: { status: 'active' } }, select: { tableName: true } }),
+    db.integrationSchema.findMany({
+      where: { integration: { status: 'active' } },
+      select: { tableName: true, description: true, integration: { select: { name: true } } },
+    }),
     db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true } }),
     db.restApiEndpoint.findMany({ where: { isEnabled: true }, select: { path: true, description: true } }),
   ])
   const tableNames = tableSchemas.map((t) => t.tableName)
+  const tableDescriptions = tableSchemas
+    .filter((t) => t.description)
+    .map((t) => `${t.integration.name}.${t.tableName}: ${t.description}`)
   const docNames = documents.map((d) => (d.category ? `${d.name} [${d.category}]` : d.name))
   const apiPaths = restEndpoints.map((e) => e.path)
 
@@ -124,6 +130,7 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           `Question: "${ctx.question}"\n` +
           `Context: database integrations available=${ctx.hasIntegrations}, knowledge base documents available=${ctx.hasDocuments}, REST APIs available=${ctx.hasRestApis ?? false}.\n` +
           (tableNames.length > 0 ? `Database tables: ${tableNames.slice(0, 30).join(', ')}\n` : '') +
+          (tableDescriptions.length > 0 ? `Table descriptions:\n${tableDescriptions.slice(0, 30).join('\n')}\n` : '') +
           (docNames.length > 0 ? `Documents: ${docNames.slice(0, 30).join(', ')}\n` : '') +
           (apiPaths.length > 0 ? `REST APIs: ${apiPaths.slice(0, 20).join(', ')}\n` : '') +
           (ctx.memoryContext ? `Memory from prior interactions:\n${ctx.memoryContext}\n` : '') +
@@ -252,6 +259,60 @@ export function answerContextLabel(source: 'SQL' | 'RAG' | 'REST_API' | 'CHAT'):
   if (source === 'REST_API') return 'REST API'
   if (source === 'CHAT') return 'PRIOR CONTEXT'
   return source
+}
+
+// ---------------------------------------------------------------------------
+// Schema description generation — LLM summarizes each table's purpose from
+// its columns + 1 sample row. Called once at connection test time, cached in
+// IntegrationSchema.description. Used as context for intent analysis + routing.
+// ----------------------------------------------------------------------------
+
+export interface TableSummaryInput {
+  tableName: string
+  columns: Array<{ name: string; type: string; primaryKey?: boolean }>
+  rowCount?: number | null
+  sampleRow?: Record<string, unknown> | null
+}
+
+export async function generateSchemaDescriptions(args: {
+  integrationName: string
+  tables: TableSummaryInput[]
+}): Promise<Record<string, string>> {
+  if (args.tables.length === 0) return {}
+
+  const tableTexts = args.tables.map((t) => {
+    const cols = t.columns.map((c) => `${c.name}:${c.type}${c.primaryKey ? ' (PK)' : ''}`).join(', ')
+    const sample = t.sampleRow ? `\n  Sample row: ${JSON.stringify(t.sampleRow).slice(0, 300)}` : ''
+    const rows = t.rowCount != null ? ` (${t.rowCount} rows)` : ''
+    return `Table: ${t.tableName}${rows}\n  Columns: ${cols}${sample}`
+  }).join('\n\n')
+
+  const raw = await chatOnce(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a database schema analyst. For each table, write a concise 1-sentence description of what the table contains and its purpose. ' +
+          'Focus on business meaning, not technical details. ' +
+          'Output ONLY valid JSON (no markdown fence): {"tableName": "description", ...}',
+      },
+      {
+        role: 'user',
+        content:
+          `Database: ${args.integrationName}\n\nTables:\n${tableTexts}\n\n` +
+          `Generate a JSON object mapping each table name to a 1-sentence description.`,
+      },
+    ],
+    { purpose: 'schema-description' },
+  )
+
+  try {
+    const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+    return JSON.parse(cleaned) as Record<string, string>
+  } catch {
+    // ponytail: LLM returned malformed JSON — return empty, don't block schema reflection
+    return {}
+  }
 }
 
 /** Pure non-streaming chat (no SQL/RAG) for external API and general questions. */
