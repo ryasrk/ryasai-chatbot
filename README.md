@@ -26,7 +26,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 ## Stack
 
 - **Framework**: Next.js 16 (App Router) · React 19 · TypeScript 5
-- **Database**: Prisma 6 + SQLite (Postgres-ready — see `docs/postgres-migration.md`)
+- **Database**: Prisma 6 + PostgreSQL 16 (pgvector + pg_trgm extensions)
 - **Runtime**: Bun (dev/test) · Node standalone (prod build)
 - **UI**: Tailwind 4 · shadcn/ui · 5 theme system
 - **AI**: OpenAI-compatible + Anthropic-native LLM providers (fail-closed — no sandbox fallback)
@@ -35,7 +35,14 @@ Default login: `admin@ryas.ai` / `admin12345`
 ## Features
 
 ### Core AI Pipeline
-- **Smart Router**: Self-adjusting load balancer (schema + performance + latency + similarity + circuit breaker)
+- **Intent Analyzer**: Decides whether retrieval is needed + whether clarification is needed. Uses document names, integration names, and schema table descriptions as context. Progressive slot filling (asks ONE question at a time)
+- **Contextual Query Rewriter**: Rewrites follow-up questions into standalone search queries using conversation history
+- **Query Expansion**: Synonym + multilingual expansion (e.g. "leave" → "vacation", "cuti", "cuti tahunan", "time off"). Max 3 expansions
+- **Multi-pass Retrieval with Reflection**: `retrieveWithReflection()` — expands query, retrieves with all expansions in parallel, merges + dedupes by chunkId, evaluates evidence sufficiency via LLM, does a second pass with 2x topK if insufficient
+- **GraphRAG**: Cognee `recallKnowledgeGraph` called in parallel with flat retrieval, graph context merged into results
+- **Agentic Confidence Loop**: `runAgenticLoop()` — route → execute → evaluate confidence → repeat (max 3 iterations). Heuristic pre-check skips LLM confidence call for obvious cases. Cross-source fallback: when confidence evaluator suggests `nextToolHint`, inject hint into next iteration
+- **Streaming Agentic Loop**: `runStreamingAgenticLoop()` — same loop but streams the final answer. Wired into UI chat via `allowMultiStepDag: true`
+- **Smart Router**: Self-adjusting load balancer (schema + performance + latency + similarity + circuit breaker) with semantic scoring (40% keyword overlap + 60% embedding similarity, cached 5min/10s)
 - **Text-to-SQL**: AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
 - **Real DB Connectors**: Postgres (pg Pool), MySQL (mysql2 Pool), MSSQL (mssql ConnectionPool) — dynamic driver loading, 30s timeout, schema reflection
 - **Hybrid RAG**: Lexical + semantic + FTS + external vector store (Qdrant/Milvus) + LLM reranker (opt-in) + query cache (1min TTL)
@@ -44,9 +51,11 @@ Default login: `admin@ryas.ai` / `admin12345`
 
 ### Super-App Capabilities
 - **Agentic Planner**: Multi-step DAG execution with self-correction
+- **Schema Description Enrichment**: LLM-generated 1-sentence description per table, stored in `IntegrationSchema.description`. Used as context in intent analyzer + router prompt. Fire-and-forget on integration create + test
 - **Plugin Registry**: 9 prebuilt plugins (weather, Wikipedia, translate, calculator, news, StackOverflow search, timezone, datetime) + custom webhook tools
 - **Cognee Memory**: Chat-turn remember/recall + knowledge graph cognify
 - **Scheduler**: Cron-based automation with notification integration
+- **Execution History + Export**: `ScheduledRunLog` model stores full execution history (answer, error, toolRuns JSON, latencyMs). `GET /api/schedules/[id]/runs` + `?format=json|csv` export. UI polling (15s) + toast notifications on new runs
 - **Notification API**: Webhook + email + Telegram delivery
 
 ### Security
@@ -70,6 +79,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 - LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat)
 - Tool run metrics (latency, success rate, circuit breaker)
 - RAG cache metrics (`getRagCacheStats()` — hits, misses, hit rate)
+- `ScheduledRunLog` full execution history (answer, error, toolRuns, latency) + JSON/CSV export
 - Monitoring dashboard (24h stats, failed requests, blocked SQL)
 - Audit log (GUARDRAIL_BLOCK, SQL_EXECUTE, API_KEY_GENERATED, etc.)
 - Log retention (daily cleanup, 90-day default via scheduler)
@@ -83,6 +93,10 @@ Default login: `admin@ryas.ai` / `admin12345`
 - RAG query cache (1min TTL, invalidated on document changes)
 - RAG LLM reranker (opt-in via `RAG_LLM_RERANK=true`)
 - Multi-tool DAG execution (opt-in via `allowMultiStepDag` flag)
+- Parallelized intent pipeline (`rewriteQuery` + `recallContext` + 7 DB queries + `analyzeIntent` via `Promise.all`)
+- Parallelized planner steps (`groupByLevel` + `Promise.all` within each dependency level)
+- Agentic loop heuristic confidence check (skips LLM call for obvious cases)
+- Semantic scoring graceful fallback (keyword-only when embedding API unavailable)
 
 ## Architecture
 
@@ -91,20 +105,32 @@ User query
    │
    ▼
 ┌─────────────────────────────────────────────────────┐
-│  Smart Router (self-adjusting)                      │
-│  schema + performance + latency + similarity        │
+│  Intent Pipeline (parallelized via Promise.all)     │
+│  ├─ Query Rewriter (follow-up → standalone)         │
+│  ├─ Contextual Recall (cognee memory)               │
+│  ├─ DB metadata queries (integrations, docs, etc.)  │
+│  └─ Intent Analyzer (slot filling, clarification)   │
+└─────────────────────────────────────────────────────┘
+   │
+   ▼
+┌─────────────────────────────────────────────────────┐
+│  Smart Router (self-adjusting + semantic scoring)   │
+│  40% keyword overlap + 60% embedding similarity     │
 │  → SQL | RAG | REST | CHAT | CONTEXTUAL_CHAT        │
 └─────────────────────────────────────────────────────┘
    │
    ├─ Chat path (tool-router.ts)
    │   └─ Single tool: SQL / RAG / REST / CHAT
    │
-   └─ Agentic path (planner.ts)
-       ├─ planQuery → multi-step DAG
-       ├─ executePlan → per-step tool execution
+   └─ Agentic path (runStreamingAgenticLoop)
+       ├─ route → execute → evaluate confidence → repeat (max 3)
+       ├─ Query Expansion (synonym + multilingual, max 3)
+       ├─ Multi-pass Retrieval with Reflection
+       │   └─ GraphRAG (cognee recallKnowledgeGraph, parallel)
+       ├─ executePlan → parallelized per dependency level
        │   ├─ Built-in tools (sql, rag, rest, chat)
        │   └─ Plugin tools (plugin:weather, plugin:web_search, ...)
-       └─ synthesizeAnswer → combine step outputs
+       └─ synthesizeAnswer → stream final answer
 ```
 
 ## Commands
@@ -113,14 +139,15 @@ User query
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (403 pass, 8 skip, 0 fail)
+bun run test         # unit tests (62+ pass individually — mock.module isolation issue across files, run per-file)
 bun run e2e          # Playwright (4 specs, mock LLM)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
-bunx prisma db push  # apply schema to SQLite
+bunx prisma db push  # apply schema to Postgres
 bunx prisma generate # regenerate Prisma client
 bash start.sh        # start Next.js + scheduler
 bash reset.sh        # reset DB + re-seed
+bun run scripts/long-turn-chat.ts  # 20-turn multi-database chat test
 ```
 
 ## Project Structure
@@ -128,8 +155,8 @@ bash reset.sh        # reset DB + re-seed
 ```
 src/
 ├── app/
-│   ├── api/              # 65 API routes
-│   ├── page.tsx          # Main SPA (12 views)
+│   ├── api/              # 67 API routes
+│   ├── page.tsx          # Main SPA (12 views, ChatView+AgenticView always mounted)
 │   ├── layout.tsx        # Root layout (theme init)
 │   ├── error.tsx         # Route-level error boundary
 │   └── global-error.tsx  # Root error boundary
@@ -137,33 +164,37 @@ src/
 │   ├── ui/               # shadcn/ui primitives
 │   └── views/            # 12 feature views
 ├── lib/
-│   ├── ai.ts             # LLM client, router, SQL gen, answer gen
+│   ├── ai.ts             # LLM client, router, SQL gen, answer gen, streaming, schema enrichment
+│   ├── intent-pipeline.ts # Intent analyzer + query rewriter + query expansion
 │   ├── llm-client.ts     # Unified transport (OpenAI + Anthropic)
-│   ├── tool-router.ts    # Single-tool execution (SQL/RAG/REST/CHAT)
-│   ├── smart-router.ts   # Self-adjusting load balancer
-│   ├── planner.ts        # Multi-step agentic planner
+│   ├── tool-router.ts    # Single-tool execution + runAgenticLoop + runStreamingAgenticLoop
+│   ├── smart-router.ts   # Self-adjusting load balancer + semantic scoring
+│   ├── planner.ts        # Multi-step agentic planner (parallelized executePlan)
+│   ├── schema-enrichment.ts # LLM-generated table descriptions for IntegrationSchema
 │   ├── plugin-registry.ts    # External webhook tool executor
 │   ├── plugin-selector.ts    # Semantic plugin matching
-│   ├── rag.ts            # Hybrid retrieval
-│   ├── rag-fts.ts        # FTS5 full-text search
+│   ├── rag.ts            # Hybrid retrieval + retrieveWithReflection
+│   ├── rag-fts.ts        # FTS5 (SQLite) / tsvector (Postgres) full-text search
 │   ├── guardrails.ts     # SQL AST validation
 │   ├── connectors.ts     # DB connector registry (Postgres/MySQL/MSSQL + demo)
 │   ├── real-connectors.ts # Real DB connectors (pg/mysql2/mssql drivers)
-│   ├── cognee.ts         # Memory + knowledge graph
+│   ├── cognee.ts         # Memory + knowledge graph (recallKnowledgeGraph)
 │   ├── errors.ts         # Typed error system (16 codes, AppError class)
 │   ├── constants.ts      # Centralized magic numbers
 │   ├── notifications.ts  # Webhook/email/Telegram
 │   └── ...
 ├── middleware.ts         # Edge auth
 prisma/
-└── schema.prisma         # 24 models
+└── schema.prisma         # 25 models (incl. ScheduledRunLog)
 mini-services/
-└── scheduler/            # Cron worker
+└── scheduler/            # Cron worker (creates ScheduledRunLog per execution)
 scripts/
 ├── seed.ts               # Full seed (users, ERP, docs, plugins, schedules)
-└── seed-plugins.ts       # Plugin-only seed (9 prebuilt)
+├── seed-plugins.ts       # Plugin-only seed (9 prebuilt)
+├── migrate-demo-to-postgres.ts # SQLite → Postgres data migration (66,435 rows)
+└── long-turn-chat.ts     # 20-turn multi-database conversation test
 docs/
-└── postgres-migration.md # SQLite → Postgres guide
+└── postgres-migration.md # Postgres migration reference (complete)
 ```
 
 ## Configuration
@@ -172,7 +203,7 @@ Copy `.env.example` to `.env` and configure:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | SQLite path (`file:./db/custom.db`) or Postgres URL |
+| `DATABASE_URL` | Yes | Postgres URL (e.g. `postgresql://ryasai:ryasai_dev@localhost:5432/ryasai`) |
 | `ENCRYPTION_SECRET_KEY` | Yes | 64-char random string for AES-256-GCM |
 | `ADMIN_INITIAL_PASSWORD` | Yes | Initial admin password (change after first login) |
 | `AUTH_DEMO_FALLBACK` | No | `false` by default (fail-closed) |

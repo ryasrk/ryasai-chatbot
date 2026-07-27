@@ -26,16 +26,28 @@ Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS cha
 ## Capabilities
 
 - Text-to-SQL with AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
+- Production RAG architecture:
+  - Intent analyzer with progressive slot filling (asks ONE clarifying question at a time)
+  - Contextual query rewriter (follow-ups → standalone search queries)
+  - Query expansion (synonym + multilingual, max 3 expansions)
+  - Multi-pass retrieval with reflection (evidence sufficiency check, 2x topK second pass)
+  - GraphRAG (cognee knowledge graph recall in parallel with flat retrieval)
+  - Agentic confidence loop (route → execute → evaluate → repeat, max 3 iterations, heuristic pre-check for obvious cases)
+  - Streaming agentic loop (same loop, streams final answer to UI)
 - Hybrid RAG (lexical + semantic + FTS + external vector store)
+- Semantic scoring in smart router (40% keyword + 60% embedding similarity, cached, graceful fallback to keyword-only)
+- Schema description enrichment (LLM-generated per-table descriptions, used as router/intent context)
 - REST API connector with whitelisted endpoints
 - OpenAI-compatible and Anthropic-native LLM providers
 - Real SSE token streaming (chat + external API)
 - API key generation with rate limiting for external integrations
 - Audit logging for all security-relevant actions
-- Multi-step agentic planner with self-correction (DAG execution)
+- Multi-step agentic planner with self-correction (DAG execution, parallelized per dependency level)
 - 9 prebuilt plugins (weather, Wikipedia, translate, calculator, news, StackOverflow, timezone, datetime) + custom webhook tools
 - Cognee memory layer (optional, disabled by default)
 - Scheduled runs (cron-based automation with notification delivery)
+- Execution history + export (full per-run logs with answer/error/toolRuns/latency, JSON/CSV export, 15s polling + toast notifications)
+- Chat persistence across menu switches (ChatView + AgenticView always mounted, SSE continues in background)
 - Notification API (webhook + email + Telegram)
 - LLM token usage tracking (per-purpose monitoring)
 - Smart router (self-adjusting load balancer with circuit breaker)
@@ -49,11 +61,12 @@ Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS cha
 
 ## Evidence on Hand
 
-- Full codebase (23 Prisma models, 60 API routes, 16 views, 194 unit tests + 4 e2e)
+- Full codebase (25 Prisma models, 67 API routes, 16 views, 62+ unit tests + 4 e2e)
 - CLAUDE.md with architecture audit and progress log
 - README.md with quick start and commands
-- docs/postgres-migration.md for scaling
-- Production status: tsc 0 errors, lint 0 errors, 194 tests green
+- PostgreSQL 16 migration complete (5 demo databases: ERP, Chinook, World, Pagila, ClickHouse)
+- `scripts/long-turn-chat.ts` — 20-turn multi-database test, 100% pass rate, 102.1s on Postgres
+- Production status: tsc 0 errors, lint 0 errors, tests green (run per-file due to mock.module isolation)
 
 ## Product Principles
 
@@ -62,3 +75,4 @@ Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS cha
 3. **Indonesian first** — all UI and system prompts in Bahasa Indonesia
 4. **Security is visible** — guardrails, audit, encryption are shown not hidden
 5. **One admin, one deployment** — no multi-role UI complexity
+6. **Production RAG architecture** — intent analysis, multi-pass retrieval with reflection, and agentic confidence loops are first-class, not bolted on

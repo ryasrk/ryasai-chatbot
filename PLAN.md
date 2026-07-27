@@ -1,8 +1,8 @@
 # ryasai Chatbot — Overhaul Plan
 
-> Created 2026-07-25. All phases P0–P5 + S4 completed.
+> Created 2026-07-25. All phases P0–P5 + S4 + RAG completed. Version 0.4.0.
 
-## Status: COMPLETE
+## Status: COMPLETE (v0.4.0)
 
 | Phase | Items | Status |
 |-------|-------|--------|
@@ -12,7 +12,8 @@
 | P3 — UI/UX Standardization | 4 items | ✅ Complete |
 | P4 — Code Quality | 4 items | ✅ Complete (P4.2, P4.4 pending) |
 | P5 — Tests | 3 items | ✅ 194 unit + 4 e2e |
-| S4 — Postgres Migration | 1 item | ✅ Guide written |
+| S4 — Postgres Migration | 4 items | ✅ Complete |
+| RAG — Production RAG Architecture | 9 items | ✅ Complete |
 
 ---
 
@@ -62,7 +63,19 @@
 ### S4 — Postgres Migration
 - ✅ Migration guide written (`docs/postgres-migration.md`)
 - ✅ Schema Postgres-compatible (String for JSON fields, no SQLite-specific types)
-- ⬜ Code adaptation (connectors.ts PRAGMA→information_schema, rag-fts.ts FTS5→tsvector) — needs running Postgres to test
+- ✅ Code adaptation (connectors.ts PRAGMA→information_schema, rag-fts.ts FTS5→tsvector)
+- ✅ Postgres 16 + pgvector + pg_trgm deployed, all demo data migrated (66,435 rows: ERP 72, Chinook 14,926, World 5,298, Pagila 46,211)
+
+### Phase RAG — Production RAG Architecture
+- ✅ Intent Analyzer with document/integration/schema context + progressive slot filling (`src/lib/intent-pipeline.ts`)
+- ✅ Contextual Query Rewriter for follow-up questions
+- ✅ Query Expansion (synonym + multilingual, max 3)
+- ✅ Multi-pass Retrieval with Reflection (`retrieveWithReflection` + `mergeRetrievalResults`)
+- ✅ GraphRAG via cognee `recallKnowledgeGraph` (wired into `retrieveWithReflection`)
+- ✅ Agentic Confidence Loop (`runAgenticLoop` — max 3 iterations, heuristic pre-check, cross-source fallback) + `runStreamingAgenticLoop`
+- ✅ Semantic scoring in smart router (40% keyword + 60% embedding similarity, source cache 5min + question cache 10s, graceful fallback)
+- ✅ Schema description enrichment (`enrichSchemaDescriptions` in `src/lib/schema-enrichment.ts`, wired into intent analyzer + routeQuery)
+- ✅ Performance: intent pipeline parallelized, planner executePlan parallelized, 21.2% faster (129.7s → 102.1s on 20-turn chat)
 
 ---
 
@@ -70,5 +83,8 @@
 
 1. **P4.2 Log retention** — add cleanup cron to scheduler for old audit/api/tool logs
 2. **P4.4 writeAudit fail-closed** — throw on critical severity DB write failure
-3. **Postgres code adaptation** — implement the raw SQL changes documented in migration guide
-4. **Cognee production deployment** — install + test cognify against real cognee instance
+3. **Cognee production deployment** — install + test cognify against real cognee instance, switch cognee to Postgres backend
+4. **Chinook data completion** — populate empty artist/album/customer tables (not in old SQLite)
+5. **Scheduler real-time push** — replace 15s polling with SSE from scheduler to UI
+6. **Scheduler failure notifications** — email/webhook on schedule failure (notification config currently only sends on success)
+7. **Test isolation fix** — resolve mock.module isolation issue so all tests run together
