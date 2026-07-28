@@ -102,7 +102,7 @@ async function sendTelegram(
   const botToken = config.botToken as string
   const chatId = config.chatId as string
   const text = `${title ? `*${title}*\n\n` : ''}${message}`
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, { // nosemgrep — legitimate Telegram notification integration, botToken from server-side DB config
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),

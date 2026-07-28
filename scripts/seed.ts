@@ -11,9 +11,8 @@ import { db } from '../src/lib/db'
 import { encryptConfig } from '../src/lib/crypto'
 import { hashPassword } from '../src/lib/passwords'
 import { ensureDemoSchema, connectorRegistry, describeSchema } from '../src/lib/connectors'
-import { chunkText, extractKeywords } from '../src/lib/rag'
-import { upsertChunkFts, rebuildFts } from '../src/lib/rag-fts'
-import { embedCompanyDocuments } from '../src/lib/embeddings'
+import { extractKeywords } from '../src/lib/rag'
+import { rebuildFts } from '../src/lib/rag-fts'
 
 // Admin credentials honour env overrides so production seeds use real values
 // instead of a placeholder hash. Defaults are dev-only.

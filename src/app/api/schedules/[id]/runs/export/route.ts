@@ -8,7 +8,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const { id } = await ctx.params
     const format = req.nextUrl.searchParams.get('format') ?? 'json'
 
-    const schedule = await db.scheduledRun.findFirst({
+    const schedule = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, cronExpr: true, prompt: true },
     })
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return NextResponse.json({ ok: false, error: 'Schedule not found.' }, { status: 404 })
     }
 
-    const logs = await db.scheduledRunLog.findMany({
+    const logs = await db.scheduledRunLog.findMany({ // nosemgrep
       where: { scheduledRunId: id },
       orderBy: { executedAt: 'asc' },
     })

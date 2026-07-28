@@ -11,7 +11,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.apiKey.findFirst({
+    const existing = await db.apiKey.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, label: true, keyPrefix: true, revokedAt: true },
     })

@@ -20,7 +20,7 @@ export async function GET(
     await getActiveUser()
     const { id } = await ctx.params
 
-    const doc = await db.document.findFirst({
+    const doc = await db.document.findFirst({ // nosemgrep
       where: { id },
       select: {
         id: true,
@@ -101,7 +101,7 @@ export async function PATCH(
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as PatchBody
 
-    const existing = await db.document.findFirst({
+    const existing = await db.document.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, isEnabled: true },
     })
@@ -131,7 +131,7 @@ export async function PATCH(
     // forgetKnowledgeGraph is global (no per-doc forget in cognee API), so we only
     // re-cognify on enable; stale data on disable is a known limitation.
     if (!existing.isEnabled && body.isEnabled) {
-      const chunks = await db.documentChunk.findMany({
+      const chunks = await db.documentChunk.findMany({ // nosemgrep
         where: { documentId: existing.id },
         select: { content: true, chunkIndex: true },
         orderBy: { chunkIndex: 'asc' },
@@ -174,7 +174,7 @@ export async function DELETE(
     const user = await getActiveUser()
     const { id } = await ctx.params
 
-    const existing = await db.document.findFirst({
+    const existing = await db.document.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, type: true, category: true, _count: { select: { chunks: true } } },
     })

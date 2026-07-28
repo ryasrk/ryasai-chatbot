@@ -110,7 +110,7 @@ describe('sendNotification', () => {
 
     expect(result.ok).toBe(true)
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('https://api.telegram.org/bot123:abc/sendMessage')
+    expect(url).toBe('https://api.telegram.org/bot123:abc/sendMessage') // nosemgrep — test file, deterministic test token
     const body = JSON.parse(init.body as string)
     expect(body.chat_id).toBe('456')
     expect(body.text).toContain('Alert')

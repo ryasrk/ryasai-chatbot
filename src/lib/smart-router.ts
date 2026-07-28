@@ -220,7 +220,7 @@ async function getSourceEmbeddings(): Promise<{
       texts.rag.length > 0 ? embedTexts(config, texts.rag) : Promise.resolve([]),
       texts.rest.length > 0 ? embedTexts(config, texts.rest) : Promise.resolve([]),
     ])
-  } catch (e) {
+  } catch {
     return null
   }
 

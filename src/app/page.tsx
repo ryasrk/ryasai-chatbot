@@ -108,6 +108,9 @@ export default function Home() {
   useEffect(() => {
     applyTheme(getStoredTheme(), getStoredDarkMode())
     const fromUrl = resolveViewFromSearch(window.location.search)
+    // ponytail: mount-time URL→state sync — useSyncExternalStore would avoid the warning
+    // but changes the writable-state pattern; guard prevents cascading renders
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewState((prev) => (prev === fromUrl ? prev : fromUrl))
     const onPop = () => setViewState(resolveViewFromSearch(window.location.search))
     window.addEventListener('popstate', onPop)

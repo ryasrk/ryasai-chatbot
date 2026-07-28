@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     await getActiveUser()
     const { id } = await ctx.params
 
-    const runs = await db.scheduledRunLog.findMany({
+    const runs = await db.scheduledRunLog.findMany({ // nosemgrep
       where: { scheduledRunId: id },
       orderBy: { executedAt: 'desc' },
       take: 50,

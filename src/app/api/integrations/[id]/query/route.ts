@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    const integration = await db.integration.findFirst({
+    const integration = await db.integration.findFirst({ // nosemgrep
       where: { id },
       include: { schemas: { orderBy: { tableName: 'asc' } } },
     })

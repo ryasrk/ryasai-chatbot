@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
-import { invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
+import { invalidateMcpToolsCache } from '@/lib/mcp-client'
 
 const VALID_TRANSPORTS = new Set(['stdio', 'sse', 'http'])
 

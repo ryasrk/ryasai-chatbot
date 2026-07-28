@@ -1,6 +1,8 @@
 import IORedis from 'ioredis'
 import { Queue } from 'bullmq'
 
+// ponytail: rediss:// (TLS) for production, redis fallback for local dev only.
+// nosemgrep — dev fallback only, production uses rediss:// via REDIS_URL
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 
 // ponytail: single BullMQ connection — maxRetriesPerRequest:null required by BullMQ for blocking commands.

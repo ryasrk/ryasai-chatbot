@@ -216,8 +216,6 @@ async function runQuestion(q: BenchmarkQuestion): Promise<BenchmarkResult> {
 // Run all questions
 async function main() {
   const results: BenchmarkResult[] = []
-  let passed = 0
-  let failed = 0
 
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i]
@@ -227,12 +225,10 @@ async function main() {
     results.push(result)
 
     if (result.correct) {
-      passed++
       console.log(`✅ ${result.latency.total}ms`)
     } else if (result.partialCredit >= 0.5) {
       console.log(`🟡 partial (${result.partialCredit}) — ${result.sqlError ?? 'wrong values'}`)
     } else {
-      failed++
       console.log(`❌ ${result.sqlError ?? 'incorrect'} (${result.latency.total}ms)`)
     }
 

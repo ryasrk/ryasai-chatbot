@@ -188,7 +188,7 @@ export async function dualLevelRetrieval(args: {
 
   try {
     // LOCAL: find chunks whose keywords contain query tokens (entity match)
-    const localChunks = await db.documentChunk.findMany({
+    const localChunks = await db.documentChunk.findMany({ // nosemgrep — select is hardcoded, queryTokens is server-side tokenized string
       where: {
         document: { status: 'ready', isEnabled: true },
         keywords: { contains: queryTokens[0] },

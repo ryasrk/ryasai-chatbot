@@ -16,15 +16,11 @@
  *   bun run benchmark/rag-eval.ts --limit 20        # run first 20
  *   bun run benchmark/rag-eval.ts --document doc-id # eval against specific document
  */
-import { db } from '@/lib/db'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 import { chatOnce } from '@/lib/llm-client'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { generateAnswer } from '@/lib/ai'
-import { scopedLogger } from '@/lib/logger'
 import { writeFileSync } from 'fs'
-
-const log = scopedLogger('rag-eval')
 
 // ---------------------------------------------------------------------------
 // RAGAS metrics — LLM-as-judge prompts (simplified from the RAGAS paper).

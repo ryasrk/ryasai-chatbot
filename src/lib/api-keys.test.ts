@@ -25,7 +25,6 @@ import {
   requireExternalApiKey,
   getBearerToken,
 } from './api-keys'
-import { UnauthorizedError } from './session'
 import { NextRequest } from 'next/server'
 
 beforeEach(() => {

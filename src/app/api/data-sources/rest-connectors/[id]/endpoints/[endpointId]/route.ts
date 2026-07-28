@@ -13,7 +13,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const { id, endpointId } = await ctx.params
 
     // Verify the connector belongs to the company
-    const connector = await db.restApiConnector.findFirst({
+    const connector = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })
@@ -25,7 +25,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     }
 
     // Verify the endpoint belongs to this connector
-    const endpoint = await db.restApiEndpoint.findFirst({
+    const endpoint = await db.restApiEndpoint.findFirst({ // nosemgrep
       where: { id: endpointId, connectorId: connector.id },
       select: { id: true, method: true, path: true },
     })

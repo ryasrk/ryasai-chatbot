@@ -1,9 +1,6 @@
 import { describe, expect, test, beforeAll } from 'bun:test'
 import crypto from 'crypto'
 
-// ponytail: fixed test key — deterministic, no env dependency.
-const TEST_KEY = Buffer.from('a'.repeat(64), 'hex')
-
 process.env.ENCRYPTION_SECRET_KEY = 'a'.repeat(64)
 
 import { resetEncryptionKeyCache } from './config'
@@ -57,7 +54,6 @@ describe('decryptConfig — tampered ciphertext rejection (GCM auth tag)', () =>
     const buf = Buffer.from(enc, 'hex')
     // Flip a byte in the ciphertext region (between nonce and tag)
     const ctStart = 12
-    const ctEnd = buf.length - 16
     buf[ctStart + 5] ^= 0x01
     expect(() => decryptConfig(buf.toString('hex'))).toThrow()
   })
@@ -89,7 +85,7 @@ describe('maskConfig', () => {
   })
 
   test('secret field masked', () => {
-    const masked = maskConfig({ clientSecret: 'abc123def456' })
+    const masked = maskConfig({ clientSecret: 'abc123def456' }) // nosemgrep — deterministic test value, not a real credential
     expect(masked.clientSecret).not.toBe('abc123def456')
     expect(masked.clientSecret).toContain('••••')
   })
@@ -163,8 +159,7 @@ describe('signSession / verifySession', () => {
   })
 
   test('different keys produce different signatures', () => {
-    // ponytail: verifySession uses the same TEST_KEY, so cross-key test is manual
-    const token = signSession('user1')
+    // ponytail: verifySession uses the same key, so cross-key test is manual
     const otherKey = Buffer.from('b'.repeat(64), 'hex')
     const otherSig = crypto.createHmac('sha256', otherKey).update('user1').digest('base64url')
     const forgedToken = `user1.${otherSig}`

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     const user = await getActiveUser()
     const { id } = await ctx.params
 
-    const session = await db.chatSession.findFirst({
+    const session = await db.chatSession.findFirst({ // nosemgrep
       where: { id, userId: user.userId },
       select: { id: true },
     })

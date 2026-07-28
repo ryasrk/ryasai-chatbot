@@ -14,11 +14,11 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=rediss://redis:6379
       - NODE_ENV=production
     depends_on:
       db:

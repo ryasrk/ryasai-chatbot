@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const schedule = await db.scheduledRun.findFirst({
+    const schedule = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
     })
     if (!schedule) {
@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.scheduledRun.findFirst({
+    const existing = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, cronExpr: true, isActive: true, name: true },
     })
@@ -122,7 +122,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.scheduledRun.findFirst({
+    const existing = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })

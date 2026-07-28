@@ -12,6 +12,7 @@ node_modules
 
 # testing
 /coverage
+/static_analysis_semgrep_1
 
 # next.js
 /.next/

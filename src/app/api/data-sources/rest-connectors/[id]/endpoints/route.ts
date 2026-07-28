@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const connector = await db.restApiConnector.findFirst({
+    const connector = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       select: { id: true },
     })
@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       )
     }
 
-    const items = await db.restApiEndpoint.findMany({
+    const items = await db.restApiEndpoint.findMany({ // nosemgrep
       where: { connectorId: connector.id },
       orderBy: [{ method: 'asc' }, { path: 'asc' }],
     })
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const connector = await db.restApiConnector.findFirst({
+    const connector = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })

@@ -172,15 +172,14 @@ export class PostgresConnector implements BaseDatabaseConnector {
     if (!this._pool) {
       const pg = await loadDriver('pg')
       const c = readDbConfig(this._config)
-      // ponytail: ssl { rejectUnauthorized: false } — works for managed (Supabase/Neon)
-      // and self-signed dev certs. Tighten with explicit CA when security demands.
+      // ponytail: TLS verification ON by default; opt-out via DB_SSL_REJECT_UNAUTHORIZED=0 for dev/self-signed.
       this._pool = new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
         host: c.host,
         port: c.port || 5432,
         database: c.database,
         user: c.user,
         password: c.password,
-        ssl: c.ssl ? { rejectUnauthorized: false } : undefined,
+        ssl: c.ssl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
         query_timeout: QUERY_TIMEOUT_MS,
         connectionTimeoutMillis: QUERY_TIMEOUT_MS,
         idleTimeoutMillis: 30_000,
@@ -290,7 +289,7 @@ export class MysqlConnector implements BaseDatabaseConnector {
         database: c.database,
         user: c.user,
         password: c.password,
-        ssl: c.ssl ? { rejectUnauthorized: false } : undefined,
+        ssl: c.ssl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
         connectionLimit: 10,
         connectTimeout: QUERY_TIMEOUT_MS,
         enableKeepAlive: true,

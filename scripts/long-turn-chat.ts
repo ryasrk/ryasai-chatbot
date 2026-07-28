@@ -154,7 +154,6 @@ async function main() {
   console.log()
 
   const toolStats: Record<string, number> = {}
-  const statusStats: Record<string, number> = {}
   let totalDurationMs = 0
   let successCount = 0
   let errorCount = 0

@@ -27,7 +27,7 @@ function key(): Buffer { return getEncryptionKey() }
 export function encryptConfig(config: Record<string, unknown>): string {
   const nonce = crypto.randomBytes(12)
   const data = Buffer.from(JSON.stringify(config), 'utf-8')
-  const cipher = crypto.createCipheriv('aes-256-gcm', key(), nonce)
+  const cipher = crypto.createCipheriv('aes-256-gcm', key(), nonce, { authTagLength: 16 })
   const ct = Buffer.concat([cipher.update(data), cipher.final()])
   const tag = cipher.getAuthTag()
   // hex(nonce || ciphertext || tag)  — tag is 16 bytes
@@ -40,7 +40,7 @@ export function decryptConfig(encryptedHex: string): Record<string, unknown> {
   const nonce = buf.subarray(0, 12)
   const tag = buf.subarray(buf.length - 16)
   const ct = buf.subarray(12, buf.length - 16)
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), nonce)
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), nonce, { authTagLength: 16 })
   decipher.setAuthTag(tag)
   const pt = Buffer.concat([decipher.update(ct), decipher.final()])
   return JSON.parse(pt.toString('utf-8'))

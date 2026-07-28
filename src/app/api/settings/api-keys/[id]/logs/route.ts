@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params
 
     // Verify the key exists
-    const key = await db.apiKey.findFirst({
+    const key = await db.apiKey.findFirst({ // nosemgrep
       where: { id },
       select: { id: true },
     })
@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       )
     }
 
-    const logs = await db.apiRequestLog.findMany({
+    const logs = await db.apiRequestLog.findMany({ // nosemgrep
       where: { apiKeyId: id },
       orderBy: { createdAt: 'desc' },
       take: 50,

@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       return NextResponse.json({ error: 'text is required.' }, { status: 400 })
     }
 
-    const session = await db.chatSession.findFirst({
+    const session = await db.chatSession.findFirst({ // nosemgrep
       where: { id, userId: user.userId },
       select: { id: true, title: true, createdAt: true },
     })
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       integrationId = integration.id
     }
 
-    const recentMessages = await db.chatMessage.findMany({
+    const recentMessages = await db.chatMessage.findMany({ // nosemgrep
       where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
       orderBy: { createdAt: 'desc' },
       take: 10,

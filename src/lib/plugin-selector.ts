@@ -55,7 +55,7 @@ function phraseMatch(queryTokens: string[], keywords: string[]): number {
 
 function categoryBoost(queryTokens: string[], category: string, subcategory: string): number {
   const categoryKeywords: Record<string, string[]> = {
-    'utility': ['cuaca', 'weather', 'tanggal', 'date', 'time', 'waktu', 'jam', 'timezone', 'zona', 'translate', 'terjemah', 'calculate', 'hitung', 'kalkulator', 'math', 'berita', 'news', 'documentation', 'doc', 'syntax', 'code', 'search', 'siapa', 'who', 'apa', 'what', 'dimana', 'where', 'kapan', 'when', 'kenapa', 'why', 'bagaimana', 'how', 'biography', 'biografi', 'person', 'tokoh', 'sejarah', 'history'],
+    'utility': ['cuaca', 'weather', 'tanggal', 'date', 'time', 'waktu', 'jam', 'timezone', 'zona', 'translate', 'terjemah', 'calculate', 'hitung', 'kalkulator', 'math', 'berita', 'news', 'documentation', 'doc', 'syntax', 'code', 'search', 'siapa', 'who', 'apa', 'what', 'dimana', 'where', 'kapan', 'when', 'kenapa', 'why', 'bagaimana', 'how', 'biography', 'biografi', 'person', 'tokoh', 'sejarah', 'history'], // nosemgrep — data array entry, not obfuscated code
     'business_intelligence': ['saham', 'stock', 'crypto', 'kripto', 'bitcoin', 'harga', 'kurs', 'nilai', 'tukar', 'exchange', 'rate', 'berita', 'news', 'finance', 'keuangan', 'market', 'pasar', 'ekonomi', 'economy'],
     'productivity': ['email', 'mail', 'surat', 'task', 'tugas', 'calendar', 'kalender', 'jadwal', 'schedule', 'dokumen', 'document', 'pdf', 'sheet', 'spreadsheet', 'notion'],
     'communication': ['slack', 'telegram', 'whatsapp', 'discord', 'chat', 'message', 'pesan', 'kirim', 'send', 'notify', 'notifikasi', 'broadcast'],

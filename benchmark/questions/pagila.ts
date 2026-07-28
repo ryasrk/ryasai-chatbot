@@ -1285,7 +1285,7 @@ export const pagilaQuestions: BenchmarkQuestion[] = [
     difficulty: 'hard',
     question: 'Which film category has the highest total rental revenue?',
     groundTruthSql:
-      'SELECT cat.name AS category, SUM(p.amount) AS total_revenue FROM pagila_category cat JOIN pagila_film_category fc ON cat.category_id = fc.category_id JOIN pagila_film f ON fc.film_id = f.film_id JOIN pagila_inventory i ON f.film_id = i.film_id JOIN pagila_rental r ON i.inventory_id = r.inventory_id JOIN pagila_payment p ON r.rental_id = p.rental_id GROUP BY cat.category_id ORDER BY total_revenue DESC LIMIT 1',
+      'SELECT cat.name AS category, SUM(p.amount) AS total_revenue FROM pagila_category cat JOIN pagila_film_category fc ON cat.category_id = fc.category_id JOIN pagila_film f ON fc.film_id = f.film_id JOIN pagila_inventory i ON f.film_id = i.film_id JOIN pagila_rental r ON i.inventory_id = r.inventory_id JOIN pagila_payment p ON r.rental_id = p.rental_id GROUP BY cat.category_id ORDER BY total_revenue DESC LIMIT 1', // nosemgrep — data array entry, not obfuscated code
     expectedAnswerContains: [],
     expectedColumns: ['category', 'total_revenue'],
     integrationId: 'int-pagila-001',

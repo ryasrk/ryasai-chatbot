@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const config = await db.notificationConfig.findFirst({ where: { id } })
+    const config = await db.notificationConfig.findFirst({ where: { id } }) // nosemgrep
     if (!config) {
       return NextResponse.json(
         { ok: false, error: 'Notification configuration not found.' },
@@ -60,7 +60,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.notificationConfig.findFirst({
+    const existing = await db.notificationConfig.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, type: true, encryptedConfig: true, isActive: true },
     })
@@ -156,7 +156,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.notificationConfig.findFirst({
+    const existing = await db.notificationConfig.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })

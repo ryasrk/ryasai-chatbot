@@ -157,6 +157,75 @@ export function AgenticView() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, thinking])
 
+  const handleEvent = useCallback((event: string, data: Record<string, unknown>, agentMsgId: string) => {
+    switch (event) {
+      case 'thinking':
+        setThinking(true)
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), 'Analyzing request...'] } : m)))
+        break
+      case 'plan': {
+        const steps = Array.isArray(data.steps) ? data.steps : []
+        const planLines = steps.map((s: { tool?: string }, i: number) => `Plan ${i + 1}: ${s.tool ?? 'unknown'}`)
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), ...planLines] } : m)))
+        break
+      }
+      case 'tool_start': {
+        const stepId = data.stepId as string
+        const tool = data.tool as string
+        const input = (data.input as Record<string, string>) ?? {}
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), `Running: ${tool}`] } : m)))
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId && m.toolCards ? { ...m, toolCards: [...m.toolCards, { stepId, tool, status: 'running', input }] } : m)))
+        break
+      }
+      case 'tool_end': {
+        const status = (data.status as string) === 'success' ? 'success' : 'failed'
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), `Done: ${data.tool} (${status})`] } : m)))
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.toolCards
+              ? {
+                  ...m,
+                  toolCards: m.toolCards.map((tc) =>
+                    tc.stepId === data.stepId
+                      ? { ...tc, status, output: data.output as string, latencyMs: data.latencyMs as number, error: data.error as string | undefined }
+                      : tc,
+                  ),
+                }
+              : m,
+          ),
+        )
+        break
+      }
+      case 'token': {
+        const token = data.content as string
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: m.content + token } : m)))
+        break
+      }
+      case 'answer':
+        setThinking(false)
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: data.content as string } : m)))
+        break
+      case 'done':
+        setMessages((prev) => prev.map((m) => (m.toolCards ? { ...m, toolCards: m.toolCards.map((tc) => (tc.status === 'running' ? { ...tc, status: 'failed' as const, error: 'Stream ended' } : tc)) } : m)))
+        if (data.conversationId) setConversationId(data.conversationId as string)
+        loadSessions()
+        break
+      case 'confirmation_required': {
+        setThinking(false)
+        const msg = (data.message as string) ?? 'Confirmation required.'
+        setConfirmationRequired(true)
+        setConfirmationMessage(msg)
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: msg } : m)))
+        break
+      }
+      case 'error':
+        setMessages((prev) => prev.map((m) => (m.toolCards ? { ...m, toolCards: m.toolCards.map((tc) => (tc.status === 'running' ? { ...tc, status: 'failed' as const, error: 'Stream ended' } : tc)) } : m)))
+        toast.error((data.message as string) ?? 'An error occurred')
+        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: (data.message as string) ?? 'An error occurred.' } : m)))
+        break
+    }
+  }, [loadSessions])
+
   const sendMessage = useCallback(async () => {
     const message = input.trim()
     if (!message || executing) return
@@ -225,76 +294,7 @@ export function AgenticView() {
       setThinking(false)
       setExecuting(false)
     }
-  }, [input, executing, conversationId])
-
-  function handleEvent(event: string, data: Record<string, unknown>, agentMsgId: string) {
-    switch (event) {
-      case 'thinking':
-        setThinking(true)
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), 'Analyzing request...'] } : m)))
-        break
-      case 'plan': {
-        const steps = Array.isArray(data.steps) ? data.steps : []
-        const planLines = steps.map((s: { tool?: string }, i: number) => `Plan ${i + 1}: ${s.tool ?? 'unknown'}`)
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), ...planLines] } : m)))
-        break
-      }
-      case 'tool_start': {
-        const stepId = data.stepId as string
-        const tool = data.tool as string
-        const input = (data.input as Record<string, string>) ?? {}
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), `Running: ${tool}`] } : m)))
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId && m.toolCards ? { ...m, toolCards: [...m.toolCards, { stepId, tool, status: 'running', input }] } : m)))
-        break
-      }
-      case 'tool_end': {
-        const status = (data.status as string) === 'success' ? 'success' : 'failed'
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, thinkingSteps: [...(m.thinkingSteps ?? []), `Done: ${data.tool} (${status})`] } : m)))
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.toolCards
-              ? {
-                  ...m,
-                  toolCards: m.toolCards.map((tc) =>
-                    tc.stepId === data.stepId
-                      ? { ...tc, status, output: data.output as string, latencyMs: data.latencyMs as number, error: data.error as string | undefined }
-                      : tc,
-                  ),
-                }
-              : m,
-          ),
-        )
-        break
-      }
-      case 'token': {
-        const token = data.content as string
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: m.content + token } : m)))
-        break
-      }
-      case 'answer':
-        setThinking(false)
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: data.content as string } : m)))
-        break
-      case 'done':
-        setMessages((prev) => prev.map((m) => (m.toolCards ? { ...m, toolCards: m.toolCards.map((tc) => (tc.status === 'running' ? { ...tc, status: 'failed' as const, error: 'Stream ended' } : tc)) } : m)))
-        if (data.conversationId) setConversationId(data.conversationId as string)
-        loadSessions()
-        break
-      case 'confirmation_required': {
-        setThinking(false)
-        const msg = (data.message as string) ?? 'Confirmation required.'
-        setConfirmationRequired(true)
-        setConfirmationMessage(msg)
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: msg } : m)))
-        break
-      }
-      case 'error':
-        setMessages((prev) => prev.map((m) => (m.toolCards ? { ...m, toolCards: m.toolCards.map((tc) => (tc.status === 'running' ? { ...tc, status: 'failed' as const, error: 'Stream ended' } : tc)) } : m)))
-        toast.error((data.message as string) ?? 'An error occurred')
-        setMessages((prev) => prev.map((m) => (m.id === agentMsgId ? { ...m, content: (data.message as string) ?? 'An error occurred.' } : m)))
-        break
-    }
-  }
+  }, [input, executing, conversationId, handleEvent])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

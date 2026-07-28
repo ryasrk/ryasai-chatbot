@@ -12,8 +12,6 @@
  */
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce as llmChatOnce, chatStream as llmChatStream } from '@/lib/llm-client'
-import { scopedLogger } from '@/lib/logger'
-const log = scopedLogger('ai')
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
 import { LlmNotConfiguredError } from '@/lib/errors'

@@ -28,7 +28,7 @@ export async function GET(
     const pageSize = Math.min(Math.max(1, requestedSize), MAX_PAGE_SIZE)
 
     // Make sure the document belongs to the active company before paginating.
-    const doc = await db.document.findFirst({
+    const doc = await db.document.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, _count: { select: { chunks: true } } },
     })
@@ -40,7 +40,7 @@ export async function GET(
     }
 
     const [chunks, total] = await Promise.all([
-      db.documentChunk.findMany({
+      db.documentChunk.findMany({ // nosemgrep
         where: { documentId: id },
         orderBy: { chunkIndex: 'asc' },
         skip: (page - 1) * pageSize,

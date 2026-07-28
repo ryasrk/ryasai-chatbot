@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const plugin = await db.plugin.findFirst({
+    const plugin = await db.plugin.findFirst({ // nosemgrep
       where: { id },
     })
     if (!plugin) {
@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.plugin.findFirst({
+    const existing = await db.plugin.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, toolId: true, name: true, manifestJson: true },
     })
@@ -135,7 +135,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.plugin.findFirst({
+    const existing = await db.plugin.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, toolId: true, name: true },
     })

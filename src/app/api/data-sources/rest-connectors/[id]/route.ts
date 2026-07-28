@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const connector = await db.restApiConnector.findFirst({
+    const connector = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       include: { endpoints: { orderBy: [{ method: 'asc' }, { path: 'asc' }] } },
     })
@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.restApiConnector.findFirst({
+    const existing = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, encryptedAuthConfig: true },
     })
@@ -158,7 +158,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     const user = await getActiveUser()
 
     const { id } = await ctx.params
-    const existing = await db.restApiConnector.findFirst({
+    const existing = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })

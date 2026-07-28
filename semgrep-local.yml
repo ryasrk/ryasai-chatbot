@@ -1,0 +1,8 @@
+# Semgrep project config — exclude scan output directories from future scans
+# Usage: semgrep --config semgrep-local.yml --config p/typescript ...
+paths:
+  exclude:
+    - "static_analysis_semgrep_*/**"
+    - "graphify-out/**"
+    - "node_modules/**"
+    - ".next/**"

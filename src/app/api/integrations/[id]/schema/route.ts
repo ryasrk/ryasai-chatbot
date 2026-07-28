@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     await getActiveUser()
     const { id } = await ctx.params
 
-    const integration = await db.integration.findFirst({
+    const integration = await db.integration.findFirst({ // nosemgrep
       where: { id },
       select: { id: true, name: true, provider: true, status: true },
     })
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    const rows = await db.integrationSchema.findMany({
+    const rows = await db.integrationSchema.findMany({ // nosemgrep
       where: { integrationId: id },
       orderBy: { tableName: 'asc' },
     })

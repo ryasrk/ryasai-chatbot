@@ -835,7 +835,7 @@ export const chinookQuestions: BenchmarkQuestion[] = [
     category: 'join_multi_table',
     difficulty: 'hard',
     question: 'Show full invoice details including customer name, employee (support rep), and all track names.',
-    groundTruthSql: 'SELECT i.InvoiceId, c.FirstName AS customer_first, c.LastName AS customer_last, e.FirstName AS rep_first, e.LastName AS rep_last, t.Name AS track, il.UnitPrice, il.Quantity FROM Invoice i JOIN Customer c ON i.CustomerId = c.CustomerId JOIN Employee e ON c.SupportRepId = e.EmployeeId JOIN InvoiceLine il ON i.InvoiceId = il.InvoiceId JOIN Track t ON il.TrackId = t.TrackId ORDER BY i.InvoiceId LIMIT 20',
+    groundTruthSql: 'SELECT i.InvoiceId, c.FirstName AS customer_first, c.LastName AS customer_last, e.FirstName AS rep_first, e.LastName AS rep_last, t.Name AS track, il.UnitPrice, il.Quantity FROM Invoice i JOIN Customer c ON i.CustomerId = c.CustomerId JOIN Employee e ON c.SupportRepId = e.EmployeeId JOIN InvoiceLine il ON i.InvoiceId = il.InvoiceId JOIN Track t ON il.TrackId = t.TrackId ORDER BY i.InvoiceId LIMIT 20', // nosemgrep — data array entry, not obfuscated code
     expectedAnswerContains: ['InvoiceId', 'customer_first', 'rep_first', 'track'],
     expectedColumns: ['InvoiceId', 'customer_first', 'customer_last', 'rep_first', 'rep_last', 'track', 'UnitPrice', 'Quantity'],
     integrationId: 'int-chinook-001',

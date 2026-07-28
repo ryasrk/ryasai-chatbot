@@ -57,7 +57,7 @@ describe('parsePluginManifest', () => {
   })
 
   test('missing timeoutMs → uses default 15000', () => {
-    const { timeoutMs, ...rest } = VALID_MANIFEST
+    const { timeoutMs: _, ...rest } = VALID_MANIFEST
     const m = parsePluginManifest(JSON.stringify(rest))
     expect(m).not.toBeNull()
     expect(m!.timeoutMs).toBe(15000)

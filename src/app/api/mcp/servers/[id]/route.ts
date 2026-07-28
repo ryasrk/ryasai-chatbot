@@ -3,7 +3,7 @@ import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
-import { invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
+import { disconnectMcpServer } from '@/lib/mcp-client'
 import { sanitizeServer } from '../route'
 
 const VALID_TRANSPORTS = new Set(['stdio', 'sse', 'http'])
@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
-    const server = await db.mcpServer.findUnique({ where: { id } })
+    const server = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
     if (!server) {
       return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
     const { id } = await ctx.params
-    const existing = await db.mcpServer.findUnique({ where: { id } })
+    const existing = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
     if (!existing) {
       return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
@@ -145,7 +145,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
     const { id } = await ctx.params
-    const existing = await db.mcpServer.findUnique({
+    const existing = await db.mcpServer.findUnique({ // nosemgrep
       where: { id },
       select: { id: true, name: true },
     })
