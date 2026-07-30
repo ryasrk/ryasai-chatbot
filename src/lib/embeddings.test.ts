@@ -1,21 +1,63 @@
-import { describe, expect, test, mock, afterEach } from 'bun:test'
+import { describe, expect, test, mock, afterEach, beforeEach } from 'bun:test'
+
+// --- Configurable DB mock ---
+const mockLlmConfigFindFirst = mock<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(async () => null)
+const mockDocumentChunkFindMany = mock<(...args: unknown[]) => Promise<Array<Record<string, unknown>>>>(async () => [])
+const mockExecuteRaw = mock<(...args: unknown[]) => Promise<number>>(async () => 1)
 
 mock.module('@/lib/db', () => ({
   db: {
-    llmConfig: { findFirst: async () => null },
-    documentChunk: { findMany: async () => [] },
+    llmConfig: { findFirst: mockLlmConfigFindFirst },
+    documentChunk: { findMany: mockDocumentChunkFindMany },
     document: { findMany: async () => [] },
+    $executeRaw: mockExecuteRaw,
   },
+}))
+
+// --- Crypto mock (decryptConfig returns a fake API key) ---
+mock.module('@/lib/crypto', () => ({
+  decryptConfig: () => ({ apiKey: 'test-key' }),
+}))
+
+// --- LLM config mock ---
+const mockGetRoleLlmConfig = mock<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(async () => null)
+mock.module('@/lib/llm-config', () => ({
+  normalizeBaseUrl: (url: string) => url.replace(/\/$/, ''),
+  getRoleLlmConfig: mockGetRoleLlmConfig,
+}))
+
+// --- LLM client mock ---
+const mockChatOnce = mock(async () => 'A summary of the document.')
+mock.module('@/lib/llm-client', () => ({
+  chatOnce: mockChatOnce,
+}))
+
+// --- Vector stores mock (no external vector store) ---
+mock.module('@/lib/vector-stores', () => ({
+  getVectorStoreRuntimeConfig: async () => null,
+  ensureVectorCollection: async () => {},
+  buildVectorPoint: (args: unknown) => args,
+  upsertVectorPoints: async () => {},
 }))
 
 import {
   combineHybridScore,
   cosineSimilarity,
+  embedDocumentChunks,
   embedTexts,
   getEmbeddingRuntimeConfig,
   parseEmbeddingJson,
   parseEmbeddingResponse,
 } from './embeddings'
+
+// Reset mocks to defaults before each test
+beforeEach(() => {
+  mockLlmConfigFindFirst.mockImplementation(async () => null)
+  mockDocumentChunkFindMany.mockImplementation(async () => [])
+  mockExecuteRaw.mockImplementation(async () => 1)
+  mockGetRoleLlmConfig.mockImplementation(async () => null)
+  mockChatOnce.mockImplementation(async () => 'A summary of the document.')
+})
 
 const originalFetch = global.fetch
 afterEach(() => {
@@ -235,5 +277,106 @@ describe('getEmbeddingRuntimeConfig', () => {
   test('no LLM config in DB → returns null', async () => {
     const result = await getEmbeddingRuntimeConfig()
     expect(result).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Contextual Retrieval — Anthropic technique (prepend LLM doc summary to chunks)
+// ---------------------------------------------------------------------------
+
+const fakeEmbeddingConfig = {
+  id: 'cfg-1',
+  provider: 'OPENAI_COMPATIBLE',
+  baseUrl: 'https://api.test.com',
+  embeddingProvider: 'OPENAI_COMPATIBLE',
+  embeddingBaseUrl: 'https://api.test.com',
+  embeddingModel: 'text-embedding-3-small',
+  encryptedEmbeddingApiKey: 'encrypted',
+  encryptedApiKey: 'encrypted',
+}
+
+function mockFetchEmbeddings() {
+  const fetchMock = mock(() =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }, { embedding: [0.4, 0.5, 0.6] }] }),
+    } as Response),
+  )
+  global.fetch = fetchMock as unknown as typeof fetch
+  return fetchMock
+}
+
+describe('embedDocumentChunks — Contextual Retrieval', () => {
+  const originalEnv = process.env.CONTEXTUAL_RETRIEVAL
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CONTEXTUAL_RETRIEVAL
+    else process.env.CONTEXTUAL_RETRIEVAL = originalEnv
+  })
+
+  test('CONTEXTUAL_RETRIEVAL not set → no LLM call, content unchanged', async () => {
+    delete process.env.CONTEXTUAL_RETRIEVAL
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: 'SOP' } },
+      { id: 'c2', content: 'chunk two', chunkIndex: 1, document: { id: 'd1', name: 'Doc A', category: 'SOP' } },
+    ])
+    const fetchMock = mockFetchEmbeddings()
+
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(2)
+    expect(mockChatOnce).not.toHaveBeenCalled()
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.input).toEqual(['chunk one', 'chunk two'])
+  })
+
+  test('CONTEXTUAL_RETRIEVAL=true → generates summary, prepends prefix to embedding input', async () => {
+    process.env.CONTEXTUAL_RETRIEVAL = 'true'
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    mockGetRoleLlmConfig.mockImplementation(async () => ({
+      id: 'cfg-1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4',
+    }))
+    mockChatOnce.mockImplementation(async () => 'A policy document about休假 rules.')
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: 'SOP' } },
+      { id: 'c2', content: 'chunk two', chunkIndex: 1, document: { id: 'd1', name: 'Doc A', category: 'SOP' } },
+    ])
+    const fetchMock = mockFetchEmbeddings()
+
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(2)
+    expect(mockChatOnce).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.input[0]).toContain('From Doc A[SOP]:')
+    expect(body.input[0]).toContain('chunk one')
+    expect(body.input[1]).toContain('From Doc A[SOP]:')
+    expect(body.input[1]).toContain('chunk two')
+  })
+
+  test('LLM summary fails → falls back to static prefix without category', async () => {
+    process.env.CONTEXTUAL_RETRIEVAL = 'true'
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    mockGetRoleLlmConfig.mockImplementation(async () => ({
+      id: 'cfg-1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'https://api.test.com', apiKey: 'sk-test', model: 'gpt-4',
+    }))
+    mockChatOnce.mockImplementation(async () => { throw new Error('LLM unavailable') })
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: null } },
+    ])
+    const fetchMock = mockFetchEmbeddings()
+
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(1)
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.input[0]).toContain('From Doc A:')
+    expect(body.input[0]).not.toContain('[null]')
+    expect(body.input[0]).toContain('chunk one')
   })
 })

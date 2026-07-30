@@ -103,6 +103,25 @@ export async function retrieveRelevantChunks(args: {
   return result
 }
 
+/** Parse LLM reranker response into sorted {index, score} pairs. Returns null on parse failure. */
+export function parseRerankerScores(raw: string, chunkCount: number): { index: number; score: number }[] | null {
+  const match = raw.match(/\[[\s\S]*\]/)
+  if (!match) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(match[0])
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return null
+  return parsed
+    .filter((item): item is { index: number; score: number } =>
+      typeof item?.index === 'number' && typeof item?.score === 'number'
+      && item.index >= 0 && item.index < chunkCount && item.score >= 3,
+    )
+    .sort((a, b) => b.score - a.score)
+}
+
 async function rerankWithLlm(
   query: string,
   chunks: RetrievedChunk[],
@@ -119,28 +138,30 @@ async function rerankWithLlm(
 
     const chunkList = chunks.map((c, i) => `[${i}] ${c.content.slice(0, 300)}`).join('\n\n')
     const systemPrompt =
-      'You are a retrieval reranker. Given a query and text chunks, rank them by relevance. ' +
-      'Answer ONLY with a JSON array of chunk indices, most relevant first. Example: [2, 0, 4, 1, 3]'
-    const userMessage = `Query: ${query}\n\nChunks:\n${chunkList}\n\nRank these chunks by relevance to the query. Output JSON array of indices only.`
+      'You are a retrieval reranker. Given a query and text chunks, score each chunk\'s relevance to the query from 0 to 10.\n' +
+      '10 = directly answers the query, 7 = contains relevant info, 4 = partially relevant, 1 = not relevant.\n' +
+      'Output ONLY a JSON array of {index, score} pairs. Example: [{"index":0,"score":8},{"index":1,"score":3}]'
+    const userMessage = `Query: ${query}\n\nChunks:\n${chunkList}\n\nScore each chunk. Output JSON array of {index, score} pairs only.`
 
     const raw = await chatOnce(cfg, [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }], 0, 'rag-rerank')
 
-    const match = raw.match(/\[[\d\s,]+\]/)
-    if (!match) return chunks.slice(0, topK)
-    const indices = JSON.parse(match[0]) as number[]
-    if (!Array.isArray(indices) || indices.length === 0) return chunks.slice(0, topK)
+    const scored = parseRerankerScores(raw, chunks.length)
+    if (!scored) return chunks.slice(0, topK)
 
     const reranked: RetrievedChunk[] = []
-    for (const idx of indices) {
-      if (typeof idx === 'number' && idx >= 0 && idx < chunks.length) {
-        reranked.push(chunks[idx])
-        if (reranked.length >= topK) break
-      }
+    const used = new Set<number>()
+    for (const item of scored) {
+      if (used.has(item.index)) continue
+      used.add(item.index)
+      reranked.push(chunks[item.index])
+      if (reranked.length >= topK) break
     }
     if (reranked.length < topK) {
-      const used = new Set(indices.filter((i) => i >= 0 && i < chunks.length))
       for (let i = 0; i < chunks.length && reranked.length < topK; i++) {
-        if (!used.has(i)) reranked.push(chunks[i])
+        if (!used.has(i)) {
+          used.add(i)
+          reranked.push(chunks[i])
+        }
       }
     }
     return reranked
@@ -254,33 +275,40 @@ interface CandidateChunk {
   keywords: string | null
   embeddingJson: string | null
   embeddingModel: string | null
+  contextPrefix: string | null
 }
 
 async function loadVectorCandidateChunks(chunkIds: string[]): Promise<CandidateChunk[]> {
   const rows = await db.documentChunk.findMany({
     where: { id: { in: chunkIds }, document: { status: 'ready', isEnabled: true } },
-    select: { id: true, chunkIndex: true, content: true, keywords: true, embeddingJson: true, embeddingModel: true, document: { select: { id: true, name: true } } },
+    select: { id: true, chunkIndex: true, content: true, keywords: true, contextPrefix: true, embeddingJson: true, embeddingModel: true, document: { select: { id: true, name: true } } },
   })
   const order = new Map(chunkIds.map((id, index) => [id, index]))
   return rows
     .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
     .map((row) => ({
       chunkId: row.id, documentId: row.document.id, documentName: row.document.name,
-      chunkIndex: row.chunkIndex, content: row.content, keywords: row.keywords,
+      chunkIndex: row.chunkIndex,
+      content: row.contextPrefix ? row.contextPrefix + row.content : row.content,
+      keywords: row.keywords,
       embeddingJson: row.embeddingJson, embeddingModel: row.embeddingModel,
+      contextPrefix: row.contextPrefix,
     }))
 }
 
 async function loadAllCandidateChunks(): Promise<CandidateChunk[]> {
   const docs = await db.document.findMany({
     where: { status: 'ready', isEnabled: true },
-    select: { id: true, name: true, chunks: { take: RAG_MAX_CHUNKS_PER_UPLOAD, select: { id: true, chunkIndex: true, content: true, keywords: true, embeddingJson: true, embeddingModel: true } } },
+    select: { id: true, name: true, chunks: { take: RAG_MAX_CHUNKS_PER_UPLOAD, select: { id: true, chunkIndex: true, content: true, keywords: true, contextPrefix: true, embeddingJson: true, embeddingModel: true } } },
   })
   return docs.flatMap((doc) =>
     doc.chunks.map((chunk) => ({
       chunkId: chunk.id, documentId: doc.id, documentName: doc.name,
-      chunkIndex: chunk.chunkIndex, content: chunk.content, keywords: chunk.keywords,
+      chunkIndex: chunk.chunkIndex,
+      content: chunk.contextPrefix ? chunk.contextPrefix + chunk.content : chunk.content,
+      keywords: chunk.keywords,
       embeddingJson: chunk.embeddingJson, embeddingModel: chunk.embeddingModel,
+      contextPrefix: chunk.contextPrefix,
     })),
   )
 }

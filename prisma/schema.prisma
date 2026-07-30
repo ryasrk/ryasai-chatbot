@@ -122,6 +122,7 @@ model DocumentChunk {
   content    String
   tokenCount Int?
   keywords   String?
+  contextPrefix String?
   embeddingJson      String?
   embedding          Unsupported("vector(1536)")?
   embeddingProvider  String?

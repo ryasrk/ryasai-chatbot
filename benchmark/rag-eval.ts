@@ -20,6 +20,7 @@ import { getRoleLlmConfig } from '@/lib/llm-config'
 import { chatOnce } from '@/lib/llm-client'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { generateAnswer } from '@/lib/ai'
+import { postLangfuseScore } from '@/lib/observability'
 import { writeFileSync } from 'fs'
 
 // ---------------------------------------------------------------------------
@@ -260,6 +261,12 @@ async function runRagEvaluation(limit?: number): Promise<void> {
     avgContextRecall: avg((r) => r.metrics.contextRecall),
     avgLatencyMs: avg((r) => r.latencyMs),
   }
+
+  // Post RAGAS scores to Langfuse if configured (fire-and-forget, never blocks)
+  postLangfuseScore({ name: 'faithfulness', value: summary.avgFaithfulness })
+  postLangfuseScore({ name: 'answer_relevance', value: summary.avgAnswerRelevance })
+  postLangfuseScore({ name: 'context_precision', value: summary.avgContextPrecision })
+  postLangfuseScore({ name: 'context_recall', value: summary.avgContextRecall })
 
   console.log('\n--- Summary ---')
   console.log(`Faithfulness:      ${summary.avgFaithfulness.toFixed(3)}`)

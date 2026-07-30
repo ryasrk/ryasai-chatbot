@@ -78,6 +78,18 @@ describe('env-schema — validateEnv', () => {
     Object.assign(env, original)
   })
 
+  test('production with CONTEXTUAL_RETRIEVAL + RAG_LLM_RERANK accepted (true/false)', () => {
+    const original = { ...env }
+    env.NODE_ENV = 'production'
+    env.ENCRYPTION_SECRET_KEY = 'a'.repeat(64)
+    env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db'
+    env.CONTEXTUAL_RETRIEVAL = 'true'
+    env.RAG_LLM_RERANK = 'false'
+    const { warnings } = validateEnv()
+    expect(warnings).toEqual([])
+    Object.assign(env, original)
+  })
+
   test('idempotent — calling twice returns same warnings', () => {
     env.NODE_ENV = 'development'
     const r1 = validateEnv()

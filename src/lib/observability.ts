@@ -14,6 +14,7 @@ export interface LlmTrace {
   latencyMs: number
   timestamp: Date
   error?: string
+  metadata?: Record<string, unknown>
 }
 
 const RING_MAX = 100
@@ -101,7 +102,7 @@ async function forwardTrace(t: LlmTrace): Promise<void> {
                       completionTokens: t.usage.completionTokens,
                     }
                   : undefined,
-                metadata: t.error ? { error: t.error } : undefined,
+                metadata: { ...(t.metadata ?? {}), ...(t.error ? { error: t.error } : {}) },
               },
             },
           ],
@@ -132,8 +133,44 @@ async function forwardTrace(t: LlmTrace): Promise<void> {
           error: t.error,
         }),
       })
-    } catch (e) {
+      } catch (e) {
       console.warn('[observability] helicone forward failed:', e)
     }
+  }
+}
+
+/**
+ * Post an evaluation score (e.g. RAGAS metric) to Langfuse. Fire-and-forget —
+ * never blocks the caller. No-op when Langfuse env vars are not set.
+ */
+export async function postLangfuseScore(args: {
+  name: string
+  value: number
+  comment?: string
+  traceId?: string
+}): Promise<void> {
+  const langfuseKey = process.env.LANGFUSE_PUBLIC_KEY
+  const langfuseSecret = process.env.LANGFUSE_SECRET_KEY
+  const langfuseBase = process.env.LANGFUSE_BASEURL ?? 'https://cloud.langfuse.com'
+
+  if (!langfuseKey || !langfuseSecret) return
+
+  try {
+    await fetch(`${langfuseBase}/api/public/scores`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization:
+          'Basic ' + Buffer.from(`${langfuseKey}:${langfuseSecret}`).toString('base64'),
+      },
+      body: JSON.stringify({
+        name: args.name,
+        value: args.value,
+        comment: args.comment,
+        traceId: args.traceId,
+      }),
+    })
+  } catch (e) {
+    console.warn('[observability] langfuse score post failed:', e)
   }
 }

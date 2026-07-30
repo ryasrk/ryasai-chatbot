@@ -10,7 +10,7 @@
 | P1 — Core LLM + Chat | 5 items | ✅ Complete |
 | P2 — Feature Implementation | 5 items | ✅ Complete |
 | P3 — UI/UX Standardization | 4 items | ✅ Complete |
-| P4 — Code Quality | 4 items | ✅ Complete (P4.2, P4.4 pending) |
+| P4 — Code Quality | 4 items | ✅ Complete |
 | P5 — Tests | 3 items | ✅ 194 unit + 4 e2e |
 | S4 — Postgres Migration | 4 items | ✅ Complete |
 | RAG — Production RAG Architecture | 9 items | ✅ Complete |
@@ -51,9 +51,9 @@
 
 ### P4 — Code Quality
 - ✅ P4.1 LLM token usage tracking (`LlmUsageLog` model + monitoring cards)
-- ⬜ P4.2 Log retention (cleanup cron for old logs — pending)
+- ✅ P4.2 Log retention (scheduler `cleanupOldLogs` — daily prune of AuditLog/ApiRequestLog/RestApiRequestLog/ToolRun/QueryHistory/LlmUsageLog/AgentRun older than `LOG_RETENTION_DAYS`, default 90)
 - ✅ P4.3 ESLint rules (no-unused-vars, no-unreachable re-enabled)
-- ⬜ P4.4 writeAudit fail-closed for critical (pending)
+- ✅ P4.4 writeAudit fail-closed for critical (session.ts throws on critical-severity DB write failure; covered by session.test.ts)
 
 ### P5 — Tests
 - ✅ P5.1 Unit tests: 194 pass, 8 skip (cognee e2e opt-in), 0 fail
@@ -81,10 +81,8 @@
 
 ## Remaining (optional, for future enhancement)
 
-1. **P4.2 Log retention** — add cleanup cron to scheduler for old audit/api/tool logs
-2. **P4.4 writeAudit fail-closed** — throw on critical severity DB write failure
-3. **Cognee production deployment** — install + test cognify against real cognee instance, switch cognee to Postgres backend
-4. **Chinook data completion** — populate empty artist/album/customer tables (not in old SQLite)
-5. **Scheduler real-time push** — replace 15s polling with SSE from scheduler to UI
-6. **Scheduler failure notifications** — email/webhook on schedule failure (notification config currently only sends on success)
-7. **Test isolation fix** — resolve mock.module isolation issue so all tests run together
+1. **Cognee production deployment** — install + test cognify against real cognee instance, switch cognee to Postgres backend
+2. **Chinook data completion** — populate empty artist/album/customer tables (not in old SQLite)
+3. **Scheduler real-time push** — replace 15s polling with SSE from scheduler to UI
+4. **Scheduler failure notifications** — email/webhook on schedule failure (notification config currently only sends on success)
+5. **Test isolation fix** — resolve mock.module isolation issue so all tests run together

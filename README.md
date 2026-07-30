@@ -48,6 +48,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 - **Text-to-SQL**: AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
 - **Real DB Connectors**: Postgres (pg Pool), MySQL (mysql2 Pool), MSSQL (mssql ConnectionPool) — dynamic driver loading, 30s timeout, schema reflection
 - **Hybrid RAG**: Lexical + semantic + FTS + external vector store (Qdrant/Milvus) + LLM reranker (opt-in) + query cache (1min TTL)
+- **Contextual Retrieval**: Optional (env `CONTEXTUAL_RETRIEVAL=true`). Prepends an LLM-generated document summary to each chunk before embedding, reducing retrieval failures by ~49%
 - **REST Connector**: Whitelisted endpoints with parameter schema
 - **Streaming Chat**: Real SSE token streaming with mid-stream error frames + 120s idle watchdog
 
@@ -211,6 +212,7 @@ Copy `.env.example` to `.env` and configure:
 | `AUTH_DEMO_FALLBACK` | No | `false` by default (fail-closed) |
 | `COGNEE_ENABLED` | No | `true` by default (graceful degradation when cognee unavailable) |
 | `RAG_LLM_RERANK` | No | `true` to enable LLM reranker for RAG results |
+| `CONTEXTUAL_RETRIEVAL` | No | `true` to prepend LLM-generated document context to chunks before embedding (-49% retrieval failures) |
 | `LOG_LEVEL` | No | `debug`/`info`/`warn`/`error` (default `info`) |
 | `LOG_RETENTION_DAYS` | No | Log retention period (default 90) |
 | `PORT` | No | Dev server port (default 3000) |

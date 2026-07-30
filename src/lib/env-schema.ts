@@ -31,6 +31,8 @@ const EnvSchema = z.object({
   COGNEE_DB_PROVIDER: z.enum(['local', 'postgres']).optional(),
   COGNEE_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).optional(),
   COGNEE_MAX_RETRIES: z.coerce.number().int().min(0).max(10).optional(),
+  CONTEXTUAL_RETRIEVAL: z.enum(['true', 'false']).optional(),
+  RAG_LLM_RERANK: z.enum(['true', 'false']).optional(),
   REDIS_URL: z.string().url().optional(),
 
   // Warn if production secrets look like plaintext placeholders

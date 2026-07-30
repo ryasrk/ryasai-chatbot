@@ -1,5 +1,5 @@
 import { test, expect, describe, mock, afterEach } from 'bun:test'
-import { traceLlmCall, getRecentTraces, getTraceStats } from '@/lib/observability'
+import { traceLlmCall, getRecentTraces, getTraceStats, postLangfuseScore } from '@/lib/observability'
 
 const originalFetch = global.fetch
 afterEach(() => {
@@ -149,6 +149,21 @@ describe('observability — trace fields', () => {
     expect(stats.avgLatencyMs).toBeGreaterThanOrEqual(0)
     expect(typeof stats.avgLatencyMs).toBe('number')
   })
+
+  test('traceLlmCall records metadata field', () => {
+    const purpose = `meta-${Math.random()}`
+    traceLlmCall({
+      purpose,
+      provider: 'x',
+      model: 'm',
+      inputPreview: '',
+      outputPreview: '',
+      latencyMs: 5,
+      metadata: { sessionId: 'sess-1', userId: 'user-1' },
+    })
+    const recent = getRecentTraces(1)
+    expect(recent[0].metadata).toEqual({ sessionId: 'sess-1', userId: 'user-1' })
+  })
 })
 
 describe('observability — forwardTrace (fire-and-forget)', () => {
@@ -245,5 +260,47 @@ describe('observability — forwardTrace (fire-and-forget)', () => {
     // trace still recorded in buffer
     const recent = getRecentTraces(1)
     expect(recent[0].purpose).toMatch(/^fail-/)
+  })
+})
+
+describe('observability — postLangfuseScore', () => {
+  test('no-op when Langfuse env vars not configured', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve({ ok: true } as Response),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await postLangfuseScore({ name: 'faithfulness', value: 0.95 })
+    expect(fetchMock.mock.calls.length).toBe(0)
+  })
+
+  test('posts to scores endpoint when Langfuse configured', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+    process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+    process.env.LANGFUSE_BASEURL = 'https://lf.example.com'
+
+    const fetchMock = mock(() =>
+      Promise.resolve({ ok: true } as Response),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await postLangfuseScore({ name: 'faithfulness', value: 0.95, comment: 'good', traceId: 't1' })
+
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][]
+    const scoreCalls = calls.filter((c) => c[0].includes('/api/public/scores'))
+    expect(scoreCalls.length).toBe(1)
+    const body = JSON.parse(scoreCalls[0][1].body as string)
+    expect(body.name).toBe('faithfulness')
+    expect(body.value).toBe(0.95)
+    expect(body.comment).toBe('good')
+    expect(body.traceId).toBe('t1')
+  })
+
+  test('post failure does not throw (swallowed)', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+    process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+    global.fetch = mock(() => Promise.reject(new Error('network down'))) as unknown as typeof fetch
+
+    await postLangfuseScore({ name: 'faithfulness', value: 0.5 })
   })
 })

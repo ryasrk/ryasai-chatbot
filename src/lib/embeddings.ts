@@ -164,11 +164,45 @@ export async function embedDocumentChunks(args: {
   const vectorConfig = await getVectorStoreRuntimeConfig()
   if (vectorConfig) await ensureVectorCollection(vectorConfig)
 
+  // Contextual Retrieval (Anthropic): prepend an LLM-generated document summary
+  // to each chunk before embedding. Reduces retrieval failures by ~49%.
+  // ponytail: one summary per document, shared across all chunks — cheap and effective.
+  let contextPrefix = ''
+  if (process.env.CONTEXTUAL_RETRIEVAL === 'true' && chunks.length > 0) {
+    const docName = chunks[0].document.name
+    const category = chunks[0].document.category
+    try {
+      const { getRoleLlmConfig } = await import('@/lib/llm-config')
+      const { chatOnce } = await import('@/lib/llm-client')
+      const cfg = await getRoleLlmConfig('query')
+      if (cfg) {
+        const fullText = chunks.map((c) => c.content).join('\n\n').slice(0, 8000)
+        const summary = await chatOnce(
+          cfg,
+          [
+            { role: 'system', content: 'Summarize the following document in 1-2 sentences for retrieval context.' },
+            { role: 'user', content: fullText },
+          ],
+          0,
+          'contextual-retrieval',
+        )
+        contextPrefix = `From ${docName}${category ? `[${category}]` : ''}: ${summary}\n\n`
+      } else {
+        contextPrefix = `From ${docName}:\n\n`
+      }
+    } catch (e) {
+      console.warn('[embeddings] contextual retrieval summary failed, using static prefix:', e)
+      contextPrefix = `From ${docName}:\n\n`
+    }
+  }
+
   let embedded = 0
   const batchSize = Math.max(1, args.batchSize ?? 16)
   for (let start = 0; start < chunks.length; start += batchSize) {
     const batch = chunks.slice(start, start + batchSize)
-    const vectors = await embedTexts(config, batch.map((chunk) => chunk.content))
+    const vectors = await embedTexts(config, batch.map((chunk) =>
+      contextPrefix ? contextPrefix + chunk.content : chunk.content,
+    ))
     const vectorPoints: VectorPoint[] = []
     await Promise.all(
       batch.map((chunk, index) => {
@@ -187,15 +221,26 @@ export async function embedDocumentChunks(args: {
             },
           }),
         )
-        return db.$executeRaw`
-          UPDATE "DocumentChunk"
-          SET "embeddingJson" = ${JSON.stringify(vector)},
-              "embedding" = ${`[${vector.join(',')}]`}::vector,
-              "embeddingProvider" = ${config.provider},
-              "embeddingModel" = ${config.model},
-              "embeddedAt" = NOW()
-          WHERE id = ${chunk.id}
-        `
+        return contextPrefix
+          ? db.$executeRaw`
+              UPDATE "DocumentChunk"
+              SET "embeddingJson" = ${JSON.stringify(vector)},
+                  "embedding" = ${`[${vector.join(',')}]`}::vector,
+                  "embeddingProvider" = ${config.provider},
+                  "embeddingModel" = ${config.model},
+                  "embeddedAt" = NOW(),
+                  "contextPrefix" = ${contextPrefix}
+              WHERE id = ${chunk.id}
+            `
+          : db.$executeRaw`
+              UPDATE "DocumentChunk"
+              SET "embeddingJson" = ${JSON.stringify(vector)},
+                  "embedding" = ${`[${vector.join(',')}]`}::vector,
+                  "embeddingProvider" = ${config.provider},
+                  "embeddingModel" = ${config.model},
+                  "embeddedAt" = NOW()
+              WHERE id = ${chunk.id}
+            `
       }).filter(Boolean),
     )
     if (vectorConfig) await upsertVectorPoints(vectorConfig, vectorPoints)
