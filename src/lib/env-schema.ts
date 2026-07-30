@@ -35,8 +35,44 @@ const EnvSchema = z.object({
   RAG_LLM_RERANK: z.enum(['true', 'false']).optional(),
   REDIS_URL: z.string().url().optional(),
 
-  // Warn if production secrets look like plaintext placeholders
+  // --- Agentic / RAG tuning (optional, sensible defaults in code) ---
+  AGENTIC_TOKEN_BUDGET: z.coerce.number().int().min(1).optional(),
+  ALIGNMENT_CHECK: z.enum(['http', 'llm', 'disabled']).optional(),
+  ALIGNMENT_CHECK_URL: z.string().url().optional(),
+  HYDE: z.enum(['true', 'false']).optional(),
+  REFLEXION_ENABLED: z.enum(['true', 'false']).optional(),
+  RERANKER_URL: z.string().url().optional(),
+  PARENT_DOC_CHILD_SIZE: z.coerce.number().int().min(1).optional(),
+  PARENT_DOC_WINDOW: z.coerce.number().int().min(0).optional(),
+  TOOL_TIMEOUT_MS: z.coerce.number().int().min(1).optional(),
+  TOOL_TIMEOUT_SQL_MS: z.coerce.number().int().min(1).optional(),
+  TOOL_TIMEOUT_PLUGIN_WEB_SEARCH_MS: z.coerce.number().int().min(1).optional(),
+
+  // --- Security ---
+  INCOMING_WEBHOOK_SECRET: z.string().min(1).optional(),
+
+  // --- SSO / OIDC ---
+  OIDC_ISSUER: z.string().url().optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  OIDC_REDIRECT_URI: z.string().url().optional(),
+
+  // --- Observability ---
+  OTEL_ENABLED: z.enum(['true', 'false']).optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+  LANGFUSE_BASEURL: z.string().url().optional(),
+  LANGFUSE_PUBLIC_KEY: z.string().optional(),
+  LANGFUSE_SECRET_KEY: z.string().optional(),
+  HELICONE_API_KEY: z.string().optional(),
+
+  // --- Server / scheduler ---
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).optional(),
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1).optional(),
+  SCHEDULER_POLL_INTERVAL_SEC: z.coerce.number().int().min(1).optional(),
+  DEFAULT_API_RATE_PER_MINUTE: z.coerce.number().int().min(0).optional(),
+  DEFAULT_API_DAILY_LIMIT: z.coerce.number().int().min(0).optional(),
+  DB_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).optional(),
 })
 
 export type EnvSchema = z.infer<typeof EnvSchema>

@@ -81,3 +81,6 @@ cognee.db
 weapon.txt
 upload/
 download/
+
+# workflows — added via web UI, not tracked in repo
+.github/workflows/

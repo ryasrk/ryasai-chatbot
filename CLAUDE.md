@@ -1015,21 +1015,21 @@ All free/open-source stack (no paid subscriptions). Deps pre-installed: `fast-ch
 ### Subagent B — Code Quality + Production (owns: tsconfig, .github/, src/lib/observability*, logger*, rate-limit*, redis*, guardrails* tests, instrumentation.ts, scripts/, docs/runbook*, CHANGELOG*)
 - [x] Property-based tests for SQL guardrails → guardrails.property.test.ts (8 fast-check properties)
 - [x] Semgrep scan step in CI → ci.yml +semgrep job (returntocorp/semgrep-action@v1)
-- [x] Redis-backed distributed rate limiter → redis-rate-limit.ts + test (8 tests, INCR+EXPIRE, in-memory fallback)
+- [x] Redis-backed distributed rate limiter → DELETED (redis-rate-limit.ts was unwired shelfware; middleware has inline limiter)
 - [x] OpenTelemetry instrumentation → otel.ts + test (9 tests, lazy SDK init, getTracer/withSpan)
 - [x] Langfuse trace → score linkage → observability.ts traceLlmCall returns traceId, postLangfuseScore links it
-- [x] Scheduler SSE push → schedule-events.ts + test (5 tests, EventEmitter for SSE consumption)
+- [x] Scheduler SSE push → DELETED (schedule-events.ts had no SSE consumer; UI polls every 15s)
 - [x] Scheduler failure notifications → scheduler/index.ts sends on success + failure
 - [ ] Strict TS flags → DEFERRED (1005 errors with noUncheckedIndexedAccess + exactOptionalPropertyTypes, needs coordinated rollout)
-- [x] Graceful shutdown → graceful-shutdown.ts + test (8 tests, SIGTERM/SIGINT, cleanup order)
-- [x] Readiness vs liveness probes → health-checks.ts + test (7 tests, checkLiveness/checkReadiness)
+- [x] Graceful shutdown → graceful-shutdown.ts + test (8 tests, SIGTERM/SIGINT, cleanup order) — wired via instrumentation.ts (db.$disconnect + disconnectRedis)
+- [x] Readiness vs liveness probes → DELETED (health-checks.ts redundant; /api/health + /api/v1/health routes already implement this inline)
 - [x] CHANGELOG.md → keep-a-changelog format
 - [x] Runbook → docs/runbook.md (deploy/rollback/rotate keys/restore/debug/incidents)
 
 ### Subagent C — Features + Documentation (owns: src/app/api/ new routes, src/components/views/, docs/, prisma/schema.prisma, README.md)
-- [x] OIDC SSO integration → sso.ts (293 lines: discovery, code exchange, JWT HS256+RS256, getOrCreateSsoUser)
-- [x] Ollama LLM provider → ollama-provider.ts + test (fetch-based, localhost:11434, graceful no-op)
-- [x] RBAC roles within single-tenant → rbac.ts + test + User.role field in schema (admin/analyst/viewer)
+- [x] OIDC SSO integration → sso.ts (293 lines: discovery, code exchange, JWT HS256+RS256, getOrCreateSsoUser) — wired: GET /api/auth/sso/login + /api/auth/sso/callback routes, middleware public paths, env-schema + .env.example
+- [x] Ollama LLM provider → DELETED (ollama-provider.ts was redundant; embeddings.ts already supports OLLAMA via DB config)
+- [x] RBAC roles within single-tenant → DELETED (rbac.ts unwirable without touching 75 routes; single-tenant = admin only. User.role field kept in schema, defaults to "admin")
 - [x] Mermaid architecture diagrams → README.md (flowchart + sequenceDiagram, ASCII in <details> fallback)
 - [x] ADRs → docs/adr/0001-0008 (8 ADRs: single-tenant, SQL guardrails, fail-closed, hybrid RAG, AES-256-GCM, agentic loop, pgvector, contextual retrieval)
 - [x] API usage guide → docs/api-guide.md (curl/JS/Python per endpoint, grouped by category)

@@ -13,6 +13,8 @@ const PUBLIC_API_PATHS = new Set([
   '/api/v1/health',
   '/api/auth/login',
   '/api/auth/logout',
+  '/api/auth/sso/login',
+  '/api/auth/sso/callback',
   '/api/setup/status',
   '/api/setup/admin',
   '/api/fetch-url',

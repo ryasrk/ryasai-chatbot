@@ -79,9 +79,8 @@
 - AES-256-GCM crypto: `src/lib/crypto.ts`
 - Session + fail-closed auth: `src/lib/session.ts`
 - SSRF blocklist: `src/lib/` (REST connector URL validation)
-- Rate limiting: `src/lib/rate-limit.ts`, `src/lib/redis.ts`
+- Rate limiting: `src/lib/redis.ts` (in-memory limiter in `src/middleware.ts`)
 - API key management: `src/lib/api-keys.ts`
 - Env schema validation: `src/lib/env-schema.ts`
 - Webhook HMAC: `src/lib/incoming-webhook.ts`
-- RBAC: `src/lib/rbac.ts`
 - SSO/OIDC: `src/lib/sso.ts`

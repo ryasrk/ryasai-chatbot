@@ -7,16 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - 2026-07-30
 
+### Removed
+- Dead/redundant shelfware: `rbac.ts`, `schedule-events.ts`, `redis-rate-limit.ts`, `rate-limit.ts`, `ollama-provider.ts`, `health-checks.ts` (+ tests). RBAC unwirable without touching 75 routes (single-tenant YAGNI). Ollama provider redundant — `embeddings.ts` already supports OLLAMA via DB config. Health checks redundant — `/api/health` + `/api/v1/health` routes already implement liveness+readiness inline. Rate limit libs unused — middleware has its own inline limiter. Schedule events emitter had no SSE consumer — UI polls every 15s.
+
 ### Added
 - Contextual Retrieval (Anthropic technique): LLM-generated document summaries prepended to chunks before embedding (`CONTEXTUAL_RETRIEVAL` env var)
 - LLM reranker scoring: 0-10 scoring approach replacing index-ranking, with score < 3 filtering
 - Langfuse trace → score linkage: `traceLlmCall` returns traceId, `postLangfuseScore` links RAGAS metrics to traces
 - OpenTelemetry instrumentation: `src/lib/otel.ts` with `getTracer()` and `withSpan()` helpers, lazy SDK init via `OTEL_ENABLED`
-- Redis-backed distributed rate limiter: `src/lib/redis-rate-limit.ts` with INCR + EXPIRE and in-memory fallback
 - Property-based tests for SQL guardrails using fast-check (8 properties)
 - Graceful shutdown module: `src/lib/graceful-shutdown.ts` with SIGTERM/SIGINT handlers and cleanup timeout
-- Health checks module: `src/lib/health-checks.ts` with `checkLiveness()` and `checkReadiness()` (DB + Redis probes)
-- Schedule run events: `src/lib/schedule-events.ts` EventEmitter for SSE push (real-time schedule monitoring)
 - Scheduler failure notifications: failed scheduled runs now send webhook/Telegram notifications with error details
 - Metadata support in LLM traces: `traceLlmCall` accepts `metadata` field, forwarded to Langfuse/Helicone
 - CI: Semgrep static analysis job in GitHub Actions

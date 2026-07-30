@@ -16,7 +16,6 @@ import { nextRun } from '../../src/lib/cron'
 import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
 import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
-import { emitScheduleRunComplete } from '../../src/lib/schedule-events'
 
 const POLL_INTERVAL_SEC =
   Number.parseInt(process.env.SCHEDULER_POLL_INTERVAL_SEC ?? '60', 10) || 60
@@ -289,16 +288,6 @@ async function executeRun(run: {
     console.error(`[scheduler] failed to update run "${run.name}":`, e)
     return
   }
-
-  // Emit schedule event for SSE consumers (real-time monitoring).
-  emitScheduleRunComplete({
-    runId: run.id,
-    name: run.name,
-    status: success ? 'success' : 'error',
-    error: lastError ?? undefined,
-    timestamp: now,
-    latencyMs: Date.now() - now.getTime(),
-  })
 
   // Persist execution log — full answer + tool runs for history + export.
   try {
