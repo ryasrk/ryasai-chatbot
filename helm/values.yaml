@@ -58,3 +58,22 @@ secret:
   DATABASE_URL: ""
   ENCRYPTION_SECRET_KEY: ""
   ADMIN_INITIAL_PASSWORD: ""
+
+# -- Blue-green deployment (Argo Rollouts). Requires Argo Rollouts controller.
+# When enabled, replaces the Deployment with a Rollout resource.
+# `autoPromotion: false` requires manual `kubectl argo rollouts promote` to swap.
+blueGreen:
+  enabled: false
+  autoPromotion: true
+  scaleDownDelay: 30
+
+# -- Canary deployment (Flagger + Istio). Requires Flagger + Istio installed.
+# When enabled, creates a Canary resource that gradually shifts traffic (10% → 50%).
+# Auto-rolls back if success rate < 99% or p95 latency > 500ms.
+canary:
+  enabled: false
+  analysisInterval: "1m"
+  maxFailures: 5
+  maxTrafficWeight: 50
+  stepWeight: 10
+  loadTestUrl: "http://flagger-loadtester.test/"

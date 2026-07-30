@@ -13,6 +13,7 @@ node_modules
 # testing
 /coverage
 /static_analysis_semgrep_1
+/graphify-out
 
 # next.js
 /.next/
@@ -43,6 +44,13 @@ db/e2e.db-journal
 # database (contains encrypted secrets + password hashes)
 db/*.db
 db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+db/*.sqlite
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
 
 # vercel
 .vercel

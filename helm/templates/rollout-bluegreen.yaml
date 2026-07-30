@@ -1,0 +1,54 @@
+{{- if .Values.blueGreen.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "chatbot.fullname" . }}
+  labels:
+    {{- include "chatbot.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    blueGreen:
+      activeService: {{ include "chatbot.fullname" . }}
+      previewService: {{ include "chatbot.fullname" . }}-preview
+      autoPromotionEnabled: {{ .Values.blueGreen.autoPromotion }}
+      scaleDownDelaySeconds: {{ .Values.blueGreen.scaleDownDelay | default 30 }}
+      prePromotionAnalysis:
+        templates:
+          - templateName: success-rate
+        args:
+          - name: service-name
+            value: {{ include "chatbot.fullname" . }}-preview
+  template:
+    metadata:
+      labels:
+        {{- include "chatbot.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: chatbot
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "chatbot.fullname" . }}
+            - secretRef:
+                name: {{ include "chatbot.fullname" . }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources.web | nindent 12 }}
+{{- end }}

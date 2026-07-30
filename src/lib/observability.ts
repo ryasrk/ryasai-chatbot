@@ -21,11 +21,22 @@ const RING_MAX = 100
 // persistent storage is the LlmUsageLog table, external tracers cover long-term.
 const traces: LlmTrace[] = []
 
+import { inc, observe, counter } from './metrics'
+counter('llm_errors_total', 'Total LLM call errors')
+
 export function traceLlmCall(trace: Omit<LlmTrace, 'id' | 'timestamp'>): void {
   const entry: LlmTrace = { ...trace, id: crypto.randomUUID(), timestamp: new Date() }
   if (traces.length >= RING_MAX) traces.shift()
   traces.push(entry)
   forwardTrace(entry).catch(() => {})
+  inc('llm_calls_total', { provider: trace.provider, purpose: trace.purpose })
+  observe('llm_duration_seconds', trace.latencyMs / 1000, { purpose: trace.purpose })
+  if (trace.usage) {
+    inc('llm_tokens_total', { provider: trace.provider }, trace.usage.totalTokens)
+  }
+  if (trace.error) {
+    inc('llm_errors_total', { provider: trace.provider })
+  }
 }
 
 export function getRecentTraces(limit: number = 50): LlmTrace[] {

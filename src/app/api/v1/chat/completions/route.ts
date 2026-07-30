@@ -4,6 +4,7 @@ import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError } from '@/lib/session'
 import { runNonStreamingChatCompletion, runStreamingChatCompletion } from '@/lib/tool-router'
 import { rateLimit } from '@/lib/redis'
+import { inc, observe } from '@/lib/metrics'
 
 interface ChatCompletionBody {
   model?: string
@@ -359,9 +360,14 @@ export async function POST(req: NextRequest) {
       })),
     }
 
+    inc('http_requests_total', { method: 'POST', path: '/api/v1/chat/completions', status: '200' })
+    observe('http_request_duration_seconds', (Date.now() - started) / 1000, { path: '/api/v1/chat/completions' })
     return NextResponse.json(payload, { headers: corsHeaders })
   } catch (e) {
     const status = statusForExternalChatError(e)
+    inc('http_requests_total', { method: 'POST', path: '/api/v1/chat/completions', status: String(status) })
+    inc('http_request_errors_total', { path: '/api/v1/chat/completions' })
+    observe('http_request_duration_seconds', (Date.now() - started) / 1000, { path: '/api/v1/chat/completions' })
     await writeApiLog({
       apiKeyId,
       status,

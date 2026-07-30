@@ -1,280 +1,18 @@
-/**
- * Smart Router — self-adjusting query routing.
- *
- * Replaces the single LLM `routeQuery` call with a hybrid scoring system:
- *
- * 1. Schema scoring — keyword overlap between question and actual DB tables/columns,
- *    REST endpoint paths/descriptions, and document names/categories.
- * 2. Performance scoring — success rate from recent ToolRun history per tool type.
- * 3. Latency scoring — faster tools get higher scores.
- * 4. Circuit breaker — auto-disables tools with >70% failure rate in last 10 runs.
- * 5. Similarity boost — learns from past successful routings of similar questions.
- * 6. LLM tiebreaker — when top 2 scores are within 0.1, uses LLM to break the tie.
- * 7. Integration selection — for SQL, picks the integration whose schema best matches.
- *
- * Self-adjustment is implicit: every routing decision reads recent ToolRun history,
- * so scores adapt automatically as performance changes. No manual configuration.
- */
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
 import { selectRelevantPlugins, type ScoredPlugin } from '@/lib/plugin-selector'
-import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity, type EmbeddingRuntimeConfig } from '@/lib/embeddings'
+import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity } from '@/lib/embeddings'
+import {
+  STOPWORDS, tokenize, expandWithSynonyms, keywordOverlap, checkAvailability, buildReason,
+  computeSemanticScore, loadSchemaMetadata, loadEndpointMetadata, loadDocumentMetadata,
+  loadPerformanceMetrics, loadSimilarityBoost, getQuestionEmbedding,
+  invalidateSourceEmbeddingCache,
+  WEIGHTS, NEUTRAL_PERF,
+  type ToolScore, type AmbiguousIntegration, type SmartRouteResult, type PerfMetrics,
+} from './smart-router-helpers'
 
-const STOPWORDS = new Set([
-  'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'pada', 'dengan', 'ini', 'itu',
-  'atau', 'adalah', 'akan', 'tidak', 'juga', 'saya', 'kita', 'ada', 'bisa',
-  'apa', 'bagaimana', 'siapa', 'kapan', 'dimana', 'kenapa', 'tolong', 'show',
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have',
-  'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may',
-  'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he',
-  'she', 'it', 'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why',
-  'how', 'all', 'each', 'every', 'some', 'any', 'no', 'not', 'as', 'of', 'at',
-  'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during',
-  'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out',
-  'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'please',
-  'tell', 'give', 'me', 'my', 'our', 'your', 'their', 'his', 'her', 'its',
-])
-
-// ponytail: common Indonesian→English data-term synonyms. NOT database names —
-// these are generic translation mappings so the schema keyword matcher can
-// find English column names (population, city, name) when the user asks in
-// Indonesian (populasi, kota, nama). Keep this small — it's a fallback, not
-// a full dictionary. Add entries when testing reveals gaps.
-const SYNONYMS: Record<string, string[]> = {
-  negara: ['country'],
-  negara2: ['country'],
-  kota: ['city'],
-  populasi: ['population'],
-  penduduk: ['population'],
-  bahasa: ['language'],
-  benua: ['continent'],
-  wilayah: ['region'],
-  jumlah: ['count', 'total', 'sum'],
-  rata: ['avg', 'average'],
-  tertinggi: ['max', 'highest', 'top'],
-  terendah: ['min', 'lowest', 'bottom'],
-  terbesar: ['max', 'largest', 'biggest'],
-  terkecil: ['min', 'smallest'],
-  terbanyak: ['max', 'most'],
-  terdikit: ['min', 'fewest', 'least'],
-  pelanggan: ['customer'],
-  produk: ['product'],
-  pesanan: ['order'],
-  gudang: ['warehouse', 'inventory'],
-  gaji: ['salary'],
-  karyawan: ['employee'],
-  faktur: ['invoice'],
-  pendapatan: ['revenue', 'income'],
-  film: ['film', 'movie'],
-  artis: ['artist'],
-  album: ['album'],
-  lagu: ['track', 'song'],
-  genre: ['genre'],
-}
-
-function expandWithSynonyms(tokens: string[]): string[] {
-  const expanded = [...tokens]
-  for (const token of tokens) {
-    const syns = SYNONYMS[token]
-    if (syns) expanded.push(...syns)
-  }
-  return expanded
-}
-
-export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
-}
-
-interface ToolScore {
-  tool: RouteDecision
-  schemaScore: number
-  perfScore: number
-  latencyScore: number
-  availability: number
-  similarityBoost: number
-  circuitBreakerTripped: boolean
-  finalScore: number
-  reason: string
-}
-
-export interface AmbiguousIntegration {
-  integrationId: string
-  integrationName: string
-  score: number
-}
-
-export interface SmartRouteResult {
-  decision: RouteDecision
-  reason: string
-  scores: ToolScore[]
-  integrationId?: string
-  llmUsed: boolean
-  // ponytail: when multiple integrations match equally, list them so the
-  // caller can ask the user to clarify which database they mean.
-  ambiguousIntegrations?: AmbiguousIntegration[]
-}
-
-interface PerfMetrics {
-  successRate: number
-  avgLatencyMs: number
-  total: number
-  recentFailRate: number
-}
-
-const NEUTRAL_PERF: PerfMetrics = {
-  successRate: 0.5,
-  avgLatencyMs: 2500,
-  total: 0,
-  recentFailRate: 0,
-}
-
-const WEIGHTS = {
-  schema: 0.35,
-  performance: 0.25,
-  latency: 0.15,
-  availability: 0.10,
-  similarity: 0.15,
-}
-
-// ponytail: source metadata embeddings cached for 5 min — sources rarely change,
-// and embedding all metadata on every query would be expensive. Invalidate when
-// integrations or documents are modified (call invalidateSourceEmbeddingCache()).
-let sourceEmbeddingCache: {
-  sql: { texts: string[]; embeddings: number[][] }
-  rag: { texts: string[]; embeddings: number[][] }
-  rest: { texts: string[]; embeddings: number[][] }
-  timestamp: number
-} | null = null
-
-const SOURCE_EMBEDDING_CACHE_TTL = 5 * 60 * 1000
-
-// ponytail: question embedding cached for 10s — within a single smartRoute call,
-// computeSemanticScore runs once per tool (5x) + pickBestIntegration. Without
-// this the question would be embedded 6x per query.
-let questionEmbeddingCache: { question: string; embedding: number[]; timestamp: number } | null = null
-const QUESTION_EMBEDDING_TTL = 10 * 1000
-
-export function invalidateSourceEmbeddingCache() {
-  sourceEmbeddingCache = null
-  questionEmbeddingCache = null
-}
-
-function safeParseColumns(raw: string): Array<{ name: string }> {
-  try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.map((c: Record<string, unknown>) => ({ name: String(c?.name ?? '') }))
-  } catch { return [] }
-}
-
-async function loadSourceTextsForEmbedding(): Promise<{
-  sql: string[]
-  rag: string[]
-  rest: string[]
-}> {
-  const [schemas, docs, endpoints] = await Promise.all([
-    db.integrationSchema.findMany({
-      where: { integration: { status: 'active' } },
-      select: { tableName: true, description: true, columns: true, integration: { select: { name: true } } },
-    }),
-    db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true, description: true } }),
-    db.restApiEndpoint.findMany({ where: { isEnabled: true, connector: { isActive: true } }, select: { path: true, description: true } }),
-  ])
-
-  const sql = schemas.map((s) => {
-    const cols = safeParseColumns(s.columns).map((c) => c.name).join(', ')
-    return `${s.integration.name} table ${s.tableName}: ${s.description ?? ''}. Columns: ${cols}`
-  })
-  const rag = docs.map((d) => `${d.name} [${d.category}]: ${d.description ?? ''}`)
-  const rest = endpoints.map((e) => `${e.path}: ${e.description ?? ''}`)
-
-  return { sql, rag, rest }
-}
-
-async function getSourceEmbeddings(): Promise<{
-  sql: { texts: string[]; embeddings: number[][] }
-  rag: { texts: string[]; embeddings: number[][] }
-  rest: { texts: string[]; embeddings: number[][] }
-} | null> {
-  const now = Date.now()
-  if (sourceEmbeddingCache && now - sourceEmbeddingCache.timestamp < SOURCE_EMBEDDING_CACHE_TTL) {
-    return sourceEmbeddingCache
-  }
-
-  const config = await getEmbeddingRuntimeConfig()
-  if (!config) return null
-
-  const texts = await loadSourceTextsForEmbedding()
-
-  // ponytail: embedding API may be unavailable (404, timeout, wrong model).
-  // Catch and fall back to keyword-only scoring — semantic is additive, not critical.
-  let sqlEmb: number[][] = []
-  let ragEmb: number[][] = []
-  let restEmb: number[][] = []
-  try {
-    [sqlEmb, ragEmb, restEmb] = await Promise.all([
-      texts.sql.length > 0 ? embedTexts(config, texts.sql) : Promise.resolve([]),
-      texts.rag.length > 0 ? embedTexts(config, texts.rag) : Promise.resolve([]),
-      texts.rest.length > 0 ? embedTexts(config, texts.rest) : Promise.resolve([]),
-    ])
-  } catch {
-    return null
-  }
-
-  const result = {
-    sql: { texts: texts.sql, embeddings: sqlEmb },
-    rag: { texts: texts.rag, embeddings: ragEmb },
-    rest: { texts: texts.rest, embeddings: restEmb },
-    timestamp: now,
-  }
-  sourceEmbeddingCache = result
-  return result
-}
-
-async function getQuestionEmbedding(question: string, config: EmbeddingRuntimeConfig): Promise<number[]> {
-  const now = Date.now()
-  if (questionEmbeddingCache && questionEmbeddingCache.question === question && now - questionEmbeddingCache.timestamp < QUESTION_EMBEDDING_TTL) {
-    return questionEmbeddingCache.embedding
-  }
-  try {
-    const emb = await embedTexts(config, [question])
-    const embedding = emb[0] ?? []
-    questionEmbeddingCache = { question, embedding, timestamp: now }
-    return embedding
-  } catch {
-    return []
-  }
-}
-
-async function computeSemanticScore(
-  question: string,
-  tool: RouteDecision,
-): Promise<number> {
-  const sources = await getSourceEmbeddings()
-  if (!sources) return 0
-
-  const config = await getEmbeddingRuntimeConfig()
-  if (!config) return 0
-
-  const sourceData = tool === 'SQL' ? sources.sql
-    : tool === 'RAG' ? sources.rag
-    : tool === 'REST' ? sources.rest
-    : null
-  if (!sourceData || sourceData.embeddings.length === 0) return 0
-
-  const queryEmb = await getQuestionEmbedding(question, config)
-  if (queryEmb.length === 0) return 0
-
-  let maxSim = 0
-  for (const emb of sourceData.embeddings) {
-    const sim = cosineSimilarity(queryEmb, emb)
-    if (sim > maxSim) maxSim = sim
-  }
-  return maxSim
-}
+export { tokenize, invalidateSourceEmbeddingCache, keywordOverlap }
+export type { SmartRouteResult, AmbiguousIntegration, ToolScore, PerfMetrics }
 
 export async function smartRoute(args: {
   question: string
@@ -296,8 +34,6 @@ export async function smartRoute(args: {
     selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 }),
   ])
 
-  // ponytail: detect explicit integration mentions in the question ("World Geography DB", "Chinook", etc.)
-  // Returns { integrationId } for a clear winner, { ambiguous } when multiple match equally.
   const mentionResult = await detectMentionedIntegration(args.question, expandedTokens)
   const mentionedIntegration = mentionResult?.integrationId
   const mentionedAmbiguous = mentionResult?.ambiguous
@@ -321,14 +57,8 @@ export async function smartRoute(args: {
         simBoost * WEIGHTS.similarity
 
     return {
-      tool,
-      schemaScore,
-      perfScore,
-      latencyScore,
-      availability,
-      similarityBoost: simBoost,
-      circuitBreakerTripped,
-      finalScore,
+      tool, schemaScore, perfScore, latencyScore, availability,
+      similarityBoost: simBoost, circuitBreakerTripped, finalScore,
       reason: buildReason(tool, schemaScore, perf, circuitBreakerTripped, simBoost),
     }
   })
@@ -363,11 +93,9 @@ export async function smartRoute(args: {
   let integrationId: string | undefined
   let ambiguousIntegrations: AmbiguousIntegration[] | undefined
   if (decision === 'SQL' && args.hasIntegrations) {
-    // ponytail: priority order — explicit name mention > user-selected > schema match
     if (mentionedIntegration) {
       integrationId = mentionedIntegration
     } else if (mentionedAmbiguous && mentionedAmbiguous.length > 1) {
-      // Explicit mention was ambiguous (e.g. "customer" matches multiple DBs)
       ambiguousIntegrations = mentionedAmbiguous
     } else if (args.preferredIntegrationId) {
       integrationId = args.preferredIntegrationId
@@ -391,13 +119,8 @@ async function scoreSchemaMatch(
   question: string,
 ): Promise<number> {
   if (tokens.length === 0) return 0
-
   const keywordScore = keywordScoreForTool(tool, tokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
   const semanticScore = await computeSemanticScore(question, tool)
-
-  // ponytail: blend 40% keyword + 60% semantic. Keyword catches exact matches
-  // (table names, column names), semantic catches conceptual matches ("movies" → film table).
-  // When no embedding config available, semanticScore=0, falls back to keyword-only.
   return keywordScore * 0.4 + semanticScore * 0.6
 }
 
@@ -410,220 +133,16 @@ function keywordScoreForTool(
   pluginRelevant: ScoredPlugin[] = [],
 ): number {
   switch (tool) {
-    case 'SQL':
-      return keywordOverlap(tokens, schemaMeta)
-    case 'REST':
-      return keywordOverlap(tokens, endpointMeta)
-    case 'RAG':
-      return keywordOverlap(tokens, docMeta)
-    case 'PLUGIN':
-      return pluginRelevant.length > 0 ? pluginRelevant[0].score : 0
+    case 'SQL': return keywordOverlap(tokens, schemaMeta)
+    case 'REST': return keywordOverlap(tokens, endpointMeta)
+    case 'RAG': return keywordOverlap(tokens, docMeta)
+    case 'PLUGIN': return pluginRelevant.length > 0 ? pluginRelevant[0].score : 0
     case 'CHAT':
-    case 'CONTEXTUAL_CHAT':
-      return 0.1
-    default:
-      return 0
+    case 'CONTEXTUAL_CHAT': return 0.1
+    default: return 0
   }
 }
 
-export function keywordOverlap(tokens: string[], metadata: string[]): number {
-  if (metadata.length === 0 || tokens.length === 0) return 0
-  const metaSet = new Set(metadata)
-  let matches = 0
-  for (const token of tokens) {
-    if (metaSet.has(token)) {
-      matches++
-      continue
-    }
-    for (const meta of metadata) {
-      if (meta.includes(token) || token.includes(meta)) {
-        matches++
-        break
-      }
-    }
-  }
-  return Math.min(matches / tokens.length, 1)
-}
-
-function checkAvailability(
-  tool: RouteDecision,
-  hasIntegrations: boolean,
-  hasDocuments: boolean,
-  hasRestApis: boolean,
-): number {
-  switch (tool) {
-    case 'SQL':
-      return hasIntegrations ? 1 : 0
-    case 'RAG':
-      return hasDocuments ? 1 : 0
-    case 'REST':
-      return hasRestApis ? 1 : 0
-    case 'PLUGIN':
-      return 1
-    case 'CHAT':
-    case 'CONTEXTUAL_CHAT':
-      return 1
-    default:
-      return 0
-  }
-}
-
-function buildReason(
-  tool: RouteDecision,
-  schemaScore: number,
-  perf: PerfMetrics,
-  circuitBreaker: boolean,
-  simBoost: number,
-): string {
-  if (circuitBreaker) return `${tool} circuit breaker tripped (fail rate ${(perf.recentFailRate * 100).toFixed(0)}%)`
-  const parts: string[] = []
-  if (schemaScore > 0.3) parts.push(`schema match ${(schemaScore * 100).toFixed(0)}%`)
-  if (perf.total > 0) parts.push(`success ${perf.successRate * 100 | 0}% (${perf.total} runs)`)
-  if (simBoost > 0.2) parts.push(`similar past query boost ${(simBoost * 100).toFixed(0)}%`)
-  if (parts.length === 0) return `${tool} — no strong signal, neutral`
-  return `${tool}: ${parts.join(', ')}`
-}
-
-async function loadSchemaMetadata(): Promise<string[]> {
-  const schemas = await db.integrationSchema.findMany({
-    where: { integration: { status: 'active' } },
-    select: { tableName: true, columns: true, integration: { select: { name: true, provider: true } } },
-  })
-  const keywords: string[] = []
-  for (const s of schemas) {
-    keywords.push(s.tableName.toLowerCase())
-    // ponytail: include integration name words so "world" or "chinook" in the question
-    // boosts SQL routing toward the right integration
-    if (s.integration?.name) {
-      for (const word of s.integration.name.toLowerCase().split(/\s+/)) {
-        if (word.length >= 3) keywords.push(word)
-      }
-    }
-    try {
-      const cols = JSON.parse(s.columns) as Array<{ name?: string; type?: string }>
-      for (const c of cols) {
-        if (c.name) keywords.push(c.name.toLowerCase())
-      }
-    } catch { /* skip malformed */ }
-  }
-  return keywords
-}
-
-async function loadEndpointMetadata(): Promise<string[]> {
-  const endpoints = await db.restApiEndpoint.findMany({
-    where: { isEnabled: true, connector: { isActive: true } },
-    select: { path: true, description: true },
-  })
-  const keywords: string[] = []
-  for (const e of endpoints) {
-    for (const segment of e.path.split('/')) {
-      const seg = segment.toLowerCase().replace(/[^a-z0-9]/g, '')
-      if (seg.length >= 3) keywords.push(seg)
-    }
-    if (e.description) {
-      for (const word of e.description.toLowerCase().split(/\s+/)) {
-        const w = word.replace(/[^a-z0-9]/g, '')
-        if (w.length >= 3 && !STOPWORDS.has(w)) keywords.push(w)
-      }
-    }
-  }
-  return keywords
-}
-
-async function loadDocumentMetadata(): Promise<string[]> {
-  const docs = await db.document.findMany({
-    where: { status: 'ready', isEnabled: true },
-    select: { name: true, category: true, description: true },
-  })
-  const keywords: string[] = []
-  for (const d of docs) {
-    for (const word of d.name.toLowerCase().split(/[^a-z0-9]+/)) {
-      if (word.length >= 3) keywords.push(word)
-    }
-    if (d.category) keywords.push(d.category.toLowerCase())
-    if (d.description) {
-      for (const word of d.description.toLowerCase().split(/\s+/)) {
-        const w = word.replace(/[^a-z0-9]/g, '')
-        if (w.length >= 3 && !STOPWORDS.has(w)) keywords.push(w)
-      }
-    }
-  }
-  return keywords
-}
-
-async function loadPerformanceMetrics(): Promise<Record<string, PerfMetrics>> {
-  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-  const types = ['SQL', 'RAG', 'REST_API', 'CHAT', 'PLUGIN']
-  const result: Record<string, PerfMetrics> = {}
-
-  for (const type of types) {
-    const [recent, last10] = await Promise.all([
-      db.toolRun.findMany({
-        where: { type, createdAt: { gte: dayAgo } },
-        select: { status: true, latencyMs: true },
-        orderBy: { createdAt: 'desc' },
-        take: 50,
-      }),
-      db.toolRun.findMany({
-        where: { type },
-        select: { status: true },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-    ])
-
-    if (recent.length === 0) {
-      result[type === 'REST_API' ? 'REST' : type] = NEUTRAL_PERF
-      continue
-    }
-
-    const successCount = recent.filter((r) => r.status === 'success').length
-    const latencies = recent.filter((r) => r.status === 'success' && r.latencyMs != null).map((r) => r.latencyMs!)
-    const failCount10 = last10.filter((r) => r.status === 'error' || r.status === 'blocked').length
-
-    result[type === 'REST_API' ? 'REST' : type] = {
-      successRate: successCount / recent.length,
-      avgLatencyMs: latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 2500,
-      total: recent.length,
-      recentFailRate: failCount10 / 10,
-    }
-  }
-
-  return result
-}
-
-async function loadSimilarityBoost(
-  tokens: string[],
-): Promise<Record<string, number>> {
-  if (tokens.length === 0) return {}
-  const recentRuns = await db.toolRun.findMany({
-    where: { status: 'success' },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    select: { type: true, inputSummary: true },
-  })
-
-  const boosts: Record<string, number> = { SQL: 0, RAG: 0, REST: 0, CHAT: 0, PLUGIN: 0 }
-  for (const run of recentRuns) {
-    const cleanSummary = (run.inputSummary ?? '').replace(/^\[Session started:[^\]]*\]\s*\[Current time:[^\]]*\]\s*/i, '').trim()
-    const runTokens = tokenize(cleanSummary)
-    if (runTokens.length === 0) continue
-    const overlap = tokens.filter((t) => runTokens.includes(t)).length
-    if (overlap === 0) continue
-    const similarity = overlap / Math.max(tokens.length, runTokens.length)
-    const key = run.type === 'REST_API' ? 'REST' : run.type
-    if (boosts[key] !== undefined) {
-      boosts[key] = Math.max(boosts[key], similarity)
-    }
-  }
-  return boosts
-}
-
-// ponytail: detect when the user explicitly mentions a database by name or
-// by its table/column names. Fully dynamic — pulls integration names + schema
-// keywords from the DB, no hardcoded provider keywords. When the user says
-// "Di World Geography DB" or "which country has the most cities", the schema
-// keywords (country, city, population, etc.) uniquely identify the integration.
 async function detectMentionedIntegration(
   question: string,
   tokens: string[],
@@ -633,16 +152,13 @@ async function detectMentionedIntegration(
     include: { schemas: { select: { tableName: true, columns: true } } },
   })
   if (integrations.length === 0) return undefined
-  if (integrations.length === 1) return undefined // only one — no ambiguity to resolve
+  if (integrations.length === 1) return undefined
 
   const lower = question.toLowerCase()
-  // ponytail: tokens are passed in (already expanded with synonyms)
 
-  // Priority 1: explicit integration name match ("World Geography DB", "Chinook")
   for (const integ of integrations) {
     const nameLower = integ.name.toLowerCase()
     if (lower.includes(nameLower)) return { integrationId: integ.id }
-    // Match significant words from the name (skip generic words)
     const significantWords = nameLower.split(/\s+/).filter(
       (w) => w.length >= 4 && !STOPWORDS.has(w) && !['db', 'database', 'data', 'store', 'media'].includes(w),
     )
@@ -651,10 +167,6 @@ async function detectMentionedIntegration(
     }
   }
 
-  // Priority 2: schema keyword match — score each integration by how many
-  // question tokens match its table names + column names. The integration
-  // with the highest unique keyword overlap wins. This is dynamic — works
-  // for any database without hardcoding domain keywords.
   const scored = integrations.map((integ) => {
     const schemaKeywords = new Set<string>()
     for (const s of integ.schemas) {
@@ -668,9 +180,7 @@ async function detectMentionedIntegration(
     }
     let matches = 0
     for (const token of tokens) {
-      // Direct match
       if (schemaKeywords.has(token)) { matches++; continue }
-      // Partial match (token contains or is contained by a schema keyword)
       for (const kw of schemaKeywords) {
         if (kw.length >= 4 && (kw.includes(token) || token.includes(kw))) {
           matches++
@@ -682,11 +192,9 @@ async function detectMentionedIntegration(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  // Only return if there's a clear winner (top score > 0 and > 1.5x the second)
   if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score * 1.5)) {
     return { integrationId: scored[0].id }
   }
-  // Ambiguous: top 2 integrations have similar scores (within 80%)
   if (scored[0].score > 0 && scored[1] && scored[1].score >= scored[0].score * 0.8) {
     const topScore = scored[0].score
     const ambiguous = scored
@@ -697,9 +205,6 @@ async function detectMentionedIntegration(
   return undefined
 }
 
-// ponytail: pickBestIntegration with ambiguity detection.
-// Returns { integrationId } when there's a clear winner,
-// or { ambiguous } when multiple integrations match equally — caller asks user to clarify.
 async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
   question: string,
@@ -711,7 +216,6 @@ async function pickBestIntegrationWithAmbiguity(
   if (integrations.length === 0) return undefined
   if (integrations.length === 1) return { integrationId: integrations[0].id }
 
-  // ponytail: build per-integration text for semantic embedding (name + table descriptions)
   const integTexts = integrations.map((integ) => {
     const parts: string[] = [integ.name]
     for (const s of integ.schemas) {
@@ -720,7 +224,6 @@ async function pickBestIntegrationWithAmbiguity(
     return parts.join('. ')
   })
 
-  // Compute semantic scores (cosine similarity of question vs each integration text)
   let semanticScores: number[] = integrations.map(() => 0)
   const config = await getEmbeddingRuntimeConfig()
   if (config && question.trim().length > 0) {
@@ -734,7 +237,7 @@ async function pickBestIntegrationWithAmbiguity(
           return cosineSimilarity(queryEmb, emb)
         })
       } catch {
-        // ponytail: embedding API unavailable — fall back to keyword-only
+        // embedding API unavailable — fall back to keyword-only
       }
     }
   }
@@ -758,25 +261,17 @@ async function pickBestIntegrationWithAmbiguity(
     }
     const keywordScore = tokens.length > 0 ? Math.min(matches / tokens.length, 1) : 0
     const semanticScore = semanticScores[idx] ?? 0
-    // ponytail: blend 40% keyword + 60% semantic — same ratio as scoreSchemaMatch.
-    // When no embedding config, semanticScore=0, falls back to keyword-only.
     const score = keywordScore * 0.4 + semanticScore * 0.6
     return { id: integ.id, name: integ.name, score }
   })
 
   scored.sort((a, b) => b.score - a.score)
 
-  // No matches at all — return undefined (caller's preferred integration takes priority)
   if (scored[0].score === 0) return undefined
-
-  // Clear winner: top score is > 1.5x the second
   if (scored.length === 1 || scored[0].score > scored[1].score * 1.5) {
     return { integrationId: scored[0].id }
   }
 
-  // Ambiguous: top 2 integrations have very similar scores (within 20%)
-  // Only flag as ambiguous when it's genuinely unclear — not when one is
-  // clearly better but not 2x better.
   const topScore = scored[0].score
   const secondScore = scored[1].score
   if (secondScore >= topScore * 0.8) {
@@ -786,11 +281,9 @@ async function pickBestIntegrationWithAmbiguity(
     return { ambiguous }
   }
 
-  // Not ambiguous — top is clearly better but not 1.5x. Pick the top.
   return { integrationId: scored[0].id }
 }
 
-// ponytail: keep the old export for backward compat (tests, routing scores endpoint)
 export async function pickBestIntegration(
   tokens: string[],
   question?: string,
@@ -838,14 +331,8 @@ export async function getRoutingScores(): Promise<{
         availability * WEIGHTS.availability
 
     return {
-      tool,
-      schemaScore,
-      perfScore: perf.successRate,
-      latencyScore,
-      availability,
-      similarityBoost: 0,
-      circuitBreakerTripped,
-      finalScore,
+      tool, schemaScore, perfScore: perf.successRate, latencyScore, availability,
+      similarityBoost: 0, circuitBreakerTripped, finalScore,
       reason: buildReason(tool, schemaScore, perf, circuitBreakerTripped, 0),
       perfMetrics: perf,
     }

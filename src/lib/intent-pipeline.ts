@@ -41,7 +41,7 @@
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 import { retrieveRelevantChunks, type RetrievedChunk } from '@/lib/rag'
-import type { ChatHistoryEntry } from '@/lib/tool-router'
+import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
 export interface IntentAnalysis {
   /** Can we answer/retrieve with the information currently available? */

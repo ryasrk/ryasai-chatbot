@@ -1,0 +1,40 @@
+{{- if .Values.canary.enabled }}
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: {{ include "chatbot.fullname" . }}
+  labels:
+    {{- include "chatbot.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "chatbot.fullname" . }}
+  service:
+    port: 3000
+    targetPort: 3000
+    gateways:
+      - public-gateway.istio-system.svc.cluster.local
+    hosts:
+      - {{ (index .Values.ingress.hosts 0).host | quote }}
+  analysis:
+    interval: {{ .Values.canary.analysisInterval | default "1m" }}
+    threshold: {{ .Values.canary.maxFailures | default 5 }}
+    maxWeight: {{ .Values.canary.maxTrafficWeight | default 50 }}
+    stepWeight: {{ .Values.canary.stepWeight | default 10 }}
+    metrics:
+      - name: request-success-rate
+        thresholdRange:
+          min: 99
+        interval: 1m
+      - name: request-duration
+        thresholdRange:
+          max: 500
+        interval: 30s
+    webhooks:
+      - name: load-test
+        type: rollout
+        url: {{ .Values.canary.loadTestUrl | default "http://flagger-loadtester.test/" }}
+        metadata:
+          cmd: "hey -z 1m -q 10 -c 2 http://{{ include "chatbot.fullname" . }}.{{ .Release.Namespace }}:3000/api/v1/health"
+{{- end }}

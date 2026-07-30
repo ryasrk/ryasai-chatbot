@@ -14,6 +14,7 @@
  *   6. Whitelist only `SELECT` (with optional WITH/CTE) as the leading keyword.
  */
 import { SQL_MAX_LIMIT } from '@/lib/constants'
+import { inc } from './metrics'
 
 export interface GuardrailResult {
   ok: boolean
@@ -74,6 +75,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     }
   }
   if (detected.length > 0) {
+    inc('guardrail_blocks_total', { type: 'dangerous_pattern' })
     return {
       ok: false,
       sanitized: '',
@@ -123,6 +125,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
   }
 
   if (detected.length > 0) {
+    inc('guardrail_blocks_total', { type: 'mutation_keyword' })
     return {
       ok: false,
       sanitized: '',
