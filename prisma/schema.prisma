@@ -24,14 +24,17 @@ model User {
   avatarColor     String   @default("oklch(0.55 0.18 250)")
   isActive        Boolean  @default(true)
   sessionVersion  Int      @default(0)
+  ssoSubject      String?  // OIDC sub claim — links SSO identity
+  role            String   @default("admin") // admin | analyst | viewer
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  chatSessions ChatSession[]
-  auditLogs    AuditLog[]
-  messages     ChatMessage[]
-  queries      QueryHistory[]
-  agentRuns    AgentRun[]
+  chatSessions  ChatSession[]
+  auditLogs     AuditLog[]
+  messages      ChatMessage[]
+  queries       QueryHistory[]
+  agentRuns     AgentRun[]
+  savedPrompts  SavedPrompt[]
 }
 
 // ------------------------------------------------------------------
@@ -109,10 +112,12 @@ model Document {
   cognifyStatus  String?   // null | processing | completed | failed
   cognifyError   String?
   cognifiedAt    DateTime?
+  version        Int      @default(1)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  chunks  DocumentChunk[]
+  chunks   DocumentChunk[]
+  versions DocumentVersion[]
 }
 
 model DocumentChunk {
@@ -527,4 +532,41 @@ model LlmUsageLog {
   @@index([createdAt])
   @@index([purpose])
   @@index([model])
+}
+
+// ------------------------------------------------------------------
+// Document versioning — snapshot history for restore
+// ------------------------------------------------------------------
+model DocumentVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  version     Int
+  contentHash String
+  chunkCount  Int
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([version])
+}
+
+// ------------------------------------------------------------------
+// SavedPrompt — reusable prompt library
+// ------------------------------------------------------------------
+model SavedPrompt {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  content   String
+  category  String   @default("general")
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([category])
+  @@index([isPublic])
 }

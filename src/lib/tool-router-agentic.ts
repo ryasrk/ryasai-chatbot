@@ -4,6 +4,7 @@ import { evaluateAnswerConfidence } from '@/lib/intent-pipeline'
 import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { summarize } from '@/lib/tool-utils'
+import { createTokenBudget, type TokenBudget } from '@/lib/agentic-budget'
 import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('tool-router')
 
@@ -74,6 +75,7 @@ export async function runAgenticLoop(
     sessionId?: string
     integrationId?: string
     chatHistory?: ChatHistoryEntry[]
+    budget?: TokenBudget
   },
   runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] }) => Promise<CompletionResult>,
 ): Promise<AgenticIterationResult> {
@@ -81,6 +83,7 @@ export async function runAgenticLoop(
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
+  const budget = args.budget ?? createTokenBudget()
 
   for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
     const contextualQuestion = accumulatedEvidence
@@ -95,6 +98,13 @@ export async function runAgenticLoop(
       chatHistory: args.chatHistory,
     })
 
+    if (result.usage) budget.track(result.usage)
+    if (budget.isExhausted()) {
+      log.info('Agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
+      confidenceHistory.push({ confident: false, confidence: 0, reason: 'token budget exhausted' })
+      return { answer: `${result.answer}\n\n[Note: token budget exhausted — answer may be incomplete.]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+    }
+
     allToolRuns.push(...result.toolRuns)
     if (result.citations) allCitations.push(...result.citations)
 
@@ -102,10 +112,21 @@ export async function runAgenticLoop(
       return { answer: result.answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
     }
 
+    // Reflexion: self-critique the answer before confidence eval (opt-in).
+    let answer = result.answer
+    if (process.env.REFLEXION_ENABLED === 'true') {
+      const { selfCritique } = await import('@/lib/reflexion')
+      const critique = await selfCritique(args.question, answer, accumulatedEvidence + `\n${result.answer}`)
+      if (critique.needsRevision) {
+        answer = critique.revisedAnswer
+        log.info('Reflexion revised answer', { iteration: iteration + 1, critique: critique.critique.slice(0, 100) })
+      }
+    }
+
     const toolEvidence = result.toolRuns
       .map((tr) => `[${tr.type}] ${tr.outputSummary?.slice(0, 300) ?? ''}`)
       .join('\n')
-    accumulatedEvidence += `\n${toolEvidence}\n[Answer so far: ${result.answer.slice(0, 1000)}]`
+    accumulatedEvidence += `\n${toolEvidence}\n[Answer so far: ${answer.slice(0, 1000)}]`
 
     const totalEvidenceLength = accumulatedEvidence.length
     const hasError = result.toolRuns.some((tr) => tr.status === 'error' || tr.status === 'blocked')
@@ -120,14 +141,23 @@ export async function runAgenticLoop(
     if (hasSubstantialData && !hasError) {
       confidenceHistory.push({ confident: true, confidence: 0.85, reason: 'substantial evidence gathered (heuristic)' })
       log.info('Agentic loop confident (heuristic: substantial evidence)', { iteration: iteration + 1, evidenceLength: totalEvidenceLength })
-      return { answer: result.answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      return { answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
     }
 
     const confidence = await evaluateAnswerConfidence({ question: args.question, evidence: accumulatedEvidence })
     confidenceHistory.push({ confident: confidence.confident, confidence: confidence.confidence, reason: confidence.reason })
 
     if (confidence.confident) {
-      return { answer: result.answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
+        const { checkAlignment } = await import('@/lib/alignment-check')
+        const alignment = await checkAlignment(answer, args.question)
+        if (alignment.risk === 'high') {
+          log.info('Agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
+          confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
+          return { answer: `${answer}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+        }
+      }
+      return { answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
     }
 
     const toolHint = confidence.nextToolHint && confidence.nextToolHint !== 'CHAT'
@@ -155,6 +185,7 @@ export async function runStreamingAgenticLoop(
     integrationId?: string
     sessionId?: string
     chatHistory?: ChatHistoryEntry[]
+    onConfidence?: (info: { iteration: number; confidence: number; reason: string; confident: boolean }) => void
   },
   runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] }) => Promise<StreamingCompletionResult>,
 ): Promise<StreamingCompletionResult> {
@@ -202,11 +233,13 @@ export async function runStreamingAgenticLoop(
 
     if (hasSubstantialData && !hasError) {
       log.info('Streaming agentic loop confident (heuristic)', { iteration: iteration + 1 })
+      args.onConfidence?.({ iteration: iteration + 1, confidence: 0.85, reason: 'substantial evidence gathered (heuristic)', confident: true })
       async function* answerStream() { yield answerText }
       return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
     }
 
     const confidence = await evaluateAnswerConfidence({ question: args.question, evidence: accumulatedEvidence })
+    args.onConfidence?.({ iteration: iteration + 1, confidence: confidence.confidence, reason: confidence.reason, confident: confidence.confident })
 
     if (confidence.confident) {
       async function* answerStream() { yield answerText }

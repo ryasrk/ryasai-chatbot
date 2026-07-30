@@ -25,7 +25,7 @@ const traces: LlmTrace[] = []
 import { inc, observe, counter } from './metrics'
 counter('llm_errors_total', 'Total LLM call errors')
 
-export function traceLlmCall(trace: Omit<LlmTrace, 'id' | 'timestamp'>): void {
+export function traceLlmCall(trace: Omit<LlmTrace, 'id' | 'timestamp'>): string {
   const entry: LlmTrace = { ...trace, id: crypto.randomUUID(), timestamp: new Date() }
   if (traces.length >= RING_MAX) traces.shift()
   traces.push(entry)
@@ -38,6 +38,7 @@ export function traceLlmCall(trace: Omit<LlmTrace, 'id' | 'timestamp'>): void {
   if (trace.error) {
     inc('llm_errors_total', { provider: trace.provider })
   }
+  return entry.id
 }
 
 export function getRecentTraces(limit: number = 50): LlmTrace[] {

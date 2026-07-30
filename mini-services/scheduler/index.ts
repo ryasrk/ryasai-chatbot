@@ -16,6 +16,7 @@ import { nextRun } from '../../src/lib/cron'
 import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
 import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
+import { emitScheduleRunComplete } from '../../src/lib/schedule-events'
 
 const POLL_INTERVAL_SEC =
   Number.parseInt(process.env.SCHEDULER_POLL_INTERVAL_SEC ?? '60', 10) || 60
@@ -222,28 +223,35 @@ async function executeRun(run: {
     })
   }
 
-  // If a notification channel is attached and the run produced an answer,
-  // deliver it. Failures are recorded into lastResult but never abort the run.
+  // If a notification channel is attached, deliver success or failure
+  // notification. Failures are recorded into lastResult but never abort the run.
   let notification: NotificationResult | null = null
-  if (success && run.notificationConfigId) {
+  if (run.notificationConfigId) {
     try {
       const cfg = await db.notificationConfig.findFirst({
         where: { id: run.notificationConfigId },
         select: { id: true, encryptedConfig: true, isActive: true },
       })
       if (cfg?.isActive) {
-        // resultSummary is a JSON string with {answer, ...}; pull answer out.
-        let answer = ''
-        try {
-          answer = (JSON.parse(resultSummary).answer as string) ?? ''
-        } catch {
-          answer = ''
+        if (success) {
+          let answer = ''
+          try {
+            answer = (JSON.parse(resultSummary).answer as string) ?? ''
+          } catch {
+            answer = ''
+          }
+          notification = await sendNotificationWithRetry({
+            configEncrypted: cfg.encryptedConfig,
+            message: answer || run.prompt,
+            title: run.name,
+          })
+        } else if (lastError) {
+          notification = await sendNotificationWithRetry({
+            configEncrypted: cfg.encryptedConfig,
+            message: `Scheduled run "${run.name}" failed: ${lastError}`,
+            title: run.name,
+          })
         }
-        notification = await sendNotificationWithRetry({
-          configEncrypted: cfg.encryptedConfig,
-          message: answer || run.prompt,
-          title: run.name,
-        })
         // Stamp lastUsedAt best-effort.
         void db.notificationConfig
           .update({ where: { id: cfg.id }, data: { lastUsedAt: new Date() } })
@@ -281,6 +289,16 @@ async function executeRun(run: {
     console.error(`[scheduler] failed to update run "${run.name}":`, e)
     return
   }
+
+  // Emit schedule event for SSE consumers (real-time monitoring).
+  emitScheduleRunComplete({
+    runId: run.id,
+    name: run.name,
+    status: success ? 'success' : 'error',
+    error: lastError ?? undefined,
+    timestamp: now,
+    latencyMs: Date.now() - now.getTime(),
+  })
 
   // Persist execution log — full answer + tool runs for history + export.
   try {

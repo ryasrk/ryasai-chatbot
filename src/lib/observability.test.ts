@@ -13,7 +13,7 @@ afterEach(() => {
 describe('observability — in-memory ring buffer + stats', () => {
   test('traceLlmCall records a trace retrievable via getRecentTraces', () => {
     const purpose = `test-unique-${Date.now()}-${Math.random()}`
-    traceLlmCall({
+    const traceId = traceLlmCall({
       purpose,
       provider: 'OPENAI_COMPATIBLE',
       model: 'test-model',
@@ -28,6 +28,7 @@ describe('observability — in-memory ring buffer + stats', () => {
     expect(recent[0].model).toBe('test-model')
     expect(recent[0].latencyMs).toBe(42)
     expect(recent[0].id).toBeTruthy()
+    expect(recent[0].id).toBe(traceId)
     expect(recent[0].timestamp).toBeInstanceOf(Date)
   })
 
@@ -302,5 +303,35 @@ describe('observability — postLangfuseScore', () => {
     global.fetch = mock(() => Promise.reject(new Error('network down'))) as unknown as typeof fetch
 
     await postLangfuseScore({ name: 'faithfulness', value: 0.5 })
+  })
+
+  test('traceLlmCall returns traceId that links to postLangfuseScore', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+    process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+    process.env.LANGFUSE_BASEURL = 'https://lf.example.com'
+
+    const fetchMock = mock(() =>
+      Promise.resolve({ ok: true } as Response),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const traceId = traceLlmCall({
+      purpose: `link-${Math.random()}`,
+      provider: 'x',
+      model: 'm',
+      inputPreview: '',
+      outputPreview: '',
+      latencyMs: 5,
+    })
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    await postLangfuseScore({ name: 'faithfulness', value: 0.9, traceId })
+
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][]
+    const scoreCalls = calls.filter((c) => c[0].includes('/api/public/scores'))
+    expect(scoreCalls.length).toBe(1)
+    const body = JSON.parse(scoreCalls[0][1].body as string)
+    expect(body.traceId).toBe(traceId)
   })
 })

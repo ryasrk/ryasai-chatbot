@@ -103,6 +103,56 @@ Default login: `admin@ryas.ai` / `admin12345`
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    A[User query] --> B[Intent Pipeline]
+    B --> B1[Query Rewriter]
+    B --> B2[Contextual Recall]
+    B --> B3[DB metadata queries]
+    B --> B4[Intent Analyzer]
+    B1 & B2 & B3 & B4 --> C[Smart Router]
+    C -->|40% keyword + 60% embedding| D{Decision}
+    D -->|SQL| E1[SQL Branch]
+    D -->|RAG| E2[RAG Branch]
+    D -->|REST| E3[REST Branch]
+    D -->|CHAT| E4[Chat Branch]
+    D -->|CONTEXTUAL_CHAT| E5[Contextual Chat]
+    E1 & E2 & E3 & E4 & E5 --> F[Answer]
+    D -->|multi-step| G[Agentic Loop]
+    G --> G1[Route]
+    G1 --> G2[Execute]
+    G2 --> G3{Confidence high?}
+    G3 -->|no, max 3| G1
+    G3 -->|yes| G4[Synthesize + Stream]
+    G4 --> F
+```
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as Router
+    participant T as Tool
+    participant L as LLM
+    U->>R: Question
+    R->>L: Intent analysis
+    L-->>R: Needs retrieval? + clarification?
+    R->>T: Route (SQL / RAG / REST / Chat)
+    T->>L: Execute (gen SQL / retrieve docs / call API)
+    L-->>T: Result
+    T->>L: Evaluate confidence
+    L-->>T: Confidence score
+    alt Confidence low AND iterations < 3
+        T->>R: Next tool hint
+        R->>T: Route next tool
+    else Confidence high
+        T->>L: Synthesize final answer
+        L-->>U: Streamed answer + citations
+    end
+```
+
+<details>
+<summary>ASCII architecture diagram (fallback)</summary>
+
 ```
 User query
    │
@@ -135,6 +185,8 @@ User query
        │   └─ Plugin tools (plugin:weather, plugin:web_search, ...)
        └─ synthesizeAnswer → stream final answer
 ```
+
+</details>
 
 ## Commands
 

@@ -199,7 +199,7 @@ function clampScore(n: number): number {
 // Main evaluation runner.
 // ---------------------------------------------------------------------------
 
-async function runRagEvaluation(limit?: number): Promise<void> {
+async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promise<void> {
   const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     console.error('No LLM configured — cannot run RAGAS evaluation.')
@@ -278,16 +278,57 @@ async function runRagEvaluation(limit?: number): Promise<void> {
   const report = { summary, results, timestamp: new Date().toISOString() }
   writeFileSync('benchmark/results/ragas-report.json', JSON.stringify(report, null, 2))
   console.log('\nReport saved to benchmark/results/ragas-report.json')
+
+  if (ciMode) checkCIThresholds(summary)
+}
+
+function checkCIThresholds(summary: {
+  avgFaithfulness: number
+  avgAnswerRelevance: number
+  avgContextPrecision: number
+  avgContextRecall: number
+}): void {
+  const thresholds = {
+    faithfulness: Number(process.env.RAGAS_MIN_FAITHFULNESS ?? 0.85),
+    answerRelevance: Number(process.env.RAGAS_MIN_ANSWER_RELEVANCE ?? 0.80),
+    contextPrecision: Number(process.env.RAGAS_MIN_CONTEXT_PRECISION ?? 0.80),
+    contextRecall: Number(process.env.RAGAS_MIN_CONTEXT_RECALL ?? 0.80),
+  }
+
+  const failures: string[] = []
+  if (summary.avgFaithfulness < thresholds.faithfulness) {
+    failures.push(`Faithfulness ${summary.avgFaithfulness.toFixed(3)} < ${thresholds.faithfulness}`)
+  }
+  if (summary.avgAnswerRelevance < thresholds.answerRelevance) {
+    failures.push(`Answer Relevance ${summary.avgAnswerRelevance.toFixed(3)} < ${thresholds.answerRelevance}`)
+  }
+  if (summary.avgContextPrecision < thresholds.contextPrecision) {
+    failures.push(`Context Precision ${summary.avgContextPrecision.toFixed(3)} < ${thresholds.contextPrecision}`)
+  }
+  if (summary.avgContextRecall < thresholds.contextRecall) {
+    failures.push(`Context Recall ${summary.avgContextRecall.toFixed(3)} < ${thresholds.contextRecall}`)
+  }
+
+  if (failures.length > 0) {
+    console.error('\n❌ CI threshold check FAILED:')
+    for (const f of failures) console.error(`  - ${f}`)
+    process.exit(1)
+  }
+
+  console.log('\n✅ CI threshold check passed')
 }
 
 // CLI entry
-const args = process.argv.slice(2)
-const limitArg = args.find((a) => a.startsWith('--limit='))
-const limit = limitArg ? parseInt(limitArg.split('=')[1]) : undefined
+if (import.meta.main) {
+  const args = process.argv.slice(2)
+  const limitArg = args.find((a) => a.startsWith('--limit='))
+  const limit = limitArg ? parseInt(limitArg.split('=')[1]) : undefined
+  const ciMode = args.includes('--ci')
 
-runRagEvaluation(limit).catch((e) => {
-  console.error('RAG evaluation failed:', e)
-  process.exit(1)
-})
+  runRagEvaluation(limit, ciMode).catch((e) => {
+    console.error('RAG evaluation failed:', e)
+    process.exit(1)
+  })
+}
 
-export { runRagEvaluation, scoreFaithfulness, scoreAnswerRelevance, scoreContextPrecision, scoreContextRecall }
+export { runRagEvaluation, checkCIThresholds, scoreFaithfulness, scoreAnswerRelevance, scoreContextPrecision, scoreContextRecall }

@@ -9,6 +9,7 @@ import {
 import { getVectorStoreRuntimeConfig, searchVectorStore } from '@/lib/vector-stores'
 import { searchFtsChunkIds } from '@/lib/rag-fts'
 import { dualLevelRetrieval } from '@/lib/knowledge-graph'
+import { buildCitationTrail, type CitationTrail } from '@/lib/citation-trail'
 import { cacheGet, cacheSet, cacheDel } from '@/lib/redis'
 import {
   RAG_CACHE_TTL_MS,
@@ -39,7 +40,8 @@ export async function invalidateRagCache(): Promise<void> {
 export async function retrieveRelevantChunks(args: {
   query: string
   topK: number
-}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number; graphContext: string }> {
+  _skipDecompose?: boolean
+}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number; graphContext: string; citationTrail?: CitationTrail[] }> {
   const queryTokens = tokenize(args.query)
   if (queryTokens.length === 0) {
     return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
@@ -53,11 +55,33 @@ export async function retrieveRelevantChunks(args: {
     return cached
   }
 
+  // Sub-query decomposition: complex multi-part questions → parallel retrieval + merge.
+  if (!args._skipDecompose) {
+    const { decomposeQuery, mergeRetrievedResults } = await import('@/lib/hyde')
+    const subQueries = decomposeQuery(args.query)
+    if (subQueries.length > 1) {
+      const subResults = await Promise.all(
+        subQueries.map((q) => retrieveRelevantChunks({ query: q, topK: args.topK, _skipDecompose: true })),
+      )
+      const merged = mergeRetrievedResults(subResults)
+      _cacheMisses += 1
+      await cacheSet(cacheKey, merged, Math.floor(RAG_CACHE_TTL_MS / 1000))
+      return merged
+    }
+  }
+
+  // HyDE: embed a hypothetical answer instead of the raw query for vector search.
+  let vectorQuery = args.query
+  if (process.env.HYDE === 'true') {
+    const { generateHypotheticalDocument } = await import('@/lib/hyde')
+    vectorQuery = await generateHypotheticalDocument(args.query)
+  }
+
   const rerankEnabled = process.env.RAG_LLM_RERANK !== 'false'
   const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
 
   const [retrievalResult, kgResult, cogneeGraphContext] = await Promise.all([
-    retrieveFromVectorAndLexical(args.query, retrievalTopK, queryTokens),
+    retrieveFromVectorAndLexical(vectorQuery, retrievalTopK, queryTokens),
     dualLevelRetrieval({ query: args.query, topK: args.topK }),
     recallGraphContext(args.query),
   ])
@@ -88,12 +112,15 @@ export async function retrieveRelevantChunks(args: {
   const graphContext = kgResult.graphContext || cogneeGraphContext
 
   const finalChunks = rerankEnabled
-    ? await rerankWithLlm(args.query, mergedChunks, args.topK)
+    ? await dispatchRerank(args.query, mergedChunks, args.topK)
     : selectTopRetrievedChunks(mergedChunks, args.topK)
+
+  const citationTrail = buildCitationTrail(args.query, kgResult, finalChunks)
 
   const result = {
     chunks: finalChunks, queryTokens,
     candidatesScanned: retrievalResult.candidatesScanned, graphContext,
+    citationTrail: citationTrail.length > 0 ? citationTrail : undefined,
   }
 
   _cacheMisses += 1
@@ -120,6 +147,18 @@ export function parseRerankerScores(raw: string, chunkCount: number): { index: n
       && item.index >= 0 && item.index < chunkCount && item.score >= 3,
     )
     .sort((a, b) => b.score - a.score)
+}
+
+async function dispatchRerank(
+  query: string,
+  chunks: RetrievedChunk[],
+  topK: number,
+): Promise<RetrievedChunk[]> {
+  if (chunks.length <= topK) return chunks
+  const { crossEncoderRerank } = await import('@/lib/reranker')
+  const cross = await crossEncoderRerank(query, chunks, topK)
+  if (cross) return cross
+  return rerankWithLlm(query, chunks, topK)
 }
 
 async function rerankWithLlm(

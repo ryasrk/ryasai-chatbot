@@ -17,6 +17,8 @@ import { executeAdminTool } from '@/lib/admin-tools'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
+import { extractJson } from '@/lib/constrained-output'
+import { withToolSandbox } from '@/lib/tool-sandbox'
 import type { ToolDef } from '@/lib/tool-registry'
 
 // ---------------------------------------------------------------------------
@@ -222,19 +224,14 @@ export async function planQuery(args: {
  * - Valid JSON but validation fails (bad tool, > MAX_STEPS, cycle) → throws.
  */
 export function parsePlanResponse(raw: string, availableTools: ToolDef[]): Plan {
-  const cleaned = stripCodeFences(raw).trim()
   let parsed: unknown
   try {
-    parsed = JSON.parse(cleaned)
+    parsed = extractJson(raw)
   } catch {
     return fallbackChatPlan()
   }
   const plan = normalizePlan(parsed)
   return validatePlan(plan, availableTools)
-}
-
-function stripCodeFences(raw: string): string {
-  return raw.replace(/```json|```/g, '')
 }
 
 function normalizePlan(parsed: unknown): Plan {
@@ -413,7 +410,15 @@ export async function executePlan(args: {
 
   for (const level of levels) {
     const levelResults = await Promise.all(
-      level.map((step) => executeStep(step, args, isConfirmed)),
+      level.map((step) =>
+        withToolSandbox(step.tool, () => executeStep(step, args, isConfirmed)).catch((e) => {
+          args.onStatus?.(step.id, step.tool, 'error')
+          return {
+            stepId: step.id, tool: step.tool, ok: false, output: '',
+            error: e instanceof Error ? e.message : String(e), latencyMs: 0,
+          } as PlanStepResult
+        }),
+      ),
     )
     results.push(...levelResults)
   }

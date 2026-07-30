@@ -55,6 +55,8 @@ export async function disconnectRedis(): Promise<void> {
   await Promise.allSettled([redis.quit(), cmd.quit()])
 }
 
+export { cmd as redisCmd }
+
 // ---------------------------------------------------------------------------
 // Distributed cache — Redis-backed with in-memory fallback.
 // ponytail: replaces per-instance Map caches (rag.ts, smart-router.ts).

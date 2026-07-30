@@ -23,6 +23,7 @@ export interface CompletionResult {
   toolRuns: PendingToolRun[]
   chartData: ChartData | null
   integrationId?: string
+  usage?: { promptTokens: number; completionTokens: number }
 }
 
 export interface ChatHistoryEntry {

@@ -13,6 +13,14 @@ import {
 const DEFAULT_MAX_CHUNK_CHARS = RAG_CHUNK_SIZE
 const DEFAULT_OVERLAP_CHARS = RAG_CHUNK_OVERLAP
 
+export interface ParentDocChunk {
+  content: string
+  contextPrefix: string
+}
+
+const PARENT_DOC_CHILD_SIZE = Number(process.env.PARENT_DOC_CHILD_SIZE ?? 512)
+const PARENT_DOC_WINDOW = Number(process.env.PARENT_DOC_WINDOW ?? 2048)
+
 export function chunkText(
   content: string,
   options: { maxChars?: number; overlapChars?: number } = {},
@@ -25,6 +33,47 @@ export function chunkText(
     .map((c) => c.trim())
     .filter((c) => c.length > 0)
     .flatMap((chunk) => splitLongChunk(chunk, maxChars, overlapChars))
+}
+
+/**
+ * Parent-document chunking: small child chunks for precise embedding,
+ * each carrying a surrounding parent window as contextPrefix for retrieval recall.
+ * ponytail: simple sliding window — not paragraph-aware. Upgrade to semantic
+ * boundary detection if retrieval precision needs it.
+ */
+export function chunkTextParentDoc(
+  content: string,
+  options: { childSize?: number; parentWindow?: number } = {},
+): ParentDocChunk[] {
+  const childSize = options.childSize ?? PARENT_DOC_CHILD_SIZE
+  const parentWindow = options.parentWindow ?? PARENT_DOC_WINDOW
+  if (!content || content.trim().length === 0) return []
+
+  const words = content.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
+
+  const chunks: ParentDocChunk[] = []
+  let pos = 0
+
+  while (pos < words.length) {
+    const childWords = words.slice(pos, pos + estimateWordCount(childSize))
+    const childContent = childWords.join(' ')
+    if (childContent.length === 0) break
+
+    const halfWindow = Math.floor(estimateWordCount(parentWindow) / 2)
+    const parentStart = Math.max(0, pos - halfWindow)
+    const parentEnd = Math.min(words.length, pos + childWords.length + halfWindow)
+    const parentContent = words.slice(parentStart, parentEnd).join(' ')
+
+    chunks.push({ content: childContent, contextPrefix: parentContent + '\n\n' })
+    pos += childWords.length
+  }
+
+  return chunks
+}
+
+function estimateWordCount(charCount: number): number {
+  return Math.max(1, Math.ceil(charCount / 5))
 }
 
 function splitLongChunk(content: string, maxChars: number, overlapChars: number): string[] {

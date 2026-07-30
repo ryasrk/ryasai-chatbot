@@ -991,3 +991,61 @@ Agentic loops stay in `tool-router.ts` because they call back into `runNonStream
 **Verification**: tsc 0 errors · lint 0 errors (33 warnings) · `bun run test` 913 pass 0 fail 8 skip across 56 files.
 
 **Next**: Run `bunx prisma db push` to apply schema changes (KgRelation table + embedding column). Run `bun run rag-eval` with real documents to measure RAG quality. Consider upgrading Bun 1.3.9 → 1.3.14. Configure role-specific LLM models (fast model for extract/keyword, strong model for query) via LlmConfig rows.
+
+---
+
+## 2026-07-30 — 8.6 → 9.5 PUSH (3 parallel subagents)
+
+Goal: push Agentic 8→9.5, RAG 8.5→9.5, Code Quality 8.5→9.5, Production 8.5→9.5, Features 8.5→9.5, Docs 8.0→9.5.
+All free/open-source stack (no paid subscriptions). Deps pre-installed: `fast-check`, `@opentelemetry/api`.
+
+### Subagent A — AI/RAG/Agentic (owns: src/lib/rag*, intent-pipeline*, tool-router*, planner*, knowledge-graph*, benchmark/rag-eval*)
+- [x] bge-reranker cross-encoder interface → reranker.ts + test
+- [x] HyDE + sub-query decomposition → hyde.ts + test
+- [x] Reflexion/self-critique pass → reflexion.ts + test
+- [x] Token/cost budget per agentic run → agentic-budget.ts + test (7 tests)
+- [x] Constrained output validation → constrained-output.ts + test (10 tests, wired into planner.ts)
+- [x] Parent-document chunking → rag-chunking.ts chunkTextParentDoc() + test (11 tests)
+- [x] Citation trails from GraphRAG → citation-trail.ts + test (5 tests), wired into rag-retrieval.ts
+- [x] Streaming confidence updates → onConfidence callback in runStreamingAgenticLoop
+- [x] Per-tool execution sandbox → tool-sandbox.ts + test (8 tests), wired into planner.ts executePlan
+- [x] LlamaFirewall AlignmentCheck interface → alignment-check.ts + test (8 tests, HTTP/LLM/disabled modes)
+- [x] DeepEval CI test gate → benchmark/rag-eval.ts --ci flag + test (5 tests)
+
+### Subagent B — Code Quality + Production (owns: tsconfig, .github/, src/lib/observability*, logger*, rate-limit*, redis*, guardrails* tests, instrumentation.ts, scripts/, docs/runbook*, CHANGELOG*)
+- [x] Property-based tests for SQL guardrails → guardrails.property.test.ts (8 fast-check properties)
+- [x] Semgrep scan step in CI → ci.yml +semgrep job (returntocorp/semgrep-action@v1)
+- [x] Redis-backed distributed rate limiter → redis-rate-limit.ts + test (8 tests, INCR+EXPIRE, in-memory fallback)
+- [x] OpenTelemetry instrumentation → otel.ts + test (9 tests, lazy SDK init, getTracer/withSpan)
+- [x] Langfuse trace → score linkage → observability.ts traceLlmCall returns traceId, postLangfuseScore links it
+- [x] Scheduler SSE push → schedule-events.ts + test (5 tests, EventEmitter for SSE consumption)
+- [x] Scheduler failure notifications → scheduler/index.ts sends on success + failure
+- [ ] Strict TS flags → DEFERRED (1005 errors with noUncheckedIndexedAccess + exactOptionalPropertyTypes, needs coordinated rollout)
+- [x] Graceful shutdown → graceful-shutdown.ts + test (8 tests, SIGTERM/SIGINT, cleanup order)
+- [x] Readiness vs liveness probes → health-checks.ts + test (7 tests, checkLiveness/checkReadiness)
+- [x] CHANGELOG.md → keep-a-changelog format
+- [x] Runbook → docs/runbook.md (deploy/rollback/rotate keys/restore/debug/incidents)
+
+### Subagent C — Features + Documentation (owns: src/app/api/ new routes, src/components/views/, docs/, prisma/schema.prisma, README.md)
+- [x] OIDC SSO integration → sso.ts (293 lines: discovery, code exchange, JWT HS256+RS256, getOrCreateSsoUser)
+- [x] Ollama LLM provider → ollama-provider.ts + test (fetch-based, localhost:11434, graceful no-op)
+- [x] RBAC roles within single-tenant → rbac.ts + test + User.role field in schema (admin/analyst/viewer)
+- [x] Mermaid architecture diagrams → README.md (flowchart + sequenceDiagram, ASCII in <details> fallback)
+- [x] ADRs → docs/adr/0001-0008 (8 ADRs: single-tenant, SQL guardrails, fail-closed, hybrid RAG, AES-256-GCM, agentic loop, pgvector, contextual retrieval)
+- [x] API usage guide → docs/api-guide.md (curl/JS/Python per endpoint, grouped by category)
+- [x] Threat model doc → docs/threat-model.md (STRIDE analysis, trust boundaries, mitigation table)
+- [x] Document versioning → doc-versioning.ts + test + 2 API routes (DocumentVersion model, create/list/restore)
+- [x] Conversation export → conversation-export.ts + test + API route (JSON/markdown formats)
+- [x] Prompt library → prompt-library.ts + test + 2 API routes (SavedPrompt model, CRUD)
+- [x] Incoming webhooks → incoming-webhook.ts + test + API route (HMAC-SHA256 verification, fail-closed)
+- [x] DAG preview → dag-preview.ts + test (Mermaid text from planner output)
+- [x] Onboarding guide → docs/onboarding.md (dev setup, codebase tour, common tasks)
+- [x] Glossary → docs/glossary.md (40+ terms defined)
+
+### FINAL VERIFICATION
+- Lint: 0 errors, 0 warnings ✅
+- Typecheck: 0 errors ✅
+- Tests: 1360 pass / 0 fail / 8 skip across 94 files ✅
+- New files: 73 (43 src/lib, 6 docs, 4 API routes, 23 test files, CHANGELOG, runbook, 8 ADRs)
+- Modified files: 16
+- Prisma models added: DocumentVersion, SavedPrompt, User.ssoSubject, User.role, Document.version
