@@ -9,6 +9,7 @@ import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('tool-router')
 
 const MAX_AGENTIC_ITERATIONS = 3
+const AGENTIC_DEADLINE_MS = Number(process.env.AGENTIC_DEADLINE_MS ?? 90_000)
 
 interface AgenticIterationResult {
   answer: string
@@ -86,8 +87,14 @@ export async function runAgenticLoop(
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
   const budget = args.budget ?? createTokenBudget()
+  const deadline = Date.now() + AGENTIC_DEADLINE_MS
 
   for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
+    if (Date.now() > deadline) {
+      log.info('Agentic loop stopped — deadline exceeded', { iterations: iteration })
+      confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
+      return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration, confidenceHistory }
+    }
     const contextualQuestion = accumulatedEvidence
       ? `${args.question}\n\n[Context from prior tool calls: ${accumulatedEvidence.slice(0, 1000)}]`
       : args.question
@@ -201,8 +208,14 @@ export async function runStreamingAgenticLoop(
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
+  const deadline = Date.now() + AGENTIC_DEADLINE_MS
 
   for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
+    if (Date.now() > deadline) {
+      log.info('Streaming agentic loop stopped — deadline exceeded', { iterations: iteration })
+      async function* timeoutStream() { yield 'The request timed out before a complete answer could be generated.' }
+      return { stream: timeoutStream(), toolRuns: allToolRuns, citations: allCitations, chartData: null }
+    }
     const contextualQuestion = accumulatedEvidence
       ? `${args.question}\n\n[Context from prior tool calls: ${accumulatedEvidence.slice(0, 1000)}]`
       : args.question
@@ -221,7 +234,7 @@ export async function runStreamingAgenticLoop(
     if (result.citations) allCitations.push(...result.citations)
 
     if (result.toolRuns.length === 0) {
-      return { stream: result.stream, toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+      return { stream: result.stream, toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData, citationTrail: result.citationTrail }
     }
 
     let answerText = ''
@@ -266,12 +279,12 @@ export async function runStreamingAgenticLoop(
           log.info('Streaming agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
           confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
           async function* alignedStream() { yield `${answerText}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]` }
-          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData, citationTrail: result.citationTrail }
         }
       }
 
       async function* answerStream() { yield answerText }
-      return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+      return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData, citationTrail: result.citationTrail }
     }
 
     const confidence = await evaluateAnswerConfidence({ question: args.question, evidence: accumulatedEvidence })
@@ -279,7 +292,6 @@ export async function runStreamingAgenticLoop(
     args.onConfidence?.({ iteration: iteration + 1, confidence: confidence.confidence, reason: confidence.reason, confident: confidence.confident })
 
     if (confidence.confident) {
-      // Alignment check (opt-in)
       if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
         const { checkAlignment } = await import('@/lib/alignment-check')
         const alignment = await checkAlignment(answerText, args.question)
@@ -287,12 +299,12 @@ export async function runStreamingAgenticLoop(
           log.info('Streaming agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
           confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
           async function* alignedStream() { yield `${answerText}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]` }
-          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData, citationTrail: result.citationTrail }
         }
       }
 
       async function* answerStream() { yield answerText }
-      return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+      return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData, citationTrail: result.citationTrail }
     }
 
     const toolHint = confidence.nextToolHint && confidence.nextToolHint !== 'CHAT'
@@ -311,5 +323,5 @@ export async function runStreamingAgenticLoop(
     systemPromptPrefix: args.systemPromptPrefix,
   })
 
-  return { stream: finalResult.stream, toolRuns: [...allToolRuns, ...finalResult.toolRuns], citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData }
+  return { stream: finalResult.stream, toolRuns: [...allToolRuns, ...finalResult.toolRuns], citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, citationTrail: finalResult.citationTrail }
 }

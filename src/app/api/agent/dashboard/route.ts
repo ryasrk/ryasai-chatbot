@@ -46,6 +46,23 @@ async function tryMcpSetup(message: string, lower: string, userId: string): Prom
   const urlWithKeyword = !!(urlInMessage && (lower.includes('mcp') || lower.includes('install') || lower.includes('add') || lower.includes('connect')))
   if (!mcpMatch && !urlWithKeyword && !bareMcpUrl) return { handled: false }
 
+  // ponytail: confirmation gate — installing an MCP server via stdio spawns a
+  // child process (npx/uvx). Require the user to explicitly confirm by including
+  // "confirm" or "yes" in their message. Without this, a crafted message could
+  // trigger arbitrary package execution with no approval.
+  const isConfirmed = /\b(confirm|yes|proceed|go ahead)\b/i.test(message)
+  if (!isConfirmed) {
+    const knownNames = Object.keys(MCP_PACKAGES)
+    const nameMatch = knownNames.find((n) => lower.includes(n))
+    const serverName = nameMatch
+      ? nameMatch.charAt(0).toUpperCase() + nameMatch.slice(1)
+      : (message.match(/(?:called|named)\s+([A-Za-z0-9_-]+)/i)?.[1] ?? 'the server')
+    return {
+      handled: true,
+      output: `I detected an MCP server install request for "${serverName}".\n\nThis will spawn a child process to run the MCP server. To confirm, reply with:\n\n  install ${serverName} confirm`,
+    }
+  }
+
   const knownNames = Object.keys(MCP_PACKAGES)
   const nameMatch = knownNames.find((n) => lower.includes(n))
   const namedMatch = message.match(/(?:called|named)\s+([A-Za-z0-9_-]+)/i)

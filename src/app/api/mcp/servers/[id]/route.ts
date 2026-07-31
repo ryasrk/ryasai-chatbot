@@ -20,6 +20,7 @@ interface PatchBody {
   args?: unknown
   url?: string
   envVars?: Record<string, unknown>
+  headers?: Record<string, unknown>
   isEnabled?: boolean
   chatEnabled?: boolean
   agenticEnabled?: boolean
@@ -57,6 +58,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       args?: string
       url?: string
       envJson?: string
+      headersJson?: string
       isEnabled?: boolean
       chatEnabled?: boolean
       agenticEnabled?: boolean
@@ -100,7 +102,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       data.url = urlRaw
     }
 
-    // envVars present in the body (even empty {}) → re-encrypt; absent → preserve.
+    // envVars: only update if the key is present AND non-empty. If the key
+    // is absent (undefined), preserve existing. If present but empty on edit,
+    // the dialog omits the key — so this branch only fires when there are
+    // actual values to store.
     if (body.envVars !== undefined) {
       const clean: Record<string, string> = {}
       if (body.envVars && typeof body.envVars === 'object') {
@@ -109,7 +114,23 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           else if (v !== null && v !== undefined) clean[k] = String(v)
         }
       }
-      data.envJson = Object.keys(clean).length > 0 ? encryptConfig(clean) : '{}'
+      if (Object.keys(clean).length > 0) {
+        data.envJson = encryptConfig(clean)
+      }
+    }
+
+    // headers: same preserve-on-blank semantics as envVars.
+    if (body.headers !== undefined) {
+      const clean: Record<string, string> = {}
+      if (body.headers && typeof body.headers === 'object') {
+        for (const [k, v] of Object.entries(body.headers)) {
+          if (typeof v === 'string') clean[k] = v
+          else if (v !== null && v !== undefined) clean[k] = String(v)
+        }
+      }
+      if (Object.keys(clean).length > 0) {
+        data.headersJson = encryptConfig(clean)
+      }
     }
 
     if (Object.keys(data).length === 0) {

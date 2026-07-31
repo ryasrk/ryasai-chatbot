@@ -45,16 +45,25 @@ export async function smartRoute(args: {
     const perfScore = perf.successRate
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
     const availability = checkAvailability(tool, args.hasIntegrations, args.hasDocuments, args.hasRestApis)
-    const circuitBreakerTripped = perf.total >= 10 && perf.recentFailRate > 0.7
+    // Circuit breaker with half-open recovery: if tripped but last failure
+    // was >5min ago, allow a probe attempt at reduced score (50%).
+    const tripped = perf.total >= 10 && perf.recentFailRate > 0.7
+    const cooldownMs = Number(process.env.CIRCUIT_BREAKER_COOLDOWN_MS ?? 300_000)
+    const inCooldown = tripped && perf.lastFailureAt && (Date.now() - perf.lastFailureAt.getTime() < cooldownMs)
+    const circuitBreakerTripped = inCooldown === true
+    const isProbe = tripped && !inCooldown
     const simBoost = similarity[tool] ?? 0
 
-    const finalScore = circuitBreakerTripped || availability === 0
+    const rawScore = schemaScore * WEIGHTS.schema +
+      perfScore * WEIGHTS.performance +
+      latencyScore * WEIGHTS.latency +
+      availability * WEIGHTS.availability +
+      simBoost * WEIGHTS.similarity
+    const finalScore = inCooldown || availability === 0
       ? 0
-      : schemaScore * WEIGHTS.schema +
-        perfScore * WEIGHTS.performance +
-        latencyScore * WEIGHTS.latency +
-        availability * WEIGHTS.availability +
-        simBoost * WEIGHTS.similarity
+      : isProbe
+        ? rawScore * 0.5
+        : rawScore
 
     return {
       tool, schemaScore, perfScore, latencyScore, availability,

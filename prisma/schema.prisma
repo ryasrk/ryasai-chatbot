@@ -428,6 +428,7 @@ model McpServer {
   args        String   @default("[]") // JSON array of command args
   url         String   @default("") // for sse/http: server endpoint
   envJson     String   @default("{}") // AES-256-GCM encrypted JSON of env vars
+  headersJson String   @default("{}") // AES-256-GCM encrypted JSON of HTTP headers (sse/http)
   isEnabled   Boolean  @default(true)
   chatEnabled    Boolean  @default(true)
   agenticEnabled Boolean  @default(true)
@@ -445,6 +446,7 @@ model ScheduledRun {
   name        String
   cronExpr    String
   prompt      String
+  timezone    String?   @default("UTC")
   isActive    Boolean   @default(true)
   lastRunAt   DateTime?
   nextRunAt   DateTime?

@@ -64,7 +64,7 @@ export function startJobWorker(): Worker<JobData> {
       if (!handler) throw new Error(`No handler for job type: ${job.data.type}`)
       await handler(job.data)
     },
-    { connection: redis, concurrency: 3 },
+    { connection: redis, concurrency: 3, lockDuration: 300_000, stalledInterval: 30_000, maxStalledCount: 1 },
   )
   worker.on('failed', (job, err) => console.error('[worker] job failed:', job?.data.type, err.message))
   return worker

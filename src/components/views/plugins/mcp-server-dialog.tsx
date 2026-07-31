@@ -38,6 +38,7 @@ const EMPTY_MCP_FORM = {
   args: '',
   url: '',
   envVars: '',
+  headers: '',
 }
 
 interface DialogProps {
@@ -68,6 +69,7 @@ export function McpServerDialog({ open, editing, onClose, onSaved }: DialogProps
         args: argsStr,
         url: editing.url,
         envVars: '',
+        headers: '',
       })
     } else {
       setForm({ ...EMPTY_MCP_FORM })
@@ -103,6 +105,17 @@ export function McpServerDialog({ open, editing, onClose, onSaved }: DialogProps
         }
       }
 
+      const headers: Record<string, string> = {}
+      if (form.headers.trim()) {
+        for (const line of form.headers.split('\n')) {
+          const idx = line.indexOf(':')
+          if (idx > 0) {
+            headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+          }
+        }
+      }
+
+      const isEdit = editing !== null
       const body: Record<string, unknown> = {
         name: form.name.trim(),
         description: form.description.trim(),
@@ -110,10 +123,17 @@ export function McpServerDialog({ open, editing, onClose, onSaved }: DialogProps
         command: form.command.trim(),
         args: argsArr,
         url: form.url.trim(),
-        envVars,
       }
 
-      const isEdit = editing !== null
+      // ponytail: only send envVars/headers when non-empty OR creating new.
+      // On edit with blank fields, omit the key so the server preserves existing secrets.
+      if (Object.keys(envVars).length > 0 || !isEdit) {
+        body.envVars = envVars
+      }
+      if (Object.keys(headers).length > 0 || !isEdit) {
+        body.headers = headers
+      }
+
       const url = isEdit ? `/api/mcp/servers/${editing!.id}` : '/api/mcp/servers'
       const method = isEdit ? 'PATCH' : 'POST'
       const res = await fetch(url, {
@@ -249,6 +269,20 @@ export function McpServerDialog({ open, editing, onClose, onSaved }: DialogProps
               {editing?.hasEnvVars ? 'Leave blank to keep existing env vars.' : 'Encrypted at rest (AES-256-GCM).'}
             </p>
           </div>
+          {form.transport !== 'stdio' && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">HTTP Headers (Header: value, one per line)</Label>
+              <Textarea
+                value={form.headers}
+                onChange={(e) => setForm({ ...form, headers: e.target.value })}
+                placeholder={'Authorization: Bearer token\nX-API-Key: key123'}
+                className="text-xs font-mono min-h-[56px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                {editing?.hasHeaders ? 'Leave blank to keep existing headers.' : 'Encrypted at rest (AES-256-GCM).'}
+              </p>
+            </div>
+          )}
         </div>
 
         {mcpTestResult && (

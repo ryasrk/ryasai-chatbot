@@ -17,8 +17,11 @@ Single-tenant enterprise AI assistant. Stack: Next.js 16 + TypeScript 5 + Prisma
 - `src/lib/` — server-only libraries (AI, RAG, guardrails, tools).
 - `src/app/api/` — 68 routes.
 - `src/components/views/` — 12 views.
-- `prisma/schema.prisma` — 26 models.
-- `mini-services/scheduler/` — cron worker.
+- `prisma/schema.prisma` — 27 models (incl. `McpServer.headersJson`, `ScheduledRun.timezone`).
+- `mini-services/scheduler/` — BullMQ worker (cron-based, timezone-aware).
+- `src/lib/redis.ts` — BullMQ queues: `scheduleQueue` (scheduled-runs), `jobQueue` (document-processing).
+- `src/lib/mcp-client.ts` — MCP client manager (timeouts, LRU, DNS-rebinding, encrypted headers).
+- `src/instrumentation.ts` — boot: env validation, job worker, OTel init, graceful shutdown wiring.
 
 ## Conventions
 

@@ -79,6 +79,7 @@ export interface PerfMetrics {
   avgLatencyMs: number
   total: number
   recentFailRate: number
+  lastFailureAt?: Date | null
 }
 
 export const NEUTRAL_PERF: PerfMetrics = {
@@ -86,6 +87,7 @@ export const NEUTRAL_PERF: PerfMetrics = {
   avgLatencyMs: 2500,
   total: 0,
   recentFailRate: 0,
+  lastFailureAt: null,
 }
 
 export const WEIGHTS = {
@@ -348,7 +350,7 @@ export async function loadPerformanceMetrics(): Promise<Record<string, PerfMetri
   const result: Record<string, PerfMetrics> = {}
 
   for (const type of types) {
-    const [recent, last10] = await Promise.all([
+    const [recent, last10, lastFail] = await Promise.all([
       db.toolRun.findMany({
         where: { type, createdAt: { gte: dayAgo } },
         select: { status: true, latencyMs: true },
@@ -360,6 +362,11 @@ export async function loadPerformanceMetrics(): Promise<Record<string, PerfMetri
         select: { status: true },
         orderBy: { createdAt: 'desc' },
         take: 10,
+      }),
+      db.toolRun.findFirst({
+        where: { type, status: { in: ['error', 'blocked'] } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'desc' },
       }),
     ])
 
@@ -377,6 +384,7 @@ export async function loadPerformanceMetrics(): Promise<Record<string, PerfMetri
       avgLatencyMs: latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 2500,
       total: recent.length,
       recentFailRate: failCount10 / 10,
+      lastFailureAt: lastFail?.createdAt ?? null,
     }
   }
 

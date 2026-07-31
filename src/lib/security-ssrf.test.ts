@@ -33,7 +33,9 @@ describe('SSRF — IP bypass attempts', () => {
     })
 
     test('GCP metadata endpoint → blocked', () => {
-      expect(isBlockedHost('metadata.google.internal')).toBe(false)
+      expect(isBlockedHost('metadata.google.internal')).toBe(true)
+      expect(isBlockedHost('metadata.aws.internal')).toBe(true)
+      expect(isBlockedHost('metadata.azure.com')).toBe(true)
     })
   })
 

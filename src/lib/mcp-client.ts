@@ -3,11 +3,20 @@
  * ----------------------------------------------------------------------------
  * Connects to externally-administered MCP servers (stdio / sse / http transports),
  * lists their tools, and calls tools by name. Connections are cached per server
- * (lazy init) and reused across calls. A 60s TTL cache wraps the aggregated tool
- * list so the planner doesn't re-fetch on every query.
+ * (lazy init, LRU-bounded) and reused across calls. A 60s TTL cache wraps the
+ * aggregated tool list so the planner doesn't re-fetch on every query.
  *
- * envJson is AES-256-GCM encrypted at rest (encrypted in the API routes via
- * encryptConfig); it is decrypted here only at connect time.
+ * envJson and headersJson are AES-256-GCM encrypted at rest (encrypted in the
+ * API routes via encryptConfig); they are decrypted here only at connect time.
+ *
+ * Production hardening:
+ * - AbortSignal.timeout() on all SDK calls (connect, listTools, callTool)
+ * - onclose handler on transports → proactive failure detection
+ * - LRU cap on connection cache (default 20, configurable via MCP_MAX_CONNECTIONS)
+ * - Single-flight dedup on tools-cache cold miss
+ * - Test connections are NOT cached (closed after listTools)
+ * - DNS-rebinding protection via dns.lookup before TCP connect
+ * - Non-text content blocks serialized (no silent data loss)
  */
 import { Client } from '@modelcontextprotocol/sdk/client'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -16,7 +25,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { db } from '@/lib/db'
 import { decryptConfig } from '@/lib/crypto'
-import { isBlockedHost } from '@/lib/llm-config'
+import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
 
 export interface McpTool {
   serverId: string
@@ -35,6 +44,7 @@ type McpServerRow = {
   args: string
   url: string
   envJson: string
+  headersJson: string
   isEnabled: boolean
 }
 
@@ -44,26 +54,38 @@ interface CachedConnection {
   failed: boolean
 }
 
-// ponytail: in-process connection cache. Ceiling — a long-running server keeps
-// stdio child processes alive for the process lifetime; upgrade to an LRU with
-// max connections + idle timeout if many MCP servers are registered.
+// ponytail: LRU-bounded connection cache. Map preserves insertion order, so
+// deleting the first key evicts the oldest. Default 20 stdio children / SSE
+// connections is generous for a single-tenant app.
+const MAX_CONNECTIONS = Number(process.env.MCP_MAX_CONNECTIONS ?? 20)
 const connections = new Map<string, CachedConnection>()
 
 let toolsCache: { tools: McpTool[]; at: number } | null = null
+let toolsCachePromise: Promise<McpTool[]> | null = null
 const TOOLS_TTL_MS = 60_000
+
+const CONNECT_TIMEOUT_MS = Number(process.env.MCP_CONNECT_TIMEOUT_MS ?? 15_000)
+const LIST_TOOLS_TIMEOUT_MS = Number(process.env.MCP_LIST_TOOLS_TIMEOUT_MS ?? 10_000)
+const CALL_TOOL_TIMEOUT_MS = Number(process.env.MCP_CALL_TOOL_TIMEOUT_MS ?? 30_000)
 
 // Minimal view of the callTool result — the SDK's union return type is far
 // wider than what we consume (text content + isError flag).
 interface McpCallResult {
-  content?: Array<{ type: string; text?: string }>
+  content?: Array<{ type: string; text?: string; [k: string]: unknown }>
   isError?: boolean
 }
 
 export async function listMcpTools(): Promise<McpTool[]> {
   if (toolsCache && Date.now() - toolsCache.at < TOOLS_TTL_MS) return toolsCache.tools
-  const tools = await listMcpToolsUncached()
-  toolsCache = { tools, at: Date.now() }
-  return tools
+  if (toolsCachePromise) return toolsCachePromise
+  toolsCachePromise = listMcpToolsUncached()
+  try {
+    const tools = await toolsCachePromise
+    toolsCache = { tools, at: Date.now() }
+    return tools
+  } finally {
+    toolsCachePromise = null
+  }
 }
 
 async function listMcpToolsUncached(): Promise<McpTool[]> {
@@ -73,7 +95,7 @@ async function listMcpToolsUncached(): Promise<McpTool[]> {
     const conn = await getConnection(s.id, s)
     if (!conn) continue
     try {
-      const { tools } = await conn.client.listTools()
+      const { tools } = await conn.client.listTools(undefined, { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) })
       for (const t of tools) {
         all.push({
           serverId: s.id,
@@ -99,10 +121,11 @@ export async function callMcpTool(
   const conn = await getConnection(serverId)
   if (!conn) return { ok: false, output: '', error: 'MCP server unavailable or inactive.' }
   try {
-    const result = (await conn.client.callTool({
-      name: toolName,
-      arguments: args,
-    })) as unknown as McpCallResult
+    const result = (await conn.client.callTool(
+      { name: toolName, arguments: args },
+      undefined,
+      { signal: AbortSignal.timeout(CALL_TOOL_TIMEOUT_MS) },
+    )) as unknown as McpCallResult
     const output = extractText(result.content)
     if (result.isError) {
       return { ok: false, output: '', error: output || 'MCP tool returned an error.' }
@@ -122,7 +145,7 @@ export async function testMcpServer(
   if (!row) return { ok: false, error: 'MCP server not found.' }
   if (!row.isEnabled) return { ok: false, error: 'MCP server is disabled.' }
 
-  const transport = buildTransport(row)
+  const transport = await buildTransport(row)
   if (!transport) return { ok: false, error: `Invalid transport config (command: ${row.command || 'empty'}, url: ${row.url || 'empty'}).` }
 
   const client = new Client(
@@ -131,10 +154,11 @@ export async function testMcpServer(
   )
 
   try {
-    await client.connect(transport)
-    const { tools } = await client.listTools()
-    const conn: CachedConnection = { client, serverName: row.name, failed: false }
-    connections.set(serverId, conn)
+    await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+    const { tools } = await client.listTools(undefined, { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) })
+    // ponytail: test connections are NOT cached — close immediately to avoid
+    // leaking stdio children / SSE sockets from repeated test clicks.
+    await safeClose(client)
     return {
       ok: true,
       toolCount: tools.length,
@@ -144,7 +168,6 @@ export async function testMcpServer(
     const msg = e instanceof Error ? e.message : String(e)
     console.warn(`[mcp] test failed for "${row.name}":`, msg)
     await safeClose(client)
-    // ponytail: include the connection target so the user sees what failed.
     const target = row.transport === 'stdio' ? row.command : row.url
     return { ok: false, error: target ? `${target}: ${msg}` : msg }
   }
@@ -169,11 +192,22 @@ export async function disconnectAllMcp(): Promise<void> {
 
 export function invalidateMcpToolsCache(): void {
   toolsCache = null
+  toolsCachePromise = null
 }
 
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+function evictIfNeeded(): void {
+  while (connections.size >= MAX_CONNECTIONS) {
+    const oldest = connections.keys().next().value
+    if (!oldest) break
+    const conn = connections.get(oldest)
+    if (conn) void safeClose(conn.client)
+    connections.delete(oldest)
+  }
+}
 
 async function getConnection(
   serverId: string,
@@ -189,8 +223,15 @@ async function getConnection(
   const r = row ?? (await db.mcpServer.findUnique({ where: { id: serverId } }))
   if (!r || !r.isEnabled) return null
 
-  const transport = buildTransport(r)
+  const transport = await buildTransport(r)
   if (!transport) return null
+
+  // ponytail: set onclose BEFORE connect so transport-level close events
+  // (SSE drop, stdio exit) proactively mark the connection as failed.
+  transport.onclose = () => {
+    const c = connections.get(serverId)
+    if (c) c.failed = true
+  }
 
   const client = new Client(
     { name: 'ryasai-chatbot', version: '1.0.0' },
@@ -198,7 +239,8 @@ async function getConnection(
   )
 
   try {
-    await client.connect(transport)
+    await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+    evictIfNeeded()
     const conn: CachedConnection = { client, serverName: r.name, failed: false }
     connections.set(serverId, conn)
     return conn
@@ -209,7 +251,7 @@ async function getConnection(
   }
 }
 
-function buildTransport(row: McpServerRow): Transport | null {
+async function buildTransport(row: McpServerRow): Promise<Transport | null> {
   if (row.transport === 'stdio') {
     if (!row.command) return null
     return new StdioClientTransport({
@@ -227,9 +269,13 @@ function buildTransport(row: McpServerRow): Transport | null {
       return null
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    // Sync string check first (fast path), then async DNS-rebinding check.
     if (isBlockedHost(url.hostname)) return null
-    if (row.transport === 'sse') return new SSEClientTransport(url)
-    return new StreamableHTTPClientTransport(url)
+    if (await isBlockedHostAsync(url.hostname)) return null
+    const headers = loadHeaders(row.headersJson)
+    const requestInit = headers ? { headers } : undefined
+    if (row.transport === 'sse') return new SSEClientTransport(url, requestInit ? { requestInit } : undefined)
+    return new StreamableHTTPClientTransport(url, requestInit ? { requestInit } : undefined)
   }
   return null
 }
@@ -238,25 +284,42 @@ function parseArgs(raw: string): string[] {
   try {
     const a = JSON.parse(raw)
     return Array.isArray(a) ? a.map(String) : []
-  } catch {
+  } catch (e) {
+    console.warn('[mcp] parseArgs: failed to parse args JSON:', e)
     return []
   }
 }
 
 function loadEnv(envJson: string): Record<string, string> | undefined {
   if (!envJson || envJson === '{}') return undefined
-  // Encrypted (hex) first — the API routes store envJson via encryptConfig.
   try {
     const dec = decryptConfig(envJson)
+    if (dec && typeof dec === 'object') return toStringRecord(dec)
+  } catch (e) {
+    console.warn('[mcp] loadEnv: decryptConfig failed, trying plain JSON:', e)
+  }
+  try {
+    const parsed = JSON.parse(envJson)
+    if (parsed && typeof parsed === 'object') return toStringRecord(parsed)
+  } catch (e) {
+    console.warn('[mcp] loadEnv: plain JSON parse also failed:', e)
+  }
+  return undefined
+}
+
+function loadHeaders(headersJson: string): Record<string, string> | undefined {
+  if (!headersJson || headersJson === '{}') return undefined
+  try {
+    const dec = decryptConfig(headersJson)
     if (dec && typeof dec === 'object') return toStringRecord(dec)
   } catch {
     // not encrypted — fall through to plain JSON
   }
   try {
-    const parsed = JSON.parse(envJson)
+    const parsed = JSON.parse(headersJson)
     if (parsed && typeof parsed === 'object') return toStringRecord(parsed)
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('[mcp] loadHeaders: failed to parse headersJson:', e)
   }
   return undefined
 }
@@ -273,8 +336,12 @@ function toStringRecord(obj: Record<string, unknown>): Record<string, string> | 
 function extractText(content: McpCallResult['content']): string {
   if (!Array.isArray(content)) return ''
   return content
-    .filter((c) => c && c.type === 'text' && typeof c.text === 'string')
-    .map((c) => c.text as string)
+    .map((c) => {
+      if (c.type === 'text' && typeof c.text === 'string') return c.text
+      // ponytail: serialize non-text blocks (image, audio, resource) as JSON
+      // to avoid silent data loss. The planner sees a structured string.
+      return JSON.stringify(c)
+    })
     .join('\n')
     .slice(0, 8000)
 }

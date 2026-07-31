@@ -83,7 +83,7 @@ curl http://localhost:3000/api/v1/health
 
 ### Scheduler as Sidecar
 
-The scheduler (`mini-services/scheduler/index.ts`) is a background worker that polls `ScheduledRun` rows every 60s and executes due prompts. It is **not** started by the Docker image's `CMD` (which runs only the web server).
+The scheduler (`mini-services/scheduler/index.ts`) is a BullMQ worker that processes repeatable cron jobs from a Redis queue. It is **not** started by the Docker image's `CMD` (which runs only the web server). The web server starts its own BullMQ worker for document processing via `instrumentation.ts`.
 
 **Option A — Separate container (recommended for Docker):**
 
@@ -110,7 +110,7 @@ bun run mini-services/scheduler/index.ts &
 ```
 See [Bare Metal Deployment](#bare-metal-deployment) below.
 
-> The scheduler uses an optimistic-lock claim pattern so multiple scheduler instances won't double-execute the same run. Still, one scheduler per deployment is the norm.
+> The scheduler uses BullMQ's built-in locking + stalled detection (60s lock, 30s stalled interval, max 1 stalled retry). Multiple scheduler instances won't double-execute — BullMQ's distributed lock prevents it. Still, one scheduler per deployment is the norm. Scheduler supports timezone-aware cron via the `timezone` field on `ScheduledRun` (e.g. `Asia/Jakarta`).
 
 ---
 
@@ -301,13 +301,14 @@ Run through this before exposing the deployment to the internet.
 - [ ] **Rotate `ENCRYPTION_SECRET_KEY`** — generate a fresh 64-char hex key. Never reuse the default/empty value. App refuses to start without it.
 - [ ] **Set strong `ADMIN_INITIAL_PASSWORD`** — then change it immediately after first login via Settings > Profil > Ganti Sandi.
 - [ ] **Set `AUTH_DEMO_FALLBACK=false`** — when `true`, unauthenticated requests impersonate the admin. This **must** be `false` in any production deployment.
-- [ ] **Configure CORS for external API** — the `/api/v1/*` endpoints set `Access-Control-Allow-Origin: *` by default. If your integration is scoped to specific origins, modify `corsHeaders` in `src/app/api/v1/chat/completions/route.ts` or place a CORS-restricting reverse proxy (Caddy/Nginx) in front.
+- [ ] **Configure CORS for external API** — set `CHAT_API_CORS_ORIGIN` env var to your specific origin(s). Defaults to `*` (all origins) for development. For production, restrict to your integration's origin.
 - [ ] **Enable audit logging** — on by default. All security-relevant actions (login, SQL execute, guardrail block, API key creation, integration create) are written to `AuditLog`. View via Security > Audit Log.
 - [ ] **Set API key rate limits** — when creating API keys via Settings > Integration API, set `requestLimitPerMinute` and `dailyRequestLimit` to sane values for your integration. The enforcement is per-key (in-memory counter + DB-backed daily reset).
 - [ ] **Restrict `WS_CORS_ORIGIN`** — set to your specific origins (comma-separated). Never use a wildcard in production.
 - [ ] **Use HTTPS** — Caddy auto-provisions TLS. If using a different proxy, terminate TLS at the edge.
 - [ ] **Secure the database** — Postgres should not be exposed externally. The compose network (`ryasai-net`) keeps `db` internal. For bare metal, bind Postgres to `localhost` or use a firewall.
-- [ ] **Review SSRF blocklist** — the app blocks RFC1918, link-local, CGNAT, and ULA addresses for outbound webhook/plugin/MCP calls. Verify this covers your internal network ranges.
+- [ ] **Review SSRF blocklist** — the app blocks RFC1918, link-local, CGNAT, ULA, and cloud metadata endpoints (`metadata.google.internal`, `metadata.aws.internal`, `metadata.azure.com`) for outbound webhook/plugin/MCP/REST calls. DNS-rebinding protection via `dns.lookup` is also applied. Verify this covers your internal network ranges.
+- [ ] **Enable OpenTelemetry** (optional) — set `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT` to export traces to your OTLP collector. SDK auto-detects from endpoint env var.
 
 ---
 
@@ -387,9 +388,10 @@ Every LLM call (router, SQL gen, RAG, REST, synthesis, chat) is logged to the `L
     │   + Cognee (memory, opt)        │
     └─────────────────────────────────┘
 
-              Scheduler (sidecar process)
-              polls ScheduledRun rows every 60s
-              → executes due prompts → notifications
+               Scheduler (sidecar process)
+               BullMQ worker — repeatable cron jobs from Redis
+               → executes due prompts → notifications
+               → graceful shutdown: worker.close() + connection.quit()
 ```
 
 **Key design properties:**

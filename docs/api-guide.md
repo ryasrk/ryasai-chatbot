@@ -216,14 +216,24 @@ curl -b cookies.txt -X POST http://localhost:3000/api/prompts \
 
 ### GET /api/mcp/servers — List MCP servers
 ### POST /api/mcp/servers — Register MCP server
-### POST /api/mcp/servers/{id}/test — Test MCP server connection
+
+Supports stdio, sse, and http transports. For sse/http, add `headers` for authentication (encrypted at rest).
 
 ```bash
+# stdio (local process)
 curl -b cookies.txt -X POST http://localhost:3000/api/mcp/servers \
   -H 'Content-Type: application/json' \
-  -d '{"name":"filesystem","transport":"stdio","command":"npx","args":"[\\"-y\\",\\"@modelcontextprotocol/server-filesystem\\",\\"/tmp\\"]"}'
+  -d '{"name":"filesystem","transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/tmp"]}'
+
+# http (remote, with auth headers)
+curl -b cookies.txt -X POST http://localhost:3000/api/mcp/servers \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"remote-mcp","transport":"http","url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer token123"}}'
 ```
 
+### POST /api/mcp/servers/{id}/test — Test MCP server connection
+
+Returns tool list if connection succeeds. Throws `MCP_ERROR` (502) on failure.
 ---
 
 ## Scheduler
@@ -231,16 +241,18 @@ curl -b cookies.txt -X POST http://localhost:3000/api/mcp/servers \
 ### GET /api/schedules — List scheduled runs
 ### POST /api/schedules — Create scheduled run (cron + prompt)
 
+Supports timezone-aware cron via the `timezone` field (e.g. `Asia/Jakarta`). Defaults to UTC.
+
 ```bash
 curl -b cookies.txt -X POST http://localhost:3000/api/schedules \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Daily Sales Report","cronExpr":"0 9 * * *","prompt":"Summarize yesterday\'s sales"}'
+  -d '{"name":"Daily Sales Report","cronExpr":"0 9 * * *","prompt":"Summarize yesterday'\''s sales","timezone":"Asia/Jakarta"}'
 ```
 
 ```python
 r = requests.post('http://localhost:3000/api/schedules',
     cookies=cookies,
-    json={'name': 'Daily Sales Report', 'cronExpr': '0 9 * * *', 'prompt': "Summarize yesterday's sales"})
+    json={'name': 'Daily Sales Report', 'cronExpr': '0 9 * * *', 'prompt': "Summarize yesterday's sales", 'timezone': 'Asia/Jakarta'})
 ```
 
 ### PATCH /api/schedules/{id} — Update schedule

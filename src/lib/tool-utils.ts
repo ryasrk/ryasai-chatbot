@@ -38,6 +38,8 @@ export interface StreamingCompletionResult {
   chartData: ChartData | null
   integrationId?: string
   stream: AsyncGenerator<string, void, unknown>
+  usage?: { promptTokens: number; completionTokens: number }
+  citationTrail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
 }
 
 // ---------------------------------------------------------------------------

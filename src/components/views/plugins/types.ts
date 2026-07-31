@@ -34,6 +34,7 @@ export interface McpServerRow {
   args: string
   url: string
   hasEnvVars: boolean
+  hasHeaders: boolean
   isEnabled: boolean
   chatEnabled: boolean
   agenticEnabled: boolean

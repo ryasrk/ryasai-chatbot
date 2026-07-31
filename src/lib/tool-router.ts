@@ -24,6 +24,7 @@ import {
   prepareChatStream, prepareContextualChatStream, prepareRagStream, prepareSqlStream, prepareRestStream, preparePluginStream,
 } from '@/lib/stream-preparers'
 import { runMultiStepDag, runAgenticLoop, runStreamingAgenticLoop } from '@/lib/tool-router-agentic'
+import { withUsageTracking } from '@/lib/llm-client'
 
 export function chooseAvailableDecision(
   decision: RouteDecision,
@@ -38,6 +39,19 @@ export function chooseAvailableDecision(
 }
 
 export async function runNonStreamingChatCompletion(args: {
+  question: string
+  userId: string
+  integrationId?: string
+  sessionId?: string
+  chatHistory?: ChatHistoryEntry[]
+  allowMultiStepDag?: boolean
+  skipClarification?: boolean
+  systemPromptPrefix?: string
+}): Promise<CompletionResult> {
+  return withUsageTracking(() => _runNonStreamingChatCompletion(args))
+}
+
+async function _runNonStreamingChatCompletion(args: {
   question: string
   userId: string
   integrationId?: string
@@ -119,6 +133,19 @@ export async function runStreamingChatCompletion(args: {
   skipClarification?: boolean
   systemPromptPrefix?: string
 }): Promise<StreamingCompletionResult> {
+  return withUsageTracking(() => _runStreamingChatCompletion(args))
+}
+
+async function _runStreamingChatCompletion(args: {
+  question: string
+  userId: string
+  integrationId?: string
+  sessionId?: string
+  chatHistory?: ChatHistoryEntry[]
+  allowMultiStepDag?: boolean
+  skipClarification?: boolean
+  systemPromptPrefix?: string
+}): Promise<StreamingCompletionResult> {
   if (args.allowMultiStepDag && args.chatHistory && args.chatHistory.length > 0) {
     return runStreamingAgenticLoop({
       ...args,
@@ -183,7 +210,7 @@ async function loadIntentPipeline(args: {
   const [effectiveQuestion, dbData, memoryContext] = await Promise.all([
     hasHistory ? rewriteQuery({ question: args.question, chatHistory: args.chatHistory! }) : Promise.resolve(args.question),
     loadDbData(),
-    recallContext({ query: args.question, sessionId: args.sessionId }),
+    recallContext({ query: args.question, sessionId: args.sessionId }).catch(() => ''),
   ])
   if (hasHistory) {
     log.debug('Query rewritten', { original: args.question.slice(0, 50), rewritten: effectiveQuestion.slice(0, 50) })

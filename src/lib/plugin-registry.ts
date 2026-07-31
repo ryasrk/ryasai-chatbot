@@ -8,7 +8,7 @@
  */
 import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig } from '@/lib/crypto'
-import { isBlockedHost } from '@/lib/llm-config'
+import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
 import { z } from 'zod'
 
 export interface PluginManifest {
@@ -157,6 +157,11 @@ export async function executePlugin(args: {
 
   const started = Date.now()
   try {
+    // SSRF re-check at execution time — don't trust registration-time check alone.
+    const parsedUrl = new URL(url)
+    if (isBlockedHost(parsedUrl.hostname) || await isBlockedHostAsync(parsedUrl.hostname)) {
+      return { ok: false, output: '', error: 'Endpoint points to a blocked internal host.', latencyMs: 0 }
+    }
     let bodyStr: string | undefined
     if (hasBody && args.input) {
       try {

@@ -24,7 +24,15 @@ cmd.on('error', () => {})
 
 // ponytail: single queue for all job types — the `type` field in JobData dispatches to the right handler.
 // Split into per-type queues if different concurrency/backoff is needed.
-export const jobQueue = new Queue('document-processing', { connection: redis })
+export const jobQueue = new Queue('document-processing', {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+    removeOnComplete: { count: 100 },
+    removeOnFail: { count: 500 },
+  },
+})
 
 export async function rateLimit(
   key: string,

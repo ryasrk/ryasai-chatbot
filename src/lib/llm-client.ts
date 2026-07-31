@@ -23,16 +23,23 @@ export * from './llm-client-types'
 export * from './llm-client-openai'
 
 // ---------------------------------------------------------------------------
-// Usage tracking — module-level last-usage for callers that need token counts
-// (e.g. agentic budget tracker). Read after chatOnce() returns.
+// Usage tracking — AsyncLocalStorage for per-request isolation.
 // ponytail: avoids changing chatOnce return type (string | LlmToolCall[]) which
-// would break 15+ callers. getLastLlmUsage() returns undefined if no call was made.
+// would break 15+ callers. getLastLlmUsage() returns the usage from the current
+// async context, or undefined if no call was made.
 // ---------------------------------------------------------------------------
 
-let _lastUsage: { promptTokens: number; completionTokens: number } | undefined
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+const _usageStorage = new AsyncLocalStorage<{ promptTokens: number; completionTokens: number } | undefined>()
 
 export function getLastLlmUsage(): { promptTokens: number; completionTokens: number } | undefined {
-  return _lastUsage
+  return _usageStorage.getStore()
+}
+
+/** Run fn in an isolated usage context. Returns fn's result. */
+export function withUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
+  return _usageStorage.run(undefined, fn)
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +105,7 @@ export async function chatOnce(
       completionTokens: data.usage?.output_tokens ?? 0,
       totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
     }
-    _lastUsage = { promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens }
+    _usageStorage.enterWith({ promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens })
     if (responseFormat) {
       const toolUse = data.content?.find((c) => c.type === 'tool_use')
       const structured = toolUse ? JSON.stringify(toolUse.input ?? {}) : (data.content?.find((c) => c.type === 'text')?.text ?? '')
@@ -165,7 +172,7 @@ export async function chatOnce(
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
   }
-  _lastUsage = { promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens }
+  _usageStorage.enterWith({ promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens })
   if (responseFormat) {
     logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
     return (choice?.message?.content ?? '').trim()
@@ -201,7 +208,7 @@ export async function* chatStream(
   if (cfg.provider === 'ANTHROPIC_COMPATIBLE') {
     const body = buildAnthropicBody(messages, temperature, true, tools)
     body.model = cfg.model
-    const res = await fetch(`${cfg.baseUrl}/v1/messages`, {
+    const res = await fetchWithRetry(`${cfg.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -236,7 +243,7 @@ export async function* chatStream(
           streamOutput += parsed.delta.text
           yield parsed.delta.text
         }
-      } catch { /* skip malformed */ }
+      } catch (e) { console.warn('[llm] malformed SSE chunk:', e) }
     }
     logLlmUsage(purpose, cfg, {
       promptTokens: inputTokens,
@@ -257,7 +264,7 @@ export async function* chatStream(
   if (tools && tools.length > 0) {
     body.tools = tools
   }
-  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+  const res = await fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -287,7 +294,7 @@ export async function* chatStream(
       }
       const token = parsed.choices?.[0]?.delta?.content
       if (token) { streamOutput += token; yield token }
-    } catch { /* skip malformed */ }
+    } catch (e) { console.warn('[llm] malformed SSE chunk:', e) }
   }
   logLlmUsage(purpose, cfg, usage, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
   } catch (e) {

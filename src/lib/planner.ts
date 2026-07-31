@@ -278,7 +278,8 @@ function coerceMcpInput(input: Record<string, string>): Record<string, unknown> 
   for (const [k, v] of Object.entries(input)) {
     try {
       out[k] = JSON.parse(v)
-    } catch {
+    } catch (e) {
+      console.warn(`[planner] coerceMcpInput: failed to parse key "${k}" as JSON, using string:`, e)
       out[k] = v
     }
   }

@@ -51,6 +51,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 - **Contextual Retrieval**: Optional (env `CONTEXTUAL_RETRIEVAL=true`). Prepends an LLM-generated document summary to each chunk before embedding, reducing retrieval failures by ~49%
 - **REST Connector**: Whitelisted endpoints with parameter schema
 - **Streaming Chat**: Real SSE token streaming with mid-stream error frames + 120s idle watchdog
+- **MCP Client**: Connects to external MCP servers (stdio/sse/http) with production hardening: `AbortSignal.timeout` on all SDK calls, LRU connection cache, DNS-rebinding SSRF protection, encrypted HTTP headers, confirmation gate for agentic installs
 
 ### Super-App Capabilities
 - **Agentic Planner**: Multi-step DAG execution with self-correction
@@ -68,8 +69,8 @@ Default login: `admin@ryas.ai` / `admin12345`
 - Edge auth middleware (cookie-based session)
 - Rate limiting (POST/PUT/DELETE/PATCH, per-route, Edge-safe in-memory)
 - SQL AST guardrails (mutation block, LIMIT cap)
-- SSRF blocklist (RFC1918, link-local, CGNAT, ULA)
-- Plugin manifest Zod validation at registration
+- SSRF blocklist (RFC1918, link-local, CGNAT, ULA) + DNS-rebinding protection (`dns.lookup` on all outbound URLs)
+- Plugin manifest Zod validation at registration + SSRF re-check at execution time
 - Webhook HMAC-SHA256 signature verification
 - API keys (hashed, prefix-based O(1) lookup, rate-limited)
 - Audit logging (fail-closed on critical severity)
@@ -79,8 +80,8 @@ Default login: `admin@ryas.ai` / `admin12345`
 ### Observability
 - Structured JSON logger (`src/lib/logger.ts` — scoped, leveled, no Pino dep)
 - Typed error responses (`{ error: { code, message, hint? } }` — 16 error codes via `src/lib/errors.ts`)
-- LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat)
-- Tool run metrics (latency, success rate, circuit breaker)
+- LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat) with `AsyncLocalStorage` per-request isolation
+- Tool run metrics (latency, success rate, circuit breaker with half-open recovery)
 - RAG cache metrics (`getRagCacheStats()` — hits, misses, hit rate)
 - `ScheduledRunLog` full execution history (answer, error, toolRuns, latency) + JSON/CSV export
 - Monitoring dashboard (24h stats, failed requests, blocked SQL)
@@ -89,17 +90,22 @@ Default login: `admin@ryas.ai` / `admin12345`
 - Health endpoints: `/api/v1/health` (liveness) + `/api/health` (DB + Redis checks)
 
 ### Reliability
-- LLM retry with exponential backoff (3 retries, 500ms*2^attempt)
-- 30s LLM timeout, 120s stream timeout
+- LLM retry with exponential backoff (3 retries, 500ms*2^attempt) — now includes streaming path via `fetchWithRetry`
+- 30s LLM timeout, 120s stream timeout, 90s agentic loop deadline (`AGENTIC_DEADLINE_MS`)
 - Per-integration SQL concurrency limiter (3 concurrent max)
 - Webhook retry with exponential backoff (3 retries, 2s*2^n)
 - RAG query cache (1min TTL, invalidated on document changes)
 - RAG LLM reranker (opt-in via `RAG_LLM_RERANK=true`)
+- pgvector HNSW index for sub-millisecond vector similarity search
 - Multi-tool DAG execution (opt-in via `allowMultiStepDag` flag)
 - Parallelized intent pipeline (`rewriteQuery` + `recallContext` + 7 DB queries + `analyzeIntent` via `Promise.all`)
 - Parallelized planner steps (`groupByLevel` + `Promise.all` within each dependency level)
 - Agentic loop heuristic confidence check (skips LLM call for obvious cases)
 - Semantic scoring graceful fallback (keyword-only when embedding API unavailable)
+- Circuit breaker with half-open recovery (5min cooldown → probe at 50% score)
+- Graceful shutdown: `worker.close()` + `db.$disconnect` + `disconnectRedis` + `disconnectAllMcp` on SIGTERM/SIGINT
+- BullMQ scheduler with timezone support (`tz` option), 3 retries with exponential backoff, stalled detection
+- Citation trails propagated end-to-end (streaming + non-streaming paths)
 
 ## Architecture
 
@@ -268,6 +274,14 @@ Copy `.env.example` to `.env` and configure:
 | `LOG_LEVEL` | No | `debug`/`info`/`warn`/`error` (default `info`) |
 | `LOG_RETENTION_DAYS` | No | Log retention period (default 90) |
 | `PORT` | No | Dev server port (default 3000) |
+| `CHAT_API_CORS_ORIGIN` | No | CORS origin for external chat API (default `*`) |
+| `AGENTIC_DEADLINE_MS` | No | Agentic loop wall-clock timeout (default 90000) |
+| `CIRCUIT_BREAKER_COOLDOWN_MS` | No | Circuit breaker half-open cooldown (default 300000) |
+| `MCP_MAX_CONNECTIONS` | No | MCP connection cache LRU cap (default 20) |
+| `MCP_CONNECT_TIMEOUT_MS` | No | MCP connect timeout (default 15000) |
+| `MCP_LIST_TOOLS_TIMEOUT_MS` | No | MCP listTools timeout (default 10000) |
+| `MCP_CALL_TOOL_TIMEOUT_MS` | No | MCP callTool timeout (default 30000) |
+| `OTEL_ENABLED` | No | `true` to enable OpenTelemetry SDK (auto-detected from `OTEL_EXPORTER_OTLP_ENDPOINT`) |
 
 ## License
 

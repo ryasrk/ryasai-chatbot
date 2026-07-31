@@ -151,6 +151,7 @@ export async function prepareRagStream(args: {
     citations,
     chartData: null,
     stream,
+    citationTrail: retrieval.citationTrail,
   }
 }
 

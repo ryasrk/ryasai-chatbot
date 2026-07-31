@@ -52,6 +52,7 @@ export async function syncSchedule(run: {
   prompt: string
   isActive: boolean
   notificationConfigId: string | null
+  timezone?: string | null
 }): Promise<void> {
   const key = REPEAT_KEY(run.id)
 
@@ -78,7 +79,7 @@ export async function syncSchedule(run: {
       notificationConfigId: run.notificationConfigId,
     },
     {
-      repeat: { pattern: run.cronExpr },
+      repeat: { pattern: run.cronExpr, ...(run.timezone ? { tz: run.timezone } : {}) },
       jobId: undefined,
     },
   )
@@ -120,6 +121,7 @@ export async function syncAllSchedules(): Promise<void> {
       prompt: true,
       isActive: true,
       notificationConfigId: true,
+      timezone: true,
     },
   })
 

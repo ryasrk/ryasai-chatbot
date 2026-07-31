@@ -1,4 +1,5 @@
-// ponytail: Next.js instrumentation hook — validates env on boot, starts the BullMQ worker.
+// ponytail: Next.js instrumentation hook — validates env on boot, starts the BullMQ worker,
+// and wires graceful shutdown (db + redis + MCP connections).
 // Guarded to nodejs runtime (Edge can't run BullMQ). Handlers register at module load.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
@@ -7,8 +8,21 @@ export async function register() {
     validateEnv()
   } catch (e) {
     console.error('[instrumentation] Env validation failed:', e instanceof Error ? e.message : e)
-    // ponytail: don't crash in production — log loudly and continue. App will fail-closed at use sites.
   }
   const { startJobWorker } = await import('@/lib/job-processor')
-  startJobWorker()
+  const docWorker = startJobWorker()
+
+  const { initOtel } = await import('@/lib/otel')
+  await initOtel()
+
+  const { setupGracefulShutdown } = await import('@/lib/graceful-shutdown')
+  const { db } = await import('@/lib/db')
+  const { disconnectRedis } = await import('@/lib/redis')
+  const { disconnectAllMcp } = await import('@/lib/mcp-client')
+  setupGracefulShutdown(undefined, [
+    () => docWorker.close(),
+    db.$disconnect,
+    disconnectRedis,
+    disconnectAllMcp,
+  ])
 }

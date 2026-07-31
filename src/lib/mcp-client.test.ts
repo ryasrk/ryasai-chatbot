@@ -66,6 +66,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: '',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: false,
     }))
 
@@ -84,6 +85,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: '',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -102,6 +104,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: '',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -120,6 +123,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: 'http://localhost:8080/sse',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -138,6 +142,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: 'http://169.254.169.254/latest',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -156,6 +161,7 @@ describe('testMcpServer — server found in DB', () => {
       args: '[]',
       url: 'http://example.com',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -176,6 +182,7 @@ describe('callMcpTool — server in DB but unreachable', () => {
       args: '[]',
       url: '',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: false,
     }))
 
@@ -194,6 +201,7 @@ describe('callMcpTool — server in DB but unreachable', () => {
       args: '[]',
       url: '',
       envJson: '{}',
+      headersJson: '{}',
       isEnabled: true,
     }))
 
@@ -215,6 +223,7 @@ describe('listMcpTools — with servers in DB', () => {
         args: '[]',
         url: '',
         envJson: '{}',
+        headersJson: '{}',
         isEnabled: true,
       },
     ])
@@ -236,6 +245,7 @@ describe('listMcpTools — with servers in DB', () => {
         args: '[]',
         url: '',
         envJson: '{}',
+        headersJson: '{}',
         isEnabled: true,
       },
       {
@@ -247,6 +257,7 @@ describe('listMcpTools — with servers in DB', () => {
         args: '[]',
         url: '',
         envJson: '{}',
+        headersJson: '{}',
         isEnabled: true,
       },
     ])

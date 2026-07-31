@@ -155,12 +155,13 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
       error: lastError,
       timestamp: now.toISOString(),
     })
-    // Re-throw so BullMQ handles retry with exponential backoff
-    throw e
+    // Record failure to DB + send notification BEFORE throwing to BullMQ.
+    // Without this, failed runs leave zero trace and users are never alerted.
+    success = false
   }
 
   // If a notification channel is attached, deliver success or failure
-  // notification. Failures are recorded into lastResult but never abort the run.
+  // notification. This runs for BOTH success and failure paths.
   let notification: NotificationResult | null = null
   if (notificationConfigId) {
     try {
@@ -188,7 +189,6 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
             title: name,
           })
         }
-        // Stamp lastUsedAt best-effort.
         void db.notificationConfig
           .update({ where: { id: cfg.id }, data: { lastUsedAt: new Date() } })
           .catch(() => {})
@@ -284,28 +284,26 @@ const workerConnection = new IORedis(REDIS_URL, {
 })
 workerConnection.on('error', () => {})
 
+let _worker: Worker<ScheduleJobData> | null = null
+
 async function bootstrap(): Promise<void> {
   console.log('[scheduler] starting BullMQ worker...')
 
-  // Sync all existing active schedules to BullMQ on startup
   try {
     await syncAllSchedules()
   } catch (e) {
     console.warn('[scheduler] failed to sync schedules on startup (non-fatal):', e)
   }
 
-  // Create the worker — BullMQ handles polling, locking, retries, and stalled detection
-  const worker = new Worker<ScheduleJobData>(
+  _worker = new Worker<ScheduleJobData>(
     'scheduled-runs',
     async (job) => {
-      // Daily cleanup runs on first job after midnight
       const now = new Date()
       const today = now.toDateString()
       if (today !== lastCleanupDay) {
         lastCleanupDay = today
         void cleanupOldLogs()
       }
-
       await processJob(job)
     },
     {
@@ -317,19 +315,19 @@ async function bootstrap(): Promise<void> {
     },
   )
 
-  worker.on('completed', (job) => {
+  _worker.on('completed', (job) => {
     console.log(`[scheduler] job ${job.id} (${job.data.name}) completed`)
   })
 
-  worker.on('failed', (job, err) => {
+  _worker.on('failed', (job, err) => {
     console.error(`[scheduler] job ${job?.id ?? 'unknown'} (${job?.data.name ?? 'unknown'}) failed: ${err.message}`)
   })
 
-  worker.on('stalled', (jobId) => {
+  _worker.on('stalled', (jobId) => {
     console.warn(`[scheduler] job ${jobId} stalled — will be re-queued automatically`)
   })
 
-  worker.on('error', (err) => {
+  _worker.on('error', (err) => {
     console.error('[scheduler] worker error:', err)
   })
 
@@ -340,17 +338,26 @@ async function bootstrap(): Promise<void> {
 // Graceful shutdown
 // ---------------------------------------------------------------------------
 
-function shutdown(signal: string) {
+async function shutdown(signal: string) {
   console.log(`[scheduler] received ${signal}, shutting down...`)
-  // BullMQ worker.close() waits for in-flight jobs to finish
-  setTimeout(() => {
-    void workerConnection.quit()
-    console.log('[scheduler] stopped')
-    process.exit(0)
-  }, 2000).unref()
+  // Close the worker first — waits for in-flight jobs to finish (bounded by lockDuration)
+  if (_worker) {
+    try {
+      await _worker.close()
+    } catch (e) {
+      console.error('[scheduler] worker.close() error:', e)
+    }
+  }
+  try {
+    await workerConnection.quit()
+  } catch {
+    // best-effort
+  }
+  console.log('[scheduler] stopped')
+  process.exit(0)
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+process.on('SIGINT', () => void shutdown('SIGINT'))
 
 void bootstrap()

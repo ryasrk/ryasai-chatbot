@@ -137,11 +137,12 @@ export async function indexChunkKnowledgeGraph(args: {
     // Store relations in KgRelation table (if it exists)
     if (extraction.relations.length > 0) {
       try {
-        await db.$executeRaw`
-          INSERT INTO "KgRelation" ("id", "chunkId", "source", "target", "description", "keywords", "createdAt")
-          SELECT ${cryptoRandomId()}, ${args.chunkId}, r.source, r.target, r.description, r.keywords, NOW()
-          FROM (VALUES ${extraction.relations.map((r) => `(${r.source}, ${r.target}, ${r.description}, ${r.keywords})`).join(',')}) AS r(source, target, description, keywords)
-        `
+        for (const r of extraction.relations) {
+          await db.$executeRaw`
+            INSERT INTO "KgRelation" ("id", "chunkId", "source", "target", "description", "keywords", "createdAt")
+            VALUES (${cryptoRandomId()}, ${args.chunkId}, ${r.source}, ${r.target}, ${r.description}, ${r.keywords}, NOW())
+          `
+        }
       } catch {
         // ponytail: KgRelation table may not exist yet — skip silently
         log.debug('KgRelation table not available, skipping relation storage')

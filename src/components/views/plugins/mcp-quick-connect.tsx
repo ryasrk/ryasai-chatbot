@@ -32,7 +32,7 @@ export function McpQuickConnect({ onConnected }: QuickConnectProps) {
       toast.error('Invalid URL.')
       return
     }
-    const transport = raw.toLowerCase().includes('/sse') ? 'sse' : 'http'
+    const transport = raw.toLowerCase().includes('/sse') && !raw.toLowerCase().includes('/mcp') ? 'sse' : 'http'
     setQuickConnecting(true)
     setQuickResult({ status: 'testing' })
     try {

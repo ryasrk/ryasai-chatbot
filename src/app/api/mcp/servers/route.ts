@@ -15,6 +15,7 @@ interface CreateBody {
   args?: unknown
   url?: string
   envVars?: Record<string, unknown>
+  headers?: Record<string, unknown>
   isEnabled?: boolean
   chatEnabled?: boolean
   agenticEnabled?: boolean
@@ -65,6 +66,17 @@ function encodeEnv(envVars: Record<string, unknown> | undefined): string {
   return encryptConfig(clean)
 }
 
+function encodeHeaders(headers: Record<string, unknown> | undefined): string {
+  if (!headers || typeof headers !== 'object') return '{}'
+  const clean: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) {
+    if (typeof v === 'string') clean[k] = v
+    else if (v !== null && v !== undefined) clean[k] = String(v)
+  }
+  if (Object.keys(clean).length === 0) return '{}'
+  return encryptConfig(clean)
+}
+
 export function sanitizeServer(row: {
   id: string
   name: string
@@ -74,6 +86,7 @@ export function sanitizeServer(row: {
   args: string
   url: string
   envJson: string
+  headersJson: string
   isEnabled: boolean
   chatEnabled: boolean
   agenticEnabled: boolean
@@ -89,6 +102,7 @@ export function sanitizeServer(row: {
     args: row.args,
     url: row.url,
     hasEnvVars: row.envJson && row.envJson !== '{}',
+    hasHeaders: row.headersJson && row.headersJson !== '{}',
     isEnabled: row.isEnabled,
     chatEnabled: row.chatEnabled,
     agenticEnabled: row.agenticEnabled,
@@ -135,6 +149,7 @@ export async function POST(req: NextRequest) {
         args: normalizeArgs(body.args),
         url: transport === 'stdio' ? '' : (body.url ?? '').trim(),
         envJson: encodeEnv(body.envVars),
+        headersJson: encodeHeaders(body.headers),
         isEnabled: body.isEnabled ?? true,
         chatEnabled: typeof body.chatEnabled === 'boolean' ? body.chatEnabled : true,
         agenticEnabled: typeof body.agenticEnabled === 'boolean' ? body.agenticEnabled : true,
@@ -148,6 +163,7 @@ export async function POST(req: NextRequest) {
         args: true,
         url: true,
         envJson: true,
+        headersJson: true,
         isEnabled: true,
         chatEnabled: true,
         agenticEnabled: true,

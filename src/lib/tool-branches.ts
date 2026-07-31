@@ -602,6 +602,12 @@ export async function executeRestRequest(args: {
 
   try {
     const url = buildEndpointUrl(args.connector.baseUrl, args.path, args.plan.query)
+    // SSRF protection at execution time — don't trust admin-configured baseUrl blindly.
+    const parsedUrl = new URL(url)
+    const { isBlockedHost, isBlockedHostAsync } = await import('@/lib/llm-config')
+    if (isBlockedHost(parsedUrl.hostname) || await isBlockedHostAsync(parsedUrl.hostname)) {
+      return { ok: false, error: 'Endpoint points to a blocked internal host.', latencyMs: Date.now() - started }
+    }
     const response = await fetch(url, {
       method: args.method,
       headers,

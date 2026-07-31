@@ -291,7 +291,7 @@ curl https://chatbot.example.com/api/health | jq '.checks.redis'
 
 ### Scheduler Not Running
 
-**Symptoms:** Scheduled runs not executing, `nextRunAt` stuck in the past.
+**Symptoms:** Scheduled runs not executing, `lastRunAt` stuck in the past.
 
 **Diagnosis:**
 ```bash
@@ -301,11 +301,14 @@ pm2 status | grep scheduler
 kubectl get pods | grep scheduler
 
 # Check due runs
-psql $DATABASE_URL -c "SELECT id, name, nextRunAt FROM \"ScheduledRun\" WHERE \"isActive\" = true AND \"nextRunAt\" <= NOW();"
+psql $DATABASE_URL -c "SELECT id, name, \"lastRunAt\" FROM \"ScheduledRun\" WHERE \"isActive\" = true;"
+
+# Check BullMQ repeatable jobs
+redis-cli --scan --pattern 'bull:scheduled-runs:*'
 ```
 
 **Mitigation:**
 - Restart scheduler process
-- Check `SCHEDULER_POLL_INTERVAL_SEC` (default 60)
-- Verify `DATABASE_URL` is correct in scheduler environment
-- Manually trigger: set `nextRunAt = NOW()` for a stuck run
+- Verify `DATABASE_URL` and `REDIS_URL` are correct in scheduler environment
+- Re-sync schedules: the scheduler calls `syncAllSchedules()` on startup — restarting re-creates all BullMQ repeatable jobs
+- Manually trigger: `POST /api/schedules/{id}/run`

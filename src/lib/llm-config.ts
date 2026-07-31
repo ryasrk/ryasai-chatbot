@@ -43,6 +43,10 @@ export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   if (h === 'localhost') return true
   if (h === '::1' || h === '::') return true
+  // Cloud metadata endpoints
+  if (h === 'metadata.google.internal') return true
+  if (h === 'metadata.aws.internal') return true
+  if (h === 'metadata.azure.com') return true
   if (/^127\./.test(h)) return true
   if (/^0\.0\.0\.0$/.test(h)) return true
   if (/^169\.254\./.test(h)) return true
@@ -53,6 +57,31 @@ export function isBlockedHost(hostname: string): boolean {
   if (/^fd[0-9a-f]/.test(h)) return true
   if (/^fe[89ab][0-9a-f]/.test(h)) return true
   return false
+}
+
+/**
+ * Async DNS-rebinding check — resolves the hostname to all IPs and blocks
+ * if any resolved IP is private/loopback/link-local. Use BEFORE TCP connect
+ * to prevent SSRF via domains that resolve to internal addresses.
+ *
+ * Fast path: if isBlockedHost() already blocks the string, skip DNS.
+ * ponytail: DNS TOCTOU is a known ceiling — a domain could resolve to a
+ * public IP at check time then to 169.254.169.254 at connect time.
+ * Full fix requires pinning the resolved IP in the TCP socket, which
+ * Node's fetch/http don't expose. The check closes the common case.
+ */
+export async function isBlockedHostAsync(hostname: string): Promise<boolean> {
+  if (isBlockedHost(hostname)) return true
+  // Skip DNS for IP literals — already checked by isBlockedHost
+  if (/^\[?[\d.]+\]?$/.test(hostname) || /^[0-9a-f:]+$/i.test(hostname)) return false
+  try {
+    const { lookup } = await import('node:dns/promises')
+    const results = await lookup(hostname, { all: true })
+    return results.some((r) => isBlockedHost(r.address))
+  } catch {
+    // DNS resolution failed — fail open (let the transport try and fail)
+    return false
+  }
 }
 
 export function maskSecret(secret: string): string {
