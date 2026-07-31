@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { FileText, Loader2, Layers, AlertCircle } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { FileText, Loader2, Layers, AlertCircle, History, RotateCcw, Plus } from 'lucide-react'
 import { toast } from 'sonner'
+import { DetailSkeleton } from '@/components/ui/view-states'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -104,12 +105,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
   }
 
   if (loadingChunks && !detail) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading details…
-      </div>
-    )
+    return <DetailSkeleton />
   }
   if (error) {
     return (
@@ -181,6 +177,98 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
               </>
             )}
           </Button>
+        </div>
+      )}
+
+      <VersionHistory docId={id} />
+    </div>
+  )
+}
+
+function VersionHistory({ docId }: { docId: string }) {
+  const [versions, setVersions] = useState<Array<{ id: string; version: number; createdAt: string }>>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/documents/${docId}/versions`, { cache: 'no-store' })
+      const j = await res.json()
+      if (res.ok && Array.isArray(j.versions)) setVersions(j.versions)
+    } catch {
+      // silent fail — versions are optional
+    } finally {
+      setLoading(false)
+    }
+  }, [docId])
+
+  useEffect(() => { load() }, [load])
+
+  const createSnapshot = async () => {
+    setCreating(true)
+    try {
+      const res = await fetch(`/api/documents/${docId}/versions`, { method: 'POST' })
+      if (res.ok) { toast.success('Snapshot created'); load() }
+      else { const j = await res.json().catch(() => ({})); toast.error(extractError(j.error, 'Failed to create snapshot.')) }
+    } catch { toast.error('Network error.') } finally { setCreating(false) }
+  }
+
+  const restore = async (versionId: string) => {
+    setRestoringId(versionId)
+    try {
+      const res = await fetch(`/api/documents/${docId}/versions/${versionId}`, { method: 'POST' })
+      if (res.ok) {
+        const j = await res.json()
+        toast.success(`Restored to version ${j.version ?? 'previous'}`)
+      } else {
+        const j = await res.json().catch(() => ({}))
+        toast.error(extractError(j.error, 'Failed to restore.'))
+      }
+    } catch { toast.error('Network error.') } finally { setRestoringId(null) }
+  }
+
+  return (
+    <div className="space-y-2 pt-3 border-t mt-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium flex items-center gap-1.5">
+          <History className="h-3.5 w-3.5" />
+          Version History
+        </div>
+        <Button variant="outline" size="sm" onClick={createSnapshot} disabled={creating} className="h-6 text-xs gap-1">
+          {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+          Snapshot
+        </Button>
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+        </div>
+      ) : versions.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic py-1">No snapshots yet.</p>
+      ) : (
+        <div className="space-y-1">
+          {versions.map((v) => (
+            <div key={v.id} className="flex items-center justify-between rounded-md border bg-background px-2.5 py-1.5">
+              <div className="text-xs">
+                <span className="font-medium">v{v.version}</span>
+                <span className="text-muted-foreground ml-2">
+                  {new Date(v.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => restore(v.id)}
+                disabled={restoringId === v.id}
+                className="h-6 text-xs gap-1"
+              >
+                {restoringId === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                Restore
+              </Button>
+            </div>
+          ))}
         </div>
       )}
     </div>

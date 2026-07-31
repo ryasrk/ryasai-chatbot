@@ -133,15 +133,16 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
       })
       const formatted = formatSearchResponse(result)
       if (formatted) return formatted
-    } catch {
-      // try next strategy
+    } catch (e) {
+      console.warn('[cognee] graph recall strategy failed:', e instanceof Error ? e.message : String(e))
     }
   }
   // Last resort: no dataset filter
   try {
     const result = await c.search(query, { topK: 5, userId: _ownerId ?? undefined })
     return formatSearchResponse(result)
-  } catch {
+  } catch (e) {
+    console.warn('[cognee] graph recall failed:', e instanceof Error ? e.message : String(e))
     return ''
   }
 }
@@ -155,7 +156,8 @@ async function recallFromSession(c: any, query: string, sessionId: string): Prom
       userId: _ownerId ?? undefined,
     })
     return formatSearchResponse(result)
-  } catch {
+  } catch (e) {
+    console.warn('[cognee] session recall failed:', e instanceof Error ? e.message : String(e))
     return ''
   }
 }

@@ -22,6 +22,7 @@ import {
 } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
+import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
   withSqlConcurrency,
@@ -56,6 +57,7 @@ export async function runChatBranch(args: {
     answer,
     citations: [],
     chartData: null,
+    usage: getLastLlmUsage(),
     toolRuns: [
       {
         type: 'CHAT',
@@ -164,6 +166,8 @@ export async function runRagBranch(args: {
     answer,
     citations,
     chartData: null,
+    usage: getLastLlmUsage(),
+    citationTrail: retrieval.citationTrail,
     toolRuns: [
       {
         type: 'RAG',
@@ -213,6 +217,7 @@ export async function runSqlBranch(args: {
     schemaDescription,
     provider: integration.provider,
     memoryContext: args.memoryContext,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
   const guard = validateAndSanitizeLlmSql(llm.sql)
   if (!guard.ok) {
@@ -303,6 +308,7 @@ export async function runSqlBranch(args: {
       citations,
       chartData: buildChartDataFromRows(result.rows),
       integrationId: integration.id,
+      usage: getLastLlmUsage(),
       toolRuns: [
         {
           type: 'SQL',
@@ -484,6 +490,7 @@ export async function runRestBranch(args: {
     answer,
     citations,
     chartData: jsonRowsToChart(result.body),
+    usage: getLastLlmUsage(),
     toolRuns: [
       {
         type: 'REST_API',
@@ -545,6 +552,7 @@ export async function runPluginBranch(args: {
     answer,
     citations: [],
     chartData: null,
+    usage: getLastLlmUsage(),
     toolRuns: [{
       type: 'PLUGIN',
       status: 'success',

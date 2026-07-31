@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseCron, nextRun } from '@/lib/cron'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { syncSchedule } from '@/lib/scheduler-queue'
 
 export async function GET() {
   try {
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
       name?: string
       cronExpr?: string
       prompt?: string
+      notificationConfigId?: string | null
     }
 
     const name = (body.name ?? '').trim()
@@ -49,8 +51,23 @@ export async function POST(req: NextRequest) {
         prompt,
         isActive: true,
         nextRunAt,
+        notificationConfigId: body.notificationConfigId || null,
       },
     })
+
+    // Sync to BullMQ
+    try {
+      await syncSchedule({
+        id: schedule.id,
+        name: schedule.name,
+        cronExpr: schedule.cronExpr,
+        prompt: schedule.prompt,
+        isActive: schedule.isActive,
+        notificationConfigId: schedule.notificationConfigId,
+      })
+    } catch (e) {
+      console.error('[schedules] BullMQ sync failed (non-fatal):', e)
+    }
 
     await writeAudit({
       userId: user.userId,

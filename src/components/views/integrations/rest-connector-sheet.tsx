@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { FormSkeleton } from '@/components/ui/view-states'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -242,12 +243,7 @@ function RestConnectorContent({
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading REST connector...
-      </div>
-    )
+    return <FormSkeleton fields={4} />
   }
 
   if (error) {

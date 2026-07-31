@@ -25,7 +25,9 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState, ErrorState } from '@/components/ui/view-states'
+import { ErrorState, StatGridSkeleton } from '@/components/ui/view-states'
+import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import {
   ChartContainer,
   ChartTooltip,
@@ -61,6 +63,7 @@ export function DashboardView() {
   const [monitoring, setMonitoring] = useState<MonitoringStats | null>(null)
   const [activeSchedules, setActiveSchedules] = useState(0)
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(() => {
@@ -115,7 +118,7 @@ export function DashboardView() {
   }, [handleRefresh])
 
   if (loading) {
-    return <LoadingState />
+    return showSkeleton ? <StatGridSkeleton /> : null
   }
   if (error || !data) {
     return <ErrorState message={error ?? 'Data unavailable.'} onRetry={handleRefresh} />
@@ -144,11 +147,13 @@ export function DashboardView() {
 
   return (
     <div className="space-y-3">
-      <section className="grid grid-cols-2 xl:grid-cols-4 gap-2.5">
+      <Stagger className="grid grid-cols-2 xl:grid-cols-4 gap-2.5">
         {stats.map((stat) => (
-          <MetricCard key={stat.label} {...stat} />
+          <StaggerItem key={stat.label}>
+            <MetricCard {...stat} />
+          </StaggerItem>
         ))}
-      </section>
+      </Stagger>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <Card>
@@ -361,7 +366,7 @@ function MetricCard({
       <CardContent className="flex items-center justify-between">
         <div className="min-w-0">
           <div className="text-lg font-semibold tabular-nums leading-tight">
-            {typeof value === 'number' ? formatNumber(value) : value}
+            {typeof value === 'number' ? <AnimatedNumber value={value} format={formatNumber} /> : value}
           </div>
           <div className="truncate text-xs text-muted-foreground">{label}</div>
         </div>

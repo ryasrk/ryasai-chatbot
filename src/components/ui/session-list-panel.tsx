@@ -1,13 +1,14 @@
 'use client'
 
 import {
-  Plus, Loader2, Trash2, PanelLeftOpen, PanelLeftClose,
+  Plus, Loader2, Trash2, PanelLeftOpen, PanelLeftClose, Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
+import { SessionListSkeleton } from '@/components/ui/view-states'
 
 export interface SessionListItem {
   id: string
@@ -116,10 +117,7 @@ export function SessionListPanel({
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-1.5 space-y-0.5">
             {loading ? (
-              <div className="flex items-center justify-center py-6 text-[11px] text-muted-foreground gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Memuat...
-              </div>
+              <SessionListSkeleton />
             ) : sessions.length === 0 ? (
               <div className="text-center py-6 text-[11px] text-muted-foreground">
                 {emptyHint}
@@ -161,6 +159,17 @@ export function SessionListPanel({
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            window.open(`/api/sessions/${s.id}/export?format=markdown`, '_blank')
+                          }}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                          aria-label="Export session"
+                        >
+                          <Download className="h-3 w-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {

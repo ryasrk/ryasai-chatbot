@@ -157,6 +157,16 @@
   }
 }
 
+/* ponytail: shared easing tokens — used across CSS + tailwind arbitrary values.
+   --ease-out: strong ease-out for entering/exiting UI (dropdowns, tooltips, dialogs)
+   --ease-in-out: natural acceleration/deceleration for on-screen movement
+   --ease-drawer: iOS-like drawer curve (from Ionic Framework) */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 @keyframes typing-dot {
   0%, 80%, 100% {
     opacity: 0.3;
@@ -180,12 +190,12 @@
 
 /* View transition — smooth fade + slight rise on menu/tab switch */
 .view-fade {
-  animation: view-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: view-fade-in 200ms var(--ease-out);
 }
 
 /* Card entrance — subtle scale for dialogs, modals, popovers */
 .scale-in {
-  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scale-in 200ms var(--ease-out);
 }
 
 /* Glass card — theme-agnostic glassmorphism surface (adapts to any theme/mode) */
@@ -195,7 +205,7 @@
   border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
   border-radius: var(--radius-md);
   box-shadow: 0 20px 60px color-mix(in oklab, var(--foreground) 8%, transparent);
-  transition: transform 250ms ease, box-shadow 250ms ease;
+  transition: transform 250ms var(--ease-out), box-shadow 250ms var(--ease-out);
 }
 .glass-card:hover {
   transform: translateY(-2px);
@@ -204,20 +214,31 @@
 
 /* Tab content transition — smooth fade when switching tabs */
 [data-slot="tabs-content"] {
-  animation: view-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: view-fade-in 200ms var(--ease-out);
 }
 
-/* Dialog/AlertDialog entrance — smooth scale-in */
-[data-slot="dialog-content"],
-[data-slot="alert-dialog-content"] {
-  animation: scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+/* ponytail: unify shadcn popover/dropdown/select/hover-card/context-menu/tooltip
+   animation timing — default tw-animate-css uses plain ease at 150ms.
+   This brings them in line with the rest of the app's --ease-out curve at 200ms. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-menu-content"],
+[data-slot="select-content"],
+[data-slot="hover-card-content"],
+[data-slot="context-menu-content"],
+[data-slot="context-menu-sub-menu-content"],
+[data-slot="menubar-content"],
+[data-slot="menubar-sub-menu-content"],
+[data-slot="tooltip-content"] {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out);
 }
 
 /* Interactive feedback — smooth state transitions on hover/active */
 button,
 [role="button"],
 a {
-  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out, opacity 150ms ease-out;
+  transition: background-color 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out, opacity 150ms ease-out, transform 160ms ease-out;
 }
 
 .text-security-disc {

@@ -22,7 +22,8 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { CardGridSkeleton, ListRowsSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -55,7 +56,9 @@ export function IntegrationsView() {
   const [items, setItems] = useState<Integration[]>([])
   const [restItems, setRestItems] = useState<RestConnectorItem[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [restLoading, setRestLoading] = useState(true)
+  const showRestSkeleton = useDelayedLoading(restLoading)
   const [loadError, setLoadError] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'database' | 'rest'>('database')
@@ -268,8 +271,8 @@ export function IntegrationsView() {
         </div>
 
         <TabsContent value="database" className="mt-2">
-      {loading ? (
-        <LoadingState label="Loading integrations…" />
+      {showSkeleton ? (
+        <CardGridSkeleton />
       ) : loadError ? (
         <ErrorState message="Failed to load integrations." onRetry={fetchList} />
       ) : items.length === 0 ? (
@@ -316,11 +319,8 @@ export function IntegrationsView() {
         <CardContent className="space-y-4">
           <RestCreateForm onCreated={fetchRestList} />
 
-          {restLoading ? (
-            <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading REST API connectors...
-            </div>
+          {showRestSkeleton ? (
+            <ListRowsSkeleton count={3} />
           ) : restItems.length === 0 ? (
             <div className="rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground">
               No REST API connectors yet.

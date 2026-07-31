@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { SessionListPanel } from '@/components/ui/session-list-panel'
+import { ChatMessageSkeleton } from '@/components/ui/view-states'
 
 import { EmptyState } from './chat/empty-state'
 import { MessageBubble } from './chat/message-bubble'
@@ -173,10 +174,7 @@ export function ChatView() {
             className={cn('flex-1 p-4 space-y-3', hasMessages && !loadingSession && 'overflow-y-auto')}
           >
             {loadingSession ? (
-              <div className="flex items-center justify-center h-full text-xs text-muted-foreground gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading conversation...
-              </div>
+              <ChatMessageSkeleton count={3} />
             ) : !hasMessages ? (
               <EmptyState
                 onPickPrompt={(p) => {

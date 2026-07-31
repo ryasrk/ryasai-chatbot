@@ -140,9 +140,22 @@ export async function POST(req: NextRequest) {
     })
 
     // Semantic-ish chunking: split on double-newlines, filter empties.
-    let chunks = chunkText(contentText)
+    // Parent-doc chunking: small child chunks + parent window context (opt-in).
+    const useParentDoc = !!process.env.PARENT_DOC_CHILD_SIZE
+    const chunkResult = useParentDoc
+      ? (await import('@/lib/rag-chunking')).chunkTextParentDoc(contentText)
+      : null
+    let chunks: string[]
+    let chunkContextPrefixes: (string | null)[]
+    if (chunkResult) {
+      chunks = chunkResult.map((c) => c.content)
+      chunkContextPrefixes = chunkResult.map((c) => c.contextPrefix)
+    } else {
+      chunks = chunkText(contentText)
+      chunkContextPrefixes = chunks.map(() => null)
+    }
     // If chunking yielded nothing (e.g., a one-paragraph doc), use the whole text.
-    if (chunks.length === 0) chunks = [contentText]
+    if (chunks.length === 0) { chunks = [contentText]; chunkContextPrefixes = [null] }
 
     // Cap chunks per upload to avoid pathological files filling the DB.
     const MAX_CHUNKS = 500
@@ -155,6 +168,7 @@ export async function POST(req: NextRequest) {
         documentId: doc.id,
         chunkIndex: idx,
         content,
+        contextPrefix: chunkContextPrefixes[idx],
         tokenCount: Math.ceil(content.length / 4),
         keywords: extractKeywords(content, 8),
       }))

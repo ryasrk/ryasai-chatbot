@@ -14,27 +14,26 @@ export async function initOtel(): Promise<void> {
   if (!enabled) return
   _initialized = true
 
+  // ponytail: hide import paths from the bundler's static analyzer — these
+  // packages are optional and may not be installed. The try/catch handles
+  // the runtime "module not found" gracefully. Turbopack/webpack can't
+  // resolve a dynamic string, so it skips bundling these.
+  const dynImport = (pkg: string) => import(/* @vite-ignore */ pkg as never)
+
   try {
-    // @ts-ignore — optional dependency, not installed by default
-    const { NodeSDK } = await import('@opentelemetry/sdk-node')
-    // @ts-ignore — optional dependency
-    const { resourceFromAttributes } = await import('@opentelemetry/resources')
-    // @ts-ignore — optional dependency
-    const { attrServiceName, attrServiceVersion } = await import('@opentelemetry/semantic-conventions')
-    // @ts-ignore — optional dependency
-    const { HttpInstrumentation } = await import('@opentelemetry/instrumentation-http')
-    // @ts-ignore — optional dependency
-    const { FetchInstrumentation } = await import('@opentelemetry/instrumentation-fetch')
+    const { NodeSDK } = await dynImport('@opentelemetry/sdk-node')
+    const { resourceFromAttributes } = await dynImport('@opentelemetry/resources')
+    const { attrServiceName, attrServiceVersion } = await dynImport('@opentelemetry/semantic-conventions')
+    const { HttpInstrumentation } = await dynImport('@opentelemetry/instrumentation-http')
+    const { FetchInstrumentation } = await dynImport('@opentelemetry/instrumentation-fetch')
 
     const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
     let traceExporter: unknown
     if (otlpEndpoint) {
-      // @ts-ignore — optional dependency
-      const { OTLPTraceExporter } = await import('@opentelemetry/exporter-trace-otlp-http')
+      const { OTLPTraceExporter } = await dynImport('@opentelemetry/exporter-trace-otlp-http')
       traceExporter = new OTLPTraceExporter({ url: `${otlpEndpoint}/v1/traces` })
     } else {
-      // @ts-ignore — optional dependency
-      const { ConsoleSpanExporter } = await import('@opentelemetry/sdk-trace-base')
+      const { ConsoleSpanExporter } = await dynImport('@opentelemetry/sdk-trace-base')
       traceExporter = new ConsoleSpanExporter()
     }
 

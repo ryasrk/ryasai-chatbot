@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Activity, Loader2 } from 'lucide-react'
+import { Activity } from 'lucide-react'
 import { format } from 'date-fns'
 import { enUS as localeId } from 'date-fns/locale'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { TableSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import {
   Table,
   TableBody,
@@ -21,6 +23,7 @@ import { RequestLogRow } from './types'
 export function RequestLogsPanel() {
   const [logs, setLogs] = useState<RequestLogRow[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,11 +51,7 @@ export function RequestLogsPanel() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    )
+    return showSkeleton ? <TableSkeleton rows={8} cols={5} /> : null
   }
 
   if (error) {

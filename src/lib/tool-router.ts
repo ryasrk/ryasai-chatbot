@@ -44,11 +44,14 @@ export async function runNonStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  skipClarification?: boolean
+  systemPromptPrefix?: string
 }): Promise<CompletionResult> {
   if (args.allowMultiStepDag && args.chatHistory && args.chatHistory.length > 0) {
     const result = await runAgenticLoop({
       question: args.question, userId: args.userId, sessionId: args.sessionId,
       integrationId: args.integrationId, chatHistory: args.chatHistory,
+      skipClarification: args.skipClarification, systemPromptPrefix: args.systemPromptPrefix,
     }, runNonStreamingChatCompletion)
     return { answer: result.answer, citations: result.citations, chartData: result.chartData, toolRuns: result.toolRuns }
   }
@@ -70,7 +73,7 @@ export async function runNonStreamingChatCompletion(args: {
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
   })
 
-  if (intent.needsClarification && intent.clarificationQuestion) {
+  if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
     return { answer: intent.clarificationQuestion, citations: [], chartData: null, toolRuns: [] }
   }
 
@@ -79,7 +82,7 @@ export async function runNonStreamingChatCompletion(args: {
   }
 
   const { decision, resolvedIntegrationId, clarification } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
-  if (clarification) {
+  if (clarification && !args.skipClarification) {
     return { answer: clarification, citations: [], chartData: null, toolRuns: [] }
   }
 
@@ -91,7 +94,8 @@ export async function runNonStreamingChatCompletion(args: {
   if (effectiveDecision === 'REST' && !promptSettings.tools.restApi) effectiveDecision = 'CHAT'
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
-  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: promptSettings.systemPrompt || undefined, memoryContext, chatHistory: args.chatHistory ?? [] }
+  const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
+  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: mergedPrefix, memoryContext, chatHistory: args.chatHistory ?? [] }
 
   let result: CompletionResult
   if (effectiveDecision === 'SQL') result = await runSqlBranch(branchArgs)
@@ -112,9 +116,15 @@ export async function runStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  skipClarification?: boolean
+  systemPromptPrefix?: string
 }): Promise<StreamingCompletionResult> {
   if (args.allowMultiStepDag && args.chatHistory && args.chatHistory.length > 0) {
-    return runStreamingAgenticLoop(args, runStreamingChatCompletion)
+    return runStreamingAgenticLoop({
+      ...args,
+      skipClarification: args.skipClarification,
+      systemPromptPrefix: args.systemPromptPrefix,
+    }, runStreamingChatCompletion)
   }
 
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
@@ -129,17 +139,17 @@ export async function runStreamingChatCompletion(args: {
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
   })
 
-  if (intent.needsClarification && intent.clarificationQuestion) {
+  if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
     async function* clarifyStream() { yield intent.clarificationQuestion! }
     return { stream: clarifyStream(), toolRuns: [], citations: [], chartData: null }
   }
 
   if (!intent.needsRetrieval) {
-    return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: undefined, memoryContext, chatHistory: args.chatHistory ?? [] })
+    return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: args.systemPromptPrefix, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
 
   const { decision, resolvedIntegrationId, clarification } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
-  if (clarification) {
+  if (clarification && !args.skipClarification) {
     const text = clarification
     async function* clarifyStream() { yield text }
     return { stream: clarifyStream(), toolRuns: [], citations: [], chartData: null }
@@ -153,7 +163,8 @@ export async function runStreamingChatCompletion(args: {
   if (effectiveDecision === 'REST' && !promptSettings.tools.restApi) effectiveDecision = 'CHAT'
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
-  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: promptSettings.systemPrompt || undefined, memoryContext, chatHistory: args.chatHistory ?? [] }
+  const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
+  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: mergedPrefix, memoryContext, chatHistory: args.chatHistory ?? [] }
 
   if (effectiveDecision === 'SQL') return await prepareSqlStream(branchArgs)
   if (effectiveDecision === 'RAG') return await prepareRagStream(branchArgs)

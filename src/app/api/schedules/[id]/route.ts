@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
 import { parseCron, nextRun } from '@/lib/cron'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { syncSchedule, removeSchedule } from '@/lib/scheduler-queue'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -47,6 +48,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       cronExpr?: string
       prompt?: string
       isActive?: boolean
+      notificationConfigId?: string | null
     }
 
     const data: {
@@ -55,10 +57,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       prompt?: string
       isActive?: boolean
       nextRunAt?: Date | null
+      notificationConfigId?: string | null
     } = {}
 
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.prompt === 'string' && body.prompt.trim()) data.prompt = body.prompt.trim()
+    if (body.notificationConfigId !== undefined) data.notificationConfigId = body.notificationConfigId || null
 
     const changingCron = typeof body.cronExpr === 'string'
     if (changingCron) {
@@ -104,6 +108,24 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       )
     }
 
+    // Sync to BullMQ
+    try {
+      if (updated.isActive) {
+        await syncSchedule({
+          id: updated.id,
+          name: updated.name,
+          cronExpr: updated.cronExpr,
+          prompt: updated.prompt,
+          isActive: updated.isActive,
+          notificationConfigId: updated.notificationConfigId,
+        })
+      } else {
+        await removeSchedule(updated.id, existing.cronExpr)
+      }
+    } catch (e) {
+      console.error('[schedules] BullMQ sync failed (non-fatal):', e)
+    }
+
     await writeAudit({
       userId: user.userId,
       action: 'SCHEDULE_UPDATE',
@@ -139,6 +161,13 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
         { ok: false, error: 'Scheduled run not found.' },
         { status: 404 },
       )
+    }
+
+    // Remove from BullMQ
+    try {
+      await removeSchedule(existing.id)
+    } catch (e) {
+      console.error('[schedules] BullMQ removal failed (non-fatal):', e)
     }
 
     await writeAudit({

@@ -548,6 +548,8 @@ bash reset.sh        # reset DB + re-seed
 
 **Next**: Wire `rememberChatTurn` + `recallContext` into chat-service (S2 Phase 1 integration). Wire planner into WS service for streaming multi-step. UI views for plugins/schedules/agent. Install `@cognee/cognee-ts` when ready to test against real cognee.
 
+> **Update 2026-07-30**: All orphaned API routes now wired to UI. SSO → login view button + status endpoint. Session export → download button in session list. Document versions → version history panel in doc detail dialog. Prompt library → "Library" tab in prompt-tools view. Webhook incoming → info card in settings system tab.
+
 ### 2026-07-24 — UI/UX overhaul (Impeccable + GRIDLIGHT theme)
 
 **Impeccable installed** — `npx impeccable install --providers=opencode --scope=project`. PRODUCT.md created. Critique system active.

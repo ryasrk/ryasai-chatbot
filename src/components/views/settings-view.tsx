@@ -15,11 +15,13 @@ import {
   Moon,
   Check,
   Loader2,
+  Webhook,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState, ErrorState } from '@/components/ui/view-states'
+import { FormSkeleton, ErrorState } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -84,6 +86,7 @@ export function SettingsView() {
 function ProfileTab() {
   const [user, setUser] = useState<ActiveUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -100,7 +103,7 @@ function ProfileTab() {
   }, [])
 
   if (loading) {
-    return <LoadingState />
+    return showSkeleton ? <FormSkeleton fields={3} /> : null
   }
 
   if (error || !user) {
@@ -399,12 +402,23 @@ function SystemTab() {
       </Card>
 
       <Card className="border-dashed">
-        <CardContent className="pt-4">
+        <CardContent className="pt-4 space-y-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Terminal className="h-3.5 w-3.5" />
             <span>Reset development data:</span>
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">./reset.sh</code>
           </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t">
+            <Webhook className="h-3.5 w-3.5" />
+            <span>Incoming webhook:</span>
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+              POST /api/webhooks/incoming
+            </code>
+          </div>
+          <p className="text-[11px] text-muted-foreground pl-5">
+            Requires <code className="font-mono">INCOMING_WEBHOOK_SECRET</code> + <code className="font-mono">x-webhook-signature</code> header.
+            Body: <code className="font-mono">{'{ "query": "..." }'}</code>
+          </p>
         </CardContent>
       </Card>
     </div>

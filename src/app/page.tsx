@@ -19,7 +19,7 @@ import {
   Layers,
   Hash,
 } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { useActiveUser } from '@/hooks/use-active-user'
 import { applyTheme, getStoredTheme, getStoredDarkMode } from '@/lib/themes'
@@ -92,6 +92,7 @@ export default function Home() {
   const [view, setViewState] = useState<ViewKey>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
   const { user, loading, unauthorized, refresh } = useActiveUser()
+  const reduceMotion = useReducedMotion()
 
   const [setup, setSetup] = useState<{
     setupCompleted: boolean
@@ -187,7 +188,7 @@ export default function Home() {
                   initial={{ x: '-100%' }}
                   animate={{ x: 0 }}
                   exit={{ x: '-100%' }}
-                  transition={{ type: 'spring', stiffness: 360, damping: 36 }}
+                  transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 360, damping: 36 }}
                 >
                   <div className="flex items-center justify-between p-4 border-b">
                     <span className="font-semibold">Navigation</span>
@@ -229,11 +230,21 @@ export default function Home() {
                 <AgenticView />
               </div>
               {/* Other views: mount on demand with fade animation. */}
-              {view !== 'chat' && view !== 'agentic' && (
-                <div className="view-fade h-full" key={view} suppressHydrationWarning>
-                  {renderView(view)}
-                </div>
-              )}
+              <AnimatePresence mode="wait">
+                {view !== 'chat' && view !== 'agentic' && (
+                  <motion.div
+                    key={view}
+                    className="h-full"
+                    suppressHydrationWarning
+                    initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                  >
+                    {renderView(view)}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </main>
         </div>
@@ -261,16 +272,24 @@ function SidebarContent({
               onClick={() => setView(item.key)}
               className={cn(
                 'relative w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
-                active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground',
+                active ? 'text-primary-foreground' : 'hover:bg-muted text-foreground',
               )}
             >
+              {active && (
+                <motion.div
+                  layoutId="nav-active-pill"
+                  className="absolute inset-0 rounded-md bg-primary"
+                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                  style={{ zIndex: -1 }}
+                />
+              )}
               <Icon
                 className={cn(
-                  'h-4 w-4 shrink-0',
+                  'h-4 w-4 shrink-0 relative',
                   active ? '' : 'text-muted-foreground',
                 )}
               />
-              <span className="text-xs font-medium truncate">{item.label}</span>
+              <span className="text-xs font-medium truncate relative">{item.label}</span>
             </button>
           )
         })}

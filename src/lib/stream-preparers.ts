@@ -191,6 +191,7 @@ export async function prepareSqlStream(args: {
     schemaDescription,
     provider: integration.provider,
     memoryContext: args.memoryContext,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
   const guard = validateAndSanitizeLlmSql(llm.sql)
   if (!guard.ok) {

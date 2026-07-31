@@ -23,6 +23,19 @@ export * from './llm-client-types'
 export * from './llm-client-openai'
 
 // ---------------------------------------------------------------------------
+// Usage tracking — module-level last-usage for callers that need token counts
+// (e.g. agentic budget tracker). Read after chatOnce() returns.
+// ponytail: avoids changing chatOnce return type (string | LlmToolCall[]) which
+// would break 15+ callers. getLastLlmUsage() returns undefined if no call was made.
+// ---------------------------------------------------------------------------
+
+let _lastUsage: { promptTokens: number; completionTokens: number } | undefined
+
+export function getLastLlmUsage(): { promptTokens: number; completionTokens: number } | undefined {
+  return _lastUsage
+}
+
+// ---------------------------------------------------------------------------
 // Public transport: chatOnce + chatStream
 // ---------------------------------------------------------------------------
 
@@ -85,6 +98,7 @@ export async function chatOnce(
       completionTokens: data.usage?.output_tokens ?? 0,
       totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
     }
+    _lastUsage = { promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens }
     if (responseFormat) {
       const toolUse = data.content?.find((c) => c.type === 'tool_use')
       const structured = toolUse ? JSON.stringify(toolUse.input ?? {}) : (data.content?.find((c) => c.type === 'text')?.text ?? '')
@@ -151,6 +165,7 @@ export async function chatOnce(
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
   }
+  _lastUsage = { promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens }
   if (responseFormat) {
     logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
     return (choice?.message?.content ?? '').trim()

@@ -11,16 +11,22 @@ import {
   ExternalLink,
   FileText,
   AlertCircle,
+  BookMarked,
+  Plus,
+  Trash2,
+  Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState } from '@/components/ui/view-states'
+import { FormSkeleton, ListRowsSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { extractError } from '@/lib/extract-error'
@@ -61,6 +67,7 @@ export function PromptToolsView() {
   const [settings, setSettings] = useState<PromptSettings>(DEFAULT_SETTINGS)
   const [connectors, setConnectors] = useState<RestConnector[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [loadError, setLoadError] = useState(false)
@@ -129,7 +136,7 @@ export function PromptToolsView() {
   }
 
   if (loading) {
-    return <LoadingState />
+    return showSkeleton ? <FormSkeleton fields={4} /> : null
   }
 
   const totalEndpoints = connectors.reduce((sum, c) => sum + (c._count?.endpoints ?? 0), 0)
@@ -154,6 +161,10 @@ export function PromptToolsView() {
           <TabsTrigger value="guardrails" className="gap-1.5 text-xs">
             <ShieldCheck className="h-3.5 w-3.5" />
             Guardrails
+          </TabsTrigger>
+          <TabsTrigger value="library" className="gap-1.5 text-xs">
+            <BookMarked className="h-3.5 w-3.5" />
+            Library
           </TabsTrigger>
         </TabsList>
 
@@ -303,7 +314,191 @@ export function PromptToolsView() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="library" className="mt-3">
+          <PromptLibrary />
+        </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+/* ============================================================ prompt library */
+
+interface SavedPrompt {
+  id: string
+  title: string
+  content: string
+  category?: string | null
+  isPublic: boolean
+  updatedAt: string
+}
+
+function PromptLibrary() {
+  const [prompts, setPrompts] = useState<SavedPrompt[]>([])
+  const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
+  const [editing, setEditing] = useState<SavedPrompt | null>(null)
+  const [showForm, setShowForm] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/prompts', { cache: 'no-store' })
+      const j = await res.json()
+      if (res.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as SavedPrompt[])
+    } catch { toast.error('Failed to load prompts.') }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleSave = async (data: { title: string; content: string; category?: string; isPublic?: boolean }) => {
+    if (editing) {
+      const res = await fetch(`/api/prompts/${editing.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (res.ok) { toast.success('Prompt updated'); setShowForm(false); setEditing(null); load() }
+      else { const j = await res.json().catch(() => ({})); toast.error(extractError(j.error, 'Failed to update.')) }
+    } else {
+      const res = await fetch('/api/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (res.ok) { toast.success('Prompt created'); setShowForm(false); load() }
+      else { const j = await res.json().catch(() => ({})); toast.error(extractError(j.error, 'Failed to create.')) }
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    const res = await fetch(`/api/prompts/${id}`, { method: 'DELETE' })
+    if (res.ok) { toast.success('Prompt deleted'); load() }
+    else { toast.error('Failed to delete.') }
+  }
+
+  if (loading) return showSkeleton ? <ListRowsSkeleton count={3} /> : null
+
+  if (showForm) {
+    return (
+      <PromptForm
+        initial={editing}
+        onSave={handleSave}
+        onCancel={() => { setShowForm(false); setEditing(null) }}
+      />
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-xs flex items-center gap-2">
+              <BookMarked className="h-4 w-4" />
+              Prompt Library
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Save and reuse prompt templates across sessions.
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => { setEditing(null); setShowForm(true) }} className="gap-1.5">
+            <Plus className="h-3.5 w-3.5" />
+            New
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {prompts.length === 0 ? (
+          <div className="flex items-center gap-2 rounded-md border border-dashed p-4 text-xs text-muted-foreground">
+            <FileText className="h-4 w-4" />
+            No saved prompts yet. Click &ldquo;New&rdquo; to create one.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {prompts.map((p) => (
+              <div key={p.id} className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                <div className="min-w-0 flex-1 pr-2">
+                  <div className="text-xs font-medium truncate">{p.title}</div>
+                  <div className="text-xs text-muted-foreground truncate font-mono">
+                    {p.content.slice(0, 80)}{p.content.length > 80 ? '…' : ''}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {p.category && <Badge variant="secondary" className="text-xs">{p.category}</Badge>}
+                    {p.isPublic && <Badge className="text-xs bg-primary/10 text-primary">Public</Badge>}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(p); setShowForm(true) }}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(p.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PromptForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: SavedPrompt | null
+  onSave: (data: { title: string; content: string; category?: string; isPublic?: boolean }) => void
+  onCancel: () => void
+}) {
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [content, setContent] = useState(initial?.content ?? '')
+  const [category, setCategory] = useState(initial?.category ?? '')
+  const [isPublic, setIsPublic] = useState(initial?.isPublic ?? false)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-xs">{initial ? 'Edit Prompt' : 'New Prompt'}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-2">
+          <Label className="text-xs">Title</Label>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. SQL Expert" className="text-xs" />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">Content</Label>
+          <Textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Prompt template text…"
+            rows={6}
+            className="resize-y text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex-1 space-y-2">
+            <Label className="text-xs">Category (optional)</Label>
+            <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. sql, rag, general" className="text-xs" />
+          </div>
+          <div className="flex items-center gap-2 pt-5">
+            <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+            <Label className="text-xs">Public</Label>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button size="sm" disabled={!title.trim() || !content.trim()} onClick={() => onSave({ title: title.trim(), content: content.trim(), category: category.trim() || undefined, isPublic })}>
+            <Save className="h-3.5 w-3.5 mr-1" />
+            {initial ? 'Update' : 'Create'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

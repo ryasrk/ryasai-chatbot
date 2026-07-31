@@ -15,6 +15,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ListRowsSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +36,7 @@ import { McpQuickConnect } from './mcp-quick-connect'
 export function McpServersTab() {
   const [servers, setServers] = useState<McpServerRow[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [search, setSearch] = useState('')
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -139,11 +142,7 @@ export function McpServersTab() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return showSkeleton ? <ListRowsSkeleton count={3} /> : null
   }
 
   return (

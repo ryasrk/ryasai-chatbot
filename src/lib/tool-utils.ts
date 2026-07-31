@@ -24,6 +24,7 @@ export interface CompletionResult {
   chartData: ChartData | null
   integrationId?: string
   usage?: { promptTokens: number; completionTokens: number }
+  citationTrail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
 }
 
 export interface ChatHistoryEntry {

@@ -1,11 +1,12 @@
 'use client'
 
 import Image from 'next/image'
-import { Loader2, LogOut, Menu, ShieldCheck, UserCircle } from 'lucide-react'
+import { LogOut, Menu, ShieldCheck, UserCircle } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { ActiveUser } from '@/lib/types'
 
 export function Topbar({
@@ -65,7 +66,13 @@ export function Topbar({
 
           <div className="flex items-center gap-2 rounded-md border bg-background px-2 py-1" suppressHydrationWarning>
             {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-7 w-7 rounded-full" />
+                <div className="hidden md:block space-y-1">
+                  <Skeleton className="h-2.5 w-20" />
+                  <Skeleton className="h-2 w-16" />
+                </div>
+              </div>
             ) : user ? (
               <>
                 <Avatar className="h-7 w-7">

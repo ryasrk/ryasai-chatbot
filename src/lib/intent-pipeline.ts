@@ -143,7 +143,8 @@ export async function analyzeIntent(args: {
 
     const parsed = parseIntentJson(raw)
     return parsed
-  } catch {
+  } catch (e) {
+    console.warn('[intent] analyzeIntent LLM call failed:', e instanceof Error ? e.message : String(e))
     // ponytail: on LLM error, fall back to default — don't block the user
     return {
       needsRetrieval: args.hasDocuments || args.hasIntegrations,
@@ -166,7 +167,8 @@ function parseIntentJson(raw: string): IntentAnalysis {
       entities: json.entities || undefined,
       confidence: typeof json.confidence === 'number' ? json.confidence : 0.5,
     }
-  } catch {
+  } catch (e) {
+    console.warn('[intent] JSON parse failed for intent analysis:', e instanceof Error ? e.message : String(e))
     // JSON parse failed — return safe defaults
     return {
       needsRetrieval: true,
@@ -224,7 +226,8 @@ export async function rewriteQuery(args: {
 
     const cleaned = rewritten.trim().replace(/^["']|["']$/g, '')
     return cleaned || args.question
-  } catch {
+  } catch (e) {
+    console.warn('[intent] query rewrite failed:', e instanceof Error ? e.message : String(e))
     return args.question
   }
 }
@@ -294,7 +297,8 @@ export async function evaluateEvidenceSufficiency(args: {
       reason: json.reason || 'unknown',
       confidence: typeof json.confidence === 'number' ? json.confidence : 0.5,
     }
-  } catch {
+  } catch (e) {
+    console.warn('[intent] evidence sufficiency evaluation failed:', e instanceof Error ? e.message : String(e))
     // On error, assume sufficient — don't block the answer
     return { sufficient: true, reason: 'Reflection failed — assuming sufficient', confidence: 0 }
   }
@@ -366,6 +370,7 @@ interface RetrievalResult {
   queryTokens: string[]
   candidatesScanned: number
   graphContext: string
+  citationTrail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
 }
 
 // ponytail: cap expansions at 3 to limit parallel retrieval calls.
@@ -386,7 +391,8 @@ export function mergeRetrievalResults(results: RetrievalResult[]): RetrievalResu
   const queryTokens = [...new Set(results.flatMap((r) => r.queryTokens))]
   const candidatesScanned = results.reduce((sum, r) => sum + r.candidatesScanned, 0)
   const graphContext = results.map((r) => r.graphContext).filter(Boolean).join('\n\n')
-  return { chunks, queryTokens, candidatesScanned, graphContext }
+  const citationTrail = results.flatMap((r) => r.citationTrail ?? [])
+  return { chunks, queryTokens, candidatesScanned, graphContext, citationTrail: citationTrail.length > 0 ? citationTrail : undefined }
 }
 
 export async function retrieveWithReflection(args: {
@@ -501,7 +507,8 @@ export async function evaluateAnswerConfidence(args: {
       nextToolHint: parsed.nextToolHint ?? null,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
     }
-  } catch {
+  } catch (e) {
+    console.warn('[intent] confidence evaluation failed:', e instanceof Error ? e.message : String(e))
     // ponytail: on LLM error, assume confident — don't block the answer
     return { confident: true, reason: 'evaluation failed, proceeding with answer', confidence: 0.5 }
   }

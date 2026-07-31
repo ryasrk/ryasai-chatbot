@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { ListRowsSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import {
   Select,
   SelectContent,
@@ -48,6 +50,7 @@ import { TestResultBlock } from './test-result-block'
 export function CustomToolsTab() {
   const [plugins, setPlugins] = useState<PluginRow[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
@@ -205,11 +208,7 @@ export function CustomToolsTab() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return showSkeleton ? <ListRowsSkeleton count={3} /> : null
   }
 
   return (

@@ -18,6 +18,8 @@ import { format } from 'date-fns'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { TableSkeleton, ListRowsSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -146,12 +148,14 @@ export function SecurityView() {
   const [filter, setFilter] = useState<SeverityFilter>('all')
   const [data, setData] = useState<AuditPage | null>(null)
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<AuditLogItem | null>(null)
 
   // ---- monitoring data (tool runs, failed requests, blocked SQL) ----
   const [monitoring, setMonitoring] = useState<MonitoringData | null>(null)
   const [monLoading, setMonLoading] = useState(true)
+  const showMonSkeleton = useDelayedLoading(monLoading)
 
   // ---- recent LLM traces (in-memory observability ring buffer) ----
   const [tracesOpen, setTracesOpen] = useState(false)
@@ -424,10 +428,8 @@ export function SecurityView() {
             </div>
             {error ? (
               <div className="py-10 text-center text-xs text-destructive">{error}</div>
-            ) : loading && !data ? (
-              <div className="flex items-center justify-center py-10 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </div>
+            ) : showSkeleton && !data ? (
+              <TableSkeleton rows={8} cols={4} />
             ) : filtered.length === 0 ? (
               <div className="py-8 text-center text-xs text-muted-foreground overflow-hidden">
                 No audit logs for this filter.
@@ -516,10 +518,8 @@ export function SecurityView() {
         <TabsContent value="tool-runs" className="mt-3">
           <div className="space-y-2">
             <div className="text-xs font-medium">Tool Runs — last 50 tool executions (RAG, SQL, REST API, Chat)</div>
-            {monLoading && !monitoring ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </div>
+            {showMonSkeleton && !monitoring ? (
+              <ListRowsSkeleton count={5} />
             ) : (monitoring?.toolRuns ?? []).length === 0 ? (
               <div className="py-8 text-center text-xs text-muted-foreground overflow-hidden">No tool runs yet.</div>
             ) : (
@@ -583,7 +583,7 @@ export function SecurityView() {
             {/* API request logs */}
             <div>
               <div className="text-xs font-medium mb-2">API Request Logs</div>
-              {monLoading && !monitoring ? (
+              {showMonSkeleton && !monitoring ? (
                 <div className="flex items-center justify-center py-4 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
@@ -632,7 +632,7 @@ export function SecurityView() {
             {/* REST API errors */}
             <div>
               <div className="text-xs font-medium mb-2">REST API Errors</div>
-              {monLoading && !monitoring ? (
+              {showMonSkeleton && !monitoring ? (
                 <div className="flex items-center justify-center py-4 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                 </div>
@@ -684,10 +684,8 @@ export function SecurityView() {
         <TabsContent value="blocked-sql" className="mt-3">
           <div className="space-y-2">
             <div className="text-xs font-medium">Blocked SQL — last 50 guardrail SQL blocks (destructive queries rejected)</div>
-            {monLoading && !monitoring ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </div>
+            {showMonSkeleton && !monitoring ? (
+              <ListRowsSkeleton count={5} />
             ) : (monitoring?.blockedSql ?? []).length === 0 ? (
               <div className="py-8 text-center text-xs text-muted-foreground overflow-hidden">No blocked SQL entries.</div>
             ) : (

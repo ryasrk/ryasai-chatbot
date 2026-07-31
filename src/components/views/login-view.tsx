@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
-import { Loader2, LogIn } from 'lucide-react'
+import { useState, useEffect, type FormEvent } from 'react'
+import { Loader2, LogIn, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +23,19 @@ export function LoginView({ onSuccess }: LoginViewProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [ssoConfigured, setSsoConfigured] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/sso/status').then(r => r.json()).then(d => setSsoConfigured(d?.configured ?? false)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('error')
+    if (err === 'sso_not_configured') setError('SSO is not configured on this server.')
+    else if (err === 'sso_state_mismatch') setError('SSO login failed: state mismatch. Try again.')
+    else if (err === 'sso_missing_params') setError('SSO login failed: missing parameters.')
+  }, [])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -88,7 +101,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               </p>
             )}
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-2">
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -97,6 +110,17 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               )}
               Sign In
             </Button>
+            {ssoConfigured && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => { window.location.href = '/api/auth/sso/login' }}
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                Sign in with SSO
+              </Button>
+            )}
           </CardFooter>
         </form>
       </Card>

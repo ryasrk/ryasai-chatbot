@@ -1,15 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History } from 'lucide-react'
+import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History, Play, Search, Bell, Activity, CheckCircle2, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { Stagger, StaggerItem } from '@/components/motion'
 
 import { describeCron, formatRelativeTime, previewNextRuns } from '@/lib/cron-describe'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { ListRowsSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -54,6 +56,22 @@ import {
 type RepeatType = 'daily' | 'weekdays' | 'weekends' | 'custom'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+interface NotificationConfig {
+  id: string
+  name: string
+  type: string
+  isActive: boolean
+}
+
+const QUICK_PRESETS = [
+  { label: 'Every hour', cron: '0 * * * *' },
+  { label: 'Every 15 min', cron: '*/15 * * * *' },
+  { label: 'Daily 9 AM', cron: '0 9 * * *' },
+  { label: 'Daily 6 PM', cron: '0 18 * * *' },
+  { label: 'Weekdays 9 AM', cron: '0 9 * * 1-5' },
+  { label: 'First of month', cron: '0 9 1 * *' },
+]
+
 function buildCron(time: string, repeat: RepeatType, selectedDays: number[]): string {
   const [h, m] = time.split(':').map(Number)
   const hh = h ?? 0
@@ -88,6 +106,7 @@ interface Schedule {
   lastRunAt: string | null
   nextRunAt: string | null
   lastResult: string | null
+  notificationConfigId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -121,10 +140,11 @@ interface RunHistoryItem {
 export function SchedulesView() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [loadError, setLoadError] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Schedule | null>(null)
-  const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true })
+  const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '' })
   const [scheduleTime, setScheduleTime] = useState('09:00')
   const timeInputRef = useRef<HTMLInputElement>(null)
   const [repeatType, setRepeatType] = useState<RepeatType>('daily')
@@ -133,10 +153,15 @@ export function SchedulesView() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [runningId, setRunningId] = useState<string | null>(null)
   const [historySchedule, setHistorySchedule] = useState<Schedule | null>(null)
   const [historyRuns, setHistoryRuns] = useState<RunHistoryItem[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const showHistorySkeleton = useDelayedLoading(loadingHistory)
   const prevLastRunMap = useRef<Map<string, string>>(new Map())
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [notificationConfigs, setNotificationConfigs] = useState<NotificationConfig[]>([])
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
@@ -160,6 +185,11 @@ export function SchedulesView() {
 
   useEffect(() => {
     fetchSchedules()
+    // Fetch notification configs for the selector
+    fetch('/api/notifications')
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setNotificationConfigs(d.configs) })
+      .catch(() => {})
   }, [fetchSchedules])
 
   // ponytail: poll every 15s for schedule changes — detects when the scheduler
@@ -191,7 +221,7 @@ export function SchedulesView() {
 
   function openCreate() {
     setEditing(null)
-    setForm({ name: '', cronExpr: '', prompt: '', isActive: true })
+    setForm({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '' })
     setScheduleTime('09:00')
     setRepeatType('daily')
     setSelectedDays([])
@@ -201,11 +231,28 @@ export function SchedulesView() {
   function openEdit(s: Schedule) {
     setEditing(s)
     const parsed = parseCron(s.cronExpr)
-    setForm({ name: s.name, cronExpr: s.cronExpr, prompt: s.prompt, isActive: s.isActive })
+    setForm({ name: s.name, cronExpr: s.cronExpr, prompt: s.prompt, isActive: s.isActive, notificationConfigId: s.notificationConfigId ?? '' })
     setScheduleTime(parsed.time)
     setRepeatType(parsed.repeat)
     setSelectedDays(parsed.selectedDays)
     setDialogOpen(true)
+  }
+
+  async function handleRunNow(s: Schedule) {
+    setRunningId(s.id)
+    try {
+      const res = await fetch(`/api/schedules/${s.id}/run`, { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) {
+        toast.success(`"${s.name}" triggered — result will appear in history shortly.`)
+      } else {
+        toast.error(data.error || 'Failed to trigger schedule.')
+      }
+    } catch {
+      toast.error('Failed to trigger schedule.')
+    } finally {
+      setRunningId(null)
+    }
   }
 
   async function handleSave() {
@@ -228,6 +275,7 @@ export function SchedulesView() {
         cronExpr,
         prompt: form.prompt.trim(),
         isActive: form.isActive,
+        notificationConfigId: form.notificationConfigId || null,
       }
 
       const res = await fetch(url, {
@@ -317,6 +365,63 @@ export function SchedulesView() {
 
   return (
     <div className="space-y-3">
+      {/* Stats summary */}
+      <Stagger className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <StaggerItem>
+        <Card>
+          <CardContent className="flex items-center justify-between py-3 px-3.5">
+            <div>
+              <div className="text-lg font-semibold tabular-nums leading-tight">{schedules.length}</div>
+              <div className="text-xs text-muted-foreground">Total Schedules</div>
+            </div>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        </StaggerItem>
+        <StaggerItem>
+        <Card>
+          <CardContent className="flex items-center justify-between py-3 px-3.5">
+            <div>
+              <div className="text-lg font-semibold tabular-nums leading-tight text-success">{schedules.filter((s) => s.isActive).length}</div>
+              <div className="text-xs text-muted-foreground">Active</div>
+            </div>
+            <Activity className="h-4 w-4 text-success" />
+          </CardContent>
+        </Card>
+        </StaggerItem>
+        <StaggerItem>
+        <Card>
+          <CardContent className="flex items-center justify-between py-3 px-3.5">
+            <div>
+              <div className="text-lg font-semibold tabular-nums leading-tight text-success">
+                {(() => {
+                  const withResults = schedules.filter((s) => s.lastResult)
+                  if (withResults.length === 0) return '-'
+                  const successCount = withResults.filter((s) => lastStatusFromResult(s.lastResult) === 'success').length
+                  return `${Math.round((successCount / withResults.length) * 100)}%`
+                })()}
+              </div>
+              <div className="text-xs text-muted-foreground">Success Rate</div>
+            </div>
+            <CheckCircle2 className="h-4 w-4 text-success" />
+          </CardContent>
+        </Card>
+        </StaggerItem>
+        <StaggerItem>
+        <Card>
+          <CardContent className="flex items-center justify-between py-3 px-3.5">
+            <div>
+              <div className="text-lg font-semibold tabular-nums leading-tight text-destructive">
+                {schedules.filter((s) => lastStatusFromResult(s.lastResult) === 'error').length}
+              </div>
+              <div className="text-xs text-muted-foreground">Failed</div>
+            </div>
+            <AlertCircle className="h-4 w-4 text-destructive" />
+          </CardContent>
+        </Card>
+        </StaggerItem>
+      </Stagger>
+
       <Card className="rounded-none border border-border/70">
         <CardHeader className="py-3 px-3.5 gap-1">
           <div className="flex items-center justify-between">
@@ -325,7 +430,7 @@ export function SchedulesView() {
               <div>
                 <CardTitle className="text-sm">Execution Schedules</CardTitle>
                 <CardDescription className="text-xs">
-                  Automate prompt execution based on cron schedules.
+                  Automate prompt execution based on cron schedules. Times are in UTC.
                 </CardDescription>
               </div>
             </div>
@@ -334,11 +439,35 @@ export function SchedulesView() {
               Add Schedule
             </Button>
           </div>
+          {/* Search + filter */}
+          {schedules.length > 0 && (
+            <div className="flex items-center gap-2 pt-1">
+              <div className="relative flex-1 max-w-[240px]">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search schedules..."
+                  className="h-7 text-xs pl-7"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | 'active' | 'inactive')}>
+                <SelectTrigger className="h-7 text-xs w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardHeader>
       </Card>
 
-      {loading ? (
-        <LoadingState />
+      {showSkeleton ? (
+        <ListRowsSkeleton />
       ) : loadError ? (
         <ErrorState message="Failed to load execution schedules." onRetry={fetchSchedules} />
       ) : schedules.length === 0 ? (
@@ -373,11 +502,28 @@ export function SchedulesView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {schedules.map((s) => {
+                {schedules
+                  .filter((s) => {
+                    if (statusFilter === 'active' && !s.isActive) return false
+                    if (statusFilter === 'inactive' && s.isActive) return false
+                    if (searchQuery && !s.name.toLowerCase().includes(searchQuery.toLowerCase()) && !s.prompt.toLowerCase().includes(searchQuery.toLowerCase())) return false
+                    return true
+                  })
+                  .map((s) => {
                   const status = lastStatusFromResult(s.lastResult)
                   return (
                     <TableRow key={s.id}>
-                      <TableCell className="text-xs py-2.5 px-3.5 font-medium">{s.name}</TableCell>
+                      <TableCell className="text-xs py-2.5 px-3.5 font-medium">
+                        <div className="flex flex-col gap-0.5">
+                          {s.name}
+                          {s.notificationConfigId && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <Bell className="h-2.5 w-2.5" />
+                              {notificationConfigs.find((c) => c.id === s.notificationConfigId)?.name ?? 'Notification'}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-xs">{describeCron(s.cronExpr)}</span>
@@ -427,6 +573,20 @@ export function SchedulesView() {
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex items-center justify-end gap-1">
+                           <Button
+                             variant="ghost"
+                             size="icon"
+                             className="h-7 w-7"
+                             onClick={() => handleRunNow(s)}
+                             disabled={runningId === s.id}
+                             title="Run Now"
+                           >
+                             {runningId === s.id ? (
+                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                             ) : (
+                               <Play className="h-3.5 w-3.5" />
+                             )}
+                           </Button>
                            {s.lastResult && (
                              <Button
                                variant="ghost"
@@ -503,6 +663,36 @@ export function SchedulesView() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Schedule</Label>
+              {/* Quick presets */}
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_PRESETS.map((p) => {
+                  const cron = buildCron(scheduleTime, repeatType, selectedDays)
+                  const isActive = cron === p.cron
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        // Parse preset cron into form state
+                        const [m, h, , , dow] = p.cron.split(' ')
+                        setScheduleTime(`${h.padStart(2, '0')}:${m.padStart(2, '0')}`)
+                        if (dow === '*') setRepeatType('daily')
+                        else if (dow === '1-5') setRepeatType('weekdays')
+                        else if (dow === '0,6') setRepeatType('weekends')
+                        else { setRepeatType('custom'); setSelectedDays(dow.split(',').map(Number)) }
+                      }}
+                      className={cn(
+                        'text-[10px] px-2 py-1 rounded-md border transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-card text-muted-foreground border-border/70 hover:bg-accent'
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  )
+                })}
+              </div>
               <div className="flex items-center gap-3 rounded-none border border-border/70 p-3 bg-muted/20">
                 <label className="cursor-pointer">
                   <span
@@ -596,6 +786,30 @@ export function SchedulesView() {
                 className="text-xs min-h-[80px]"
               />
             </div>
+            {notificationConfigs.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <Bell className="h-3 w-3" />
+                  Notification Channel
+                </Label>
+                <Select
+                  value={form.notificationConfigId || 'none'}
+                  onValueChange={(v) => setForm({ ...form, notificationConfigId: v === 'none' ? '' : v })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No notification</SelectItem>
+                    {notificationConfigs.filter((c) => c.isActive).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} ({c.type})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Separator />
             <div className="flex items-center justify-between">
               <Label className="text-xs">Active</Label>
@@ -679,10 +893,8 @@ export function SchedulesView() {
           )}
 
           <div className="flex-1 overflow-y-auto space-y-2">
-            {loadingHistory ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
+            {showHistorySkeleton ? (
+              <ListRowsSkeleton count={4} />
             ) : historyRuns.length === 0 ? (
               <div className="text-center py-8 text-xs text-muted-foreground">
                 No execution history yet.

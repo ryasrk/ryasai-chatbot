@@ -11,7 +11,6 @@ import {
   Columns3,
   ChevronsDownUp,
   ChevronsUpDown,
-  Loader2,
   ShieldAlert,
   type LucideIcon,
 } from 'lucide-react'
@@ -34,6 +33,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
+import { TableSkeleton } from '@/components/ui/view-states'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Table,
@@ -368,12 +368,7 @@ function SchemaViewerContent({
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading schema…
-      </div>
-    )
+    return <TableSkeleton rows={8} cols={3} />
   }
   if (error) {
     return (

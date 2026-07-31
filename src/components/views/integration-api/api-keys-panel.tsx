@@ -18,6 +18,8 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { ListRowsSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -46,6 +48,7 @@ import { copyText } from './utils'
 export function ApiKeysPanel() {
   const [items, setItems] = useState<ApiKeyRow[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [error, setError] = useState<string | null>(null)
   const [label, setLabel] = useState('')
   const [rateLimit, setRateLimit] = useState('')
@@ -130,11 +133,7 @@ export function ApiKeysPanel() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    )
+    return showSkeleton ? <ListRowsSkeleton count={4} /> : null
   }
 
   if (error) {

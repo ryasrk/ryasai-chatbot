@@ -76,8 +76,10 @@ export async function runAgenticLoop(
     integrationId?: string
     chatHistory?: ChatHistoryEntry[]
     budget?: TokenBudget
+    skipClarification?: boolean
+    systemPromptPrefix?: string
   },
-  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] }) => Promise<CompletionResult>,
+  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string }) => Promise<CompletionResult>,
 ): Promise<AgenticIterationResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -96,6 +98,8 @@ export async function runAgenticLoop(
       sessionId: args.sessionId,
       integrationId: args.integrationId,
       chatHistory: args.chatHistory,
+      skipClarification: args.skipClarification,
+      systemPromptPrefix: args.systemPromptPrefix,
     })
 
     if (result.usage) budget.track(result.usage)
@@ -173,6 +177,8 @@ export async function runAgenticLoop(
     userId: args.userId,
     sessionId: args.sessionId,
     chatHistory: args.chatHistory,
+    skipClarification: args.skipClarification,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
 
   return { answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: [...allToolRuns, ...finalResult.toolRuns], iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
@@ -185,13 +191,16 @@ export async function runStreamingAgenticLoop(
     integrationId?: string
     sessionId?: string
     chatHistory?: ChatHistoryEntry[]
+    skipClarification?: boolean
+    systemPromptPrefix?: string
     onConfidence?: (info: { iteration: number; confidence: number; reason: string; confident: boolean }) => void
   },
-  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] }) => Promise<StreamingCompletionResult>,
+  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string }) => Promise<StreamingCompletionResult>,
 ): Promise<StreamingCompletionResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
+  const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
 
   for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
     const contextualQuestion = accumulatedEvidence
@@ -204,6 +213,8 @@ export async function runStreamingAgenticLoop(
       sessionId: args.sessionId,
       integrationId: args.integrationId,
       chatHistory: args.chatHistory,
+      skipClarification: args.skipClarification,
+      systemPromptPrefix: args.systemPromptPrefix,
     })
 
     allToolRuns.push(...result.toolRuns)
@@ -218,6 +229,16 @@ export async function runStreamingAgenticLoop(
       answerText += chunk
     }
 
+    // Reflexion: self-critique the answer before confidence eval (opt-in).
+    if (process.env.REFLEXION_ENABLED === 'true') {
+      const { selfCritique } = await import('@/lib/reflexion')
+      const critique = await selfCritique(args.question, answerText, accumulatedEvidence + `\n${answerText}`)
+      if (critique.needsRevision) {
+        answerText = critique.revisedAnswer
+        log.info('Streaming reflexion revised answer', { iteration: iteration + 1, critique: critique.critique.slice(0, 100) })
+      }
+    }
+
     const toolEvidence = result.toolRuns
       .map((tr) => `[${tr.type}] ${tr.outputSummary?.slice(0, 300) ?? ''}`)
       .join('\n')
@@ -227,26 +248,58 @@ export async function runStreamingAgenticLoop(
     const hasSubstantialData = accumulatedEvidence.length > 500
 
     if (hasError && result.toolRuns.every((tr) => tr.status === 'error' || tr.status === 'blocked')) {
+      confidenceHistory.push({ confident: false, confidence: 0, reason: 'all tools failed' })
       log.info('Streaming agentic loop continuing (all tools failed)', { iteration: iteration + 1 })
       continue
     }
 
     if (hasSubstantialData && !hasError) {
+      confidenceHistory.push({ confident: true, confidence: 0.85, reason: 'substantial evidence gathered (heuristic)' })
       log.info('Streaming agentic loop confident (heuristic)', { iteration: iteration + 1 })
       args.onConfidence?.({ iteration: iteration + 1, confidence: 0.85, reason: 'substantial evidence gathered (heuristic)', confident: true })
+
+      // Alignment check (opt-in)
+      if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
+        const { checkAlignment } = await import('@/lib/alignment-check')
+        const alignment = await checkAlignment(answerText, args.question)
+        if (alignment.risk === 'high') {
+          log.info('Streaming agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
+          confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
+          async function* alignedStream() { yield `${answerText}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]` }
+          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+        }
+      }
+
       async function* answerStream() { yield answerText }
       return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
     }
 
     const confidence = await evaluateAnswerConfidence({ question: args.question, evidence: accumulatedEvidence })
+    confidenceHistory.push({ confident: confidence.confident, confidence: confidence.confidence, reason: confidence.reason })
     args.onConfidence?.({ iteration: iteration + 1, confidence: confidence.confidence, reason: confidence.reason, confident: confidence.confident })
 
     if (confidence.confident) {
+      // Alignment check (opt-in)
+      if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
+        const { checkAlignment } = await import('@/lib/alignment-check')
+        const alignment = await checkAlignment(answerText, args.question)
+        if (alignment.risk === 'high') {
+          log.info('Streaming agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
+          confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
+          async function* alignedStream() { yield `${answerText}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]` }
+          return { stream: alignedStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
+        }
+      }
+
       async function* answerStream() { yield answerText }
       return { stream: answerStream(), toolRuns: allToolRuns, citations: allCitations, chartData: result.chartData }
     }
 
-    log.info('Streaming agentic loop continuing', { iteration: iteration + 1, confidence: confidence.confidence, nextToolHint: confidence.nextToolHint })
+    const toolHint = confidence.nextToolHint && confidence.nextToolHint !== 'CHAT'
+      ? `\n[Hint: the previous tool call was insufficient. Try ${confidence.nextToolHint} instead.]`
+      : ''
+    accumulatedEvidence += toolHint
+    log.info('Streaming agentic loop continuing', { iteration: iteration + 1, confidence: confidence.confidence, reason: confidence.reason, nextToolHint: confidence.nextToolHint })
   }
 
   const finalResult = await runStreaming({
@@ -254,6 +307,8 @@ export async function runStreamingAgenticLoop(
     userId: args.userId,
     sessionId: args.sessionId,
     chatHistory: args.chatHistory,
+    skipClarification: args.skipClarification,
+    systemPromptPrefix: args.systemPromptPrefix,
   })
 
   return { stream: finalResult.stream, toolRuns: [...allToolRuns, ...finalResult.toolRuns], citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData }

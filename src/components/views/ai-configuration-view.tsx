@@ -16,7 +16,8 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState } from '@/components/ui/view-states'
+import { FormSkeleton } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -41,6 +42,7 @@ import { extractError } from '@/lib/extract-error'
 export function AIConfigurationView() {
   const [cfg, setCfg] = useState<PublicLlmConfig | null>(null)
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
 
   const [provider, setProvider] = useState('OPENAI_COMPATIBLE')
   const [baseUrl, setBaseUrl] = useState('')
@@ -83,7 +85,7 @@ export function AIConfigurationView() {
   }, [])
 
   if (loading) {
-    return <LoadingState />
+    return showSkeleton ? <FormSkeleton fields={5} /> : null
   }
 
   async function handleFetchModels() {

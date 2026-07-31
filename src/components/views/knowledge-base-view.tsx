@@ -23,7 +23,8 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { LoadingState, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { CardGridSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -51,6 +52,7 @@ import { VectorStorePanel } from './knowledge-base/vector-store-panel'
 export function KnowledgeBaseView() {
   const [docs, setDocs] = useState<DocumentItem[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
   const [loadError, setLoadError] = useState(false)
   const [activeCat, setActiveCat] = useState<string>('ALL')
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -273,8 +275,8 @@ export function KnowledgeBaseView() {
       </div>
 
       {/* Document list */}
-      {loading ? (
-        <LoadingState label="Loading documents…" />
+      {showSkeleton ? (
+        <CardGridSkeleton count={6} />
       ) : loadError ? (
         <ErrorState message="Failed to load documents." onRetry={fetchDocs} />
       ) : docs.length === 0 ? (

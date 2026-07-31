@@ -22,6 +22,7 @@ interface ChatCompletionPayload {
   answer: string
   citations: unknown[]
   chart_data: unknown
+  citation_trail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
   tool_runs: Array<{
     id: string
     type: string
@@ -351,6 +352,7 @@ export async function POST(req: NextRequest) {
       answer: completion.answer,
       citations: completion.citations,
       chart_data: completion.chartData,
+      citation_trail: completion.citationTrail,
       tool_runs: toolRuns.map((toolRun) => ({
         id: toolRun.id,
         type: toolRun.type,
