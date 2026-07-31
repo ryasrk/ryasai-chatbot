@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     const state = searchParams.get('state')
     const stateCookie = req.cookies.get('sso_state')?.value
     const nonceCookie = req.cookies.get('sso_nonce')?.value
+    const codeVerifierCookie = req.cookies.get('sso_code_verifier')?.value
 
     if (!code || !state || !stateCookie) {
       return NextResponse.redirect(new URL('/login?error=sso_missing_params', req.url))
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
 
     const issuer = process.env.OIDC_ISSUER!
     const config = await getOidcConfig(issuer)
-    const tokens = await exchangeCode(code, config)
+    const tokens = await exchangeCode(code, config, codeVerifierCookie)
 
     const { header } = decodeIdToken(tokens.id_token)
     const payload = header.alg === 'RS256'
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
     })
     res.cookies.delete('sso_state')
     res.cookies.delete('sso_nonce')
+    res.cookies.delete('sso_code_verifier')
     return res
   } catch (e) {
     return handleApiError(e, 'SSO callback failed.')

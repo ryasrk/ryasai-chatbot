@@ -62,7 +62,12 @@ export async function getOidcConfig(issuerUrl: string): Promise<OidcConfig> {
   return cfg
 }
 
-export function buildAuthUrl(config: OidcConfig, state: string, nonce: string): string {
+export function buildAuthUrl(
+  config: OidcConfig,
+  state: string,
+  nonce: string,
+  codeChallenge?: string,
+): string {
   const clientId = env('OIDC_CLIENT_ID')
   const redirectUri = env('OIDC_REDIRECT_URI')
   if (!clientId || !redirectUri) throw new Error('OIDC_CLIENT_ID or OIDC_REDIRECT_URI not set')
@@ -74,10 +79,18 @@ export function buildAuthUrl(config: OidcConfig, state: string, nonce: string): 
     state,
     nonce,
   })
+  if (codeChallenge) {
+    params.set('code_challenge', codeChallenge)
+    params.set('code_challenge_method', 'S256')
+  }
   return `${config.authorization_endpoint}?${params.toString()}`
 }
 
-export async function exchangeCode(code: string, config: OidcConfig): Promise<OidcTokens> {
+export async function exchangeCode(
+  code: string,
+  config: OidcConfig,
+  codeVerifier?: string,
+): Promise<OidcTokens> {
   const clientId = env('OIDC_CLIENT_ID')
   const clientSecret = env('OIDC_CLIENT_SECRET')
   const redirectUri = env('OIDC_REDIRECT_URI')
@@ -89,6 +102,7 @@ export async function exchangeCode(code: string, config: OidcConfig): Promise<Oi
     redirect_uri: redirectUri,
   })
   if (clientSecret) body.set('client_secret', clientSecret)
+  if (codeVerifier) body.set('code_verifier', codeVerifier)
   const res = await fetch(config.token_endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
@@ -290,4 +304,12 @@ export function generateStateNonce(): { state: string; nonce: string } {
     state: crypto.randomBytes(16).toString('hex'),
     nonce: crypto.randomBytes(16).toString('hex'),
   }
+}
+
+export function generateCodeVerifier(): string {
+  return crypto.randomBytes(32).toString('base64url')
+}
+
+export function computeCodeChallenge(verifier: string): string {
+  return crypto.createHash('sha256').update(verifier).digest('base64url')
 }

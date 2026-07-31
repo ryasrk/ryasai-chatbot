@@ -23,10 +23,17 @@ export function LoginView({ onSuccess }: LoginViewProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [ssoConfigured, setSsoConfigured] = useState(false)
+  const [oidcConfigured, setOidcConfigured] = useState(false)
+  const [samlConfigured, setSamlConfigured] = useState(false)
 
   useEffect(() => {
-    fetch('/api/auth/sso/status').then(r => r.json()).then(d => setSsoConfigured(d?.configured ?? false)).catch(() => {})
+    fetch('/api/auth/sso/status')
+      .then(r => r.json())
+      .then(d => {
+        setOidcConfigured(d?.oidc ?? false)
+        setSamlConfigured(d?.saml ?? false)
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -110,16 +117,31 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               )}
               Sign In
             </Button>
-            {ssoConfigured && (
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => { window.location.href = '/api/auth/sso/login' }}
-              >
-                <KeyRound className="mr-2 h-4 w-4" />
-                Sign in with SSO
-              </Button>
+            {(oidcConfigured || samlConfigured) && (
+              <div className="flex flex-col gap-2 w-full">
+                {oidcConfigured && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => { window.location.href = '/api/auth/sso/login' }}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Sign in with SSO
+                  </Button>
+                )}
+                {samlConfigured && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => { window.location.href = '/api/auth/saml/login' }}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Sign in with SAML
+                  </Button>
+                )}
+              </div>
             )}
           </CardFooter>
         </form>

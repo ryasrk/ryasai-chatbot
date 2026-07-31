@@ -282,6 +282,17 @@ Copy `.env.example` to `.env` and configure:
 | `MCP_LIST_TOOLS_TIMEOUT_MS` | No | MCP listTools timeout (default 10000) |
 | `MCP_CALL_TOOL_TIMEOUT_MS` | No | MCP callTool timeout (default 30000) |
 | `OTEL_ENABLED` | No | `true` to enable OpenTelemetry SDK (auto-detected from `OTEL_EXPORTER_OTLP_ENDPOINT`) |
+| `OIDC_ISSUER` | No | OIDC provider issuer URL (enables SSO login button) |
+| `OIDC_CLIENT_ID` | No | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | No | OIDC client secret (not required for PKCE-only public clients) |
+| `OIDC_REDIRECT_URI` | No | Must be `https://your-chatbot-url/api/auth/sso/callback` |
+| `SAML_SP_ENTITY_ID` | No | SAML SP entity ID (enables SAML login button) |
+| `SAML_SP_CALLBACK_URL` | No | SAML ACS URL (e.g. `https://chatbot/api/auth/saml/callback`) |
+| `SAML_IDP_ENTRY_POINT` | No | IdP SSO URL (auto-discovered if `SAML_IDP_METADATA_URL` set) |
+| `SAML_IDP_CERT` | No | IdP public cert PEM (auto-discovered if metadata URL set) |
+| `SAML_IDP_METADATA_URL` | No | IdP metadata XML URL for auto-discovery |
+| `SAML_SP_CERT` | No | SP cert for signing AuthnRequests (optional) |
+| `SAML_SP_PRIVATE_KEY` | No | SP private key for signing (optional) |
 
 ## License
 
