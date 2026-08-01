@@ -4,8 +4,8 @@ import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/se
 
 /**
  * POST /api/setup/complete (auth required)
- *   Sets AppConfig.setupCompleted = true and writes a SETUP_COMPLETED audit.
- *   Returns 200 { ok: true }.
+ *   Sets AppConfig.setupCompleted = true, seeds prebuilt plugins for the org,
+ *   and writes a SETUP_COMPLETED audit. Returns 200 { ok: true }.
  */
 export async function POST() {
   try {
@@ -17,6 +17,14 @@ export async function POST() {
     } else {
       await db.appConfig.create({ data: { organizationId: user.organizationId, setupCompleted: true } })
     }
+
+    // Seed prebuilt plugins for this org (if not already seeded)
+    const pluginCount = await db.plugin.count()
+    if (pluginCount === 0) {
+      const { seedPlugins } = await import('@/lib/plugin-seeds')
+      await seedPlugins(user.organizationId)
+    }
+
     await writeAudit({
       userId: user.userId,
       action: 'SETUP_COMPLETED',
