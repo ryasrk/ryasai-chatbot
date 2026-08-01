@@ -587,6 +587,7 @@ model ScheduledRun {
   name                  String
   cronExpr              String
   prompt                String
+  promptId              String?
   timezone              String?   @default("UTC")
   isActive              Boolean   @default(true)
   lastRunAt             DateTime?

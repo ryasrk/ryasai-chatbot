@@ -5,6 +5,7 @@ import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { scopedLogger } from '@/lib/logger'
+import { redisCmd } from '@/lib/redis'
 import { AppError } from '@/lib/errors'
 import { SESSION_INACTIVITY_TIMEOUT_MS } from '@/lib/constants'
 const log = scopedLogger('session')
@@ -52,25 +53,30 @@ export function requireRole(user: ActiveUser, minRole: 'admin' | 'analyst' | 'vi
   }
 }
 
-// ponytail: in-memory inactivity tracker — per-instance, not distributed.
-// Ceiling: cleared on server restart (users re-authenticate). 30min timeout.
-// Upgrade to Redis-backed tracker when deploying >1 instance.
-const _lastActivity = new Map<string, number>()
-
-function isInactivityExpired(userId: string): boolean {
-  const last = _lastActivity.get(userId)
-  if (!last) return false // first request or after restart — allow
-  return Date.now() - last > SESSION_INACTIVITY_TIMEOUT_MS
+// ponytail: Redis-backed inactivity tracker — distributed across instances.
+// Key: session:activity:{userId}, value: timestamp, TTL: SESSION_INACTIVITY_TIMEOUT_MS.
+// Ceiling: 1-second granularity. Fails open (allow) when Redis is down.
+async function isInactivityExpired(userId: string): Promise<boolean> {
+  try {
+    const last = await redisCmd.get(`session:activity:${userId}`)
+    if (!last) return false // no record — first request or after TTL expiry
+    return Date.now() - parseInt(last, 10) > SESSION_INACTIVITY_TIMEOUT_MS
+  } catch {
+    // Redis down — fail open (allow access)
+    return false
+  }
 }
 
-function touchActivity(userId: string): void {
-  _lastActivity.set(userId, Date.now())
-  // Evict stale entries periodically
-  if (_lastActivity.size > 1000) {
-    const now = Date.now()
-    for (const [k, t] of _lastActivity) {
-      if (now - t > SESSION_INACTIVITY_TIMEOUT_MS) _lastActivity.delete(k)
-    }
+async function touchActivity(userId: string): Promise<void> {
+  try {
+    await redisCmd.set(
+      `session:activity:${userId}`,
+      String(Date.now()),
+      'PX',
+      SESSION_INACTIVITY_TIMEOUT_MS,
+    )
+  } catch {
+    // Redis down — skip
   }
 }
 
@@ -112,8 +118,7 @@ export async function getActiveUser(): Promise<ActiveUser> {
   const userId = verifySession(token)
   if (userId) {
     // ponytail: inactivity timeout — reject if user has been idle >30min
-    if (isInactivityExpired(userId)) {
-      _lastActivity.delete(userId)
+    if (await isInactivityExpired(userId)) {
       throw new UnauthorizedError('Session expired due to inactivity. Please log in again.')
     }
 
@@ -140,7 +145,7 @@ export async function getActiveUser(): Promise<ActiveUser> {
       if (org && (org.licenseStatus === 'expired' || org.licenseStatus === 'invalid' || org.licenseStatus === 'suspended')) {
         throw new LicenseError()
       }
-      touchActivity(userId)
+      await touchActivity(userId)
       return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId, plan: org?.licensePlan ?? null }
     }
   }

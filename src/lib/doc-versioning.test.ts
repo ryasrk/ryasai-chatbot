@@ -27,6 +27,11 @@ const mockVersionFindFirst = mock<(...args: unknown[]) => Promise<Record<string,
   async () => null,
 )
 const mockEmbedDocumentChunks = mock(async () => ({ embedded: 2, skipped: 0, provider: 'x', model: 'y' }))
+const mockChunkDeleteMany = mock(async () => ({ count: 2 }))
+const mockChunkCreateMany = mock(async () => ({ count: 2 }))
+const mockReadFile = mock(async () => Buffer.from('hello\n\nworld'))
+const mockExtractFileText = mock(async () => ({ text: 'hello\n\nworld', isPlaceholder: false }))
+const mockChunkText = mock((s: string) => s.split(/\n\n+/).filter(Boolean))
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -34,7 +39,7 @@ mock.module('@/lib/db', () => ({
       findUnique: mockDocFindUnique,
       update: mockDocUpdate,
     },
-    documentChunk: { findMany: mockChunkFindMany },
+    documentChunk: { findMany: mockChunkFindMany, deleteMany: mockChunkDeleteMany, createMany: mockChunkCreateMany },
     documentVersion: {
       create: mockVersionCreate,
       findMany: mockVersionFindMany,
@@ -46,6 +51,9 @@ mock.module('@/lib/db', () => ({
 mock.module('@/lib/embeddings', () => ({
   embedDocumentChunks: mockEmbedDocumentChunks,
 }))
+mock.module('fs/promises', () => ({ readFile: mockReadFile }))
+mock.module('@/lib/rag', () => ({ extractFileText: mockExtractFileText }))
+mock.module('@/lib/rag-chunking', () => ({ chunkText: mockChunkText }))
 
 import { createDocVersion, listDocVersions, restoreDocVersion } from './doc-versioning'
 
@@ -70,6 +78,11 @@ beforeEach(() => {
   ])
   mockVersionFindFirst.mockImplementation(async () => null)
   mockEmbedDocumentChunks.mockImplementation(async () => ({ embedded: 2, skipped: 0, provider: 'x', model: 'y' }))
+  mockChunkDeleteMany.mockImplementation(async () => ({ count: 2 }))
+  mockChunkCreateMany.mockImplementation(async () => ({ count: 2 }))
+  mockReadFile.mockImplementation(async () => Buffer.from('hello\n\nworld'))
+  mockExtractFileText.mockImplementation(async () => ({ text: 'hello\n\nworld', isPlaceholder: false }))
+  mockChunkText.mockImplementation((s: string) => s.split(/\n\n+/).filter(Boolean))
 })
 
 describe('createDocVersion', () => {
@@ -109,7 +122,7 @@ describe('listDocVersions', () => {
 })
 
 describe('restoreDocVersion', () => {
-  test('sets document version and re-embeds chunks', async () => {
+  test('sets document version; no uploadPath → restored false, no re-embed', async () => {
     mockVersionFindFirst.mockImplementation(async () => ({
       id: 'ver-1',
       documentId: 'doc-1',
@@ -118,12 +131,41 @@ describe('restoreDocVersion', () => {
       chunkCount: 2,
       createdAt: new Date('2026-01-01'),
     }))
+    mockDocFindUnique.mockImplementation(async () => ({ id: 'doc-1', version: 1 }))
     const result = await restoreDocVersion('doc-1', 'ver-1')
     expect(result.version).toBe(2)
-    expect(result.embedded).toBe(2)
+    expect(result.restored).toBe(false)
 
     const updateArg = (mockDocUpdate.mock.calls[0] as unknown as [{ data: Record<string, unknown> }])[0]
     expect(updateArg.data.version).toBe(2)
+    expect(mockEmbedDocumentChunks.mock.calls.length).toBe(0)
+  })
+
+  test('uploadPath present → re-reads file, replaces chunks, re-embeds, restored true', async () => {
+    mockVersionFindFirst.mockImplementation(async () => ({
+      id: 'ver-1',
+      documentId: 'doc-1',
+      version: 2,
+      contentHash: 'abc',
+      chunkCount: 2,
+      createdAt: new Date('2026-01-01'),
+    }))
+    mockDocFindUnique.mockImplementation(async () => ({
+      id: 'doc-1',
+      uploadPath: '/tmp/doc.txt',
+      name: 'doc.txt',
+      type: 'txt',
+      mimeType: 'text/plain',
+      organizationId: 'org-1',
+    }))
+
+    const result = await restoreDocVersion('doc-1', 'ver-1')
+    expect(result.version).toBe(2)
+    expect(result.restored).toBe(true)
+
+    expect(mockReadFile.mock.calls.length).toBe(1)
+    expect(mockChunkDeleteMany.mock.calls.length).toBe(1)
+    expect(mockChunkCreateMany.mock.calls.length).toBe(1)
     expect(mockEmbedDocumentChunks.mock.calls.length).toBe(1)
   })
 

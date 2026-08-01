@@ -15,7 +15,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       userId: user.userId,
       action: 'DOC_VERSION_RESTORE',
       severity: 'warning',
-      detail: { documentId: id, versionId, restoredTo: result.version, embedded: result.embedded },
+      detail: { documentId: id, versionId, restoredTo: result.version, restored: result.restored },
     })
     return NextResponse.json({ ok: true, ...result })
   } catch (e) {

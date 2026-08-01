@@ -17,6 +17,15 @@ export const runtime = 'nodejs'
 
 const MAX_BYTES = 50 * 1024 * 1024 // 50 MB — spec §8
 
+const ALLOWED_EXTENSIONS = new Set(['.txt', '.pdf', '.docx', '.xlsx', '.md', '.csv', '.json'])
+const ALLOWED_MIME_TYPES = new Set([
+  'text/plain', 'text/markdown', 'text/csv',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/json',
+])
+
 /**
  * GET /api/documents?category=Foo
  * List all documents, optionally filtered by category.
@@ -109,6 +118,18 @@ export async function POST(req: NextRequest) {
       },
       { status: 413 },
     )
+  }
+
+  const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ''
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
+    return NextResponse.json(
+      { error: `File type ${ext} is not allowed. Accepted: ${[...ALLOWED_EXTENSIONS].join(', ')}` },
+      { status: 400 },
+    )
+  }
+  // Check MIME type if provided (some browsers don't set it correctly)
+  if (file.type && !ALLOWED_MIME_TYPES.has(file.type) && file.type !== 'application/octet-stream') {
+    return NextResponse.json({ error: `MIME type ${file.type} is not allowed.` }, { status: 400 })
   }
 
   try {

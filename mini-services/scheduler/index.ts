@@ -104,7 +104,7 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
   const scheduledRun = await bypassOrg(() =>
     db.scheduledRun.findUnique({
       where: { id: runId },
-      select: { organizationId: true },
+      select: { organizationId: true, promptId: true },
     }),
   )
   if (!scheduledRun) {
@@ -131,12 +131,26 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
     // the intent analyzer.
     const autonomyPrefix = `This is an automated scheduled execution. No human is available to answer questions. Make reasonable assumptions, use the current date (${now.toISOString().split('T')[0]} UTC), pick the most relevant data source automatically, and provide the answer directly. Do NOT ask clarifying questions.`
 
+    // ponytail: if the scheduled run references a saved prompt, prepend its
+    // content to the autonomy directive so user-defined system instructions
+    // shape the LLM's behavior during unattended execution.
+    let systemPromptPrefix = autonomyPrefix
+    if (scheduledRun.promptId) {
+      const savedPrompt = await db.savedPrompt.findUnique({
+        where: { id: scheduledRun.promptId },
+        select: { content: true },
+      })
+      if (savedPrompt) {
+        systemPromptPrefix = `${savedPrompt.content}\n\n${autonomyPrefix}`
+      }
+    }
+
     const result = await withTimeout(
       runNonStreamingChatCompletion({
         question: prompt,
         userId,
         skipClarification: true,
-        systemPromptPrefix: autonomyPrefix,
+        systemPromptPrefix,
       }),
       RUN_TIMEOUT_MS,
       'Scheduled run timeout (60s)',

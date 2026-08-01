@@ -13,6 +13,8 @@ import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
 import { callMcpTool } from '@/lib/mcp-client'
+import { checkToolRateLimit } from '@/lib/tool-rate-limit'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { executeAdminTool } from '@/lib/admin-tools'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
@@ -481,8 +483,39 @@ async function executeStep(
       const parts = step.tool.split(':')
       const serverId = parts[1]
       const toolName = parts.slice(2).join(':')
+      // Per-org rate limit on MCP tool invocations.
+      const orgId = getOrgContext()
+      if (orgId) {
+        const rl = await checkToolRateLimit('mcp', orgId)
+        if (!rl.allowed) {
+          args.onStatus?.(step.id, step.tool, 'error')
+          return {
+            stepId: step.id, tool: step.tool, ok: false, output: '',
+            error: 'Rate limit exceeded for MCP tools. Try again in a minute.',
+            latencyMs: Date.now() - started,
+          }
+        }
+      }
       const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
       args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      // ponytail: persist a ToolRun row at invocation time for MCP observability.
+      // chatMessageId is null here — the planner runs before the AI message is
+      // persisted. runMultiStepDag filters MCP steps from its returned toolRuns
+      // so callers don't create duplicate rows.
+      if (orgId) {
+        await db.toolRun.create({
+          data: {
+            organizationId: orgId,
+            chatMessageId: null,
+            type: 'PLUGIN',
+            status: result.ok ? 'success' : 'error',
+            latencyMs: Date.now() - started,
+            inputSummary: `MCP: ${toolName}`,
+            outputSummary: result.output.slice(0, 500) || null,
+            errorMessage: result.error ?? null,
+          },
+        }).catch(() => {})
+      }
       return {
         stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
         error: result.error, latencyMs: Date.now() - started,

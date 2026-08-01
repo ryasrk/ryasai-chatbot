@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
       name?: string
       cronExpr?: string
       prompt?: string
+      promptId?: string | null
       notificationConfigId?: string | null
     }
 
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
         name,
         cronExpr,
         prompt,
+        promptId: body.promptId || null,
         isActive: true,
         nextRunAt,
         notificationConfigId: body.notificationConfigId || null,

@@ -59,19 +59,58 @@ export async function listDocVersions(documentId: string): Promise<DocVersionSna
 export async function restoreDocVersion(
   documentId: string,
   versionId: string,
-): Promise<{ version: number; embedded: number }> {
+): Promise<{ version: number; restored: boolean }> {
   const version = await db.documentVersion.findFirst({
     where: { id: versionId, documentId },
   })
   if (!version) throw new Error(`Version not found: ${versionId}`)
 
+  const doc = await db.document.findUnique({
+    where: { id: documentId },
+    select: { id: true, uploadPath: true, name: true, type: true, mimeType: true, organizationId: true },
+  })
+  if (!doc) throw new Error(`Document not found: ${documentId}`)
+
+  // Update version number
   await db.document.update({
     where: { id: documentId },
     data: { version: version.version },
   })
 
-  const { embedDocumentChunks } = await import('@/lib/embeddings')
-  const result = await embedDocumentChunks({ documentId })
+  if (doc.uploadPath) {
+    // Re-read and re-embed from the original uploaded file.
+    const { readFile } = await import('fs/promises')
+    try {
+      const buffer = await readFile(doc.uploadPath)
+      const { extractFileText } = await import('@/lib/rag')
+      const { chunkText } = await import('@/lib/rag-chunking')
+      const file = new File([buffer], doc.name, { type: doc.mimeType || 'application/octet-stream' })
+      const { text } = await extractFileText(file)
+      const chunks = chunkText(text)
 
-  return { version: version.version, embedded: result.embedded }
+      // Delete existing chunks, then re-insert the restored content.
+      await db.documentChunk.deleteMany({ where: { documentId } })
+      await db.documentChunk.createMany({
+        data: chunks.map((c, i) => ({
+          organizationId: doc.organizationId,
+          documentId,
+          chunkIndex: i,
+          content: c,
+          tokenCount: Math.ceil(c.length / 4),
+        })),
+      })
+
+      // Re-embed the restored chunks.
+      const { embedDocumentChunks } = await import('@/lib/embeddings')
+      await embedDocumentChunks({ documentId })
+
+      return { version: version.version, restored: true }
+    } catch {
+      // ponytail: original file no longer on disk — can't restore content,
+      // but the version pointer is still updated above.
+      return { version: version.version, restored: false }
+    }
+  }
+
+  return { version: version.version, restored: false }
 }

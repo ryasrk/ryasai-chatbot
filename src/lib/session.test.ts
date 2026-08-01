@@ -24,6 +24,9 @@ mock.module('@/lib/db', () => ({
     organization: { findUnique: mockOrgFindUnique },
   },
 }))
+mock.module('@/lib/redis', () => ({
+  redisCmd: { get: async () => null, set: async () => 'OK' },
+}))
 
 import { handleApiError, writeAudit, getActiveUser, UnauthorizedError } from './session'
 
@@ -80,6 +83,9 @@ describe('handleApiError', () => {
 })
 
 describe('writeAudit — fail-closed for critical, swallow for non-critical', () => {
+  beforeEach(() => {
+    mockAuditLogCreate.mockImplementation(async () => ({}))
+  })
   test('successful write → no throw', async () => {
     await writeAudit({ action: 'LOGIN', severity: 'info', detail: { ip: '1.2.3.4' } })
     expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)

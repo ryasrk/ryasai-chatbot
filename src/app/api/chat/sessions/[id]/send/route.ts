@@ -11,6 +11,7 @@ interface SendBody {
   text?: string
   integrationId?: string
   timezone?: string
+  promptId?: string
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -66,6 +67,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       take: 10,
       select: { sender: true, text: true, createdAt: true },
     })
+
+    let systemPromptPrefix: string | undefined
+    if (typeof body.promptId === 'string' && body.promptId.trim()) {
+      const prompt = await db.savedPrompt.findUnique({ where: { id: body.promptId } })
+      if (prompt) systemPromptPrefix = prompt.content
+    }
 
     const userMessage = await db.chatMessage.create({
       data: {
@@ -144,6 +151,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             sessionId: session.id,
             chatHistory,
             allowMultiStepDag: true,
+            systemPromptPrefix,
           })
 
           // 4. Emit tool execution events (skip for pure CHAT — no tool to show).
