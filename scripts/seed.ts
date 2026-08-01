@@ -27,15 +27,11 @@ async function main() {
   const org = await bypassOrg(() =>
     db.organization.upsert({
       where: { slug: 'default' },
-      update: { name: 'Default Organization', licenseKey: process.env.SEED_LICENSE_KEY || 'RYASAI-278B49FD-641EF14A-265D68D3', licensePlan: 'pro', licenseStatus: 'valid', licenseValidatedAt: new Date() },
+      update: { name: 'Default Organization' },
       create: {
         id: 'org-default',
         name: 'Default Organization',
         slug: 'default',
-        licenseKey: process.env.SEED_LICENSE_KEY || 'RYASAI-278B49FD-641EF14A-265D68D3',
-        licensePlan: 'pro',
-        licenseStatus: 'valid',
-        licenseValidatedAt: new Date(),
       },
     }),
   )

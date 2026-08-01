@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { db } from '@/lib/db'
-import { bypassOrg, getOrgContext } from '@/lib/prisma-tenant'
+import { bypassOrg, enterWithOrg, getOrgContext } from '@/lib/prisma-tenant'
 import { serverConfig } from '@/lib/config'
 import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
@@ -133,16 +133,14 @@ export async function getActiveUser(): Promise<ActiveUser> {
     )
     // ponytail: session fixation defense — reject tokens with stale session version.
     if (u && u.isActive && u.sessionVersion === extractSessionVersion(token)) {
-      // Set org context for all subsequent queries in this request
-      const { enterWithOrg } = await import('@/lib/prisma-tenant')
       enterWithOrg(u.organizationId)
-      // License gate — reject if org license is expired/invalid/suspended
       const org = await bypassOrg(() =>
         db.organization.findUnique({
           where: { id: u.organizationId },
           select: { licenseStatus: true, licensePlan: true },
         }),
       )
+      // License gate — only block expired/invalid/suspended. 'none' and 'valid' pass.
       if (org && (org.licenseStatus === 'expired' || org.licenseStatus === 'invalid' || org.licenseStatus === 'suspended')) {
         throw new LicenseError()
       }
@@ -169,9 +167,7 @@ export async function getActiveUser(): Promise<ActiveUser> {
     }),
   )
   if (!user) throw new Error('No active user found. Run the seed script.')
-  const { enterWithOrg } = await import('@/lib/prisma-tenant')
   enterWithOrg(user.organizationId)
-  // License gate — reject if org license is expired/invalid/suspended
   const fallbackOrg = await bypassOrg(() =>
     db.organization.findUnique({
       where: { id: user.organizationId },

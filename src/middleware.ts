@@ -18,6 +18,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/signup',
+  '/api/auth/register',
   '/api/auth/sso/login',
   '/api/auth/sso/callback',
   '/api/auth/sso/status',

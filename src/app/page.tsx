@@ -145,7 +145,7 @@ export default function Home() {
 
   if (setup && !setup.setupCompleted) {
     if (!setup.hasAdmin) {
-      // No users exist — show signup (org + license + admin creation)
+      // No users exist — show signup
       return (
         <LoginView
           onSuccess={() => {
@@ -157,7 +157,22 @@ export default function Home() {
         />
       )
     }
-    // Admin exists but setup not completed — show wizard
+    // Admin exists but setup not completed
+    // If user is logged in but org has no license, show login in signup mode (license step)
+    if (!loading && user && !user.plan) {
+      return (
+        <LoginView
+          onSuccess={() => {
+            setSetup(null)
+            setSetupRefreshKey((k) => k + 1)
+            refresh()
+          }}
+          defaultMode="signup"
+          startStep={1}
+        />
+      )
+    }
+    // User has license — show wizard
     return (
       <SetupView
         onDone={() => {
