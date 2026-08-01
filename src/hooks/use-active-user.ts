@@ -14,6 +14,7 @@ let booted = false
 
 export function useActiveUser() {
   const user = useActiveUserStore((s) => s.user)
+  const orgName = useActiveUserStore((s) => s.orgName)
   const loading = useActiveUserStore((s) => s.loading)
   const unauthorized = useActiveUserStore((s) => s.unauthorized)
   const refresh = useActiveUserStore((s) => s.refresh)
@@ -24,5 +25,5 @@ export function useActiveUser() {
     refresh()
   }, [refresh])
 
-  return { user, loading, unauthorized, refresh }
+  return { user, orgName, loading, unauthorized, refresh }
 }

@@ -8,7 +8,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
@@ -99,6 +99,7 @@ export function validateCreateIntegrationInput(body: CreateBody) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const body = (await req.json().catch(() => ({}))) as CreateBody
 
     const validation = validateCreateIntegrationInput(body)

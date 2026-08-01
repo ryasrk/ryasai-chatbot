@@ -8,7 +8,7 @@ class MockUnauthorizedError extends Error {
   }
 }
 
-const mockGetActiveUser = mock(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c' }))
+const mockGetActiveUser = mock(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c', role: 'admin', organizationId: 'org-default' }))
 const mockWriteAudit = mock(async () => undefined)
 const mockIntegrationFindFirst = mock(async (): Promise<{ id: string; provider: string; status: string; encryptedConfig: string; schemas: { tableName: string; columns: string; rowCount: number; sampleRow: null }[] } | null> => null)
 const mockQueryHistoryCreate = mock(async () => ({}))
@@ -76,7 +76,7 @@ beforeEach(() => {
   mockDescribeSchema.mockClear()
   mockValidateSql.mockClear()
   mockGenerateSql.mockClear()
-  mockGetActiveUser.mockImplementation(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c' }))
+  mockGetActiveUser.mockImplementation(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c', role: 'admin', organizationId: 'org-default' }))
   mockIntegrationFindFirst.mockImplementation(async () => null)
   mockValidateSql.mockImplementation(() => ({ ok: true, sanitized: 'SELECT 1 LIMIT 100' }))
   mockGenerateSql.mockImplementation(async () => ({ sql: 'SELECT 1', explanation: 'test' }))

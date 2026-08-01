@@ -33,6 +33,14 @@ export class ForbiddenError extends Error {
   }
 }
 
+export class LicenseError extends Error {
+  readonly code = 'LICENSE_INVALID'
+  constructor(message = 'License is no longer valid. Please contact your administrator.') {
+    super(message)
+    this.name = 'LicenseError'
+  }
+}
+
 const ROLE_RANK: Record<string, number> = { viewer: 0, analyst: 1, admin: 2 }
 
 export function requireRole(user: ActiveUser, minRole: 'admin' | 'analyst' | 'viewer'): void {
@@ -78,6 +86,12 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
       { status: 403 },
     )
   }
+  if (e instanceof LicenseError) {
+    return NextResponse.json(
+      { error: { code: 'LICENSE_INVALID' as const, message: e.message } },
+      { status: 402 },
+    )
+  }
   if (e instanceof AppError) {
     return NextResponse.json(
       { error: { code: e.code, message: e.message, hint: e.hint } },
@@ -115,6 +129,16 @@ export async function getActiveUser(): Promise<ActiveUser> {
       // Set org context for all subsequent queries in this request
       const { enterWithOrg } = await import('@/lib/prisma-tenant')
       enterWithOrg(u.organizationId)
+      // License gate — reject if org license is expired/invalid/suspended
+      const org = await bypassOrg(() =>
+        db.organization.findUnique({
+          where: { id: u.organizationId },
+          select: { licenseStatus: true },
+        }),
+      )
+      if (org && (org.licenseStatus === 'expired' || org.licenseStatus === 'invalid' || org.licenseStatus === 'suspended')) {
+        throw new LicenseError()
+      }
       touchActivity(userId)
       return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId }
     }
@@ -140,6 +164,16 @@ export async function getActiveUser(): Promise<ActiveUser> {
   if (!user) throw new Error('No active user found. Run the seed script.')
   const { enterWithOrg } = await import('@/lib/prisma-tenant')
   enterWithOrg(user.organizationId)
+  // License gate — reject if org license is expired/invalid/suspended
+  const fallbackOrg = await bypassOrg(() =>
+    db.organization.findUnique({
+      where: { id: user.organizationId },
+      select: { licenseStatus: true },
+    }),
+  )
+  if (fallbackOrg && (fallbackOrg.licenseStatus === 'expired' || fallbackOrg.licenseStatus === 'invalid' || fallbackOrg.licenseStatus === 'suspended')) {
+    throw new LicenseError()
+  }
   return { userId: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId }
 }
 

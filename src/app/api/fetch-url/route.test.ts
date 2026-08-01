@@ -13,7 +13,7 @@ class MockUnauthorizedError extends Error {
 mock.module('@/lib/session', () => ({
   getActiveUser: async () => {
     if (authThrows) throw new MockUnauthorizedError()
-    return { userId: 'u1', name: 'Test', email: 't@t.com' }
+    return { userId: 'u1', name: 'Test', email: 't@t.com', role: 'admin', organizationId: 'org-default' }
   },
   handleApiError: (e: unknown, msg: string, status = 500) => {
     if (e instanceof MockUnauthorizedError) return Response.json({ error: e.message }, { status: 401 })

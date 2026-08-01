@@ -91,7 +91,7 @@ function renderView(view: ViewKey) {
 export default function Home() {
   const [view, setViewState] = useState<ViewKey>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { user, loading, unauthorized, refresh } = useActiveUser()
+  const { user, orgName, loading, unauthorized, refresh } = useActiveUser()
   const reduceMotion = useReducedMotion()
 
   const [setup, setSetup] = useState<{
@@ -160,7 +160,7 @@ export default function Home() {
   return (
     <>
       <div className="min-h-screen flex flex-col bg-muted/25" suppressHydrationWarning>
-        <Topbar user={user} loading={loading} onMenuClick={() => setMobileOpen((v) => !v)} />
+        <Topbar user={user} orgName={orgName} loading={loading} onMenuClick={() => setMobileOpen((v) => !v)} />
 
         <div className="flex flex-1 w-full" suppressHydrationWarning>
           <aside

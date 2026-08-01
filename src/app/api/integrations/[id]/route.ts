@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { decryptConfig, maskConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
 
@@ -79,6 +79,7 @@ interface PatchBody {
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as PatchBody
 
@@ -153,6 +154,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
 
     const existing = await db.integration.findFirst({ // nosemgrep

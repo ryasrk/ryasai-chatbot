@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -9,6 +9,7 @@ interface RouteContext {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     const { id } = await ctx.params
     const existing = await db.apiKey.findFirst({ // nosemgrep

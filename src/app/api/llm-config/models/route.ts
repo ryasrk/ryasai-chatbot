@@ -9,7 +9,7 @@
  * Admin-only (rotates nothing, but reveals connectivity to the provider).
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import {
   fetchProviderModels,
   getLlmRuntimeConfig,
@@ -21,6 +21,7 @@ import { db } from '@/lib/db'
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as {
       baseUrl?: string

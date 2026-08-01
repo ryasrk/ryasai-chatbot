@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { invalidateMcpToolsCache } from '@/lib/mcp-client'
@@ -127,6 +127,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const body = (await req.json().catch(() => ({}))) as CreateBody
 
     const name = (body.name ?? '').trim()

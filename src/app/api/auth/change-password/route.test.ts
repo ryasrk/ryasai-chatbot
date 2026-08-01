@@ -8,7 +8,7 @@ class MockUnauthorizedError extends Error {
   }
 }
 
-const mockGetActiveUser = mock(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c' }))
+const mockGetActiveUser = mock(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c', role: 'admin', organizationId: 'org-default' }))
 const mockWriteAudit = mock(async () => undefined)
 const mockVerifyPassword = mock(() => true)
 const mockHashPassword = mock(() => 'scrypt$newhash')
@@ -46,7 +46,7 @@ beforeEach(() => {
   mockHashPassword.mockClear()
   mockUserFindUnique.mockClear()
   mockUserUpdate.mockClear()
-  mockGetActiveUser.mockImplementation(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c' }))
+  mockGetActiveUser.mockImplementation(async () => ({ userId: 'u1', name: 'Admin', email: 'a@b.c', role: 'admin', organizationId: 'org-default' }))
   mockWriteAudit.mockImplementation(async () => undefined)
   mockVerifyPassword.mockImplementation(() => true)
   mockHashPassword.mockImplementation(() => 'scrypt$newhash')

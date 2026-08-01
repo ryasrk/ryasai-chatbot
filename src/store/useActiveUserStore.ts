@@ -12,6 +12,7 @@ import type { ActiveUser } from '@/lib/types'
 
 interface ActiveUserState {
   user: ActiveUser | null
+  orgName: string | null
   loading: boolean
   /** True when the last /api/me refresh returned 401 (no valid session). */
   unauthorized: boolean
@@ -21,6 +22,7 @@ interface ActiveUserState {
 
 export const useActiveUserStore = create<ActiveUserState>((set) => ({
   user: null,
+  orgName: null,
   loading: true,
   unauthorized: false,
 
@@ -29,9 +31,15 @@ export const useActiveUserStore = create<ActiveUserState>((set) => ({
     try {
       const res = await fetch('/api/me', { cache: 'no-store' })
       if (res.ok) {
-        set({ user: await res.json(), unauthorized: false })
+        const user = await res.json()
+        set({ user, unauthorized: false })
+        // Fetch org name in parallel (non-blocking)
+        fetch('/api/org', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => set({ orgName: d?.organization?.name ?? null }))
+          .catch(() => {})
       } else if (res.status === 401) {
-        set({ user: null, unauthorized: true })
+        set({ user: null, orgName: null, unauthorized: true })
       }
     } catch {
       /* ignore — transient network errors don't change auth state */

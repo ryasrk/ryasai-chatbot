@@ -7,6 +7,8 @@ export interface ActiveUser {
   userId: string
   name: string
   email: string
+  role: string
+  organizationId: string
 }
 
 export interface Integration {

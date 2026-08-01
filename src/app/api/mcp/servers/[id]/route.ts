@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { disconnectMcpServer } from '@/lib/mcp-client'
@@ -43,6 +43,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
     const existing = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
     if (!existing) {
@@ -165,6 +166,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
     const existing = await db.mcpServer.findUnique({ // nosemgrep
       where: { id },

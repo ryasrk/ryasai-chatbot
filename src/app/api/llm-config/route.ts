@@ -8,7 +8,7 @@
  * Model discovery lives at POST /api/llm-config/models.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { getPublicLlmConfig, normalizeBaseUrl } from '@/lib/llm-config'
 import { encryptConfig } from '@/lib/crypto'
 import { db } from '@/lib/db'
@@ -37,6 +37,7 @@ interface PutBody {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as PutBody
     const VALID_PROVIDERS = new Set(['OPENAI_COMPATIBLE', 'ANTHROPIC_COMPATIBLE'])

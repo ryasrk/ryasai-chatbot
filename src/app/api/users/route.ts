@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError } from '@/lib/session'
 
 /**
  * GET /api/users
- *   Lists all users in the active user's company (id, name, email, role,
- *   avatarColor, isActive). Used by the Settings page.
+ *   Lists all users in the active user's organization (id, name, email, role,
+ *   avatarColor, isActive, createdAt). Admin-only. Used by the Settings page.
  */
 export async function GET() {
   try {
-    await getActiveUser()
+    const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     const users = await db.user.findMany({
       where: {},
@@ -18,6 +19,7 @@ export async function GET() {
         id: true,
         name: true,
         email: true,
+        role: true,
         avatarColor: true,
         isActive: true,
         createdAt: true,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 
 /**
  * POST /api/setup/complete (auth required)
@@ -10,6 +10,7 @@ import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 export async function POST() {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const existing = await db.appConfig.findFirst()
     if (existing) {
       await db.appConfig.update({ where: { id: existing.id }, data: { setupCompleted: true } })

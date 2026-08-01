@@ -11,10 +11,12 @@ import type { ActiveUser } from '@/lib/types'
 
 export function Topbar({
   user,
+  orgName,
   loading,
   onMenuClick,
 }: {
   user: ActiveUser | null
+  orgName: string | null
   loading: boolean
   onMenuClick: () => void
 }) {
@@ -47,7 +49,7 @@ export function Topbar({
               priority
             />
             <div className="min-w-0 hidden sm:block" suppressHydrationWarning>
-              <div className="text-sm font-semibold leading-tight truncate" suppressHydrationWarning>ryasai</div>
+              <div className="text-sm font-semibold leading-tight truncate" suppressHydrationWarning>{orgName ?? 'ryasai'}</div>
               <div className="text-[11px] text-muted-foreground leading-tight truncate" suppressHydrationWarning>
                 {user?.email ?? 'Dedicated chatbot'}
               </div>
@@ -82,7 +84,7 @@ export function Topbar({
                 </Avatar>
                 <div className="hidden md:block text-left leading-tight">
                   <div className="max-w-[160px] truncate text-xs font-medium">{user.name}</div>
-                  <div className="text-[10px] text-muted-foreground">Admin</div>
+                  <div className="text-[10px] text-muted-foreground capitalize">{user.role}</div>
                 </div>
               </>
             ) : (

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generateApiKey, maskApiKey } from '@/lib/api-keys'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 
 interface CreateApiKeyBody {
   label?: string
@@ -42,6 +42,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as CreateApiKeyBody
     const label = (body.label ?? '').trim()

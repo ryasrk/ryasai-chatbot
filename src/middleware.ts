@@ -23,6 +23,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/auth/saml/login',
   '/api/auth/saml/callback',
   '/api/auth/saml/metadata',
+  '/api/auth/accept-invite',
   '/api/setup/status',
   '/api/setup/admin',
   '/api/fetch-url',

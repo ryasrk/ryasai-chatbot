@@ -1,6 +1,6 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
-const mockUser = { userId: 'u1', name: 'Test', email: 't@t.com' }
+const mockUser = { userId: 'u1', name: 'Test', email: 't@t.com', role: 'admin', organizationId: 'org-default' }
 
 let findManyResult: any[] = []
 let createData: any = null

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { encryptConfig } from '@/lib/crypto'
 import { db } from '@/lib/db'
 import { ensureVectorCollection, getVectorStoreRuntimeConfig } from '@/lib/vector-stores'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { maskSecret, normalizeBaseUrl } from '@/lib/llm-config'
 
 export async function GET() {
@@ -39,6 +39,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const body = (await req.json().catch(() => ({}))) as {
       provider?: string
       baseUrl?: string
@@ -90,7 +91,8 @@ export async function PUT(req: NextRequest) {
 
 export async function POST() {
   try {
-    await getActiveUser()
+    const user = await getActiveUser()
+    requireRole(user, 'admin')
     const config = await getVectorStoreRuntimeConfig()
     if (!config) return NextResponse.json({ ok: true, data: { provider: 'INTERNAL' } })
     await ensureVectorCollection(config)
