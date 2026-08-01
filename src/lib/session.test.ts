@@ -8,6 +8,7 @@ const mockCookieGet = mock<(name: string) => { value: string } | undefined>(() =
 const mockUserFindUnique = mock<(args: any) => Promise<any>>(async () => null)
 const mockUserFindFirst = mock<(args: any) => Promise<any>>(async () => null)
 const mockAuditLogCreate = mock<(args: any) => Promise<any>>(async () => ({}))
+const mockOrgFindUnique = mock<(args: any) => Promise<any>>(async () => ({ licenseStatus: 'valid' }))
 
 mock.module('next/headers', () => ({
   cookies: async () => ({ get: mockCookieGet }),
@@ -20,6 +21,7 @@ mock.module('@/lib/db', () => ({
   db: {
     user: { findUnique: mockUserFindUnique, findFirst: mockUserFindFirst },
     auditLog: { create: mockAuditLogCreate },
+    organization: { findUnique: mockOrgFindUnique },
   },
 }))
 
@@ -32,7 +34,7 @@ beforeEach(() => {
   mockUserFindUnique.mockImplementation(async () => null)
   mockUserFindFirst.mockImplementation(async () => null)
   mockAuditLogCreate.mockImplementation(async () => ({}))
-  mockAuditLogCreate.mockImplementation(async () => ({}))
+  mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'valid' }))
 })
 
 describe('handleApiError', () => {

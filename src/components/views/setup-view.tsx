@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
-import { Loader2, CheckCircle2, Copy, ArrowLeft } from 'lucide-react'
+import { useState } from 'react'
+import { Loader2, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -14,19 +14,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 import { extractError } from '@/lib/extract-error'
 
-const STEPS = ['Admin Account', 'LLM API', 'Test Model', 'Document', 'Data Source', 'Test Chat'] as const
+const STEPS = ['LLM API', 'Test Model', 'Document', 'Data Source', 'Test Chat'] as const
 
 interface SetupViewProps {
-  hasAdmin: boolean
   onDone: () => void
 }
 
-export function SetupView({ hasAdmin, onDone }: SetupViewProps) {
-  const [step, setStep] = useState(hasAdmin ? 1 : 0)
+export function SetupView({ onDone }: SetupViewProps) {
+  const [step, setStep] = useState(0)
   const next = () => setStep((s) => s + 1)
   const prev = () => setStep((s) => Math.max(0, s - 1))
 
@@ -43,162 +41,27 @@ export function SetupView({ hasAdmin, onDone }: SetupViewProps) {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle>Initial Setup — {STEPS[step]}</CardTitle>
+          <CardTitle>Setup Wizard — {STEPS[step]}</CardTitle>
           <CardDescription>
             Step {step + 1} of {STEPS.length}
           </CardDescription>
           <Progress value={((step + 1) / STEPS.length) * 100} className="mt-2" />
         </CardHeader>
         <CardContent className="min-h-[280px]">
-          {step === 0 && <AdminStep onNext={next} />}
-          {step === 1 && <LlmStep onNext={next} onPrev={prev} />}
-          {step === 2 && <TestModelStep onNext={next} onPrev={prev} />}
-          {step === 3 && <DocumentStep onNext={next} onPrev={prev} />}
-          {step === 4 && <DataSourceStep onNext={next} onPrev={prev} />}
-          {step === 5 && <TestChatStep onFinish={finish} onPrev={prev} />}
+          {step === 0 && <LlmStep onNext={next} />}
+          {step === 1 && <TestModelStep onNext={next} onPrev={prev} />}
+          {step === 2 && <DocumentStep onNext={next} onPrev={prev} />}
+          {step === 3 && <DataSourceStep onNext={next} onPrev={prev} />}
+          {step === 4 && <TestChatStep onFinish={finish} onPrev={prev} />}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-/* ----------------------------- Step 0: Admin ----------------------------- */
+/* ------------------------------ Step 0: LLM ------------------------------ */
 
-function AdminStep({ onNext }: { onNext: () => void }) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(null)
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setSubmitting(true)
-    try {
-      const res = await fetch('/api/setup/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) {
-        setCreated({ email, password })
-        return
-      }
-      setError(data?.error || 'Failed to create admin account.')
-    } catch {
-      setError('Unable to connect to the server.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (created) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 text-emerald-600">
-          <CheckCircle2 className="h-5 w-5" />
-          <span className="font-medium">Admin account created successfully!</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Note the following credentials for future logins:
-        </p>
-        <div className="rounded-md border bg-muted/40 p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs text-muted-foreground">Email</div>
-              <code className="text-xs font-mono">{created.email}</code>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                try { await navigator.clipboard.writeText(created.email); toast.success('Email copied.') } catch { toast.error('Failed to copy') }
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs text-muted-foreground">Password</div>
-              <code className="text-xs font-mono">{created.password}</code>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                try { await navigator.clipboard.writeText(created.password); toast.success('Password copied.') } catch { toast.error('Failed to copy') }
-              }}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-        <Alert className="border-amber-300 bg-amber-50/70 dark:bg-amber-950/20">
-          <AlertDescription>
-            You can change your password anytime in Settings &gt; Change Password after logging in.
-          </AlertDescription>
-        </Alert>
-        <Button className="w-full" onClick={onNext}>
-          Continue →
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <p className="text-xs text-muted-foreground">
-        Create the first admin account. You will be automatically logged in after the account is created.
-      </p>
-      <div className="space-y-2">
-        <Label htmlFor="setup-name">Name</Label>
-        <Input
-          id="setup-name"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={submitting}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="setup-email">Email</Label>
-        <Input
-          id="setup-email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={submitting}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="setup-password">Password</Label>
-        <Input
-          id="setup-password"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={submitting}
-        />
-      </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Create Account & Continue
-      </Button>
-    </form>
-  )
-}
-
-/* ------------------------------ Step 1: LLM ------------------------------ */
-
-function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+function LlmStep({ onNext }: { onNext: () => void }) {
   const [provider] = useState('openai-compatible')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -267,10 +130,6 @@ function LlmStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void })
         />
       </div>
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onPrev} disabled={saving}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
         <Button variant="outline" className="flex-1" onClick={onNext} disabled={saving}>
           Skip
         </Button>

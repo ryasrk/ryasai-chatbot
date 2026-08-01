@@ -16,10 +16,11 @@ import {
 
 interface LoginViewProps {
   onSuccess: () => void
+  defaultMode?: 'login' | 'signup'
 }
 
-export function LoginView({ onSuccess }: LoginViewProps) {
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+export function LoginView({ onSuccess, defaultMode = 'login' }: LoginViewProps) {
+  const [mode, setMode] = useState<'login' | 'signup'>(defaultMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')

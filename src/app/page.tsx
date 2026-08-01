@@ -142,9 +142,22 @@ export default function Home() {
   }, [])
 
   if (setup && !setup.setupCompleted) {
+    if (!setup.hasAdmin) {
+      // No users exist — show signup (org + license + admin creation)
+      return (
+        <LoginView
+          onSuccess={() => {
+            // After signup, re-fetch setup status to transition to wizard
+            setSetup(null)
+            refresh()
+          }}
+          defaultMode="signup"
+        />
+      )
+    }
+    // Admin exists but setup not completed — show wizard
     return (
       <SetupView
-        hasAdmin={setup.hasAdmin}
         onDone={() => {
           setSetup({ setupCompleted: true, hasAdmin: true })
           refresh()
