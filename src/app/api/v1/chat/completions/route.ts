@@ -5,6 +5,7 @@ import { handleApiError } from '@/lib/session'
 import { runNonStreamingChatCompletion, runStreamingChatCompletion } from '@/lib/tool-router'
 import { rateLimit } from '@/lib/redis'
 import { inc, observe } from '@/lib/metrics'
+import { getOrgContext } from '@/lib/prisma-tenant'
 
 interface ChatCompletionBody {
   model?: string
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
       ? await findSession(body.session_id)
       : await db.chatSession.create({
           data: {
+            organizationId: identity.organizationId,
             userId: admin.id,
             title: question.slice(0, 60) || 'External API Chat',
           },
@@ -118,6 +120,7 @@ export async function POST(req: NextRequest) {
 
     await db.chatMessage.create({
       data: {
+        organizationId: identity.organizationId,
         sessionId: session.id,
         userId: admin.id,
         sender: 'user',
@@ -202,6 +205,7 @@ export async function POST(req: NextRequest) {
 
             const aiMessage = await db.chatMessage.create({
               data: {
+                organizationId: identity.organizationId,
                 sessionId: session.id,
                 userId: admin.id,
                 sender: 'ai',
@@ -218,6 +222,7 @@ export async function POST(req: NextRequest) {
               streaming.toolRuns.map((toolRun) =>
                 db.toolRun.create({
                   data: {
+                    organizationId: identity.organizationId,
                     chatMessageId: aiMessage.id,
                     restApiEndpointId: toolRun.restApiEndpointId,
                     type: toolRun.type,
@@ -300,6 +305,7 @@ export async function POST(req: NextRequest) {
 
     const aiMessage = await db.chatMessage.create({
       data: {
+        organizationId: identity.organizationId,
         sessionId: session.id,
         userId: admin.id,
         sender: 'ai',
@@ -316,6 +322,7 @@ export async function POST(req: NextRequest) {
       completion.toolRuns.map((toolRun) =>
         db.toolRun.create({
           data: {
+            organizationId: identity.organizationId,
             chatMessageId: aiMessage.id,
             restApiEndpointId: toolRun.restApiEndpointId,
             type: toolRun.type,
@@ -429,8 +436,11 @@ async function writeApiLog(args: {
   latencyMs: number
   errorMessage?: string
 }) {
+  const orgId = getOrgContext()
+  if (!orgId) return
   await db.apiRequestLog.create({
     data: {
+      organizationId: orgId,
       apiKeyId: args.apiKeyId,
       endpoint: 'POST /api/v1/chat/completions',
       status: args.status,

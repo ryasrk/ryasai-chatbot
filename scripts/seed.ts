@@ -13,6 +13,7 @@ import { hashPassword } from '../src/lib/passwords'
 import { ensureDemoSchema, connectorRegistry, describeSchema } from '../src/lib/connectors'
 import { extractKeywords } from '../src/lib/rag'
 import { rebuildFts } from '../src/lib/rag-fts'
+import { bypassOrg, enterWithOrg } from '../src/lib/prisma-tenant'
 
 // Admin credentials honour env overrides so production seeds use real values
 // instead of a placeholder hash. Defaults are dev-only.
@@ -21,6 +22,25 @@ const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin12345'
 
 async function main() {
   console.log('🌱 Seeding ryasai database...')
+
+  // 0. Organization ---------------------------------------------------------
+  const org = await bypassOrg(() =>
+    db.organization.upsert({
+      where: { slug: 'default' },
+      update: { name: 'Default Organization', licenseKey: process.env.SEED_LICENSE_KEY || 'RYASAI-278B49FD-641EF14A-265D68D3', licensePlan: 'pro', licenseStatus: 'valid', licenseValidatedAt: new Date() },
+      create: {
+        id: 'org-default',
+        name: 'Default Organization',
+        slug: 'default',
+        licenseKey: process.env.SEED_LICENSE_KEY || 'RYASAI-278B49FD-641EF14A-265D68D3',
+        licensePlan: 'pro',
+        licenseStatus: 'valid',
+        licenseValidatedAt: new Date(),
+      },
+    }),
+  )
+  enterWithOrg(org.id)
+  console.log(`   ↳ organization: ${org.name} (${org.id})`)
 
   // 1. Users ----------------------------------------------------------------
   const users = [
@@ -31,23 +51,30 @@ async function main() {
   for (const [i, u] of users.entries()) {
     const email = i === 0 && adminEmailOverride ? adminEmailOverride : u.email
     const password = i === 0 ? adminPassword : 'user12345'
-    await db.user.upsert({
-      where: { email },
-      update: {
-        name: u.name,
-        isActive: true,
-        avatarColor: u.color,
-        passwordHash: hashPassword(password),
-      },
-      create: {
-        id: u.id,
-        email,
-        name: u.name,
-        passwordHash: hashPassword(password),
-        avatarColor: u.color,
-        isActive: true,
-      },
-    })
+    const role = i === 0 ? 'admin' : i === 1 ? 'analyst' : 'viewer'
+    await bypassOrg(() =>
+      db.user.upsert({
+        where: { email },
+        update: {
+          name: u.name,
+          isActive: true,
+          avatarColor: u.color,
+          passwordHash: hashPassword(password),
+          role,
+          organizationId: org.id,
+        },
+        create: {
+          id: u.id,
+          email,
+          name: u.name,
+          passwordHash: hashPassword(password),
+          avatarColor: u.color,
+          isActive: true,
+          role,
+          organizationId: org.id,
+        },
+      }),
+    )
   }
 
   // 2. Integration (encrypted config) --------------------------------------
@@ -74,6 +101,7 @@ async function main() {
       provider: 'SQLITE_DEMO',
       encryptedConfig: enc,
       status: 'active',
+      organizationId: org.id,
     },
   })
 
@@ -99,6 +127,7 @@ async function main() {
         columns: JSON.stringify(t.columns),
         rowCount: t.rowCount ?? null,
         reflectedAt: new Date(),
+        organizationId: org.id,
       },
     })
   }
@@ -123,6 +152,7 @@ async function main() {
         category: d.category,
         description: d.description,
         contentText: d.content,
+        organizationId: org.id,
       },
     })
     // chunk by paragraphs (~512 tokens target)
@@ -134,6 +164,7 @@ async function main() {
         content: p.trim(),
         tokenCount: Math.ceil(p.trim().length / 4),
         keywords: extractKeywords(p),
+        organizationId: org.id,
       })),
     })
   }
@@ -152,6 +183,7 @@ async function main() {
       authType: 'NONE',
       isActive: true,
       timeoutMs: 15000,
+      organizationId: org.id,
     },
   })
   const endpoints = [
@@ -163,7 +195,7 @@ async function main() {
   ]
   for (const ep of endpoints) {
     await db.restApiEndpoint.create({
-      data: { connectorId: restConnector.id, ...ep },
+      data: { connectorId: restConnector.id, organizationId: org.id, ...ep },
     })
   }
   console.log(`   ↳ inserted REST connector with ${endpoints.length} endpoints`)
@@ -183,6 +215,7 @@ async function main() {
       prompt: 'Tampilkan ringkasan penjualan hari ini dari database ERP',
       isActive: true,
       nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      organizationId: org.id,
     },
   })
   console.log('   ↳ inserted 1 scheduled run')
@@ -198,6 +231,7 @@ async function main() {
       keyHash: generated.hash,
       requestLimitPerMinute: 100,
       dailyRequestLimit: 10000,
+      organizationId: org.id,
     },
   })
   console.log(`   ↳ inserted API key: ${generated.plainText}`)
@@ -210,17 +244,20 @@ async function main() {
         action: 'INTEGRATION_CREATE',
         severity: 'info',
         detail: JSON.stringify({ integrationId: integration.id, name: integration.name, provider: integration.provider }),
+        organizationId: org.id,
       },
       {
         userId: 'usr-admin',
         action: 'SYSTEM_INIT',
         severity: 'info',
         detail: JSON.stringify({ message: 'Sistem ryasai diinisialisasi.' }),
+        organizationId: org.id,
       },
       {
         action: 'GUARDRAIL_BLOCK',
         severity: 'critical',
         detail: JSON.stringify({ reason: 'Contoh: percobaan prompt injection terdeteksi & diblokir saat testing awal.' }),
+        organizationId: org.id,
       },
     ],
   })

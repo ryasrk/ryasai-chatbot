@@ -82,6 +82,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const message = await db.chatMessage.create({
       data: {
+        organizationId: user.organizationId,
         sessionId: session.id,
         userId: user.userId,
         sender,

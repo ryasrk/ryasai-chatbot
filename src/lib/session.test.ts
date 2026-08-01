@@ -128,10 +128,12 @@ describe('getActiveUser', () => {
       email: 'admin@test.com',
       isActive: true,
       sessionVersion: 0,
+      role: 'admin',
+      organizationId: 'org-1',
     }))
 
     const user = await getActiveUser()
-    expect(user).toEqual({ userId: 'user-1', name: 'Admin', email: 'admin@test.com' })
+    expect(user).toEqual({ userId: 'user-1', name: 'Admin', email: 'admin@test.com', role: 'admin', organizationId: 'org-1' })
   })
 
   test('valid cookie + INACTIVE user → falls through, throws (no fallback)', async () => {
@@ -143,6 +145,8 @@ describe('getActiveUser', () => {
       email: 'admin@test.com',
       isActive: false,
       sessionVersion: 0,
+      role: 'admin',
+      organizationId: 'org-1',
     }))
 
     await expect(getActiveUser()).rejects.toThrow()
@@ -163,6 +167,8 @@ describe('getActiveUser', () => {
       name: 'Demo',
       email: 'demo@test.com',
       isActive: true,
+      role: 'admin',
+      organizationId: 'org-1',
     }))
 
     const user = await getActiveUser()

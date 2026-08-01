@@ -69,6 +69,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const userMessage = await db.chatMessage.create({
       data: {
+        organizationId: user.organizationId,
         sessionId: session.id,
         userId: user.userId,
         sender: 'user',
@@ -195,6 +196,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // 6. Persist AI message + ToolRuns + update session.
           const aiMessage = await db.chatMessage.create({
             data: {
+              organizationId: user.organizationId,
               sessionId: session.id,
               sender: 'ai',
               text: fullAnswer,
@@ -213,6 +215,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             streaming.toolRuns.map((toolRun) =>
               db.toolRun.create({
                 data: {
+                  organizationId: user.organizationId,
                   chatMessageId: aiMessage.id,
                   restApiEndpointId: toolRun.restApiEndpointId,
                   type: toolRun.type,
@@ -256,6 +259,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
               await persistAssistantError({
                 sessionId: session.id,
                 userId: user.userId,
+                organizationId: user.organizationId,
                 message: text,
               }).catch(() => {
                 /* best effort only */
@@ -312,12 +316,14 @@ function isPrismaMissingSessionRace(error: unknown): boolean {
 async function persistAssistantError(args: {
   sessionId: string
   userId: string
+  organizationId: string
   message: string
 }) {
   const text =
     'AI provider is not configured. Open Settings > AI Configuration and set the model API endpoint before using Chat.'
   const aiMessage = await db.chatMessage.create({
     data: {
+      organizationId: args.organizationId,
       sessionId: args.sessionId,
       userId: args.userId,
       sender: 'ai',
@@ -331,6 +337,7 @@ async function persistAssistantError(args: {
   })
   await db.toolRun.create({
     data: {
+      organizationId: args.organizationId,
       chatMessageId: aiMessage.id,
       type: 'CHAT',
       status: 'error',

@@ -185,6 +185,7 @@ export async function seedPlugins() {
     const manifestJson = JSON.stringify(p.manifest)
     await db.plugin.create({
       data: {
+        organizationId: 'org-default',
         toolId: p.toolId,
         name: p.name,
         description: p.description,

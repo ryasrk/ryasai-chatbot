@@ -1,5 +1,3 @@
-import type { PrismaClient } from '@prisma/client'
-
 export interface PromptSettings {
   systemPrompt: string
   tools: { rag: boolean; sql: boolean; restApi: boolean }
@@ -52,8 +50,10 @@ export function mergePromptSettings(
   }
 }
 
+// ponytail: accept the tenant-extended db (not plain PrismaClient) so callers
+// can pass the $extends client without a cast.
 export async function getPromptSettings(
-  db: PrismaClient,
+  db: typeof import('@/lib/db').db,
 ): Promise<PromptSettings> {
   const cfg = await db.appConfig.findFirst()
   return parsePromptSettings(cfg?.promptSettings)

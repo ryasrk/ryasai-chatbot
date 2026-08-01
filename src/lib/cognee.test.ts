@@ -227,7 +227,7 @@ describe('cognee memory layer — enabled (package installed, graceful degradati
       if (config) {
         await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
       } else {
-        await db.appConfig.create({ data: { cogneeEnabled: true } })
+        await db.appConfig.create({ data: { cogneeEnabled: true, organizationId: 'test-org' } })
       }
     } catch {}
     invalidateCogneeSettings()

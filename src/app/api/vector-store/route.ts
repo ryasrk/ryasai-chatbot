@@ -69,6 +69,7 @@ export async function PUT(req: NextRequest) {
     } else {
       await db.vectorStoreConfig.create({
         data: {
+          organizationId: user.organizationId,
           ...payload,
           encryptedApiKey: apiKey ? encryptConfig({ apiKey }) : undefined,
         },

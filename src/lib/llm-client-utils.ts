@@ -6,6 +6,7 @@ import type { LlmMessage, LlmUsage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { traceLlmCall } from '@/lib/observability'
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BACKOFF_BASE_MS,
@@ -53,6 +54,7 @@ export function logLlmUsage(
   db.llmUsageLog
     .create({
       data: {
+        organizationId: getOrgContext()!,
         purpose,
         provider,
         model: cfg.model,

@@ -10,6 +10,7 @@
 import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { signSession } from '@/lib/crypto'
+import { bypassOrg } from '@/lib/prisma-tenant'
 
 export interface OidcConfig {
   issuer: string
@@ -280,8 +281,9 @@ export async function getOrCreateSsoUser(userInfo: OidcUserInfo): Promise<SsoUse
     }
   }
 
-  const created = await db.user.create({
+  const created = await bypassOrg(() => db.user.create({
     data: {
+      organizationId: 'org-default',
       email,
       name,
       ssoSubject: userInfo.sub,
@@ -289,7 +291,7 @@ export async function getOrCreateSsoUser(userInfo: OidcUserInfo): Promise<SsoUse
       sessionVersion: 1,
     },
     select: { id: true, name: true, email: true },
-  })
+  }))
   return {
     userId: created.id,
     name: created.name,

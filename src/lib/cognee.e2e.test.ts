@@ -59,7 +59,7 @@ beforeAll(async () => {
       data: { cogneeEnabled: true },
     })
   } else {
-    await db.appConfig.create({ data: { cogneeEnabled: true } })
+    await db.appConfig.create({ data: { cogneeEnabled: true, organizationId: 'test-org' } })
   }
   invalidateCogneeSettings()
 
@@ -124,6 +124,7 @@ maybeDescribe('cognee e2e: upload → cognify → chat → recall → memory →
 
         const doc = await db.document.create({
           data: {
+            organizationId: 'test-org',
             name: `${TEST_DOC_PREFIX}${articleName}`,
             type: 'txt',
             sizeBytes: truncated.length,
@@ -132,6 +133,7 @@ maybeDescribe('cognee e2e: upload → cognify → chat → recall → memory →
             contentText: truncated,
             chunks: {
               create: chunks.map((content, idx) => ({
+                organizationId: 'test-org',
                 chunkIndex: idx,
                 content,
                 tokenCount: Math.floor(content.length / 4),

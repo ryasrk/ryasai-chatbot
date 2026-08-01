@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const encryptedConfig = encryptConfig({ type, ...config })
 
     const created = await db.notificationConfig.create({
-      data: { name, type, encryptedConfig, isActive: true },
+      data: { organizationId: user.organizationId, name, type, encryptedConfig, isActive: true },
     })
 
     await writeAudit({

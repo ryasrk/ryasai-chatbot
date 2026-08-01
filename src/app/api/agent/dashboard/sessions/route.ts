@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
     const session = await db.chatSession.create({
       data: {
         title,
+        organizationId: user.organizationId,
         userId: user.userId,
       },
     })

@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
 import {
   connectorRegistry,
@@ -127,6 +128,7 @@ export async function prepareRagStream(args: {
 
   await db.auditLog.create({
     data: {
+      organizationId: getOrgContext()!,
       userId: null,
       action: 'RAG_SEARCH',
       severity: 'info',

@@ -1,6 +1,6 @@
 // =====================================================================
 // ryasai — Prisma Schema
-// Single-tenant, admin-only. No company/roleId isolation.
+// Multi-tenant. Every data model has organizationId for tenant isolation.
 // AES-256-GCM encrypted integrations, RAG, chat history, audit logs.
 // =====================================================================
 
@@ -14,7 +14,74 @@ datasource db {
 }
 
 // ------------------------------------------------------------------
-// User — admin only, no roles
+// Organization — tenant root entity
+// ------------------------------------------------------------------
+model Organization {
+  id                  String   @id @default(cuid())
+  name                String
+  slug                String   @unique
+  brandingJson        String?
+  licenseKey          String?  // license key from License-Validator
+  licensePlan         String?  // starter | pro | enterprise
+  licenseStatus       String   @default("none") // none | valid | expired | invalid | suspended
+  licenseValidatedAt  DateTime?
+  licenseExpiresAt    DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  users               User[]
+  invitations         Invitation[]
+  integrations        Integration[]
+  integrationSchemas  IntegrationSchema[]
+  llmConfigs          LlmConfig[]
+  documents           Document[]
+  documentChunks      DocumentChunk[]
+  documentVersions    DocumentVersion[]
+  kgRelations         KgRelation[]
+  vectorStoreConfigs  VectorStoreConfig[]
+  chatSessions        ChatSession[]
+  chatMessages        ChatMessage[]
+  appConfigs          AppConfig[]
+  restApiConnectors   RestApiConnector[]
+  restApiEndpoints    RestApiEndpoint[]
+  restApiRequestLogs  RestApiRequestLog[]
+  toolRuns            ToolRun[]
+  apiKeys             ApiKey[]
+  apiRequestLogs      ApiRequestLog[]
+  auditLogs           AuditLog[]
+  queryHistories      QueryHistory[]
+  plugins             Plugin[]
+  mcpServers          McpServer[]
+  scheduledRuns       ScheduledRun[]
+  scheduledRunLogs    ScheduledRunLog[]
+  notificationConfigs NotificationConfig[]
+  agentRuns           AgentRun[]
+  llmUsageLogs        LlmUsageLog[]
+  savedPrompts        SavedPrompt[]
+}
+
+// ------------------------------------------------------------------
+// Invitation — email invite to join an org
+// ------------------------------------------------------------------
+model Invitation {
+  id              String   @id @default(cuid())
+  organizationId  String
+  email           String
+  role            String   @default("viewer") // admin | analyst | viewer
+  token           String   @unique
+  invitedBy       String
+  status          String   @default("pending") // pending | accepted | expired
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+// ------------------------------------------------------------------
+// User — belongs to one org, email globally unique (1 user = 1 org)
 // ------------------------------------------------------------------
 model User {
   id              String   @id @default(cuid())
@@ -24,17 +91,21 @@ model User {
   avatarColor     String   @default("oklch(0.55 0.18 250)")
   isActive        Boolean  @default(true)
   sessionVersion  Int      @default(0)
-  ssoSubject      String?  // OIDC sub claim — links SSO identity
-  role            String   @default("admin") // admin | analyst | viewer
+  ssoSubject      String?  // OIDC sub / SAML NameID — links SSO identity
+  role            String   @default("viewer") // admin | analyst | viewer
+  organizationId  String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  chatSessions  ChatSession[]
-  auditLogs     AuditLog[]
-  messages      ChatMessage[]
-  queries       QueryHistory[]
-  agentRuns     AgentRun[]
-  savedPrompts  SavedPrompt[]
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  chatSessions ChatSession[]
+  auditLogs    AuditLog[]
+  messages     ChatMessage[]
+  queries      QueryHistory[]
+  agentRuns    AgentRun[]
+  savedPrompts SavedPrompt[]
+
+  @@index([organizationId])
 }
 
 // ------------------------------------------------------------------
@@ -42,6 +113,7 @@ model User {
 // ------------------------------------------------------------------
 model Integration {
   id              String   @id @default(cuid())
+  organizationId  String
   name            String
   type            String   // DATABASE | API
   provider        String   // POSTGRESQL | MYSQL | MSSQL | REST_API | SQLITE_DEMO
@@ -52,32 +124,39 @@ model Integration {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  schemas       IntegrationSchema[]
-  queryHistory  QueryHistory[]
-  chatMessages  ChatMessage[]
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schemas          IntegrationSchema[]
+  queryHistory     QueryHistory[]
+  chatMessages     ChatMessage[]
+
+  @@index([organizationId])
 }
 
 model IntegrationSchema {
-  id            String   @id @default(cuid())
-  integrationId String
-  tableName     String
-  columns       String   // JSON: [{name,type,pk,notnull,fk,distinctValues}]
-  rowCount      Int?
-  sampleRow     String?  // JSON: {col: value} — 1 representative row for LLM format understanding
-  description   String?  // LLM-generated natural language summary of this table
-  reflectedAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  integrationId   String
+  tableName       String
+  columns         String   // JSON: [{name,type,pk,notnull,fk,distinctValues}]
+  rowCount        Int?
+  sampleRow       String?  // JSON: {col: value} — 1 representative row for LLM format understanding
+  description     String?  // LLM-generated natural language summary of this table
+  reflectedAt     DateTime @default(now())
 
-  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([integrationId])
 }
 
 // ------------------------------------------------------------------
-// LLM provider configuration — multiple configs (chat vs agent)
+// LLM provider configuration — multiple configs (chat vs agent), per-org
 // ------------------------------------------------------------------
 model LlmConfig {
   id              String   @id @default(cuid())
-  purpose         String   @default("chat") @unique // chat | agent
+  organizationId  String
+  purpose         String   // chat | agent
   provider        String   @default("OPENAI_COMPATIBLE")
   baseUrl         String
   encryptedApiKey String
@@ -92,77 +171,94 @@ model LlmConfig {
   lastEmbeddingModelSyncAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, purpose])
+  @@index([organizationId])
 }
 
 // ------------------------------------------------------------------
 // RAG — documents & semantic chunks
 // ------------------------------------------------------------------
 model Document {
-  id             String    @id @default(cuid())
-  name           String
-  type           String    // pdf | docx | xlsx | txt | md
-  sizeBytes      Int
-  mimeType       String
-  status         String    @default("processing") // processing | ready | error
-  isEnabled      Boolean   @default(true)
-  category       String?   // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
-  description    String?
-  contentText    String
-  uploadPath     String?
-  cognifyStatus  String?   // null | processing | completed | failed
-  cognifyError   String?
-  cognifiedAt    DateTime?
-  version        Int      @default(1)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  organizationId  String
+  name            String
+  type            String    // pdf | docx | xlsx | txt | md
+  sizeBytes       Int
+  mimeType        String
+  status          String    @default("processing") // processing | ready | error
+  isEnabled       Boolean   @default(true)
+  category        String?   // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
+  description     String?
+  contentText     String
+  uploadPath      String?
+  cognifyStatus   String?   // null | processing | completed | failed
+  cognifyError    String?
+  cognifiedAt     DateTime?
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  chunks   DocumentChunk[]
-  versions DocumentVersion[]
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  chunks       DocumentChunk[]
+  versions     DocumentVersion[]
+
+  @@index([organizationId])
 }
 
 model DocumentChunk {
-  id         String   @id @default(cuid())
-  documentId String
-  chunkIndex Int
-  content    String
-  tokenCount Int?
-  keywords   String?
-  contextPrefix String?
-  embeddingJson      String?
-  embedding          Unsupported("vector(1536)")?
-  embeddingProvider  String?
-  embeddingModel     String?
-  embeddedAt         DateTime?
-  createdAt  DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  documentId      String
+  chunkIndex      Int
+  content         String
+  tokenCount      Int?
+  keywords        String?
+  contextPrefix   String?
+  embeddingJson   String?
+  embedding       Unsupported("vector(1536)")?
+  embeddingProvider String?
+  embeddingModel  String?
+  embeddedAt      DateTime?
+  createdAt       DateTime @default(now())
 
-  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([documentId])
   @@index([embeddingModel])
 }
 
 // ------------------------------------------------------------------
-// Knowledge Graph — entity-relation extraction (LightRAG dual-level retrieval)
+// Knowledge Graph — entity-relation extraction
 // ------------------------------------------------------------------
 model KgRelation {
-  id          String   @id @default(cuid())
-  chunkId     String
-  source      String
-  target      String
-  description String
-  keywords    String   @default("")
-  createdAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  chunkId         String
+  source          String
+  target          String
+  description     String
+  keywords        String   @default("")
+  createdAt       DateTime @default(now())
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([chunkId])
   @@index([source])
   @@index([target])
 }
 
 // ------------------------------------------------------------------
-// Hybrid RAG — external vector database config (singleton)
+// Hybrid RAG — external vector database config, per-org
 // ------------------------------------------------------------------
 model VectorStoreConfig {
   id              String   @id @default(cuid())
+  organizationId  String
   provider        String   @default("INTERNAL") // INTERNAL | QDRANT | MILVUS
   baseUrl         String?
   encryptedApiKey String?
@@ -172,56 +268,63 @@ model VectorStoreConfig {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([provider])
 }
 
 // ------------------------------------------------------------------
-// Smart Mapping AI — source/entity/field map
-// ------------------------------------------------------------------
-// ------------------------------------------------------------------
 // Chat sessions & messages
 // ------------------------------------------------------------------
 model ChatSession {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String   @default("Sesi Baru")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String
+  title           String   @default("Sesi Baru")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages ChatMessage[]
-  agentRuns AgentRun[]
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+  agentRuns    AgentRun[]
 
+  @@index([organizationId])
   @@index([userId])
 }
 
 model ChatMessage {
-  id         String   @id @default(cuid())
-  sessionId  String
-  userId     String?
-  sender     String   // user | ai | system
-  text       String
-  status     String?
-  citations  String?
-  chartData  String?
-  createdAt  DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  sessionId       String
+  userId          String?
+  sender          String   // user | ai | system
+  text            String
+  status          String?
+  citations       String?
+  chartData       String?
+  integrationId   String?
+  createdAt       DateTime @default(now())
 
-  session     ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user        User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  integration Integration?   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
-  integrationId String?
-  toolRuns    ToolRun[]
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  session      ChatSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  integration  Integration?   @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  toolRuns     ToolRun[]
 
+  @@index([organizationId])
   @@index([sessionId])
   @@index([userId])
   @@index([integrationId])
 }
 
 // ------------------------------------------------------------------
-// AppConfig — singleton setup/config
+// AppConfig — per-org setup/config
 // ------------------------------------------------------------------
 model AppConfig {
   id                  String   @id @default(cuid())
+  organizationId      String
   setupCompleted      Boolean  @default(false)
   organizationName    String?
   brandingJson        String?
@@ -234,6 +337,10 @@ model AppConfig {
   cogneeMaxRetries    Int      @default(3)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
 
 // ------------------------------------------------------------------
@@ -241,6 +348,7 @@ model AppConfig {
 // ------------------------------------------------------------------
 model RestApiConnector {
   id                  String   @id @default(cuid())
+  organizationId      String
   name                String
   baseUrl             String
   authType            String   @default("NONE") // NONE | BEARER | API_KEY_HEADER
@@ -250,12 +358,16 @@ model RestApiConnector {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  endpoints   RestApiEndpoint[]
-  requestLogs RestApiRequestLog[]
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  endpoints     RestApiEndpoint[]
+  requestLogs   RestApiRequestLog[]
+
+  @@index([organizationId])
 }
 
 model RestApiEndpoint {
   id              String   @id @default(cuid())
+  organizationId  String
   connectorId     String
   method          String
   path            String
@@ -267,16 +379,19 @@ model RestApiEndpoint {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  connector   RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
-  requestLogs RestApiRequestLog[]
-  toolRuns    ToolRun[]
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connector    RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  requestLogs  RestApiRequestLog[]
+  toolRuns     ToolRun[]
 
+  @@index([organizationId])
   @@index([connectorId])
   @@index([method, path])
 }
 
 model RestApiRequestLog {
   id              String   @id @default(cuid())
+  organizationId  String
   connectorId     String
   endpointId      String?
   statusCode      Int?
@@ -286,9 +401,11 @@ model RestApiRequestLog {
   errorMessage    String?
   createdAt       DateTime @default(now())
 
-  connector RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
-  endpoint  RestApiEndpoint?  @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connector    RestApiConnector  @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  endpoint     RestApiEndpoint?  @relation(fields: [endpointId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([connectorId])
   @@index([endpointId])
 }
@@ -298,6 +415,7 @@ model RestApiRequestLog {
 // ------------------------------------------------------------------
 model ToolRun {
   id                String   @id @default(cuid())
+  organizationId    String
   chatMessageId     String?
   restApiEndpointId String?
   type              String   // RAG | SQL | REST_API | CHAT
@@ -308,9 +426,11 @@ model ToolRun {
   errorMessage      String?
   createdAt         DateTime @default(now())
 
-  chatMessage     ChatMessage?     @relation(fields: [chatMessageId], references: [id], onDelete: SetNull)
-  restApiEndpoint RestApiEndpoint? @relation(fields: [restApiEndpointId], references: [id], onDelete: SetNull)
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  chatMessage      ChatMessage?     @relation(fields: [chatMessageId], references: [id], onDelete: SetNull)
+  restApiEndpoint  RestApiEndpoint? @relation(fields: [restApiEndpointId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([chatMessageId])
   @@index([restApiEndpointId])
   @@index([type])
@@ -319,6 +439,7 @@ model ToolRun {
 
 model ApiKey {
   id                    String    @id @default(cuid())
+  organizationId        String
   label                 String
   keyPrefix             String
   keyHash               String
@@ -330,24 +451,29 @@ model ApiKey {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  requestLogs ApiRequestLog[]
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestLogs  ApiRequestLog[]
 
+  @@index([organizationId])
   @@index([keyPrefix])
   @@index([isActive])
 }
 
 model ApiRequestLog {
-  id           String   @id @default(cuid())
-  apiKeyId     String?
-  endpoint     String
-  status       Int
-  latencyMs    Int?
-  requestId    String?
-  errorMessage String?
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  apiKeyId        String?
+  endpoint        String
+  status          Int
+  latencyMs       Int?
+  requestId       String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
 
-  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKey      ApiKey?       @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([apiKeyId])
   @@index([endpoint])
 }
@@ -356,16 +482,19 @@ model ApiRequestLog {
 // Audit logs
 // ------------------------------------------------------------------
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String
-  severity  String   @default("info") // info | warning | critical
-  detail    String   // JSON string
-  ipAddress String?
-  createdAt DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String?
+  action          String
+  severity        String   @default("info") // info | warning | critical
+  detail          String   // JSON string
+  ipAddress       String?
+  createdAt       DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([userId])
   @@index([severity])
   @@index([createdAt])
@@ -376,65 +505,76 @@ model AuditLog {
 // Query history (Text-to-SQL executed queries)
 // ------------------------------------------------------------------
 model QueryHistory {
-  id            String   @id @default(cuid())
-  integrationId String
-  userId        String
-  naturalQuery  String
-  generatedSql  String
-  rowCount      Int?
-  executionMs   Int?
-  success       Boolean  @default(true)
-  errorMessage  String?
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  integrationId   String
+  userId          String
+  naturalQuery    String
+  generatedSql    String
+  rowCount        Int?
+  executionMs     Int?
+  success         Boolean  @default(true)
+  errorMessage    String?
+  createdAt       DateTime @default(now())
 
-  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([integrationId])
   @@index([userId])
 }
 
 // ------------------------------------------------------------------
-// Plugin/tool manifest registry
+// Plugin/tool manifest registry — per-org
 // ------------------------------------------------------------------
 model Plugin {
-  id            String   @id @default(cuid())
-  toolId        String   @unique
-  name          String  
-  description   String
-  manifestJson  String
-  isEnabled     Boolean  @default(false)
-  chatEnabled    Boolean  @default(true)
-  agenticEnabled Boolean  @default(true)
-  category      String   @default("general")
-  subcategory   String   @default("general")
-  keywords      String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  toolId          String
+  name            String
+  description     String
+  manifestJson    String
+  isEnabled       Boolean  @default(false)
+  chatEnabled     Boolean  @default(true)
+  agenticEnabled  Boolean  @default(true)
+  category        String   @default("general")
+  subcategory     String   @default("general")
+  keywords        String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([isEnabled])
   @@index([category])
 }
 
 // ------------------------------------------------------------------
-// MCP (Model Context Protocol) server registry — external tool servers
+// MCP (Model Context Protocol) server registry — per-org
 // ------------------------------------------------------------------
 model McpServer {
-  id          String   @id @default(cuid())
-  name        String
-  description String   @default("")
-  transport   String   @default("stdio") // stdio | sse | http
-  command     String   @default("") // for stdio: executable to run
-  args        String   @default("[]") // JSON array of command args
-  url         String   @default("") // for sse/http: server endpoint
-  envJson     String   @default("{}") // AES-256-GCM encrypted JSON of env vars
-  headersJson String   @default("{}") // AES-256-GCM encrypted JSON of HTTP headers (sse/http)
-  isEnabled   Boolean  @default(true)
-  chatEnabled    Boolean  @default(true)
-  agenticEnabled Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String   @default("")
+  transport       String   @default("stdio") // stdio | sse | http
+  command         String   @default("") // for stdio: executable to run
+  args            String   @default("[]") // JSON array of command args
+  url             String   @default("") // for sse/http: server endpoint
+  envJson         String   @default("{}") // AES-256-GCM encrypted JSON of env vars
+  headersJson     String   @default("{}") // AES-256-GCM encrypted JSON of HTTP headers (sse/http)
+  isEnabled       Boolean  @default(true)
+  chatEnabled     Boolean  @default(true)
+  agenticEnabled  Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([isEnabled])
 }
 
@@ -442,55 +582,64 @@ model McpServer {
 // Scheduled/triggered runs (cron + prompt)
 // ------------------------------------------------------------------
 model ScheduledRun {
-  id          String    @id @default(cuid())
-  name        String
-  cronExpr    String
-  prompt      String
-  timezone    String?   @default("UTC")
-  isActive    Boolean   @default(true)
-  lastRunAt   DateTime?
-  nextRunAt   DateTime?
-  lastResult  String?
-  notificationConfigId String?
-  notificationConfig  NotificationConfig? @relation(fields: [notificationConfigId], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  organizationId        String
+  name                  String
+  cronExpr              String
+  prompt                String
+  timezone              String?   @default("UTC")
+  isActive              Boolean   @default(true)
+  lastRunAt             DateTime?
+  nextRunAt             DateTime?
+  lastResult            String?
+  notificationConfigId  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  logs        ScheduledRunLog[]
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notificationConfig NotificationConfig? @relation(fields: [notificationConfigId], references: [id], onDelete: SetNull)
+  logs               ScheduledRunLog[]
 
+  @@index([organizationId])
   @@index([isActive])
   @@index([nextRunAt])
   @@index([notificationConfigId])
 }
 
 model ScheduledRunLog {
-  id             String   @id @default(cuid())
-  scheduledRunId String
-  status         String   // 'success' | 'error'
-  answer         String?  // full LLM answer
-  error          String?  // error message if failed
-  toolRunsJson   String?  // JSON array of tool run summaries
-  latencyMs      Int?
-  executedAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  scheduledRunId  String
+  status          String   // 'success' | 'error'
+  answer          String?  // full LLM answer
+  error           String?  // error message if failed
+  toolRunsJson    String?  // JSON array of tool run summaries
+  latencyMs       Int?
+  executedAt      DateTime @default(now())
 
-  scheduledRun   ScheduledRun @relation(fields: [scheduledRunId], references: [id], onDelete: Cascade)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scheduledRun ScheduledRun   @relation(fields: [scheduledRunId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([scheduledRunId])
   @@index([executedAt])
 }
 
 model NotificationConfig {
-  id             String   @id @default(cuid())
-  name           String
-  type           String   // webhook | email | telegram
-  encryptedConfig String  // AES-256-GCM encrypted JSON: {type,url,token} | {type,smtpHost,...} | {type,botToken,chatId}
-  isActive       Boolean  @default(true)
-  lastUsedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  name            String
+  type            String   // webhook | email | telegram
+  encryptedConfig String   // AES-256-GCM encrypted JSON
+  isActive        Boolean  @default(true)
+  lastUsedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   scheduledRuns ScheduledRun[]
 
+  @@index([organizationId])
   @@index([isActive])
 }
 
@@ -498,20 +647,23 @@ model NotificationConfig {
 // Agentic multi-step run tracking
 // ------------------------------------------------------------------
 model AgentRun {
-  id           String   @id @default(cuid())
-  userId       String?
-  sessionId    String?
-  question     String
-  planJson     String
-  status       String   // planning | executing | complete | error
-  resultJson   String?
-  errorMessage String?
-  latencyMs    Int?
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String?
+  sessionId       String?
+  question        String
+  planJson        String
+  status          String   // planning | executing | complete | error
+  resultJson      String?
+  errorMessage    String?
+  latencyMs       Int?
+  createdAt       DateTime @default(now())
 
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user    User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   session ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
+  @@index([organizationId])
   @@index([status])
   @@index([userId])
   @@index([sessionId])
@@ -521,16 +673,20 @@ model AgentRun {
 // LlmUsageLog — token usage per LLM call (cost tracking + monitoring)
 // ------------------------------------------------------------------
 model LlmUsageLog {
-  id               String   @id @default(cuid())
-  purpose          String   // chat | agent | router | sql | rag | rest | synthesis
-  provider         String   // OPENAI_COMPATIBLE | ANTHROPIC_COMPATIBLE
-  model            String
-  promptTokens     Int      @default(0)
-  completionTokens Int      @default(0)
-  totalTokens      Int      @default(0)
-  latencyMs        Int?
-  createdAt        DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  purpose         String   // chat | agent | router | sql | rag | rest | synthesis
+  provider        String   // OPENAI_COMPATIBLE | ANTHROPIC_COMPATIBLE
+  model           String
+  promptTokens    Int      @default(0)
+  completionTokens Int     @default(0)
+  totalTokens     Int      @default(0)
+  latencyMs       Int?
+  createdAt       DateTime @default(now())
 
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([createdAt])
   @@index([purpose])
   @@index([model])
@@ -540,34 +696,40 @@ model LlmUsageLog {
 // Document versioning — snapshot history for restore
 // ------------------------------------------------------------------
 model DocumentVersion {
-  id          String   @id @default(cuid())
-  documentId  String
-  version     Int
-  contentHash String
-  chunkCount  Int
-  createdAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  organizationId  String
+  documentId      String
+  version         Int
+  contentHash     String
+  chunkCount      Int
+  createdAt       DateTime @default(now())
 
-  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([documentId])
   @@index([version])
 }
 
 // ------------------------------------------------------------------
-// SavedPrompt — reusable prompt library
+// SavedPrompt — reusable prompt library, per-org
 // ------------------------------------------------------------------
 model SavedPrompt {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  content   String
-  category  String   @default("general")
-  isPublic  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String
+  title           String
+  content         String
+  category        String   @default("general")
+  isPublic        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@index([userId])
   @@index([category])
   @@index([isPublic])

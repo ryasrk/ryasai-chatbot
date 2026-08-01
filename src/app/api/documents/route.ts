@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
     // Create the document with status='ready'.
     const doc = await db.document.create({
       data: {
+        organizationId: user.organizationId,
         name: file.name,
         type: docType,
         sizeBytes: file.size,
@@ -165,6 +166,7 @@ export async function POST(req: NextRequest) {
 
     // Persist chunks with token estimate + keyword tags.
     const chunkRows = chunks.map((content, idx) => ({
+        organizationId: user.organizationId,
         documentId: doc.id,
         chunkIndex: idx,
         content,

@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { UnauthorizedError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const KEY_PREFIX = 'ryas_'
 const HASH_ALGO = 'sha256'
@@ -36,6 +37,7 @@ export function maskApiKey(prefix: string): string {
 
 export interface ExternalApiIdentity {
   apiKeyId: string
+  organizationId: string
   label: string
   requestLimitPerMinute: number | null
 }
@@ -58,17 +60,19 @@ export async function requireExternalApiKey(
   const candidates = prefix.length >= 13
     ? await db.apiKey.findMany({
         where: { isActive: true, revokedAt: null, keyPrefix: prefix },
-        select: { id: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
+        select: { id: true, organizationId: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
       })
     : await db.apiKey.findMany({
         where: { isActive: true, revokedAt: null },
-        select: { id: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
+        select: { id: true, organizationId: true, label: true, keyHash: true, requestLimitPerMinute: true, dailyRequestLimit: true },
       })
 
   const matched = candidates.find((candidate) =>
     verifyApiKey(token, candidate.keyHash),
   )
   if (!matched) throw new UnauthorizedError('API key is invalid or has been revoked.')
+
+  enterWithOrg(matched.organizationId)
 
   // Rate limit enforcement
   if (matched.requestLimitPerMinute || matched.dailyRequestLimit) {
@@ -102,6 +106,7 @@ export async function requireExternalApiKey(
 
   return {
     apiKeyId: matched.id,
+    organizationId: matched.organizationId,
     label: matched.label,
     requestLimitPerMinute: matched.requestLimitPerMinute,
   }

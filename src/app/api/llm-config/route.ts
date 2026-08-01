@@ -101,7 +101,7 @@ export async function PUT(req: NextRequest) {
       await db.llmConfig.update({ where: { id: existing.id }, data: payload })
     } else {
       await db.llmConfig.create({
-        data: { ...payload, encryptedApiKey, encryptedEmbeddingApiKey },
+        data: { organizationId: user.organizationId, purpose: 'chat', ...payload, encryptedApiKey, encryptedEmbeddingApiKey },
       })
     }
 

@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
 
     const connector = await db.restApiConnector.create({
       data: {
+        organizationId: user.organizationId,
         name: parsed.name,
         baseUrl: parsed.baseUrl,
         authType: parsed.authType,

@@ -141,6 +141,7 @@ export async function POST(req: NextRequest) {
     const encryptedConfig = encryptConfig(config as Record<string, unknown>)
     const integration = await db.integration.create({
       data: {
+        organizationId: user.organizationId,
         name,
         type,
         provider,
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
       await db.integrationSchema.deleteMany({ where: { integrationId: integration.id } }).catch(() => {})
       await db.integrationSchema.createMany({
         data: reflectedTables.map((t) => ({
+          organizationId: user.organizationId,
           integrationId: integration.id,
           tableName: t.tableName,
           columns: JSON.stringify(t.columns ?? []),

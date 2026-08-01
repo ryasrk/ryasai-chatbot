@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { bypassOrg, getOrgContext } from '@/lib/prisma-tenant'
 import { serverConfig } from '@/lib/config'
 import { extractSessionVersion, verifySession } from '@/lib/crypto'
 import { cookies } from 'next/headers'
@@ -12,6 +13,8 @@ export interface ActiveUser {
   userId: string
   name: string
   email: string
+  role: string
+  organizationId: string
 }
 
 export class UnauthorizedError extends Error {
@@ -19,6 +22,24 @@ export class UnauthorizedError extends Error {
   constructor(message = 'No active session.') {
     super(message)
     this.name = 'UnauthorizedError'
+  }
+}
+
+export class ForbiddenError extends Error {
+  readonly code = 'FORBIDDEN'
+  constructor(message = 'Insufficient permissions.') {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}
+
+const ROLE_RANK: Record<string, number> = { viewer: 0, analyst: 1, admin: 2 }
+
+export function requireRole(user: ActiveUser, minRole: 'admin' | 'analyst' | 'viewer'): void {
+  const userRank = ROLE_RANK[user.role] ?? 0
+  const requiredRank = ROLE_RANK[minRole] ?? 0
+  if (userRank < requiredRank) {
+    throw new ForbiddenError(`Requires ${minRole} role. You have ${user.role}.`)
   }
 }
 
@@ -51,6 +72,12 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
       { status: 401 },
     )
   }
+  if (e instanceof ForbiddenError) {
+    return NextResponse.json(
+      { error: { code: 'FORBIDDEN' as const, message: e.message } },
+      { status: 403 },
+    )
+  }
   if (e instanceof AppError) {
     return NextResponse.json(
       { error: { code: e.code, message: e.message, hint: e.hint } },
@@ -75,15 +102,21 @@ export async function getActiveUser(): Promise<ActiveUser> {
       throw new UnauthorizedError('Session expired due to inactivity. Please log in again.')
     }
 
-    const u = await db.user.findUnique({
-      where: { id: userId },
-      select: { id: true, name: true, email: true, isActive: true, sessionVersion: true },
-    })
+    // ponytail: bypass org context for user lookup — we need to find the user
+    // by ID regardless of org (we don't know the org yet).
+    const u = await bypassOrg(() =>
+      db.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, email: true, isActive: true, sessionVersion: true, role: true, organizationId: true },
+      }),
+    )
     // ponytail: session fixation defense — reject tokens with stale session version.
-    // Old cookies (pre-login) have version 0 or a prior version; new logins increment it.
     if (u && u.isActive && u.sessionVersion === extractSessionVersion(token)) {
+      // Set org context for all subsequent queries in this request
+      const { enterWithOrg } = await import('@/lib/prisma-tenant')
+      enterWithOrg(u.organizationId)
       touchActivity(userId)
-      return { userId: u.id, name: u.name, email: u.email }
+      return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId }
     }
   }
 
@@ -97,12 +130,17 @@ export async function getActiveUser(): Promise<ActiveUser> {
         'Disable in production by setting AUTH_DEMO_FALLBACK=false.',
     )
   }
-  const user = await db.user.findFirst({
-    where: { isActive: true },
-    orderBy: { createdAt: 'asc' },
-  })
+  const user = await bypassOrg(() =>
+    db.user.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, email: true, role: true, organizationId: true },
+    }),
+  )
   if (!user) throw new Error('No active user found. Run the seed script.')
-  return { userId: user.id, name: user.name, email: user.email }
+  const { enterWithOrg } = await import('@/lib/prisma-tenant')
+  enterWithOrg(user.organizationId)
+  return { userId: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId }
 }
 
 export async function writeAudit(args: {
@@ -116,6 +154,7 @@ export async function writeAudit(args: {
   try {
     await db.auditLog.create({
       data: {
+        organizationId: getOrgContext()!,
         userId: args.userId,
         action: args.action,
         severity,

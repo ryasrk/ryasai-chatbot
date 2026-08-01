@@ -70,6 +70,8 @@ export async function POST(req: NextRequest) {
     } else {
       await db.llmConfig.create({
         data: {
+          organizationId: user.organizationId,
+          purpose: 'chat',
           provider: 'OPENAI_COMPATIBLE',
           baseUrl,
           model: models[0] ?? '',

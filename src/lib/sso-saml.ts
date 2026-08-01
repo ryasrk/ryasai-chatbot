@@ -12,6 +12,7 @@
 import { SAML, ValidateInResponseTo, type Profile, type SamlOptions } from '@node-saml/node-saml'
 import { db } from '@/lib/db'
 import { signSession } from '@/lib/crypto'
+import { bypassOrg } from '@/lib/prisma-tenant'
 import { redisCmd } from '@/lib/redis'
 import { scopedLogger } from '@/lib/logger'
 
@@ -287,8 +288,9 @@ export async function getOrCreateSsoUser(userInfo: SamlUserInfo): Promise<SamlUs
     }
   }
 
-  const created = await db.user.create({
+  const created = await bypassOrg(() => db.user.create({
     data: {
+      organizationId: 'org-default',
       email,
       name,
       ssoSubject: userInfo.sub,
@@ -296,7 +298,7 @@ export async function getOrCreateSsoUser(userInfo: SamlUserInfo): Promise<SamlUs
       sessionVersion: 1,
     },
     select: { id: true, name: true, email: true },
-  })
+  }))
   return {
     userId: created.id,
     name: created.name,

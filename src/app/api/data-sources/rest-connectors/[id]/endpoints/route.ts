@@ -77,6 +77,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     const item = await db.restApiEndpoint.create({
       data: {
+        organizationId: user.organizationId,
         connectorId: connector.id,
         method,
         path,

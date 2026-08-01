@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
 import {
   connectorRegistry,
@@ -149,6 +150,7 @@ export async function runRagBranch(args: {
 
   await db.auditLog.create({
     data: {
+      organizationId: getOrgContext()!,
       userId: null,
       action: 'RAG_SEARCH',
       severity: 'info',
@@ -223,6 +225,7 @@ export async function runSqlBranch(args: {
   if (!guard.ok) {
     await db.auditLog.create({
       data: {
+        organizationId: getOrgContext()!,
         userId: args.userId,
         action: 'GUARDRAIL_BLOCK',
         severity: 'critical',
@@ -264,6 +267,7 @@ export async function runSqlBranch(args: {
     const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
     await db.queryHistory.create({
       data: {
+        organizationId: getOrgContext()!,
         integrationId: integration.id,
         userId: args.userId,
         naturalQuery: args.question,
@@ -275,6 +279,7 @@ export async function runSqlBranch(args: {
     })
     await db.auditLog.create({
       data: {
+        organizationId: getOrgContext()!,
         userId: args.userId,
         action: 'SQL_EXECUTE',
         severity: 'info',
@@ -323,6 +328,7 @@ export async function runSqlBranch(args: {
     const errorMessage = e instanceof Error ? e.message : String(e)
     await db.queryHistory.create({
       data: {
+        organizationId: getOrgContext()!,
         integrationId: integration.id,
         userId: args.userId,
         naturalQuery: args.question,
@@ -333,6 +339,7 @@ export async function runSqlBranch(args: {
     })
     await db.auditLog.create({
       data: {
+        organizationId: getOrgContext()!,
         userId: args.userId,
         action: 'SQL_EXECUTE_ERROR',
         severity: 'warning',
@@ -456,6 +463,7 @@ export async function runRestBranch(args: {
 
   await db.auditLog.create({
     data: {
+      organizationId: getOrgContext()!,
       userId: args.userId,
       action: 'REST_ENDPOINT_EXECUTE',
       severity: result.statusCode >= 200 && result.statusCode < 400 ? 'info' : 'warning',
@@ -618,6 +626,7 @@ export async function executeRestRequest(args: {
     const latencyMs = Date.now() - started
     await db.restApiRequestLog.create({
       data: {
+        organizationId: getOrgContext()!,
         connectorId: args.connector.id,
         endpointId: args.endpointId,
         statusCode: response.status,
@@ -645,6 +654,7 @@ export async function executeRestRequest(args: {
     const error = e instanceof Error ? e.message : String(e)
     await db.restApiRequestLog.create({
       data: {
+        organizationId: getOrgContext()!,
         connectorId: args.connector.id,
         endpointId: args.endpointId,
         latencyMs,

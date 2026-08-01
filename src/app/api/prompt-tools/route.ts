@@ -29,7 +29,7 @@ export async function PUT(req: NextRequest) {
     if (existing) {
       await db.appConfig.update({ where: { id: existing.id }, data: { promptSettings: JSON.stringify(merged) } })
     } else {
-      await db.appConfig.create({ data: { promptSettings: JSON.stringify(merged) } })
+      await db.appConfig.create({ data: { organizationId: user.organizationId, promptSettings: JSON.stringify(merged) } })
     }
 
     await writeAudit({

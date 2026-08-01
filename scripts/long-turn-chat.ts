@@ -61,7 +61,7 @@ async function main() {
 
   // Persist a session row so cognee rememberChatTurn can use it
   await db.chatSession.create({
-    data: { id: SESSION_ID, userId: USER_ID, title: 'Long-turn multi-DB test' },
+    data: { id: SESSION_ID, userId: USER_ID, organizationId: 'org-default', title: 'Long-turn multi-DB test' },
   }).catch(() => {})
 
   const history: ChatHistoryEntry[] = []

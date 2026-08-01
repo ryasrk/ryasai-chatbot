@@ -28,6 +28,8 @@ import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
 import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
 import { syncAllSchedules, type ScheduleJobData } from '../../src/lib/scheduler-queue'
+import { bypassOrg, enterWithOrg } from '../../src/lib/prisma-tenant'
+import { validateLicense, generateMachineId } from '../../src/lib/license-client'
 
 const RUN_TIMEOUT_MS = 60_000
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -97,6 +99,21 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
   const now = new Date()
   console.log(`[scheduler] executing "${name}"`)
 
+  // Scheduler runs outside request context — look up the run's org via
+  // bypassOrg, then enter that org so all subsequent queries are scoped.
+  const scheduledRun = await bypassOrg(() =>
+    db.scheduledRun.findUnique({
+      where: { id: runId },
+      select: { organizationId: true },
+    }),
+  )
+  if (!scheduledRun) {
+    console.warn(`[scheduler] run "${name}" (${runId}) not found — skipping`)
+    return
+  }
+  const orgId = scheduledRun.organizationId
+  enterWithOrg(orgId)
+
   const admin = await db.user.findFirst({
     where: { isActive: true },
     select: { id: true },
@@ -137,6 +154,7 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
       void db.toolRun
         .create({
           data: {
+            organizationId: orgId,
             restApiEndpointId: tr.restApiEndpointId ?? null,
             type: tr.type,
             status: tr.status,
@@ -238,6 +256,7 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
     } catch {}
     await db.scheduledRunLog.create({
       data: {
+        organizationId: orgId,
         scheduledRunId: runId,
         status: success ? 'success' : 'error',
         answer,
@@ -254,6 +273,7 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
   try {
     await db.auditLog.create({
       data: {
+        organizationId: orgId,
         userId: null,
         action: 'SCHEDULED_RUN',
         severity: 'info',
@@ -286,6 +306,41 @@ workerConnection.on('error', () => {})
 
 let _worker: Worker<ScheduleJobData> | null = null
 
+// ponytail: daily license validation — checks all orgs, updates status.
+// Runs on startup + every 24h. License-Validator is the source of truth.
+let lastLicenseCheckDay = ''
+
+async function validateAllLicenses(): Promise<void> {
+  try {
+    const orgs = await bypassOrg(() =>
+      db.organization.findMany({
+        where: { licenseKey: { not: null } },
+        select: { id: true, slug: true, licenseKey: true },
+      }),
+    )
+    for (const org of orgs) {
+      if (!org.licenseKey) continue
+      const machineId = generateMachineId(org.slug)
+      const result = await validateLicense(org.licenseKey, machineId)
+      const status = result.valid ? 'valid' : result.message.includes('expired') ? 'expired' : 'invalid'
+      await bypassOrg(() =>
+        db.organization.update({
+          where: { id: org.id },
+          data: {
+            licenseStatus: status,
+            licensePlan: result.plan,
+            licenseValidatedAt: new Date(),
+            licenseExpiresAt: result.expiresAt ? new Date(result.expiresAt) : null,
+          },
+        }),
+      )
+      console.log(`[scheduler] license check: ${org.slug} → ${status}`)
+    }
+  } catch (e) {
+    console.warn('[scheduler] license validation failed:', e)
+  }
+}
+
 async function bootstrap(): Promise<void> {
   console.log('[scheduler] starting BullMQ worker...')
 
@@ -295,6 +350,9 @@ async function bootstrap(): Promise<void> {
     console.warn('[scheduler] failed to sync schedules on startup (non-fatal):', e)
   }
 
+  // ponytail: validate all org licenses on startup + daily
+  void validateAllLicenses()
+
   _worker = new Worker<ScheduleJobData>(
     'scheduled-runs',
     async (job) => {
@@ -303,6 +361,10 @@ async function bootstrap(): Promise<void> {
       if (today !== lastCleanupDay) {
         lastCleanupDay = today
         void cleanupOldLogs()
+      }
+      if (today !== lastLicenseCheckDay) {
+        lastLicenseCheckDay = today
+        void validateAllLicenses()
       }
       await processJob(job)
     },

@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
     const generated = generateApiKey()
     const item = await db.apiKey.create({
       data: {
+        organizationId: user.organizationId,
         label,
         keyPrefix: generated.prefix,
         keyHash: generated.hash,

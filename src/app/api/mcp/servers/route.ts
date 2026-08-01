@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
     const transport = (body.transport as string).trim()
     const server = await db.mcpServer.create({
       data: {
+        organizationId: user.organizationId,
         name,
         description: (body.description ?? '').trim(),
         transport,

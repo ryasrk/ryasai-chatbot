@@ -9,6 +9,7 @@ async function main() {
 
   const server = await db.mcpServer.create({
     data: {
+      organizationId: 'org-default',
       name: 'reuse-before-generate',
       description: 'Check GitHub, npm, PyPI for maintained alternatives before building something new. Call check_before_building before scaffolding any new project or module.',
       transport: 'stdio',

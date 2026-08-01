@@ -4,17 +4,18 @@ import { hashPassword } from '@/lib/passwords'
 import { signSession } from '@/lib/crypto'
 import { normalizeSetupAdminInput, getSetupState } from '@/lib/setup'
 import { writeAudit, handleApiError } from '@/lib/session'
+import { bypassOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/setup/admin (public, but 409 once setupCompleted)
  *   Body: { name, email, password (min 8 chars) }
- *   Creates the singleton AppConfig if missing, upserts the admin
+ *   Creates the first Organization + AppConfig if missing, upserts the admin
  *   user with a scrypt hash, auto-logs-in (sets the session cookie), and writes
  *   a SETUP_ADMIN_CREATED audit.
  */
 export async function POST(req: NextRequest) {
   try {
-    const state = await getSetupState(db)
+    const state = await bypassOrg(() => getSetupState(db))
     if (state.setupCompleted) {
       return NextResponse.json({ error: 'Setup already completed.' }, { status: 409 })
     }
@@ -26,22 +27,36 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    let appConfig = await db.appConfig.findFirst()
-    if (!appConfig) appConfig = await db.appConfig.create({ data: {} })
+    // ponytail: setup runs before any org context exists — bypassOrg for all
+    // queries, create the first Organization explicitly.
+    const user = await bypassOrg(async () => {
+      let org = await db.organization.findFirst()
+      if (!org) {
+        org = await db.organization.create({
+          data: { name: 'Default Organization', slug: 'default' },
+        })
+      }
 
-    const user = await db.user.upsert({
-      where: { email: input.email },
-      create: {
-        email: input.email,
-        name: input.name,
-        passwordHash: hashPassword(input.password),
-        isActive: true,
-      },
-      update: {
-        name: input.name,
-        passwordHash: hashPassword(input.password),
-        isActive: true,
-      },
+      const existing = await db.appConfig.findFirst({ where: { organizationId: org.id } })
+      if (!existing) {
+        await db.appConfig.create({ data: { organizationId: org.id } })
+      }
+
+      return db.user.upsert({
+        where: { email: input.email },
+        create: {
+          email: input.email,
+          name: input.name,
+          passwordHash: hashPassword(input.password),
+          isActive: true,
+          organizationId: org.id,
+        },
+        update: {
+          name: input.name,
+          passwordHash: hashPassword(input.password),
+          isActive: true,
+        },
+      })
     })
 
     await writeAudit({

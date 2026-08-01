@@ -6,6 +6,7 @@ import { getAvailableTools } from '@/lib/tool-registry'
 import { planQuery, executePlan, synthesizeAnswer } from '@/lib/planner'
 import { rememberChatTurn } from '@/lib/cognee'
 import { rateLimit } from '@/lib/redis'
+import { getOrgContext } from '@/lib/prisma-tenant'
 
 async function writeApiLog(args: {
   apiKeyId: string | null
@@ -13,8 +14,11 @@ async function writeApiLog(args: {
   latencyMs: number
   errorMessage?: string
 }) {
+  const orgId = getOrgContext()
+  if (!orgId) return
   await db.apiRequestLog.create({
     data: {
+      organizationId: orgId,
       apiKeyId: args.apiKeyId,
       endpoint: 'POST /api/v1/agent/run',
       status: args.status,
@@ -75,6 +79,7 @@ export async function POST(req: NextRequest) {
     // 1) Plan
     agentRun = await db.agentRun.create({
       data: {
+        organizationId: identity.organizationId,
         userId: admin?.id ?? undefined,
         sessionId: body.sessionId ?? undefined,
         question,

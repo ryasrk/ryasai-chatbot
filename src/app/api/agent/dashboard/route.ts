@@ -39,7 +39,7 @@ const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx' }> = {
 //   1. "add/install/set up mcp server [name]" (keyword-driven)
 //   2. URL + (mcp|install|add|connect) keyword — "install this: https://…"
 //   3. Bare URL that looks like an MCP endpoint (/sse, /mcp, /api/mcp)
-async function tryMcpSetup(message: string, lower: string, userId: string): Promise<{ handled: boolean; output?: string }> {
+async function tryMcpSetup(message: string, lower: string, userId: string, organizationId: string): Promise<{ handled: boolean; output?: string }> {
   const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
   const bareMcpUrl = message.match(/https?:\/\/[^\s]*\/(?:sse|mcp|api\/mcp)[^\s]*/i)?.[0]
   const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:[\w-]+\s+)?(?:mcp\s+server|mcps?\b)/i)
@@ -136,6 +136,7 @@ async function tryMcpSetup(message: string, lower: string, userId: string): Prom
       isEnabled: true,
       chatEnabled: true,
       agenticEnabled: true,
+      organizationId,
     },
   })
   invalidateMcpToolsCache()
@@ -285,6 +286,7 @@ export async function POST(req: NextRequest) {
         data: {
           title: `[Agent] ${new Date().toLocaleString('en-US')}`,
           userId: user.userId,
+          organizationId: user.organizationId,
         },
       })
       sessionId = session.id
@@ -295,7 +297,7 @@ export async function POST(req: NextRequest) {
     }
 
     await db.chatMessage.create({
-      data: { sessionId, userId: user.userId, sender: 'user', text: message },
+      data: { sessionId, userId: user.userId, sender: 'user', text: message, organizationId: user.organizationId },
     }).catch(() => null)
 
     // Load chat history (last 10 messages, exclude agent sender to avoid duplication)
@@ -338,7 +340,7 @@ export async function POST(req: NextRequest) {
             send('answer', { content: credOutput })
             send('done', { conversationId })
             await db.chatMessage.create({
-              data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: credOutput, status: 'complete' },
+              data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: credOutput, status: 'complete', organizationId: user.organizationId },
             }).catch(() => null)
             await db.chatSession.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }).catch(() => null)
             await rememberChatTurn({
@@ -353,7 +355,7 @@ export async function POST(req: NextRequest) {
           // ponytail: MCP setup is URL-driven (requires parsing URLs from text),
           // so it runs as a pre-check before the LLM planner. All other admin
           // actions are handled by the planner via admin:* tools.
-          const mcpResult = await tryMcpSetup(message, message.toLowerCase(), user.userId)
+          const mcpResult = await tryMcpSetup(message, message.toLowerCase(), user.userId, user.organizationId)
           if (mcpResult.handled && mcpResult.output) {
             const mcpOutput = mcpResult.output
             send('tool_start', { stepId: 'mcp', tool: 'mcp_setup', input: { message } })
@@ -361,7 +363,7 @@ export async function POST(req: NextRequest) {
             send('answer', { content: mcpOutput })
             send('done', { conversationId })
             await db.chatMessage.create({
-              data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: mcpOutput, status: 'complete' },
+              data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: mcpOutput, status: 'complete', organizationId: user.organizationId },
             }).catch(() => null)
             await db.chatSession.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }).catch(() => null)
             await rememberChatTurn({
@@ -415,7 +417,7 @@ export async function POST(req: NextRequest) {
           send('done', { conversationId })
 
           await db.chatMessage.create({
-            data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: fullAnswer, status: 'complete' },
+            data: { sessionId: conversationId, userId: user.userId, sender: 'agent', text: fullAnswer, status: 'complete', organizationId: user.organizationId },
           }).catch(() => null)
           await db.chatSession.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }).catch(() => null)
 

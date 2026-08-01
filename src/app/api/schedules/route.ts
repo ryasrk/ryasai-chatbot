@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
     const nextRunAt = nextRun(cronExpr, new Date())
     const schedule = await db.scheduledRun.create({
       data: {
+        organizationId: user.organizationId,
         name,
         cronExpr,
         prompt,

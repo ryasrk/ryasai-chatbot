@@ -14,7 +14,7 @@ export async function POST() {
     if (existing) {
       await db.appConfig.update({ where: { id: existing.id }, data: { setupCompleted: true } })
     } else {
-      await db.appConfig.create({ data: { setupCompleted: true } })
+      await db.appConfig.create({ data: { organizationId: user.organizationId, setupCompleted: true } })
     }
     await writeAudit({
       userId: user.userId,

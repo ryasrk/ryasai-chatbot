@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
       } else {
         await db.appConfig.create({
           data: {
+            organizationId: user.organizationId,
             cogneeEnabled: willBeEnabled,
             cogneeDbProvider: willBeDbProvider,
             cogneeDbUrl: willBeDbUrl,

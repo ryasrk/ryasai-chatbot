@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 
 export interface DocVersionSnapshot {
   id: string
@@ -32,6 +33,7 @@ export async function createDocVersion(documentId: string): Promise<DocVersionSn
 
   const snapshot = await db.documentVersion.create({
     data: {
+      organizationId: getOrgContext()!,
       documentId,
       version: nextVersion,
       contentHash: hash,

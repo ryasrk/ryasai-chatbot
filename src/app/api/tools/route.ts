@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
 
     const plugin = await db.plugin.create({
       data: {
+        organizationId: user.organizationId,
         toolId,
         name,
         description,

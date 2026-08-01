@@ -163,6 +163,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       // Record query history — spec §7
       await db.queryHistory.create({
         data: {
+          organizationId: user.organizationId,
           integrationId: integration.id,
           userId: user.userId,
           naturalQuery,
@@ -198,6 +199,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       const msg = e instanceof Error ? e.message : String(e)
       await db.queryHistory.create({
         data: {
+          organizationId: user.organizationId,
           integrationId: integration.id,
           userId: user.userId,
           naturalQuery,
