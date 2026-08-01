@@ -157,9 +157,13 @@ export default function Home() {
         />
       )
     }
-    // Admin exists but setup not completed
-    // If user is logged in but org has no license, show login in signup mode (license step)
+    // Users exist but setup not completed — must be logged in to continue
+    if (!loading && unauthorized) {
+      // Not logged in — show login
+      return <LoginView onSuccess={() => { setSetupRefreshKey((k) => k + 1); refresh() }} />
+    }
     if (!loading && user && !user.plan) {
+      // Logged in but no license — show license activation
       return (
         <LoginView
           onSuccess={() => {
@@ -172,15 +176,19 @@ export default function Home() {
         />
       )
     }
-    // User has license — show wizard
-    return (
-      <SetupView
-        onDone={() => {
-          setSetup({ setupCompleted: true, hasAdmin: true })
-          refresh()
-        }}
-      />
-    )
+    // Logged in with license — show wizard
+    if (!loading && user && user.plan) {
+      return (
+        <SetupView
+          onDone={() => {
+            setSetup({ setupCompleted: true, hasAdmin: true })
+            refresh()
+          }}
+        />
+      )
+    }
+    // Still loading — render nothing (prevents flash)
+    return null
   }
 
   if (!loading && unauthorized) {
