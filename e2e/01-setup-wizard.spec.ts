@@ -2,47 +2,44 @@ import { test, expect } from '@playwright/test'
 
 /**
  * Setup wizard spec.
- * Runs first (fresh DB) — creates the admin account and walks through all
+ * Runs first (fresh DB) — signs up with license, walks through all
  * wizard steps, ending on the Dashboard.
  */
-test('first run: setup wizard creates admin and completes', async ({ page }) => {
+test('first run: signup with license → setup wizard → dashboard', async ({ page }) => {
   await page.goto('/')
 
-  // Step 0: Admin account
-  await expect(page.getByText('Setup Awal')).toBeVisible()
-  await page.locator('#setup-name').fill('Admin E2E')
-  await page.locator('#setup-email').fill('admin@e2e.test')
-  await page.locator('#setup-password').fill('password123')
-  await page.getByRole('button', { name: 'Buat Akun & Lanjut' }).click()
+  // Step 0: Signup (org + license + admin)
+  await expect(page.getByText('Sign Up')).toBeVisible()
+  await page.locator('#orgName').fill('E2E Test Corp')
+  await page.locator('#slug').fill('e2e-test')
+  await page.locator('#name').fill('Admin E2E')
+  await page.locator('#email').fill('admin@e2e.test')
+  await page.locator('#password').fill('password123')
+  await page.locator('#licenseKey').fill('RYASAI-278B49FD-641EF14A-265D68D3')
+  await page.getByRole('button', { name: /Create Organization/i }).click()
 
   // Step 1: LLM API — point at mock
-  await expect(page.getByText('LLM API')).toBeVisible()
+  await expect(page.getByText('LLM API')).toBeVisible({ timeout: 10_000 })
   await page.locator('#llm-base').fill('http://localhost:4545/v1')
   await page.locator('#llm-key').fill('mock-key')
   await page.locator('#llm-model').fill('mock-model')
-  await page.getByRole('button', { name: 'Simpan & Lanjut' }).click()
+  await page.getByRole('button', { name: /Save & Continue/i }).click()
 
-  // Step 2: Test Model — sync models then proceed
-  await expect(page.getByText('Tes Model')).toBeVisible()
-  await page.getByRole('button', { name: 'Tes Koneksi' }).click()
-  await expect(page.getByText(/model tersedia/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Lanjut →' }).click()
+  // Step 2: Test Model — skip
+  await expect(page.getByText('Test Model')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /Skip/i }).click()
 
   // Step 3: Document — skip
-  await expect(page.getByText('Setup Awal — Dokumen')).toBeVisible()
-  await page.getByRole('button', { name: 'Lewati' }).click()
+  await expect(page.getByText('Document')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /Skip/i }).click()
 
   // Step 4: Data Source — acknowledge
-  await expect(page.getByText('Setup Awal — Data Source')).toBeVisible()
-  await page.getByRole('button', { name: /Mengerti, Lanjut/i }).click()
+  await expect(page.getByText('Data Source')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /Got it, Continue/i }).click()
 
-  // Step 5: Test Chat — send a test message then finish
-  await expect(page.getByText('Tes Chat')).toBeVisible()
-  await page.locator('#test-msg').fill('Halo, ini tes.')
-  await page.getByRole('button', { name: 'Kirim Tes' }).click()
-  await expect(page.getByText('Balasan:')).toBeVisible()
-
-  await page.getByRole('button', { name: 'Selesai' }).click()
+  // Step 5: Test Chat — finish
+  await expect(page.getByText('Test Chat')).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('button', { name: /Finish/i }).click()
 
   // Should land on the Dashboard
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({

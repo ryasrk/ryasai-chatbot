@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { bypassOrg, getOrgContext } from '@/lib/prisma-tenant'
 import { serverConfig } from '@/lib/config'
@@ -192,6 +193,8 @@ export async function writeAudit(args: {
 }) {
   const severity = args.severity ?? 'info'
   try {
+    const content = JSON.stringify({ userId: args.userId, action: args.action, severity, detail: args.detail, timestamp: Date.now() })
+    const hash = crypto.createHash('sha256').update(content).digest('hex')
     await db.auditLog.create({
       data: {
         organizationId: getOrgContext()!,
@@ -200,6 +203,7 @@ export async function writeAudit(args: {
         severity,
         detail: JSON.stringify(args.detail),
         ipAddress: args.ipAddress ?? null,
+        hash,
       },
     })
   } catch (e) {

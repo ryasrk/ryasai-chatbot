@@ -489,6 +489,7 @@ model AuditLog {
   severity        String   @default("info") // info | warning | critical
   detail          String   // JSON string
   ipAddress       String?
+  hash            String?
   createdAt       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

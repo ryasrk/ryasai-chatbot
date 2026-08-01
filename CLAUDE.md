@@ -12,7 +12,7 @@
 | Path | `/home/ryasr/ryasai/Chatbot` |
 | Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · PostgreSQL 16 (pgvector + pg_trgm) · Bun · Tailwind 4 · shadcn/ui |
 | Runtime | Bun for dev/test, Node standalone for prod build |
-| Domain | Single-tenant enterprise AI assistant: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
+| Domain | Multi-tenant SaaS AI assistant: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
 | Status | **Production ready** (2026-07-27): Postgres migration complete, production RAG architecture, fail-closed auth, standalone build verified |
 | Version | 0.4.0 |
 | Language | English (standardized — all UI, errors, system prompts, comments in English) |
@@ -25,10 +25,19 @@
 
 **Auth & tenancy**
 - Scrypt password hashing (`src/lib/passwords.ts`), signed httpOnly session cookie (`src/lib/session.ts`), `AUTH_DEMO_FALLBACK=false` fail-closed mode.
-- Single admin per deployment; `Company` → `User` (RBAC: admin/manager/staff) → all resources scoped by `companyId`.
+- Multi-tenant: `Organization` → `User` (RBAC: admin/analyst/viewer) → all resources scoped by `organizationId` via Prisma extension.
 - Login/logout routes, `/api/me` identity, setup wizard gate (`AppConfig.setupCompleted`).
 
-**Data layer (Prisma schema — 25 models)**
+**Multi-tenant architecture**
+- `Organization` is the tenant root; `User.organizationId` links 1 user → 1 org. Every data model carries `organizationId`.
+- Prisma tenant extension (`src/lib/prisma-tenant.ts`) auto-injects `organizationId` via AsyncLocalStorage. Use `bypassOrg()` for setup/SSO queries.
+- License validation: `LICENSE_VALIDATOR_URL` env. Signup validates license before org creation (`src/lib/license-client.ts`).
+- RBAC: `admin > analyst > viewer`. `requireRole(user, 'admin')` guards admin routes.
+- Plan gating: `starter | pro | enterprise`. `hasPlan(user.plan, 'pro')` gates premium features (`src/lib/plan-gating.ts`).
+- SSO/SAML: enterprise-tier feature, integrates with organization identity providers.
+- Session: `getActiveUser()` calls `enterWithOrg()` to set context, checks license status.
+
+**Data layer (Prisma schema — 30 models)**
 - `Company`, `User`, `Integration` (encrypted config), `IntegrationSchema` (reflected table/columns cache).
 - `LlmConfig` + `VectorStoreConfig` (per-tenant LLM + vector store, AES-256-GCM encrypted keys).
 - `Document` → `DocumentChunk` (content, keywords, embeddingJson, embeddingModel).
@@ -213,7 +222,7 @@ User query
 ### When NOT to use cognee
 
 - < 50 documents and no multi-hop needs → existing RAG is simpler and faster. Cognee adds a Postgres dependency.
-- Single-tenant demo with no cross-session memory need → overkill.
+- Small deployment with no cross-session memory need → overkill.
 - **Decision gate**: adopt cognee only when G2 (memory) OR G3 (multi-hop graph) becomes the blocker. Until then, the flat RAG is sufficient.
 
 ---
@@ -401,7 +410,7 @@ runAgenticLoop(question, context, maxIter=3):
 - Server-only libs in `src/lib/`, never import `db` or `crypto` into client components.
 - Types in `src/lib/types.ts` — single source for client-facing shapes.
 - Views in `src/components/views/` — one per nav target.
-- API routes in `src/app/api/` — RESTful, single-tenant (no companyId).
+- API routes in `src/app/api/` — RESTful, multi-tenant (organizationId via Prisma extension).
 - Mini-services are independent processes with their own PrismaClient.
 - English in all user-facing strings (system prompts, error messages, UI labels).
 - Comments explain *why*, not *what*. The codebase already follows this — keep it.
@@ -489,7 +498,7 @@ bash reset.sh        # reset DB + re-seed
 | `src/lib/prompt-settings.ts` | Per-tenant system prompt + tool toggles |
 | `mini-services/scheduler/index.ts` | Cron-based scheduled run worker |
 | `src/app/api/v1/chat/completions/route.ts` | OpenAI-compatible external API |
-| `prisma/schema.prisma` | 25 models, single-tenant, encrypted configs |
+| `prisma/schema.prisma` | 30 models, multi-tenant, encrypted configs |
 
 ### Specs & progress
 - `PLAN.md` — overhaul plan (all phases P0–P5 + S4 + RAG complete)

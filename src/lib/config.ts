@@ -48,7 +48,9 @@ export function getEncryptionKey(): Buffer {
   if (/^[0-9a-fA-F]{64}$/.test(raw)) {
     _key = Buffer.from(raw, 'hex')
   } else {
-    // ponytail: SHA-256 derivation; upgrade to a KDF (e.g. scrypt) if keys are human-chosen secrets.
+    // ponytail: SHA-256 fallback for non-hex passphrases. Normal path (64-char hex) uses raw
+    // bytes above — no KDF needed. scryptSync would break existing encrypted configs (different
+    // derived key). Upgrade path: switch to scryptSync + version-prefix encryptConfig blobs.
     _key = crypto.createHash('sha256').update(raw).digest()
   }
   return _key

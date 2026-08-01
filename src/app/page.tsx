@@ -99,6 +99,7 @@ export default function Home() {
     setupCompleted: boolean
     hasAdmin: boolean
   } | null>(null)
+  const [setupRefreshKey, setSetupRefreshKey] = useState(0)
 
   const setView = useCallback((next: ViewKey) => {
     setViewState(next)
@@ -140,7 +141,7 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [setupRefreshKey])
 
   if (setup && !setup.setupCompleted) {
     if (!setup.hasAdmin) {
@@ -148,8 +149,8 @@ export default function Home() {
       return (
         <LoginView
           onSuccess={() => {
-            // After signup, re-fetch setup status to transition to wizard
             setSetup(null)
+            setSetupRefreshKey((k) => k + 1)
             refresh()
           }}
           defaultMode="signup"
@@ -168,7 +169,7 @@ export default function Home() {
   }
 
   if (!loading && unauthorized) {
-    return <LoginView onSuccess={refresh} />
+    return <LoginView onSuccess={() => { setSetupRefreshKey((k) => k + 1); refresh() }} />
   }
 
   if (!loading && licenseError) {

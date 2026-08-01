@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/passwords'
 import { signSession } from '@/lib/crypto'
 import { writeAudit, handleApiError } from '@/lib/session'
+import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/auth/login
@@ -31,10 +32,18 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const user = await db.user.findUnique({ where: { email: input.email } })
+    // ponytail: login runs before org context exists — bypassOrg for user lookup.
+    // findUnique is not scoped by the tenant extension (can't add non-unique fields).
+    const user = await bypassOrg(() =>
+      db.user.findUnique({
+        where: { email: input.email },
+        select: { id: true, name: true, email: true, isActive: true, passwordHash: true, role: true, organizationId: true, sessionVersion: true },
+      }),
+    )
     const ok = !!user && user.isActive && verifyPassword(input.password, user.passwordHash)
     if (!user || !ok) {
       if (user) {
+        enterWithOrg(user.organizationId)
         await writeAudit({
           userId: user.id,
           action: 'LOGIN_FAILED',
@@ -42,17 +51,17 @@ export async function POST(req: NextRequest) {
           detail: { email: input.email },
         })
       }
-      // Generic message: never reveal whether the email exists.
       return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 })
     }
 
+    // Set org context for writeAudit + session increment
+    enterWithOrg(user.organizationId)
     await writeAudit({
       userId: user.id,
       action: 'LOGIN_SUCCESS',
       detail: { email: user.email },
     })
 
-    // ponytail: session fixation defense — increment sessionVersion to invalidate prior cookies.
     const updated = await db.user.update({
       where: { id: user.id },
       data: { sessionVersion: { increment: 1 } },
@@ -61,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     const res = NextResponse.json({
       ok: true,
-      user: { userId: user.id, name: user.name, email: user.email },
+      user: { userId: user.id, name: user.name, email: user.email, role: user.role },
     })
     res.cookies.set('x-active-user', signSession(user.id, updated.sessionVersion), {
       httpOnly: true,
