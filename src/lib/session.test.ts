@@ -8,7 +8,7 @@ const mockCookieGet = mock<(name: string) => { value: string } | undefined>(() =
 const mockUserFindUnique = mock<(args: any) => Promise<any>>(async () => null)
 const mockUserFindFirst = mock<(args: any) => Promise<any>>(async () => null)
 const mockAuditLogCreate = mock<(args: any) => Promise<any>>(async () => ({}))
-const mockOrgFindUnique = mock<(args: any) => Promise<any>>(async () => ({ licenseStatus: 'valid' }))
+const mockOrgFindUnique = mock<(args: any) => Promise<any>>(async () => ({ licenseStatus: 'valid', licensePlan: 'pro' }))
 
 mock.module('next/headers', () => ({
   cookies: async () => ({ get: mockCookieGet }),
@@ -34,7 +34,7 @@ beforeEach(() => {
   mockUserFindUnique.mockImplementation(async () => null)
   mockUserFindFirst.mockImplementation(async () => null)
   mockAuditLogCreate.mockImplementation(async () => ({}))
-  mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'valid' }))
+  mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'valid', licensePlan: 'pro' }))
 })
 
 describe('handleApiError', () => {
@@ -135,7 +135,7 @@ describe('getActiveUser', () => {
     }))
 
     const user = await getActiveUser()
-    expect(user).toEqual({ userId: 'user-1', name: 'Admin', email: 'admin@test.com', role: 'admin', organizationId: 'org-1' })
+    expect(user).toEqual({ userId: 'user-1', name: 'Admin', email: 'admin@test.com', role: 'admin', organizationId: 'org-1', plan: 'pro' })
   })
 
   test('valid cookie + INACTIVE user → falls through, throws (no fallback)', async () => {

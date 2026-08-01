@@ -16,11 +16,19 @@ import {
   Check,
   Loader2,
   Webhook,
+  Users,
+  Building2,
+  Crown,
+  Mail,
+  Copy,
+  Trash2,
+  RefreshCw,
+  BadgeCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FormSkeleton, ErrorState } from '@/components/ui/view-states'
+import { FormSkeleton, TableSkeleton, ErrorState } from '@/components/ui/view-states'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +42,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { extractError } from '@/lib/extract-error'
 import type { ActiveUser } from '@/lib/types'
 import { THEMES, type ThemeId, setTheme } from '@/lib/themes'
 
@@ -63,6 +75,14 @@ export function SettingsView() {
           <Server className="h-3.5 w-3.5" />
           System
         </TabsTrigger>
+        <TabsTrigger value="team" className="gap-1.5 text-xs">
+          <Users className="h-3.5 w-3.5" />
+          Team
+        </TabsTrigger>
+        <TabsTrigger value="org" className="gap-1.5 text-xs">
+          <Building2 className="h-3.5 w-3.5" />
+          Organization
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="profile" className="mt-3">
@@ -76,6 +96,12 @@ export function SettingsView() {
       </TabsContent>
       <TabsContent value="system" className="mt-3">
         <SystemTab />
+      </TabsContent>
+      <TabsContent value="team" className="mt-3">
+        <TeamTab />
+      </TabsContent>
+      <TabsContent value="org" className="mt-3">
+        <OrgTab />
       </TabsContent>
     </Tabs>
   )
@@ -419,6 +445,414 @@ function SystemTab() {
             Requires <code className="font-mono">INCOMING_WEBHOOK_SECRET</code> + <code className="font-mono">x-webhook-signature</code> header.
             Body: <code className="font-mono">{'{ "query": "..." }'}</code>
           </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/* --------------------------------- Team Tab -------------------------------- */
+
+interface TeamMember {
+  id: string
+  name: string
+  email: string
+  role: string
+  avatarColor: string | null
+  isActive: boolean
+  createdAt: string
+}
+
+function roleBadge(role: string) {
+  if (role === 'admin') return <Badge variant="warning" className="gap-1 text-[10px]"><Crown className="h-3 w-3" />Admin</Badge>
+  if (role === 'analyst') return <Badge variant="info" className="text-[10px]">Analyst</Badge>
+  return <Badge variant="secondary" className="text-[10px]">Viewer</Badge>
+}
+
+function TeamTab() {
+  const [me, setMe] = useState<ActiveUser | null>(null)
+  const [members, setMembers] = useState<TeamMember[]>([])
+  const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
+  const [error, setError] = useState<string | null>(null)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('viewer')
+  const [inviting, setInviting] = useState(false)
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+
+  const isAdmin = me?.role === 'admin'
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const [meRes, usersRes] = await Promise.all([
+        fetch('/api/me', { cache: 'no-store' }),
+        fetch('/api/users', { cache: 'no-store' }),
+      ])
+      if (!meRes.ok) throw new Error('Failed to load profile.')
+      if (!usersRes.ok) {
+        const body = await usersRes.json().catch(() => ({}))
+        throw new Error(extractError(body, 'Failed to load team members.'))
+      }
+      const [meData, usersData] = await Promise.all([meRes.json(), usersRes.json()])
+      setMe(meData as ActiveUser)
+      setMembers((usersData as { items: TeamMember[] }).items ?? [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setInviting(true)
+    setInviteUrl(null)
+    try {
+      const res = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(extractError(data, 'Invitation failed.')); return }
+      setInviteUrl(data.inviteUrl as string)
+      toast.success('Invitation created. Copy the link to share.')
+      setInviteEmail('')
+    } catch {
+      toast.error('Unable to connect to the server.')
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  async function handleRoleChange(id: string, role: string) {
+    const res = await fetch(`/api/users/${id}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { toast.error(extractError(data, 'Failed to update role.')); return }
+    toast.success('Role updated.')
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, role } : m)))
+  }
+
+  async function handleDeactivate(id: string, name: string) {
+    if (!window.confirm(`Deactivate ${name}? They will lose access immediately.`)) return
+    const res = await fetch(`/api/users/${id}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { toast.error(extractError(data, 'Failed to deactivate user.')); return }
+    toast.success('User deactivated.')
+    setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, isActive: false } : m)))
+  }
+
+  if (loading) return showSkeleton ? <TableSkeleton rows={4} cols={4} /> : null
+  if (error) return <ErrorState message={error} onRetry={load} />
+
+  return (
+    <div className="space-y-3">
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs flex items-center gap-2">
+              <Mail className="h-3.5 w-3.5" />
+              Invite Team Member
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2 items-end">
+              <div className="flex-1 w-full space-y-1.5">
+                <Label htmlFor="invite-email" className="text-xs">Email</Label>
+                <Input id="invite-email" type="email" placeholder="colleague@company.com" required
+                  value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} disabled={inviting} />
+              </div>
+              <div className="w-full sm:w-32 space-y-1.5">
+                <Label className="text-xs">Role</Label>
+                <Select value={inviteRole} onValueChange={setInviteRole} disabled={inviting}>
+                  <SelectTrigger className="w-full" size="sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="analyst">Analyst</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" size="sm" disabled={inviting || !inviteEmail}>
+                {inviting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                Send Invite
+              </Button>
+            </form>
+            {inviteUrl && (
+              <div className="mt-2.5 flex items-center gap-2 rounded-md border bg-muted/40 p-2">
+                <code className="flex-1 truncate text-[11px] font-mono">{inviteUrl}</code>
+                <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(inviteUrl); toast.success('Link copied.') }}>
+                  <Copy className="h-3.5 w-3.5" /> Copy
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="pt-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Member</TableHead>
+                <TableHead className="text-xs">Role</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                {isAdmin && <TableHead className="text-xs text-right">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7">
+                        <AvatarFallback className="text-[10px] font-semibold text-white"
+                          style={{ backgroundColor: m.avatarColor ?? 'oklch(0.55 0.18 250)' }}>
+                          {initials(m.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium truncate">{m.name}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">{m.email}</div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{roleBadge(m.role)}</TableCell>
+                  <TableCell>
+                    {m.isActive
+                      ? <Badge variant="success" className="text-[10px]">Active</Badge>
+                      : <Badge variant="secondary" className="text-[10px]">Inactive</Badge>}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-2">
+                        <Select value={m.role} onValueChange={(role) => void handleRoleChange(m.id, role)}>
+                          <SelectTrigger size="sm" className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                            <SelectItem value="analyst">Analyst</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive"
+                          disabled={m.id === me?.userId || !m.isActive}
+                          onClick={() => void handleDeactivate(m.id, m.name)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/* --------------------------- Organization Tab ------------------------------ */
+
+interface OrgInfo {
+  id: string
+  name: string
+  slug: string
+  brandingJson: string | null
+  licensePlan: string | null
+  licenseStatus: string
+  licenseExpiresAt: string | null
+}
+
+interface LicenseInfo {
+  key: string | null
+  plan: string | null
+  status: string
+  validatedAt: string | null
+  expiresAt: string | null
+}
+
+function planBadge(plan: string | null) {
+  if (plan === 'enterprise') return <Badge variant="warning" className="text-[10px]">Enterprise</Badge>
+  if (plan === 'pro') return <Badge variant="info" className="text-[10px]">Pro</Badge>
+  if (plan === 'starter') return <Badge variant="secondary" className="text-[10px]">Starter</Badge>
+  return <Badge variant="outline" className="text-[10px]">None</Badge>
+}
+
+function statusBadge(status: string) {
+  if (status === 'valid') return <Badge variant="success" className="text-[10px]">Valid</Badge>
+  if (status === 'expired') return <Badge variant="destructive" className="text-[10px]">Expired</Badge>
+  if (status === 'invalid') return <Badge variant="destructive" className="text-[10px]">Invalid</Badge>
+  if (status === 'suspended') return <Badge variant="destructive" className="text-[10px]">Suspended</Badge>
+  return <Badge variant="secondary" className="text-[10px]">None</Badge>
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function OrgTab() {
+  const [me, setMe] = useState<ActiveUser | null>(null)
+  const [org, setOrg] = useState<OrgInfo | null>(null)
+  const [license, setLicense] = useState<LicenseInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
+  const [error, setError] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [revalidating, setRevalidating] = useState(false)
+
+  const isAdmin = me?.role === 'admin'
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const [meRes, orgRes, licRes] = await Promise.all([
+        fetch('/api/me', { cache: 'no-store' }),
+        fetch('/api/org', { cache: 'no-store' }),
+        fetch('/api/org/license', { cache: 'no-store' }),
+      ])
+      if (!meRes.ok || !orgRes.ok) throw new Error('Failed to load organization.')
+      const [meData, orgData, licData] = await Promise.all([
+        meRes.json(),
+        orgRes.json(),
+        licRes.ok ? licRes.json() : Promise.resolve({ license: null }),
+      ])
+      setMe(meData as ActiveUser)
+      setOrg(orgData.organization as OrgInfo)
+      setEditName(orgData.organization?.name ?? '')
+      setLicense((licData as { license: LicenseInfo | null }).license ?? null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function handleSaveName() {
+    if (!editName.trim()) return
+    setSavingName(true)
+    try {
+      const res = await fetch('/api/org', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(extractError(data, 'Failed to update organization.')); return }
+      setOrg(data.organization as OrgInfo)
+      toast.success('Organization name updated.')
+    } catch {
+      toast.error('Unable to connect to the server.')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  async function handleRevalidate() {
+    setRevalidating(true)
+    try {
+      const res = await fetch('/api/org/license', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(extractError(data, 'License re-validation failed.')); return }
+      toast.success(`License ${data.license?.status ?? 'validated'}.`)
+      const [orgRes, licRes] = await Promise.all([
+        fetch('/api/org', { cache: 'no-store' }),
+        fetch('/api/org/license', { cache: 'no-store' }),
+      ])
+      if (orgRes.ok) { const d = await orgRes.json(); setOrg(d.organization as OrgInfo) }
+      if (licRes.ok) { const d = await licRes.json(); setLicense(d.license as LicenseInfo) }
+    } catch {
+      toast.error('Unable to connect to the server.')
+    } finally {
+      setRevalidating(false)
+    }
+  }
+
+  if (loading) return showSkeleton ? <FormSkeleton fields={3} /> : null
+  if (error || !org) return <ErrorState message={error ?? 'Organization data unavailable.'} onRetry={load} />
+
+  const plan = license?.plan ?? org.licensePlan
+  const status = license?.status ?? org.licenseStatus
+  const expiresAt = license?.expiresAt ?? org.licenseExpiresAt
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xs flex items-center gap-2">
+            <Building2 className="h-3.5 w-3.5" />
+            Organization
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Name</Label>
+            {isAdmin ? (
+              <div className="flex gap-2">
+                <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={savingName}
+                  className="flex-1" />
+                <Button size="sm" onClick={() => void handleSaveName()} disabled={savingName || editName.trim() === org.name}>
+                  {savingName && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  Save
+                </Button>
+              </div>
+            ) : (
+              <div className="text-sm font-medium">{org.name}</div>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Slug</Label>
+            <code className="rounded bg-muted px-2 py-1 text-xs font-mono">{org.slug}</code>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xs flex items-center gap-2">
+            <BadgeCheck className="h-3.5 w-3.5" />
+            License
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1">Plan</div>
+              {planBadge(plan)}
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1">Status</div>
+              {statusBadge(status)}
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1">Expires</div>
+              <div className="text-xs font-medium">{expiresAt ? fmtDate(expiresAt) : 'Lifetime'}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1">Last Validated</div>
+              <div className="text-xs font-medium">{fmtDate(license?.validatedAt ?? null)}</div>
+            </div>
+          </div>
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => void handleRevalidate()} disabled={revalidating}>
+              {revalidating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Revalidate
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>

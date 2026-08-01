@@ -14,6 +14,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/v1/chat/completions',
   '/api/v1/agent/run',
   '/api/webhooks/incoming',
+  '/api/webhooks/license',
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/signup',

@@ -17,6 +17,7 @@ export function useActiveUser() {
   const orgName = useActiveUserStore((s) => s.orgName)
   const loading = useActiveUserStore((s) => s.loading)
   const unauthorized = useActiveUserStore((s) => s.unauthorized)
+  const licenseError = useActiveUserStore((s) => s.licenseError)
   const refresh = useActiveUserStore((s) => s.refresh)
 
   useEffect(() => {
@@ -25,5 +26,5 @@ export function useActiveUser() {
     refresh()
   }, [refresh])
 
-  return { user, orgName, loading, unauthorized, refresh }
+  return { user, orgName, loading, unauthorized, licenseError, refresh }
 }

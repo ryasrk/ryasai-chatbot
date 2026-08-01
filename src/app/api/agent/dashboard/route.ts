@@ -1,5 +1,6 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { hasPlan } from '@/lib/plan-gating'
 import { rememberChatTurn } from '@/lib/cognee'
 import { db } from '@/lib/db'
 import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
@@ -269,6 +270,9 @@ function parseCredentialPairs(s: string): Record<string, string> {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    if (!hasPlan(user.plan, 'pro')) {
+      return NextResponse.json({ error: 'Agent features require a Pro plan or higher.' }, { status: 403 })
+    }
     const body = (await req.json().catch(() => ({}))) as { message?: string; conversationId?: string; sessionId?: string; timezone?: string }
     const message = (body.message ?? '').trim()
     const tz = body.timezone || 'UTC'

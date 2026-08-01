@@ -15,6 +15,7 @@ export interface ActiveUser {
   email: string
   role: string
   organizationId: string
+  plan: string | null
 }
 
 export class UnauthorizedError extends Error {
@@ -133,14 +134,14 @@ export async function getActiveUser(): Promise<ActiveUser> {
       const org = await bypassOrg(() =>
         db.organization.findUnique({
           where: { id: u.organizationId },
-          select: { licenseStatus: true },
+          select: { licenseStatus: true, licensePlan: true },
         }),
       )
       if (org && (org.licenseStatus === 'expired' || org.licenseStatus === 'invalid' || org.licenseStatus === 'suspended')) {
         throw new LicenseError()
       }
       touchActivity(userId)
-      return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId }
+      return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId, plan: org?.licensePlan ?? null }
     }
   }
 
@@ -168,13 +169,13 @@ export async function getActiveUser(): Promise<ActiveUser> {
   const fallbackOrg = await bypassOrg(() =>
     db.organization.findUnique({
       where: { id: user.organizationId },
-      select: { licenseStatus: true },
+      select: { licenseStatus: true, licensePlan: true },
     }),
   )
   if (fallbackOrg && (fallbackOrg.licenseStatus === 'expired' || fallbackOrg.licenseStatus === 'invalid' || fallbackOrg.licenseStatus === 'suspended')) {
     throw new LicenseError()
   }
-  return { userId: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId }
+  return { userId: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId, plan: fallbackOrg?.licensePlan ?? null }
 }
 
 export async function writeAudit(args: {

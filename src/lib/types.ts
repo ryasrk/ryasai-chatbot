@@ -9,6 +9,7 @@ export interface ActiveUser {
   email: string
   role: string
   organizationId: string
+  plan: string | null
 }
 
 export interface Integration {

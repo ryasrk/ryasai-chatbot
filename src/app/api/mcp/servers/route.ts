@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
+import { hasPlan } from '@/lib/plan-gating'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { invalidateMcpToolsCache } from '@/lib/mcp-client'
@@ -128,6 +129,9 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
     requireRole(user, 'admin')
+    if (!hasPlan(user.plan, 'pro')) {
+      return NextResponse.json({ error: 'MCP servers require a Pro plan or higher.' }, { status: 403 })
+    }
     const body = (await req.json().catch(() => ({}))) as CreateBody
 
     const name = (body.name ?? '').trim()

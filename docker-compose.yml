@@ -20,11 +20,15 @@ services:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
       - REDIS_URL=rediss://redis:6379
       - NODE_ENV=production
+      - LICENSE_VALIDATOR_URL=http://license-server:9000
+      - LICENSE_PRODUCT=ryasai-chatbot
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      license-server:
+        condition: service_started
     restart: unless-stopped
     networks:
       - ryasai-net
@@ -59,9 +63,42 @@ services:
     networks:
       - ryasai-net
 
+  license-server:
+    build: ../License-Validator
+    ports:
+      - "9000:9000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://license:license_secret@license-db:5432/license_db
+      - JWT_SECRET=${JWT_SECRET:-jwt-secret-change-me}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@ryasai.com}
+    depends_on:
+      license-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ryasai-net
+
+  license-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: license
+      POSTGRES_PASSWORD: license_secret
+      POSTGRES_DB: license_db
+    volumes:
+      - license_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U license"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ryasai-net
+
 networks:
   ryasai-net:
 
 volumes:
   pgdata:
   redisdata:
+  license_pgdata:

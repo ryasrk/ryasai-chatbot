@@ -38,6 +38,7 @@ import { PluginsView } from '@/components/views/plugins-view'
 import { SchedulesView } from '@/components/views/schedules-view'
 import { LoginView } from '@/components/views/login-view'
 import { SetupView } from '@/components/views/setup-view'
+import { ErrorScreen } from '@/components/ui/error-screen'
 import { Topbar } from '@/components/views/topbar'
 import {
   resolveViewFromSearch,
@@ -91,7 +92,7 @@ function renderView(view: ViewKey) {
 export default function Home() {
   const [view, setViewState] = useState<ViewKey>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { user, orgName, loading, unauthorized, refresh } = useActiveUser()
+  const { user, orgName, loading, unauthorized, licenseError, refresh } = useActiveUser()
   const reduceMotion = useReducedMotion()
 
   const [setup, setSetup] = useState<{
@@ -168,6 +169,10 @@ export default function Home() {
 
   if (!loading && unauthorized) {
     return <LoginView onSuccess={refresh} />
+  }
+
+  if (!loading && licenseError) {
+    return <ErrorScreen type="license" onRetry={refresh} />
   }
 
   return (
