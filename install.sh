@@ -47,12 +47,21 @@ fi
 # --- Deploy dir ------------------------------------------------------------
 APP_DIR=/opt/ryasai-chatbot
 REPO_URL=https://github.com/ryasrk/ryasai-chatbot.git
+BACKUP_DIR="$APP_DIR/backups"
+IS_UPDATE=false
 
-if [ -d "$APP_DIR/.git" ]; then
-  info "Updating existing install..."
-  git -C "$APP_DIR" pull --ff-only
+if [ -d "$APP_DIR/.git" ] || [ -f "$APP_DIR/.env" ]; then
+  IS_UPDATE=true
+  info "Existing install detected — running UPDATE (data preserved, no rebuild)..."
+  git -C "$APP_DIR" pull --ff-only >/dev/null 2>&1 || {
+    # local working tree may be dirty (e.g. a prior failed install) — reset
+    # tracked files but keep .env untouched (git reset never touches it)
+    git -C "$APP_DIR" fetch --depth 1 origin >/dev/null 2>&1 && \
+      git -C "$APP_DIR" reset --hard origin/HEAD >/dev/null 2>&1 || true
+  }
 else
   info "Cloning ryasai Chatbot -> $APP_DIR"
+  mkdir -p "$APP_DIR"
   git clone --depth 1 "$REPO_URL" "$APP_DIR"
 fi
 cd "$APP_DIR"
@@ -105,6 +114,22 @@ EOF
   warn "Generated admin password: $ADMIN_PASS  (save this NOW, or run: grep ADMIN_INITIAL_PASSWORD .env)"
 else
   info ".env already exists — keeping it."
+fi
+
+# --- Pre-update backup (UPDATE only) ---------------------------------------
+# Before touching the DB schema/images, dump Postgres + Redis to $BACKUP_DIR and
+# keep the last N. Fresh installs skip this (no data yet). Failure is non-fatal.
+if [ "$IS_UPDATE" = true ]; then
+  mkdir -p "$BACKUP_DIR"
+  STAMP=$(date +%Y%m%d-%H%M%S)
+  if docker compose -f docker-compose.prod.yml ps --status running --services db >/dev/null 2>&1 \
+     && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U ryasai -d ryasai > "$BACKUP_DIR/ryasai-$STAMP.sql" 2>/dev/null; then
+    info "DB backup saved -> $BACKUP_DIR/ryasai-$STAMP.sql"
+  else
+    warn "DB backup skipped (db not running yet — first update or fresh install)."
+  fi
+  # Keep newest 5 dumps
+  ls -1t "$BACKUP_DIR"/ryasai-*.sql 2>/dev/null | tail -n +6 | xargs -r rm -f
 fi
 
 # --- Compose (app + redis + pg, NO license-server; that runs on ryasai) -----
@@ -195,17 +220,51 @@ volumes:
   redisdata:
 EOF
 
+# --- Disk guard: never let the disk fill up ----------------------------------
+# Before pulling, check free space. If low, prune unused Docker data FIRST
+# (containers/images/build-cache) so the pull never dies mid-extract. Named
+# volumes (pgdata/redisdata = user data) are NEVER touched.
+MIN_FREE_MB=2000
+MB_FREE=$(df -m / | awk 'NR==2{print $4}')
+if [ "$MB_FREE" -lt "$MIN_FREE_MB" ]; then
+  warn "Low disk (${MB_FREE}MB free, need $MIN_FREE_MB) — pruning unused Docker data (volumes kept)..."
+  docker container prune -f >/dev/null 2>&1 || true
+  docker image prune -af >/dev/null 2>&1 || true
+  docker builder prune -af >/dev/null 2>&1 || true
+  MB_FREE=$(df -m / | awk 'NR==2{print $4}')
+  info "Free after prune: ${MB_FREE}MB"
+fi
+
 # --- Pull & run (no build on the VPS — images are prebuilt in CI) -----------
 info "Pulling prebuilt images..."
 if docker compose -f docker-compose.prod.yml pull; then
   info "Starting services (migrate -> app + scheduler)..."
   docker compose -f docker-compose.prod.yml up -d --remove-orphans
 else
-  # ponytail: GHCR images may not be published yet (workflow not live) — fall
-  # back to building locally so installs never hard-fail.
-  warn "Prebuilt images not found — building from source (slow on 1 vCPU)..."
-  docker compose -f docker-compose.prod.yml up -d --remove-orphans --build
+  if [ "$IS_UPDATE" = true ]; then
+    # ponytail: on UPDATE never fall back to building — the pull failed for a
+    # runtime reason (e.g. disk full/network), and a source build on 1 vCPU can
+    # OOM + fills the disk that blocked the pull. The stack stays on the old
+    # image, which is already running. Retry `bash install.sh` after freeing space.
+    warn "Image pull failed — KEEPING current install (data untouched). Free disk space and re-run install.sh."
+    info "Current services:"
+    docker compose -f docker-compose.prod.yml ps || true
+  else
+    # fresh install: GHCR images may not be published yet — build locally so
+    # installs never hard-fail.
+    warn "Prebuilt images not found — building from source (slow on 1 vCPU)..."
+    docker compose -f docker-compose.prod.yml up -d --remove-orphans --build
+  fi
 fi
+
+# --- Prune stale data (every run) — drop old app/scheduler layers so the -------
+# disk never fills up. -af removes ALL images not referenced by a running/stopped
+# container (old versions of app/scheduler/pgvector/redis after each bump) plus
+# build cache. This is a dedicated VPS — nothing else needs those images. Very
+# important: `--volumes` is NEVER used, so pgdata/redisdata (user data) survive.
+docker container prune -f >/dev/null 2>&1 || true
+docker image prune -af >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
 
 # --- Health ----------------------------------------------------------------
 info "Waiting for app to come up..."
