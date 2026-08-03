@@ -1,17 +1,17 @@
 # Product Requirements Document — ryasai Chatbot
 
-> Version 0.4.0 · PostgreSQL backend · Single-tenant · Fail-closed
-> Last updated 2026-07-27
+> Version 0.5.0 · PostgreSQL backend · Multi-tenant · Fail-closed · License-enforced
+> Last updated 2026-08-03
 
 ---
 
 ## 1. Product Overview
 
-**ryasai Chatbot** is a self-hosted, single-tenant enterprise AI assistant that answers natural-language questions by routing them to the right tool — SQL queries, document RAG, REST API calls, external plugins, or general chat. It gives internal teams a single assistant that can access structured data, company documents, and external APIs without switching tools.
+**ryasai Chatbot** is a self-hosted, multi-tenant enterprise AI assistant that answers natural-language questions by routing them to the right tool — SQL queries, document RAG, REST API calls, external plugins, or general chat. It gives internal teams a single assistant that can access structured data, company documents, and external APIs without switching tools.
 
 ### Who it's for
 
-Enterprise administrators who manage an AI assistant deployment. They connect data sources (SQL databases, REST APIs), upload knowledge documents, configure LLM providers, generate API keys for integration, and monitor usage. Their goal is to keep the assistant accurate, secure, and useful for their organization.
+Enterprise administrators who deploy the assistant on their own server. They connect data sources (SQL databases, REST APIs), upload knowledge documents, configure LLM providers, generate API keys for integration, and monitor usage. Licenses are validated against a central ryasai license server. Their goal is to keep the assistant accurate, secure, and useful for their organization.
 
 ### Problem it solves
 
@@ -21,9 +21,10 @@ Enterprises have data siloed across databases, documents, and APIs. Employees ei
 
 | Attribute | ryasai | SaaS chatbots |
 |-----------|--------|---------------|
-| Hosting | Self-hosted, single instance | Vendor cloud |
+| Hosting | Self-hosted, per-org instances | Vendor cloud |
 | Data residency | All data stays in admin's infrastructure | Vendor-controlled |
-| Multi-tenancy | Single-tenant (one deployment, one admin) | Multi-tenant SaaS |
+| Multi-tenancy | Multi-tenant (org-scoped data via `organizationId`, 1 user = 1 org) | Multi-tenant SaaS |
+| Licensing | Central validator, Ed25519-signed responses, 7-day offline grace | Subscription |
 | Security model | Fail-closed by default — missing config means refuse, not guess | Best-effort |
 | Guardrails | SQL AST, SSRF blocklist, audit logging built in | Add-ons or absent |
 | Credentials | AES-256-GCM encrypted at rest | Vendor-managed |
@@ -46,11 +47,10 @@ Unlike SaaS chatbots, all data stays in the admin's infrastructure. SQL guardrai
 
 ### Non-Goals
 
-- **Multi-tenant SaaS** — deliberately single-tenant, one admin per deployment (multi-tenant is a future roadmap item)
+- **Reselling LLM access** — uses the admin's own OpenAI-compatible or Anthropic-native endpoint; does not resell LLM access
 - **Free-form tool execution** — tools are whitelisted from a registry; the LLM cannot invent endpoints or SQL tables
 - **No-code admin UI for non-engineers** — the admin is a low-level engineer who wants compact, direct controls
 - **Mobile app** — web-only (responsive desktop)
-- **Vendor LLM hosting** — uses the admin's own OpenAI-compatible or Anthropic-native endpoint; does not resell LLM access
 - **Real-time streaming push for scheduler** — current scheduler uses 15s polling (SSE push is a future roadmap item)
 - **Free-form SQL** — only SELECT with LIMIT 100, no DML/DDL, enforced by AST guardrails with no bypass
 
@@ -227,6 +227,29 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 | Log retention | Daily cleanup via scheduler, 90-day default (`LOG_RETENTION_DAYS`) |
 | Health endpoints | `/api/v1/health` (liveness) + `/api/health` (DB + Redis connectivity checks) |
 
+### 4.12 Multi-Tenancy
+
+| Requirement | Description |
+|-------------|-------------|
+| Tenant root | `Organization` model; every data model carries `organizationId` |
+| Tenant isolation | Prisma extension auto-injects orgId from AsyncLocalStorage (`enterWithOrg`); `bypassOrg()` escape hatch for setup/SSO/invite flows |
+| User model | 1 user = 1 org (`User.organizationId`); email globally unique; session resolves org |
+| RBAC | Roles `admin > analyst > viewer`; `requireRole(user, 'admin')` guards admin routes (17 handlers / 14 routes) |
+| Team management | Invite (email → token), accept-invite, role change, deactivate; invitation scoped to org |
+| Plan gating | `starter | pro | enterprise`; `hasPlan()` gates MCP / scheduler / agent features |
+
+### 4.13 Licensing
+
+| Requirement | Description |
+|-------------|-------------|
+| Central validator | `LICENSE_VALIDATOR_URL` (e.g. `https://license.ryasai.my.id`); `src/lib/license-client.ts` |
+| Activation | `POST /api/auth/activate-license` validates key + machine, stores plan/expiry on org |
+| Ed25519 signed responses | Server signs with private key; client verifies with `LICENSE_SIGNING_PUBLIC_KEY` + nonce challenge (prevents MITM/mock) |
+| Periodic revalidation | Background job every `LICENSE_REVALIDATION_INTERVAL_HOURS` (24h) updates org license status |
+| Offline grace period | `LICENSE_GRACE_PERIOD_DAYS` (7d) from last successful validation; explicit rejection (expired/deactivated) locks immediately |
+| Lockdown | 402 on all routes with reason (`expired`/`deactivated`/`unreachable`); `/api/license/retry` remains reachable |
+| Machine ID | `slug:hostname` — stable across restarts, avoids consuming extra machine slots |
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -261,7 +284,7 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 ### Scalability
 
 - PostgreSQL 16 + pgvector 0.6 + pg_trgm extensions
-- Single-tenant (multi-tenant is a future roadmap item)
+- Multi-tenant: shared DB, org-scoped via `organizationId` + Prisma tenant extension
 - Dynamic driver loading (app works without pg/mysql2/mssql installed; fails with clear error when that provider is used)
 
 ### Availability

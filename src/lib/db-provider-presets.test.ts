@@ -3,7 +3,7 @@ import { DB_PROVIDER_PRESETS } from './db-provider-presets'
 
 describe('db-provider-presets', () => {
   test('has expected number of presets', () => {
-    expect(DB_PROVIDER_PRESETS.length).toBeGreaterThanOrEqual(10)
+    expect(DB_PROVIDER_PRESETS.length).toBeGreaterThanOrEqual(8)
   })
 
   test('each preset has required fields', () => {
@@ -34,11 +34,10 @@ describe('db-provider-presets', () => {
     expect(mssql!.defaultPort).toBe(1433)
   })
 
-  test('SQLite presets have port 0', () => {
-    const sqlite = DB_PROVIDER_PRESETS.filter((p) => p.family.startsWith('SQLITE_'))
-    expect(sqlite.length).toBeGreaterThanOrEqual(3)
-    for (const s of sqlite) {
-      expect(s.defaultPort).toBe(0)
+  test('all providers have a real connector family', () => {
+    const realFamilies = ['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLICKHOUSE']
+    for (const preset of DB_PROVIDER_PRESETS) {
+      expect(realFamilies).toContain(preset.family)
     }
   })
 

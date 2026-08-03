@@ -64,16 +64,25 @@ export async function POST() {
     const machineId = generateMachineId(org.slug)
     const result = await validateLicense(org.licenseKey, machineId)
 
-    const newStatus = result.valid ? 'valid' : result.message.includes('expired') ? 'expired' : 'invalid'
+    let newStatus: string
+    if (result.signatureVerified && result.valid) {
+      newStatus = 'valid'
+    } else if (result.signatureVerified && !result.valid) {
+      newStatus = result.message.includes('expired') ? 'expired'
+        : result.message.includes('deactivated') ? 'suspended'
+        : 'invalid'
+    } else {
+      newStatus = 'unreachable'
+    }
 
     await bypassOrg(() =>
       db.organization.update({
         where: { id: org.id },
         data: {
           licenseStatus: newStatus,
-          licensePlan: result.plan,
-          licenseValidatedAt: new Date(),
-          licenseExpiresAt: result.expiresAt ? new Date(result.expiresAt) : null,
+          licensePlan: result.signatureVerified ? result.plan : undefined,
+          licenseValidatedAt: result.signatureVerified && result.valid ? new Date() : undefined,
+          licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : null,
         },
       }),
     )

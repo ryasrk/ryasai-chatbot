@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -40,8 +39,6 @@ export function CreateIntegrationDialog({
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const preset = getDbProviderPreset(form.provider)
-  const isDemo = form.provider === 'SQLITE_DEMO'
-  const needsConnectionString = preset?.needsConnectionString ?? false
 
   const update = (k: keyof CreateFormState, v: string) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -59,16 +56,10 @@ export function CreateIntegrationDialog({
     const e: Record<string, string> = {}
     if (!form.name.trim()) e.name = 'Name is required.'
     if (!form.provider) e.provider = 'Provider is required.'
-    if (!isDemo) {
-      if (needsConnectionString) {
-        if (!form.database_name.trim()) e.database_name = 'Connection string is required.'
-      } else {
-        if (!form.host.trim()) e.host = 'Host is required.'
-        if (!form.database_name.trim()) e.database_name = 'Database is required.'
-        if (!form.username.trim()) e.username = 'Username is required.'
-        if (!form.password) e.password = 'Password is required.'
-      }
-    }
+    if (!form.host.trim()) e.host = 'Host is required.'
+    if (!form.database_name.trim()) e.database_name = 'Database is required.'
+    if (!form.username.trim()) e.username = 'Username is required.'
+    if (!form.password) e.password = 'Password is required.'
     if (form.port && !/^\d+$/.test(form.port)) e.port = 'Port must be a number.'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -78,26 +69,13 @@ export function CreateIntegrationDialog({
     if (!validate()) return
     setSubmitting(true)
     try {
-      let config: Record<string, unknown>
-      if (isDemo) {
-        config = {
-          host: 'demo',
-          port: 0,
-          database_name: 'demo_erp',
-          username: 'demo',
-          password: 'demo',
-        }
-      } else if (needsConnectionString) {
-        config = { connectionString: form.database_name.trim() }
-      } else {
-        config = {
-          host: form.host.trim(),
+      let config: Record<string, unknown> = {
+        host: form.host.trim(),
           port: Number(form.port) || 0,
           username: form.username.trim(),
           password: form.password,
           database_name: form.database_name.trim(),
         }
-      }
 
       const res = await fetch('/api/integrations', {
         method: 'POST',
@@ -189,36 +167,11 @@ export function CreateIntegrationDialog({
                   SSL is recommended for this provider.
                 </span>
               )}
-              {isDemo && (
-                <span className="block mt-1 text-success">
-                  Use SQLITE_DEMO only for internal validation before a production connection is available.
-                </span>
-              )}
             </p>
           )}
 
-          {/* Config fields — only shown for non-DEMO providers */}
-          {!isDemo && needsConnectionString && (
-            <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="int-connstring">
-                  Connection String <span className="text-destructive">*</span>
-                </Label>
-                <Textarea
-                  id="int-connstring"
-                  value={form.database_name}
-                  onChange={(e) => update('database_name', e.target.value)}
-                  placeholder="mongodb+srv://user:pass@cluster/db?retryWrites=true&w=majority"
-                  className="font-mono text-xs min-h-[80px]"
-                />
-                {errors.database_name && (
-                  <p className="text-xs text-destructive">{errors.database_name}</p>
-                )}
-              </div>
-            </div>
-          )}
-          {!isDemo && !needsConnectionString && (
-            <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+          {/* Config fields — connection string providers */}
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="int-host">Host</Label>
@@ -286,7 +239,6 @@ export function CreateIntegrationDialog({
                 </div>
               </div>
             </div>
-          )}
         </div>
 
         <DialogFooter>

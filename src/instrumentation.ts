@@ -1,5 +1,5 @@
 // ponytail: Next.js instrumentation hook — validates env on boot, starts the BullMQ worker,
-// and wires graceful shutdown (db + redis + MCP connections).
+// wires graceful shutdown (db + redis + MCP connections), and starts license revalidation.
 // Guarded to nodejs runtime (Edge can't run BullMQ). Handlers register at module load.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
@@ -19,10 +19,13 @@ export async function register() {
   const { db } = await import('@/lib/db')
   const { disconnectRedis } = await import('@/lib/redis')
   const { disconnectAllMcp } = await import('@/lib/mcp-client')
+  const { startLicenseRevalidation } = await import('@/lib/license-revalidation')
+  const stopLicenseReval = startLicenseRevalidation()
   setupGracefulShutdown(undefined, [
     () => docWorker.close(),
     db.$disconnect,
     disconnectRedis,
     disconnectAllMcp,
+    stopLicenseReval,
   ])
 }

@@ -1,4 +1,4 @@
-export type DbProtocolFamily = 'POSTGRESQL' | 'MYSQL' | 'MSSQL' | 'MONGODB' | 'CLICKHOUSE' | 'SNOWFLAKE' | 'ORACLE' | 'SQLITE_DEMO' | 'SQLITE_CHINOOK' | 'SQLITE_WORLD' | 'SQLITE_PAGILA'
+export type DbProtocolFamily = 'POSTGRESQL' | 'MYSQL' | 'MSSQL' | 'CLICKHOUSE'
 
 export interface DbProviderPreset {
   id: string
@@ -12,23 +12,15 @@ export interface DbProviderPreset {
 }
 
 export const DB_PROVIDER_PRESETS: DbProviderPreset[] = [
-  { id: 'SQLITE_DEMO', label: 'SQLite Demo (ERP Sample)', family: 'SQLITE_DEMO', defaultPort: 0, hint: 'Internal sample ERP dataset for testing', connectionFormat: 'internal' },
-  { id: 'SQLITE_CHINOOK', label: 'SQLite Chinook (Media Store)', family: 'SQLITE_CHINOOK', defaultPort: 0, hint: 'Chinook sample database — artists, albums, tracks, customers, invoices', connectionFormat: 'internal' },
-  { id: 'SQLITE_WORLD', label: 'SQLite World (Geography)', family: 'SQLITE_WORLD', defaultPort: 0, hint: 'World sample database — countries, cities, languages', connectionFormat: 'internal' },
-  { id: 'SQLITE_PAGILA', label: 'SQLite Pagila (Movie Rental)', family: 'SQLITE_PAGILA', defaultPort: 0, hint: 'Pagila sample database — films, actors, customers, rentals, payments', connectionFormat: 'internal' },
-  { id: 'POSTGRESQL', label: 'PostgreSQL', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Database relasional open-source', connectionFormat: 'host:port/db' },
-  { id: 'MYSQL', label: 'MySQL / MariaDB', family: 'MYSQL', defaultPort: 3306, hint: 'Database relasional populer', connectionFormat: 'host:port/db' },
-  { id: 'MSSQL', label: 'Microsoft SQL Server', family: 'MSSQL', defaultPort: 1433, hint: 'Database enterprise Microsoft', connectionFormat: 'host:port/db' },
-  { id: 'SUPABASE', label: 'Supabase (PostgreSQL)', family: 'POSTGRESQL', defaultPort: 5432, hint: 'PostgreSQL managed dengan connection pooling', connectionFormat: 'host:port/db', sslByDefault: true },
-  { id: 'NEON', label: 'Neon (PostgreSQL)', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Serverless PostgreSQL dengan branching', connectionFormat: 'host:port/db', sslByDefault: true },
+  { id: 'POSTGRESQL', label: 'PostgreSQL', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Open-source relational database', connectionFormat: 'host:port/db' },
+  { id: 'MYSQL', label: 'MySQL / MariaDB', family: 'MYSQL', defaultPort: 3306, hint: 'Popular relational database', connectionFormat: 'host:port/db' },
+  { id: 'MSSQL', label: 'Microsoft SQL Server', family: 'MSSQL', defaultPort: 1433, hint: 'Microsoft enterprise database', connectionFormat: 'host:port/db' },
+  { id: 'SUPABASE', label: 'Supabase (PostgreSQL)', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Managed PostgreSQL with connection pooling', connectionFormat: 'host:port/db', sslByDefault: true },
+  { id: 'NEON', label: 'Neon (PostgreSQL)', family: 'POSTGRESQL', defaultPort: 5432, hint: 'Serverless PostgreSQL with branching', connectionFormat: 'host:port/db', sslByDefault: true },
   { id: 'PLANETSCALE', label: 'PlanetScale (MySQL)', family: 'MYSQL', defaultPort: 3306, hint: 'Serverless MySQL platform', connectionFormat: 'host:port/db', sslByDefault: true },
   { id: 'TIDB', label: 'TiDB (MySQL-compatible)', family: 'MYSQL', defaultPort: 4000, hint: 'Distributed SQL, MySQL-compatible', connectionFormat: 'host:port/db', sslByDefault: true },
   { id: 'COCKROACHDB', label: 'CockroachDB (PostgreSQL)', family: 'POSTGRESQL', defaultPort: 26257, hint: 'Distributed SQL, PostgreSQL-compatible', connectionFormat: 'host:port/db', sslByDefault: true },
-  { id: 'MONGODB', label: 'MongoDB', family: 'MONGODB', defaultPort: 27017, hint: 'Document database NoSQL', connectionFormat: 'connection_string', needsConnectionString: true },
-  { id: 'ORACLE', label: 'Oracle Database', family: 'ORACLE', defaultPort: 1521, hint: 'Database enterprise Oracle', connectionFormat: 'host:port/service' },
-  { id: 'SNOWFLAKE', label: 'Snowflake', family: 'SNOWFLAKE', defaultPort: 443, hint: 'Cloud data warehouse', connectionFormat: 'account/database', sslByDefault: true, needsConnectionString: true },
   { id: 'CLICKHOUSE', label: 'ClickHouse', family: 'CLICKHOUSE', defaultPort: 8123, hint: 'Columnar OLAP database', connectionFormat: 'host:port/db' },
-  { id: 'DATABRICKS', label: 'Databricks', family: 'SNOWFLAKE', defaultPort: 443, hint: 'Lakehouse platform', connectionFormat: 'connection_string', sslByDefault: true, needsConnectionString: true },
 ]
 
 export function getDbProviderPreset(id: string): DbProviderPreset | undefined {
@@ -39,7 +31,7 @@ export function getDbProtocolFamily(providerId: string): DbProtocolFamily {
   const preset = getDbProviderPreset(providerId)
   if (preset) return preset.family
   if (providerId === 'POSTGRESQL' || providerId === 'MYSQL' || providerId === 'MSSQL') return providerId as DbProtocolFamily
-  return 'SQLITE_DEMO'
+  return 'POSTGRESQL'
 }
 
 export const VALID_DB_PROVIDER_IDS = DB_PROVIDER_PRESETS.map(p => p.id)

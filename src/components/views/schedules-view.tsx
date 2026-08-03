@@ -64,8 +64,12 @@ interface NotificationConfig {
 }
 
 const QUICK_PRESETS = [
-  { label: 'Every hour', cron: '0 * * * *' },
+  { label: 'Every minute', cron: '* * * * *' },
+  { label: 'Every 5 min', cron: '*/5 * * * *' },
   { label: 'Every 15 min', cron: '*/15 * * * *' },
+  { label: 'Every 30 min', cron: '*/30 * * * *' },
+  { label: 'Every hour', cron: '0 * * * *' },
+  { label: 'Every 6 hours', cron: '0 */6 * * *' },
   { label: 'Daily 9 AM', cron: '0 9 * * *' },
   { label: 'Daily 6 PM', cron: '0 18 * * *' },
   { label: 'Weekdays 9 AM', cron: '0 9 * * 1-5' },
@@ -149,6 +153,7 @@ export function SchedulesView() {
   const timeInputRef = useRef<HTMLInputElement>(null)
   const [repeatType, setRepeatType] = useState<RepeatType>('daily')
   const [selectedDays, setSelectedDays] = useState<number[]>([])
+  const [customCron, setCustomCron] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -225,6 +230,7 @@ export function SchedulesView() {
     setScheduleTime('09:00')
     setRepeatType('daily')
     setSelectedDays([])
+    setCustomCron(null)
     setDialogOpen(true)
   }
 
@@ -235,6 +241,7 @@ export function SchedulesView() {
     setScheduleTime(parsed.time)
     setRepeatType(parsed.repeat)
     setSelectedDays(parsed.selectedDays)
+    setCustomCron(parsed ? null : s.cronExpr)
     setDialogOpen(true)
   }
 
@@ -256,7 +263,7 @@ export function SchedulesView() {
   }
 
   async function handleSave() {
-    const cronExpr = buildCron(scheduleTime, repeatType, selectedDays)
+    const cronExpr = customCron ?? buildCron(scheduleTime, repeatType, selectedDays)
     if (!form.name.trim() || !cronExpr.trim() || !form.prompt.trim()) {
       toast.error('All fields are required.')
       return
@@ -666,20 +673,14 @@ export function SchedulesView() {
               {/* Quick presets */}
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_PRESETS.map((p) => {
-                  const cron = buildCron(scheduleTime, repeatType, selectedDays)
-                  const isActive = cron === p.cron
+                  const currentCron = customCron ?? buildCron(scheduleTime, repeatType, selectedDays)
+                  const isActive = currentCron === p.cron
                   return (
                     <button
                       key={p.label}
                       type="button"
                       onClick={() => {
-                        // Parse preset cron into form state
-                        const [m, h, , , dow] = p.cron.split(' ')
-                        setScheduleTime(`${h.padStart(2, '0')}:${m.padStart(2, '0')}`)
-                        if (dow === '*') setRepeatType('daily')
-                        else if (dow === '1-5') setRepeatType('weekdays')
-                        else if (dow === '0,6') setRepeatType('weekends')
-                        else { setRepeatType('custom'); setSelectedDays(dow.split(',').map(Number)) }
+                        setCustomCron(p.cron)
                       }}
                       className={cn(
                         'text-[10px] px-2 py-1 rounded-md border transition-colors',
@@ -705,7 +706,7 @@ export function SchedulesView() {
                     ref={timeInputRef}
                     type="time"
                     value={scheduleTime}
-                    onChange={(e) => setScheduleTime(e.target.value)}
+                    onChange={(e) => { setScheduleTime(e.target.value); setCustomCron(null) }}
                     className="sr-only"
                   />
                 </label>
@@ -714,6 +715,7 @@ export function SchedulesView() {
                   value={repeatType}
                   onValueChange={(v) => {
                     setRepeatType(v as RepeatType)
+                    setCustomCron(null)
                     if (v !== 'custom') setSelectedDays([])
                   }}
                 >
@@ -740,6 +742,7 @@ export function SchedulesView() {
                           setSelectedDays((prev) =>
                             active ? prev.filter((d) => d !== i) : [...prev, i]
                           )
+                          setCustomCron(null)
                         }}
                         className={cn(
                           'h-8 w-12 text-xs rounded-md border transition-colors',
@@ -755,7 +758,7 @@ export function SchedulesView() {
                 </div>
               )}
               {(() => {
-                const cronExpr = buildCron(scheduleTime, repeatType, selectedDays)
+                const cronExpr = customCron ?? buildCron(scheduleTime, repeatType, selectedDays)
                 return (
                   <>
                     <p className="text-xs text-muted-foreground">

@@ -126,7 +126,9 @@ async function enrichSchema(
   tables: ReflectedTable[],
   runQuery: (sql: string) => Promise<QueryRow[]>,
   quote: (s: string) => string,
+  qualify?: (t: string) => string,
 ): Promise<void> {
+  const q = qualify ?? ((t: string) => quote(t))
   for (const table of tables) {
     const rc = table.rowCount ?? 0
     if (rc <= 0 || rc > 10000) continue
@@ -136,7 +138,7 @@ async function enrichSchema(
       if (!t.includes('TEXT') && !t.includes('VARCHAR') && !t.includes('CHAR') && !t.includes('ENUM')) continue
       try {
         const rows = await runQuery(
-          `SELECT DISTINCT ${quote(col.name)} AS v FROM ${quote(table.tableName)} LIMIT 21`,
+          `SELECT DISTINCT ${quote(col.name)} AS v FROM ${q(table.tableName)} LIMIT 21`,
         )
         if (rows.length <= 20) {
           col.distinctValues = rows
@@ -149,7 +151,7 @@ async function enrichSchema(
     }
     try {
       const colNames = table.columns.map((c) => quote(c.name)).join(', ')
-      const rows = await runQuery(`SELECT ${colNames} FROM ${quote(table.tableName)} LIMIT 1`)
+      const rows = await runQuery(`SELECT ${colNames} FROM ${q(table.tableName)} LIMIT 1`)
       if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
     } catch {
       // non-fatal — skip sample on error
@@ -248,6 +250,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
       tables,
       async (sql) => (await pool.query(sql)).rows as QueryRow[],
       (s) => `"${s.replace(/"/g, '""')}"`,
+      (t) => `"${schema.replace(/"/g, '""')}"."${t.replace(/"/g, '""')}"`,
     )
     return tables
   }

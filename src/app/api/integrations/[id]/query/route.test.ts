@@ -14,7 +14,7 @@ const mockIntegrationFindFirst = mock(async (): Promise<{ id: string; provider: 
 const mockQueryHistoryCreate = mock(async () => ({}))
 const mockDecryptConfig = mock(() => ({}))
 const mockGetConnector = mock(() => ({
-  provider: 'SQLITE_DEMO',
+  provider: 'POSTGRESQL',
   executeQuery: async () => ({ rows: [{ id: 1 }], rowCount: 1, executionMs: 5 }),
 }))
 const mockDescribeSchema = mock(() => 'schema text')
@@ -60,7 +60,7 @@ function makeReq(body: unknown) {
 
 const ACTIVE_INTEGRATION = {
   id: 'int1',
-  provider: 'SQLITE_DEMO',
+  provider: 'POSTGRESQL',
   status: 'active',
   encryptedConfig: 'enc',
   schemas: [{ tableName: 'demo_products', columns: '[]', rowCount: 10, sampleRow: null }],
@@ -81,7 +81,7 @@ beforeEach(() => {
   mockValidateSql.mockImplementation(() => ({ ok: true, sanitized: 'SELECT 1 LIMIT 100' }))
   mockGenerateSql.mockImplementation(async () => ({ sql: 'SELECT 1', explanation: 'test' }))
   mockGetConnector.mockImplementation(() => ({
-    provider: 'SQLITE_DEMO',
+    provider: 'POSTGRESQL',
     executeQuery: async () => ({ rows: [{ id: 1 }], rowCount: 1, executionMs: 5 }),
   }))
   mockWriteAudit.mockImplementation(async () => undefined)
@@ -113,7 +113,7 @@ describe('POST /api/integrations/[id]/query', () => {
   test('SQL execute error → 502', async () => {
     mockIntegrationFindFirst.mockImplementationOnce(async () => ACTIVE_INTEGRATION)
     mockGetConnector.mockImplementationOnce(() => ({
-      provider: 'SQLITE_DEMO',
+      provider: 'POSTGRESQL',
       executeQuery: async () => { throw new Error('syntax error near FROM') },
     }))
     const res = await POST(makeReq({ naturalQuery: 'query' }) as any, makeCtx() as any)

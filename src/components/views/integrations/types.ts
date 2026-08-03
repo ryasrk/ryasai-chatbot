@@ -113,7 +113,7 @@ export interface RestConnectorDetail extends RestConnectorItem {
 
 export const EMPTY_FORM: CreateFormState = {
   name: '',
-  provider: 'SQLITE_DEMO',
+  provider: 'POSTGRESQL',
   host: 'localhost',
   port: '5432',
   username: '',

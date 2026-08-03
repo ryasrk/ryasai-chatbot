@@ -14,7 +14,7 @@ import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 
-const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'SQLITE_DEMO'])
+const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLICKHOUSE', 'SUPABASE', 'NEON', 'PLANETSCALE', 'TIDB', 'COCKROACHDB'])
 
 export async function GET(_req: NextRequest) {
   try {

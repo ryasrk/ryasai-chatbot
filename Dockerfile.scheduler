@@ -1,0 +1,15 @@
+FROM oven/bun:1 AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+COPY prisma ./prisma
+RUN bun install --frozen-lockfile
+
+FROM oven/bun:1 AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN bunx prisma generate
+# source tree (src/lib, mini-services) + config bundled by bun at runtime
+# ponytail: no build needed — bun runs TS directly; image is for the scheduler worker only.
+CMD ["bun", "run", "mini-services/scheduler/index.ts"]

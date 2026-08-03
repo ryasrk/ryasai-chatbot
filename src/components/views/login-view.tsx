@@ -77,7 +77,8 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
       })
       if (res.ok) { onSuccess(); return }
       const data = await res.json().catch(() => ({}))
-      setError(data?.error || 'Invalid email or password.')
+      const errMsg = typeof data?.error === 'string' ? data.error : data?.error?.message
+      setError(errMsg || 'Invalid email or password.')
     } catch {
       setError('Unable to connect to the server.')
     } finally {
@@ -100,7 +101,8 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
         return
       }
       const data = await res.json().catch(() => ({}))
-      setError(data?.error || 'Registration failed.')
+      const errMsg = typeof data?.error === 'string' ? data.error : data?.error?.message
+      setError(errMsg || 'Registration failed.')
     } catch {
       setError('Unable to connect to the server.')
     } finally {
@@ -120,7 +122,8 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
       })
       if (res.ok) { onSuccess(); return }
       const data = await res.json().catch(() => ({}))
-      setError(data?.error || 'License activation failed.')
+      const errMsg = typeof data?.error === 'string' ? data.error : data?.error?.message
+      setError(errMsg || 'License activation failed.')
     } catch {
       setError('Unable to connect to the server.')
     } finally {

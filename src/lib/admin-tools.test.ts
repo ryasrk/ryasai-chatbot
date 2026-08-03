@@ -194,12 +194,12 @@ describe('executeAdminTool — admin:show_audit_log', () => {
 describe('executeAdminTool — admin:list_integrations', () => {
   test('returns integration list when present', async () => {
     mockIntegrationFindMany.mockImplementation(async () => [
-      { name: 'Chinook DB', provider: 'SQLITE_DEMO', status: 'active', type: 'database' },
+      { name: 'Sales DB', provider: 'POSTGRESQL', status: 'active', type: 'database' },
     ])
     const result = await executeAdminTool('admin:list_integrations', {}, 'user1', true)
     expect(result.ok).toBe(true)
-    expect(result.output).toContain('Chinook DB')
-    expect(result.output).toContain('SQLITE_DEMO')
+    expect(result.output).toContain('Sales DB')
+    expect(result.output).toContain('POSTGRESQL')
     expect(result.output).toContain('active')
   })
 

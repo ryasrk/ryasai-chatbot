@@ -9,6 +9,7 @@ import { scopedLogger } from '@/lib/logger'
 import { redisCmd } from '@/lib/redis'
 import { AppError } from '@/lib/errors'
 import { SESSION_INACTIVITY_TIMEOUT_MS } from '@/lib/constants'
+import { getLockdownReason } from '@/lib/license-client'
 const log = scopedLogger('session')
 
 export interface ActiveUser {
@@ -38,9 +39,16 @@ export class ForbiddenError extends Error {
 
 export class LicenseError extends Error {
   readonly code = 'LICENSE_INVALID'
-  constructor(message = 'License is no longer valid. Please contact your administrator.') {
-    super(message)
+  readonly reason: string
+  constructor(reason: string = 'expired', message?: string) {
+    const messages: Record<string, string> = {
+      expired: 'License has expired. Please renew your license.',
+      deactivated: 'License has been deactivated. Please contact support.',
+      unreachable: 'License server unreachable and grace period has expired. Please check your internet connection.',
+    }
+    super(message ?? messages[reason] ?? 'License is no longer valid.')
     this.name = 'LicenseError'
+    this.reason = reason
   }
 }
 
@@ -137,12 +145,15 @@ export async function getActiveUser(): Promise<ActiveUser> {
       const org = await bypassOrg(() =>
         db.organization.findUnique({
           where: { id: u.organizationId },
-          select: { licenseStatus: true, licensePlan: true },
+          select: { licenseStatus: true, licensePlan: true, licenseValidatedAt: true },
         }),
       )
-      // License gate — only block expired/invalid/suspended. 'none' and 'valid' pass.
-      if (org && (org.licenseStatus === 'expired' || org.licenseStatus === 'invalid' || org.licenseStatus === 'suspended')) {
-        throw new LicenseError()
+      // License gate — block expired/invalid/suspended. 'unreachable' blocked only beyond grace period.
+      if (org) {
+        const lockdownReason = getLockdownReason(org.licenseStatus, org.licenseValidatedAt ?? null)
+        if (lockdownReason) {
+          throw new LicenseError(lockdownReason)
+        }
       }
       await touchActivity(userId)
       return { userId: u.id, name: u.name, email: u.email, role: u.role, organizationId: u.organizationId, plan: org?.licensePlan ?? null }
@@ -171,11 +182,14 @@ export async function getActiveUser(): Promise<ActiveUser> {
   const fallbackOrg = await bypassOrg(() =>
     db.organization.findUnique({
       where: { id: user.organizationId },
-      select: { licenseStatus: true, licensePlan: true },
+      select: { licenseStatus: true, licensePlan: true, licenseValidatedAt: true },
     }),
   )
-  if (fallbackOrg && (fallbackOrg.licenseStatus === 'expired' || fallbackOrg.licenseStatus === 'invalid' || fallbackOrg.licenseStatus === 'suspended')) {
-    throw new LicenseError()
+  if (fallbackOrg) {
+    const lockdownReason = getLockdownReason(fallbackOrg.licenseStatus, fallbackOrg.licenseValidatedAt ?? null)
+    if (lockdownReason) {
+      throw new LicenseError(lockdownReason)
+    }
   }
   return { userId: user.id, name: user.name, email: user.email, role: user.role, organizationId: user.organizationId, plan: fallbackOrg?.licensePlan ?? null }
 }
