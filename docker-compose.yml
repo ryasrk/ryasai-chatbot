@@ -7,11 +7,31 @@
 # One-command install:  curl -sSL https://ryasai.my.id/install.sh | bash
 # (that generates docker-compose.prod.yml from install.sh — this file is the
 #  shorthand equivalent for folks who prefer to run compose directly)
+#
+# Images are PREBUILT in GitHub Actions (ghcr.io/ryasrk/ryasai-chatbot) — the
+# VPS never compiles the app. `migrate` is a one-shot schema push (uses the
+# scheduler image, which ships the full prisma CLI) that must finish before
+# app/scheduler start.
 # =============================================================================
 
 services:
+  migrate:
+    image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--accept-data-loss", "--skip-generate"]
+    restart: "no"
+    networks:
+      - ryasai-net
+
   app:
-    build: .
+    image: ghcr.io/ryasrk/ryasai-chatbot:app
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env
@@ -26,14 +46,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - ryasai-net
 
   scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.scheduler
+    image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -46,12 +66,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - ryasai-net
 
   redis:
     image: redis:7-alpine
+    # ponytail: cap RAM on a 1GB box; volatile-lru evicts only TTL'd keys,
+    # so BullMQ job data (no TTL) is kept. Tradeoff documented in compose.
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redisdata:/data
     healthcheck:
@@ -69,6 +94,9 @@ services:
       - POSTGRES_USER=ryasai
       - POSTGRES_PASSWORD=ryasai
       - POSTGRES_DB=ryasai
+    # ponytail: recipe-size Postgres — defaults assume 2GB+; these caps keep
+    # it under ~200MB so app+redis+pg fit in 1GB RAM.
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40", "-c", "effective_cache_size=128MB", "-c", "maintenance_work_mem=32MB"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

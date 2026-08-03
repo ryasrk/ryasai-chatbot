@@ -8,7 +8,8 @@
 #   1. Docker Engine + Compose plugin
 #   2. Clones ryasai/Chatbot to /opt/ryasai-chatbot
 #   3. Generates .env (secrets auto-created, license pointed at ryasai server)
-#   4. docker compose up -d  (app + redis + postgres, License-Validator is external)
+#   4. docker compose pull + up  (app + redis + postgres; images are prebuilt
+#      in CI on GitHub — NO compile on the VPS, License-Validator is external)
 # =============================================================================
 set -euo pipefail
 
@@ -107,10 +108,26 @@ else
 fi
 
 # --- Compose (app + redis + pg, NO license-server; that runs on ryasai) -----
+# Images are PREBUILT in GitHub Actions and pushed to GHCR — the VPS never
+# compiles the app (a Next build is ~15min on 1 vCPU and OOMs at 1GB).
+# Schema is applied by the `migrate` one-shot job (reuses the scheduler image,
+# which ships the full prisma CLI) before app/scheduler start.
 cat > docker-compose.prod.yml <<'EOF'
 services:
+  migrate:
+    image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--accept-data-loss", "--skip-generate"]
+    restart: "no"
+    networks: [ryasai-net]
+
   app:
-    build: .
+    image: ghcr.io/ryasrk/ryasai-chatbot:app
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env
@@ -123,13 +140,12 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     restart: unless-stopped
     networks: [ryasai-net]
 
   scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile.scheduler
+    image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -140,11 +156,15 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     restart: unless-stopped
     networks: [ryasai-net]
 
   redis:
     image: redis:7-alpine
+    # ponytail: cap RAM on a 1GB box; volatile-lru evicts only TTL'd keys,
+    # so BullMQ job data (no TTL) is kept. Tradeoff documented in compose.
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-lru"]
     volumes: [redisdata:/data]
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 3 }
     restart: unless-stopped
@@ -156,6 +176,9 @@ services:
       - POSTGRES_USER=ryasai
       - POSTGRES_PASSWORD=ryasai
       - POSTGRES_DB=ryasai
+    # ponytail: recipe-size Postgres — defaults assume 2GB+; these caps keep
+    # it under ~200MB so app+redis+pg fit in 1GB RAM.
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40", "-c", "effective_cache_size=128MB", "-c", "maintenance_work_mem=32MB"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U ryasai -d ryasai"], interval: 10s, timeout: 5s, retries: 5 }
     restart: unless-stopped
@@ -168,9 +191,11 @@ volumes:
   redisdata:
 EOF
 
-# --- Build & run -----------------------------------------------------------
-info "Building images (this takes a few minutes on 1 vCPU)..."
-docker compose -f docker-compose.prod.yml up -d --build
+# --- Pull & run (no build on the VPS — images are prebuilt in CI) -----------
+info "Pulling prebuilt images (no local build)..."
+docker compose -f docker-compose.prod.yml pull
+info "Starting services (migrate -> app + scheduler)..."
+docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 # --- Health ----------------------------------------------------------------
 info "Waiting for app to come up..."

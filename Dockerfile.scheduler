@@ -12,4 +12,6 @@ COPY . .
 RUN bunx prisma generate
 # source tree (src/lib, mini-services) + config bundled by bun at runtime
 # ponytail: no build needed — bun runs TS directly; image is for the scheduler worker only.
+# Note: full node_modules kept on purpose — this image also runs the compose
+# `migrate` one-shot (`prisma db push`), which needs the prisma CLI closure.
 CMD ["bun", "run", "mini-services/scheduler/index.ts"]
