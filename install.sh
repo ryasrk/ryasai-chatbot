@@ -128,6 +128,7 @@ services:
 
   app:
     image: ghcr.io/ryasrk/ryasai-chatbot:app
+    build: .
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env
@@ -146,6 +147,9 @@ services:
 
   scheduler:
     image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -192,10 +196,16 @@ volumes:
 EOF
 
 # --- Pull & run (no build on the VPS — images are prebuilt in CI) -----------
-info "Pulling prebuilt images (no local build)..."
-docker compose -f docker-compose.prod.yml pull
-info "Starting services (migrate -> app + scheduler)..."
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
+info "Pulling prebuilt images..."
+if docker compose -f docker-compose.prod.yml pull; then
+  info "Starting services (migrate -> app + scheduler)..."
+  docker compose -f docker-compose.prod.yml up -d --remove-orphans
+else
+  # ponytail: GHCR images may not be published yet (workflow not live) — fall
+  # back to building locally so installs never hard-fail.
+  warn "Prebuilt images not found — building from source (slow on 1 vCPU)..."
+  docker compose -f docker-compose.prod.yml up -d --remove-orphans --build
+fi
 
 # --- Health ----------------------------------------------------------------
 info "Waiting for app to come up..."

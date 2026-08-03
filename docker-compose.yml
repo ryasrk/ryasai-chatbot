@@ -32,6 +32,7 @@ services:
 
   app:
     image: ghcr.io/ryasrk/ryasai-chatbot:app
+    build: .
     ports:
       - "127.0.0.1:3000:3000"
     env_file: .env
@@ -54,6 +55,9 @@ services:
 
   scheduler:
     image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
