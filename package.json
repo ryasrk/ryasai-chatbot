@@ -14,7 +14,7 @@
     "e2e": "playwright test",
     "test": "bun scripts/test.ts",
     "rag-eval": "bun benchmark/rag-eval.ts",
-    "prepare": "cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit",
+    "prepare": "if [ -d .git/hooks ]; then cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit; fi",
     "test:coverage": "bun test --coverage",
     "coverage": "bun test --coverage 2>&1 | tail -20",
     "coverage:check": "c8 --check-coverage --lines 50 --functions 50 bun run test"
