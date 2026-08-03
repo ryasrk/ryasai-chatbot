@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
 import { encryptConfig, maskConfig, decryptConfig } from '@/lib/crypto'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const VALID_TYPES = new Set(['webhook', 'email', 'telegram'])
 
@@ -40,7 +41,7 @@ function maskRow(row: {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const config = await db.notificationConfig.findFirst({ where: { id } }) // nosemgrep
     if (!config) {
@@ -58,6 +59,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.notificationConfig.findFirst({ // nosemgrep
@@ -154,6 +156,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.notificationConfig.findFirst({ // nosemgrep

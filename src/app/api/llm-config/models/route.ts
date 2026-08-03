@@ -1,3 +1,14 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
+import {
+  fetchProviderModels,
+  getLlmRuntimeConfig,
+  normalizeBaseUrl,
+} from '@/lib/llm-config'
+import { encryptConfig } from '@/lib/crypto'
+import { db } from '@/lib/db'
+import { enterWithOrg } from '@/lib/prisma-tenant'
+
 /**
  * LLM model discovery — fetch available models from {baseUrl}/models.
  * ----------------------------------------------------------------------------
@@ -8,19 +19,11 @@
  * Caches the result into LlmConfig.availableModels + lastModelSyncAt.
  * Admin-only (rotates nothing, but reveals connectivity to the provider).
  */
-import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
-import {
-  fetchProviderModels,
-  getLlmRuntimeConfig,
-  normalizeBaseUrl,
-} from '@/lib/llm-config'
-import { encryptConfig } from '@/lib/crypto'
-import { db } from '@/lib/db'
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as {

@@ -19,10 +19,11 @@ interface CreatePluginBody {
   chatEnabled?: boolean
   agenticEnabled?: boolean
 }
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const plugins = await db.plugin.findMany({
       where: {},
       orderBy: [{ category: 'asc' }, { subcategory: 'asc' }, { name: 'asc' }],
@@ -71,6 +72,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const body = (await req.json().catch(() => ({}))) as CreatePluginBody
 

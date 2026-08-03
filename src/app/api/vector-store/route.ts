@@ -4,10 +4,11 @@ import { db } from '@/lib/db'
 import { ensureVectorCollection, getVectorStoreRuntimeConfig } from '@/lib/vector-stores'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { maskSecret, normalizeBaseUrl } from '@/lib/llm-config'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const row = await db.vectorStoreConfig.findFirst()
     return NextResponse.json({
       ok: true,
@@ -39,6 +40,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const body = (await req.json().catch(() => ({}))) as {
       provider?: string
@@ -92,6 +94,7 @@ export async function PUT(req: NextRequest) {
 export async function POST() {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const config = await getVectorStoreRuntimeConfig()
     if (!config) return NextResponse.json({ ok: true, data: { provider: 'INTERNAL' } })

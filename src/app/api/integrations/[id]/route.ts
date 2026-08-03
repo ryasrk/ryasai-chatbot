@@ -1,3 +1,4 @@
+import { enterWithOrg } from '@/lib/prisma-tenant'
 /**
  * Spec §5.1 — Integration detail / update / delete endpoints.
  * ----------------------------------------------------------------------------
@@ -19,7 +20,7 @@ interface RouteCtx {
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
 
     const integration = await db.integration.findFirst({ // nosemgrep
@@ -79,6 +80,7 @@ interface PatchBody {
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as PatchBody
@@ -154,6 +156,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
 

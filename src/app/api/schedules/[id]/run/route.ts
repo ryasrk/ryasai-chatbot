@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { scheduleQueue } from '@/lib/scheduler-queue'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -15,6 +16,7 @@ interface RouteContext {
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     const schedule = await db.scheduledRun.findFirst({ // nosemgrep

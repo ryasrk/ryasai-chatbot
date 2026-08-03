@@ -110,7 +110,11 @@ export function createTenantExtension() {
     query: {
       async $allOperations({ args, query, model, operation }) {
         const orgId = orgStorage.getStore()
-        if (!orgId || !model || !ORG_SCOPED_MODELS.has(model)) {
+        // ponytail: Prisma passes model names in schema case (PascalCase, e.g. "User").
+        // ORG_SCOPED_MODELS is keyed by first-lowercase names ("user") — normalize
+        // before matching, otherwise injection silently never fires (cross-org leak).
+        const modelKey = model ? model.charAt(0).toLowerCase() + model.slice(1) : undefined
+        if (!orgId || !model || !modelKey || !ORG_SCOPED_MODELS.has(modelKey)) {
           return query(args)
         }
 

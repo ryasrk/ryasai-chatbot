@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { runStreamingChatCompletion, type ChatHistoryEntry, type StreamingCompletionResult } from '@/lib/tool-router'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 // ponytail: hard ceiling for the whole handler (Next.js route segment config) —
 // the agentic loop can otherwise pin a worker for minutes across iterations.
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // --- Pre-stream: auth, validate, persist user message, load history ---
     // Errors here return proper HTTP status codes (client hasn't opened SSE yet).
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as SendBody
 

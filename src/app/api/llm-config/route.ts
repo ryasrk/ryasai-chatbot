@@ -1,3 +1,4 @@
+import { enterWithOrg } from '@/lib/prisma-tenant'
 /**
  * LLM configuration — OpenAI-compatible provider settings per tenant.
  * ----------------------------------------------------------------------------
@@ -15,7 +16,7 @@ import { db } from '@/lib/db'
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const data = await getPublicLlmConfig()
     return NextResponse.json({ ok: true, data })
   } catch (e) {
@@ -37,6 +38,7 @@ interface PutBody {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as PutBody

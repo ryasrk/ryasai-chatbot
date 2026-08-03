@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface CreateConnectorBody {
   name?: string
@@ -14,7 +15,7 @@ interface CreateConnectorBody {
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const items = await db.restApiConnector.findMany({
       where: {},
       orderBy: { createdAt: 'desc' },
@@ -40,6 +41,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const body = (await req.json().catch(() => ({}))) as CreateConnectorBody
     const parsed = parseConnectorInput(body)

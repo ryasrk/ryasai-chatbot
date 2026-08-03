@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -20,6 +21,7 @@ const VALID_ROLES = ['admin', 'analyst', 'viewer'] as const
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
 
     const { id } = await ctx.params

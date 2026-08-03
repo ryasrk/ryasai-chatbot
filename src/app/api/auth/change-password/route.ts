@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword, hashPassword } from '@/lib/passwords'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/auth/change-password
@@ -13,6 +14,7 @@ import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const body = (await req.json().catch(() => ({}))) as {
       currentPassword?: string
       newPassword?: string

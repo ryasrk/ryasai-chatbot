@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/chat/sessions
@@ -14,6 +15,7 @@ import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 export async function GET() {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const sessions = await db.chatSession.findMany({
       where: {
@@ -36,6 +38,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const body = await req.json().catch(() => ({}))
     const title: string =
       typeof body?.title === 'string' && body.title.trim().length > 0

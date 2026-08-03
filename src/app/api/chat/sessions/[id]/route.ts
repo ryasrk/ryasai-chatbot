@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -17,6 +18,7 @@ interface RouteCtx {
 export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     // Backward-compatible cap on history size: accept ?limit= (default 100,
@@ -78,6 +80,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx) {
 export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({ // nosemgrep

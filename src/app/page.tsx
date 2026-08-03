@@ -212,7 +212,7 @@ export default function Home() {
               'sticky top-[57px] h-[calc(100vh-57px)]',
             )}
           >
-            <SidebarContent view={view} setView={setView} />
+            <SidebarContent view={view} setView={setView} role={user?.role} />
           </aside>
 
           <AnimatePresence>
@@ -248,6 +248,7 @@ export default function Home() {
                       setView(v)
                       setMobileOpen(false)
                     }}
+                    role={user?.role}
                   />
                 </motion.aside>
               </div>
@@ -298,14 +299,16 @@ export default function Home() {
 function SidebarContent({
   view,
   setView,
+  role,
 }: {
   view: ViewKey
   setView: (v: ViewKey) => void
+  role?: string
 }) {
   return (
     <div className="flex flex-col h-full">
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
+        {NAV.filter((item) => !(item.key === 'agentic' && role === 'viewer')).map((item) => {
           const Icon = item.icon
           const active = view === item.key
           return (

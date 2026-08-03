@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { hasPlan } from '@/lib/plan-gating'
 import { rememberChatTurn } from '@/lib/cognee'
 import { db } from '@/lib/db'
@@ -9,6 +9,7 @@ import { streamAnswer } from '@/lib/ai'
 import { testMcpServer, invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
 import { fetchMcpInstallFromUrl } from '@/lib/mcp-installer'
 import { encryptConfig, decryptConfig } from '@/lib/crypto'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 // ponytail: lightweight known-names map for agentic MCP setup. Covers the
 // common @modelcontextprotocol/server-* packages + a few uvx ones. Unknown
@@ -302,6 +303,8 @@ function parseCredentialPairs(s: string): Record<string, string> {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
+    requireRole(user, 'analyst')
     if (!hasPlan(user.plan, 'pro')) {
       return NextResponse.json({ error: 'Agent features require a Pro plan or higher.' }, { status: 403 })
     }

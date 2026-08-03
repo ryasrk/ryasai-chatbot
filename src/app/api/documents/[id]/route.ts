@@ -4,6 +4,7 @@ import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/se
 import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
 import { invalidateRagCache } from '@/lib/rag'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
@@ -17,7 +18,7 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
 
     const doc = await db.document.findFirst({ // nosemgrep
@@ -98,6 +99,7 @@ export async function PATCH(
 ) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as PatchBody
@@ -173,6 +175,7 @@ export async function DELETE(
 ) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
 

@@ -29,6 +29,7 @@ import {
 import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
 import { generateSql } from '@/lib/ai'
 import { withSqlConcurrency } from '@/lib/tool-utils'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -41,6 +42,7 @@ interface QueryBody {
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as QueryBody
     const naturalQuery = (body.naturalQuery ?? '').trim()

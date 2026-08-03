@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig, maskConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -19,7 +20,7 @@ interface PatchConnectorBody {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const connector = await db.restApiConnector.findFirst({ // nosemgrep
       where: { id },
@@ -59,6 +60,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.restApiConnector.findFirst({ // nosemgrep
@@ -156,6 +158,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.restApiConnector.findFirst({ // nosemgrep

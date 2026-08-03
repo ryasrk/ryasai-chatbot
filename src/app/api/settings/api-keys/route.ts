@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generateApiKey, maskApiKey } from '@/lib/api-keys'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface CreateApiKeyBody {
   label?: string
@@ -11,7 +12,7 @@ interface CreateApiKeyBody {
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const items = await db.apiKey.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
@@ -42,6 +43,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as CreateApiKeyBody

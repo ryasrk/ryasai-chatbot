@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError } from '@/lib/session'
 import { db } from '@/lib/db'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET(req: NextRequest) {
   try {
-    await getActiveUser()
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
+    requireRole(user, 'analyst')
     const searchParams = req.nextUrl.searchParams
     const sessionId = searchParams.get('sessionId')
 
@@ -45,6 +48,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
+    requireRole(user, 'analyst')
     const body = (await req.json().catch(() => ({}))) as { title?: string }
     const title = body.title?.trim() || `[Agent] ${new Date().toLocaleString('en-US')}`
 

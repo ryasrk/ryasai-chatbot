@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/users
@@ -10,8 +11,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    await getActiveUser()
-
+    enterWithOrg((await getActiveUser()).organizationId)
     const users = await db.user.findMany({
       where: {},
       orderBy: [{ name: 'asc' }],

@@ -1,3 +1,4 @@
+import { enterWithOrg } from '@/lib/prisma-tenant'
 /**
  * Spec §3.1 (Dynamic Connector Factory) + §3.2 (Registry) + §5.1 (POST /api/v1/integrations/connect)
  * ----------------------------------------------------------------------------
@@ -18,8 +19,7 @@ const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLI
 
 export async function GET(_req: NextRequest) {
   try {
-    await getActiveUser()
-
+    enterWithOrg((await getActiveUser()).organizationId)
     const integrations = await db.integration.findMany({
       where: {},
       orderBy: { createdAt: 'desc' },
@@ -99,6 +99,7 @@ export function validateCreateIntegrationInput(body: CreateBody) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const body = (await req.json().catch(() => ({}))) as CreateBody
 

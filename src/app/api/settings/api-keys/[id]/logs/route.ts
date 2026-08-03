@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/settings/api-keys/[id]/logs
@@ -12,7 +13,7 @@ interface RouteContext {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
 
     // Verify the key exists

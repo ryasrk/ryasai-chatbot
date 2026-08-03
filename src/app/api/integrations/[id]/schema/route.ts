@@ -1,3 +1,4 @@
+import { enterWithOrg } from '@/lib/prisma-tenant'
 /**
  * Spec §3.2 / §5.1 — Return cached reflected schema (tables + columns + rowCount).
  * ----------------------------------------------------------------------------
@@ -20,7 +21,7 @@ const SCHEMA_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const refresh = new URL(req.url).searchParams.get('refresh') === '1'
 

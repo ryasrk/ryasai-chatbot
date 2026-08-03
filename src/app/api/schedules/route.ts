@@ -4,10 +4,11 @@ import { parseCron, nextRun, normalizeTimezone } from '@/lib/cron'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { hasPlan } from '@/lib/plan-gating'
 import { syncSchedule } from '@/lib/scheduler-queue'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const schedules = await db.scheduledRun.findMany({
       orderBy: { createdAt: 'desc' },
     })
@@ -20,6 +21,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     if (!hasPlan(user.plan, 'pro')) {
       return NextResponse.json({ error: 'Scheduled runs require a Pro plan or higher.' }, { status: 403 })

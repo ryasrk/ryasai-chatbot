@@ -12,10 +12,11 @@ import {
 interface RouteContext {
   params: Promise<{ id: string }>
 }
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const plugin = await db.plugin.findFirst({ // nosemgrep
       where: { id },
@@ -50,6 +51,7 @@ interface PatchBody {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.plugin.findFirst({ // nosemgrep
@@ -133,6 +135,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
 
     const { id } = await ctx.params
     const existing = await db.plugin.findFirst({ // nosemgrep

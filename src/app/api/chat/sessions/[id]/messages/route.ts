@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -18,6 +19,7 @@ interface RouteCtx {
 export async function POST(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     const session = await db.chatSession.findFirst({ // nosemgrep

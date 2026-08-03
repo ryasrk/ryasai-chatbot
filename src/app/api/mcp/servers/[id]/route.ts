@@ -5,6 +5,7 @@ import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { disconnectMcpServer } from '@/lib/mcp-client'
 import { sanitizeServer } from '../route'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const VALID_TRANSPORTS = new Set(['stdio', 'sse', 'http'])
 
@@ -28,7 +29,7 @@ interface PatchBody {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const server = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
     if (!server) {
@@ -43,6 +44,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
     const existing = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
@@ -166,6 +168,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
     const existing = await db.mcpServer.findUnique({ // nosemgrep

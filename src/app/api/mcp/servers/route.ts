@@ -5,6 +5,7 @@ import { hasPlan } from '@/lib/plan-gating'
 import { encryptConfig } from '@/lib/crypto'
 import { isBlockedHost } from '@/lib/llm-config'
 import { invalidateMcpToolsCache } from '@/lib/mcp-client'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const VALID_TRANSPORTS = new Set(['stdio', 'sse', 'http'])
 
@@ -114,7 +115,7 @@ export function sanitizeServer(row: {
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const servers = await db.mcpServer.findMany({
       where: {},
       orderBy: { name: 'asc' },
@@ -128,6 +129,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     if (!hasPlan(user.plan, 'pro')) {
       return NextResponse.json({ error: 'MCP servers require a Pro plan or higher.' }, { status: 403 })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { checkRedisHealth } from '@/lib/redis'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/monitoring → aggregated observability data:
@@ -13,7 +14,7 @@ import { checkRedisHealth } from '@/lib/redis'
  */
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const [toolRuns, failedApiRequests, restApiErrors, blockedSql, toolRunCount24h, latencyAgg, failedApiCount24h, llmUsage24h, llmUsageByPurpose] =

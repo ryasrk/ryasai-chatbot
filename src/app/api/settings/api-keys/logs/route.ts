@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/settings/api-keys/logs
@@ -8,8 +9,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    await getActiveUser()
-
+    enterWithOrg((await getActiveUser()).organizationId)
     const logs = await db.apiRequestLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,

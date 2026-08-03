@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/analytics
@@ -18,8 +19,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function GET() {
   try {
-    await getActiveUser()
-
+    enterWithOrg((await getActiveUser()).organizationId)
     // ---- helpers ---------------------------------------------------------
     const days = 7
     // ponytail: use UTC for bucket dates so the chart matches DB timestamps

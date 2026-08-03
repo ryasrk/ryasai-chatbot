@@ -1,3 +1,4 @@
+import { enterWithOrg } from '@/lib/prisma-tenant'
 /**
  * Cognee management API — health, stats, reset, re-cognify, config.
  * GET    /api/cognee         — health + stats
@@ -11,6 +12,7 @@ import { db } from '@/lib/db'
 export async function GET() {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     if (!user) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
     }
@@ -35,6 +37,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     if (!user) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
     }

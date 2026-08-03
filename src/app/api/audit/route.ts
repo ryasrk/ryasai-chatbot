@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const DEFAULT_AUDIT_PAGE_SIZE = 20
 const MAX_AUDIT_PAGE_SIZE = 20
@@ -21,8 +22,7 @@ export function parseAuditPagination(searchParams: URLSearchParams) {
  */
 export async function GET(req: NextRequest) {
   try {
-    await getActiveUser()
-
+    enterWithOrg((await getActiveUser()).organizationId)
     const { searchParams } = req.nextUrl
     const severity = searchParams.get('severity') || undefined
     const action = searchParams.get('action') || undefined

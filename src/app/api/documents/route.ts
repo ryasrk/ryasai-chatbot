@@ -13,6 +13,7 @@ import { MAX_EXTRACTED_TEXT_CHARS } from '@/lib/rag-chunking'
 import { enqueueOrSync } from '@/lib/job-processor'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
@@ -33,7 +34,7 @@ const ALLOWED_MIME_TYPES = new Set([
  */
 export async function GET(req: NextRequest) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
 
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     // Viewer read access is fine for documents, but mutating the corpus is admin-only.
     requireRole(user, 'admin')
 
