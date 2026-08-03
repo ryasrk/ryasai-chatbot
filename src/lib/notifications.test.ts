@@ -143,13 +143,25 @@ describe('sendNotification', () => {
     expect(result.error).toContain('400')
   })
 
-  test('email → returns ok false (SMTP not configured)', async () => {
+  test('email → without RESEND_API_KEY returns clear error', async () => {
+    delete process.env.RESEND_API_KEY
     const result = await sendNotification({
       configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
       message: 'hi',
     })
     expect(result.ok).toBe(false)
-    expect(result.error).toContain('SMTP')
+    expect(result.error).toContain('RESEND_API_KEY')
+  })
+
+  test('email → without recipient returns error', async () => {
+    process.env.RESEND_API_KEY = 're_test'
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email' }),
+      message: 'hi',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('recipient')
+    delete process.env.RESEND_API_KEY
   })
 
   test('invalid config → ok false with error', async () => {

@@ -8,19 +8,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { decryptConfig } from '@/lib/crypto'
+import { connectorRegistry } from '@/lib/connectors'
+import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx) {
+const SCHEMA_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
     await getActiveUser()
     const { id } = await ctx.params
+    const refresh = new URL(req.url).searchParams.get('refresh') === '1'
 
     const integration = await db.integration.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, provider: true, status: true },
+      select: { id: true, name: true, provider: true, status: true, encryptedConfig: true, organizationId: true },
     })
 
     if (!integration) {
@@ -30,10 +36,51 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    const rows = await db.integrationSchema.findMany({ // nosemgrep
+    let rows = await db.integrationSchema.findMany({ // nosemgrep
       where: { integrationId: id },
       orderBy: { tableName: 'asc' },
     })
+
+    // ponytail: no cron — refresh on demand and surface staleness to the log.
+    const oldestReflectedAt = rows[0]?.reflectedAt
+    const stale = !!oldestReflectedAt && Date.now() - oldestReflectedAt.getTime() > SCHEMA_CACHE_TTL_MS
+    if (stale) {
+      console.log(`[schema] integration ${id} cached schema is older than 24h (reflectedAt ${oldestReflectedAt.toISOString()}) — call ?refresh=1 to re-reflect`)
+    }
+
+    if (refresh) {
+      try {
+        const connector = connectorRegistry.getConnector(
+          id,
+          integration.provider,
+          decryptConfig(integration.encryptedConfig),
+        )
+        const tables = await connector.fetchSchema()
+        await db.integrationSchema.deleteMany({ where: { integrationId: id } })
+        await db.integrationSchema.createMany({
+          data: tables.map((t) => ({
+            organizationId: integration.organizationId,
+            integrationId: id,
+            tableName: t.tableName,
+            columns: JSON.stringify(t.columns ?? []),
+            rowCount: t.rowCount ?? null,
+            sampleRow: t.sampleRow ? JSON.stringify(t.sampleRow) : null,
+          })),
+        })
+        invalidateSourceEmbeddingCache()
+        console.log(`[schema] integration ${id} re-reflected via ?refresh=1 (${tables.length} tables)`)
+        rows = await db.integrationSchema.findMany({ // nosemgrep
+          where: { integrationId: id },
+          orderBy: { tableName: 'asc' },
+        })
+      } catch (e) {
+        console.error(`[schema] refresh failed for integration ${id}:`, e)
+        return NextResponse.json(
+          { ok: false, error: 'Schema refresh failed. Check the connection and re-run the test.' },
+          { status: 502 },
+        )
+      }
+    }
 
     const tables = rows.map((r) => ({
       id: r.id,

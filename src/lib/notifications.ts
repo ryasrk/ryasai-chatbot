@@ -113,18 +113,50 @@ async function sendTelegram(
   return { ok: true, latencyMs }
 }
 
-// ponytail: email stub — nodemailer not installed. Add when SMTP is wired up.
+// ponytail: Resend — transactional email. API key + from-address come from env;
+// the per-config encrypted blob only stores the recipient (`to`). Falls back to
+// a clear error when RESEND_API_KEY is not set (keeps scheduler working for
+// webhook/telegram even if email is unconfigured).
+const RESEND_API_KEY = process.env.RESEND_API_KEY ?? ''
+const RESEND_FROM = process.env.EMAIL_FROM ?? 'ryasai@ryasai.my.id'
+const RESEND_URL = 'https://api.resend.com/emails'
+
 async function sendEmail(
-  _config: Record<string, unknown>,
-  _message: string,
-  _title: string | undefined,
+  config: Record<string, unknown>,
+  message: string,
+  title: string | undefined,
   started: number,
 ): Promise<NotificationResult> {
-  return {
-    ok: false,
-    error: 'Email notification requires SMTP configuration. Use webhook or telegram for now.',
-    latencyMs: Date.now() - started,
+  const to = config.to as string | undefined
+  if (!to) return { ok: false, error: 'Email recipient (to) is required.', latencyMs: Date.now() - started }
+  if (!RESEND_API_KEY) {
+    return {
+      ok: false,
+      error: 'Email requires RESEND_API_KEY in .env. Use webhook or telegram for now.',
+      latencyMs: Date.now() - started,
+    }
   }
+
+  const res = await fetch(RESEND_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM,
+      to: [to],
+      subject: title ?? 'ryasai notification',
+      text: message,
+    }),
+    signal: AbortSignal.timeout(NOTIFICATION_TIMEOUT_MS),
+  })
+  const latencyMs = Date.now() - started
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    return { ok: false, error: `Resend API HTTP ${res.status} ${detail.slice(0, 160)}`, latencyMs }
+  }
+  return { ok: true, latencyMs }
 }
 
 // ---------------------------------------------------------------------------

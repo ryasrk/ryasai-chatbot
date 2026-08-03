@@ -132,8 +132,10 @@ export async function POST(req: NextRequest) {
       connectorRegistry.drop(tempId)
     } catch (e) {
       connectorRegistry.drop(tempId)
+      // Don't leak driver detail (host/user/server) to the client — log it server-side.
+      console.error('[integrations] connection/schema failed:', e)
       return NextResponse.json(
-        { ok: false, error: e instanceof Error ? e.message : 'Unknown error during connection.' },
+        { ok: false, error: 'Connection failed. Check credentials and network.' },
         { status: 400 },
       )
     }

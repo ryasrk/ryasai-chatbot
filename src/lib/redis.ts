@@ -5,6 +5,11 @@ import { Queue } from 'bullmq'
 // nosemgrep — dev fallback only, production uses rediss:// via REDIS_URL
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 
+if (process.env.NODE_ENV === 'production' && !REDIS_URL.startsWith('rediss://')) {
+  // ponytail: warn, don't hard-fail — some prod deployments rely on an internal network / VM proxy.
+  console.warn('[redis] SECURITY: REDIS_URL is not using TLS (rediss://). Redis traffic (incl. credentials) is sent in plaintext.')
+}
+
 // ponytail: single BullMQ connection — maxRetriesPerRequest:null required by BullMQ for blocking commands.
 // Per-account queues if throughput matters.
 export const redis = new IORedis(REDIS_URL, {

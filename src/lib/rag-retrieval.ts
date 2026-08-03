@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { scopedLogger } from '@/lib/logger'
+import { getOrgContext } from '@/lib/prisma-tenant'
 const log = scopedLogger('rag')
 import {
   embedTexts,
@@ -30,7 +31,10 @@ export function getRagCacheStats(): { hits: number; misses: number; hitRate: num
 }
 
 function ragCacheKey(query: string, topK: number): string {
-  return `rag:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
+  // ponytail: org-scoped cache key — prevents cross-tenant data disclosure
+  // (org A reading org B's cached retrieved chunks for the same query string).
+  const orgId = getOrgContext() ?? 'global'
+  return `rag:${orgId}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
 }
 
 export async function invalidateRagCache(): Promise<void> {
@@ -77,7 +81,9 @@ export async function retrieveRelevantChunks(args: {
     vectorQuery = await generateHypotheticalDocument(args.query)
   }
 
-  const rerankEnabled = process.env.RAG_LLM_RERANK !== 'false'
+  // ponytail: rerank is opt-in (RAG_LLM_RERANK=false is no longer the default) —
+  // default OFF avoids an extra LLM call on every retrieval. Enable for precision.
+  const rerankEnabled = process.env.RAG_LLM_RERANK === 'true'
   const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
 
   const [retrievalResult, kgResult, cogneeGraphContext] = await Promise.all([
@@ -273,6 +279,7 @@ async function resolveVectorScores(args: { vector: number[] | null; topK: number
   if (!args.vector) return new Map()
 
   try {
+    await ensureVectorIndexes()
     const pgScores = await pgvectorSimilaritySearch(args.vector, Math.max(args.topK * 8, 16))
     if (pgScores.size > 0) return pgScores
   } catch (e) {
@@ -292,10 +299,14 @@ async function resolveVectorScores(args: { vector: number[] | null; topK: number
 
 async function pgvectorSimilaritySearch(queryVector: number[], limit: number): Promise<Map<string, number>> {
   const vectorStr = `[${queryVector.join(',')}]`
+  const orgId = getOrgContext()
+  // Org-scoped (prevents cross-tenant ranking interference) + HNSW index makes
+  // the ORDER BY embedding <=> a bounded ANNS scan instead of full-corpus O(n).
   const rows = await db.$queryRaw<Array<{ id: string; similarity: number }>>`
     SELECT id, 1 - (embedding <=> ${vectorStr}::vector) AS similarity
     FROM "DocumentChunk"
     WHERE embedding IS NOT NULL
+      AND "organizationId" = ${orgId ?? ''}
       AND "documentId" IN (
         SELECT id FROM "Document" WHERE status = 'ready' AND "isEnabled" = true
       )
@@ -303,6 +314,29 @@ async function pgvectorSimilaritySearch(queryVector: number[], limit: number): P
     LIMIT ${limit}
   `
   return new Map(rows.map((row) => [row.id, row.similarity]))
+}
+
+/**
+ * Create the HNSW index on DocumentChunk.embedding (idempotent). Called at
+ * search time like ensureRagFtsTable — CREATE INDEX IF NOT EXISTS is cheap
+ * after first run. Kills the O(n) vector scan at scale.
+ */
+const VECTOR_INDEX_CREATED = new Set<string>()
+
+export async function ensureVectorIndexes(): Promise<void> {
+  const orgId = getOrgContext() ?? 'global'
+  if (VECTOR_INDEX_CREATED.has(orgId)) return
+  try {
+    await db.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "DocumentChunk_embedding_hnsw"
+      ON "DocumentChunk" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 64)
+    `)
+    VECTOR_INDEX_CREATED.add(orgId)
+  } catch (e) {
+    // non-fatal — vector search degrades to sequential scan until index exists
+    log.warn('ensureVectorIndexes failed', { error: e instanceof Error ? e.message : String(e) })
+  }
 }
 
 interface CandidateChunk {
@@ -335,9 +369,14 @@ async function loadVectorCandidateChunks(chunkIds: string[]): Promise<CandidateC
     }))
 }
 
+// ponytail: FTS-miss fallback is bounded to ~5000 chunks (10 docs × max chunks/doc)
+// instead of pulling every enabled chunk of the org into memory.
+const ALL_CANDIDATE_DOC_LIMIT = Math.max(1, Math.ceil(5000 / RAG_MAX_CHUNKS_PER_UPLOAD))
+
 async function loadAllCandidateChunks(): Promise<CandidateChunk[]> {
   const docs = await db.document.findMany({
     where: { status: 'ready', isEnabled: true },
+    take: ALL_CANDIDATE_DOC_LIMIT,
     select: { id: true, name: true, chunks: { take: RAG_MAX_CHUNKS_PER_UPLOAD, select: { id: true, chunkIndex: true, content: true, keywords: true, contextPrefix: true, embeddingJson: true, embeddingModel: true } } },
   })
   return docs.flatMap((doc) =>

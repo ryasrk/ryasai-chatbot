@@ -28,6 +28,7 @@ import {
 } from '@/lib/connectors'
 import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
 import { generateSql } from '@/lib/ai'
+import { withSqlConcurrency } from '@/lib/tool-utils'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -158,7 +159,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     )
 
     try {
-      const result = await connector.executeQuery(sanitizedSql)
+      const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sanitizedSql))
 
       // Record query history — spec §7
       await db.queryHistory.create({

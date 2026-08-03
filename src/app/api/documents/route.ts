@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import {
   chunkText,
   detectDocType,
@@ -9,6 +9,7 @@ import {
   invalidateRagCache,
 } from '@/lib/rag'
 import { upsertChunkFts } from '@/lib/rag-fts'
+import { MAX_EXTRACTED_TEXT_CHARS } from '@/lib/rag-chunking'
 import { enqueueOrSync } from '@/lib/job-processor'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
@@ -134,9 +135,23 @@ export async function POST(req: NextRequest) {
 
   try {
     const user = await getActiveUser()
+    // Viewer read access is fine for documents, but mutating the corpus is admin-only.
+    requireRole(user, 'admin')
 
     const docType = detectDocType(file.name)
     const { text: extracted, isPlaceholder } = await extractFileText(file)
+
+    // Cap extracted text BEFORE chunking — a huge text bloats the payload, DB rows,
+    // and in-memory chunk arrays. Binary parsers already cap inside limitExtractedText;
+    // this guards plain text/csv/json uploads too.
+    if (extracted.length > MAX_EXTRACTED_TEXT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `Extracted text exceeds ${MAX_EXTRACTED_TEXT_CHARS.toLocaleString()} characters.`,
+        },
+        { status: 413 },
+      )
+    }
 
     // Build the content text. For placeholders we still keep a single "chunk"
     // so retrieval has something to match against the filename/category.
@@ -163,9 +178,11 @@ export async function POST(req: NextRequest) {
 
     // Semantic-ish chunking: split on double-newlines, filter empties.
     // Parent-doc chunking: small child chunks + parent window context (opt-in).
+    // Cap chunks per upload to avoid pathological files filling the DB.
+    const MAX_CHUNKS = 500
     const useParentDoc = !!process.env.PARENT_DOC_CHILD_SIZE
     const chunkResult = useParentDoc
-      ? (await import('@/lib/rag-chunking')).chunkTextParentDoc(contentText)
+      ? (await import('@/lib/rag-chunking')).chunkTextParentDoc(contentText, { maxChunks: MAX_CHUNKS })
       : null
     let chunks: string[]
     let chunkContextPrefixes: (string | null)[]
@@ -173,17 +190,11 @@ export async function POST(req: NextRequest) {
       chunks = chunkResult.map((c) => c.content)
       chunkContextPrefixes = chunkResult.map((c) => c.contextPrefix)
     } else {
-      chunks = chunkText(contentText)
+      chunks = chunkText(contentText, { maxChunks: MAX_CHUNKS })
       chunkContextPrefixes = chunks.map(() => null)
     }
     // If chunking yielded nothing (e.g., a one-paragraph doc), use the whole text.
     if (chunks.length === 0) { chunks = [contentText]; chunkContextPrefixes = [null] }
-
-    // Cap chunks per upload to avoid pathological files filling the DB.
-    const MAX_CHUNKS = 500
-    if (chunks.length > MAX_CHUNKS) {
-      chunks = chunks.slice(0, MAX_CHUNKS)
-    }
 
     // Persist chunks with token estimate + keyword tags.
     const chunkRows = chunks.map((content, idx) => ({
@@ -214,8 +225,8 @@ export async function POST(req: NextRequest) {
 
     // ponytail: heavy processing (embeddings + cognify + KG extraction) moved to background.
     // Falls back to synchronous when Redis is down — graceful degradation.
-    await enqueueOrSync('document-embed', { type: 'document-embed', documentId: doc.id })
-    void enqueueOrSync('document-cognify', { type: 'document-cognify', documentId: doc.id }).catch(() => null)
+    await enqueueOrSync('document-embed', { type: 'document-embed', documentId: doc.id, organizationId: user.organizationId })
+    void enqueueOrSync('document-cognify', { type: 'document-cognify', documentId: doc.id, organizationId: user.organizationId }).catch(() => null)
     // ponytail: LightRAG-style entity-relation extraction — fire-and-forget, enhances RAG with KG.
     void Promise.all(persistedChunks.map((c) => indexChunkKnowledgeGraph({ chunkId: c.id, content: c.content }).catch(() => null)))
 

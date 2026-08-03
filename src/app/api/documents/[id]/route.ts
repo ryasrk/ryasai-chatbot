@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
 import { invalidateRagCache } from '@/lib/rag'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
@@ -98,6 +98,7 @@ export async function PATCH(
 ) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as PatchBody
 
@@ -172,6 +173,7 @@ export async function DELETE(
 ) {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
     const { id } = await ctx.params
 
     const existing = await db.document.findFirst({ // nosemgrep

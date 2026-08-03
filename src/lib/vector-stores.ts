@@ -120,7 +120,15 @@ export async function getVectorStoreRuntimeConfig(
   }
 }
 
+// ponytail: memoize "collection ensured" per backend+collection so we don't fire an
+// HTTP round-trip on every document embed batch after the first one in this process.
+const ensuredCollections = new Set<string>()
+
 export async function ensureVectorCollection(config: VectorStoreRuntimeConfig) {
+  if (config.provider === 'INTERNAL') return
+  const key = `${config.provider}:${config.baseUrl}:${config.collectionName}`
+  if (ensuredCollections.has(key)) return
+  ensuredCollections.add(key)
   if (config.provider === 'QDRANT') {
     await vectorFetch(config, `/collections/${encodeURIComponent(config.collectionName)}`, {
       method: 'PUT',

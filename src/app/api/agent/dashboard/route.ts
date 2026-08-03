@@ -40,12 +40,22 @@ const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx' }> = {
 //   1. "add/install/set up mcp server [name]" (keyword-driven)
 //   2. URL + (mcp|install|add|connect) keyword — "install this: https://…"
 //   3. Bare URL that looks like an MCP endpoint (/sse, /mcp, /api/mcp)
-async function tryMcpSetup(message: string, lower: string, userId: string, organizationId: string): Promise<{ handled: boolean; output?: string }> {
+async function tryMcpSetup(message: string, lower: string, userId: string, organizationId: string, isAdmin: boolean): Promise<{ handled: boolean; output?: string }> {
   const urlInMessage = message.match(/https?:\/\/[^\s)]+/i)?.[0]
   const bareMcpUrl = message.match(/https?:\/\/[^\s]*\/(?:sse|mcp|api\/mcp)[^\s]*/i)?.[0]
   const mcpMatch = message.match(/(?:add|install|set\s*up)\s+(?:[\w-]+\s+)?(?:mcp\s+server|mcps?\b)/i)
   const urlWithKeyword = !!(urlInMessage && (lower.includes('mcp') || lower.includes('install') || lower.includes('add') || lower.includes('connect')))
   if (!mcpMatch && !urlWithKeyword && !bareMcpUrl) return { handled: false }
+
+  // ponytail: MCP install spawns child processes (npx/uvx) — admins only.
+  // Prevents a prompt-injected or crafted message from running arbitrary
+  // packages as the app runtime user. Non-admins get a clear denial.
+  if (!isAdmin) {
+    return {
+      handled: true,
+      output: 'MCP server installation requires an administrator account. Ask an admin to add this MCP server.',
+    }
+  }
 
   // ponytail: confirmation gate — installing an MCP server via stdio spawns a
   // child process (npx/uvx). Require the user to explicitly confirm by including
@@ -125,6 +135,20 @@ async function tryMcpSetup(message: string, lower: string, userId: string, organ
     }
   }
 
+  // ponytail: defense-in-depth — only allow known safe runners for stdio spawn.
+  // npx/uvx/node/python only; blocks any other command parsed from a fetched page.
+  const ALLOWED_CMDS = new Set(['npx', 'uvx', 'node', 'python'])
+  if (transport === 'stdio' && command && !ALLOWED_CMDS.has(command)) {
+    await writeAudit({
+      userId, action: 'MCP_SERVER_CREATE_BLOCKED', severity: 'warning',
+      detail: { name: serverName, command, reason: 'disallowed command' },
+    })
+    return {
+      handled: true,
+      output: `MCP install blocked: command "${command}" is not in the allowed list (npx, uvx, node, python).`,
+    }
+  }
+
   const created = await db.mcpServer.create({
     data: {
       name: serverName,
@@ -179,7 +203,7 @@ async function tryMcpSetup(message: string, lower: string, userId: string, organ
 
 // ponytail: credential handler — detects "set credentials for X: KEY=val, KEY=val"
 // or "set GITHUB_TOKEN to ghp_xxx for X" and updates the MCP server's encrypted envJson.
-async function tryMcpCredentials(message: string, lower: string, userId: string): Promise<{ handled: boolean; output?: string }> {
+async function tryMcpCredentials(message: string, lower: string, userId: string, isAdmin: boolean): Promise<{ handled: boolean; output?: string }> {
   // Pattern 1: "set credentials for <name>: KEY=val, KEY=val"
   const credMatch = message.match(/(?:set|update|add)\s+credentials\s+for\s+["']?([\w-]+)["']?\s*[:]\s*(.+)/i)
   // Pattern 2: "set <KEY> to <val> for <name>" (single key)
@@ -199,6 +223,14 @@ async function tryMcpCredentials(message: string, lower: string, userId: string)
   }
 
   if (Object.keys(envUpdates).length === 0) return { handled: false }
+
+  // ponytail: MCP credentials are secrets — admins only.
+  if (!isAdmin) {
+    return {
+      handled: true,
+      output: 'Setting MCP server credentials requires an administrator account.',
+    }
+  }
 
   // Find the server by name (case-insensitive)
   const server = await db.mcpServer.findFirst({
@@ -336,7 +368,7 @@ export async function POST(req: NextRequest) {
 
           // ponytail: MCP credential update — detect "set credentials for X: KEY=val"
           // before MCP setup (which is for new installs) and before the LLM planner.
-          const credResult = await tryMcpCredentials(message, message.toLowerCase(), user.userId)
+          const credResult = await tryMcpCredentials(message, message.toLowerCase(), user.userId, user.role === 'admin')
           if (credResult.handled && credResult.output) {
             const credOutput = credResult.output
             send('tool_start', { stepId: 'mcp-cred', tool: 'mcp_credentials', input: { message: 'set credentials' } })
@@ -359,7 +391,7 @@ export async function POST(req: NextRequest) {
           // ponytail: MCP setup is URL-driven (requires parsing URLs from text),
           // so it runs as a pre-check before the LLM planner. All other admin
           // actions are handled by the planner via admin:* tools.
-          const mcpResult = await tryMcpSetup(message, message.toLowerCase(), user.userId, user.organizationId)
+          const mcpResult = await tryMcpSetup(message, message.toLowerCase(), user.userId, user.organizationId, user.role === 'admin')
           if (mcpResult.handled && mcpResult.output) {
             const mcpOutput = mcpResult.output
             send('tool_start', { stepId: 'mcp', tool: 'mcp_setup', input: { message } })
@@ -379,8 +411,8 @@ export async function POST(req: NextRequest) {
             return
           }
 
-          // LLM planner decides which tool to use (including admin:* tools)
-          const availableTools = await getAvailableTools(message, 'agentic')
+          // LLM planner decides which tool to use (admin:* only for admins)
+          const availableTools = await getAvailableTools(message, 'agentic', { isAdmin: user.role === 'admin' })
           const fmtOpts: Intl.DateTimeFormatOptions = { timeZone: tz, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }
           const sessionStart = sessionCreatedAt.toLocaleString('en-US', fmtOpts)
           const currentTime = new Date().toLocaleString('en-US', fmtOpts)
@@ -397,6 +429,7 @@ export async function POST(req: NextRequest) {
             plan,
             userId: user.userId,
             sessionId: conversationId,
+            isAdmin: user.role === 'admin',
             onStatus: (stepId, tool, status) => {
               if (status === 'running') {
                 stepStartTimes.set(stepId, Date.now())

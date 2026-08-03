@@ -65,6 +65,10 @@ const EnvSchema = z.object({
   LANGFUSE_SECRET_KEY: z.string().optional(),
   HELICONE_API_KEY: z.string().optional(),
 
+  // --- Email (Resend) — optional; scheduler falls back to webhook/telegram ---
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().email().optional(),
+
   // --- Server / scheduler ---
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).optional(),
   LOG_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).optional(),

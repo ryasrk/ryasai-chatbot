@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
-import { parseCron, nextRun } from '@/lib/cron'
+import { parseCron, nextRun, normalizeTimezone } from '@/lib/cron'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { syncSchedule, removeSchedule } from '@/lib/scheduler-queue'
 
@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params
     const existing = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, cronExpr: true, isActive: true, name: true },
+      select: { id: true, cronExpr: true, isActive: true, name: true, timezone: true },
     })
     if (!existing) {
       return NextResponse.json(
@@ -49,6 +49,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       prompt?: string
       isActive?: boolean
       notificationConfigId?: string | null
+      timezone?: string | null
     }
 
     const data: {
@@ -58,11 +59,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       isActive?: boolean
       nextRunAt?: Date | null
       notificationConfigId?: string | null
+      timezone?: string
     } = {}
 
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.prompt === 'string' && body.prompt.trim()) data.prompt = body.prompt.trim()
     if (body.notificationConfigId !== undefined) data.notificationConfigId = body.notificationConfigId || null
+    if (body.timezone !== undefined) data.timezone = normalizeTimezone(body.timezone)
 
     const changingCron = typeof body.cronExpr === 'string'
     if (changingCron) {
@@ -118,9 +121,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           prompt: updated.prompt,
           isActive: updated.isActive,
           notificationConfigId: updated.notificationConfigId,
+          timezone: updated.timezone,
         })
       } else {
-        await removeSchedule(updated.id, existing.cronExpr)
+        await removeSchedule(updated.id, existing.cronExpr, existing.timezone)
       }
     } catch (e) {
       console.error('[schedules] BullMQ sync failed (non-fatal):', e)

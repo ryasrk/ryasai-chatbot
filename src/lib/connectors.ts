@@ -49,6 +49,8 @@ export interface BaseDatabaseConnector {
 
 export class ConnectorRegistry {
   private _pools = new Map<string, BaseDatabaseConnector>()
+  private _lastUsedAt = new Map<string, number>()
+  private _getCount = 0
 
   getConnector(integrationId: string, provider: string, decryptedConfig: Record<string, unknown>): BaseDatabaseConnector {
     if (!this._pools.has(integrationId)) {
@@ -56,28 +58,48 @@ export class ConnectorRegistry {
       let connector: BaseDatabaseConnector
       switch (family) {
         case 'POSTGRESQL':
-          connector = new PostgresConnector(decryptedConfig)
+          // ponytail: pass the actual provider id (e.g. SUPABASE) so TLS defaults resolve.
+          connector = new PostgresConnector(decryptedConfig, provider)
           break
         case 'MYSQL':
-          connector = new MysqlConnector(decryptedConfig)
+          connector = new MysqlConnector(decryptedConfig, provider)
           break
         case 'MSSQL':
-          connector = new MssqlConnector(decryptedConfig)
+          connector = new MssqlConnector(decryptedConfig, provider)
           break
         case 'CLICKHOUSE':
-          connector = new ClickHouseConnector(decryptedConfig)
+          connector = new ClickHouseConnector(decryptedConfig, provider)
           break
         default:
           throw new Error(`Provider ${provider} is not supported.`)
       }
       this._pools.set(integrationId, connector)
+      this._lastUsedAt.set(integrationId, Date.now())
     }
+    this._lastUsedAt.set(integrationId, Date.now())
+    // ponytail: opportunistic idle reaping every 50 lookups — no background timer.
+    if (++this._getCount % 50 === 0) this.reapIdle(10 * 60 * 1000)
     return this._pools.get(integrationId)!
+  }
+
+  // Close pools idle longer than timeoutMs (e.g. 10 min) — prevents connection exhaustion
+  // across many orgs × integrations when most are only touched during reflection/tests.
+  reapIdle(timeoutMs: number): number {
+    const now = Date.now()
+    let reaped = 0
+    for (const [id, lastUsed] of this._lastUsedAt) {
+      if (now - lastUsed > timeoutMs) {
+        this.drop(id)
+        reaped++
+      }
+    }
+    return reaped
   }
 
   drop(integrationId: string) {
     const c = this._pools.get(integrationId)
     this._pools.delete(integrationId)
+    this._lastUsedAt.delete(integrationId)
     // ponytail: fire-and-forget pool cleanup — keeps drop() sync for existing callers.
     if (c?.close) c.close().catch(() => {})
   }

@@ -15,6 +15,15 @@ import {
 
 export type EmbeddingProvider = 'OPENAI_COMPATIBLE' | 'OPENAI' | 'OLLAMA'
 
+// ponytail: transient retry — 429/5xx and network failures get 2 retries with
+// exponential backoff; 4xx validation errors are permanent (resending garbage
+// won't help) so they surface immediately.
+const EMBED_RETRIES = 2
+const EMBED_RETRY_BACKOFF_MS = 500
+// ponytail: hard cap each embedding input (~30K chars) so oversized chunks can't
+// blow the model context window (e.g. text-embedding-3-small is 8K tokens).
+const MAX_EMBED_INPUT_CHARS = 30_000
+
 export interface EmbeddingRuntimeConfig {
   provider: EmbeddingProvider
   baseUrl: string
@@ -106,7 +115,9 @@ export async function embedTexts(
   config: EmbeddingRuntimeConfig,
   input: string[],
 ): Promise<number[][]> {
-  const cleanInput = input.map((text) => text.trim()).filter(Boolean)
+  const cleanInput = input
+    .map((text) => text.trim().slice(0, MAX_EMBED_INPUT_CHARS))
+    .filter(Boolean)
   if (cleanInput.length === 0) return []
 
   const endpoint =
@@ -116,15 +127,66 @@ export async function embedTexts(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model: config.model, input: cleanInput }),
-    signal: AbortSignal.timeout(60000),
-  })
-  if (!res.ok) throw new Error(`Embedding API error (HTTP ${res.status}).`)
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= EMBED_RETRIES; attempt += 1) {
+    if (attempt > 0) await sleep(EMBED_RETRY_BACKOFF_MS * 2 ** (attempt - 1))
 
-  return parseEmbeddingResponse(config.provider, await res.json())
+    let res: Response
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model: config.model, input: cleanInput }),
+        signal: AbortSignal.timeout(60000),
+      })
+    } catch (e) {
+      // network-level failure — transient, retry
+      lastError = e instanceof Error ? e : new Error(String(e))
+      continue
+    }
+
+    if (!res.ok) {
+      const err = new Error(`Embedding API error (HTTP ${res.status}).`)
+      if (!isRetryableStatus(res.status)) throw err
+      lastError = err
+      continue
+    }
+
+    // Parse + validate outside the retry path so alignment errors propagate
+    // immediately instead of being masked by retries.
+    const payload = await res.json().catch(() => ({}))
+    return validateEmbeddingResponse(config.provider, cleanInput.length, payload)
+  }
+  throw lastError ?? new Error('Embedding API request failed.')
+}
+
+// ponytail: index alignment between texts and vectors is assumed downstream
+// (embedDocumentChunks pairs vectors[index] with chunk[index]), so a count or
+// dimension mismatch must fail loudly rather than silently mis-align.
+function validateEmbeddingResponse(
+  provider: EmbeddingProvider,
+  expectedCount: number,
+  payload: unknown,
+): number[][] {
+  const vectors = parseEmbeddingResponse(provider, payload)
+  if (vectors.length !== expectedCount) {
+    throw new Error(
+      `Embedding API returned ${vectors.length} vectors for ${expectedCount} inputs — refusing to misalign chunk→vector pairs.`,
+    )
+  }
+  const dimension = vectors[0]?.length ?? 0
+  if (dimension === 0 || vectors.some((vector) => vector.length !== dimension)) {
+    throw new Error('Embedding API returned vectors with empty or inconsistent dimensions.')
+  }
+  return vectors
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function parseEmbeddingJson(raw: string | null | undefined): number[] | null {

@@ -111,3 +111,18 @@ export function nextRun(expr: string, from: Date): Date | null {
   }
   return null
 }
+
+/**
+ * Validate + normalise an IANA timezone name. Falls back to 'UTC' for empty
+ * or invalid values so the DB always holds something BullMQ's cron-parser can
+ * consume.
+ */
+export function normalizeTimezone(tz?: string | null): string {
+  if (!tz) return 'UTC'
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return tz
+  } catch {
+    return 'UTC'
+  }
+}

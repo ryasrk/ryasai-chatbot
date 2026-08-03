@@ -1,8 +1,13 @@
 import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
+import { getOrgContext } from '@/lib/prisma-tenant'
 
 // ponytail: lazy check so mock.module('@/lib/db-provider') works in tests.
 const isPostgres = () => getDbProvider() === 'postgresql'
+
+// ponytail: DDL (CREATE TABLE / ADD COLUMN / CREATE INDEX) runs once per process —
+// the statements are idempotent but a round-trip on every upsert/search was pure waste.
+const ftsDdlDone = new Set<string>()
 
 export function buildFtsMatchQuery(tokens: string[]): string {
   return tokens
@@ -21,15 +26,20 @@ export function normalizeFtsRows(rows: Array<{ chunkId: string; rank: number }>)
 }
 
 export async function ensureRagFtsTable() {
+  const backend = isPostgres() ? 'postgres' : 'sqlite'
+  if (ftsDdlDone.has(backend)) return
   if (isPostgres()) {
     await db.$executeRawUnsafe(`ALTER TABLE "DocumentChunk" ADD COLUMN IF NOT EXISTS tsv tsvector`)
     await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DocumentChunk_tsv_idx" ON "DocumentChunk" USING GIN(tsv)`)
-    return
+  } else {
+    // ponytail: legacy `companyId UNINDEXED` column removed — it was always ''
+    // and is org-unsafe. Searches now join DocumentChunk to filter by org instead.
+    await db.$executeRawUnsafe(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS DocumentChunkFts
+      USING fts5(chunkId UNINDEXED, content, keywords)
+    `)
   }
-  await db.$executeRawUnsafe(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS DocumentChunkFts
-    USING fts5(chunkId UNINDEXED, companyId UNINDEXED, content, keywords)
-  `)
+  ftsDdlDone.add(backend)
 }
 
 export async function upsertChunkFts(args: {
@@ -47,9 +57,8 @@ export async function upsertChunkFts(args: {
   }
   await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts WHERE chunkId = ?', args.chunkId)
   await db.$executeRawUnsafe(
-    'INSERT INTO DocumentChunkFts(chunkId, companyId, content, keywords) VALUES (?, ?, ?, ?)',
+    'INSERT INTO DocumentChunkFts(chunkId, content, keywords) VALUES (?, ?, ?)',
     args.chunkId,
-    '',
     args.content,
     args.keywords ?? '',
   )
@@ -73,9 +82,8 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
   await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts')
   for (const chunk of chunks) {
     await db.$executeRawUnsafe(
-      'INSERT INTO DocumentChunkFts(chunkId, companyId, content, keywords) VALUES (?, ?, ?, ?)',
+      'INSERT INTO DocumentChunkFts(chunkId, content, keywords) VALUES (?, ?, ?)',
       chunk.id,
-      '',
       chunk.content,
       chunk.keywords ?? '',
     )
@@ -87,6 +95,11 @@ export async function searchFtsChunkIds(args: {
   queryTokens: string[]
   limit: number
 }): Promise<string[]> {
+  // Raw SQL bypasses the Prisma tenant extension — never query across orgs. If
+  // there's no org context (worker, tests) return [] rather than leak other orgs' rows.
+  const orgId = getOrgContext()
+  if (!orgId) return []
+
   if (isPostgres()) {
     const query = args.queryTokens.join(' ').trim()
     if (!query) return []
@@ -97,10 +110,12 @@ export async function searchFtsChunkIds(args: {
           SELECT id AS "chunkId", -ts_rank(tsv, plainto_tsquery('simple', $1)) AS rank
           FROM "DocumentChunk"
           WHERE tsv @@ plainto_tsquery('simple', $1)
+            AND "organizationId" = $2
           ORDER BY rank ASC
-          LIMIT $2
+          LIMIT $3
         `,
         query,
+        orgId,
         args.limit,
       )
       return normalizeFtsRows(rows)
@@ -113,15 +128,18 @@ export async function searchFtsChunkIds(args: {
   if (!match) return []
   try {
     await ensureRagFtsTable()
+    // FTS virtual table has no org column — join back to DocumentChunk to scope by org.
     const rows = await db.$queryRawUnsafe<Array<{ chunkId: string; rank: number }>>(
       `
-        SELECT chunkId, bm25(DocumentChunkFts) AS rank
-        FROM DocumentChunkFts
-        WHERE DocumentChunkFts MATCH ?
+        SELECT f.chunkId, bm25(DocumentChunkFts) AS rank
+        FROM DocumentChunkFts f
+        JOIN DocumentChunk c ON c.id = f.chunkId
+        WHERE DocumentChunkFts MATCH ? AND c."organizationId" = ?
         ORDER BY rank ASC
         LIMIT ?
       `,
       match,
+      orgId,
       args.limit,
     )
     return normalizeFtsRows(rows)

@@ -21,6 +21,7 @@ mock.module('@/lib/db', () => ({
 mock.module('@/lib/db-provider', () => ({ getDbProvider: () => 'sqlite' as const }))
 
 import { buildFtsMatchQuery, normalizeFtsRows, ensureRagFtsTable, upsertChunkFts, rebuildFts, searchFtsChunkIds } from './rag-fts'
+import { bypassOrg, enterWithOrg } from './prisma-tenant'
 
 beforeEach(() => {
   mockExecuteRawUnsafe.mockClear()
@@ -73,7 +74,16 @@ describe('rebuildFts (SQLite)', () => {
 })
 
 describe('searchFtsChunkIds (SQLite)', () => {
-  test('issues bm25 match query and returns sorted chunkIds', async () => {
+  test('no org context → empty result (no cross-org query)', async () => {
+    const ids = await bypassOrg(() =>
+      searchFtsChunkIds({ queryTokens: ['hello'], limit: 10 }),
+    )
+    expect(ids).toEqual([])
+    expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
+  })
+
+  test('issues bm25 match query scoped to org and returns sorted chunkIds', async () => {
+    enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementationOnce(
       async () => [{ chunkId: 'b', rank: -3 }, { chunkId: 'a', rank: -5 }],
     )
@@ -82,14 +92,18 @@ describe('searchFtsChunkIds (SQLite)', () => {
     const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
     expect(sql).toContain('bm25')
     expect(sql).toContain('DocumentChunkFts')
+    expect(sql).toContain('organizationId')
   })
 
   test('empty tokens → empty result (no DB call)', async () => {
+    enterWithOrg('org-1')
     const ids = await searchFtsChunkIds({ queryTokens: [], limit: 10 })
     expect(ids).toEqual([])
+    expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
   })
 
   test('DB error → returns empty array (graceful)', async () => {
+    enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementationOnce(async () => {
       throw new Error('FTS table missing')
     })

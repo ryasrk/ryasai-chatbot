@@ -1,4 +1,5 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { bypassOrg, enterWithOrg } from './prisma-tenant'
 
 // --- Mocks: Postgres provider + DB (must precede import) ---
 const mockExecuteRawUnsafe = mock<(sql: string, ...params: unknown[]) => Promise<number>>(async () => 1)
@@ -54,7 +55,16 @@ describe('rebuildFts (Postgres)', () => {
 })
 
 describe('searchFtsChunkIds (Postgres)', () => {
-  test('uses ts_rank + plainto_tsquery (not bm25)', async () => {
+  test('no org context → empty result (no cross-org query)', async () => {
+    const ids = await bypassOrg(() =>
+      searchFtsChunkIds({ queryTokens: ['search'], limit: 10 }),
+    )
+    expect(ids).toEqual([])
+    expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
+  })
+
+  test('uses ts_rank + plainto_tsquery scoped to org', async () => {
+    enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementationOnce(
       async () => [{ chunkId: 'pg-1', rank: -0.5 }],
     )
@@ -63,9 +73,11 @@ describe('searchFtsChunkIds (Postgres)', () => {
     const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
     expect(sql).toContain('ts_rank')
     expect(sql).toContain('plainto_tsquery')
+    expect(sql).toContain('organizationId')
   })
 
   test('empty query → empty result', async () => {
+    enterWithOrg('org-pg')
     const ids = await searchFtsChunkIds({ queryTokens: [], limit: 10 })
     expect(ids).toEqual([])
   })

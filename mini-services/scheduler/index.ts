@@ -27,14 +27,28 @@ import { db } from '../../src/lib/db'
 import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
 import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
-import { syncAllSchedules, type ScheduleJobData } from '../../src/lib/scheduler-queue'
+import { syncAllSchedules, type ScheduleJob, type ScheduleJobData } from '../../src/lib/scheduler-queue'
 import { bypassOrg, enterWithOrg } from '../../src/lib/prisma-tenant'
 import { validateLicense, generateMachineId } from '../../src/lib/license-client'
 
 const RUN_TIMEOUT_MS = 60_000
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
+// ponytail: dedup marker TTL must outlive the run timeout + BullMQ lockDuration
+// so a re-queued stalled job is skipped until the original would have finished.
+const DEDUP_TTL_SEC = RUN_TIMEOUT_MS / 1000 + 30
+// ponytail: fixed housekeeping cadence, independent of scheduled runs firing.
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000
+const LICENSE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+const RESYNC_INTERVAL_MS = 10 * 60 * 1000
 
-let lastCleanupDay = ''
+// Permanent failures — retrying just burns attempts. Everything else is
+// transient (timeouts, LLM/DB hiccups) and should retry with backoff.
+function isRetryableError(e: unknown): boolean {
+  if (e instanceof Error) {
+    return !/invalid|unauthorized|cannot decrypt|config/i.test(e.message)
+  }
+  return true
+}
 
 // ---------------------------------------------------------------------------
 // Timeout helper — races a promise against a timer, clears the timer on
@@ -55,7 +69,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T
 
 // ---------------------------------------------------------------------------
 // Log retention — prune observability tables older than LOG_RETENTION_DAYS.
-// Runs once per day at the first poll after midnight (cron equivalent: 0 0 * * *).
+// Runs once per day (also on a fixed 24h interval, not only when a job fires).
 // ---------------------------------------------------------------------------
 
 async function cleanupOldLogs(): Promise<void> {
@@ -94,10 +108,11 @@ async function cleanupOldLogs(): Promise<void> {
 // Job processor — executes a single scheduled run
 // ---------------------------------------------------------------------------
 
-async function processJob(job: { data: ScheduleJobData }): Promise<void> {
+async function processJob(job: ScheduleJob): Promise<void> {
   const { runId, name, prompt, notificationConfigId } = job.data
   const now = new Date()
-  console.log(`[scheduler] executing "${name}"`)
+  const isLastAttempt = job.attemptsMade >= (job.opts?.attempts ?? 3) - 1
+  console.log(`[scheduler] executing "${name}" (attempt ${job.attemptsMade + 1})`)
 
   // Scheduler runs outside request context — look up the run's org via
   // bypassOrg, then enter that org so all subsequent queries are scoped.
@@ -123,6 +138,8 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
   let resultSummary: string = ''
   let success = false
   let lastError: string | null = null
+  let retryError: unknown = null
+  let abortController: AbortController | null = null
 
   try {
     // Autonomy directive — scheduled runs are unattended, so the LLM
@@ -145,12 +162,17 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
       }
     }
 
+    // ponytail: abort the underlying completion chain when the 60s race wins,
+    // so the in-flight pipeline stops at its next stage boundary instead of
+    // burning more tokens / writing tool runs after the timeout.
+    abortController = new AbortController()
     const result = await withTimeout(
       runNonStreamingChatCompletion({
         question: prompt,
         userId,
         skipClarification: true,
         systemPromptPrefix,
+        signal: abortController.signal,
       }),
       RUN_TIMEOUT_MS,
       'Scheduled run timeout (60s)',
@@ -181,6 +203,7 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
         .catch(() => {})
     }
   } catch (e) {
+    retryError = e
     lastError = e instanceof Error ? e.message : String(e)
     console.error(`[scheduler] run "${name}" failed:`, lastError)
     resultSummary = JSON.stringify({
@@ -190,6 +213,8 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
     // Record failure to DB + send notification BEFORE throwing to BullMQ.
     // Without this, failed runs leave zero trace and users are never alerted.
     success = false
+  } finally {
+    abortController?.abort()
   }
 
   // If a notification channel is attached, deliver success or failure
@@ -214,7 +239,9 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
             message: answer || prompt,
             title: name,
           })
-        } else if (lastError) {
+        } else if (lastError && isLastAttempt) {
+          // Only alert on the final retry attempt — a transient failure that
+          // succeeds on retry shouldn't page the user with a false alarm.
           notification = await sendNotificationWithRetry({
             configEncrypted: cfg.encryptedConfig,
             message: `Scheduled run "${name}" failed: ${lastError}`,
@@ -306,6 +333,15 @@ async function processJob(job: { data: ScheduleJobData }): Promise<void> {
   }
 
   console.log(`[scheduler] completed "${name}"`)
+
+  // Rethrow transient failures so BullMQ retries with exponential backoff
+  // (attempts:3) — otherwise the attempts/backoff config is dead code and a
+  // transient LLM/DB error permanently fails the run. The failure is already
+  // recorded above; retries just log another ScheduledRunLog row (idempotent).
+  if (retryError !== null) {
+    if (isRetryableError(retryError)) throw retryError
+    console.log(`[scheduler] "${name}" failed permanently (${lastError}) — not retrying`)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -320,10 +356,8 @@ workerConnection.on('error', () => {})
 
 let _worker: Worker<ScheduleJobData> | null = null
 
-// ponytail: daily license validation — checks all orgs, updates status.
-// Runs on startup + every 24h. License-Validator is the source of truth.
-let lastLicenseCheckDay = ''
-
+// ponytail: license validation — checks all orgs, updates status.
+// Runs on startup + every 6h. License-Validator is the source of truth.
 async function validateAllLicenses(): Promise<void> {
   try {
     const orgs = await bypassOrg(() =>
@@ -349,6 +383,9 @@ async function validateAllLicenses(): Promise<void> {
         }),
       )
       console.log(`[scheduler] license check: ${org.slug} → ${status}`)
+      // ponytail: yield between orgs so a large org list can't starve the
+      // event loop / hammer the license validator.
+      await new Promise((resolve) => setTimeout(resolve, 25))
     }
   } catch (e) {
     console.warn('[scheduler] license validation failed:', e)
@@ -364,23 +401,37 @@ async function bootstrap(): Promise<void> {
     console.warn('[scheduler] failed to sync schedules on startup (non-fatal):', e)
   }
 
-  // ponytail: validate all org licenses on startup + daily
+  // ponytail: housekeeping runs on fixed intervals, independent of whether any
+  // scheduled job actually fires that day (previously cleanup + license
+  // validation only ran when a schedule tick happened to land).
+  void cleanupOldLogs()
   void validateAllLicenses()
+  setInterval(() => void cleanupOldLogs(), CLEANUP_INTERVAL_MS)
+  setInterval(() => void validateAllLicenses(), LICENSE_CHECK_INTERVAL_MS)
+  // ponytail: periodic re-sync heals repeatable jobs after a Redis restart
+  // (repeatable jobs live only in Redis). syncAllSchedules is idempotent, so
+  // this never duplicates.
+  setInterval(() => {
+    void syncAllSchedules().catch((e) => console.warn('[scheduler] periodic re-sync failed:', e))
+  }, RESYNC_INTERVAL_MS)
 
   _worker = new Worker<ScheduleJobData>(
     'scheduled-runs',
     async (job) => {
-      const now = new Date()
-      const today = now.toDateString()
-      if (today !== lastCleanupDay) {
-        lastCleanupDay = today
-        void cleanupOldLogs()
+      // ponytail: per-fire-tick dedup marker. A crashed/stalled job is
+      // re-queued with the same job.id; SET NX makes the second start a no-op.
+      // Deleted on settle so BullMQ retries (same job.id) can re-acquire.
+      const dedupKey = `sched:dedup:${job.data.runId}:${job.id ?? job.timestamp}`
+      const acquired = await workerConnection.set(dedupKey, '1', 'EX', DEDUP_TTL_SEC, 'NX')
+      if (acquired !== 'OK') {
+        console.warn(`[scheduler] duplicate tick for "${job.data.name}" (${dedupKey}) — skipping`)
+        return
       }
-      if (today !== lastLicenseCheckDay) {
-        lastLicenseCheckDay = today
-        void validateAllLicenses()
+      try {
+        await processJob(job)
+      } finally {
+        await workerConnection.del(dedupKey).catch(() => {})
       }
-      await processJob(job)
     },
     {
       connection: workerConnection,

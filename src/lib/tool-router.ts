@@ -47,6 +47,7 @@ export async function runNonStreamingChatCompletion(args: {
   allowMultiStepDag?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
+  signal?: AbortSignal
 }): Promise<CompletionResult> {
   return withUsageTracking(() => _runNonStreamingChatCompletion(args))
 }
@@ -60,6 +61,7 @@ async function _runNonStreamingChatCompletion(args: {
   allowMultiStepDag?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
+  signal?: AbortSignal
 }): Promise<CompletionResult> {
   if (args.allowMultiStepDag && args.chatHistory && args.chatHistory.length > 0) {
     const result = await runAgenticLoop({
@@ -75,9 +77,18 @@ async function _runNonStreamingChatCompletion(args: {
     if (dagResult) return dagResult
   }
 
+  // ponytail: cooperative abort — check between pipeline stages so an external
+  // timeout/cancel stops the chain at the next boundary. The per-branch LLM
+  // fetches have their own 30s AbortSignal.timeout, so at most one in-flight
+  // call keeps burning after we bail. Perfect cancel wiring would need an
+  // AbortSignal plumbed into every branch executor; ceiling noted.
+  args.signal?.throwIfAborted()
+
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
   const [docCount, intCount, docNames, intNames, schemaRows, restEndpointCount, promptSettings] = dbData
   const schemaSummaries = schemaRows.map((s) => `${s.integration.name}.${s.tableName}: ${s.description}`)
+
+  args.signal?.throwIfAborted()
 
   const intent = await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
@@ -94,6 +105,8 @@ async function _runNonStreamingChatCompletion(args: {
   if (!intent.needsRetrieval) {
     return runChatBranch({ ...args, question: effectiveQuestion, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
+
+  args.signal?.throwIfAborted()
 
   const { decision, resolvedIntegrationId, clarification } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
   if (clarification && !args.skipClarification) {
@@ -219,7 +232,7 @@ async function loadIntentPipeline(args: {
 }
 
 async function loadDbData() {
-  return Promise.all([
+  const queries = Promise.all([
     db.document.count({ where: { status: 'ready', isEnabled: true } }),
     db.integration.count({ where: { status: 'active' } }),
     db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true }, take: 20 }),
@@ -228,6 +241,19 @@ async function loadDbData() {
     db.restApiEndpoint.count({ where: { isEnabled: true, connector: { isActive: true } } }),
     getPromptSettings(db),
   ])
+  // ponytail: shared 15s ceiling across the whole pre-stream DB batch so a slow
+  // DB can't pin a request; the outer handler surfaces a sanitized error.
+  return withTimeout(queries, 15_000, 'Preflight DB load')
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) },
+    )
+  })
 }
 
 type DbData = Awaited<ReturnType<typeof loadDbData>>

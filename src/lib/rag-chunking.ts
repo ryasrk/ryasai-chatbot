@@ -13,6 +13,10 @@ import {
 const DEFAULT_MAX_CHUNK_CHARS = RAG_CHUNK_SIZE
 const DEFAULT_OVERLAP_CHARS = RAG_CHUNK_OVERLAP
 
+// Hard cap on extracted text — enforced before regex/rebuild work so a 50MB file
+// can't balloon into millions of in-memory chunk strings.
+export const MAX_EXTRACTED_TEXT_CHARS = 2_000_000
+
 export interface ParentDocChunk {
   content: string
   contextPrefix: string
@@ -23,16 +27,24 @@ const PARENT_DOC_WINDOW = Number(process.env.PARENT_DOC_WINDOW ?? 2048)
 
 export function chunkText(
   content: string,
-  options: { maxChars?: number; overlapChars?: number } = {},
+  options: { maxChars?: number; overlapChars?: number; maxChunks?: number } = {},
 ): string[] {
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHUNK_CHARS
   const overlapChars = Math.min(options.overlapChars ?? DEFAULT_OVERLAP_CHARS, maxChars)
+  const maxChunks = options.maxChunks ?? Infinity
   if (!content) return []
-  return content
-    .split(/\n\n+/)
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0)
-    .flatMap((chunk) => splitLongChunk(chunk, maxChars, overlapChars))
+  // ponytail: stop building chunks once maxChunks is reached — avoids materializing
+  // tens of thousands of chunk strings only to slice them down to 500 afterwards.
+  const chunks: string[] = []
+  for (const paragraph of content.split(/\n\n+/)) {
+    const trimmed = paragraph.trim()
+    if (!trimmed || chunks.length >= maxChunks) continue
+    for (const chunk of splitLongChunk(trimmed, maxChars, overlapChars)) {
+      if (chunks.length >= maxChunks) break
+      chunks.push(chunk)
+    }
+  }
+  return chunks
 }
 
 /**
@@ -43,10 +55,11 @@ export function chunkText(
  */
 export function chunkTextParentDoc(
   content: string,
-  options: { childSize?: number; parentWindow?: number } = {},
+  options: { childSize?: number; parentWindow?: number; maxChunks?: number } = {},
 ): ParentDocChunk[] {
   const childSize = options.childSize ?? PARENT_DOC_CHILD_SIZE
   const parentWindow = options.parentWindow ?? PARENT_DOC_WINDOW
+  const maxChunks = options.maxChunks ?? Infinity
   if (!content || content.trim().length === 0) return []
 
   const words = content.split(/\s+/).filter(Boolean)
@@ -55,7 +68,8 @@ export function chunkTextParentDoc(
   const chunks: ParentDocChunk[] = []
   let pos = 0
 
-  while (pos < words.length) {
+  // ponytail: early-out once maxChunks is reached (same reasoning as chunkText).
+  while (pos < words.length && chunks.length < maxChunks) {
     const childWords = words.slice(pos, pos + estimateWordCount(childSize))
     const childContent = childWords.join(' ')
     if (childContent.length === 0) break
@@ -171,5 +185,6 @@ export async function extractFileText(
 }
 
 function limitExtractedText(text: string): string {
-  return text.replace(/\s+\n/g, '\n').trim().slice(0, 2_000_000)
+  // slice before the normalize regex so huge extractions don't get regex'd in full
+  return text.slice(0, MAX_EXTRACTED_TEXT_CHARS).replace(/\s+\n/g, '\n').trim()
 }

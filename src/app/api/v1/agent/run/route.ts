@@ -74,7 +74,8 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
 
-    const availableTools = await getAvailableTools(question, 'agentic')
+    // API-key callers are external automation — never expose admin.* tools
+    const availableTools = await getAvailableTools(question, 'agentic', { isAdmin: false })
 
     // 1) Plan
     agentRun = await db.agentRun.create({
@@ -94,11 +95,12 @@ export async function POST(req: NextRequest) {
       data: { planJson: JSON.stringify(plan), status: 'executing' },
     })
 
-    // 2) Execute
+    // 2) Execute — API-key callers never get admin.* execution.
     const stepResults = await executePlan({
       plan,
       userId: admin?.id ?? 'system',
       sessionId: body.sessionId,
+      isAdmin: false,
     })
 
     // 3) Synthesize

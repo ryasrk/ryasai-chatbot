@@ -3,6 +3,7 @@ import {
   readDbConfig,
   normaliseRow,
   loadDriver,
+  assertSelectOnly,
   PostgresConnector,
   MysqlConnector,
   MssqlConnector,
@@ -29,6 +30,11 @@ describe('readDbConfig', () => {
   test('falls back to db when database is missing', () => {
     const cfg = readDbConfig({ host: 'h', port: 1, db: 'alt_db', user: 'u', password: 'p' })
     expect(cfg.database).toBe('alt_db')
+  })
+
+  test('picks up database_name when database and db are missing', () => {
+    const cfg = readDbConfig({ host: 'h', port: 1, database_name: 'ui_db', username: 'u', password: 'p' })
+    expect(cfg.database).toBe('ui_db')
   })
 
   test('falls back to username when user is missing', () => {
@@ -84,6 +90,34 @@ describe('readDbConfig', () => {
   test('defaults password to empty string', () => {
     const cfg = readDbConfig({ host: 'h', port: 1, database: 'd', user: 'u' })
     expect(cfg.password).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// assertSelectOnly — execution-boundary guardrail
+// ---------------------------------------------------------------------------
+
+describe('assertSelectOnly', () => {
+  test('accepts SELECT', () => {
+    expect(() => assertSelectOnly('SELECT * FROM demo_orders LIMIT 5')).not.toThrow()
+  })
+
+  test('accepts WITH (CTE)', () => {
+    expect(() => assertSelectOnly('WITH t AS (SELECT 1) SELECT * FROM t')).not.toThrow()
+  })
+
+  test('rejects DELETE', () => {
+    expect(() => assertSelectOnly('DELETE FROM demo_orders WHERE id = 1')).toThrow('Only SELECT/WITH')
+  })
+
+  test('rejects UPDATE', () => {
+    expect(() => assertSelectOnly('UPDATE demo_orders SET status = \'x\'')).toThrow('Only SELECT/WITH')
+  })
+
+  test('allows mutation keywords inside string literals', () => {
+    expect(() =>
+      assertSelectOnly("SELECT * FROM demo_orders WHERE status = 'UPDATE' AND note = 'delete'"),
+    ).not.toThrow()
   })
 })
 

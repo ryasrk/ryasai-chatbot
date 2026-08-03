@@ -227,6 +227,49 @@ describe('embedTexts', () => {
     await expect(embedTexts(cfg, ['hi'])).rejects.toThrow('500')
   })
 
+  test('429 → retries then succeeds on next attempt', async () => {
+    let calls = 0
+    global.fetch = mock(() => {
+      calls += 1
+      if (calls === 1) return Promise.resolve({ ok: false, status: 429 } as Response)
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ embedding: [0.1] }] }) } as Response)
+    }) as unknown as typeof fetch
+
+    const result = await embedTexts(cfg, ['hello'])
+    expect(result).toEqual([[0.1]])
+    expect(calls).toBe(2)
+  })
+
+  test('4xx validation error → no retry (single call)', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve({ ok: false, status: 400 } as Response),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(embedTexts(cfg, ['hi'])).rejects.toThrow('400')
+    expect(fetchMock.mock.calls.length).toBe(1)
+  })
+
+  test('vector count mismatch → throws clear error instead of misaligning', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ embedding: [0.1, 0.2] }] }) } as Response),
+    ) as unknown as typeof fetch
+
+    await expect(embedTexts(cfg, ['one', 'two'])).rejects.toThrow(/refusing to misalign/)
+  })
+
+  test('truncates oversized inputs to 30K chars before POSTing', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ embedding: [0.1] }] }) } as Response),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await embedTexts(cfg, ['x'.repeat(100_000)])
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.input[0].length).toBe(30_000)
+  })
+
   test('Ollama provider → uses /api/embed endpoint', async () => {
     const fetchMock = mock(() =>
       Promise.resolve({
@@ -295,14 +338,24 @@ const fakeEmbeddingConfig = {
   encryptedApiKey: 'encrypted',
 }
 
-function mockFetchEmbeddings() {
-  const fetchMock = mock(() =>
-    Promise.resolve({
+function mockFetchEmbeddings(inputCount?: number) {
+  const fetchMock = mock(async (url: string, init?: RequestInit) => {
+    let n: number = inputCount ?? 2
+    if (inputCount === undefined) {
+      try {
+        const body = JSON.parse(String(init?.body ?? ''))
+        if (Array.isArray(body?.input)) n = body.input.length
+      } catch {
+        n = 2
+      }
+    }
+    const data = Array.from({ length: n }, (_, i) => ({ embedding: [0.1 + i, 0.2 + i, 0.3 + i] }))
+    return Promise.resolve({
       ok: true,
       status: 200,
-      json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }, { embedding: [0.4, 0.5, 0.6] }] }),
-    } as Response),
-  )
+      json: async () => ({ data }),
+    } as Response)
+  })
   global.fetch = fetchMock as unknown as typeof fetch
   return fetchMock
 }

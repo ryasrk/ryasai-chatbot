@@ -156,6 +156,7 @@ export function getTool(id: string): ToolDef | undefined {
 export async function getAvailableTools(
   query?: string,
   context?: 'chat' | 'agentic',
+  opts?: { isAdmin?: boolean },
 ): Promise<ToolDef[]> {
   let pluginTools: ToolDef[]
   if (!query) {
@@ -205,8 +206,10 @@ export async function getAvailableTools(
       subcategory: 'mcp',
     }))
 
-  // ponytail: admin tools only injected for agentic context (not chat).
-  const adminTools = context === 'agentic' ? ADMIN_TOOLS : []
+  // ponytail: admin tools only for actual admins AND agentic context.
+  // Prevent non-admin org users (and API-key holders) from reaching admin.*
+  // side-effectful tools through the planner.
+  const adminTools = context === 'agentic' && opts?.isAdmin ? ADMIN_TOOLS : []
 
   return [...BUILT_IN_TOOLS, ...adminTools, ...pluginTools, ...mcpToolDefs]
 }

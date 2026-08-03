@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { embedCompanyDocuments } from '@/lib/embeddings'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { jobQueue, checkRedisHealth } from '@/lib/redis'
 
 export const runtime = 'nodejs'
@@ -8,6 +8,8 @@ export const runtime = 'nodejs'
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    // Only admins may trigger re-embedding — it consumes org embedding quota.
+    requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as { documentId?: string }
     const documentId =
@@ -18,7 +20,7 @@ export async function POST(req: NextRequest) {
     // ponytail: enqueue to Redis when available, run synchronously when Redis is down.
     const health = await checkRedisHealth()
     if (health.connected) {
-      await jobQueue.add('embedding-rebuild', { type: 'embedding-rebuild', documentId })
+      await jobQueue.add('embedding-rebuild', { type: 'embedding-rebuild', documentId, organizationId: user.organizationId })
       await writeAudit({
         userId: user.userId,
         action: 'RAG_EMBEDDINGS_REBUILD',

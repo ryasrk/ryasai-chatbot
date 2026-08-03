@@ -204,7 +204,7 @@ export function useChatSend() {
 
   /* ----- send message ----- */
   const handleSend = useCallback(
-    async (override?: string) => {
+    async (override?: string, retryMessageId?: string) => {
       const text = (override ?? input).trim()
       if (!text || sending || store.isStreaming) return
       if (!user) {
@@ -237,13 +237,22 @@ export function useChatSend() {
       setInput('')
       setSending(true)
 
-      // 1) Persist the user message (the WS service handles the AI message).
-      const userMessage: ChatMessageItem = {
-        id: `user-${Date.now()}`,
-        sender: 'user',
-        text,
-        createdAt: new Date().toISOString(),
-      }
+      // 1) User message. On retry we reuse the already-persisted message (and its
+      //    id) so the route doesn't insert a duplicate user message. The server
+      //    confirms/updates the real id via the user_message SSE event.
+      const userMessage: ChatMessageItem = retryMessageId
+        ? {
+            id: retryMessageId,
+            sender: 'user',
+            text,
+            createdAt: new Date().toISOString(),
+          }
+        : {
+            id: `user-${Date.now()}`,
+            sender: 'user',
+            text,
+            createdAt: new Date().toISOString(),
+          }
       const aiPlaceholder: ChatMessageItem = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
@@ -251,8 +260,11 @@ export function useChatSend() {
         status: 'generating',
         createdAt: new Date().toISOString(),
       }
-      store.addMessage(userMessage)
-      store.addMessage(aiPlaceholder)
+      const latest = useChatStore.getState()
+      if (!latest.messages.some((m) => m.id === userMessage.id)) {
+        latest.addMessage(userMessage)
+      }
+      latest.addMessage(aiPlaceholder)
       store.setStreaming(true)
       currentToolTypeRef.current = ''
       toolHasResultsRef.current = false
@@ -271,6 +283,7 @@ export function useChatSend() {
           body: JSON.stringify({
             text,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            ...(retryMessageId ? { messageId: retryMessageId } : {}),
           }),
           signal: ac.signal,
         })
@@ -357,8 +370,8 @@ export function useChatSend() {
   const handleRetry = useCallback(() => {
     const chat = useChatStore.getState()
     const msgs = chat.messages
-    // Find the last user message; drop it + the trailing error AI bubble,
-    // then re-send the same text (handleSend re-adds both fresh).
+    // Keep the last user message (its id dedupes the re-send server-side) —
+    // only drop the failed AI bubbles after it, then re-send the same text.
     let lastUserIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].sender === 'user') {
@@ -367,10 +380,12 @@ export function useChatSend() {
       }
     }
     if (lastUserIdx === -1) return
-    const text = msgs[lastUserIdx].text
-    chat.setMessages(msgs.slice(0, lastUserIdx))
+    const userMessage = msgs[lastUserIdx]
+    const text = userMessage.text
+    if (!text.trim()) return
+    chat.setMessages(msgs.slice(0, lastUserIdx + 1))
     chat.setError(null)
-    void handleSend(text)
+    void handleSend(text, userMessage.id)
   }, [handleSend])
 
   return {

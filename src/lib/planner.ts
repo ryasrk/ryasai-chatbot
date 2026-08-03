@@ -395,6 +395,7 @@ export async function executePlan(args: {
   userId: string
   sessionId?: string
   onStatus?: (stepId: string, tool: string, status: StepStatus) => void
+  isAdmin?: boolean
 }): Promise<PlanStepResult[]> {
   const results: PlanStepResult[] = []
   const sorted = topoSort(args.plan.steps)
@@ -453,7 +454,7 @@ function groupByLevel(sorted: PlanStep[]): PlanStep[][] {
 
 async function executeStep(
   step: PlanStep,
-  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void },
+  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean },
   isConfirmed: boolean,
 ): Promise<PlanStepResult> {
   const started = Date.now()
@@ -462,6 +463,15 @@ async function executeStep(
   try {
     // Admin tools — platform management (generate API key, show monitoring, etc.)
     if (step.tool.startsWith('admin:')) {
+      // Defense-in-depth: never execute admin.* unless the caller is an admin.
+      // Even if a plan leaks an admin:* step (prompt injection), this blocks it.
+      if (!args.isAdmin) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: 'Admin tool requires an administrator account.', latencyMs: Date.now() - started,
+        }
+      }
       const result = await executeAdminTool(step.tool, step.input, args.userId, isConfirmed)
       if (result.confirmationRequired) {
         args.onStatus?.(step.id, step.tool, 'error')

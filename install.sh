@@ -78,6 +78,10 @@ NEXT_PUBLIC_WS_PORT=3003
 ADMIN_EMAIL=admin@ryasai.local
 ADMIN_INITIAL_PASSWORD=$ADMIN_PASS
 
+# Email notifications (Resend). Leave blank to use webhook/telegram only.
+# RESEND_API_KEY=
+# EMAIL_FROM=ryasai@yourdomain.com
+
 # License validation — central ryasai license server
 LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
 LICENSE_PRODUCT=ryasai-chatbot

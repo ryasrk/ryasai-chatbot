@@ -14,17 +14,27 @@ interface RouteCtx {
  * DELETE /api/chat/sessions/[id]
  *   Deletes the session (messages cascade).
  */
-export async function GET(_req: NextRequest, ctx: RouteCtx) {
+export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
     const user = await getActiveUser()
     const { id } = await ctx.params
+
+    // Backward-compatible cap on history size: accept ?limit= (default 100,
+    // max 500) so an unbounded session can't bloat the response. The UI only
+    // needs the tail of the conversation, which is then returned ascending.
+    const limitParam = Number(new URL(req.url).searchParams.get('limit'))
+    const limit =
+      Number.isFinite(limitParam) && limitParam > 0
+        ? Math.min(Math.floor(limitParam), 500)
+        : 100
 
     const session = await db.chatSession.findFirst({ // nosemgrep
       where: { id, userId: user.userId },
       include: {
         messages: {
           where: { sender: { in: ['user', 'ai'] } },
-          orderBy: { createdAt: 'asc' as const },
+          orderBy: { createdAt: 'desc' as const },
+          take: limit,
           include: {
             integration: { select: { id: true, name: true, provider: true } },
             toolRuns: { select: { type: true, status: true, outputSummary: true } },
@@ -41,7 +51,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     }
 
     // parse JSON fields + derive toolType/toolHasResults from toolRuns
-    const messages = session.messages.map((m) => {
+    // (fetched desc → reverse back to ascending so the UI renders oldest first)
+    const messages = session.messages.reverse().map((m) => {
       const toolRun = m.toolRuns?.[0]
       const toolType = toolRun?.type && toolRun.type !== 'CHAT' ? toolRun.type : null
       const toolHasResults =

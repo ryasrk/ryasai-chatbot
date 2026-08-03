@@ -19,6 +19,7 @@ import type {
   ReflectedColumn,
   ReflectedTable,
 } from './connectors'
+import { getDbProviderPreset } from '@/lib/db-provider-presets'
 
 // ponytail: 30s query timeout — matches the REST/LLM timeout convention (CLAUDE.md §6).
 const QUERY_TIMEOUT_MS = 30_000
@@ -41,11 +42,54 @@ export function readDbConfig(c: Record<string, unknown>): DbConfig {
   return {
     host: String(c.host ?? c.server ?? 'localhost'),
     port: Number(c.port ?? 0) || 0,
-    database: String(c.database ?? c.db ?? ''),
+    // database_name is what the create-integration UI/API actually sends.
+    database: String(c.database ?? c.db ?? c.database_name ?? ''),
     user: String(c.user ?? c.username ?? ''),
     password: String(c.password ?? ''),
     schema: c.schema ? String(c.schema) : undefined,
     ssl: c.ssl === true || c.ssl === 'true',
+  }
+}
+
+// ponytail: managed providers (Supabase/Neon/PlanetScale/TiDB/CockroachDB) default to
+// TLS even though the UI never sends ssl:true — keeps plaintext credentials off the wire.
+function resolveUseSsl(config: Record<string, unknown>, providerId?: string): boolean {
+  const c = readDbConfig(config)
+  if (c.ssl) return true
+  const preset = providerId ? getDbProviderPreset(providerId) : undefined
+  return preset?.sslByDefault === true
+}
+
+const MUTATION_KEYWORDS = new Set([
+  'DELETE', 'UPDATE', 'INSERT', 'DROP', 'ALTER', 'TRUNCATE',
+  'CREATE', 'GRANT', 'REVOKE', 'MERGE', 'REPLACE', 'CALL',
+  'EXEC', 'EXECUTE', 'RENAME', 'ATTACH', 'DETACH', 'PRAGMA',
+  'VACUUM', 'REINDEX', 'ANALYZE', 'LOCK', 'UNLOCK',
+])
+
+// ponytail: execution-boundary guard. Callers (tool-branches, stream-preparers, query
+// route) already run full AST validation via guardrails.ts — this is belt-and-suspenders.
+export function assertSelectOnly(sql: string): void {
+  const trimmed = sql.trim()
+  if (!/^(SELECT|WITH)\b/i.test(trimmed)) {
+    throw new Error('Only SELECT/WITH queries are permitted.')
+  }
+  const tokens = trimmed.match(/'[^']*'|"[^"]*"|\b[A-Za-z_][A-Za-z0-9_]*\b|\S/g) ?? []
+  let inStr = false
+  let strCh = ''
+  for (const t of tokens) {
+    if (inStr) {
+      if (t === strCh) inStr = false
+      continue
+    }
+    if (t === "'" || t === '"') {
+      inStr = true
+      strCh = t
+      continue
+    }
+    if (MUTATION_KEYWORDS.has(t.toUpperCase())) {
+      throw new Error('Only SELECT/WITH queries are permitted.')
+    }
   }
 }
 
@@ -168,12 +212,16 @@ export class PostgresConnector implements BaseDatabaseConnector {
   // ponytail: `any` for dynamically-imported pool — avoids type resolution
   // issues when the driver isn't installed. Public methods stay typed.
   private _pool: any = null
-  constructor(private _config: Record<string, unknown>) {}
+  constructor(
+    private _config: Record<string, unknown>,
+    private _providerId?: string,
+  ) {}
 
   private async pool(): Promise<any> {
     if (!this._pool) {
       const pg = await loadDriver('pg')
       const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
       // ponytail: TLS verification ON by default; opt-out via DB_SSL_REJECT_UNAUTHORIZED=0 for dev/self-signed.
       this._pool = new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
         host: c.host,
@@ -181,7 +229,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
         database: c.database,
         user: c.user,
         password: c.password,
-        ssl: c.ssl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
+        ssl: useSsl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
         query_timeout: QUERY_TIMEOUT_MS,
         connectionTimeoutMillis: QUERY_TIMEOUT_MS,
         idleTimeoutMillis: 30_000,
@@ -256,6 +304,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
   }
 
   async executeQuery(sql: string): Promise<QueryResult> {
+    assertSelectOnly(sql)
     const pool = await this.pool()
     const start = Date.now()
     const result = await pool.query(sql)
@@ -280,19 +329,23 @@ export class PostgresConnector implements BaseDatabaseConnector {
 export class MysqlConnector implements BaseDatabaseConnector {
   readonly provider = 'MYSQL'
   private _pool: any = null
-  constructor(private _config: Record<string, unknown>) {}
+  constructor(
+    private _config: Record<string, unknown>,
+    private _providerId?: string,
+  ) {}
 
   private async pool(): Promise<any> {
     if (!this._pool) {
       const mysql = await loadDriver('mysql2/promise')
       const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
       this._pool = (mysql.createPool as (cfg: Record<string, unknown>) => unknown)({
         host: c.host,
         port: c.port || 3306,
         database: c.database,
         user: c.user,
         password: c.password,
-        ssl: c.ssl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
+        ssl: useSsl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
         connectionLimit: 10,
         connectTimeout: QUERY_TIMEOUT_MS,
         enableKeepAlive: true,
@@ -359,6 +412,7 @@ export class MysqlConnector implements BaseDatabaseConnector {
   }
 
   async executeQuery(sql: string): Promise<QueryResult> {
+    assertSelectOnly(sql)
     const pool = await this.pool()
     const start = Date.now()
     const [rows] = await pool.query({ sql, timeout: QUERY_TIMEOUT_MS })
@@ -383,12 +437,16 @@ export class MysqlConnector implements BaseDatabaseConnector {
 export class MssqlConnector implements BaseDatabaseConnector {
   readonly provider = 'MSSQL'
   private _pool: any = null
-  constructor(private _config: Record<string, unknown>) {}
+  constructor(
+    private _config: Record<string, unknown>,
+    private _providerId?: string,
+  ) {}
 
   private async pool(): Promise<any> {
     if (!this._pool) {
       const mssql = await loadDriver('mssql')
       const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
       // ponytail: server maps to host; requestTimeout covers all queries on this pool.
       const inst = new (mssql.ConnectionPool as unknown as new (cfg: Record<string, unknown>) => { connect(): Promise<unknown> })({
         server: c.host,
@@ -398,7 +456,7 @@ export class MssqlConnector implements BaseDatabaseConnector {
         password: c.password,
         connectionTimeout: QUERY_TIMEOUT_MS,
         requestTimeout: QUERY_TIMEOUT_MS,
-        options: { encrypt: c.ssl, trustServerCertificate: !c.ssl },
+        options: { encrypt: useSsl, trustServerCertificate: !useSsl },
         pool: { max: 10, idleTimeoutMillis: 30_000 },
       })
       await inst.connect()
@@ -472,6 +530,7 @@ export class MssqlConnector implements BaseDatabaseConnector {
   }
 
   async executeQuery(sql: string): Promise<QueryResult> {
+    assertSelectOnly(sql)
     const pool = await this.pool()
     const start = Date.now()
     const result = await pool.request().query(sql)
@@ -499,15 +558,19 @@ export class MssqlConnector implements BaseDatabaseConnector {
 export class ClickHouseConnector implements BaseDatabaseConnector {
   readonly provider = 'CLICKHOUSE'
   private _client: any = null
-  constructor(private _config: Record<string, unknown>) {}
+  constructor(
+    private _config: Record<string, unknown>,
+    private _providerId?: string,
+  ) {}
 
   private async client(): Promise<any> {
     if (!this._client) {
       const ch = await loadDriver('@clickhouse/client')
       const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
       const createClient = ch.createClient as (opts: Record<string, unknown>) => unknown
       this._client = createClient({
-        url: `https://${c.host}:${c.port || 8123}`,
+        url: `${useSsl ? 'https' : 'http'}://${c.host}:${c.port || 8123}`,
         database: c.database || 'default',
         username: c.user,
         password: c.password,
@@ -568,6 +631,7 @@ export class ClickHouseConnector implements BaseDatabaseConnector {
   }
 
   async executeQuery(sql: string): Promise<QueryResult> {
+    assertSelectOnly(sql)
     const cl = await this.client()
     const start = Date.now()
     const rs = await cl.query({ query: sql, format: 'JSONEachRow' })

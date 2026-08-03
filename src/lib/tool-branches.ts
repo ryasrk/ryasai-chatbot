@@ -23,6 +23,8 @@ import {
 } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
+import { withToolSandbox } from '@/lib/tool-sandbox'
+import { checkToolRateLimit } from '@/lib/tool-rate-limit'
 import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
@@ -110,10 +112,17 @@ export async function runRagBranch(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const retrieval = await retrieveWithReflection({
-    query: args.question,
-    topK: 4,
-  })
+  let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
+  try {
+    retrieval = await retrieveWithReflection({
+      query: args.question,
+      topK: 4,
+    })
+  } catch {
+    // ponytail: RAG is best-effort — if the knowledge backend is down, degrade
+    // to plain chat instead of failing the whole turn.
+    return runChatBranch(args)
+  }
   const topChunks = retrieval.chunks
   if (topChunks.length === 0 && !retrieval.graphContext) return runChatBranch(args)
 
@@ -257,6 +266,29 @@ export async function runSqlBranch(args: {
   }
 
   const sql = guard.sanitized
+
+  const orgId = getOrgContext()
+  if (orgId) {
+    const rl = await checkToolRateLimit('sql', orgId)
+    if (!rl.allowed) {
+      return {
+        answer: 'Rate limit exceeded for SQL queries. Please try again in a minute.',
+        citations: [],
+        chartData: null,
+        integrationId: integration.id,
+        toolRuns: [
+          {
+            type: 'SQL',
+            status: 'blocked',
+            latencyMs: Date.now() - started,
+            inputSummary: summarize(args.question),
+            errorMessage: 'SQL rate limit exceeded.',
+          },
+        ],
+      }
+    }
+  }
+
   const connector = connectorRegistry.getConnector(
     integration.id,
     integration.provider,
@@ -264,7 +296,9 @@ export async function runSqlBranch(args: {
   )
 
   try {
-    const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
+    const result = await withSqlConcurrency(integration.id, () =>
+      withToolSandbox('sql', () => connector.executeQuery(sql)),
+    )
     await db.queryHistory.create({
       data: {
         organizationId: getOrgContext()!,

@@ -6,7 +6,7 @@
  * Used by the agentic dashboard when a user says "install this MCP <github-url>"
  * and the URL is NOT a direct MCP endpoint (no /sse, /mcp, /api/mcp path).
  */
-import { isBlockedHost } from '@/lib/llm-config'
+import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
 
 export interface ParsedMcpInstall {
   command: string
@@ -22,10 +22,12 @@ export interface ParsedMcpInstall {
  * Returns null if no install pattern is found.
  */
 export async function fetchMcpInstallFromUrl(url: string): Promise<ParsedMcpInstall | null> {
-  // SSRF check
+  // SSRF check — sync hostname blocklist + async DNS-rebinding re-check
+  // before any fetch. Mirrors mcp-client.ts/plugin-registry.ts hardening.
   try {
     const parsed = new URL(url)
     if (isBlockedHost(parsed.hostname)) return null
+    if (await isBlockedHostAsync(parsed.hostname)) return null
   } catch {
     return null
   }

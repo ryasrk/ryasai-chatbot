@@ -5,11 +5,35 @@ import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@
 import { getAvailableTools } from '@/lib/tool-registry'
 import { summarize } from '@/lib/tool-utils'
 import { createTokenBudget, type TokenBudget } from '@/lib/agentic-budget'
+import { getLastLlmUsage } from '@/lib/llm-client'
 import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('tool-router')
 
 const MAX_AGENTIC_ITERATIONS = 3
 const AGENTIC_DEADLINE_MS = Number(process.env.AGENTIC_DEADLINE_MS ?? 90_000)
+
+// ponytail: deadline is enforced per round (see withAgenticDeadline) so a hung
+// tool (plugin up to 120s, dead MCP 30s, REST timeout) can't push a single
+// round past the remaining deadline budget. The losing work keeps running in
+// the background — Node can't abort a promise it doesn't hold a signal for.
+class AgenticDeadlineError extends Error {
+  constructor() {
+    super('agentic deadline exceeded')
+    this.name = 'AgenticDeadlineError'
+  }
+}
+
+async function withAgenticDeadline<T>(deadline: number, fn: () => Promise<T>): Promise<T> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new AgenticDeadlineError()
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new AgenticDeadlineError()), remaining)
+    fn().then(
+      (v) => { clearTimeout(timer); resolve(v) },
+      (e) => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
 
 interface AgenticIterationResult {
   answer: string
@@ -45,6 +69,8 @@ export async function runMultiStepDag(args: {
       plan,
       userId: args.userId,
       sessionId: args.sessionId,
+      // runMultiStepDag uses 'chat' context — admin tools are never offered here.
+      isAdmin: false,
     })
 
     const answer = await synthesizeAnswer({
@@ -103,15 +129,25 @@ export async function runAgenticLoop(
       ? `${args.question}\n\n[Context from prior tool calls: ${accumulatedEvidence.slice(0, 1000)}]`
       : args.question
 
-    const result = await runCompletion({
-      question: contextualQuestion,
-      userId: args.userId,
-      sessionId: args.sessionId,
-      integrationId: args.integrationId,
-      chatHistory: args.chatHistory,
-      skipClarification: args.skipClarification,
-      systemPromptPrefix: args.systemPromptPrefix,
-    })
+    let result: CompletionResult
+    try {
+      result = await withAgenticDeadline(deadline, () => runCompletion({
+        question: contextualQuestion,
+        userId: args.userId,
+        sessionId: args.sessionId,
+        integrationId: args.integrationId,
+        chatHistory: args.chatHistory,
+        skipClarification: args.skipClarification,
+        systemPromptPrefix: args.systemPromptPrefix,
+      }))
+    } catch (e) {
+      if (e instanceof AgenticDeadlineError) {
+        log.info('Agentic loop stopped — deadline exceeded mid-round', { iteration: iteration + 1 })
+        confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
+        return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      }
+      throw e
+    }
 
     if (result.usage) budget.track(result.usage)
     if (budget.isExhausted()) {
@@ -183,14 +219,24 @@ export async function runAgenticLoop(
   }
 
   log.info('Agentic loop max iterations reached', { iterations: MAX_AGENTIC_ITERATIONS })
-  const finalResult = await runCompletion({
-    question: `${args.question}\n\n[All gathered evidence: ${accumulatedEvidence.slice(0, 2000)}]\n\nBased on all the evidence above, answer the original question.`,
-    userId: args.userId,
-    sessionId: args.sessionId,
-    chatHistory: args.chatHistory,
-    skipClarification: args.skipClarification,
-    systemPromptPrefix: args.systemPromptPrefix,
-  })
+  let finalResult: CompletionResult
+  try {
+    finalResult = await withAgenticDeadline(deadline, () => runCompletion({
+      question: `${args.question}\n\n[All gathered evidence: ${accumulatedEvidence.slice(0, 2000)}]\n\nBased on all the evidence above, answer the original question.`,
+      userId: args.userId,
+      sessionId: args.sessionId,
+      chatHistory: args.chatHistory,
+      skipClarification: args.skipClarification,
+      systemPromptPrefix: args.systemPromptPrefix,
+    }))
+  } catch (e) {
+    if (e instanceof AgenticDeadlineError) {
+      log.info('Agentic loop stopped — deadline exceeded during synthesis', { iterations: MAX_AGENTIC_ITERATIONS })
+      confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
+      return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
+    }
+    throw e
+  }
 
   return { answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: [...allToolRuns, ...finalResult.toolRuns], iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
 }
@@ -204,6 +250,7 @@ export async function runStreamingAgenticLoop(
     chatHistory?: ChatHistoryEntry[]
     skipClarification?: boolean
     systemPromptPrefix?: string
+    budget?: TokenBudget
     onConfidence?: (info: { iteration: number; confidence: number; reason: string; confident: boolean }) => void
   },
   runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string }) => Promise<StreamingCompletionResult>,
@@ -212,6 +259,7 @@ export async function runStreamingAgenticLoop(
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
+  const budget = args.budget ?? createTokenBudget()
   const deadline = Date.now() + AGENTIC_DEADLINE_MS
 
   async function* combinedStream(): AsyncGenerator<string, void, unknown> {
@@ -226,15 +274,27 @@ export async function runStreamingAgenticLoop(
         ? `${args.question}\n\n[Context from prior tool calls: ${accumulatedEvidence.slice(0, 1000)}]`
         : args.question
 
-      const result = await runStreaming({
-        question: contextualQuestion,
-        userId: args.userId,
-        sessionId: args.sessionId,
-        integrationId: args.integrationId,
-        chatHistory: args.chatHistory,
-        skipClarification: args.skipClarification,
-        systemPromptPrefix: args.systemPromptPrefix,
-      })
+      let result: StreamingCompletionResult
+      try {
+        result = await withAgenticDeadline(deadline, () => runStreaming({
+          question: contextualQuestion,
+          userId: args.userId,
+          sessionId: args.sessionId,
+          integrationId: args.integrationId,
+          chatHistory: args.chatHistory,
+          skipClarification: args.skipClarification,
+          systemPromptPrefix: args.systemPromptPrefix,
+        }))
+      } catch (e) {
+        if (e instanceof AgenticDeadlineError) {
+          log.info('Streaming agentic loop stopped — deadline exceeded mid-round', { iteration: iteration + 1 })
+          yield accumulatedEvidence
+            ? '\n\n[Note: deadline exceeded — the answer may be incomplete.]'
+            : 'The request timed out before a complete answer could be generated.'
+          return
+        }
+        throw e
+      }
 
       allToolRuns.push(...result.toolRuns)
       if (result.citations) allCitations.push(...result.citations)
@@ -245,6 +305,12 @@ export async function runStreamingAgenticLoop(
         output.citationTrail = result.citationTrail
         for await (const chunk of result.stream) {
           yield chunk
+        }
+        const usage = getLastLlmUsage()
+        if (usage) budget.track(usage)
+        if (budget.isExhausted()) {
+          log.info('Streaming agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
+          yield '\n\n[Note: token budget exhausted — answer may be incomplete.]'
         }
         return
       }
@@ -269,6 +335,17 @@ export async function runStreamingAgenticLoop(
           answerText += chunk
           yield chunk
         }
+      }
+
+      // Token budget — mirror runAgenticLoop: track this round's usage and stop
+      // starting further tool iterations once exhausted.
+      const usage = getLastLlmUsage()
+      if (usage) budget.track(usage)
+      if (budget.isExhausted()) {
+        log.info('Streaming agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
+        confidenceHistory.push({ confident: false, confidence: 0, reason: 'token budget exhausted' })
+        yield '\n\n[Note: token budget exhausted — answer may be incomplete.]'
+        return
       }
 
       const toolEvidence = result.toolRuns
@@ -335,20 +412,37 @@ export async function runStreamingAgenticLoop(
 
     // Max iterations reached without a confident answer — final synthesis.
     log.info('Streaming agentic loop max iterations reached', { iterations: MAX_AGENTIC_ITERATIONS })
-    const finalResult = await runStreaming({
-      question: `${args.question}\n\n[All gathered evidence: ${accumulatedEvidence.slice(0, 2000)}]\n\nBased on all the evidence above, answer the original question.`,
-      userId: args.userId,
-      sessionId: args.sessionId,
-      chatHistory: args.chatHistory,
-      skipClarification: args.skipClarification,
-      systemPromptPrefix: args.systemPromptPrefix,
-    })
+    let finalResult: StreamingCompletionResult
+    try {
+      finalResult = await withAgenticDeadline(deadline, () => runStreaming({
+        question: `${args.question}\n\n[All gathered evidence: ${accumulatedEvidence.slice(0, 2000)}]\n\nBased on all the evidence above, answer the original question.`,
+        userId: args.userId,
+        sessionId: args.sessionId,
+        chatHistory: args.chatHistory,
+        skipClarification: args.skipClarification,
+        systemPromptPrefix: args.systemPromptPrefix,
+      }))
+    } catch (e) {
+      if (e instanceof AgenticDeadlineError) {
+        log.info('Streaming agentic loop stopped — deadline exceeded during synthesis', { iterations: MAX_AGENTIC_ITERATIONS })
+        yield accumulatedEvidence
+          ? '\n\n[Note: deadline exceeded — the answer may be incomplete.]'
+          : 'The request timed out before a complete answer could be generated.'
+        return
+      }
+      throw e
+    }
     allToolRuns.push(...finalResult.toolRuns)
     if (finalResult.citations) allCitations.push(...finalResult.citations)
     output.chartData = finalResult.chartData
     output.citationTrail = finalResult.citationTrail
     for await (const chunk of finalResult.stream) {
       yield chunk
+    }
+    const finalUsage = getLastLlmUsage()
+    if (finalUsage) budget.track(finalUsage)
+    if (budget.isExhausted()) {
+      yield '\n\n[Note: token budget exhausted — answer may be incomplete.]'
     }
   }
 

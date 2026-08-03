@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { rebuildFts } from '@/lib/rag-fts'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { jobQueue, checkRedisHealth } from '@/lib/redis'
 
 export const runtime = 'nodejs'
@@ -8,11 +8,12 @@ export const runtime = 'nodejs'
 export async function POST() {
   try {
     const user = await getActiveUser()
+    requireRole(user, 'admin')
 
     // ponytail: enqueue to Redis when available, run synchronously when Redis is down.
     const health = await checkRedisHealth()
     if (health.connected) {
-      await jobQueue.add('fts-rebuild', { type: 'fts-rebuild' })
+      await jobQueue.add('fts-rebuild', { type: 'fts-rebuild', organizationId: user.organizationId })
       await writeAudit({
         userId: user.userId,
         action: 'RAG_FTS_REBUILD',

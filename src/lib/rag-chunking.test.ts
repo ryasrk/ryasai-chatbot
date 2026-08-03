@@ -29,6 +29,12 @@ describe('chunkText', () => {
       expect(chunk.length).toBeLessThanOrEqual(50 + 5)
     }
   })
+
+  test('maxChunks caps output early (no full materialization)', () => {
+    const long = Array.from({ length: 2000 }, (_, i) => `paragraph ${i}`).join('\n\n')
+    const chunks = chunkText(long, { maxChars: 100, maxChunks: 50 })
+    expect(chunks.length).toBe(50)
+  })
 })
 
 describe('chunkTextParentDoc', () => {
@@ -69,5 +75,11 @@ describe('chunkTextParentDoc', () => {
     for (const chunk of chunks) {
       expect(chunk.contextPrefix).toContain(chunk.content)
     }
+  })
+
+  test('maxChunks caps output early', () => {
+    const long = Array.from({ length: 2000 }, (_, i) => `word${i}`).join(' ')
+    const chunks = chunkTextParentDoc(long, { childSize: 20, parentWindow: 80, maxChunks: 50 })
+    expect(chunks.length).toBe(50)
   })
 })

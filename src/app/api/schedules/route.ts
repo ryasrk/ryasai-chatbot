@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { parseCron, nextRun } from '@/lib/cron'
+import { parseCron, nextRun, normalizeTimezone } from '@/lib/cron'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { hasPlan } from '@/lib/plan-gating'
 import { syncSchedule } from '@/lib/scheduler-queue'
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
       prompt?: string
       promptId?: string | null
       notificationConfigId?: string | null
+      timezone?: string | null
     }
 
     const name = (body.name ?? '').trim()
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
         cronExpr,
         prompt,
         promptId: body.promptId || null,
+        timezone: normalizeTimezone(body.timezone),
         isActive: true,
         nextRunAt,
         notificationConfigId: body.notificationConfigId || null,
@@ -72,6 +74,7 @@ export async function POST(req: NextRequest) {
         prompt: schedule.prompt,
         isActive: schedule.isActive,
         notificationConfigId: schedule.notificationConfigId,
+        timezone: schedule.timezone,
       })
     } catch (e) {
       console.error('[schedules] BullMQ sync failed (non-fatal):', e)

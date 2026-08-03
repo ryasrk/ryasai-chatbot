@@ -96,7 +96,14 @@ export async function prepareRagStream(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  const retrieval = await retrieveWithReflection({ query: args.question, topK: 4 })
+  let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
+  try {
+    retrieval = await retrieveWithReflection({ query: args.question, topK: 4 })
+  } catch {
+    // ponytail: RAG is best-effort — if the knowledge backend is down, degrade
+    // to plain chat instead of failing the whole stream.
+    return prepareChatStream(args)
+  }
   const topChunks = retrieval.chunks
   if (topChunks.length === 0 && !retrieval.graphContext) return prepareChatStream(args)
 
