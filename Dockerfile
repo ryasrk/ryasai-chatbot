@@ -4,12 +4,18 @@ COPY package.json bun.lock ./
 COPY prisma ./prisma
 RUN bun install --frozen-lockfile
 
-FROM oven/bun:1 AS builder
+# ponytail: builder runs `next build` under REAL node (node:22-slim), not
+# bun's node-compat wrapper. oven/bun's `node` is a bun shim, and Turbopack
+# breaks there: "Failed to load external module jsdom-...: Cannot find module
+# '../data/patch.json'" during page-data collection. Host node passes; this
+# was the exact failure on 1GB VPS installs. oven/bun is kept for `deps` only.
+FROM node:22-slim AS builder
 WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN bunx prisma generate
-RUN bun run build
+RUN node node_modules/prisma/build/index.js generate
+RUN node node_modules/.bin/next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
 RUN cp -r node_modules/.prisma .next/standalone/node_modules/
 
 FROM node:22-slim AS prod

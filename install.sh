@@ -27,12 +27,20 @@ command -v docker >/dev/null || { info "Installing Docker...";
 docker compose version >/dev/null 2>&1 || { info "Installing Docker Compose plugin...";
   apt-get install -y -qq docker-compose-plugin >/dev/null; }
 
-# --- Swap safety net (1 vCPU/1GB builds can OOM) ---------------------------
+# --- Swap safety net (1 vCPU / 1GB RAM builds can OOM) ----------------------
 TOTAL_MB=$(free -m | awk '/^Mem:/{print $2}')
-if [ "$TOTAL_MB" -lt 2000 ] && [ ! -f /swapfile ]; then
-  warn "RAM < 2GB. Creating 1GB swapfile to survive docker build..."
-  fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile >/dev/null
-  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+if [ "$TOTAL_MB" -lt 2000 ] && ! swapon --show 2>/dev/null | grep -q '/swapfile'; then
+  warn "RAM < 2GB — creating swap so the Docker build won't OOM..."
+  SWAP_MB=2048
+  DISK_KB=$(df -k / | awk 'NR==2{print $4}')
+  [ "$DISK_KB" -lt $((SWAP_MB * 1024)) ] && SWAP_MB=$(( DISK_KB / 2048 ))
+  if fallocate -l "${SWAP_MB}M" /swapfile 2>/dev/null || \
+     dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_MB" status=none 2>/dev/null; then
+    chmod 600 /swapfile && mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile >/dev/null 2>&1 \
+      && { grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; }
+  else
+    warn "swapfile creation failed (fallocate+dd) — on 1GB RAM you'll want swap: add one manually or install will likely OOM."
+  fi
 fi
 
 # --- Deploy dir ------------------------------------------------------------
