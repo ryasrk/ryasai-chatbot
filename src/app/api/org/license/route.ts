@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
-import { validateLicense, generateMachineId } from '@/lib/license-client'
+import { validateLicense, generateMachineId, licenseStatusFromResult } from '@/lib/license-client'
 
 /**
  * GET /api/org/license
@@ -63,17 +63,7 @@ export async function POST() {
 
     const machineId = generateMachineId(org.slug)
     const result = await validateLicense(org.licenseKey, machineId)
-
-    let newStatus: string
-    if (result.signatureVerified && result.valid) {
-      newStatus = 'valid'
-    } else if (result.signatureVerified && !result.valid) {
-      newStatus = result.message.includes('expired') ? 'expired'
-        : result.message.includes('deactivated') ? 'suspended'
-        : 'invalid'
-    } else {
-      newStatus = 'unreachable'
-    }
+    const newStatus = licenseStatusFromResult(result)
 
     await bypassOrg(() =>
       db.organization.update({
@@ -82,7 +72,9 @@ export async function POST() {
           licenseStatus: newStatus,
           licensePlan: result.signatureVerified ? result.plan : undefined,
           licenseValidatedAt: result.signatureVerified && result.valid ? new Date() : undefined,
-          licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : null,
+          // Preserve last known expiry when no definitive answer came back
+          // (unreachable / unsigned) — consistent with retry + revalidation.
+          licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : undefined,
         },
       }),
     )

@@ -1,14 +1,18 @@
 'use client'
-import { ShieldAlert, CreditCard, Lock } from 'lucide-react'
+import { ShieldAlert, CreditCard, Lock, Loader2, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ErrorScreenProps {
   type: 'forbidden' | 'license' | 'unauthorized'
   message?: string
   onRetry?: () => void
+  /** When true, the Try Again button shows a spinner and is disabled. */
+  retrying?: boolean
+  /** Secondary action shown after a failed retry (license type only). */
+  onSignup?: () => void
 }
 
-export function ErrorScreen({ type, message, onRetry }: ErrorScreenProps) {
+export function ErrorScreen({ type, message, onRetry, retrying, onSignup }: ErrorScreenProps) {
   const config = {
     forbidden: { icon: ShieldAlert, title: 'Access Denied', desc: message || 'You do not have permission to perform this action. Contact your organization administrator.' },
     license: { icon: CreditCard, title: 'License Required', desc: message || 'Your license is no longer valid. Please contact your administrator to renew.' },
@@ -23,8 +27,15 @@ export function ErrorScreen({ type, message, onRetry }: ErrorScreenProps) {
         <h2 className="text-lg font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{desc}</p>
         {onRetry && (
-          <Button onClick={onRetry} variant="outline" className="w-full">
+          <Button onClick={onRetry} variant="outline" className="w-full" disabled={retrying}>
+            {retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Try Again
+          </Button>
+        )}
+        {type === 'license' && onSignup && (
+          <Button onClick={onSignup} className="w-full">
+            <UserPlus className="mr-2 h-4 w-4" />
+            Sign Up Again
           </Button>
         )}
         {type === 'unauthorized' && (

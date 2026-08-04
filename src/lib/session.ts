@@ -121,7 +121,18 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
   )
 }
 
-export async function getActiveUser(): Promise<ActiveUser> {
+export interface GetActiveUserOptions {
+  /**
+   * When true, resolve the session and org context but skip the license gate.
+   * Used by routes that must re-validate the license themselves even when the
+   * org is already locked down (e.g. POST /api/license/retry) — without this,
+   * getActiveUser() would throw LicenseError before the caller can act.
+   */
+  skipLicenseCheck?: boolean
+}
+
+export async function getActiveUser(opts: GetActiveUserOptions = {}): Promise<ActiveUser> {
+  const skipLicense = opts.skipLicenseCheck === true
   const store = await cookies()
   const token = store.get('x-active-user')?.value
   const userId = verifySession(token)
@@ -149,7 +160,8 @@ export async function getActiveUser(): Promise<ActiveUser> {
         }),
       )
       // License gate — block expired/invalid/suspended. 'unreachable' blocked only beyond grace period.
-      if (org) {
+      // Skipped when the caller is performing the revalidation itself (e.g. /api/license/retry).
+      if (!skipLicense && org) {
         const lockdownReason = getLockdownReason(org.licenseStatus, org.licenseValidatedAt ?? null)
         if (lockdownReason) {
           throw new LicenseError(lockdownReason)
@@ -185,7 +197,7 @@ export async function getActiveUser(): Promise<ActiveUser> {
       select: { licenseStatus: true, licensePlan: true, licenseValidatedAt: true },
     }),
   )
-  if (fallbackOrg) {
+  if (!skipLicense && fallbackOrg) {
     const lockdownReason = getLockdownReason(fallbackOrg.licenseStatus, fallbackOrg.licenseValidatedAt ?? null)
     if (lockdownReason) {
       throw new LicenseError(lockdownReason)

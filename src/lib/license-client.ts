@@ -173,3 +173,23 @@ export function getLockdownReason(
 }
 
 export { REVALIDATION_INTERVAL_MS }
+
+/**
+ * Map a LicenseValidationResult to the org licenseStatus string persisted in DB.
+ * Single source of truth for the status mapping — used by the retry route,
+ * the periodic revalidation job, and the admin revalidate route so they can
+ * never diverge on what "signatureVerified + message contains 'expired'" means.
+ *
+ *   valid             → 'valid'
+ *   signed + invalid  → 'expired' | 'suspended' | 'invalid' (by message)
+ *   unsigned / network → 'unreachable' (grace period applies)
+ */
+export function licenseStatusFromResult(result: LicenseValidationResult): string {
+  if (result.signatureVerified && result.valid) return 'valid'
+  if (result.signatureVerified && !result.valid) {
+    return result.message.includes('expired') ? 'expired'
+      : result.message.includes('deactivated') ? 'suspended'
+      : 'invalid'
+  }
+  return 'unreachable'
+}

@@ -28,7 +28,7 @@ mock.module('@/lib/redis', () => ({
   redisCmd: { get: async () => null, set: async () => 'OK' },
 }))
 
-import { handleApiError, writeAudit, getActiveUser, UnauthorizedError } from './session'
+import { handleApiError, writeAudit, getActiveUser, UnauthorizedError, LicenseError } from './session'
 
 beforeEach(() => {
   process.env.AUTH_DEMO_FALLBACK = 'false'
@@ -198,5 +198,62 @@ describe('getActiveUser', () => {
     mockVerifySession.mockImplementation(() => null)
 
     await expect(getActiveUser()).rejects.toThrow()
+  })
+
+  test('locked-down org (expired) without skipLicenseCheck → throws LicenseError', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockVerifySession.mockImplementation(() => 'user-1')
+    mockUserFindUnique.mockImplementation(async () => ({
+      id: 'user-1',
+      name: 'Admin',
+      email: 'admin@test.com',
+      isActive: true,
+      sessionVersion: 0,
+      role: 'admin',
+      organizationId: 'org-1',
+    }))
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'expired', licensePlan: 'pro' }))
+
+    await expect(getActiveUser()).rejects.toBeInstanceOf(LicenseError)
+  })
+
+  test('locked-down org (expired) WITH skipLicenseCheck → returns user (no throw)', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockVerifySession.mockImplementation(() => 'user-1')
+    mockUserFindUnique.mockImplementation(async () => ({
+      id: 'user-1',
+      name: 'Admin',
+      email: 'admin@test.com',
+      isActive: true,
+      sessionVersion: 0,
+      role: 'admin',
+      organizationId: 'org-1',
+    }))
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'expired', licensePlan: 'pro' }))
+
+    const user = await getActiveUser({ skipLicenseCheck: true })
+    expect(user.userId).toBe('user-1')
+    expect(user.plan).toBe('pro')
+  })
+
+  test('valid org + skipLicenseCheck → still returns user (no regression)', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockVerifySession.mockImplementation(() => 'user-1')
+    mockUserFindUnique.mockImplementation(async () => ({
+      id: 'user-1',
+      name: 'Admin',
+      email: 'admin@test.com',
+      isActive: true,
+      sessionVersion: 0,
+      role: 'admin',
+      organizationId: 'org-1',
+    }))
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'valid', licensePlan: 'pro' }))
+
+    const user = await getActiveUser({ skipLicenseCheck: true })
+    expect(user.userId).toBe('user-1')
   })
 })

@@ -4,7 +4,7 @@
  */
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
-import { validateLicense, generateMachineId, REVALIDATION_INTERVAL_MS } from '@/lib/license-client'
+import { validateLicense, generateMachineId, licenseStatusFromResult, REVALIDATION_INTERVAL_MS } from '@/lib/license-client'
 import { scopedLogger } from '@/lib/logger'
 
 const log = scopedLogger('license-reval')
@@ -33,18 +33,7 @@ async function runRevalidation() {
       try {
         const machineId = generateMachineId(org.slug)
         const result = await validateLicense(org.licenseKey, machineId)
-
-        let newStatus: string
-        if (result.signatureVerified && result.valid) {
-          newStatus = 'valid'
-        } else if (result.signatureVerified && !result.valid) {
-          newStatus = result.message.includes('expired') ? 'expired'
-            : result.message.includes('deactivated') ? 'suspended'
-            : 'invalid'
-        } else {
-          // Signature failed or network error → unreachable (grace period applies)
-          newStatus = 'unreachable'
-        }
+        const newStatus = licenseStatusFromResult(result)
 
         await bypassOrg(() =>
           db.organization.update({

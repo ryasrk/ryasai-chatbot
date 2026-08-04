@@ -101,11 +101,49 @@ export default function Home() {
   } | null>(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
 
+  // License retry state — 'Try Again' re-validates against the License-Validator
+  // service (not just re-reading cached DB status). After a failed retry, a
+  // 'Sign Up Again' button appears so the user can start a fresh signup.
+  const [licenseRetrying, setLicenseRetrying] = useState(false)
+  const [licenseRetryFailed, setLicenseRetryFailed] = useState(false)
+  const [forceSignup, setForceSignup] = useState(false)
+
   const setView = useCallback((next: ViewKey) => {
     setViewState(next)
     const url = new URL(window.location.href)
     url.searchParams.set('view', next)
     window.history.replaceState(null, '', url)
+  }, [])
+
+  // Real license revalidation: hit POST /api/license/retry (calls the
+  // License-Validator service, updates org.licenseStatus in DB), then refresh
+  // /api/me so the shell re-evaluates the license gate. If the license is still
+  // not valid afterwards, surface the 'Sign Up Again' button.
+  const handleLicenseRetry = useCallback(async () => {
+    setLicenseRetrying(true)
+    setLicenseRetryFailed(false)
+    try {
+      const res = await fetch('/api/license/retry', { method: 'POST' })
+      const data = await res.json().catch(() => ({} as Record<string, unknown>))
+      await refresh()
+      const status = (data?.license as { status?: string } | undefined)?.status
+      if (status !== 'valid') {
+        setLicenseRetryFailed(true)
+      }
+    } catch {
+      // Network error on retry itself — refresh to re-read DB, then offer signup
+      await refresh()
+      setLicenseRetryFailed(true)
+    } finally {
+      setLicenseRetrying(false)
+    }
+  }, [refresh])
+
+  // After a failed retry, let the user start a fresh signup: clear the session
+  // and show the LoginView in signup mode.
+  const handleSignupAgain = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    setForceSignup(true)
   }, [])
 
   useEffect(() => {
@@ -191,12 +229,33 @@ export default function Home() {
     return null
   }
 
+  if (forceSignup) {
+    return (
+      <LoginView
+        onSuccess={() => {
+          setForceSignup(false)
+          setLicenseRetryFailed(false)
+          setSetupRefreshKey((k) => k + 1)
+          refresh()
+        }}
+        defaultMode="signup"
+      />
+    )
+  }
+
   if (!loading && unauthorized) {
     return <LoginView onSuccess={() => { setSetupRefreshKey((k) => k + 1); refresh() }} />
   }
 
   if (!loading && licenseError) {
-    return <ErrorScreen type="license" onRetry={refresh} />
+    return (
+      <ErrorScreen
+        type="license"
+        onRetry={handleLicenseRetry}
+        retrying={licenseRetrying}
+        onSignup={licenseRetryFailed ? handleSignupAgain : undefined}
+      />
+    )
   }
 
   return (
