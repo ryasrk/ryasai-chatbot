@@ -67,7 +67,7 @@ describe('BUILT_IN_TOOLS', () => {
   })
 
   test('has exactly 4 tools', () => {
-    expect(BUILT_IN_TOOLS).toHaveLength(5)
+    expect(BUILT_IN_TOOLS).toHaveLength(6)
   })
 
   test('every tool has required fields (id, description, paramDescription, requiresDataSource)', () => {

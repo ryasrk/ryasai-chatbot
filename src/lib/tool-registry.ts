@@ -52,6 +52,13 @@ export const BUILT_IN_TOOLS: ToolDef[] = [
     paramDescription: '{ "url": "the URL to fetch" }',
     requiresDataSource: 'none',
   },
+  {
+    id: 'web_search',
+    description:
+      'Search the internet for current information. Use when the user asks to search the web, find latest news, look up current events, or get up-to-date information. Returns titles, URLs, and snippets for each result. ALWAYS use this for any request about current events, news, or recent information — NEVER use the chat tool for these.',
+    paramDescription: '{ "query": "the search query" }',
+    requiresDataSource: 'none',
+  },
 ]
 
 // ponytail: admin tools — registered so the LLM planner decides when to use them,

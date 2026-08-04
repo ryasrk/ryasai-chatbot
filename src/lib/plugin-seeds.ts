@@ -110,7 +110,7 @@ const PLUGINS: PluginSeed[] = [
     manifest: {
       paramDescription: 'RSS endpoint. Path/search?q=<search keyword or empty for top news>&hl=<language e.g. id or en>&gl=<country e.g. ID or US>&ceid=<country:language e.g. ID:id>. Returns RSS XML with title, link, pubDate, description for each article.',
       executorType: 'webhook',
-      endpoint: 'https://news.google.com/rss/search',
+      endpoint: 'https://news.google.com/rss',
       method: 'GET',
       authType: 'NONE',
       timeoutMs: 10000,

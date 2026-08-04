@@ -16,7 +16,7 @@ import { callMcpTool } from '@/lib/mcp-client'
 import { checkToolRateLimit } from '@/lib/tool-rate-limit'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { executeAdminTool } from '@/lib/admin-tools'
-import { fetchUrlForPlanner } from '@/lib/web-fetch'
+import { fetchUrlForPlanner, webSearch } from '@/lib/web-fetch'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
@@ -107,7 +107,8 @@ export async function planQueryWithTools(args: {
       'CONFIRMATION FLOW: Some tools (admin:mcp_install, admin:mcp_remove, admin:set_prompt, admin:toggle_*) ' +
       'require confirmation. On the first call, do NOT include confirm in the input — the tool will ask the user to confirm. ' +
       'When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes". ' +
-      'MCP INSTALL FROM URL: Use a two-step plan — (1) web_fetch the URL to read install instructions, (2) admin:mcp_install with the extracted command/args/envVars.'
+      'MCP INSTALL FROM URL: Use a two-step plan — (1) web_fetch the URL to read install instructions, (2) admin:mcp_install with the extracted command/args/envVars. ' +
+      'WEB SEARCH: Use web_search for any request about current events, news, or searching the internet — NEVER use chat for these.'
 
     const userMessage =
       `Question: ${args.question}\n\n` +
@@ -190,8 +191,8 @@ export async function planQuery(args: {
       'needsSynthesis=true if results from multiple steps need to be combined into one answer. ' +
       'needsSynthesis=false if one step is enough to answer. ' +
       'IMPORTANT RULES:\n' +
-      '- If the user asks to search the web, look up information, find a person/topic, or get news, use the plugin:web_search tool — NEVER use chat for these.\n' +
-      '- If the user asks to read/fetch a specific article or URL, use plugin:url_fetch.\n' +
+      '- If the user asks to search the web, look up information, find a person/topic, get news, or find latest updates, use the web_search tool — NEVER use chat for these. web_search searches the real internet and returns current results.\n' +
+      '- If the user asks to read/fetch a specific article or URL, use web_fetch.\n' +
       '- If the user asks to translate text, use plugin:translate.\n' +
       '- If the user asks for weather, use plugin:weather.\n' +
       '- If the user asks for calculations, use plugin:calculator.\n' +
@@ -568,6 +569,34 @@ async function executeStep(
         stepId: step.id, tool: step.tool, ok: result.ok,
         output: result.ok ? result.content : '',
         error: result.ok ? undefined : result.error,
+        latencyMs: Date.now() - started,
+      }
+    }
+
+    // web_search — search the internet and return results.
+    if (step.tool === 'web_search') {
+      const query = (step.input.query || step.input.q || step.input.question || step.input.search || '').trim()
+      if (!query) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: 'Search query is required for web_search.', latencyMs: Date.now() - started,
+        }
+      }
+      const result = await webSearch(query)
+      args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      if (!result.ok) {
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: result.error, latencyMs: Date.now() - started,
+        }
+      }
+      // Format results as readable text for the LLM synthesizer
+      const formatted = result.results
+        .map((r, i) => `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.snippet}`)
+        .join('\n\n')
+      return {
+        stepId: step.id, tool: step.tool, ok: true, output: formatted,
         latencyMs: Date.now() - started,
       }
     }
