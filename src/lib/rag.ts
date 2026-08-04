@@ -12,7 +12,33 @@ export const STOPWORDS = new Set<string>([
   'has', 'had', 'not', 'but', 'from', 'into', 'onto', 'over', 'under',
   'a', 'an', 'of', 'in', 'to', 'is', 'it', 'on', 'as', 'at', 'by', 'be',
   'do', 'if', 'or', 'we', 'you', 'they', 'he', 'she', 'my', 'our',
+  // Short function words that the old `length < 4` cutoff used to hide. Now that
+  // 2-3 char tokens are kept (acronyms: sql, api, roi, ppn, pt), these have to be
+  // named explicitly or every query matches every chunk on "the/per/via" noise.
+  'me', 'us', 'am', 'so', 'no', 'up', 'out', 'via', 'per', 'all', 'any', 'can',
+  'may', 'get', 'got', 'its', 'his', 'her', 'him', 'own', 'off', 'now', 'new',
+  'how', 'why', 'who', 'what', 'when', 'where', 'which', 'whom', 'whose',
+  'ada', 'ya', 'ke', 'kan', 'pun', 'lah', 'nya', 'bagi', 'saja', 'atas',
+  'jika', 'saya', 'anda', 'kami', 'kita', 'mereka', 'sudah', 'belum', 'lagi',
 ])
+
+/**
+ * Is this word worth indexing/matching?
+ *
+ * ponytail: noise suppression is the STOPWORDS list's job, not a length cutoff.
+ * The old `length < 4` rule silently deleted every acronym a business chatbot
+ * cares about — sql, api, roi, ceo, ppn, pt, npwp — plus every year and amount,
+ * making them unmatchable in both lexical scoring and the FTS query built from
+ * these tokens. Ceiling: a hand-maintained list; swap for a real stemmer/IDF
+ * cutoff if the corpus grows past a few languages.
+ */
+function isMeaningfulToken(word: string): boolean {
+  if (word.length < 2) return false
+  if (STOPWORDS.has(word)) return false
+  // Bare digits: keep 2+ (years, amounts, quantities), drop single digits.
+  if (/^\d+$/.test(word)) return word.length >= 2
+  return true
+}
 
 export function tokenize(text: string): string[] {
   if (!text) return []
@@ -24,9 +50,7 @@ export function tokenize(text: string): string[] {
   const out: string[] = []
   const seen = new Set<string>()
   for (const w of words) {
-    if (w.length < 4) continue
-    if (STOPWORDS.has(w)) continue
-    if (/^\d+$/.test(w)) continue
+    if (!isMeaningfulToken(w)) continue
     if (seen.has(w)) continue
     seen.add(w)
     out.push(w)
@@ -43,9 +67,7 @@ export function extractKeywords(text: string, topN = 8): string {
     .filter(Boolean)
   const freq = new Map<string, number>()
   for (const w of words) {
-    if (w.length < 4) continue
-    if (STOPWORDS.has(w)) continue
-    if (/^\d+$/.test(w)) continue
+    if (!isMeaningfulToken(w)) continue
     freq.set(w, (freq.get(w) ?? 0) + 1)
   }
   const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, topN)
@@ -53,6 +75,11 @@ export function extractKeywords(text: string, topN = 8): string {
 }
 
 export interface RetrievalScore {
+  /**
+   * Ordering score. After hybrid retrieval this is the RRF-fused rank score
+   * (~0.01-0.05), NOT comparable to the raw counts below — those are reporting
+   * only. Never add it to lexicalTotal or semanticScore.
+   */
   total: number
   lexicalTotal: number
   contentHits: number
@@ -60,6 +87,8 @@ export interface RetrievalScore {
   phraseHits: number
   semanticSimilarity: number
   semanticScore: number
+  /** Okapi BM25 score for the lexical leg. Absent when scored outside retrieval. */
+  bm25?: number
 }
 
 export interface RetrievedChunk {

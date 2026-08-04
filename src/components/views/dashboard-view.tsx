@@ -13,39 +13,37 @@ import {
   Zap,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import dynamic from 'next/dynamic'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorState, StatGridSkeleton } from '@/components/ui/view-states'
+import { Skeleton } from '@/components/ui/skeleton'
 import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
 
+// ponytail: recharts is ~500 KB and lives below the metric cards — load it
+// after they paint rather than in front of them.
+const DashboardCharts = dynamic(
+  () => import('@/components/views/dashboard-charts').then((m) => m.DashboardCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <>
+        {[0, 1].map((i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2"><Skeleton className="h-4 w-32" /></CardHeader>
+            <CardContent><Skeleton className="h-[140px] w-full" /></CardContent>
+          </Card>
+        ))}
+      </>
+    ),
+  },
+)
+
 const formatNumber = (n: number) => n.toLocaleString('en-US')
-
-const chatChartConfig: ChartConfig = {
-  count: { label: 'Chat Messages', color: 'var(--chart-1)' },
-}
-
-const tokenChartConfig: ChartConfig = {
-  totalTokens: { label: 'Tokens', color: 'var(--chart-3)' },
-}
 
 interface MonitoringStats {
   toolRunCount24h: number
@@ -156,72 +154,7 @@ export function DashboardView() {
       </Stagger>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-              Chat Activity
-            </CardTitle>
-            <CardDescription className="text-xs">Messages per day, last 7 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chatChartConfig} className="h-[140px] w-full aspect-auto">
-              <AreaChart data={chatTrend} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="dashboardChatFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.24} />
-                    <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={10} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={10} width={22} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  stroke="var(--chart-1)"
-                  strokeWidth={2}
-                  fill="url(#dashboardChatFill)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <Coins className="h-3.5 w-3.5 text-muted-foreground" />
-              Token Usage (24h)
-            </CardTitle>
-            <CardDescription className="text-xs">Tokens by LLM purpose</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {tokenData.length === 0 ? (
-              <div className="h-[140px] flex items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
-                No LLM calls in the last 24h.
-              </div>
-            ) : (
-              <ChartContainer config={tokenChartConfig} className="h-[140px] w-full aspect-auto">
-                <BarChart data={tokenData} margin={{ left: 2, right: 8, top: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="purpose" tickLine={false} axisLine={false} fontSize={10} />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={10}
-                    width={40}
-                    tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="totalTokens" fill="var(--chart-3)" isAnimationActive={false} radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
+        <DashboardCharts chatTrend={chatTrend} tokenData={tokenData} />
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">

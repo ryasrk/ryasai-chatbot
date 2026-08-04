@@ -15,7 +15,7 @@ import { writeAudit } from '@/lib/session'
 import { getPromptSettings, mergePromptSettings } from '@/lib/prompt-settings'
 import { getRoutingScores } from '@/lib/smart-router'
 import { testMcpServer, invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
-import { fetchMcpInstallFromUrl } from '@/lib/mcp-installer'
+import { fetchMcpInstallFromUrl, parseMcpInstallInstructions } from '@/lib/mcp-installer'
 import { encryptConfig, decryptConfig } from '@/lib/crypto'
 
 // ponytail: lightweight known-names map for MCP package resolution. Covers the
@@ -302,8 +302,12 @@ async function mcpInstallAction(
   const llmCommand = (input.command || input.cmd || '').trim()
   const llmArgs = (input.args || '').trim()
   const llmEnvVars = (input.envVars || input.env || '').trim()
+  // Raw install instructions piped in from a prior web_fetch step via the
+  // planner's {{stepN}} placeholder. Parsed here so the page the agent actually
+  // read is what gets installed — no second fetch, no guessing from the name.
+  const instructions = (input.instructions || input.content || '').trim()
 
-  if (!name && !url) {
+  if (!name && !url && !instructions) {
     return { ok: false, output: 'MCP server name or URL is required. Ask the user for a server name or install URL.' }
   }
 
@@ -317,6 +321,7 @@ async function mcpInstallAction(
   let requiredEnvVars: string[] = []
 
   const knownNameHit = serverName ? Object.keys(MCP_PACKAGES).find((n) => serverName.toLowerCase().includes(n)) : undefined
+  const parsedInstructions = instructions ? parseMcpInstallInstructions(instructions) : null
 
   // Priority 1: LLM-provided command/args (after web_fetch reading the install page).
   // The LLM read the README/docs and extracted the install command — trust it.
@@ -329,6 +334,14 @@ async function mcpInstallAction(
     if (llmEnvVars) {
       requiredEnvVars = llmEnvVars.split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
     }
+  } else if (parsedInstructions) {
+    // Priority 2: the install instructions a prior web_fetch step actually read.
+    transport = 'stdio'
+    command = parsedInstructions.command
+    args = parsedInstructions.args
+    requiredEnvVars = parsedInstructions.envVars
+    if (!serverName && parsedInstructions.name) serverName = parsedInstructions.name
+    if (url) serverUrl = url
   } else if (url) {
     const isDirectMcpEndpoint = /\/(?:sse|mcp|api\/mcp)/i.test(url)
     if (isDirectMcpEndpoint) {

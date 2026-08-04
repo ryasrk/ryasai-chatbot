@@ -40,7 +40,7 @@
  */
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
-import { retrieveRelevantChunks, type RetrievedChunk } from '@/lib/rag'
+import { retrieveRelevantChunks, selectTopRetrievedChunks, type RetrievedChunk } from '@/lib/rag'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
 export interface IntentAnalysis {
@@ -377,6 +377,15 @@ interface RetrievalResult {
 // Ceiling: 3x retrieval calls per RAG query. The RAG cache absorbs repeats.
 const MAX_EXPANSIONS = 3
 
+/**
+ * Union of several retrieval passes, deduped by chunkId keeping the best score.
+ *
+ * Deliberately UNBOUNDED — callers must apply selectTopRetrievedChunks to the
+ * result. 3 query expansions plus an optional second pass at 2x topK used to
+ * reach the prompt whole, so a topK of 4 shipped ~20 chunks (~69K chars with
+ * parent-doc prefixes): the cost of every RAG turn, and the best chunk buried
+ * in the middle where models reliably miss it.
+ */
 export function mergeRetrievalResults(results: RetrievalResult[]): RetrievalResult {
   const seen = new Map<string, RetrievedChunk>()
   for (const r of results) {
@@ -429,7 +438,7 @@ export async function retrieveWithReflection(args: {
     })
     const merged2 = mergeRetrievalResults([merged, secondPass])
     return {
-      chunks: merged2.chunks,
+      chunks: selectTopRetrievedChunks(merged2.chunks, args.topK * 2),
       queryTokens: merged2.queryTokens,
       candidatesScanned: merged2.candidatesScanned,
       graphContext: merged2.graphContext,
@@ -439,7 +448,7 @@ export async function retrieveWithReflection(args: {
   }
 
   return {
-    chunks: merged.chunks,
+    chunks: selectTopRetrievedChunks(merged.chunks, args.topK),
     queryTokens: merged.queryTokens,
     candidatesScanned: merged.candidatesScanned,
     graphContext: merged.graphContext,

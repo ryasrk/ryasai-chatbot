@@ -37,8 +37,11 @@ mock.module('@/lib/plugin-registry', () => ({
 mock.module('@/lib/mcp-client', () => ({
   callMcpTool: mockCallMcpTool,
 }))
+// ponytail: deliberately NOT mocking @/lib/admin-tools — bun's mock.module is
+// process-global and leaks into admin-tools.test.ts. Per-step confirmation is
+// covered by the isStepConfirmed unit tests below instead.
 
-import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQueryWithTools, synthesizeAnswer } from '@/lib/planner'
+import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQueryWithTools, synthesizeAnswer, resolveStepInput, isStepConfirmed } from '@/lib/planner'
 import type { PlanStep, Plan } from '@/lib/planner'
 import type { ToolDef } from '@/lib/tool-registry'
 
@@ -46,6 +49,7 @@ const TOOLS: ToolDef[] = [
   { id: 'sql', description: 'Query DB', paramDescription: '{}', requiresDataSource: 'integration' },
   { id: 'rag', description: 'Search docs', paramDescription: '{}', requiresDataSource: 'document' },
   { id: 'chat', description: 'General chat', paramDescription: '{}', requiresDataSource: 'none' },
+  { id: 'web_fetch', description: 'Fetch a URL', paramDescription: '{}', requiresDataSource: 'none' },
 ]
 
 const originalFetch = global.fetch
@@ -269,11 +273,93 @@ describe('executePlan', () => {
   })
 })
 
+describe('resolveStepInput', () => {
+  const step: PlanStep = {
+    id: 'step2',
+    tool: 'admin:mcp_install',
+    input: { name: 'ctx7', instructions: '{{step1}}' },
+    dependsOn: ['step1'],
+  }
+
+  test('substitutes a prior step output into the placeholder', () => {
+    const resolved = resolveStepInput(step, new Map([['step1', 'npx -y @upstash/context7-mcp']]))
+    expect(resolved.input.instructions).toBe('npx -y @upstash/context7-mcp')
+    expect(resolved.input.name).toBe('ctx7')
+  })
+
+  test('case-insensitive placeholder and whitespace tolerated', () => {
+    const s: PlanStep = { id: 'step2', tool: 'chat', input: { message: 'got: {{ Step1 }}' } }
+    expect(resolveStepInput(s, new Map([['step1', 'X']])).input.message).toBe('got: X')
+  })
+
+  test('missing/failed dependency resolves to empty, never the literal placeholder', () => {
+    const resolved = resolveStepInput(step, new Map([['step9', 'unrelated']]))
+    expect(resolved.input.instructions).toBe('')
+  })
+
+  test('truncates a huge output so it cannot blow the downstream input budget', () => {
+    const resolved = resolveStepInput(step, new Map([['step1', 'a'.repeat(20_000)]]))
+    expect(resolved.input.instructions.length).toBe(8_000)
+  })
+
+  test('returns the original step untouched when no placeholder is present', () => {
+    const s: PlanStep = { id: 'step1', tool: 'chat', input: { message: 'plain' } }
+    expect(resolveStepInput(s, new Map([['step1', 'X']]))).toBe(s)
+  })
+})
+
+describe('executePlan — step data flow + per-step confirmation', () => {
+  test('dependent step receives the prior step output', async () => {
+    const asked: string[] = []
+    ;(mockRunNonStreaming as unknown as ReturnType<typeof mock>).mockImplementation(
+      async (a: { question: string }) => {
+        asked.push(a.question)
+        return { answer: 'mock-answer', citations: [], chartData: null, toolRuns: [], integrationId: null }
+      },
+    )
+    const plan: Plan = {
+      steps: [
+        { id: 'step1', tool: 'chat', input: { message: 'hello' } },
+        { id: 'step2', tool: 'chat', input: { message: 'saw: {{step1}}' }, dependsOn: ['step1'] },
+      ],
+      needsSynthesis: false,
+    }
+    await executePlan({ plan, userId: 'u1' })
+    // step1's output ('mock-answer') must have reached step2's input
+    expect(asked).toEqual(['hello', 'saw: mock-answer'])
+  })
+
+})
+
+describe('isStepConfirmed', () => {
+  const step = (input: Record<string, string>): PlanStep => ({ id: 'step1', tool: 'admin:set_prompt', input })
+
+  test('accepts the confirm spellings the planner is told to emit', () => {
+    expect(isStepConfirmed(step({ confirm: 'yes' }))).toBe(true)
+    expect(isStepConfirmed(step({ confirm: 'true' }))).toBe(true)
+    expect(isStepConfirmed(step({ confirmed: 'yes' }))).toBe(true)
+  })
+
+  test('an unconfirmed step is not confirmed by a sibling step', () => {
+    // The regression this replaced: executePlan used steps.some(...), so a plan
+    // pairing a confirmed install with an unconfirmed set_prompt ran both.
+    const confirmed = step({ name: 'a', confirm: 'yes' })
+    const sibling = step({ prompt: 'pwned' })
+    expect(isStepConfirmed(confirmed)).toBe(true)
+    expect(isStepConfirmed(sibling)).toBe(false)
+  })
+
+  test('no confirm key → false', () => {
+    expect(isStepConfirmed(step({}))).toBe(false)
+    expect(isStepConfirmed(step({ confirm: 'no' }))).toBe(false)
+  })
+})
+
 describe('planQueryWithTools', () => {
   test('LLM returns tool_call → single-step plan built from arguments', async () => {
     const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
     fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(
-      JSON.stringify({ tool: 'sql', input: { question: 'sales' }, needsSynthesis: false })
+      JSON.stringify({ steps: [{ id: 'step1', tool: 'sql', input: { question: 'sales' } }], needsSynthesis: false })
     ))
     const plan = await planQueryWithTools({
       question: 'show me sales',
@@ -283,6 +369,27 @@ describe('planQueryWithTools', () => {
     expect(plan!.steps).toHaveLength(1)
     expect(plan!.steps[0].tool).toBe('sql')
     expect(plan!.steps[0].input.question).toBe('sales')
+  })
+
+  // The whole point of the steps[] schema: the function-calling planner must be
+  // able to express web_fetch → admin:mcp_install. The old one-step-only shape
+  // made this plan impossible, which silently disabled install-from-URL.
+  test('LLM returns multi-step tool_call → dependent plan preserved', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(
+      JSON.stringify({
+        steps: [
+          { id: 'step1', tool: 'web_fetch', input: { url: 'https://example.com' } },
+          { id: 'step2', tool: 'chat', input: { message: '{{step1}}' }, dependsOn: ['step1'] },
+        ],
+        needsSynthesis: true,
+      })
+    ))
+    const plan = await planQueryWithTools({ question: 'read it', availableTools: TOOLS })
+    expect(plan).not.toBeNull()
+    expect(plan!.steps).toHaveLength(2)
+    expect(plan!.steps[1].dependsOn).toEqual(['step1'])
+    expect(plan!.needsSynthesis).toBe(true)
   })
 
   test('LLM returns empty tool_calls → null (fallback)', async () => {

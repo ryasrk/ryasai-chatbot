@@ -9,7 +9,11 @@ export const SQL_MAX_LIMIT = 100
 // RAG
 export const RAG_CHUNK_SIZE = 1400
 export const RAG_CHUNK_OVERLAP = 180
-export const RAG_MAX_PER_DOCUMENT = 2
+// Per-document cap in the final top-K, for source diversity. 2 was aggressive:
+// at the default topK=4 a long document that fully answers the question could
+// only contribute two chunks. 3 keeps multi-source answers without starving the
+// single-document case.
+export const RAG_MAX_PER_DOCUMENT = 3
 export const RAG_CACHE_TTL_MS = 60_000
 export const RAG_MAX_CHUNKS_PER_UPLOAD = 500
 

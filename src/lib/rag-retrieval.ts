@@ -17,10 +17,12 @@ import {
   RAG_MAX_CHUNKS_PER_UPLOAD,
 } from '@/lib/constants'
 import {
-  tokenize, scoreChunk, applySemanticScore, applyVectorStoreScore,
+  tokenize, scoreChunk,
   selectTopRetrievedChunks,
   type RetrievedChunk,
 } from './rag'
+import { cosineSimilarity } from '@/lib/embeddings'
+import { bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
 
 let _cacheHits = 0
 let _cacheMisses = 0
@@ -86,35 +88,24 @@ export async function retrieveRelevantChunks(args: {
   const rerankEnabled = process.env.RAG_LLM_RERANK === 'true'
   const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
 
-  const [retrievalResult, kgResult, cogneeGraphContext] = await Promise.all([
-    retrieveFromVectorAndLexical(vectorQuery, retrievalTopK, queryTokens),
+  const [kgResult, cogneeGraphContext] = await Promise.all([
     dualLevelRetrieval({ query: args.query, topK: args.topK }),
     recallGraphContext(args.query),
   ])
 
-  const kgChunkIds = new Set(kgResult.allChunkIds)
-  let mergedChunks = retrievalResult.chunks
-  if (kgChunkIds.size > 0) {
-    const boosted = retrievalResult.chunks.map((chunk) =>
-      kgResult.localChunks.includes(chunk.chunkId)
-        ? { ...chunk, score: chunk.score * 1.3 }
-        : chunk,
-    )
-    const existingIds = new Set(retrievalResult.chunks.map((c) => c.chunkId))
-    const kgOnlyChunks = await loadVectorCandidateChunks(
-      kgResult.allChunkIds.filter((id) => !existingIds.has(id)),
-    )
-    const kgScored = kgOnlyChunks.map((chunk) => {
-      const lexicalScore = scoreChunk(queryTokens, chunk)
-      return {
-        chunkId: chunk.chunkId, documentId: chunk.documentId, documentName: chunk.documentName,
-        chunkIndex: chunk.chunkIndex, content: chunk.content,
-        score: lexicalScore.total * 0.8, scoreBreakdown: lexicalScore,
-      }
-    })
-    mergedChunks = [...boosted, ...kgScored]
-  }
+  // The knowledge graph is fused in as a third retriever rather than post-hoc
+  // boosted. The old code multiplied KG-local hits by 1.3 and scored KG-only
+  // chunks at lexical*0.8 — two hand-tuned constants that only made sense while
+  // every leg shared one additive scale, and which would be nonsense now that
+  // fused scores are RRF (~0.016) and raw lexical scores are counts (~0-30).
+  const retrievalResult = await retrieveAndFuse({
+    vectorQuery,
+    queryTokens,
+    topK: retrievalTopK,
+    kgRanking: kgResult.allChunkIds,
+  })
 
+  const mergedChunks = retrievalResult.chunks
   const graphContext = kgResult.graphContext || cogneeGraphContext
 
   const finalChunks = rerankEnabled
@@ -216,42 +207,106 @@ async function rerankWithLlm(
   }
 }
 
-async function retrieveFromVectorAndLexical(
-  query: string,
-  topK: number,
-  queryTokens: string[],
-): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
-  const queryEmbedding = await resolveQueryEmbedding(query)
-  const vectorScores = await resolveVectorScores({ vector: queryEmbedding?.vector ?? null, topK })
-  const candidates = vectorScores.size > 0
-    ? await loadVectorCandidateChunks([...vectorScores.keys()])
-    : await loadLexicalCandidateChunks(queryTokens, topK)
+/**
+ * True hybrid retrieval: run the vector and lexical retrievers independently,
+ * union their candidates, then fuse the two (three, with the KG) rankings.
+ *
+ * The previous version was NOT hybrid. It picked candidates with
+ *   vectorScores.size > 0 ? vectorCandidates : lexicalCandidates
+ * so whenever pgvector returned anything the FTS leg never ran at all — lexical
+ * scoring only re-ranked the vector's own candidates. A chunk that was an exact
+ * keyword match but semantically distant could not be retrieved, no matter how
+ * well it matched, because nothing ever put it in the pool.
+ */
+async function retrieveAndFuse(args: {
+  vectorQuery: string
+  queryTokens: string[]
+  topK: number
+  kgRanking?: string[]
+}): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
+  const { queryTokens, topK } = args
+  const poolSize = Math.max(topK * 8, 24)
+
+  const queryEmbedding = await resolveQueryEmbedding(args.vectorQuery)
+
+  // Both legs, always, in parallel.
+  const [vectorScores, lexicalIds] = await Promise.all([
+    resolveVectorScores({ vector: queryEmbedding?.vector ?? null, topK }),
+    searchFtsChunkIds({ queryTokens, limit: poolSize }),
+  ])
+
+  // Vector hits in similarity order — resolveVectorScores returns them scored,
+  // and both pgvector and the external stores already sort by distance.
+  const vectorRanking = [...vectorScores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([chunkId]) => chunkId)
+
+  const candidateIds = [
+    ...new Set([...vectorRanking, ...lexicalIds, ...(args.kgRanking ?? [])]),
+  ]
+
+  let candidates = await loadVectorCandidateChunks(candidateIds)
+  if (candidates.length === 0) {
+    // Neither retriever produced anything (no embeddings yet, empty FTS index).
+    candidates = await loadAllCandidateChunks()
+  }
+  if (candidates.length === 0) return { chunks: [], candidatesScanned: 0 }
+
+  const byId = new Map(candidates.map((chunk) => [chunk.chunkId, chunk]))
+
+  // Lexical leg: BM25 over the union, so chunks that only the vector leg found
+  // still get a real lexical score instead of being absent from that ranking.
+  const bm25 = bm25Rank(
+    queryTokens,
+    candidates.map((chunk) => ({
+      id: chunk.chunkId,
+      // Keywords fold in as extra term occurrences — a lightweight BM25F: a term
+      // that is both in the body and an extracted keyword legitimately scores
+      // higher, without a hand-picked field weight.
+      tokens: tokenize(chunk.content).concat(
+        (chunk.keywords ?? '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean),
+      ),
+    })),
+  )
+  const bm25Scores = new Map(bm25.map((entry) => [entry.id, entry.score]))
+
+  const rankings = [vectorRanking, toRanking(bm25)]
+  if (args.kgRanking?.length) rankings.push(args.kgRanking)
+  const fused = fuseRankings(rankings)
 
   const scored: RetrievedChunk[] = []
-  let candidatesScanned = 0
-  for (const chunk of candidates) {
-    candidatesScanned += 1
+  for (const { id, score } of fused) {
+    const chunk = byId.get(id)
+    if (!chunk) continue
     const lexicalScore = scoreChunk(queryTokens, chunk)
-    const vectorScore = vectorScores.get(chunk.chunkId)
+    const vectorScore = vectorScores.get(id)
     const chunkEmbedding =
       queryEmbedding && chunk.embeddingModel === queryEmbedding.model
         ? parseEmbeddingJson(chunk.embeddingJson)
         : null
-    const scoreBreakdown =
+    // The breakdown stays populated for the UI and the search-tester. It is
+    // reporting only — `score` is the fused rank, which is what orders results.
+    const similarity =
       typeof vectorScore === 'number'
-        ? applyVectorStoreScore(lexicalScore, vectorScore)
+        ? vectorScore
         : queryEmbedding && chunkEmbedding
-          ? applySemanticScore(lexicalScore, queryEmbedding.vector, chunkEmbedding)
-          : lexicalScore
-    if (scoreBreakdown.total <= 0) continue
+          ? cosineSimilarity(queryEmbedding.vector, chunkEmbedding)
+          : 0
     scored.push({
       chunkId: chunk.chunkId, documentId: chunk.documentId, documentName: chunk.documentName,
       chunkIndex: chunk.chunkIndex, content: chunk.content,
-      score: scoreBreakdown.total, scoreBreakdown,
+      score,
+      scoreBreakdown: {
+        ...lexicalScore,
+        bm25: Math.round((bm25Scores.get(id) ?? 0) * 1000) / 1000,
+        semanticSimilarity: Math.max(0, similarity),
+        semanticScore: Math.round(Math.max(0, similarity) * 12 * 100) / 100,
+        total: score,
+      },
     })
   }
 
-  return { chunks: selectTopRetrievedChunks(scored, topK), candidatesScanned }
+  return { chunks: selectTopRetrievedChunks(scored, topK), candidatesScanned: candidates.length }
 }
 
 async function recallGraphContext(query: string): Promise<string> {
@@ -279,7 +334,8 @@ async function resolveVectorScores(args: { vector: number[] | null; topK: number
   if (!args.vector) return new Map()
 
   try {
-    await ensureVectorIndexes()
+    // Fire-and-forget: never make a user query wait on an index build.
+    void ensureVectorIndexes()
     const pgScores = await pgvectorSimilaritySearch(args.vector, Math.max(args.topK * 8, 16))
     if (pgScores.size > 0) return pgScores
   } catch (e) {
@@ -317,26 +373,47 @@ async function pgvectorSimilaritySearch(queryVector: number[], limit: number): P
 }
 
 /**
- * Create the HNSW index on DocumentChunk.embedding (idempotent). Called at
- * search time like ensureRagFtsTable — CREATE INDEX IF NOT EXISTS is cheap
- * after first run. Kills the O(n) vector scan at scale.
+ * Build the HNSW index on DocumentChunk.embedding, once per process.
+ *
+ * CONCURRENTLY matters: plain CREATE INDEX takes an ACCESS EXCLUSIVE lock on
+ * DocumentChunk, so on a populated table the first search after every restart
+ * froze all reads AND writes — uploads included — until the build finished.
+ *
+ * The index is table-wide, not per-org; the old per-org memo just made N orgs
+ * each re-issue the same statement.
+ *
+ * Returns the in-flight build so callers CAN await it (rebuild jobs), but the
+ * search path deliberately does not — a missing index means a slower scan, which
+ * is a far better failure mode than a blocked query.
  */
-const VECTOR_INDEX_CREATED = new Set<string>()
+let _vectorIndexBuild: Promise<void> | null = null
 
-export async function ensureVectorIndexes(): Promise<void> {
-  const orgId = getOrgContext() ?? 'global'
-  if (VECTOR_INDEX_CREATED.has(orgId)) return
-  try {
-    await db.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "DocumentChunk_embedding_hnsw"
+export function ensureVectorIndexes(): Promise<void> {
+  if (_vectorIndexBuild) return _vectorIndexBuild
+  _vectorIndexBuild = db
+    .$executeRawUnsafe(`
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS "DocumentChunk_embedding_hnsw"
       ON "DocumentChunk" USING hnsw (embedding vector_cosine_ops)
       WITH (m = 16, ef_construction = 64)
     `)
-    VECTOR_INDEX_CREATED.add(orgId)
-  } catch (e) {
-    // non-fatal — vector search degrades to sequential scan until index exists
-    log.warn('ensureVectorIndexes failed', { error: e instanceof Error ? e.message : String(e) })
-  }
+    .then(() => undefined)
+    .catch((e: unknown) => {
+      // Non-fatal — vector search degrades to a sequential scan. Deliberately NOT
+      // retried with a plain (blocking) CREATE INDEX: that is the failure mode
+      // this function exists to avoid. Two known causes, both operator-fixable:
+      //   - the driver ran it inside a transaction block (CONCURRENTLY forbids it)
+      //   - a previous CONCURRENTLY build left an INVALID index needing DROP first
+      _vectorIndexBuild = null
+      log.warn(
+        'ensureVectorIndexes failed — vector search will sequential-scan. ' +
+          'Create it once by hand during a maintenance window:\n' +
+          '  CREATE INDEX CONCURRENTLY IF NOT EXISTS "DocumentChunk_embedding_hnsw"\n' +
+          '  ON "DocumentChunk" USING hnsw (embedding vector_cosine_ops)\n' +
+          '  WITH (m = 16, ef_construction = 64);',
+        { error: e instanceof Error ? e.message : String(e) },
+      )
+    })
+  return _vectorIndexBuild
 }
 
 interface CandidateChunk {
@@ -391,11 +468,3 @@ async function loadAllCandidateChunks(): Promise<CandidateChunk[]> {
   )
 }
 
-async function loadLexicalCandidateChunks(queryTokens: string[], topK: number): Promise<CandidateChunk[]> {
-  const ftsIds = await searchFtsChunkIds({ queryTokens, limit: Math.max(topK * 12, 32) })
-  let candidates = ftsIds.length > 0 ? await loadVectorCandidateChunks(ftsIds) : []
-  if (candidates.length === 0) {
-    candidates = await loadAllCandidateChunks()
-  }
-  return candidates
-}

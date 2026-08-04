@@ -111,13 +111,30 @@ export async function getEmbeddingRuntimeConfig(
   return { provider, baseUrl, apiKey, model }
 }
 
+/**
+ * Embed `input`, returning one entry per input in the SAME order. Inputs that are
+ * empty after trimming get `[]` — they are never sent to the API, and callers
+ * already treat an empty vector as "skip this one".
+ *
+ * The alignment guarantee is the point: embedDocumentChunks pairs vectors[i] with
+ * batch[i], and this used to `.filter(Boolean)` the input, so a single blank chunk
+ * shifted every later vector by one — silently attaching the wrong embedding to
+ * every subsequent chunk, forever. The count check below can't catch that either,
+ * because it validated against the already-filtered length.
+ */
 export async function embedTexts(
   config: EmbeddingRuntimeConfig,
   input: string[],
 ): Promise<number[][]> {
-  const cleanInput = input
-    .map((text) => text.trim().slice(0, MAX_EMBED_INPUT_CHARS))
-    .filter(Boolean)
+  const prepared = input.map((text) => text.trim().slice(0, MAX_EMBED_INPUT_CHARS))
+  const sendIndexes: number[] = []
+  const cleanInput: string[] = []
+  prepared.forEach((text, index) => {
+    if (text) {
+      sendIndexes.push(index)
+      cleanInput.push(text)
+    }
+  })
   if (cleanInput.length === 0) return []
 
   const endpoint =
@@ -155,7 +172,13 @@ export async function embedTexts(
     // Parse + validate outside the retry path so alignment errors propagate
     // immediately instead of being masked by retries.
     const payload = await res.json().catch(() => ({}))
-    return validateEmbeddingResponse(config.provider, cleanInput.length, payload)
+    const vectors = validateEmbeddingResponse(config.provider, cleanInput.length, payload)
+    // Scatter back onto the original indexes so vectors[i] belongs to input[i].
+    const aligned: number[][] = input.map(() => [])
+    sendIndexes.forEach((originalIndex, sentIndex) => {
+      aligned[originalIndex] = vectors[sentIndex]
+    })
+    return aligned
   }
   throw lastError ?? new Error('Embedding API request failed.')
 }
@@ -187,6 +210,72 @@ function isRetryableStatus(status: number): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Declared width of DocumentChunk.embedding, e.g. 1536. The schema hardcodes
+ * vector(1536) while the embedding model is operator-configurable, so anything
+ * other than a 1536-dim model (text-embedding-3-large is 3072, most local models
+ * are 768) made every `::vector` write throw — inside an unguarded Promise.all,
+ * which killed ingestion outright. Read it once and adapt instead.
+ *
+ * null = unknown (non-Postgres, or the column is missing): skip the vector write.
+ */
+let _embeddingColumnDim: number | null | undefined
+let _dimensionWarned = false
+
+export async function getEmbeddingColumnDimension(): Promise<number | null> {
+  if (_embeddingColumnDim !== undefined) return _embeddingColumnDim
+  try {
+    const rows = await db.$queryRaw<Array<{ coltype: string }>>`
+      SELECT format_type(a.atttypid, a.atttypmod) AS coltype
+      FROM pg_attribute a
+      WHERE a.attrelid = '"DocumentChunk"'::regclass
+        AND a.attname = 'embedding'
+        AND NOT a.attisdropped
+    `
+    const match = rows[0]?.coltype?.match(/\((\d+)\)/)
+    // Only memoise a definite answer. Caching a transient DB error would disable
+    // pgvector writes for the rest of the process with no way back.
+    if (match) {
+      _embeddingColumnDim = Number(match[1])
+      return _embeddingColumnDim
+    }
+    // Query succeeded but there is no such column (non-Postgres, or dropped).
+    _embeddingColumnDim = null
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Test seam — forget the cached column width. */
+export function resetEmbeddingColumnDimension(): void {
+  _embeddingColumnDim = undefined
+  _dimensionWarned = false
+}
+
+/**
+ * Can this vector go into the pgvector column? When it can't we still store
+ * embeddingJson, so retrieval keeps working through the cosine fallback in
+ * applySemanticScore — slower, but correct, and the operator gets told once how
+ * to fix it properly.
+ */
+async function canWriteVectorColumn(dimension: number): Promise<boolean> {
+  const columnDim = await getEmbeddingColumnDimension()
+  if (columnDim === null) return false
+  if (columnDim === dimension) return true
+  if (!_dimensionWarned) {
+    _dimensionWarned = true
+    console.error(
+      `[embeddings] embedding model returns ${dimension} dims but DocumentChunk.embedding is vector(${columnDim}). ` +
+        'Storing embeddingJson only — pgvector search is disabled until the column matches. Fix with:\n' +
+        `  ALTER TABLE "DocumentChunk" DROP COLUMN embedding;\n` +
+        `  ALTER TABLE "DocumentChunk" ADD COLUMN embedding vector(${dimension});\n` +
+        '  (then re-run the embedding rebuild; update prisma/schema.prisma to match)',
+    )
+  }
+  return false
 }
 
 export function parseEmbeddingJson(raw: string | null | undefined): number[] | null {
@@ -266,45 +355,60 @@ export async function embedDocumentChunks(args: {
       contextPrefix ? contextPrefix + chunk.content : chunk.content,
     ))
     const vectorPoints: VectorPoint[] = []
-    await Promise.all(
-      batch.map((chunk, index) => {
-        const vector = vectors[index]
-        if (!vector || vector.length === 0) return null
-        embedded += 1
-        vectorPoints.push(
-          buildVectorPoint({
-            chunkId: chunk.id,
-            vector,
-            payload: {
-              documentId: chunk.document.id,
-              documentName: chunk.document.name,
-              category: chunk.document.category ?? null,
-              chunkIndex: chunk.chunkIndex,
-            },
-          }),
+    const writes: Array<{ chunkId: string; run: Promise<unknown> }> = []
+    for (const [index, chunk] of batch.entries()) {
+      const vector = vectors[index]
+      if (!vector || vector.length === 0) continue
+      const withVectorColumn = await canWriteVectorColumn(vector.length)
+      vectorPoints.push(
+        buildVectorPoint({
+          chunkId: chunk.id,
+          vector,
+          payload: {
+            documentId: chunk.document.id,
+            documentName: chunk.document.name,
+            category: chunk.document.category ?? null,
+            chunkIndex: chunk.chunkIndex,
+          },
+        }),
+      )
+      const json = JSON.stringify(vector)
+      const literal = `[${vector.join(',')}]`
+      const run = withVectorColumn
+        ? db.$executeRaw`
+            UPDATE "DocumentChunk"
+            SET "embeddingJson" = ${json},
+                "embedding" = ${literal}::vector,
+                "embeddingProvider" = ${config.provider},
+                "embeddingModel" = ${config.model},
+                "embeddedAt" = NOW(),
+                "contextPrefix" = COALESCE(${contextPrefix || null}::text, "contextPrefix")
+            WHERE id = ${chunk.id}
+          `
+        : db.$executeRaw`
+            UPDATE "DocumentChunk"
+            SET "embeddingJson" = ${json},
+                "embeddingProvider" = ${config.provider},
+                "embeddingModel" = ${config.model},
+                "embeddedAt" = NOW(),
+                "contextPrefix" = COALESCE(${contextPrefix || null}::text, "contextPrefix")
+            WHERE id = ${chunk.id}
+          `
+      writes.push({ chunkId: chunk.id, run })
+    }
+
+    // allSettled, not all: one rejected row used to abort the whole ingestion and
+    // leave every later chunk of the document unembedded.
+    const settled = await Promise.allSettled(writes.map((w) => w.run))
+    settled.forEach((outcome, index) => {
+      if (outcome.status === 'fulfilled') embedded += 1
+      else {
+        console.warn(
+          `[embeddings] failed to store embedding for chunk ${writes[index].chunkId}:`,
+          outcome.reason,
         )
-        return contextPrefix
-          ? db.$executeRaw`
-              UPDATE "DocumentChunk"
-              SET "embeddingJson" = ${JSON.stringify(vector)},
-                  "embedding" = ${`[${vector.join(',')}]`}::vector,
-                  "embeddingProvider" = ${config.provider},
-                  "embeddingModel" = ${config.model},
-                  "embeddedAt" = NOW(),
-                  "contextPrefix" = ${contextPrefix}
-              WHERE id = ${chunk.id}
-            `
-          : db.$executeRaw`
-              UPDATE "DocumentChunk"
-              SET "embeddingJson" = ${JSON.stringify(vector)},
-                  "embedding" = ${`[${vector.join(',')}]`}::vector,
-                  "embeddingProvider" = ${config.provider},
-                  "embeddingModel" = ${config.model},
-                  "embeddedAt" = NOW()
-              WHERE id = ${chunk.id}
-            `
-      }).filter(Boolean),
-    )
+      }
+    })
     if (vectorConfig) await upsertVectorPoints(vectorConfig, vectorPoints)
   }
 

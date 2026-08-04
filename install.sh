@@ -2,6 +2,7 @@
 # =============================================================================
 # ryasai Chatbot — One-command installer
 # Usage:  curl -sSL https://ryasai.my.id/install.sh | bash
+#         curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng
 # Target: Ubuntu/Debian, 1 vCPU / 1GB+ RAM VPS
 # -----------------------------------------------------------------------------
 # Installs:
@@ -10,6 +11,11 @@
 #   3. Generates .env (secrets auto-created, license pointed at ryasai server)
 #   4. docker compose pull + up  (app + redis + postgres; images are prebuilt
 #      in CI on GitHub — NO compile on the VPS, License-Validator is external)
+#
+# Options:
+#   --with-searxng   Also run a private SearXNG instance and point web_search at
+#                    it instead of scraping DuckDuckGo. Costs ~256MB RAM, so it
+#                    is OFF by default — a 1GB box is already tight.
 # =============================================================================
 set -euo pipefail
 
@@ -18,6 +24,23 @@ C_GREEN='\033[0;32m'; C_YELLOW='\033[1;33m'; C_RED='\033[0;31m'; C_BOLD='\033[1m
 info()  { echo -e "${C_GREEN}==>${C_NC} $*"; }
 warn()  { echo -e "${C_YELLOW}WARN:${C_NC} $*"; }
 fail()  { echo -e "${C_RED}ERROR:${C_NC} $*" >&2; exit 1; }
+
+# --- Options ---------------------------------------------------------------
+WITH_SEARXNG=false
+for arg in "$@"; do
+  case "$arg" in
+    --with-searxng) WITH_SEARXNG=true ;;
+    # $0 is "bash" when piped from curl, so print help inline rather than self-read.
+    -h|--help)
+      echo "ryasai Chatbot installer"
+      echo "  curl -sSL https://ryasai.my.id/install.sh | bash"
+      echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng"
+      echo
+      echo "  --with-searxng   Run a private SearXNG for web_search (~256MB RAM)."
+      exit 0 ;;
+    *) fail "Unknown option: $arg (supported: --with-searxng)" ;;
+  esac
+done
 
 # --- Prereqs ---------------------------------------------------------------
 [ "$(id -u)" -eq 0 ] || fail "Run as root (sudo su)."
@@ -109,11 +132,25 @@ LICENSE_REVALIDATION_INTERVAL_HOURS=24
 
 # Data-source DB (optional, for Text-to-SQL on your own DB)
 RELATIONAL_DB_URL=
+
+# Private SearXNG for web_search. Empty = fall back to scraping DuckDuckGo.
+# Set by --with-searxng; points at the internal compose service.
+SEARXNG_URL=
 EOF
   chmod 600 .env
   warn "Generated admin password: $ADMIN_PASS  (save this NOW, or run: grep ADMIN_INITIAL_PASSWORD .env)"
 else
   info ".env already exists — keeping it."
+fi
+
+# SEARXNG_URL is set/cleared on every run so the flag stays authoritative across
+# updates — an existing .env from a pre-SearXNG install has no such key at all.
+SEARXNG_TARGET=""
+[ "$WITH_SEARXNG" = true ] && SEARXNG_TARGET="http://searxng:8080"
+if grep -q '^SEARXNG_URL=' .env 2>/dev/null; then
+  sed -i "s|^SEARXNG_URL=.*|SEARXNG_URL=$SEARXNG_TARGET|" .env
+else
+  printf '\n# Private SearXNG for web_search (empty = DuckDuckGo fallback)\nSEARXNG_URL=%s\n' "$SEARXNG_TARGET" >> .env
 fi
 
 # --- Pre-update backup (UPDATE only) ---------------------------------------
@@ -212,6 +249,52 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U ryasai -d ryasai"], interval: 10s, timeout: 5s, retries: 5 }
     restart: unless-stopped
     networks: [ryasai-net]
+EOF
+
+# --- Optional: private SearXNG (--with-searxng) -----------------------------
+# Off by default: ~256MB RSS is a lot next to app+redis+pg on a 1GB box.
+# Internal-only — no published port, reachable solely at http://searxng:8080
+# over ryasai-net. The app's SSRF guard blocks private IPs, so web-fetch.ts
+# allows exactly this one configured origin and nothing else.
+if [ "$WITH_SEARXNG" = true ]; then
+  if [ "$TOTAL_MB" -lt 1800 ]; then
+    warn "--with-searxng on a ${TOTAL_MB}MB box: SearXNG wants ~256MB. Swap is on, but expect it to be tight."
+  fi
+  # Generated, not tracked in git — it holds a secret, and a locally-seded
+  # tracked file would break the `git pull --ff-only` on the next update.
+  # Kept if it already exists so the secret survives updates.
+  mkdir -p searxng
+  if [ ! -f searxng/settings.yml ]; then
+    info "Writing searxng/settings.yml..."
+    # json format is NOT enabled by default — without it every query 403s.
+    cat > searxng/settings.yml <<EOF
+use_default_settings: true
+server:
+  secret_key: "$(openssl rand -hex 32)"
+  limiter: false
+  image_proxy: false
+search:
+  formats:
+    - html
+    - json
+EOF
+    chmod 600 searxng/settings.yml
+  fi
+  cat >> docker-compose.prod.yml <<'EOF'
+
+  searxng:
+    image: searxng/searxng:latest
+    volumes: ["./searxng:/etc/searxng:rw"]
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    # Capped so it can never starve app/pg on a small box.
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [ryasai-net]
+EOF
+fi
+
+cat >> docker-compose.prod.yml <<'EOF'
 
 networks:
   ryasai-net:

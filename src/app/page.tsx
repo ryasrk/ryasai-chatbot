@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import {
   LayoutDashboard,
   MessageSquare,
@@ -25,25 +26,74 @@ import { useActiveUser } from '@/hooks/use-active-user'
 import { applyTheme, getStoredTheme, getStoredDarkMode } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
 import { DashboardView } from '@/components/views/dashboard-view'
-import { ChatView } from '@/components/views/chat-view'
-import { IntegrationsView } from '@/components/views/integrations-view'
-import { KnowledgeBaseView } from '@/components/views/knowledge-base-view'
-import { SecurityView } from '@/components/views/security-view'
-import { SettingsView } from '@/components/views/settings-view'
-import { AIConfigurationView } from '@/components/views/ai-configuration-view'
-import { PromptToolsView } from '@/components/views/prompt-tools-view'
-import { IntegrationApiView } from '@/components/views/integration-api-view'
-import { AgenticView } from '@/components/views/agentic-view'
-import { PluginsView } from '@/components/views/plugins-view'
-import { SchedulesView } from '@/components/views/schedules-view'
 import { LoginView } from '@/components/views/login-view'
-import { SetupView } from '@/components/views/setup-view'
 import { ErrorScreen } from '@/components/ui/error-screen'
 import { Topbar } from '@/components/views/topbar'
+import {
+  CardGridSkeleton,
+  ChatMessageSkeleton,
+  FormSkeleton,
+  ListRowsSkeleton,
+  LoadingState,
+  TableSkeleton,
+} from '@/components/ui/view-states'
 import {
   resolveViewFromSearch,
   type ViewKey,
 } from '@/lib/view-routing'
+
+// ponytail: every view except the default one is code-split. Statically
+// importing all 12 put recharts, react-markdown and react-syntax-highlighter
+// into the first-load chunk — 2.4 MB of JS to render a login form.
+// Dashboard + Login stay static: they are what the first paint actually shows.
+const ChatView = dynamic(
+  () => import('@/components/views/chat-view').then((m) => m.ChatView),
+  { ssr: false, loading: () => <ChatMessageSkeleton /> },
+)
+const AgenticView = dynamic(
+  () => import('@/components/views/agentic-view').then((m) => m.AgenticView),
+  { ssr: false, loading: () => <LoadingState /> },
+)
+const IntegrationsView = dynamic(
+  () => import('@/components/views/integrations-view').then((m) => m.IntegrationsView),
+  { ssr: false, loading: () => <CardGridSkeleton /> },
+)
+const KnowledgeBaseView = dynamic(
+  () => import('@/components/views/knowledge-base-view').then((m) => m.KnowledgeBaseView),
+  { ssr: false, loading: () => <CardGridSkeleton /> },
+)
+const AIConfigurationView = dynamic(
+  () => import('@/components/views/ai-configuration-view').then((m) => m.AIConfigurationView),
+  { ssr: false, loading: () => <FormSkeleton /> },
+)
+const PromptToolsView = dynamic(
+  () => import('@/components/views/prompt-tools-view').then((m) => m.PromptToolsView),
+  { ssr: false, loading: () => <FormSkeleton /> },
+)
+const PluginsView = dynamic(
+  () => import('@/components/views/plugins-view').then((m) => m.PluginsView),
+  { ssr: false, loading: () => <ListRowsSkeleton /> },
+)
+const SchedulesView = dynamic(
+  () => import('@/components/views/schedules-view').then((m) => m.SchedulesView),
+  { ssr: false, loading: () => <ListRowsSkeleton /> },
+)
+const SecurityView = dynamic(
+  () => import('@/components/views/security-view').then((m) => m.SecurityView),
+  { ssr: false, loading: () => <TableSkeleton /> },
+)
+const IntegrationApiView = dynamic(
+  () => import('@/components/views/integration-api-view').then((m) => m.IntegrationApiView),
+  { ssr: false, loading: () => <TableSkeleton /> },
+)
+const SettingsView = dynamic(
+  () => import('@/components/views/settings-view').then((m) => m.SettingsView),
+  { ssr: false, loading: () => <FormSkeleton /> },
+)
+const SetupView = dynamic(
+  () => import('@/components/views/setup-view').then((m) => m.SetupView),
+  { ssr: false, loading: () => <LoadingState /> },
+)
 
 const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, desc: 'Operational overview' },
@@ -94,6 +144,13 @@ export default function Home() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const { user, orgName, loading, unauthorized, licenseError, refresh } = useActiveUser()
   const reduceMotion = useReducedMotion()
+
+  // ponytail: chat + agentic stay mounted once opened (preserves SSE streams and
+  // chat state), but there is no reason to mount — and download — them before
+  // the user ever goes there. Ref, not state: adding is idempotent and the view
+  // change already triggers this render.
+  const visited = useRef<Set<ViewKey>>(new Set())
+  visited.current.add(view)
 
   const [setup, setSetup] = useState<{
     setupCompleted: boolean
@@ -323,14 +380,19 @@ export default function Home() {
               view === 'chat' || view === 'agentic' ? 'overflow-hidden' : 'overflow-y-auto',
               'p-4 md:p-6',
             )}>
-              {/* Stateful views: always mounted, hidden when inactive.
-                  Preserves SSE streams + chat state across menu switches. */}
-              <div className={cn('h-full', view === 'chat' ? 'block' : 'hidden')}>
-                <ChatView />
-              </div>
-              <div className={cn('h-full', view === 'agentic' ? 'block' : 'hidden')}>
-                <AgenticView />
-              </div>
+              {/* Stateful views: mounted on first visit, then kept mounted and
+                  hidden when inactive. Preserves SSE streams + chat state
+                  across menu switches. */}
+              {visited.current.has('chat') && (
+                <div className={cn('h-full', view === 'chat' ? 'block' : 'hidden')}>
+                  <ChatView />
+                </div>
+              )}
+              {visited.current.has('agentic') && (
+                <div className={cn('h-full', view === 'agentic' ? 'block' : 'hidden')}>
+                  <AgenticView />
+                </div>
+              )}
               {/* Other views: mount on demand with fade animation. */}
               <AnimatePresence mode="wait">
                 {view !== 'chat' && view !== 'agentic' && (

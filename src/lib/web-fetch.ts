@@ -48,12 +48,16 @@ export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; co
     let text = await res.text()
 
     // Strip HTML tags if it's HTML
+    let title: string | undefined
     if (contentType.includes('text/html') || text.includes('<html') || text.includes('<!DOCTYPE')) {
+      // Grab <title> before stripping — the return type has always advertised it
+      // and never populated it.
+      title = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim().slice(0, 300) || undefined
       text = stripHtml(text)
     }
 
     const content = text.trim().slice(0, MAX_CONTENT_LENGTH)
-    return { ok: true, content }
+    return { ok: true, content, title }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { ok: false, content: '', error: `Fetch error: ${msg}` }
@@ -81,9 +85,83 @@ export interface SearchResult {
   snippet: string
 }
 
+/**
+ * The configured private SearXNG endpoint, or null when unset/malformed.
+ *
+ * This is an OPERATOR-set env var, never user input — which is what makes it
+ * safe to skip the isBlockedHost SSRF check below. The compose service resolves
+ * to a private Docker IP that the guard would (correctly) reject for any
+ * user-supplied URL.
+ */
+export function getSearxngEndpoint(): string | null {
+  const raw = (process.env.SEARXNG_URL ?? '').trim()
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.href.replace(/\/+$/, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Query SearXNG's JSON API. Returns null when SearXNG isn't configured or the
+ * request fails, so the caller falls back to DuckDuckGo rather than hard-failing.
+ *
+ * Requires `json` in settings.yml `search.formats` — it is NOT on by default and
+ * SearXNG answers 403 without it. install.sh --with-searxng writes that config.
+ */
+async function searxngSearch(
+  query: string,
+  maxResults: number,
+): Promise<{ ok: boolean; results: SearchResult[]; error?: string } | null> {
+  const base = getSearxngEndpoint()
+  if (!base) return null
+
+  // Path and params are fixed here and the origin comes from env — no part of
+  // this URL is caller-controlled except the query VALUE, so the guard bypass
+  // above cannot be widened into a general SSRF primitive.
+  const url = new URL(`${base}/search`)
+  url.searchParams.set('q', query)
+  url.searchParams.set('format', 'json')
+
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (!res.ok) {
+      console.warn(`[web-fetch] SearXNG HTTP ${res.status} — falling back to DuckDuckGo`)
+      return null
+    }
+    const body = (await res.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> }
+    const results: SearchResult[] = (body.results ?? [])
+      .filter((r) => r.url && r.title)
+      .slice(0, maxResults)
+      .map((r) => ({
+        title: String(r.title),
+        url: String(r.url),
+        snippet: String(r.content ?? '').slice(0, 200),
+      }))
+    // An empty result set is a real answer, not a transport failure — but the
+    // DuckDuckGo path may still find something, so let it try.
+    if (results.length === 0) return null
+    return { ok: true, results }
+  } catch (e) {
+    console.warn('[web-fetch] SearXNG unreachable — falling back to DuckDuckGo:', e)
+    return null
+  }
+}
+
 export async function webSearch(query: string, maxResults = 8): Promise<{ ok: boolean; results: SearchResult[]; error?: string }> {
   const trimmed = query.trim()
   if (!trimmed) return { ok: false, results: [], error: 'Search query is empty.' }
+
+  // Prefer a private SearXNG when one is configured (install.sh --with-searxng).
+  // Falls back to DuckDuckGo scraping if it's unset or unreachable.
+  const searxng = await searxngSearch(trimmed, maxResults)
+  if (searxng) return searxng
 
   // ponytail: DuckDuckGo HTML endpoint — free, no API key, returns parseable HTML.
   // Using the lite version for simpler HTML structure (less JS-heavy).

@@ -201,10 +201,28 @@ describe('tokenize', () => {
     expect(tokenize('   ')).toEqual([])
   })
 
-  test('filters short words, stopwords, and digits-only', () => {
+  test('drops stopwords but keeps short words and multi-digit numbers', () => {
     const tokens = tokenize('the 1234 cat is on the mat')
-    // 'the', 'is', 'on' are stopwords; 'cat' < 4 chars; '1234' is digits-only
-    expect(tokens).toEqual([])
+    // 'the'/'is'/'on' are stopwords. 'cat' and 'mat' are 3 chars and '1234' is a
+    // number — all three used to be discarded by the length/digit rules.
+    expect(tokens).toEqual(['1234', 'cat', 'mat'])
+  })
+
+  test('keeps acronyms and years that the old length cutoff deleted', () => {
+    // The concrete regression: none of these were retrievable at all before.
+    expect(tokenize('SQL API ROI')).toEqual(['sql', 'api', 'roi'])
+    expect(tokenize('revenue in 2024')).toEqual(['revenue', '2024'])
+    expect(tokenize('PPN dan PT untuk NPWP')).toEqual(['ppn', 'pt', 'npwp'])
+  })
+
+  test('still drops single characters and single digits', () => {
+    expect(tokenize('a b 1 9 x')).toEqual([])
+  })
+
+  test('question words do not become search tokens', () => {
+    // These reached the KG local level as queryTokens[0] and boosted random chunks.
+    expect(tokenize('what is the revenue')).toEqual(['revenue'])
+    expect(tokenize('how do we handle refunds')).toEqual(['handle', 'refunds'])
   })
 
   test('special characters are stripped, words preserved', () => {
@@ -243,9 +261,9 @@ describe('extractKeywords', () => {
     expect(keywords.split(',').length).toBe(3)
   })
 
-  test('filters stopwords and short words', () => {
-    const keywords = extractKeywords('the is on cat dog')
-    expect(keywords).toBe('')
+  test('filters stopwords but keeps short content words', () => {
+    expect(extractKeywords('the is on cat dog')).toBe('cat,dog')
+    expect(extractKeywords('the is on and or')).toBe('')
   })
 })
 

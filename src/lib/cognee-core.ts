@@ -1,9 +1,21 @@
 /**
  * Cognee — core engine: settings cache, client init, shared helpers.
  * Depends on: external (llm-config, embeddings, db). No deps on other cognee split files.
+ *
+ * TENANCY
+ * ----------------------------------------------------------------------------
+ * Everything here is keyed by organizationId. Cognee used to hold one global
+ * client + one global ownerId + one global settings cache, which meant a single
+ * shared store: org B recalled org A's documents, org A's settings applied to
+ * org B for the 10s cache window, and whichever org initialised first supplied
+ * the LLM API key that every other org's cognify then billed to.
+ *
+ * No org context => cognee is a no-op. Fail closed: a background worker that
+ * forgets to enterWithOrg gets nothing rather than everyone's data.
  */
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { getEmbeddingRuntimeConfig } from '@/lib/embeddings'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { db } from '@/lib/db'
 
 interface CogneeSettings {
@@ -14,58 +26,66 @@ interface CogneeSettings {
   maxRetries: number
 }
 
-let _cachedSettings: CogneeSettings | null = null
-let _settingsAt = 0
+const DISABLED_SETTINGS: CogneeSettings = {
+  enabled: false,
+  dbProvider: 'local',
+  dbUrl: null,
+  batchSize: 50,
+  maxRetries: 3,
+}
+
+const _settingsCache = new Map<string, { settings: CogneeSettings; at: number }>()
 const SETTINGS_TTL = 10000 // 10s cache
 
 export async function getCogneeSettings(): Promise<CogneeSettings> {
-  if (_cachedSettings && Date.now() - _settingsAt < SETTINGS_TTL) return _cachedSettings
+  const orgId = getOrgContext()
+  if (!orgId) return DISABLED_SETTINGS
 
-  // Check env var first (backward compat), then DB.
-  // ponytail: default to true when neither env nor DB explicitly disables —
-  // cognee.init fails gracefully if @cognee/cognee-ts can't start, so enabling
-  // by default is safe (falls back to no-op).
-  const envEnabled = process.env.COGNEE_ENABLED !== 'false'
+  const cached = _settingsCache.get(orgId)
+  if (cached && Date.now() - cached.at < SETTINGS_TTL) return cached.settings
+
+  // ponytail: fail closed — cognee stays off unless COGNEE_ENABLED is explicitly
+  // "true". It writes org data into an external graph store and spends LLM budget;
+  // neither should switch on because an env var was left unset.
+  const envEnabled = process.env.COGNEE_ENABLED === 'true'
+
+  const envFallback = (): CogneeSettings => ({
+    enabled: envEnabled,
+    dbProvider: process.env.COGNEE_DB_PROVIDER?.toLowerCase() === 'postgres' ? 'postgres' : 'local',
+    dbUrl: process.env.COGNEE_DB_URL ?? null,
+    batchSize: parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
+    maxRetries: parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
+  })
 
   let settings: CogneeSettings
   try {
+    // Org-scoped by the tenant extension — this is THIS org's config.
     const config = await db.appConfig.findFirst()
-    if (config) {
-      settings = {
-        enabled: envEnabled && config.cogneeEnabled,
-        dbProvider: (config.cogneeDbProvider === 'postgres' ? 'postgres' : 'local'),
-        dbUrl: config.cogneeDbUrl ?? process.env.COGNEE_DB_URL ?? null,
-        batchSize: config.cogneeBatchSize || parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
-        maxRetries: config.cogneeMaxRetries || parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
-      }
-    } else {
-      settings = {
-        enabled: envEnabled,
-        dbProvider: process.env.COGNEE_DB_PROVIDER?.toLowerCase() === 'postgres' ? 'postgres' : 'local',
-        dbUrl: process.env.COGNEE_DB_URL ?? null,
-        batchSize: parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
-        maxRetries: parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
-      }
-    }
+    settings = config
+      ? {
+          enabled: envEnabled && config.cogneeEnabled,
+          dbProvider: config.cogneeDbProvider === 'postgres' ? 'postgres' : 'local',
+          dbUrl: config.cogneeDbUrl ?? process.env.COGNEE_DB_URL ?? null,
+          batchSize: config.cogneeBatchSize || parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
+          maxRetries: config.cogneeMaxRetries || parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
+        }
+      : envFallback()
   } catch {
-    settings = {
-      enabled: envEnabled,
-      dbProvider: process.env.COGNEE_DB_PROVIDER?.toLowerCase() === 'postgres' ? 'postgres' : 'local',
-      dbUrl: process.env.COGNEE_DB_URL ?? null,
-      batchSize: parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
-      maxRetries: parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
-    }
+    settings = envFallback()
   }
 
-  _cachedSettings = settings
-  _settingsAt = Date.now()
+  _settingsCache.set(orgId, { settings, at: Date.now() })
   return settings
 }
 
-/** Invalidate cached settings — call after UI updates cognee config. */
-export function invalidateCogneeSettings(): void {
-  _cachedSettings = null
-  _settingsAt = 0
+/**
+ * Invalidate cached settings — call after UI updates cognee config.
+ * Clears the calling org only; pass `all` for process-wide (tests, reset).
+ */
+export function invalidateCogneeSettings(scope: 'org' | 'all' = 'org'): void {
+  const orgId = getOrgContext()
+  if (scope === 'all' || !orgId) _settingsCache.clear()
+  else _settingsCache.delete(orgId)
 }
 
 export async function isCogneeEnabled(): Promise<boolean> {
@@ -80,33 +100,58 @@ export function cognifyMaxRetries(settings: CogneeSettings): number {
   return settings.maxRetries
 }
 
-let _cognee: any | null = null
-let _initFailed = false
-let _initFailedAt = 0
-let _warming = false
-export let _ownerId: string | null = null
+interface CogneeEntry {
+  client: any | null
+  ownerId: string | null
+  initFailedAt: number
+  warming: boolean
+}
+
+const _clients = new Map<string, CogneeEntry>()
 
 const INIT_RETRY_MS = 30000 // retry init after 30s if it failed
 
+function entryFor(orgId: string): CogneeEntry {
+  let entry = _clients.get(orgId)
+  if (!entry) {
+    entry = { client: null, ownerId: null, initFailedAt: 0, warming: false }
+    _clients.set(orgId, entry)
+  }
+  return entry
+}
+
+/**
+ * Per-org cognee store paths. In `local` mode all state is files on disk, so the
+ * org id has to be in the path — one shared sqlite/kuzu/lancedb directory is one
+ * shared knowledge graph. Sanitised because it lands in a filesystem path.
+ */
+function storeDirsFor(orgId: string): { dataDir: string; systemDir: string } {
+  const safe = orgId.replace(/[^a-zA-Z0-9_-]/g, '_')
+  const dataRoot = process.env.COGNEE_DATA_DIR ?? '.cognee/data'
+  const systemRoot = process.env.COGNEE_SYSTEM_DIR ?? '.cognee/system'
+  return { dataDir: `${dataRoot}/${safe}`, systemDir: `${systemRoot}/${safe}` }
+}
+
 export async function getCogneeClient(): Promise<any> {
   // ponytail: graceful degradation — returns null when cognee SDK init fails, callers fall back to no-op
-  if (_cognee) return _cognee
-  if (_initFailed && Date.now() - _initFailedAt < INIT_RETRY_MS) return null
-  if (_warming) return null
+  const orgId = getOrgContext()
+  if (!orgId) return null
 
-  _initFailed = false // clear stale failure flag
+  const entry = entryFor(orgId)
+  if (entry.client) return entry.client
+  if (entry.initFailedAt && Date.now() - entry.initFailedAt < INIT_RETRY_MS) return null
+  if (entry.warming) return null
 
   try {
-    _warming = true
+    entry.warming = true
     const settings = await getCogneeSettings()
     const { Cognee } = await import('@cognee/cognee-ts')
 
+    // This org's LLM config — not whichever org happened to boot first.
     const llm = await getLlmRuntimeConfig()
 
     const usePostgres = settings.dbProvider === 'postgres'
-
-    const dataDir = process.env.COGNEE_DATA_DIR ?? '.cognee/data'
-    const systemDir = process.env.COGNEE_SYSTEM_DIR ?? '.cognee/system'
+    const { dataDir, systemDir } = storeDirsFor(orgId)
 
     const settingsObj: Record<string, unknown> = {
       dataRootDirectory: dataDir,
@@ -141,26 +186,33 @@ export async function getCogneeClient(): Promise<any> {
 
     const c = new Cognee(settingsObj)
     await c.warm()
-    _ownerId = await c.ownerId()
-    _cognee = c
+    entry.ownerId = await c.ownerId()
+    entry.client = c
+    entry.initFailedAt = 0
     return c
   } catch (err) {
     console.warn('[cognee] init failed:', err)
-    _initFailed = true
-    _initFailedAt = Date.now()
+    entry.initFailedAt = Date.now()
     return null
   } finally {
-    _warming = false
+    entry.warming = false
   }
 }
 
+/**
+ * Cognee's own user id for the calling org's client. Every search must pass it —
+ * it used to be a module-global `_ownerId` set by whichever org initialised first.
+ */
+export function getCogneeOwnerId(): string | undefined {
+  const orgId = getOrgContext()
+  return (orgId && _clients.get(orgId)?.ownerId) || undefined
+}
+
 /** Reset the cognee client cache — forces re-init on next call. */
-export function resetClientCache(): void {
-  _cognee = null
-  _initFailed = false
-  _initFailedAt = 0
-  _warming = false
-  _ownerId = null
+export function resetClientCache(scope: 'org' | 'all' = 'org'): void {
+  const orgId = getOrgContext()
+  if (scope === 'all' || !orgId) _clients.clear()
+  else _clients.delete(orgId)
 }
 
 async function updateDocumentCognifyStatus(

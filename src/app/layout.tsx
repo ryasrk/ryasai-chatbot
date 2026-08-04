@@ -12,6 +12,9 @@ const inter = Inter({
 const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
   subsets: ["latin"],
+  // ponytail: mono is only used inside code blocks / chat, never above the
+  // fold — preloading it just competes with the real critical resources.
+  preload: false,
 });
 
 export const metadata: Metadata = {

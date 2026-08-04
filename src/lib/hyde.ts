@@ -51,16 +51,36 @@ export function decomposeQuery(query: string): string[] {
   if (cmpMatch) return [cmpMatch[1].trim(), cmpMatch[2].trim()].filter((s) => s.length > 2)
 
   if (/\band\b/i.test(query)) {
-    const parts = query.split(/\s+and\s+/i).map((p) => p.trim()).filter((p) => p.length > 2)
-    if (parts.length >= 2) return parts.slice(0, 3)
+    const parts = query.split(/\s+and\s+/i).map((p) => p.trim())
+    // Every part must be a clause, not a bare word. Splitting on any "and" turned
+    // "terms and conditions" into ["terms", "conditions"] and "profit and loss
+    // statement" into ["profit", "loss statement"] — two retrievals for half a
+    // noun phrase each, on by default for every query containing the word.
+    // ponytail: word count is the cheap proxy for "is this its own question".
+    // Ceiling: an LLM splitter would handle "revenue and margin by region"
+    // properly; add one when decomposition demonstrably beats single retrieval.
+    if (parts.length >= 2 && parts.every(isStandaloneClause)) return parts.slice(0, 3)
   }
 
   if (/\bvs\b|\bversus\b/i.test(query)) {
+    // vs/versus is an explicit comparison — a bare "A vs B" is exactly the case
+    // decomposition is for, so no clause-length requirement here.
     const parts = query.split(/\s+(?:vs|versus)\s+/i).map((p) => p.trim()).filter((p) => p.length > 2)
     if (parts.length >= 2) return parts.slice(0, 3)
   }
 
   return [query]
+}
+
+/**
+ * A sub-query worth its own retrieval pass. Two words is the line that separates
+ * a real second question ("sales revenue and marketing spend") from half of a
+ * noun phrase ("terms and conditions", "profit and loss statement",
+ * "research and development budget") — in the latter, at least one side is a
+ * single bare word.
+ */
+function isStandaloneClause(part: string): boolean {
+  return part.split(/\s+/).filter(Boolean).length >= 2
 }
 
 /** Merge multiple retrieval results — dedupe by chunkId keeping highest score. */

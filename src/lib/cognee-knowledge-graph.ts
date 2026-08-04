@@ -10,7 +10,7 @@ import {
   getCogneeSettings,
   cogneeBatchSize,
   cognifyMaxRetries,
-  _ownerId,
+  getCogneeOwnerId,
   formatSearchResponse,
   extractSearchItems,
   updateDocumentCognifyStatus,
@@ -249,7 +249,7 @@ export async function recallKnowledgeGraph(args: {
         datasets: [kbDatasetFor()],
         topK: strategy.topK,
         searchType: strategy.searchType,
-        userId: _ownerId ?? undefined,
+        userId: getCogneeOwnerId(),
       })
       const formatted = formatSearchResponse(result)
       if (formatted) results.push(formatted)
@@ -300,7 +300,7 @@ export async function recallKnowledgeGraphStructured(args: {
         datasets: [kbDatasetFor()],
         topK: strategy.topK,
         searchType: strategy.searchType,
-        userId: _ownerId ?? undefined,
+        userId: getCogneeOwnerId(),
       })
       const items = extractSearchItems(result)
       for (const item of items) {

@@ -128,6 +128,9 @@ export async function PATCH(
       data: { isEnabled: body.isEnabled },
       select: { id: true, isEnabled: true, updatedAt: true },
     })
+    // Retrieval filters on isEnabled, but cached results were computed before the
+    // toggle — without this a disabled document keeps answering for the cache TTL.
+    await invalidateRagCache()
     invalidateSourceEmbeddingCache()
 
     // ponytail: cognifyDocument checks isCogneeEnabled internally — no-op if disabled.

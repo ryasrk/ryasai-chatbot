@@ -69,6 +69,22 @@ describe('decomposeQuery', () => {
     expect(result.length).toBeLessThanOrEqual(3)
   })
 
+  test('does NOT split noun phrases joined by "and"', () => {
+    // Each of these used to fan out into two retrievals for half a phrase.
+    expect(decomposeQuery('terms and conditions')).toEqual(['terms and conditions'])
+    expect(decomposeQuery('profit and loss statement')).toEqual(['profit and loss statement'])
+    expect(decomposeQuery('research and development budget')).toEqual([
+      'research and development budget',
+    ])
+  })
+
+  test('still splits when both sides are real clauses', () => {
+    expect(decomposeQuery('what is our refund policy and how do i escalate a complaint')).toEqual([
+      'what is our refund policy',
+      'how do i escalate a complaint',
+    ])
+  })
+
   test('"difference between X and Y" → [X, Y]', () => {
     const result = decomposeQuery('difference between annual leave and sick leave')
     expect(result).toEqual(['annual leave', 'sick leave'])

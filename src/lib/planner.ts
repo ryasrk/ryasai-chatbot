@@ -53,6 +53,20 @@ export type StepStatus = 'running' | 'done' | 'error'
 
 const MAX_STEPS = 6
 
+// ponytail: shared between the function-calling planner and the JSON planner so
+// the two cannot drift. Both must describe the same {{stepN}} contract.
+const STEP_DEPENDENCY_RULES =
+  'STEP DATA FLOW: A step that needs an earlier step\'s output must (a) list that step id in dependsOn, ' +
+  'and (b) reference it with the placeholder {{stepN}} inside one of its input string values. ' +
+  'The placeholder is replaced with that step\'s actual output before the step runs. ' +
+  'Do NOT guess the content of a later step\'s input — use the placeholder. '
+
+const MCP_INSTALL_RULES =
+  'MCP INSTALL FROM URL: Use a TWO-STEP plan — step1 web_fetch the URL, then step2 admin:mcp_install with ' +
+  'dependsOn:["step1"] and "instructions":"{{step1}}" so the fetched page reaches the installer, plus the ' +
+  'server name and URL. Leave command/args/envVars out unless you already know them; they are read from the ' +
+  'fetched instructions. '
+
 // ---------------------------------------------------------------------------
 // Plan query — ask the LLM to produce a multi-step plan
 // ---------------------------------------------------------------------------
@@ -60,23 +74,40 @@ const MAX_STEPS = 6
 const PLAN_STEP_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
-    tool: { type: 'string', description: 'Tool ID from the available tools list' },
-    input: {
-      type: 'object',
-      description: 'Parameters for the tool',
-      additionalProperties: true,
+    steps: {
+      type: 'array',
+      description: `The plan steps, in order. Maximum ${MAX_STEPS}. Use one step for simple questions.`,
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Step id: "step1", "step2", ...' },
+          tool: { type: 'string', description: 'Tool ID from the available tools list' },
+          input: {
+            type: 'object',
+            description:
+              'Parameters for the tool. To use a prior step\'s output, put the placeholder {{stepN}} inside a string value.',
+            additionalProperties: true,
+          },
+          dependsOn: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Step ids that must complete before this one runs',
+          },
+        },
+        required: ['id', 'tool', 'input'],
+      },
     },
     needsSynthesis: {
       type: 'boolean',
       description: 'Whether results need synthesis into a single answer',
     },
   },
-  required: ['tool', 'input'],
+  required: ['steps'],
 }
 
-// ponytail: native function calling is one-shot (single tool call), so this
-// only produces single-step plans. Multi-step plans fall back to planQuery's
-// manual JSON prompt. Add multi-step when providers support sequential calls.
+// ponytail: emits the whole plan in one function call (steps array) rather than
+// one step per call — providers only reliably return a single tool call per
+// completion, and a one-step-only planner cannot express web_fetch -> install.
 export async function planQueryWithTools(args: {
   question: string
   availableTools: ToolDef[]
@@ -102,12 +133,14 @@ export async function planQueryWithTools(args: {
 
     const systemPrompt =
       'You are an enterprise AI planner. Create a plan to answer the user\'s question. ' +
-      `Select one tool from the available list. Maximum ${MAX_STEPS} steps. ` +
-      'Call the execute_step function with the tool ID, input parameters, and whether synthesis is needed. ' +
+      `Select tools from the available list. Maximum ${MAX_STEPS} steps. ` +
+      'Call the execute_plan function with the full list of steps and whether synthesis is needed. ' +
+      STEP_DEPENDENCY_RULES +
       'CONFIRMATION FLOW: Some tools (admin:mcp_install, admin:mcp_remove, admin:set_prompt, admin:toggle_*) ' +
       'require confirmation. On the first call, do NOT include confirm in the input — the tool will ask the user to confirm. ' +
       'When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes". ' +
-      'MCP INSTALL FROM URL: Use a two-step plan — (1) web_fetch the URL to read install instructions, (2) admin:mcp_install with the extracted command/args/envVars. ' +
+      'Confirmation is per step: only the step the user confirmed may carry "confirm":"yes". ' +
+      MCP_INSTALL_RULES +
       'WEB SEARCH: Use web_search for any request about current events, news, or searching the internet — NEVER use chat for these.'
 
     const userMessage =
@@ -115,14 +148,14 @@ export async function planQueryWithTools(args: {
       `Available tools:\n${toolList}\n\n` +
       (memoryContext ? `Memory from prior interactions:\n${memoryContext}\n\n` : '') +
       (historyText ? `Prior conversation history:\n${historyText}\n\n` : '') +
-      `Plan the first step.`
+      `Plan the steps.`
 
     const tools: LlmToolDef[] = [
       {
         type: 'function',
         function: {
-          name: 'execute_step',
-          description: 'Execute one step of the plan using the specified tool',
+          name: 'execute_plan',
+          description: 'Execute the plan steps in dependency order using the specified tools',
           parameters: PLAN_STEP_SCHEMA,
         },
       },
@@ -141,26 +174,12 @@ export async function planQueryWithTools(args: {
 
     if (!Array.isArray(result) || result.length === 0) return null
 
-    const stepData = JSON.parse(result[0].arguments) as {
-      tool: string
-      input?: Record<string, unknown>
-      needsSynthesis?: boolean
-    }
-
-    const toolIds = new Set(args.availableTools.map((t) => t.id))
-    if (!toolIds.has(stepData.tool)) return null
-
-    const input: Record<string, string> = {}
-    if (stepData.input && typeof stepData.input === 'object') {
-      for (const [k, v] of Object.entries(stepData.input)) {
-        input[k] = String(v)
-      }
-    }
-
-    return {
-      steps: [{ id: 'step1', tool: stepData.tool, input, dependsOn: [] }],
-      needsSynthesis: stepData.needsSynthesis ?? false,
-    }
+    // ponytail: reuse the same normalize + validate the JSON path uses — one
+    // set of rules (unknown tool, MAX_STEPS, cycles) for both planners.
+    // validatePlan throws on a bad plan; the catch below returns null so
+    // planQuery falls through to the JSON prompt path.
+    const plan = normalizePlan(JSON.parse(result[0].arguments))
+    return validatePlan(plan, args.availableTools)
   } catch {
     return null
   }
@@ -199,7 +218,7 @@ export async function planQuery(args: {
       '- Only use the chat tool for greetings, opinions, or questions that truly need no external data.\n' +
       '- Only use sql if the question is about structured data in connected databases (sales, inventory, customers).\n' +
       '- Only use rag if the question is about company documents (SOPs, policies, guidelines).\n' +
-      '- To install/add/set up an MCP server from a URL, use a TWO-STEP plan: (1) web_fetch the URL to read the installation instructions, (2) admin:mcp_install with the server name, URL, and the command/args/envVars you extracted from the fetched content.\n' +
+      '- ' + MCP_INSTALL_RULES + '\n' +
       '- To install a known MCP server by name (filesystem, github, postgres, etc.), use admin:mcp_install directly with the name.\n' +
       '- To set credentials for an MCP server, use admin:mcp_set_credentials with the server name and credentials.\n' +
       '- To list MCP servers, use admin:mcp_list.\n' +
@@ -207,7 +226,8 @@ export async function planQuery(args: {
       '- To remove an MCP server, use admin:mcp_remove.\n' +
       '- To seed/restore prebuilt plugins, use admin:seed_plugins.\n' +
       '- Use web_fetch to read any URL (GitHub repo, docs page, blog post) and get its text content. Useful for reading installation instructions before installing an MCP server.\n' +
-      'CONFIRMATION FLOW: Tools marked "REQUIRES user confirmation" need a two-turn flow. On the first call, do NOT include confirm in the input. The tool will return a confirmation message — relay it to the user. When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes".\n' +
+      STEP_DEPENDENCY_RULES + '\n' +
+      'CONFIRMATION FLOW: Tools marked "REQUIRES user confirmation" need a two-turn flow. On the first call, do NOT include confirm in the input. The tool will return a confirmation message — relay it to the user. When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes". Confirmation is per step: only the step the user confirmed may carry "confirm":"yes".\n' +
       'Answer ONLY with JSON without markdown code fence:\n' +
       '{"steps":[{"id":"step1","tool":"<tool_id>","input":{...},"dependsOn":[]}],"needsSynthesis":true|false}'
 
@@ -266,7 +286,10 @@ function normalizePlan(parsed: unknown): Plan {
 function normalizeStep(raw: unknown): PlanStep | null {
   if (!raw || typeof raw !== 'object') return null
   const step = raw as Record<string, unknown>
-  const id = String(step.id ?? '').trim()
+  // ponytail: step ids are machine identifiers, never user-facing — lowercase them
+  // (and dependsOn) so "Step1" vs "step1" from the LLM can't produce a dangling
+  // dependency or a missed {{stepN}} substitution.
+  const id = String(step.id ?? '').trim().toLowerCase()
   const tool = String(step.tool ?? '').trim()
   if (!id || !tool) return null
   const input =
@@ -274,7 +297,7 @@ function normalizeStep(raw: unknown): PlanStep | null {
       ? stringifyEntries(step.input as Record<string, unknown>)
       : {}
   const dependsOn = Array.isArray(step.dependsOn)
-    ? step.dependsOn.map(String).filter(Boolean)
+    ? step.dependsOn.map((d) => String(d).trim().toLowerCase()).filter(Boolean)
     : undefined
   return { id, tool, input, dependsOn }
 }
@@ -415,11 +438,6 @@ export async function executePlan(args: {
   const results: PlanStepResult[] = []
   const sorted = topoSort(args.plan.steps)
 
-  // ponytail: check if the user confirmed — planner passes this via the message context
-  const isConfirmed = args.plan.steps.some((s) =>
-    s.input.confirm === 'yes' || s.input.confirmed === 'yes' || s.input.confirm === 'true',
-  )
-
   // ponytail: group steps by dependency level. Steps at the same level have
   // no dependencies on each other and can execute in parallel. Steps at level N
   // depend only on steps at level < N. Ceiling: O(levels) sequential rounds,
@@ -427,22 +445,66 @@ export async function executePlan(args: {
   // this saves ~50% vs fully sequential.
   const levels = groupByLevel(sorted)
 
+  // Outputs of completed steps, keyed by step id — resolves {{stepN}} placeholders
+  // in the inputs of dependent steps. Levels run in order, so every dependency
+  // of a step in level N has already landed here by the time that level starts.
+  const priorOutputs = new Map<string, string>()
+
   for (const level of levels) {
     const levelResults = await Promise.all(
-      level.map((step) =>
-        withToolSandbox(step.tool, () => executeStep(step, args, isConfirmed)).catch((e) => {
+      level.map((step) => {
+        const resolved = resolveStepInput(step, priorOutputs)
+        return withToolSandbox(resolved.tool, () => executeStep(resolved, args, isStepConfirmed(resolved))).catch((e) => {
           args.onStatus?.(step.id, step.tool, 'error')
           return {
             stepId: step.id, tool: step.tool, ok: false, output: '',
             error: e instanceof Error ? e.message : String(e), latencyMs: 0,
           } as PlanStepResult
-        }),
-      ),
+        })
+      }),
     )
     results.push(...levelResults)
+    for (const r of levelResults) {
+      if (r.ok) priorOutputs.set(r.stepId, r.output)
+    }
   }
 
   return results
+}
+
+/**
+ * Whether THIS step carries the user's confirmation.
+ *
+ * ponytail: was previously computed once per plan with `steps.some(...)`, which
+ * meant confirming one step confirmed every step — a plan could smuggle an
+ * unconfirmed admin action alongside a confirmed one. Per-step, always.
+ */
+export function isStepConfirmed(step: PlanStep): boolean {
+  const { confirm, confirmed } = step.input
+  return confirm === 'yes' || confirm === 'true' || confirmed === 'yes'
+}
+
+const MAX_INJECTED_OUTPUT = 8_000
+
+/**
+ * Replace {{stepN}} placeholders in a step's input values with that step's output.
+ * A placeholder whose step failed or produced nothing resolves to empty string —
+ * the tool then reports a missing input rather than receiving the literal "{{step1}}".
+ *
+ * ponytail: string substitution, not a template engine. Outputs are truncated so a
+ * large fetched page can't blow the downstream tool's input budget.
+ */
+export function resolveStepInput(step: PlanStep, priorOutputs: Map<string, string>): PlanStep {
+  if (priorOutputs.size === 0) return step
+  let touched = false
+  const input: Record<string, string> = {}
+  for (const [key, value] of Object.entries(step.input)) {
+    input[key] = value.replace(/\{\{\s*(step\d+)\s*\}\}/gi, (_match, id: string) => {
+      touched = true
+      return (priorOutputs.get(id.toLowerCase()) ?? '').slice(0, MAX_INJECTED_OUTPUT)
+    })
+  }
+  return touched ? { ...step, input } : step
 }
 
 function groupByLevel(sorted: PlanStep[]): PlanStep[][] {

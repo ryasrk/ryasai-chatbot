@@ -41,6 +41,16 @@ import {
   resetCognee,
 } from './cognee'
 import { db } from '@/lib/db'
+import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
+
+// Cognee is org-scoped: no org context => every entry point is a no-op, by design
+// (a worker that forgets enterWithOrg must get nothing, not everyone's graph).
+//
+// ponytail: entered per-test inside async bodies/hooks, never at module scope —
+// AsyncLocalStorage.enterWith() during module evaluation swaps the context bun's
+// runner is holding and every *synchronous* test in the file then hangs to its
+// 5s timeout. Cost of the workaround is one call per test that needs an org.
+const TEST_ORG = 'org-test'
 
 const _savedFlag = process.env.COGNEE_ENABLED
 afterAll(async () => {
@@ -56,6 +66,7 @@ afterAll(async () => {
 
 describe('cognee memory layer — disabled (default)', () => {
   beforeEach(async () => {
+    enterWithOrg(TEST_ORG)
     delete process.env.COGNEE_ENABLED
     try {
       const config = await db.appConfig.findFirst()
@@ -149,6 +160,10 @@ describe('cognee memory layer — disabled (default)', () => {
 })
 
 describe('cognee — COGNEE_ENABLED env var', () => {
+  beforeEach(async () => {
+    enterWithOrg(TEST_ORG)
+  })
+
   test('COGNEE_ENABLED=false → disabled even if DB says enabled', async () => {
     process.env.COGNEE_ENABLED = 'false'
     try {
@@ -171,7 +186,9 @@ describe('cognee — COGNEE_ENABLED env var', () => {
     expect(health.enabled).toBe(true)
   })
 
-  test('COGNEE_ENABLED unset → defaults to enabled (safe default)', async () => {
+  test('COGNEE_ENABLED unset → disabled (fail closed)', async () => {
+    // Was "defaults to enabled". Cognee writes org data into an external graph
+    // store and spends LLM budget; neither may switch on from an unset env var.
     delete process.env.COGNEE_ENABLED
     try {
       const config = await db.appConfig.findFirst()
@@ -179,7 +196,7 @@ describe('cognee — COGNEE_ENABLED env var', () => {
     } catch {}
     invalidateCogneeSettings()
     const health = await cogneeHealth()
-    expect(health.enabled).toBe(true)
+    expect(health.enabled).toBe(false)
   })
 })
 
@@ -194,12 +211,16 @@ describe('clearSessionCache', () => {
 })
 
 describe('invalidateCogneeSettings', () => {
+  beforeEach(async () => {
+    enterWithOrg(TEST_ORG)
+  })
+
   test('invalidateCogneeSettings → does not throw', () => {
     expect(() => invalidateCogneeSettings()).not.toThrow()
   })
 
   test('invalidateCogneeSettings forces settings re-read from DB', async () => {
-    delete process.env.COGNEE_ENABLED
+    process.env.COGNEE_ENABLED = 'true'
     try {
       const config = await db.appConfig.findFirst()
       if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: false } })
@@ -220,7 +241,14 @@ describe('invalidateCogneeSettings', () => {
 })
 
 describe('cognee memory layer — enabled (package installed, graceful degradation)', () => {
+  // beforeAll's context does not reach the individual tests in bun — each test
+  // needs the org entered in its own chain.
+  beforeEach(async () => {
+    enterWithOrg(TEST_ORG)
+  })
+
   beforeAll(async () => {
+    enterWithOrg(TEST_ORG)
     process.env.COGNEE_ENABLED = 'true'
     try {
       const config = await db.appConfig.findFirst()
@@ -314,12 +342,53 @@ describe('cognee memory layer — enabled (package installed, graceful degradati
 })
 
 describe('cognee dataset isolation', () => {
-  test('datasetFor returns fixed default', () => {
-    expect(datasetFor()).toBe('default')
+  // These names WERE the constants 'default' and 'default:kb' for every tenant.
+  // In postgres mode several orgs can share one cognee database, so the dataset
+  // name is the isolation boundary inside it — a fixed name meant one shared graph.
+  test('dataset names carry the org id', async () => {
+    enterWithOrg(TEST_ORG)
+    expect(datasetFor()).toBe(`org:${TEST_ORG}`)
+    expect(kbDatasetFor()).toBe(`org:${TEST_ORG}:kb`)
   })
 
-  test('kbDatasetFor returns fixed default:kb', () => {
-    expect(kbDatasetFor()).toBe('default:kb')
+  test('memory and knowledge-base datasets stay distinct', async () => {
+    enterWithOrg(TEST_ORG)
     expect(kbDatasetFor()).not.toBe(datasetFor())
+  })
+
+  test('two orgs never resolve to the same dataset', async () => {
+    enterWithOrg('org-a')
+    const a = { chat: datasetFor(), kb: kbDatasetFor() }
+    enterWithOrg('org-b')
+    const b = { chat: datasetFor(), kb: kbDatasetFor() }
+    expect(a.chat).not.toBe(b.chat)
+    expect(a.kb).not.toBe(b.kb)
+    // and neither org can reach the other's knowledge base
+    expect(a.kb).not.toBe(b.chat)
+    expect(b.kb).not.toBe(a.chat)
+    enterWithOrg(TEST_ORG)
+  })
+
+  test('no org context resolves to a dead namespace, not the shared default', async () => {
+    await bypassOrg(async () => {
+      expect(datasetFor()).toBe('org:no-org')
+      expect(kbDatasetFor()).toBe('org:no-org:kb')
+      expect(datasetFor()).not.toBe('default')
+    })
+    enterWithOrg(TEST_ORG)
+  })
+
+  test('getCogneeSettings is disabled without org context', async () => {
+    process.env.COGNEE_ENABLED = 'true'
+    try {
+      const config = await db.appConfig.findFirst()
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+    } catch {}
+    invalidateCogneeSettings('all')
+    await bypassOrg(async () => {
+      const health = await cogneeHealth()
+      expect(health.enabled).toBe(false)
+    })
+    enterWithOrg(TEST_ORG)
   })
 })

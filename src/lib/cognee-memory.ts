@@ -4,7 +4,7 @@
  */
 import type { ChatTurnMemory } from './cognee-types'
 import { datasetFor } from './cognee-types'
-import { isCogneeEnabled, getCogneeClient, _ownerId, formatSearchResponse } from './cognee-core'
+import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse } from './cognee-core'
 
 export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (!(await isCogneeEnabled())) return
@@ -129,7 +129,7 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
         datasets: [datasetFor()],
         topK: strategy.topK,
         searchType: strategy.searchType,
-        userId: _ownerId ?? undefined,
+        userId: getCogneeOwnerId(),
       })
       const formatted = formatSearchResponse(result)
       if (formatted) return formatted
@@ -139,7 +139,7 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
   }
   // Last resort: no dataset filter
   try {
-    const result = await c.search(query, { topK: 5, userId: _ownerId ?? undefined })
+    const result = await c.search(query, { topK: 5, userId: getCogneeOwnerId() })
     return formatSearchResponse(result)
   } catch (e) {
     console.warn('[cognee] graph recall failed:', e instanceof Error ? e.message : String(e))
@@ -153,7 +153,7 @@ async function recallFromSession(c: any, query: string, sessionId: string): Prom
     const result = await c.search(query, {
       sessionId,
       topK: 3,
-      userId: _ownerId ?? undefined,
+      userId: getCogneeOwnerId(),
     })
     return formatSearchResponse(result)
   } catch (e) {

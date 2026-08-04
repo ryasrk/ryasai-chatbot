@@ -7,10 +7,13 @@
  * ponytail: native TS implementation — no external cognee dependency for KG.
  * Falls back to empty results when LLM is unavailable (graceful degradation).
  */
+import { randomUUID } from 'node:crypto'
 import { db } from '@/lib/db'
 import { getRoleLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce } from '@/lib/llm-client'
 import { scopedLogger } from '@/lib/logger'
+import { getOrgContext } from '@/lib/prisma-tenant'
+import { tokenize } from '@/lib/rag'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
 const log = scopedLogger('kg')
@@ -134,18 +137,35 @@ export async function indexChunkKnowledgeGraph(args: {
       })
     }
 
-    // Store relations in KgRelation table (if it exists)
+    // Store relations. KgRelation.organizationId is NOT NULL — omitting it made
+    // every insert throw, and the old catch reported that as "table not available",
+    // so the entire global/relation half of dual-level retrieval silently never
+    // stored a row. Use the Prisma model so the tenant extension supplies the org.
     if (extraction.relations.length > 0) {
-      try {
-        for (const r of extraction.relations) {
-          await db.$executeRaw`
-            INSERT INTO "KgRelation" ("id", "chunkId", "source", "target", "description", "keywords", "createdAt")
-            VALUES (${cryptoRandomId()}, ${args.chunkId}, ${r.source}, ${r.target}, ${r.description}, ${r.keywords}, NOW())
-          `
+      const orgId = getOrgContext()
+      if (!orgId) {
+        log.warn('skipping KG relation storage — no org context', { chunkId: args.chunkId })
+      } else {
+        try {
+          await db.kgRelation.createMany({
+            data: extraction.relations.map((r) => ({
+              id: randomUUID(),
+              organizationId: orgId,
+              chunkId: args.chunkId,
+              source: r.source.toLowerCase().trim(),
+              target: r.target.toLowerCase().trim(),
+              description: r.description ?? '',
+              keywords: r.keywords ?? '',
+            })),
+          })
+        } catch (e) {
+          // Loud: a failure here means the graph's global level goes stale, and
+          // that is exactly the class of bug the old silent catch hid.
+          log.warn('KG relation storage failed', {
+            chunkId: args.chunkId,
+            error: e instanceof Error ? e.message : String(e),
+          })
         }
-      } catch {
-        // ponytail: KgRelation table may not exist yet — skip silently
-        log.debug('KgRelation table not available, skipping relation storage')
       }
     }
 
@@ -176,23 +196,32 @@ export interface DualLevelResult {
   graphContext: string
 }
 
+// ponytail: cap the OR-list / ILIKE ANY array — a long question would otherwise
+// build a where clause with one `contains` per token and scan the keyword index
+// once per term. 8 covers real questions; raise it only if recall measurably drops.
+const MAX_KG_QUERY_TOKENS = 8
+
 export async function dualLevelRetrieval(args: {
   query: string
   topK?: number
 }): Promise<DualLevelResult> {
   const topK = args.topK ?? 4
-  const queryTokens = args.query.toLowerCase().split(/\s+/).filter((t) => t.length > 2)
+  // Use the shared tokenizer: the old `split(/\s+/).filter(len > 2)` kept
+  // stopwords, so `queryTokens[0]` was usually "what"/"how" and the local level
+  // matched — then 1.3x boosted — essentially random chunks.
+  const queryTokens = tokenize(args.query).slice(0, MAX_KG_QUERY_TOKENS)
 
-  if (queryTokens.length === 0) {
+  const orgId = getOrgContext()
+  if (queryTokens.length === 0 || !orgId) {
     return { localChunks: [], globalChunks: [], allChunkIds: [], matchedEntities: [], graphContext: '' }
   }
 
   try {
-    // LOCAL: find chunks whose keywords contain query tokens (entity match)
+    // LOCAL: chunks whose keywords contain ANY query token (was: only the first).
     const localChunks = await db.documentChunk.findMany({ // nosemgrep — select is hardcoded, queryTokens is server-side tokenized string
       where: {
         document: { status: 'ready', isEnabled: true },
-        keywords: { contains: queryTokens[0] },
+        OR: queryTokens.map((token) => ({ keywords: { contains: token } })),
       },
       take: topK * 3,
       select: { id: true, keywords: true },
@@ -215,11 +244,16 @@ export async function dualLevelRetrieval(args: {
     let globalChunkIds: string[] = []
     let relationContext = ''
     try {
+      // Raw SQL bypasses the Prisma tenant extension, so organizationId has to be
+      // filtered here explicitly — relationContext below is interpolated straight
+      // into the answer prompt, so an unscoped row is a cross-tenant disclosure.
+      const patterns = queryTokens.map((t) => `%${t}%`)
       const relations = await db.$queryRaw<Array<{ chunkId: string; source: string; target: string; description: string }>>`
         SELECT r."chunkId", r.source, r.target, r.description
         FROM "KgRelation" r
-        WHERE r.source ILIKE ANY(${queryTokens.map((t) => `%${t}%`)}::text[])
-           OR r.target ILIKE ANY(${queryTokens.map((t) => `%${t}%`)}::text[])
+        WHERE r."organizationId" = ${orgId}
+          AND (r.source ILIKE ANY(${patterns}::text[])
+            OR r.target ILIKE ANY(${patterns}::text[]))
         LIMIT ${topK * 5}
       `
       globalChunkIds = [...new Set(relations.map((r) => r.chunkId))]
@@ -232,9 +266,11 @@ export async function dualLevelRetrieval(args: {
           .map((r) => `[${r.source}] → ${r.description} → [${r.target}]`)
           .join('\n')
       }
-    } catch {
-      // ponytail: KgRelation table may not exist — global level is opt-in
-      log.debug('KgRelation table not available, skipping global retrieval')
+    } catch (e) {
+      // Degrade to local-only rather than failing the whole retrieval, but say why.
+      log.warn('KG global retrieval failed, using local level only', {
+        error: e instanceof Error ? e.message : String(e),
+      })
     }
 
     const allChunkIds = [...localChunkIds, ...globalChunkIds]
@@ -253,14 +289,6 @@ export async function dualLevelRetrieval(args: {
     log.warn('dualLevelRetrieval failed', { error: e instanceof Error ? e.message : String(e) })
     return { localChunks: [], globalChunks: [], allChunkIds: [], matchedEntities: [], graphContext: '' }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function cryptoRandomId(): string {
-  return 'kg_' + Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
 // Re-export for consumers that need ChatHistoryEntry type

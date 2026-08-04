@@ -219,6 +219,46 @@ describe('embedTexts', () => {
     expect(result).toEqual([])
   })
 
+  test('a blank input keeps every other vector on its own index', async () => {
+    // The landmine: embedDocumentChunks pairs vectors[i] with chunks[i]. This used
+    // to .filter(Boolean) the input, so one blank chunk shifted every later vector
+    // up by one and silently attached the wrong embedding to the rest of the
+    // document — permanently, with no error anywhere.
+    let sentInputs: string[] = []
+    global.fetch = mock((_url: string, init: RequestInit) => {
+      sentInputs = JSON.parse(String(init.body)).input
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [{ embedding: [1, 1] }, { embedding: [3, 3] }] }),
+      } as Response)
+    }) as unknown as typeof fetch
+
+    const result = await embedTexts(cfg, ['first', '   ', 'third'])
+
+    // The blank was never sent to the API...
+    expect(sentInputs).toEqual(['first', 'third'])
+    // ...and the vectors still line up with the ORIGINAL positions.
+    expect(result).toEqual([[1, 1], [3, 3]].flatMap((v, i) => (i === 0 ? [v, []] : [v])))
+    expect(result[0]).toEqual([1, 1])
+    expect(result[1]).toEqual([]) // blank → empty, callers skip it
+    expect(result[2]).toEqual([3, 3])
+  })
+
+  test('output length always matches input length', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: [{ embedding: [0.5] }] }),
+      } as Response),
+    ) as unknown as typeof fetch
+
+    const result = await embedTexts(cfg, ['  ', 'only real one', ''])
+    expect(result).toHaveLength(3)
+    expect(result[1]).toEqual([0.5])
+  })
+
   test('HTTP error → throws with status code', async () => {
     global.fetch = mock(() =>
       Promise.resolve({ ok: false, status: 500 } as Response),
