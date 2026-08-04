@@ -178,29 +178,40 @@ const PLUGINS: PluginSeed[] = [
 
 export async function seedPlugins() {
   console.log('Seeding plugins...')
-  await db.plugin.deleteMany({})
-  let created = 0
-
-  for (const p of PLUGINS) {
-    const manifestJson = JSON.stringify(p.manifest)
-    await db.plugin.create({
-      data: {
-        organizationId: 'org-default',
-        toolId: p.toolId,
-        name: p.name,
-        description: p.description,
-        manifestJson,
-        category: p.category,
-        subcategory: p.subcategory,
-        keywords: p.keywords,
-        isEnabled: p.enabled,
-      },
-    })
-    created++
-    console.log(`  ${p.enabled ? '✅' : '❌'} ${p.toolId} — ${p.name}`)
+  // ponytail: seed for every org — the previous hardcoded 'org-default' meant
+  // only one org got plugins. deleteMany is scoped per org inside the loop.
+  const orgs = await db.organization.findMany({ select: { id: true } })
+  if (orgs.length === 0) {
+    console.log('No organizations found. Create an org first.')
+    return
   }
 
-  console.log(`\nDone: ${created} plugins registered, all enabled`)
+  let totalCreated = 0
+  for (const org of orgs) {
+    await db.plugin.deleteMany({ where: { organizationId: org.id } })
+    for (const p of PLUGINS) {
+      const manifestJson = JSON.stringify(p.manifest)
+      await db.plugin.create({
+        data: {
+          organizationId: org.id,
+          toolId: p.toolId,
+          name: p.name,
+          description: p.description,
+          manifestJson,
+          category: p.category,
+          subcategory: p.subcategory,
+          keywords: p.keywords,
+          isEnabled: p.enabled,
+          chatEnabled: true,
+          agenticEnabled: true,
+        },
+      })
+      totalCreated++
+    }
+    console.log(`  Org ${org.id}: ${PLUGINS.length} plugins registered`)
+  }
+
+  console.log(`\nDone: ${totalCreated} plugins across ${orgs.length} org(s)`)
 }
 
 async function main() {
