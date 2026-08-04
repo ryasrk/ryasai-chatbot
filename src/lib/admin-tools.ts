@@ -98,6 +98,8 @@ export async function executeAdminTool(
       return mcpTestAction(input)
     case 'admin:mcp_remove':
       return mcpRemoveAction(input, userId, isConfirmed)
+    case 'admin:seed_plugins':
+      return seedPluginsAction(userId)
     default:
       return { ok: false, output: `Unknown admin tool: ${toolId}` }
   }
@@ -589,4 +591,25 @@ function parseCredentialPairs(s: string): Record<string, string> {
     if (val) result[key] = val.replace(/['"`]/g, '')
   }
   return result
+}
+
+async function seedPluginsAction(userId: string): Promise<AdminToolResult> {
+  const { seedPlugins } = await import('@/lib/plugin-seeds')
+  const { bypassOrg, getOrgContext } = await import('@/lib/prisma-tenant')
+  const orgId = getOrgContext()
+  if (!orgId) return { ok: false, output: 'Organization context is required.' }
+
+  const before = await bypassOrg(() => db.plugin.count({ where: { organizationId: orgId } }))
+  await bypassOrg(() => seedPlugins(orgId))
+  const after = await bypassOrg(() => db.plugin.count({ where: { organizationId: orgId } }))
+
+  await writeAudit({
+    userId, action: 'PLUGINS_SEEDED', severity: 'warning',
+    detail: { orgId, before, after, via: 'agentic' },
+  })
+
+  return {
+    ok: true,
+    output: `Plugins seeded for this organization.\nBefore: ${before} plugins\nAfter: ${after} plugins\n\nThe prebuilt plugins (weather, translate, calculator, news, web search, etc.) are now available. Use admin:list_plugins to see them.`,
+  }
 }

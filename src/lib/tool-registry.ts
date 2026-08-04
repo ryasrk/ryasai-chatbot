@@ -177,6 +177,13 @@ export const ADMIN_TOOLS: ToolDef[] = [
     requiresDataSource: 'none',
     category: 'admin',
   },
+  {
+    id: 'admin:seed_plugins',
+    description: 'Seed/register prebuilt plugins (weather, translate, calculator, news, web search, etc.) for this organization. Use when the user says plugins are empty, missing, or asks to restore/reset prebuilt plugins.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
 ]
 
 export function getTool(id: string): ToolDef | undefined {

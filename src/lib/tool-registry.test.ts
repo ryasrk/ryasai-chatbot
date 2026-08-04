@@ -89,8 +89,8 @@ describe('BUILT_IN_TOOLS', () => {
 })
 
 describe('ADMIN_TOOLS', () => {
-  test('has 18 tools', () => {
-    expect(ADMIN_TOOLS).toHaveLength(18)
+  test('has 19 tools', () => {
+    expect(ADMIN_TOOLS).toHaveLength(19)
   })
 
   test('every admin tool has required fields', () => {

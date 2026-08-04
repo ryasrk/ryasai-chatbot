@@ -29,13 +29,19 @@ export async function register() {
     const { seedPlugins } = await import('@/lib/plugin-seeds')
     const { bypassOrg } = await import('@/lib/prisma-tenant')
     const orgs = await bypassOrg(() => db.organization.findMany({ select: { id: true } }))
+    console.log(`[instrumentation] Plugin auto-heal: found ${orgs.length} org(s)`)
+    let seeded = 0
     for (const org of orgs) {
       const count = await bypassOrg(() => db.plugin.count({ where: { organizationId: org.id } }))
       if (count === 0) {
         console.log(`[instrumentation] Auto-seeding plugins for org ${org.id} (had 0 plugins)`)
         await bypassOrg(() => seedPlugins(org.id))
+        seeded++
+      } else {
+        console.log(`[instrumentation] Org ${org.id} already has ${count} plugins, skipping`)
       }
     }
+    console.log(`[instrumentation] Plugin auto-heal complete: seeded ${seeded} org(s)`)
   } catch (e) {
     console.warn('[instrumentation] Plugin auto-heal failed:', e instanceof Error ? e.message : e)
   }
