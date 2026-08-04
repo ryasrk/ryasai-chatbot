@@ -45,6 +45,13 @@ export const BUILT_IN_TOOLS: ToolDef[] = [
     paramDescription: '{ "message": "the message to respond to" }',
     requiresDataSource: 'none',
   },
+  {
+    id: 'web_fetch',
+    description:
+      'Fetch the content of any URL (GitHub repo, documentation page, blog post, etc.) and return the readable text. Use to read installation instructions, documentation, or any web page content. Returns up to 10000 characters of extracted text.',
+    paramDescription: '{ "url": "the URL to fetch" }',
+    requiresDataSource: 'none',
+  },
 ]
 
 // ponytail: admin tools — registered so the LLM planner decides when to use them,
@@ -144,8 +151,8 @@ export const ADMIN_TOOLS: ToolDef[] = [
   },
   {
     id: 'admin:mcp_install',
-    description: 'Install/register an MCP server (Model Context Protocol). Use when the user asks to add, install, set up, connect, or register an MCP server. Accepts a server name, optional URL (GitHub repo, docs page, or direct MCP endpoint), and optional package name. REQUIRES user confirmation before executing (spawns a child process for stdio transport).',
-    paramDescription: '{ "name": "server name", "url": "optional GitHub/docs URL or MCP endpoint", "package": "optional npm/pip package name", "transport": "optional: stdio|sse|http", "confirm": "yes to confirm" }',
+    description: 'Install/register an MCP server (Model Context Protocol). Use when the user asks to add, install, set up, connect, or register an MCP server. Accepts a server name, optional URL (GitHub repo, docs page, or direct MCP endpoint), and optional package name. If you fetched the URL with web_fetch and found install instructions, pass the command/args/envVars directly. REQUIRES user confirmation before executing (spawns a child process for stdio transport).',
+    paramDescription: '{ "name": "server name", "url": "optional GitHub/docs URL or MCP endpoint", "package": "optional npm/pip package", "command": "optional: runner command (npx/uvx/node/python) if you read it from web_fetch", "args": "optional: space-separated args if you read them from web_fetch", "envVars": "optional: comma-separated env var names (e.g. GITHUB_TOKEN,API_KEY)", "transport": "optional: stdio|sse|http", "confirm": "yes to confirm" }',
     requiresDataSource: 'none',
     category: 'admin',
   },

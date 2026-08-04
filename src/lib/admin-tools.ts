@@ -297,6 +297,11 @@ async function mcpInstallAction(
   const url = (input.url || input.endpoint || '').trim()
   const explicitPkg = (input.package || input.pkg || '').trim()
   const transportHint = (input.transport || '').trim().toLowerCase()
+  // ponytail: LLM can provide command/args/envVars directly after reading the
+  // fetched URL content via web_fetch. This takes priority over regex parsing.
+  const llmCommand = (input.command || input.cmd || '').trim()
+  const llmArgs = (input.args || '').trim()
+  const llmEnvVars = (input.envVars || input.env || '').trim()
 
   if (!name && !url) {
     return { ok: false, output: 'MCP server name or URL is required. Ask the user for a server name or install URL.' }
@@ -309,10 +314,22 @@ async function mcpInstallAction(
   let args: string[] = []
   let serverUrl = ''
   let needsUrlFetch = false
+  let requiredEnvVars: string[] = []
 
   const knownNameHit = serverName ? Object.keys(MCP_PACKAGES).find((n) => serverName.toLowerCase().includes(n)) : undefined
 
-  if (url) {
+  // Priority 1: LLM-provided command/args (after web_fetch reading the install page).
+  // The LLM read the README/docs and extracted the install command — trust it.
+  if (llmCommand) {
+    transport = 'stdio'
+    command = llmCommand
+    args = llmArgs
+      ? llmArgs.split(/\s+/).filter(Boolean)
+      : (explicitPkg ? (llmCommand === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
+    if (llmEnvVars) {
+      requiredEnvVars = llmEnvVars.split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
+    }
+  } else if (url) {
     const isDirectMcpEndpoint = /\/(?:sse|mcp|api\/mcp)/i.test(url)
     if (isDirectMcpEndpoint) {
       transport = transportHint === 'sse' || url.includes('/sse') ? 'sse' : 'http'
@@ -365,9 +382,9 @@ async function mcpInstallAction(
   }
 
   // Confirmed — execute the install.
-  let requiredEnvVars: string[] = []
-
-  if (needsUrlFetch && serverUrl) {
+  // If the LLM already provided command/args (priority 1), we're set.
+  // If not and we have a URL to fetch, do the regex-based fallback parse.
+  if (needsUrlFetch && serverUrl && !command) {
     const install = await fetchMcpInstallFromUrl(serverUrl)
     if (install) {
       transport = 'stdio'

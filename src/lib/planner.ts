@@ -16,6 +16,7 @@ import { callMcpTool } from '@/lib/mcp-client'
 import { checkToolRateLimit } from '@/lib/tool-rate-limit'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { executeAdminTool } from '@/lib/admin-tools'
+import { fetchUrlForPlanner } from '@/lib/web-fetch'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
@@ -105,7 +106,8 @@ export async function planQueryWithTools(args: {
       'Call the execute_step function with the tool ID, input parameters, and whether synthesis is needed. ' +
       'CONFIRMATION FLOW: Some tools (admin:mcp_install, admin:mcp_remove, admin:set_prompt, admin:toggle_*) ' +
       'require confirmation. On the first call, do NOT include confirm in the input — the tool will ask the user to confirm. ' +
-      'When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes".'
+      'When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes". ' +
+      'MCP INSTALL FROM URL: Use a two-step plan — (1) web_fetch the URL to read install instructions, (2) admin:mcp_install with the extracted command/args/envVars.'
 
     const userMessage =
       `Question: ${args.question}\n\n` +
@@ -196,12 +198,14 @@ export async function planQuery(args: {
       '- Only use the chat tool for greetings, opinions, or questions that truly need no external data.\n' +
       '- Only use sql if the question is about structured data in connected databases (sales, inventory, customers).\n' +
       '- Only use rag if the question is about company documents (SOPs, policies, guidelines).\n' +
-      '- To install/add/set up an MCP server, use admin:mcp_install with the server name and/or URL in the input.\n' +
+      '- To install/add/set up an MCP server from a URL, use a TWO-STEP plan: (1) web_fetch the URL to read the installation instructions, (2) admin:mcp_install with the server name, URL, and the command/args/envVars you extracted from the fetched content.\n' +
+      '- To install a known MCP server by name (filesystem, github, postgres, etc.), use admin:mcp_install directly with the name.\n' +
       '- To set credentials for an MCP server, use admin:mcp_set_credentials with the server name and credentials.\n' +
       '- To list MCP servers, use admin:mcp_list.\n' +
       '- To test an MCP server, use admin:mcp_test.\n' +
       '- To remove an MCP server, use admin:mcp_remove.\n' +
       '- To seed/restore prebuilt plugins, use admin:seed_plugins.\n' +
+      '- Use web_fetch to read any URL (GitHub repo, docs page, blog post) and get its text content. Useful for reading installation instructions before installing an MCP server.\n' +
       'CONFIRMATION FLOW: Tools marked "REQUIRES user confirmation" need a two-turn flow. On the first call, do NOT include confirm in the input. The tool will return a confirmation message — relay it to the user. When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes".\n' +
       'Answer ONLY with JSON without markdown code fence:\n' +
       '{"steps":[{"id":"step1","tool":"<tool_id>","input":{...},"dependsOn":[]}],"needsSynthesis":true|false}'
@@ -544,6 +548,27 @@ async function executeStep(
       return {
         stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,
         error: result.error, latencyMs: Date.now() - started,
+      }
+    }
+
+    // web_fetch — fetch any URL and return readable text content.
+    // Used by the planner to read installation instructions, docs, etc.
+    if (step.tool === 'web_fetch') {
+      const url = (step.input.url || step.input.link || '').trim()
+      if (!url) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: 'URL is required for web_fetch.', latencyMs: Date.now() - started,
+        }
+      }
+      const result = await fetchUrlForPlanner(url)
+      args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
+      return {
+        stepId: step.id, tool: step.tool, ok: result.ok,
+        output: result.ok ? result.content : '',
+        error: result.ok ? undefined : result.error,
+        latencyMs: Date.now() - started,
       }
     }
 
