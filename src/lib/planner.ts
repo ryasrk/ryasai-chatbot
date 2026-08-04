@@ -534,8 +534,11 @@ async function executeStep(
 
     if (step.tool.startsWith('plugin:')) {
       const toolId = step.tool.slice('plugin:'.length)
+      // ponytail: context filtering already happened in getAvailableTools when
+      // building the tool list offered to the planner. Here we only check
+      // isEnabled — the chat/agentic flag was already enforced upstream.
       const plugin = await db.plugin.findFirst({
-        where: { toolId, isEnabled: true, agenticEnabled: true },
+        where: { toolId, isEnabled: true },
       })
       if (!plugin) {
         args.onStatus?.(step.id, step.tool, 'error')

@@ -31,7 +31,7 @@ export async function smartRoute(args: {
     loadDocumentMetadata(),
     loadPerformanceMetrics(),
     loadSimilarityBoost(tokens),
-    selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 }),
+    selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05, context: 'chat' }),
   ])
 
   const mentionResult = await detectMentionedIntegration(args.question, expandedTokens)

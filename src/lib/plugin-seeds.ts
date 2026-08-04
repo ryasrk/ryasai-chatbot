@@ -178,7 +178,9 @@ const PLUGINS: PluginSeed[] = [
 import { db } from '@/lib/db'
 
 export async function seedPlugins(organizationId: string) {
-  await db.plugin.deleteMany({})
+  // ponytail: scope delete to this org only — the previous deleteMany({}) wiped
+  // ALL orgs' plugins every time any org re-ran setup. Cross-org data destruction.
+  await db.plugin.deleteMany({ where: { organizationId } })
   for (const p of PLUGINS) {
     await db.plugin.create({
       data: {

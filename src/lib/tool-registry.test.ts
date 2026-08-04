@@ -89,8 +89,8 @@ describe('BUILT_IN_TOOLS', () => {
 })
 
 describe('ADMIN_TOOLS', () => {
-  test('has 13 tools', () => {
-    expect(ADMIN_TOOLS).toHaveLength(13)
+  test('has 18 tools', () => {
+    expect(ADMIN_TOOLS).toHaveLength(18)
   })
 
   test('every admin tool has required fields', () => {
@@ -194,7 +194,7 @@ describe('getAvailableTools — context filtering', () => {
   })
 
   test('agentic context → admin tools included', async () => {
-    const tools = await getAvailableTools(undefined, 'agentic')
+    const tools = await getAvailableTools(undefined, 'agentic', { isAdmin: true })
     const ids = tools.map((t) => t.id)
     expect(ids.some((id) => id.startsWith('admin:'))).toBe(true)
     expect(ids).toContain('admin:generate_api_key')

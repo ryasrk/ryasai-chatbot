@@ -107,13 +107,18 @@ export async function selectRelevantPlugins(args: {
   query: string
   topK?: number
   minScore?: number
+  context?: 'chat' | 'agentic'
 }): Promise<ScoredPlugin[]> {
   const topK = args.topK ?? 5
   const minScore = args.minScore ?? 0.01
 
-  const plugins = await db.plugin.findMany({
-    where: { isEnabled: true },
-  })
+  // ponytail: filter by context flag at the DB level — prevents plugins
+  // disabled for the current context from influencing routing decisions.
+  const where = args.context
+    ? { isEnabled: true, [args.context === 'chat' ? 'chatEnabled' : 'agenticEnabled']: true }
+    : { isEnabled: true }
+
+  const plugins = await db.plugin.findMany({ where })
 
   if (plugins.length === 0) return []
 

@@ -136,9 +136,44 @@ export const ADMIN_TOOLS: ToolDef[] = [
     category: 'admin',
   },
   {
-    id: 'admin:reindex_status',
+       id: 'admin:reindex_status',
     description: 'Show the current knowledge base document count and reindex status.',
     paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:mcp_install',
+    description: 'Install/register an MCP server (Model Context Protocol). Use when the user asks to add, install, set up, connect, or register an MCP server. Accepts a server name, optional URL (GitHub repo, docs page, or direct MCP endpoint), and optional package name. REQUIRES user confirmation before executing (spawns a child process for stdio transport).',
+    paramDescription: '{ "name": "server name", "url": "optional GitHub/docs URL or MCP endpoint", "package": "optional npm/pip package name", "transport": "optional: stdio|sse|http", "confirm": "yes to confirm" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:mcp_set_credentials',
+    description: 'Set or update credentials (env vars/API keys/tokens) for an MCP server. Use when the user asks to set, update, or add credentials, API keys, or tokens for an MCP server.',
+    paramDescription: '{ "server": "MCP server name", "credentials": "KEY=value, KEY=value" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:mcp_list',
+    description: 'List all registered MCP servers with their transport, endpoint, and enabled status.',
+    paramDescription: '{}',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:mcp_test',
+    description: 'Test the connection to an MCP server and list its available tools. Use when the user asks to test, check, or verify an MCP server connection.',
+    paramDescription: '{ "server": "MCP server name or ID" }',
+    requiresDataSource: 'none',
+    category: 'admin',
+  },
+  {
+    id: 'admin:mcp_remove',
+    description: 'Remove/delete an MCP server registration. REQUIRES user confirmation. Use when the user asks to remove, delete, or uninstall an MCP server.',
+    paramDescription: '{ "server": "MCP server name or ID", "confirm": "yes to confirm" }',
     requiresDataSource: 'none',
     category: 'admin',
   },
@@ -172,7 +207,7 @@ export async function getAvailableTools(
         subcategory: p.subcategory,
       }))
   } else {
-    const relevantPlugins = await selectRelevantPlugins({ query, topK: 5 })
+    const relevantPlugins = await selectRelevantPlugins({ query, topK: 5, context })
     pluginTools = relevantPlugins
       .filter((p) => filterByContext(p, context))
       .map((p) => ({

@@ -18,9 +18,11 @@ export async function POST() {
       await db.appConfig.create({ data: { organizationId: user.organizationId, setupCompleted: true } })
     }
 
-    // Seed prebuilt plugins for this org (if not already seeded)
-    const pluginCount = await db.plugin.count()
-    if (pluginCount === 0) {
+    // Seed prebuilt plugins for this org if it has none yet. Scoped count —
+    // a previous global pluginCount check skipped seeding for new orgs when
+    // any other org already had plugins.
+    const orgPluginCount = await db.plugin.count({ where: { organizationId: user.organizationId } })
+    if (orgPluginCount === 0) {
       const { seedPlugins } = await import('@/lib/plugin-seeds')
       await seedPlugins(user.organizationId)
     }

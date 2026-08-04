@@ -553,7 +553,7 @@ export async function runPluginBranch(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05 })
+  const relevant = await selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05, context: 'chat' })
   const chatRelevant = relevant.filter((p) => p.chatEnabled)
   if (chatRelevant.length === 0) return runChatBranch(args)
 

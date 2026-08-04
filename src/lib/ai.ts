@@ -150,8 +150,10 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           : 'CHAT'
   // ponytail: lightweight plugin check — keyword match only, no LLM call.
   // If a relevant plugin exists, route to PLUGIN so tool-router executes it.
+  // Filter by chatEnabled — this runs in the chat path (routeQuery is called
+  // from resolveRouting in tool-router.ts, which is the chat completion flow).
   if (decision === 'CHAT') {
-    const relevant = await selectRelevantPlugins({ query: ctx.question, topK: 1, minScore: 0.05 })
+    const relevant = await selectRelevantPlugins({ query: ctx.question, topK: 1, minScore: 0.05, context: 'chat' })
     if (relevant.length > 0) {
       return { decision: 'PLUGIN', reason: `Plugin ${relevant[0].name} is relevant (score ${relevant[0].score.toFixed(2)})` }
     }
