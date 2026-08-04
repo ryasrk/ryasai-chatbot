@@ -2,7 +2,13 @@
 
 ![CI](https://github.com/ryasai/Chatbot/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-Proprietary-red) ![Version](https://img.shields.io/badge/version-0.4.0-blue) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
-Self-hosted, single-tenant AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails.
+**Multi-tenant SaaS** AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails and organizational isolation.
+
+- **Multi-tenant:** Each organization is completely isolated. Documents, queries, and results are per-org. Org context enforced via AsyncLocalStorage + Prisma extension.
+- **Advanced RAG:** Hybrid retrieval (vector + lexical + knowledge graph) with RRF rank fusion. BM25 IDF weighting. Evaluation framework with golden test set.
+- **Production-grade security:** AES-256-GCM encryption, session fixation defense, SSRF protection, audit logging, role-based access control.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for full system design. See [MULTI-TENANT-GUIDE.md](./MULTI-TENANT-GUIDE.md) for org isolation details.
 
 ## Quick Start
 
@@ -14,285 +20,186 @@ bun install
 bunx prisma db push --accept-data-loss
 bunx prisma generate
 
-# Seed demo data (admin user, ERP tables, documents, plugins)
+# Seed demo data
 bun run scripts/seed.ts
 
-# Start dev server + scheduler
+# Start dev server
 bash start.sh
-# or just the web app:
-bun run dev
 ```
 
-Default login: `admin@ryas.ai` / `admin12345`
+Default: `admin@ryas.ai` / `admin12345`
+
+## Key Updates (v0.4.0)
+
+**Multi-Tenant Architecture:**
+- Org isolation via AsyncLocalStorage + Prisma extension
+- Every query auto-filtered by organizationId
+- getActiveUser() required on all routes
+- Role-based access (admin, analyst, viewer)
+
+**RAG Improvements:**
+- Fixed critical bug: retrieval was either/or, now both + KG run together
+- BM25 + RRF fusion: consensus ranking, no hand-tuned weights
+- Eval framework: recall@k, precision@k, MRR, grounded rate
+- Golden test set: 25 real-world questions ready
+
+See ARCHITECTURE.md and MULTI-TENANT-GUIDE.md for details.
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router) · React 19 · TypeScript 5
-- **Database**: Prisma 6 + PostgreSQL 16 (pgvector + pg_trgm extensions)
-- **Runtime**: Bun (dev/test) · Node standalone (prod build)
-- **UI**: Tailwind 4 · shadcn/ui · 5 theme system
-- **AI**: OpenAI-compatible + Anthropic-native LLM providers (fail-closed — no sandbox fallback)
-- **Memory**: Cognee integration (enabled by default, graceful degradation when unavailable)
+- **Framework**: Next.js 16 (Turbopack) · React 19 · TypeScript 5
+- **Database**: Prisma 6 + PostgreSQL 16 (pgvector + pg_trgm)
+- **Runtime**: Bun · Node.js
+- **UI**: Tailwind 4 · shadcn/ui
+- **AI**: OpenAI-compatible + Anthropic providers
+- **Memory**: Cognee (optional, graceful degradation)
 
 ## Features
 
-### Core AI Pipeline
-- **Intent Analyzer**: Decides whether retrieval is needed + whether clarification is needed. Uses document names, integration names, and schema table descriptions as context. Progressive slot filling (asks ONE question at a time)
-- **Contextual Query Rewriter**: Rewrites follow-up questions into standalone search queries using conversation history
-- **Query Expansion**: Synonym + multilingual expansion (e.g. "leave" → "vacation", "cuti", "cuti tahunan", "time off"). Max 3 expansions
-- **Multi-pass Retrieval with Reflection**: `retrieveWithReflection()` — expands query, retrieves with all expansions in parallel, merges + dedupes by chunkId, evaluates evidence sufficiency via LLM, does a second pass with 2x topK if insufficient
-- **GraphRAG**: Cognee `recallKnowledgeGraph` called in parallel with flat retrieval, graph context merged into results
-- **Agentic Confidence Loop**: `runAgenticLoop()` — route → execute → evaluate confidence → repeat (max 3 iterations). Heuristic pre-check skips LLM confidence call for obvious cases. Cross-source fallback: when confidence evaluator suggests `nextToolHint`, inject hint into next iteration
-- **Streaming Agentic Loop**: `runStreamingAgenticLoop()` — same loop but streams the final answer. Wired into UI chat via `allowMultiStepDag: true`
-- **Smart Router**: Self-adjusting load balancer (schema + performance + latency + similarity + circuit breaker) with semantic scoring (40% keyword overlap + 60% embedding similarity, cached 5min/10s)
-- **Text-to-SQL**: AST guardrails (SELECT only, LIMIT 100, no DML/DDL)
-- **Real DB Connectors**: Postgres (pg Pool), MySQL (mysql2 Pool), MSSQL (mssql ConnectionPool) — dynamic driver loading, 30s timeout, schema reflection
-- **Hybrid RAG**: Lexical + semantic + FTS + external vector store (Qdrant/Milvus) + LLM reranker (opt-in) + query cache (1min TTL)
-- **Contextual Retrieval**: Optional (env `CONTEXTUAL_RETRIEVAL=true`). Prepends an LLM-generated document summary to each chunk before embedding, reducing retrieval failures by ~49%
-- **REST Connector**: Whitelisted endpoints with parameter schema
-- **Streaming Chat**: Real SSE token streaming with mid-stream error frames + 120s idle watchdog
-- **MCP Client**: Connects to external MCP servers (stdio/sse/http) with production hardening: `AbortSignal.timeout` on all SDK calls, LRU connection cache, DNS-rebinding SSRF protection, encrypted HTTP headers, confirmation gate for agentic installs
+### Multi-Tenant
+- Org-scoped data (every table has organizationId)
+- Automatic query filtering via Prisma extension
+- Auth enforcement on all routes
+- Role-based access control
 
-### Super-App Capabilities
-- **Agentic Planner**: Multi-step DAG execution with self-correction
-- **Schema Description Enrichment**: LLM-generated 1-sentence description per table, stored in `IntegrationSchema.description`. Used as context in intent analyzer + router prompt. Fire-and-forget on integration create + test
-- **Plugin Registry**: 9 prebuilt plugins (weather, Wikipedia, translate, calculator, news, StackOverflow search, timezone, datetime) + custom webhook tools
-- **Cognee Memory**: Chat-turn remember/recall + knowledge graph cognify
-- **Scheduler**: Cron-based automation with notification integration
-- **Execution History + Export**: `ScheduledRunLog` model stores full execution history (answer, error, toolRuns JSON, latencyMs). `GET /api/schedules/[id]/runs` + `?format=json|csv` export. UI polling (15s) + toast notifications on new runs
-- **Notification API**: Webhook + email + Telegram delivery
+### Hybrid Retrieval
+- **Vector leg**: pgvector HNSW, cosine similarity
+- **Lexical leg**: BM25 (k1=1.2, b=0.75), IDF weighting, TF saturation
+- **KG leg**: Entity + relation retrieval
+- **Fusion**: RRF (consensus ranking, k=60)
+- **Eval**: Golden test set, recall/precision/MRR metrics
+
+### AI Pipeline
+- Intent Analyzer (retrieval need + clarification)
+- Contextual Query Rewriter (follow-up → standalone)
+- Query Expansion (synonym + multilingual)
+- Multi-pass Retrieval with Reflection
+- GraphRAG (Cognee extraction in parallel)
+- Agentic Loop (route → execute → evaluate → repeat)
+- Smart Router (semantic + performance scoring)
+- Text-to-SQL (AST guardrails)
+- Real DB Connectors (Postgres, MySQL, MSSQL)
+- REST Connector (whitelisted endpoints)
+- MCP Client (external servers with hardening)
+
+### Super-App
+- Agentic Planner (multi-step DAG)
+- Schema Enrichment (LLM descriptions)
+- Plugin Registry (9 prebuilt + custom webhooks)
+- Cognee Memory (chat recall + KG)
+- Scheduler (cron automation)
+- Execution History (full audit trail)
+- Notifications (webhook + email + Telegram)
 
 ### Security
-- AES-256-GCM encryption for all credentials
-- Session fixation defense (sessionVersion + HMAC, invalidated on re-login)
+- AES-256-GCM credentials encryption
+- Session fixation defense
 - 30min inactivity timeout
-- Edge auth middleware (cookie-based session)
-- Rate limiting (POST/PUT/DELETE/PATCH, per-route, Edge-safe in-memory)
-- SQL AST guardrails (mutation block, LIMIT cap)
-- SSRF blocklist (RFC1918, link-local, CGNAT, ULA) + DNS-rebinding protection (`dns.lookup` on all outbound URLs)
-- Plugin manifest Zod validation at registration + SSRF re-check at execution time
-- Webhook HMAC-SHA256 signature verification
-- API keys (hashed, prefix-based O(1) lookup, rate-limited)
-- Audit logging (fail-closed on critical severity)
-- Env schema validation at startup (Zod, prod-only)
-- Fail-closed auth (no demo fallback by default)
+- Edge auth middleware
+- Rate limiting per route
+- SQL AST guardrails
+- SSRF blocklist + DNS-rebinding protection
+- Webhook HMAC-SHA256 verification
+- API key hashing + rate limiting
+- Audit logging
+- Env schema validation (Zod)
+- Fail-closed auth
+- Multi-tenant isolation (org scoping)
 
 ### Observability
-- Structured JSON logger (`src/lib/logger.ts` — scoped, leveled, no Pino dep)
-- Typed error responses (`{ error: { code, message, hint? } }` — 16 error codes via `src/lib/errors.ts`)
-- LLM token usage tracking (per-purpose: router, sql, rag, rest, synthesis, chat) with `AsyncLocalStorage` per-request isolation
-- Tool run metrics (latency, success rate, circuit breaker with half-open recovery)
-- RAG cache metrics (`getRagCacheStats()` — hits, misses, hit rate)
-- `ScheduledRunLog` full execution history (answer, error, toolRuns, latency) + JSON/CSV export
-- Monitoring dashboard (24h stats, failed requests, blocked SQL)
-- Audit log (GUARDRAIL_BLOCK, SQL_EXECUTE, API_KEY_GENERATED, etc.)
-- Log retention (daily cleanup, 90-day default via scheduler)
-- Health endpoints: `/api/v1/health` (liveness) + `/api/health` (DB + Redis checks)
+- Structured JSON logging
+- Typed errors (16 codes)
+- LLM token usage tracking
+- Tool metrics (latency, success, circuit breaker)
+- RAG cache stats
+- Execution history + export (JSON/CSV)
+- Monitoring dashboard
+- Audit log
+- Log retention (90-day default)
+- Health endpoints
 
 ### Reliability
-- LLM retry with exponential backoff (3 retries, 500ms*2^attempt) — now includes streaming path via `fetchWithRetry`
-- 30s LLM timeout, 120s stream timeout, 90s agentic loop deadline (`AGENTIC_DEADLINE_MS`)
-- Per-integration SQL concurrency limiter (3 concurrent max)
-- Webhook retry with exponential backoff (3 retries, 2s*2^n)
-- RAG query cache (1min TTL, invalidated on document changes)
-- RAG LLM reranker (opt-in via `RAG_LLM_RERANK=true`)
-- pgvector HNSW index for sub-millisecond vector similarity search
-- Multi-tool DAG execution (opt-in via `allowMultiStepDag` flag)
-- Parallelized intent pipeline (`rewriteQuery` + `recallContext` + 7 DB queries + `analyzeIntent` via `Promise.all`)
-- Parallelized planner steps (`groupByLevel` + `Promise.all` within each dependency level)
-- Agentic loop heuristic confidence check (skips LLM call for obvious cases)
-- Semantic scoring graceful fallback (keyword-only when embedding API unavailable)
-- Circuit breaker with half-open recovery (5min cooldown → probe at 50% score)
-- Graceful shutdown: `worker.close()` + `db.$disconnect` + `disconnectRedis` + `disconnectAllMcp` on SIGTERM/SIGINT
-- BullMQ scheduler with timezone support (`tz` option), 3 retries with exponential backoff, stalled detection
-- Citation trails propagated end-to-end (streaming + non-streaming paths)
+- LLM retry (3x exponential backoff)
+- Timeouts: 30s LLM, 120s stream, 90s agentic
+- SQL concurrency limiter (3 max per integration)
+- Webhook retry (3x exponential backoff)
+- RAG cache (1min TTL)
+- RAG LLM reranker (optional)
+- pgvector HNSW (sub-millisecond)
+- Multi-tool DAG (optional)
 
-## Architecture
-
-```mermaid
-flowchart TD
-    A[User query] --> B[Intent Pipeline]
-    B --> B1[Query Rewriter]
-    B --> B2[Contextual Recall]
-    B --> B3[DB metadata queries]
-    B --> B4[Intent Analyzer]
-    B1 & B2 & B3 & B4 --> C[Smart Router]
-    C -->|40% keyword + 60% embedding| D{Decision}
-    D -->|SQL| E1[SQL Branch]
-    D -->|RAG| E2[RAG Branch]
-    D -->|REST| E3[REST Branch]
-    D -->|CHAT| E4[Chat Branch]
-    D -->|CONTEXTUAL_CHAT| E5[Contextual Chat]
-    E1 & E2 & E3 & E4 & E5 --> F[Answer]
-    D -->|multi-step| G[Agentic Loop]
-    G --> G1[Route]
-    G1 --> G2[Execute]
-    G2 --> G3{Confidence high?}
-    G3 -->|no, max 3| G1
-    G3 -->|yes| G4[Synthesize + Stream]
-    G4 --> F
-```
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant R as Router
-    participant T as Tool
-    participant L as LLM
-    U->>R: Question
-    R->>L: Intent analysis
-    L-->>R: Needs retrieval? + clarification?
-    R->>T: Route (SQL / RAG / REST / Chat)
-    T->>L: Execute (gen SQL / retrieve docs / call API)
-    L-->>T: Result
-    T->>L: Evaluate confidence
-    L-->>T: Confidence score
-    alt Confidence low AND iterations < 3
-        T->>R: Next tool hint
-        R->>T: Route next tool
-    else Confidence high
-        T->>L: Synthesize final answer
-        L-->>U: Streamed answer + citations
-    end
-```
-
-<details>
-<summary>ASCII architecture diagram (fallback)</summary>
-
-```
-User query
-   │
-   ▼
-┌─────────────────────────────────────────────────────┐
-│  Intent Pipeline (parallelized via Promise.all)     │
-│  ├─ Query Rewriter (follow-up → standalone)         │
-│  ├─ Contextual Recall (cognee memory)               │
-│  ├─ DB metadata queries (integrations, docs, etc.)  │
-│  └─ Intent Analyzer (slot filling, clarification)   │
-└─────────────────────────────────────────────────────┘
-   │
-   ▼
-┌─────────────────────────────────────────────────────┐
-│  Smart Router (self-adjusting + semantic scoring)   │
-│  40% keyword overlap + 60% embedding similarity     │
-│  → SQL | RAG | REST | CHAT | CONTEXTUAL_CHAT        │
-└─────────────────────────────────────────────────────┘
-   │
-   ├─ Chat path (tool-router.ts)
-   │   └─ Single tool: SQL / RAG / REST / CHAT
-   │
-   └─ Agentic path (runStreamingAgenticLoop)
-       ├─ route → execute → evaluate confidence → repeat (max 3)
-       ├─ Query Expansion (synonym + multilingual, max 3)
-       ├─ Multi-pass Retrieval with Reflection
-       │   └─ GraphRAG (cognee recallKnowledgeGraph, parallel)
-       ├─ executePlan → parallelized per dependency level
-       │   ├─ Built-in tools (sql, rag, rest, chat)
-       │   └─ Plugin tools (plugin:weather, plugin:web_search, ...)
-       └─ synthesizeAnswer → stream final answer
-```
-
-</details>
-
-## Commands
+## Development
 
 ```bash
-bun run dev          # dev server on $PORT (3000 default)
-bun run build        # standalone build → .next/standalone
-bun run start        # prod standalone server
-bun run test         # unit tests (62+ pass individually — mock.module isolation issue across files, run per-file)
-bun run e2e          # Playwright (4 specs, mock LLM)
-bun run lint         # eslint (0 errors)
-bunx tsc --noEmit    # typecheck (0 errors)
-bunx prisma db push  # apply schema to Postgres
-bunx prisma generate # regenerate Prisma client
-bash start.sh        # start Next.js + scheduler
-bash reset.sh        # reset DB + re-seed
-bun run scripts/long-turn-chat.ts  # 20-turn multi-database chat test
+bun install              # deps
+bun run dev              # dev server (port 3000)
+bun run build            # standalone build
+bun run start            # prod server
+bun run test             # 1392+ unit tests
+bun run e2e              # Playwright
+bun run lint             # eslint
+bunx tsc --noEmit        # typecheck
+bash start.sh            # Next.js + scheduler
+bash reset.sh            # reset DB + reseed
 ```
 
 ## Project Structure
 
 ```
 src/
-├── app/
-│   ├── api/              # 62 API routes
-│   ├── page.tsx          # Main SPA (12 views, ChatView+AgenticView always mounted)
-│   ├── layout.tsx        # Root layout (theme init)
-│   ├── error.tsx         # Route-level error boundary
-│   └── global-error.tsx  # Root error boundary
+├── app/api/              # 62 API routes
+├── app/page.tsx          # Main SPA (12 views)
 ├── components/
-│   ├── ui/               # shadcn/ui primitives
-│   └── views/            # 12 feature views
+│   ├── ui/               # shadcn/ui
+│   └── views/            # Feature views
 ├── lib/
-│   ├── ai.ts             # LLM client, router, SQL gen, answer gen, streaming, schema enrichment
-│   ├── intent-pipeline.ts # Intent analyzer + query rewriter + query expansion
-│   ├── llm-client.ts     # Unified transport (OpenAI + Anthropic)
-│   ├── tool-router.ts    # Dispatcher + agentic loop (split: tool-branches, stream-preparers, tool-utils)
-│   ├── smart-router.ts   # Self-adjusting load balancer + semantic scoring
-│   ├── planner.ts        # Multi-step agentic planner (parallelized executePlan)
-│   ├── schema-enrichment.ts # LLM-generated table descriptions for IntegrationSchema
-│   ├── plugin-registry.ts    # External webhook tool executor
-│   ├── plugin-selector.ts    # Semantic plugin matching
-│   ├── rag.ts            # Hybrid retrieval + retrieveWithReflection
-│   ├── rag-fts.ts        # FTS5 (SQLite) / tsvector (Postgres) full-text search
-│   ├── guardrails.ts     # SQL AST validation
-│   ├── connectors.ts     # DB connector registry (Postgres/MySQL/MSSQL + demo)
-│   ├── real-connectors.ts # Real DB connectors (pg/mysql2/mssql drivers)
-│   ├── cognee.ts         # Memory + knowledge graph (recallKnowledgeGraph)
-│   ├── errors.ts         # Typed error system (16 codes, AppError class)
-│   ├── constants.ts      # Centralized magic numbers
-│   ├── notifications.ts  # Webhook/email/Telegram
-│   └── ...
+│   ├── rag-ranking.ts    # BM25 + RRF
+│   ├── rag-eval.ts       # Eval framework
+│   ├── prisma-tenant.ts  # Multi-tenant extension
+│   ├── session.ts        # Auth + org context
+│   ├── cognee.ts         # Knowledge graph
+│   └── ... (60+ files)
 ├── middleware.ts         # Edge auth
 prisma/
-└── schema.prisma         # 25 models (incl. ScheduledRunLog)
-mini-services/
-└── scheduler/            # Cron worker (creates ScheduledRunLog per execution)
-scripts/
-├── seed.ts               # Full seed (users, ERP, docs, plugins, schedules)
-├── seed-plugins.ts       # Plugin-only seed (9 prebuilt)
-├── migrate-demo-to-postgres.ts # SQLite → Postgres data migration (66,435 rows)
-└── long-turn-chat.ts     # 20-turn multi-database conversation test
+└── schema.prisma         # 30 models
 docs/
-└── postgres-migration.md # Postgres migration reference (complete)
+├── ARCHITECTURE.md       # Full system design
+└── MULTI-TENANT-GUIDE.md # Org scoping guide
 ```
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env`:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | Postgres URL (e.g. `postgresql://ryasai:ryasai_dev@localhost:5432/ryasai`) |
-| `ENCRYPTION_SECRET_KEY` | Yes | 64-char random string for AES-256-GCM |
-| `ADMIN_INITIAL_PASSWORD` | Yes | Initial admin password (change after first login) |
-| `AUTH_DEMO_FALLBACK` | No | `false` by default (fail-closed) |
-| `COGNEE_ENABLED` | No | `true` by default (graceful degradation when cognee unavailable) |
-| `RAG_LLM_RERANK` | No | `true` to enable LLM reranker for RAG results |
-| `CONTEXTUAL_RETRIEVAL` | No | `true` to prepend LLM-generated document context to chunks before embedding (-49% retrieval failures) |
-| `LOG_LEVEL` | No | `debug`/`info`/`warn`/`error` (default `info`) |
-| `LOG_RETENTION_DAYS` | No | Log retention period (default 90) |
-| `PORT` | No | Dev server port (default 3000) |
-| `CHAT_API_CORS_ORIGIN` | No | CORS origin for external chat API (default `*`) |
-| `AGENTIC_DEADLINE_MS` | No | Agentic loop wall-clock timeout (default 90000) |
-| `CIRCUIT_BREAKER_COOLDOWN_MS` | No | Circuit breaker half-open cooldown (default 300000) |
-| `MCP_MAX_CONNECTIONS` | No | MCP connection cache LRU cap (default 20) |
-| `MCP_CONNECT_TIMEOUT_MS` | No | MCP connect timeout (default 15000) |
-| `MCP_LIST_TOOLS_TIMEOUT_MS` | No | MCP listTools timeout (default 10000) |
-| `MCP_CALL_TOOL_TIMEOUT_MS` | No | MCP callTool timeout (default 30000) |
-| `OTEL_ENABLED` | No | `true` to enable OpenTelemetry SDK (auto-detected from `OTEL_EXPORTER_OTLP_ENDPOINT`) |
-| `OIDC_ISSUER` | No | OIDC provider issuer URL (enables SSO login button) |
-| `OIDC_CLIENT_ID` | No | OIDC client ID |
-| `OIDC_CLIENT_SECRET` | No | OIDC client secret (not required for PKCE-only public clients) |
-| `OIDC_REDIRECT_URI` | No | Must be `https://your-chatbot-url/api/auth/sso/callback` |
-| `SAML_SP_ENTITY_ID` | No | SAML SP entity ID (enables SAML login button) |
-| `SAML_SP_CALLBACK_URL` | No | SAML ACS URL (e.g. `https://chatbot/api/auth/saml/callback`) |
-| `SAML_IDP_ENTRY_POINT` | No | IdP SSO URL (auto-discovered if `SAML_IDP_METADATA_URL` set) |
-| `SAML_IDP_CERT` | No | IdP public cert PEM (auto-discovered if metadata URL set) |
-| `SAML_IDP_METADATA_URL` | No | IdP metadata XML URL for auto-discovery |
-| `SAML_SP_CERT` | No | SP cert for signing AuthnRequests (optional) |
-| `SAML_SP_PRIVATE_KEY` | No | SP private key for signing (optional) |
+| Var | Required | Description |
+|-----|----------|-------------|
+| `DATABASE_URL` | Yes | Postgres |
+| `ENCRYPTION_SECRET_KEY` | Yes | 64-char (AES-256-GCM) |
+| `ADMIN_INITIAL_PASSWORD` | Yes | Initial password |
+| `COGNEE_ENABLED` | No | true (default) |
+| `RAG_LLM_RERANK` | No | true (optional) |
+| `CONTEXTUAL_RETRIEVAL` | No | true (optional, -49% failures) |
+| `LOG_LEVEL` | No | debug/info/warn/error |
+| `PORT` | No | 3000 (default) |
+
+See `.env.example` for auth (OIDC, SAML), observability, and advanced options.
+
+## Documentation
+
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Full system design, RAG pipeline, multi-tenant isolation, performance
+- **[MULTI-TENANT-GUIDE.md](./MULTI-TENANT-GUIDE.md)** — Org scoping guide, code examples, pitfalls
+- **[docs/postgres-migration.md](./docs/postgres-migration.md)** — Postgres setup
+
+## Production Readiness
+
+- ✅ Multi-tenant isolation (AsyncLocalStorage + Prisma)
+- ✅ Authentication + RBAC (admin, analyst, viewer)
+- ✅ BM25 + RRF (fixed: was never hybrid)
+- ✅ Eval framework with golden test set
+- ✅ 1392+ unit tests
+- ✅ Error handling + graceful fallbacks
+- ⏳ Load testing recommended
+- ⏳ Monitoring + alerting setup
 
 ## License
 
