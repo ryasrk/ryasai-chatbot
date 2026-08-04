@@ -102,7 +102,10 @@ export async function planQueryWithTools(args: {
     const systemPrompt =
       'You are an enterprise AI planner. Create a plan to answer the user\'s question. ' +
       `Select one tool from the available list. Maximum ${MAX_STEPS} steps. ` +
-      'Call the execute_step function with the tool ID, input parameters, and whether synthesis is needed.'
+      'Call the execute_step function with the tool ID, input parameters, and whether synthesis is needed. ' +
+      'CONFIRMATION FLOW: Some tools (admin:mcp_install, admin:mcp_remove, admin:set_prompt, admin:toggle_*) ' +
+      'require confirmation. On the first call, do NOT include confirm in the input — the tool will ask the user to confirm. ' +
+      'When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes".'
 
     const userMessage =
       `Question: ${args.question}\n\n` +
@@ -193,6 +196,13 @@ export async function planQuery(args: {
       '- Only use the chat tool for greetings, opinions, or questions that truly need no external data.\n' +
       '- Only use sql if the question is about structured data in connected databases (sales, inventory, customers).\n' +
       '- Only use rag if the question is about company documents (SOPs, policies, guidelines).\n' +
+      '- To install/add/set up an MCP server, use admin:mcp_install with the server name and/or URL in the input.\n' +
+      '- To set credentials for an MCP server, use admin:mcp_set_credentials with the server name and credentials.\n' +
+      '- To list MCP servers, use admin:mcp_list.\n' +
+      '- To test an MCP server, use admin:mcp_test.\n' +
+      '- To remove an MCP server, use admin:mcp_remove.\n' +
+      '- To seed/restore prebuilt plugins, use admin:seed_plugins.\n' +
+      'CONFIRMATION FLOW: Tools marked "REQUIRES user confirmation" need a two-turn flow. On the first call, do NOT include confirm in the input. The tool will return a confirmation message — relay it to the user. When the user confirms (says "yes", "confirm", "go ahead"), re-call the same tool with the same input plus "confirm":"yes".\n' +
       'Answer ONLY with JSON without markdown code fence:\n' +
       '{"steps":[{"id":"step1","tool":"<tool_id>","input":{...},"dependsOn":[]}],"needsSynthesis":true|false}'
 
@@ -474,10 +484,15 @@ async function executeStep(
       }
       const result = await executeAdminTool(step.tool, step.input, args.userId, isConfirmed)
       if (result.confirmationRequired) {
-        args.onStatus?.(step.id, step.tool, 'error')
+        // ponytail: confirmationRequired is NOT an error — it's a gate. Pass the
+        // confirmation message through as output so the LLM synthesizer relays it
+        // to the user. Mark as 'done' so the UI doesn't show "Failed".
+        // When the user confirms in a follow-up, the planner will re-call this
+        // tool with confirm:"yes" in the input, and isConfirmed will be true.
+        args.onStatus?.(step.id, step.tool, 'done')
         return {
-          stepId: step.id, tool: step.tool, ok: false, output: '',
-          error: result.confirmationRequired.message, latencyMs: Date.now() - started,
+          stepId: step.id, tool: step.tool, ok: true, output: result.confirmationRequired.message,
+          latencyMs: Date.now() - started,
         }
       }
       args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
