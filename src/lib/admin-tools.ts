@@ -377,8 +377,16 @@ async function mcpInstallAction(
   }
 
   if (!serverName) {
+    // ponytail: last path segment, not hostname — every GitHub repo whose README
+    // omits a name used to install as "github.com", so a second one collided and
+    // "set credentials for github.com" became ambiguous. Falls back to hostname
+    // for bare-domain URLs, which at least stays distinguishable.
     if (url) {
-      try { serverName = new URL(url).hostname } catch { serverName = '' }
+      try {
+        const u = new URL(url)
+        const slug = u.pathname.split('/').filter(Boolean).pop()
+        serverName = slug ? slug.replace(/\.git$/, '') : u.hostname
+      } catch { serverName = '' }
     }
     if (!serverName) serverName = `MCP-${new Date().toISOString().slice(11, 19)}`
   }
@@ -476,6 +484,48 @@ async function mcpInstallAction(
   }
 }
 
+type ResolvedMcp =
+  | { ok: true; server: { id: string; name: string } }
+  | { ok: false; output: string }
+
+/**
+ * Resolve a user-supplied MCP server reference (ID or name) to exactly one row.
+ *
+ * ponytail: every caller used findFirst({ name: { contains } }) with no ordering,
+ * and McpServer.name carries no unique constraint. Once a few servers are
+ * installed that silently picks the wrong one — "set credentials for spotify"
+ * lands on spotify-premium, and two repos whose README omits a name both install
+ * as "github.com". Same pattern on mcp_remove, where it deleted the wrong
+ * server. So: ID first, then exact name, then unique substring; anything
+ * genuinely ambiguous asks instead of guessing.
+ */
+async function resolveMcpServer(target: string): Promise<ResolvedMcp> {
+  const q = target.trim()
+  if (!q) return { ok: false, output: 'MCP server name or ID is required.' }
+
+  const byId = await db.mcpServer.findFirst({ where: { id: q }, select: { id: true, name: true } })
+  if (byId) return { ok: true, server: byId }
+
+  const matches = await db.mcpServer.findMany({
+    where: { name: { contains: q, mode: 'insensitive' } },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  })
+  if (matches.length === 0) return { ok: false, output: `MCP server "${q}" not found.` }
+  if (matches.length === 1) return { ok: true, server: matches[0] }
+
+  // A substring can hit several names while still naming one of them exactly.
+  const exact = matches.filter((m) => m.name.toLowerCase() === q.toLowerCase())
+  if (exact.length === 1) return { ok: true, server: exact[0] }
+
+  // Names may be duplicated, so offer IDs — otherwise the list can't be acted on.
+  const list = matches.map((m) => `  - ${m.name} (id: ${m.id})`).join('\n')
+  return {
+    ok: false,
+    output: `"${q}" matches ${matches.length} MCP servers:\n${list}\n\nRe-run with the exact name or the ID.`,
+  }
+}
+
 async function mcpSetCredentialsAction(
   input: Record<string, string>,
   userId: string,
@@ -491,12 +541,10 @@ async function mcpSetCredentialsAction(
     return { ok: false, output: 'No valid credential pairs found. Format: KEY=value, KEY=value' }
   }
 
-  const server = await db.mcpServer.findFirst({
-    where: { name: { contains: serverName, mode: 'insensitive' } },
-  })
-  if (!server) {
-    return { ok: false, output: `MCP server "${serverName}" not found.` }
-  }
+  const resolved = await resolveMcpServer(serverName)
+  if (!resolved.ok) return { ok: false, output: resolved.output }
+  const server = await db.mcpServer.findFirst({ where: { id: resolved.server.id } })
+  if (!server) return { ok: false, output: `MCP server "${serverName}" not found.` }
 
   // Merge with existing env vars (decrypt, merge, re-encrypt).
   let existingEnv: Record<string, string> = {}
@@ -559,12 +607,9 @@ async function mcpListAction(): Promise<AdminToolResult> {
 
 async function mcpTestAction(input: Record<string, string>): Promise<AdminToolResult> {
   const target = (input.server || input.name || input.id || '').trim()
-  if (!target) return { ok: false, output: 'MCP server name or ID is required.' }
-  const server = await db.mcpServer.findFirst({
-    where: { OR: [{ id: target }, { name: { contains: target } }] },
-    select: { id: true, name: true },
-  })
-  if (!server) return { ok: false, output: `MCP server "${target}" not found.` }
+  const resolved = await resolveMcpServer(target)
+  if (!resolved.ok) return { ok: false, output: resolved.output }
+  const server = resolved.server
 
   const result = await testMcpServer(server.id)
   if (result.ok) {
@@ -585,12 +630,9 @@ async function mcpRemoveAction(
   isConfirmed: boolean,
 ): Promise<AdminToolResult> {
   const target = (input.server || input.name || input.id || '').trim()
-  if (!target) return { ok: false, output: 'MCP server name or ID is required.' }
-  const server = await db.mcpServer.findFirst({
-    where: { OR: [{ id: target }, { name: { contains: target } }] },
-    select: { id: true, name: true },
-  })
-  if (!server) return { ok: false, output: `MCP server "${target}" not found.` }
+  const resolved = await resolveMcpServer(target)
+  if (!resolved.ok) return { ok: false, output: resolved.output }
+  const server = resolved.server
 
   if (!isConfirmed) {
     return {
