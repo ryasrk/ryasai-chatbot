@@ -66,7 +66,7 @@
     "input-otp": "^1.4.2",
     "ioredis": "^5.11.1",
     "jsdom": "^29.1.1",
-    "lucide-react": "^0.525.0",
+    "lucide-react": "^1.27.0",
     "mssql": "^12.7.0",
     "mysql2": "^3.23.1",
     "next": "^16.1.1",
