@@ -152,6 +152,51 @@ export function parseMcpInstallInstructions(text: string): ParsedMcpInstall | nu
   return null
 }
 
+/** "@scope/pkg@1.2.3" -> "@scope/pkg", "pkg@latest" -> "pkg", "@scope/pkg" -> itself. */
+function npmPackageName(spec: string): string {
+  const at = spec.lastIndexOf('@')
+  return at > 0 ? spec.slice(0, at) : spec
+}
+
+/**
+ * Is this npm package a 404?
+ *
+ * When the package name was guessed rather than read from a README, npx exits
+ * before the stdio handshake and the only thing the caller sees is
+ * "MCP error -32000: Connection closed" — on a server row that has already been
+ * written. Asking the registry first turns that into a sentence someone can act on.
+ *
+ * ponytail: fails OPEN. A registry outage must never block an install that
+ * would otherwise work, so only a definitive 404 counts as missing.
+ */
+export async function npmPackageMissing(spec: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${npmPackageName(spec)}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8_000),
+      headers: { 'User-Agent': 'ryasai-chatbot/1.0' },
+    })
+    return res.status === 404
+  } catch {
+    return false
+  }
+}
+
+/** Real npm packages matching a name — suggestions only, never auto-installed. */
+export async function searchNpmPackages(query: string, limit = 5): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(query)}&size=${limit}`,
+      { signal: AbortSignal.timeout(8_000), headers: { 'User-Agent': 'ryasai-chatbot/1.0' } },
+    )
+    if (!res.ok) return []
+    const body = (await res.json()) as { objects?: { package?: { name?: string } }[] }
+    return (body.objects ?? []).map((o) => o.package?.name).filter((n): n is string => !!n)
+  } catch {
+    return []
+  }
+}
+
 function parseArgsString(s: string): string[] {
   const tokens: string[] = []
   const regex = /"([^"]+)"|'([^']+)'|(\S+)/g

@@ -99,6 +99,35 @@ describe('admin:mcp_install — real README, real spawn', () => {
   }, 180_000)
 })
 
+describe('admin:mcp_install — the shapes the planner actually sent', () => {
+  test('a whole "npx -y pkg" command line installs and connects', async () => {
+    // The planner sends the line as the README writes it, not a bare runner.
+    // This used to come back "command ... is not in the allowed list", which the
+    // model relayed as "your runner blocks npx" plus manual steps.
+    const res = await executeAdminTool(
+      'admin:mcp_install',
+      { name: 'weather', command: 'npx -y @dangahagan/weather-mcp' },
+      'u1',
+      false,
+    )
+
+    expect(res.output).not.toContain('not in the allowed list')
+    expect(res.ok).toBe(true)
+    expect(res.output).toContain('installed and connected')
+  }, 180_000)
+
+  test('a name matching no real package says so instead of "Connection closed"', async () => {
+    // Real registry: @modelcontextprotocol/server-weather-mcp is a 404.
+    const before = rows.size
+    const res = await executeAdminTool('admin:mcp_install', { name: 'weather-mcp' }, 'u1', false)
+
+    expect(res.ok).toBe(false)
+    expect(res.output).toContain('no npm package named')
+    expect(res.output).not.toContain('Connection closed')
+    expect(rows.size).toBe(before) // no dead server row left behind
+  }, 60_000)
+})
+
 describe('admin:mcp_install — uvx (Python) path', () => {
   // The npx half and the uvx half fail for unrelated reasons, so cover both.
   // This one needs `uvx` on PATH; the runtime is installed in the Docker prod

@@ -15,7 +15,7 @@ import { writeAudit } from '@/lib/session'
 import { getPromptSettings, mergePromptSettings } from '@/lib/prompt-settings'
 import { getRoutingScores } from '@/lib/smart-router'
 import { testMcpServer, invalidateMcpToolsCache, disconnectMcpServer } from '@/lib/mcp-client'
-import { fetchMcpInstallFromUrl, parseMcpInstallInstructions } from '@/lib/mcp-installer'
+import { fetchMcpInstallFromUrl, npmPackageMissing, parseMcpInstallInstructions, searchNpmPackages } from '@/lib/mcp-installer'
 import { encryptConfig, decryptConfig } from '@/lib/crypto'
 
 // ponytail: lightweight known-names map for MCP package resolution. Covers the
@@ -334,12 +334,22 @@ async function mcpInstallAction(
   // The LLM read the README/docs and extracted the install command — trust it.
   if (llmCommand) {
     transport = 'stdio'
-    command = llmCommand
+    // ponytail: the planner rarely sends a bare runner. It sends the line the
+    // README shows — "npx -y @scope/pkg" — or occasionally the whole fetched
+    // page. Both used to fail the allow-list check below as a disallowed
+    // command, and the model papered over that by printing manual install
+    // steps. parseMcpInstallInstructions already extracts a runner + args from
+    // arbitrary text, so reuse it instead of rejecting the call. The allow-list
+    // still runs, on the extracted runner — nothing new gets to spawn.
+    const parsed = ALLOWED_MCP_CMDS.has(llmCommand) ? null : parseMcpInstallInstructions(llmCommand)
+    command = parsed?.command ?? llmCommand
     args = llmArgs
       ? llmArgs.split(/\s+/).filter(Boolean)
-      : (explicitPkg ? (llmCommand === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
+      : parsed?.args ?? (explicitPkg ? (command === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
     if (llmEnvVars) {
       requiredEnvVars = llmEnvVars.split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
+    } else if (parsed?.envVars.length) {
+      requiredEnvVars = parsed.envVars
     }
   } else if (parsedInstructions) {
     // Priority 2: the install instructions a prior web_fetch step actually read.
@@ -428,6 +438,26 @@ async function mcpInstallAction(
       detail: { name: serverName, command, reason: 'disallowed command' },
     })
     return { ok: false, output: `MCP install blocked: command "${command}" is not in the allowed list (npx, uvx, node, python).` }
+  }
+
+  // ponytail: check the package is real before writing a row for it. With only
+  // a name to go on the branch above guesses "@modelcontextprotocol/server-<name>",
+  // which 404s for anything outside that org — npx then exits before the stdio
+  // handshake and the user gets "MCP error -32000: Connection closed" plus a dead
+  // server row. Suggestions are listed, never auto-installed: the top npm hit for
+  // a fuzzy name is somebody else's package, not the repo that was asked for.
+  if (transport === 'stdio' && (command === 'npx' || command === 'bunx')) {
+    const pkgArg = args.find((a) => !a.startsWith('-'))
+    if (pkgArg && (await npmPackageMissing(pkgArg))) {
+      const hits = (await searchNpmPackages(serverName || pkgArg)).filter((n) => n !== pkgArg)
+      const suggestions = hits.length > 0
+        ? `\n\nReal npm packages matching "${serverName}":\n${hits.map((n) => `  - ${n}`).join('\n')}`
+        : ''
+      return {
+        ok: false,
+        output: `MCP install failed: there is no npm package named "${pkgArg}".${suggestions}\n\nCall admin:mcp_install again with "package" set to the right one, or "url" set to the repo (web_fetch it first and pass the README as "instructions"). Do not ask the user to install anything by hand.`,
+      }
+    }
   }
 
   const orgId = getOrgContext()
