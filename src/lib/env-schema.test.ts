@@ -3,6 +3,16 @@ import { validateEnv, resetEnvValidation } from './env-schema'
 
 const env = process.env as Record<string, string | undefined>
 
+// ponytail: `Object.assign(env, snapshot)` restores keys the test overwrote but
+// cannot remove keys it *added* — AUTH_DEMO_FALLBACK leaked out of its own test
+// and made the later "no warnings" case fail. Delete the extras, then restore.
+function restoreEnv(snapshot: Record<string, string | undefined>) {
+  for (const k of Object.keys(env)) {
+    if (!(k in snapshot)) delete env[k]
+  }
+  Object.assign(env, snapshot)
+}
+
 beforeEach(() => {
   resetEnvValidation()
 })
@@ -36,7 +46,7 @@ describe('env-schema — validateEnv', () => {
     delete env.AUTH_DEMO_FALLBACK
     const { warnings } = validateEnv()
     expect(warnings).toEqual([])
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('production with short key → warning', () => {
@@ -46,7 +56,7 @@ describe('env-schema — validateEnv', () => {
     env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db'
     const { warnings } = validateEnv()
     expect(warnings.some((w) => w.includes('shorter than 32'))).toBe(true)
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('production with placeholder key → warning', () => {
@@ -56,7 +66,7 @@ describe('env-schema — validateEnv', () => {
     env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db'
     const { warnings } = validateEnv()
     expect(warnings.some((w) => w.includes('placeholder'))).toBe(true)
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('production with AUTH_DEMO_FALLBACK=true → warning', () => {
@@ -67,7 +77,7 @@ describe('env-schema — validateEnv', () => {
     env.AUTH_DEMO_FALLBACK = 'true'
     const { warnings } = validateEnv()
     expect(warnings.some((w) => w.includes('AUTH_DEMO_FALLBACK'))).toBe(true)
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('production with missing ENCRYPTION_SECRET_KEY → throws', () => {
@@ -75,7 +85,7 @@ describe('env-schema — validateEnv', () => {
     env.NODE_ENV = 'production'
     delete env.ENCRYPTION_SECRET_KEY
     expect(() => validateEnv()).toThrow()
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('production with CONTEXTUAL_RETRIEVAL + RAG_LLM_RERANK accepted (true/false)', () => {
@@ -87,7 +97,7 @@ describe('env-schema — validateEnv', () => {
     env.RAG_LLM_RERANK = 'false'
     const { warnings } = validateEnv()
     expect(warnings).toEqual([])
-    Object.assign(env, original)
+    restoreEnv(original)
   })
 
   test('idempotent — calling twice returns same warnings', () => {
