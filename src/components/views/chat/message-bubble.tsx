@@ -1,15 +1,22 @@
 'use client'
 
 import { memo } from 'react'
+import dynamic from 'next/dynamic'
 import { Bot, Database } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChatMarkdown } from '@/components/ui/markdown'
 import type { ChatMessageItem } from '@/lib/types'
-import { ChartRenderer } from './chart-renderer'
 import { CitationList } from './citation-list'
 import { DataSourceBadge } from './data-source-badge'
 import { ThinkingCard } from './thinking-card'
 import { TOOL_BADGE } from './types'
+
+// ponytail: recharts (~500 KB) only matters for the rare message that carries
+// chartData. Loading it with the chat view was the bulk of the chat tab's TBT.
+const ChartRenderer = dynamic(
+  () => import('./chart-renderer').then((m) => m.ChartRenderer),
+  { ssr: false, loading: () => <div className="mt-1 h-[200px] animate-pulse rounded-md bg-muted/40" /> },
+)
 
 // ponytail: local-time HH:MM, no Intl dependency
 function formatTime(iso: string | undefined): string {

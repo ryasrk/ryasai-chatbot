@@ -13,35 +13,15 @@ import {
   Zap,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import dynamic from 'next/dynamic'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorState, StatGridSkeleton } from '@/components/ui/view-states'
-import { Skeleton } from '@/components/ui/skeleton'
 import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
+import { DashboardCharts } from '@/components/views/dashboard-charts'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
-
-// ponytail: recharts is ~500 KB and lives below the metric cards — load it
-// after they paint rather than in front of them.
-const DashboardCharts = dynamic(
-  () => import('@/components/views/dashboard-charts').then((m) => m.DashboardCharts),
-  {
-    ssr: false,
-    loading: () => (
-      <>
-        {[0, 1].map((i) => (
-          <Card key={i}>
-            <CardHeader className="pb-2"><Skeleton className="h-4 w-32" /></CardHeader>
-            <CardContent><Skeleton className="h-[140px] w-full" /></CardContent>
-          </Card>
-        ))}
-      </>
-    ),
-  },
-)
 
 const formatNumber = (n: number) => n.toLocaleString('en-US')
 

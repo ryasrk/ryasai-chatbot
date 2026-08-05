@@ -271,8 +271,10 @@ export function IntegrationsView() {
         </div>
 
         <TabsContent value="database" className="mt-2">
-      {showSkeleton ? (
-        <CardGridSkeleton />
+      {/* ponytail: gate on `loading` — otherwise the first 200 ms falls through
+          to the empty state and the view paints empty → skeleton → cards. */}
+      {loading ? (
+        showSkeleton ? <CardGridSkeleton /> : null
       ) : loadError ? (
         <ErrorState message="Failed to load integrations." onRetry={fetchList} />
       ) : items.length === 0 ? (

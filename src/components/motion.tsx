@@ -6,7 +6,7 @@
  */
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { motion, useInView, useReducedMotion, type Variants } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
@@ -71,6 +71,8 @@ export function FadeIn({
   )
 }
 
+const defaultFormat = (n: number) => Math.round(n).toLocaleString('id-ID')
+
 /**
  * Count-up number. Animates from 0 → value the first time it scrolls into view.
  * Falls back to the final value immediately when the user prefers reduced motion.
@@ -89,31 +91,33 @@ export function AnimatedNumber({
   const ref = useRef<HTMLSpanElement>(null)
   const inView = useInView(ref, { once: true, margin: '-8%' })
   const reduce = useReducedMotion()
-  const [display, setDisplay] = useState(0)
 
+  // ponytail: the rAF loop writes textContent instead of calling setState. The
+  // dashboard renders 8 of these at once — one setState per frame per card was
+  // ~500 React renders in 1.1s, which was most of its Lighthouse TBT.
   useEffect(() => {
-    if (!inView) return
+    const el = ref.current
+    if (!el || !inView) return
+    const fmt = format ?? defaultFormat
     if (reduce) {
-      const t = setTimeout(() => setDisplay(value), 0)
-      return () => clearTimeout(t)
+      el.textContent = fmt(value)
+      return
     }
     let raf = 0
     const start = performance.now()
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / (duration * 1000))
       const eased = 1 - Math.pow(1 - t, 3) // easeOutCubic
-      setDisplay(value * eased)
+      el.textContent = fmt(t < 1 ? value * eased : value)
       if (t < 1) raf = requestAnimationFrame(tick)
-      else setDisplay(value)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [inView, value, reduce, duration])
+  }, [inView, value, reduce, duration, format])
 
-  const fmt = format ?? ((n: number) => Math.round(n).toLocaleString('id-ID'))
   return (
     <span ref={ref} className={cn(className)}>
-      {fmt(display)}
+      {(format ?? defaultFormat)(0)}
     </span>
   )
 }

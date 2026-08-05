@@ -12,8 +12,12 @@ import {
   Check,
   Copy,
 } from 'lucide-react'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash'
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript'
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json'
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python'
+import vscDarkPlus from 'react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,6 +35,14 @@ import {
 import { copyText, statusBadgeClass, methodBadgeClass } from './utils'
 
 /* ----------------------------- Documentation ----------------------------- */
+
+// ponytail: PrismLight + the 4 languages these docs actually use. The full
+// `Prism` build ships refractor's ~290 grammars (1.2 MB) to highlight some curl
+// and JSON. Unregistered languages ("text", "sse") render as plain code.
+SyntaxHighlighter.registerLanguage('bash', bash)
+SyntaxHighlighter.registerLanguage('javascript', javascript)
+SyntaxHighlighter.registerLanguage('json', json)
+SyntaxHighlighter.registerLanguage('python', python)
 
 function CodeBlock({ code, language = 'javascript', label }: { code: string; language?: string; label?: string }) {
   const [copied, setCopied] = useState(false)

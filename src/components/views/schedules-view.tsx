@@ -201,6 +201,8 @@ export function SchedulesView() {
   // completes a run. Shows a toast notification with the result.
   useEffect(() => {
     const interval = setInterval(async () => {
+      // ponytail: no point polling a tab nobody is looking at
+      if (document.hidden) return
       try {
         const res = await fetch('/api/schedules', { cache: 'no-store' })
         const data = await res.json()
@@ -473,8 +475,12 @@ export function SchedulesView() {
         </CardHeader>
       </Card>
 
-      {showSkeleton ? (
-        <ListRowsSkeleton />
+      {/* ponytail: gate on `loading`, not on `showSkeleton`. Without it the
+          first 200 ms (before the delayed skeleton appears) fell through to the
+          empty state, so the page painted "No schedules yet" → skeleton → table.
+          Three layouts in one load is what wrecked Speed Index here. */}
+      {loading ? (
+        showSkeleton ? <ListRowsSkeleton /> : null
       ) : loadError ? (
         <ErrorState message="Failed to load execution schedules." onRetry={fetchSchedules} />
       ) : schedules.length === 0 ? (
