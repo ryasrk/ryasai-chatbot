@@ -58,22 +58,24 @@ mock.module('@/lib/prisma-tenant', () => ({
 const { executeAdminTool } = await import('./admin-tools')
 
 describe('admin:mcp_install — real README, real spawn', () => {
-  test('unconfirmed install asks for confirmation and writes nothing', async () => {
-    const before = rows.size
+  test('a bare install request installs — it never asks to confirm', async () => {
+    // Regression: the gate returned in ~11 ms having written nothing, while the
+    // step still reported success, so the model papered over the silence with a
+    // "run npx yourself" tutorial. isConfirmed=false must still install.
     const res = await executeAdminTool('admin:mcp_install', { url: TARGET_URL }, 'u1', false)
 
-    expect(res.confirmationRequired).toBeDefined()
-    expect(res.confirmationRequired!.action).toBe('MCP_INSTALL')
-    expect(res.confirmationRequired!.message).toContain(TARGET_URL)
-    expect(rows.size).toBe(before)
-  })
+    expect(res.confirmationRequired).toBeUndefined()
+    expect(res.ok).toBe(true)
+    expect(res.output).toContain('installed and connected')
+    expect(rows.size).toBeGreaterThan(0)
+  }, 180_000)
 
-  test('confirmed install fetches the README, spawns the server, and lists its tools', async () => {
+  test('install fetches the README, spawns the server, and lists its tools', async () => {
     const res = await executeAdminTool(
       'admin:mcp_install',
-      { url: TARGET_URL, confirm: 'yes' },
+      { url: TARGET_URL },
       'u1',
-      true,
+      false,
     )
 
     expect(res.output).toContain('installed and connected')
@@ -104,9 +106,9 @@ describe('admin:mcp_install — uvx (Python) path', () => {
   test('installing a known uvx server by name spawns it and lists tools', async () => {
     const res = await executeAdminTool(
       'admin:mcp_install',
-      { name: 'fetch', confirm: 'yes' },
+      { name: 'fetch' },
       'u1',
-      true,
+      false,
     )
 
     expect(res.output).toContain('installed and connected')

@@ -97,7 +97,7 @@ export async function executeAdminTool(
     case 'admin:reindex_status':
       return reindexStatusAction()
     case 'admin:mcp_install':
-      return mcpInstallAction(input, userId, isConfirmed)
+      return mcpInstallAction(input, userId)
     case 'admin:mcp_set_credentials':
       return mcpSetCredentialsAction(input, userId)
     case 'admin:mcp_list':
@@ -292,14 +292,13 @@ async function reindexStatusAction(): Promise<AdminToolResult> {
 // ---------------------------------------------------------------------------
 // MCP server management tools — context-driven via the LLM planner.
 // The planner decides when to invoke these based on conversation history.
-// Confirmation flows through the standard isConfirmed parameter (the planner
-// emits confirm: "yes" in the tool input when the user confirms).
+// Removal still confirms via the standard isConfirmed parameter (the planner
+// emits confirm: "yes" in the tool input); install deliberately does not.
 // ---------------------------------------------------------------------------
 
 async function mcpInstallAction(
   input: Record<string, string>,
   userId: string,
-  isConfirmed: boolean,
 ): Promise<AdminToolResult> {
   const name = (input.name || input.server || '').trim()
   const url = (input.url || input.endpoint || '').trim()
@@ -384,23 +383,17 @@ async function mcpInstallAction(
     if (!serverName) serverName = `MCP-${new Date().toISOString().slice(11, 19)}`
   }
 
-  // ponytail: confirmation gate — stdio transport spawns a child process.
-  // Show a preview of what will run, ask the user to confirm.
-  if (!isConfirmed) {
-    const configPreview = transport === 'stdio' && command
-      ? `Command: ${command} ${args.join(' ')}`
-      : transport === 'stdio' && needsUrlFetch
-        ? `Source: ${serverUrl} (will fetch install instructions)`
-        : `URL: ${serverUrl}`
-    return {
-      ok: false,
-      output: '',
-      confirmationRequired: {
-        action: 'MCP_INSTALL',
-        message: `I'll install MCP server "${serverName}" (transport: ${transport}).\n${configPreview}\n\nThis will spawn a child process to run the MCP server. Type "confirm yes" to proceed.`,
-      },
-    }
-  }
+  // ponytail: no confirmation gate. "Install this <url>" IS the instruction —
+  // making the user then type "confirm yes" meant the tool returned in ~11 ms
+  // having installed nothing, while the step still reported success, and the
+  // model filled the silence with a manual "run npx yourself" tutorial. This
+  // matches the installer's original behaviour before f39fff9 added the gate.
+  //
+  // What still guards this: ALLOWED_MCP_CMDS below restricts the runner to
+  // npx/bunx/uvx/node/python, and the resolved command is echoed in the result
+  // so the user sees exactly what ran. Ceiling: the runner is constrained, the
+  // *package* is not — a hostile README can still name any npm/PyPI package.
+  // Reinstate a gate here if untrusted people can drive this tool.
 
   // Confirmed — execute the install.
   // If the LLM already provided command/args (priority 1), we're set.
