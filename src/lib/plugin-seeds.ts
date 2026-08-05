@@ -177,25 +177,48 @@ const PLUGINS: PluginSeed[] = [
 
 import { db } from '@/lib/db'
 
+/**
+ * Install/refresh the built-in plugins for one org.
+ *
+ * ponytail: upsert by toolId. This used to deleteMany + recreate, which took
+ * every hand-registered plugin in the org down with it on any re-seed. Upserting
+ * also means a corrected built-in manifest can actually reach an existing org —
+ * the news endpoint fix sat in the seed file while production kept 404ing on the
+ * stale row, because the boot auto-heal only seeds orgs with zero plugins.
+ *
+ * Seed-owned fields (endpoint, description, keywords) are refreshed; the admin's
+ * enable toggles are left alone on rows that already exist.
+ *
+ * Ceiling: one findFirst per plugin. Fine for ~10 built-ins; add a
+ * @@unique([organizationId, toolId]) and a real upsert if this list grows.
+ */
 export async function seedPlugins(organizationId: string) {
-  // ponytail: scope delete to this org only — the previous deleteMany({}) wiped
-  // ALL orgs' plugins every time any org re-ran setup. Cross-org data destruction.
-  await db.plugin.deleteMany({ where: { organizationId } })
   for (const p of PLUGINS) {
-    await db.plugin.create({
-      data: {
-        organizationId,
-        toolId: p.toolId,
-        name: p.name,
-        description: p.description,
-        manifestJson: JSON.stringify(p.manifest),
-        category: p.category,
-        subcategory: p.subcategory,
-        keywords: p.keywords,
-        isEnabled: p.enabled,
-        chatEnabled: true,
-        agenticEnabled: true,
-      },
+    const seedOwned = {
+      name: p.name,
+      description: p.description,
+      manifestJson: JSON.stringify(p.manifest),
+      category: p.category,
+      subcategory: p.subcategory,
+      keywords: p.keywords,
+    }
+    const existing = await db.plugin.findFirst({
+      where: { organizationId, toolId: p.toolId },
+      select: { id: true },
     })
+    if (existing) {
+      await db.plugin.update({ where: { id: existing.id }, data: seedOwned })
+    } else {
+      await db.plugin.create({
+        data: {
+          organizationId,
+          toolId: p.toolId,
+          ...seedOwned,
+          isEnabled: p.enabled,
+          chatEnabled: true,
+          agenticEnabled: true,
+        },
+      })
+    }
   }
 }

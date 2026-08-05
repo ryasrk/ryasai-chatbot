@@ -3,7 +3,7 @@ import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/se
 import { hasPlan } from '@/lib/plan-gating'
 import { rememberChatTurn } from '@/lib/cognee'
 import { db } from '@/lib/db'
-import { planQuery, executePlan, type PlanStepResult } from '@/lib/planner'
+import { planQuery, executePlan, formatStepContext, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { streamAnswer } from '@/lib/ai'
 import { enterWithOrg } from '@/lib/prisma-tenant'
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
             },
           })
 
-          const synthesisContext = results.map(r => `Step ${r.stepId} (${r.tool}): ${r.output ?? r.error}`).join('\n')
+          const synthesisContext = formatStepContext(results)
           let fullAnswer = ''
           // ponytail: streamAnswer routes to configured LLM endpoint (fail-closed if unconfigured).
           // source 'SQL' is a neutral generic label for multi-source synthesis context.

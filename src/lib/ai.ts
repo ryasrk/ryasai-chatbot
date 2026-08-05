@@ -248,6 +248,8 @@ export async function generateAnswer(args: {
       `Answer the user's question based on the CONTEXT provided. ` +
       `If the question refers to prior data or conversation, use both the CONTEXT and the conversation history to answer. ` +
       `Do not say data is unavailable if it appears in the context or history. ` +
+      `If the CONTEXT marks a step FAILED, report that failure and its reason. ` +
+      `Never invent data, and never substitute manual setup instructions for the user to run by hand. ` +
       `Format numbers for readability. ` +
       `Mention the data source naturally at the end of the answer.`,
   })
@@ -450,6 +452,8 @@ export async function* streamAnswer(args: {
         'Answer the user\'s question based on the CONTEXT provided. ' +
         'If the question refers to prior data or conversation, use both the CONTEXT and the conversation history to answer. ' +
         'Do not say data is unavailable if it appears in the context or history. ' +
+        'If the CONTEXT marks a step FAILED, report that failure and its reason. ' +
+        'Never invent data, and never substitute manual setup instructions for the user to run by hand. ' +
         'Format numbers for readability.',
     },
     {

@@ -8,7 +8,7 @@ const mockRunNonStreaming = mock(async () => ({
   integrationId: null,
 }))
 
-const mockGenerateAnswer = mock(async () => 'synthesized-answer')
+const mockGenerateAnswer = mock(async (_args: { question: string; context: string; source: string }) => 'synthesized-answer')
 const mockGenerateChat = mock(async () => 'fixed-question')
 const mockPluginFindFirst = mock(async () => null) as unknown as ReturnType<typeof mock>
 const mockExecutePlugin = mock(async () => ({ ok: true, output: 'plugin-output', error: null, latencyMs: 10 }))
@@ -41,7 +41,7 @@ mock.module('@/lib/mcp-client', () => ({
 // process-global and leaks into admin-tools.test.ts. Per-step confirmation is
 // covered by the isStepConfirmed unit tests below instead.
 
-import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQueryWithTools, synthesizeAnswer, resolveStepInput, isStepConfirmed } from '@/lib/planner'
+import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQueryWithTools, synthesizeAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
 import type { PlanStep, Plan } from '@/lib/planner'
 import type { ToolDef } from '@/lib/tool-registry'
 
@@ -482,5 +482,72 @@ describe('synthesizeAnswer', () => {
     })
     expect(answer).toBe('synthesized-answer')
     expect(mockGenerateAnswer).toHaveBeenCalledTimes(1)
+  })
+
+  test('all-failed plan lists why each step failed', async () => {
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'plugin:news', input: {} }],
+      needsSynthesis: true,
+    }
+    const answer = await synthesizeAnswer({
+      question: 'latest news',
+      stepResults: [
+        { stepId: 's1', tool: 'plugin:news', ok: false, output: '', error: 'Webhook returned HTTP 404.', latencyMs: 3 },
+      ],
+      plan,
+    })
+    expect(answer).toContain('HTTP 404')
+    expect(mockGenerateAnswer).not.toHaveBeenCalled()
+  })
+
+  test('partial failure reaches the synthesis context, not just the success', async () => {
+    const plan: Plan = {
+      steps: [
+        { id: 's1', tool: 'sql', input: {} },
+        { id: 's2', tool: 'plugin:news', input: {} },
+      ],
+      needsSynthesis: true,
+    }
+    await synthesizeAnswer({
+      question: 'sales and news',
+      stepResults: [
+        { stepId: 's1', tool: 'sql', ok: true, output: 'sales data', latencyMs: 10 },
+        { stepId: 's2', tool: 'plugin:news', ok: false, output: '', error: 'Webhook returned HTTP 404.', latencyMs: 3 },
+      ],
+      plan,
+    })
+    const ctx = mockGenerateAnswer.mock.calls[0][0].context
+    expect(ctx).toContain('sales data')
+    expect(ctx).toContain('FAILED')
+    expect(ctx).toContain('HTTP 404')
+  })
+})
+
+describe('formatStepContext', () => {
+  // Regression: a failed step carries output:'' — an empty string, not nullish.
+  // The old `r.output ?? r.error` kept '' and dropped the reason, leaving the
+  // model a blank CONTEXT that it filled with invented manual instructions.
+  test('empty output on a failed step does not swallow the error', () => {
+    const ctx = formatStepContext([
+      { stepId: 's1', tool: 'admin:mcp_install', ok: false, output: '', error: 'MCP server name or URL is required.', latencyMs: 2 },
+    ])
+    expect(ctx).toContain('FAILED')
+    expect(ctx).toContain('MCP server name or URL is required.')
+    expect(ctx).not.toBe('')
+  })
+
+  test('marks successful steps OK and keeps their output', () => {
+    const ctx = formatStepContext([
+      { stepId: 's1', tool: 'sql', ok: true, output: 'rows here', latencyMs: 1 },
+    ])
+    expect(ctx).toContain('OK')
+    expect(ctx).toContain('rows here')
+  })
+
+  test('falls back to output when a failed step has no error field', () => {
+    const ctx = formatStepContext([
+      { stepId: 's1', tool: 'admin:mcp_install', ok: false, output: 'blocked: command not allowed', latencyMs: 1 },
+    ])
+    expect(ctx).toContain('blocked: command not allowed')
   })
 })

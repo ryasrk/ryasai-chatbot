@@ -772,6 +772,31 @@ async function selfCorrect(args: {
 // Synthesize — combine step outputs into a single NL answer
 // ---------------------------------------------------------------------------
 
+/** Why a step failed. Every failure path sets output:'' and puts the reason in error. */
+export function stepFailureReason(r: PlanStepResult): string {
+  return r.error || r.output || 'unknown error'
+}
+
+/**
+ * Render step results for a synthesis prompt.
+ *
+ * ponytail: failures MUST reach the model. Callers built this with
+ * `r.output ?? r.error`, but a failed step carries output:'' — an empty string,
+ * not nullish — so `??` kept the empty string and dropped the reason. The model
+ * then saw a blank CONTEXT, had no tool result to report, and fell back to
+ * pretrained knowledge: generic "clone the repo and run npm install" tutorials
+ * instead of saying what actually broke.
+ */
+export function formatStepContext(results: PlanStepResult[]): string {
+  return results
+    .map((r) =>
+      r.ok
+        ? `[Step ${r.stepId} — ${r.tool}] OK\n${r.output}`
+        : `[Step ${r.stepId} — ${r.tool}] FAILED: ${stepFailureReason(r)}`,
+    )
+    .join('\n\n---\n\n')
+}
+
 export async function synthesizeAnswer(args: {
   question: string
   stepResults: PlanStepResult[]
@@ -780,20 +805,24 @@ export async function synthesizeAnswer(args: {
   const successful = args.stepResults.filter((r) => r.ok)
 
   if (successful.length === 0) {
-    return 'Sorry, no steps completed successfully.'
+    // Report the actual reasons rather than a bare apology — deterministic, so
+    // an all-failed plan can never be answered from the model's imagination.
+    const reasons = args.stepResults.map((r) => `- ${r.tool}: ${stepFailureReason(r)}`).join('\n')
+    return `Sorry, no steps completed successfully.\n\n${reasons}`
   }
 
   const hasExternalToolStep = args.plan.steps.some(
     (s) => s.tool.startsWith('plugin:') || s.tool.startsWith('mcp:'),
   )
 
-  if (!args.plan.needsSynthesis && successful.length === 1 && !hasExternalToolStep) {
+  // Passthrough only when nothing failed — otherwise a partial failure would be
+  // hidden behind the one step that happened to succeed.
+  const allOk = successful.length === args.stepResults.length
+  if (allOk && !args.plan.needsSynthesis && successful.length === 1 && !hasExternalToolStep) {
     return successful[0].output
   }
 
-  const context = successful
-    .map((r) => `[Step ${r.stepId} — ${r.tool}]\n${r.output}`)
-    .join('\n\n---\n\n')
+  const context = formatStepContext(args.stepResults)
 
   // ponytail: source label is cosmetic in the synthesis prompt; 'SQL' is the
   // most neutral generic label for multi-source context. Upgrade to per-step
