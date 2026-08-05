@@ -18,6 +18,8 @@
  * - DNS-rebinding protection via dns.lookup before TCP connect
  * - Non-text content blocks serialized (no silent data loss)
  */
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
@@ -251,11 +253,48 @@ async function getConnection(
   }
 }
 
+function onPath(cmd: string): boolean {
+  return (process.env.PATH ?? '')
+    .split(':')
+    .filter(Boolean)
+    .some((dir) => {
+      try {
+        return statSync(join(dir, cmd)).isFile()
+      } catch {
+        return false
+      }
+    })
+}
+
+/**
+ * Pick the runner to actually spawn. Prefers bunx over npx; everything else is
+ * spawned exactly as stored.
+ *
+ * ponytail: every MCP README says `npx -y <pkg>`, and that is what the installer
+ * parses and stores. Two problems with running it literally. The stock
+ * `oven/bun:1-slim` runtime had no Node at all, so npx was ENOENT and no stdio
+ * server could start — the Dockerfile now installs Node, but an older or
+ * stripped image still won't have it. And npx runs the server as a grandchild
+ * (npx -> node -> server), so closing the transport leaves the real process
+ * behind; bunx execs it directly and dies with the transport. Measured on the
+ * install integration test: bunx 4.1s and a clean exit, npx never exited.
+ *
+ * bunx is argv-compatible with npx down to tolerating `-y`, and ships with the
+ * runtime this app runs on. Falls back to npx if bunx somehow isn't on PATH.
+ *
+ * Only npx has a substitute. uvx/python have no bun equivalent — a server
+ * needing those requires the real runtime, which the prod stage now installs.
+ */
+export function resolveStdioCommand(command: string): string {
+  if (command === 'npx' && onPath('bunx')) return 'bunx'
+  return command
+}
+
 async function buildTransport(row: McpServerRow): Promise<Transport | null> {
   if (row.transport === 'stdio') {
     if (!row.command) return null
     return new StdioClientTransport({
-      command: row.command,
+      command: resolveStdioCommand(row.command),
       args: parseArgs(row.args),
       env: loadEnv(row.envJson),
     })

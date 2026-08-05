@@ -35,11 +35,36 @@ ENV PORT=3000
 # Docker sets HOSTNAME, and Next's standalone server binds to it (eth0 IP),
 # which breaks the in-container localhost healthcheck. Bind all interfaces.
 ENV HOSTNAME=0.0.0.0
+
+# MCP runtimes. ALLOWED_MCP_CMDS in admin-tools.ts permits npx/uvx/node/python,
+# and the stock bun image has none of them — every stdio MCP server died with
+# ENOENT here. Node comes from the official image rather than apt so it matches
+# the builder's major; uv ships /uv and /uvx as static binaries.
+#
+# Adds ~230 MB uncompressed, in two independent halves — drop either if the
+# image has to stay small, and MCP servers of that kind simply stop being
+# installable (the others keep working):
+#   Node  ~139 MB -> npx / node servers
+#   uv+py  ~90 MB -> uvx / python servers
+COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /usr/local/bin/
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends python3 ca-certificates \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/prisma ./prisma
-RUN groupadd -r nodejs && useradd -r -g nodejs nextjs \
+# ponytail: `useradd -r` alone leaves nextjs with no home, so every package
+# runner (bunx, npx, uvx) fails the moment it tries to write its download cache.
+# Give it a real HOME and export it — MCP servers are fetched on first spawn.
+RUN groupadd -r nodejs && useradd -r -g nodejs -m -d /home/nextjs nextjs \
     && mkdir -p db \
-    && chown -R nextjs:nodejs /app
+    && chown -R nextjs:nodejs /app /home/nextjs
+ENV HOME=/home/nextjs
 USER nextjs
 EXPOSE 3000
 VOLUME ["/app/db"]

@@ -19,7 +19,60 @@ import {
   disconnectAllMcp,
   invalidateMcpToolsCache,
   listMcpTools,
+  resolveStdioCommand,
 } from '@/lib/mcp-client'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+/** A PATH containing exactly the given command names, and nothing else. */
+function pathWith(...cmds: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-path-'))
+  for (const c of cmds) writeFileSync(join(dir, c), '')
+  return dir
+}
+
+function withPath<T>(p: string, fn: () => T): T {
+  const original = process.env.PATH
+  process.env.PATH = p
+  try {
+    return fn()
+  } finally {
+    process.env.PATH = original
+  }
+}
+
+describe('resolveStdioCommand', () => {
+  // Regression: the stock oven/bun:1-slim runtime had no Node, so the `npx`
+  // every MCP README prescribes was ENOENT and no stdio server could start.
+  test('npx becomes bunx when Node is not installed', () => {
+    withPath(pathWith('bunx'), () => {
+      expect(resolveStdioCommand('npx')).toBe('bunx')
+    })
+  })
+
+  // bunx is preferred even where npx works: npx runs the server as a grandchild
+  // and leaks it when the transport closes.
+  test('bunx wins over npx when both are available', () => {
+    withPath(pathWith('npx', 'bunx'), () => {
+      expect(resolveStdioCommand('npx')).toBe('bunx')
+    })
+  })
+
+  test('npx is used as-is when there is no bunx to fall back to', () => {
+    withPath(pathWith('npx'), () => {
+      expect(resolveStdioCommand('npx')).toBe('npx')
+    })
+  })
+
+  test('runners with no bun equivalent are never rewritten', () => {
+    withPath(pathWith('bunx'), () => {
+      expect(resolveStdioCommand('uvx')).toBe('uvx')
+      expect(resolveStdioCommand('python')).toBe('python')
+      expect(resolveStdioCommand('node')).toBe('node')
+    })
+  })
+})
 
 beforeEach(() => {
   invalidateMcpToolsCache()

@@ -23,16 +23,21 @@ import { encryptConfig, decryptConfig } from '@/lib/crypto'
 // names fall through to the package-name pattern. Add entries as needed.
 // Used inside the admin:mcp_install tool implementation — the LLM planner
 // decides WHEN to install (context-driven); this map resolves WHAT to run.
-const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx' }> = {
+// ponytail: `extraArgs` exists for one reason — the Python MCP SDK renamed
+// McpError to MCPError, and the pinned-below servers still import the old name,
+// so a bare `uvx mcp-server-fetch` dies on ImportError before it can speak MCP.
+// `--with "mcp<1.10"` holds the SDK at the last version they work against.
+// Drop the pin per-entry once that package ships a release using MCPError.
+const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx'; extraArgs?: string[] }> = {
   filesystem: { pkg: '@modelcontextprotocol/server-filesystem', runner: 'npx' },
   'google-drive': { pkg: '@modelcontextprotocol/server-google-drive', runner: 'npx' },
   'google-maps': { pkg: '@modelcontextprotocol/server-google-maps', runner: 'npx' },
   postgres: { pkg: '@modelcontextprotocol/server-postgres', runner: 'npx' },
   postgresql: { pkg: '@modelcontextprotocol/server-postgres', runner: 'npx' },
-  sqlite: { pkg: 'mcp-server-sqlite', runner: 'uvx' },
+  sqlite: { pkg: 'mcp-server-sqlite', runner: 'uvx', extraArgs: ['--with', 'mcp<1.10'] },
   brave: { pkg: '@modelcontextprotocol/server-brave-search', runner: 'npx' },
   'brave-search': { pkg: '@modelcontextprotocol/server-brave-search', runner: 'npx' },
-  fetch: { pkg: 'mcp-server-fetch', runner: 'uvx' },
+  fetch: { pkg: 'mcp-server-fetch', runner: 'uvx', extraArgs: ['--with', 'mcp<1.10'] },
   puppeteer: { pkg: '@modelcontextprotocol/server-puppeteer', runner: 'npx' },
   memory: { pkg: '@modelcontextprotocol/server-memory', runner: 'npx' },
   'sequential-thinking': { pkg: '@modelcontextprotocol/server-sequential-thinking', runner: 'npx' },
@@ -46,8 +51,11 @@ const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx' }> = {
 }
 
 // ponytail: defense-in-depth — only allow known safe runners for stdio spawn.
-// npx/uvx/node/python only; blocks any other command parsed from a fetched page.
-const ALLOWED_MCP_CMDS = new Set(['npx', 'uvx', 'node', 'python'])
+// Blocks any other command parsed from a fetched page. bunx is on the list
+// because resolveStdioCommand already spawns npx installs through it, and READMEs
+// increasingly write `bunx` directly — rejecting it while we run it internally
+// made no sense. It grants nothing npx didn't: both fetch and execute a package.
+const ALLOWED_MCP_CMDS = new Set(['npx', 'bunx', 'uvx', 'node', 'python'])
 
 export interface AdminToolResult {
   ok: boolean
@@ -360,8 +368,8 @@ async function mcpInstallAction(
     if (explicitPkg) {
       args = runner === 'npx' ? ['-y', explicitPkg] : [explicitPkg]
     } else if (knownNameHit) {
-      const pkg = MCP_PACKAGES[knownNameHit].pkg
-      args = runner === 'npx' ? ['-y', pkg] : [pkg]
+      const entry = MCP_PACKAGES[knownNameHit]
+      args = runner === 'npx' ? ['-y', entry.pkg] : [...(entry.extraArgs ?? []), entry.pkg]
       if (knownNameHit === 'filesystem') args.push('/tmp')
     } else if (serverName) {
       const pkgToken = `@modelcontextprotocol/server-${serverName.toLowerCase()}`
