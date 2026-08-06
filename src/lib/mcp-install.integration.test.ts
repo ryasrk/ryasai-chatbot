@@ -111,7 +111,20 @@ describe('admin:mcp_install — the shapes the planner actually sent', () => {
       false,
     )
 
-    expect(res.output).not.toContain('not in the allowed list')
+    expect(res.output).not.toContain('blocked')
+    expect(res.ok).toBe(true)
+    expect(res.output).toContain('installed and connected')
+  }, 180_000)
+
+  test('the --yes spelling installs and connects too', async () => {
+    const res = await executeAdminTool(
+      'admin:mcp_install',
+      { name: 'weather', command: 'npx --yes @dangahagan/weather-mcp' },
+      'u1',
+      false,
+    )
+
+    expect(res.output).not.toContain('blocked')
     expect(res.ok).toBe(true)
     expect(res.output).toContain('installed and connected')
   }, 180_000)

@@ -296,6 +296,27 @@ async function reindexStatusAction(): Promise<AdminToolResult> {
 // emits confirm: "yes" in the tool input); install deliberately does not.
 // ---------------------------------------------------------------------------
 
+/**
+ * Pull an allowed runner + its args out of whatever the planner put in `command`.
+ *
+ * It is almost never a bare token: it is the line the README prints
+ * ("npx -y @scope/pkg", "npx --yes @scope/pkg", "bunx pkg"), and occasionally
+ * the whole fetched page. Splitting on whitespace handles every command line
+ * verbatim including flag spellings the README parser does not know; the parser
+ * is the fallback for prose and JSON config blocks. Returns null when no allowed
+ * runner is in there at all, so the caller still blocks it.
+ */
+function normalizeRunner(raw: string): { command: string; args: string[]; envVars: string[] } | null {
+  const [head, ...rest] = raw.trim().split(/\s+/).filter(Boolean)
+  if (head && ALLOWED_MCP_CMDS.has(head)) return { command: head, args: rest, envVars: [] }
+
+  const parsed = parseMcpInstallInstructions(raw)
+  if (parsed && ALLOWED_MCP_CMDS.has(parsed.command)) {
+    return { command: parsed.command, args: parsed.args, envVars: parsed.envVars }
+  }
+  return null
+}
+
 async function mcpInstallAction(
   input: Record<string, string>,
   userId: string,
@@ -341,15 +362,15 @@ async function mcpInstallAction(
     // steps. parseMcpInstallInstructions already extracts a runner + args from
     // arbitrary text, so reuse it instead of rejecting the call. The allow-list
     // still runs, on the extracted runner — nothing new gets to spawn.
-    const parsed = ALLOWED_MCP_CMDS.has(llmCommand) ? null : parseMcpInstallInstructions(llmCommand)
-    command = parsed?.command ?? llmCommand
+    const runner = normalizeRunner(llmCommand)
+    command = runner?.command ?? llmCommand
     args = llmArgs
       ? llmArgs.split(/\s+/).filter(Boolean)
-      : parsed?.args ?? (explicitPkg ? (command === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
+      : (runner?.args.length ? runner.args : explicitPkg ? (command === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
     if (llmEnvVars) {
       requiredEnvVars = llmEnvVars.split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
-    } else if (parsed?.envVars.length) {
-      requiredEnvVars = parsed.envVars
+    } else if (runner?.envVars.length) {
+      requiredEnvVars = runner.envVars
     }
   } else if (parsedInstructions) {
     // Priority 2: the install instructions a prior web_fetch step actually read.
@@ -437,7 +458,14 @@ async function mcpInstallAction(
       userId, action: 'MCP_SERVER_CREATE_BLOCKED', severity: 'warning',
       detail: { name: serverName, command, reason: 'disallowed command' },
     })
-    return { ok: false, output: `MCP install blocked: command "${command}" is not in the allowed list (npx, uvx, node, python).` }
+    // ponytail: the runner list is rendered from the set, not retyped. The old
+    // hardcoded "(npx, uvx, node, python)" had drifted — it omitted bunx and
+    // still named npx while rejecting an npx command line, so the model read a
+    // contradiction and invented an environment policy to explain it.
+    return {
+      ok: false,
+      output: `MCP install blocked: no allowed runner in "${command}".\nAllowed runners: ${[...ALLOWED_MCP_CMDS].join(', ')}.\nCall admin:mcp_install again with "command" set to one of those and everything else in "args".`,
+    }
   }
 
   // ponytail: check the package is real before writing a row for it. With only
