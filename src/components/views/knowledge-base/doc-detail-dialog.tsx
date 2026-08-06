@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { FileText, Loader2, Layers, AlertCircle, History, RotateCcw, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { DetailSkeleton } from '@/components/ui/view-states'
+import { Delayed, DetailSkeleton } from '@/components/ui/view-states'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -105,7 +105,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
   }
 
   if (loadingChunks && !detail) {
-    return <DetailSkeleton />
+    return <Delayed><DetailSkeleton /></Delayed>
   }
   if (error) {
     return (

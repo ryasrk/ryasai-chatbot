@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
-import { TableSkeleton } from '@/components/ui/view-states'
+import { Delayed, TableSkeleton } from '@/components/ui/view-states'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Table,
@@ -368,7 +368,7 @@ function SchemaViewerContent({
   }
 
   if (loading) {
-    return <TableSkeleton rows={8} cols={3} />
+    return <Delayed><TableSkeleton rows={8} cols={3} /></Delayed>
   }
   if (error) {
     return (

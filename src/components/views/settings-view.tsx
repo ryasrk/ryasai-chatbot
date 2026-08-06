@@ -30,7 +30,7 @@ import {
 import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { FormSkeleton, TableSkeleton, ErrorState } from '@/components/ui/view-states'
+import { Delayed, FormSkeleton, TableSkeleton, ErrorState } from '@/components/ui/view-states'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -996,7 +996,7 @@ function NotificationsTab() {
           </Button>
         </CardHeader>
         <CardContent>
-          {loading ? <TableSkeleton rows={3} /> : error ? (
+          {loading ? <Delayed><TableSkeleton rows={3} /></Delayed> : error ? (
             <ErrorState message={error} onRetry={load} />
           ) : configs.length === 0 ? (
             <div className="text-sm text-muted-foreground py-6 text-center">

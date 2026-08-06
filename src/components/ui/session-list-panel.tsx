@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
-import { SessionListSkeleton } from '@/components/ui/view-states'
+import { Delayed, SessionListSkeleton } from '@/components/ui/view-states'
 
 export interface SessionListItem {
   id: string
@@ -117,7 +117,7 @@ export function SessionListPanel({
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-1.5 space-y-0.5">
             {loading ? (
-              <SessionListSkeleton />
+              <Delayed><SessionListSkeleton /></Delayed>
             ) : sessions.length === 0 ? (
               <div className="text-center py-6 text-[11px] text-muted-foreground">
                 {emptyHint}

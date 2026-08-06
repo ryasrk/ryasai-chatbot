@@ -32,6 +32,7 @@ import { Topbar } from '@/components/views/topbar'
 import {
   CardGridSkeleton,
   ChatMessageSkeleton,
+  Delayed,
   FormSkeleton,
   ListRowsSkeleton,
   LoadingState,
@@ -46,53 +47,58 @@ import {
 // importing all 12 put recharts, react-markdown and react-syntax-highlighter
 // into the first-load chunk — 2.4 MB of JS to render a login form.
 // Dashboard + Login stay static: they are what the first paint actually shows.
+// ponytail: every fallback is wrapped in <Delayed>. These render the moment a
+// menu item is clicked, and a chunk that is already in the browser cache
+// resolves in 10-50 ms — so each switch used to paint skeleton → blank →
+// content. Delayed drops anything that resolves inside 200 ms; a genuinely
+// cold chunk still gets its skeleton.
 const ChatView = dynamic(
   () => import('@/components/views/chat-view').then((m) => m.ChatView),
-  { ssr: false, loading: () => <ChatMessageSkeleton /> },
+  { ssr: false, loading: () => <Delayed><ChatMessageSkeleton /></Delayed> },
 )
 const AgenticView = dynamic(
   () => import('@/components/views/agentic-view').then((m) => m.AgenticView),
-  { ssr: false, loading: () => <LoadingState /> },
+  { ssr: false, loading: () => <Delayed><LoadingState /></Delayed> },
 )
 const IntegrationsView = dynamic(
   () => import('@/components/views/integrations-view').then((m) => m.IntegrationsView),
-  { ssr: false, loading: () => <CardGridSkeleton /> },
+  { ssr: false, loading: () => <Delayed><CardGridSkeleton /></Delayed> },
 )
 const KnowledgeBaseView = dynamic(
   () => import('@/components/views/knowledge-base-view').then((m) => m.KnowledgeBaseView),
-  { ssr: false, loading: () => <CardGridSkeleton /> },
+  { ssr: false, loading: () => <Delayed><CardGridSkeleton /></Delayed> },
 )
 const AIConfigurationView = dynamic(
   () => import('@/components/views/ai-configuration-view').then((m) => m.AIConfigurationView),
-  { ssr: false, loading: () => <FormSkeleton /> },
+  { ssr: false, loading: () => <Delayed><FormSkeleton /></Delayed> },
 )
 const PromptToolsView = dynamic(
   () => import('@/components/views/prompt-tools-view').then((m) => m.PromptToolsView),
-  { ssr: false, loading: () => <FormSkeleton /> },
+  { ssr: false, loading: () => <Delayed><FormSkeleton /></Delayed> },
 )
 const PluginsView = dynamic(
   () => import('@/components/views/plugins-view').then((m) => m.PluginsView),
-  { ssr: false, loading: () => <ListRowsSkeleton /> },
+  { ssr: false, loading: () => <Delayed><ListRowsSkeleton /></Delayed> },
 )
 const SchedulesView = dynamic(
   () => import('@/components/views/schedules-view').then((m) => m.SchedulesView),
-  { ssr: false, loading: () => <ListRowsSkeleton /> },
+  { ssr: false, loading: () => <Delayed><ListRowsSkeleton /></Delayed> },
 )
 const SecurityView = dynamic(
   () => import('@/components/views/security-view').then((m) => m.SecurityView),
-  { ssr: false, loading: () => <TableSkeleton /> },
+  { ssr: false, loading: () => <Delayed><TableSkeleton /></Delayed> },
 )
 const IntegrationApiView = dynamic(
   () => import('@/components/views/integration-api-view').then((m) => m.IntegrationApiView),
-  { ssr: false, loading: () => <TableSkeleton /> },
+  { ssr: false, loading: () => <Delayed><TableSkeleton /></Delayed> },
 )
 const SettingsView = dynamic(
   () => import('@/components/views/settings-view').then((m) => m.SettingsView),
-  { ssr: false, loading: () => <FormSkeleton /> },
+  { ssr: false, loading: () => <Delayed><FormSkeleton /></Delayed> },
 )
 const SetupView = dynamic(
   () => import('@/components/views/setup-view').then((m) => m.SetupView),
-  { ssr: false, loading: () => <LoadingState /> },
+  { ssr: false, loading: () => <Delayed><LoadingState /></Delayed> },
 )
 
 const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string }[] = [

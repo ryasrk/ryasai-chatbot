@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Delayed } from '@/components/ui/view-states'
 
 interface CogneeStats {
   enabled: boolean
@@ -130,13 +131,15 @@ export function CogneeCard() {
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-3 w-48" />
-          <Skeleton className="h-3 w-40" />
-        </CardContent>
-      </Card>
+      <Delayed>
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-48" />
+            <Skeleton className="h-3 w-40" />
+          </CardContent>
+        </Card>
+      </Delayed>
     )
   }
 

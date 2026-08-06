@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { FormSkeleton } from '@/components/ui/view-states'
+import { Delayed, FormSkeleton } from '@/components/ui/view-states'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -243,7 +243,7 @@ function RestConnectorContent({
   }
 
   if (loading) {
-    return <FormSkeleton fields={4} />
+    return <Delayed><FormSkeleton fields={4} /></Delayed>
   }
 
   if (error) {

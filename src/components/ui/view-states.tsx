@@ -4,7 +4,21 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { cn } from '@/lib/utils'
+
+/**
+ * Delay-gates a loading fallback so a fast load never flashes it.
+ *
+ * ponytail: for the places that have no `loading` boolean to hand to
+ * useDelayedLoading — chiefly next/dynamic's `loading:` option, which renders
+ * the instant a menu item is clicked. A warm chunk resolves in 10-50 ms, so
+ * every switch painted skeleton → blank → content. Mounted means loading, so
+ * the hook gets a constant true and unmounting cancels the timer.
+ */
+export function Delayed({ children, delay }: { children: React.ReactNode; delay?: number }) {
+  return useDelayedLoading(true, delay) ? <>{children}</> : null
+}
 
 export function LoadingState({ label = 'Loading...' }: { label?: string }) {
   return (
