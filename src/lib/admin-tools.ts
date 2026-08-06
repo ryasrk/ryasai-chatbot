@@ -297,6 +297,27 @@ async function reindexStatusAction(): Promise<AdminToolResult> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Strip what a model wraps its tokens in.
+ *
+ * ponytail: format characters (\p{Cf} — zero-width space, ZWJ, BOM, direction
+ * marks) are the ones that cost a debugging round trip. String.trim() leaves
+ * them and \s does not match them, so a command that prints as exactly "npx"
+ * failed an equality check against "npx" with nothing on screen to explain it.
+ * Space separators (\p{Zs} — NBSP and friends) become a plain space so the
+ * split below still finds the boundaries.
+ */
+function stripInvisible(s: string): string {
+  return s.replace(/\p{Cf}/gu, '').replace(/\p{Zs}/gu, ' ')
+}
+
+const WRAPPING_QUOTES = /^["'`]+|["'`]+$/g
+
+/** Escape what does not print, so the next failure report is readable as sent. */
+function visible(s: string): string {
+  return s.replace(/[^\x20-\x7E]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+}
+
+/**
  * Pull an allowed runner + its args out of whatever the planner put in `command`.
  *
  * It is almost never a bare token: it is the line the README prints
@@ -307,10 +328,14 @@ async function reindexStatusAction(): Promise<AdminToolResult> {
  * runner is in there at all, so the caller still blocks it.
  */
 function normalizeRunner(raw: string): { command: string; args: string[]; envVars: string[] } | null {
-  const [head, ...rest] = raw.trim().split(/\s+/).filter(Boolean)
+  const cleaned = stripInvisible(raw).replace(WRAPPING_QUOTES, '').trim()
+  const [head, ...rest] = cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.replace(WRAPPING_QUOTES, ''))
   if (head && ALLOWED_MCP_CMDS.has(head)) return { command: head, args: rest, envVars: [] }
 
-  const parsed = parseMcpInstallInstructions(raw)
+  const parsed = parseMcpInstallInstructions(cleaned)
   if (parsed && ALLOWED_MCP_CMDS.has(parsed.command)) {
     return { command: parsed.command, args: parsed.args, envVars: parsed.envVars }
   }
@@ -321,15 +346,20 @@ async function mcpInstallAction(
   input: Record<string, string>,
   userId: string,
 ): Promise<AdminToolResult> {
-  const name = (input.name || input.server || '').trim()
-  const url = (input.url || input.endpoint || '').trim()
-  const explicitPkg = (input.package || input.pkg || '').trim()
-  const transportHint = (input.transport || '').trim().toLowerCase()
+  // ponytail: clean every token-shaped param, not just `command`. The same model
+  // emits them all, so a zero-width character in `package` reaches the registry
+  // as a name that cannot match and comes back as "no npm package named ..." —
+  // which reads like a typo the user made.
+  const clean = (v: string) => stripInvisible(v).trim()
+  const name = clean(input.name || input.server || '')
+  const url = clean(input.url || input.endpoint || '')
+  const explicitPkg = clean(input.package || input.pkg || '').replace(WRAPPING_QUOTES, '')
+  const transportHint = clean(input.transport || '').toLowerCase()
   // ponytail: LLM can provide command/args/envVars directly after reading the
   // fetched URL content via web_fetch. This takes priority over regex parsing.
-  const llmCommand = (input.command || input.cmd || '').trim()
-  const llmArgs = (input.args || '').trim()
-  const llmEnvVars = (input.envVars || input.env || '').trim()
+  const llmCommand = clean(input.command || input.cmd || '')
+  const llmArgs = clean(input.args || '')
+  const llmEnvVars = clean(input.envVars || input.env || '')
   // Raw install instructions piped in from a prior web_fetch step via the
   // planner's {{stepN}} placeholder. Parsed here so the page the agent actually
   // read is what gets installed — no second fetch, no guessing from the name.
@@ -365,7 +395,7 @@ async function mcpInstallAction(
     const runner = normalizeRunner(llmCommand)
     command = runner?.command ?? llmCommand
     args = llmArgs
-      ? llmArgs.split(/\s+/).filter(Boolean)
+      ? llmArgs.split(/\s+/).filter(Boolean).map((t) => t.replace(WRAPPING_QUOTES, ''))
       : (runner?.args.length ? runner.args : explicitPkg ? (command === 'npx' ? ['-y', explicitPkg] : [explicitPkg]) : [])
     if (llmEnvVars) {
       requiredEnvVars = llmEnvVars.split(/[,;]\s*/).map((v) => v.trim()).filter(Boolean)
@@ -464,7 +494,7 @@ async function mcpInstallAction(
     // contradiction and invented an environment policy to explain it.
     return {
       ok: false,
-      output: `MCP install blocked: no allowed runner in "${command}".\nAllowed runners: ${[...ALLOWED_MCP_CMDS].join(', ')}.\nCall admin:mcp_install again with "command" set to one of those and everything else in "args".`,
+      output: `MCP install blocked: no allowed runner in "${visible(command)}".\nAllowed runners: ${[...ALLOWED_MCP_CMDS].join(', ')}.\nCall admin:mcp_install again with "command" set to one of those and everything else in "args".`,
     }
   }
 

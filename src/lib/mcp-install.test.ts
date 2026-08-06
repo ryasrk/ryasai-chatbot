@@ -105,6 +105,43 @@ describe('command arriving as a whole command line', () => {
     expect(String(rows[0].args)).toContain('@dangahagan/weather-mcp')
   })
 
+  // The planner emits tokens wrapped in things that are invisible in a log line.
+  // A zero-width space is category Cf: .trim() does not remove it and \s does not
+  // match it, so "npx" that prints as "npx" failed the allow-list with nothing
+  // visible to explain why.
+  test.each([
+    ['zero-width spaces', '​npx​'],
+    ['non-breaking spaces', ' npx '],
+    ['a byte-order mark', '﻿npx'],
+    ['double quotes', '"npx"'],
+    ['backticks', '`npx`'],
+    ['quotes around a whole command line', '" npx -y @dangahagan/weather-mcp "'],
+  ])('a runner wrapped in %s still resolves', async (_label, command) => {
+    const res = await install({ name: 'weather', command, args: '-y @dangahagan/weather-mcp' })
+
+    expect(res.output).not.toContain('blocked')
+    expect(res.ok).toBe(true)
+    expect(rows[0].command).toBe('npx')
+  })
+
+  test('a package name carrying invisible characters is cleaned before lookup', async () => {
+    // Otherwise it reaches the registry as a name that cannot match and comes
+    // back as "there is no npm package named ..." — which reads like a typo.
+    const res = await install({ name: 'weather', command: 'npx', args: '-y ​@dangahagan/weather-mcp' })
+
+    expect(res.ok).toBe(true)
+    expect(String(rows[0].args)).toContain('@dangahagan/weather-mcp')
+    expect(String(rows[0].args)).not.toContain('​')
+  })
+
+  test('a character that survives cleaning is shown escaped, not silently', async () => {
+    // Cyrillic er in place of p — identical on screen, never matches.
+    const res = await install({ name: 'x', command: 'nрx' })
+
+    expect(res.ok).toBe(false)
+    expect(res.output).toContain('\\u0440')
+  })
+
   test('the block message lists every allowed runner and says how to retry', async () => {
     // It used to hardcode "(npx, uvx, node, python)" while npx WAS allowed and
     // bunx was missing, so the model read a contradiction — "allowed list is
