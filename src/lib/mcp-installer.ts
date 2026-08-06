@@ -53,6 +53,16 @@ async function fetchUrlContent(url: string): Promise<string | null> {
         // try next branch
       }
     }
+    
+    // If main/master both fail, try falling back to README without extension
+    // Some repos have README instead of README.md
+    try {
+      const res = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repo}/main/README`,
+        { signal: AbortSignal.timeout(5_000), headers: { 'User-Agent': 'ryasai-chatbot/1.0' } },
+      )
+      if (res.ok) return await res.text()
+    } catch {}
   }
 
   // Generic URL fetch
@@ -125,7 +135,7 @@ export function parseMcpInstallInstructions(text: string): ParsedMcpInstall | nu
     }
   }
 
-  // Pattern 4: bare "uvx <pkg>"
+  // Pattern 4: try uvx before falling back to other patterns
   const uvxMatch = text.match(/(?:^|\n|\s)`?(uvx)\s+([a-z0-9][\w./-]*)/m)
   if (uvxMatch) {
     return {
@@ -136,7 +146,19 @@ export function parseMcpInstallInstructions(text: string): ParsedMcpInstall | nu
     }
   }
 
-  // Pattern 5: simple "command": "npx", "args": [...] without mcpServers wrapper
+  // Pattern 5: enhanced search for node/python runners
+  // Look for common patterns like "node server.js" or "python script.py"
+  const nodeRunnerMatch = text.match(/(?:^|\n|\s)`?(node|python)\s+([\w.-]+\.js[\w.@/-]*)/m)
+  if (nodeRunnerMatch) {
+    return {
+      command: nodeRunnerMatch[1],
+      args: [nodeRunnerMatch[2].replace(/['"`]/g, '')],
+      envVars,
+      source: 'node/python command in README',
+    }
+  }
+
+  // Pattern 6: simple "command": "npx", "args": [...] without mcpServers wrapper
   const simpleJsonMatch = text.match(
     /"command"\s*:\s*"(npx|uvx|node|python)"\s*,\s*"args"\s*:\s*\[([^\]]+)\]/,
   )

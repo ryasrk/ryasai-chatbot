@@ -48,6 +48,8 @@ const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx'; extraAr
   stripe: { pkg: '@modelcontextprotocol/server-stripe', runner: 'npx' },
   sentry: { pkg: '@modelcontextprotocol/server-sentry', runner: 'npx' },
   time: { pkg: '@modelcontextprotocol/server-time', runner: 'npx' },
+  weather: { pkg: '@dangahagan/weather-mcp', runner: 'npx' },
+  'weather-mcp': { pkg: '@dangahagan/weather-mcp', runner: 'npx' },
 }
 
 // ponytail: defense-in-depth — only allow known safe runners for stdio spawn.
@@ -494,7 +496,7 @@ async function mcpInstallAction(
     // contradiction and invented an environment policy to explain it.
     return {
       ok: false,
-      output: `MCP install blocked: no allowed runner in "${visible(command)}".\nAllowed runners: ${[...ALLOWED_MCP_CMDS].join(', ')}.\nCall admin:mcp_install again with "command" set to one of those and everything else in "args".`,
+      output: `MCP install blocked: no allowed runner in "${visible(command)}".\nAllowed runners: ${[...ALLOWED_MCP_CMDS].join(', ')}.\n\nTry passing the install instructions from web_fetch as "instructions":"{{stepN}}" or specify "command" explicitly as one of those runners with the correct package in "args" or "package".`,
     }
   }
 
@@ -508,12 +510,34 @@ async function mcpInstallAction(
     const pkgArg = args.find((a) => !a.startsWith('-'))
     if (pkgArg && (await npmPackageMissing(pkgArg))) {
       const hits = (await searchNpmPackages(serverName || pkgArg)).filter((n) => n !== pkgArg)
-      const suggestions = hits.length > 0
-        ? `\n\nReal npm packages matching "${serverName}":\n${hits.map((n) => `  - ${n}`).join('\n')}`
-        : ''
+      
+      // Check for common patterns and suggest fixes
+      let suggestions: string[] = []
+      
+      // Pattern 1: If user mentioned "weather-mcp" but it tried @dangahagan/weather-mcp
+      if ((serverName?.toLowerCase().includes('weather') || pkgArg.toLowerCase().includes('weather'))) {
+        const weatherPkgs = ['@dangahagan/weather-mcp', 'weather-mcp']
+        const matching = weatherPkgs.filter(p => p !== pkgArg)
+        if (matching.length > 0) {
+          suggestions.push(`Try: ${matching[0]} instead?`)
+        }
+      }
+      
+      // Pattern 2: @scope/package pattern where scope might be wrong
+      if (pkgArg.startsWith('@') && hits.length > 0) {
+        // Maybe they meant a different scoped package
+        const similar = hits.slice(0, 3).map(n => `  • ${n}`)
+        suggestions.push(`Similar packages:\n${similar.join('\n')}`)
+      }
+      
+      // Pattern 3: Generic fuzzy matches
+      if (hits.length > 0 && suggestions.length === 0) {
+        suggestions.push(`Real npm packages matching "${serverName}":\n${hits.slice(0, 5).map(n => `  • ${n}`).join('\n')}`)
+      }
+      
       return {
         ok: false,
-        output: `MCP install failed: there is no npm package named "${pkgArg}".${suggestions}\n\nCall admin:mcp_install again with "package" set to the right one, or "url" set to the repo (web_fetch it first and pass the README as "instructions"). Do not ask the user to install anything by hand.`,
+        output: `MCP install failed: there is no npm package named "${pkgArg}".\n\n${suggestions.join('\n\n')}\n\nCall admin:mcp_install again with:\n• "package": set to the correct package name, OR\n• "url": provide the GitHub URL and we'll fetch instructions automatically, OR\n• "instructions": pass the README content from web_fetch`,
       }
     }
   }
