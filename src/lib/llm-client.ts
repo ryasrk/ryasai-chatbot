@@ -282,7 +282,7 @@ export async function* chatStream(
   for await (const chunk of iterSseStream(res.body)) {
     try {
       const parsed = JSON.parse(chunk) as {
-        choices?: Array<{ delta?: { content?: string } }>
+        choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
       }
       if (parsed.usage) {
@@ -292,7 +292,10 @@ export async function* chatStream(
           totalTokens: parsed.usage.total_tokens ?? 0,
         }
       }
-      const token = parsed.choices?.[0]?.delta?.content
+      // delta.content = real SSE token; message.content = non-stream fallback
+      // (iterSseStream yields a whole-JSON body when the server ignored
+      // stream:true — without this the token would be silently dropped).
+      const token = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content
       if (token) { streamOutput += token; yield token }
     } catch (e) { console.warn('[llm] malformed SSE chunk:', e) }
   }

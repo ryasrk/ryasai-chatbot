@@ -118,6 +118,22 @@ export async function* iterSseStream(
   // flush decoder + process any remaining partial line
   buffer += decoder.decode()
   const tail = buffer.trim()
+
+  // ponytail: NON-STREAM FALLBACK. A server that ignores `stream:true` and
+  // answers with a plain JSON body produces ZERO `data:` lines — the caller
+  // then yields no tokens and the user gets a silent EMPTY answer. That is
+  // exactly what the e2e mock did (and any minimal OpenAI-compatible proxy
+  // can). If nothing was yielded and the tail parses as JSON, yield it whole
+  // so the standard chunk-parser handles it like a single completion.
+  if (tail && !tail.startsWith('data: ')) {
+    try {
+      JSON.parse(tail)
+      yield tail
+      return
+    } catch {
+      // not JSON either — fall through to the plain-tail branch below
+    }
+  }
   if (tail.startsWith('data: ')) {
     const data = tail.slice(6)
     if (data && data !== '[DONE]') yield data
