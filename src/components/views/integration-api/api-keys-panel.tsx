@@ -294,7 +294,7 @@ export function ApiKeysPanel() {
                           variant="outline"
                           disabled={!item.isActive || !!item.revokedAt || revokingId === item.id}
                           onClick={() => setConfirmRevokeId(item.id)}
-                          className="text-rose-600 hover:text-rose-700"
+                          className="text-destructive hover:text-destructive"
                         >
                           {revokingId === item.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -407,8 +407,8 @@ function RequestLogsForKey({ apiKeyId }: { apiKeyId: string }) {
                       variant="outline"
                       className={
                         log.status < 400
-                          ? 'text-emerald-600'
-                          : 'text-rose-600'
+                          ? 'text-success'
+                          : 'text-destructive'
                       }
                     >
                       {log.status}
@@ -420,7 +420,7 @@ function RequestLogsForKey({ apiKeyId }: { apiKeyId: string }) {
                   <TableCell className="text-xs text-muted-foreground">
                     {format(new Date(log.createdAt), 'dd MMM HH:mm:ss', { locale: localeId })}
                   </TableCell>
-                  <TableCell className="text-xs text-rose-600 max-w-[200px] truncate">
+                  <TableCell className="text-xs text-destructive max-w-[200px] truncate">
                     {log.errorMessage || '—'}
                   </TableCell>
                 </TableRow>

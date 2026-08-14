@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import { useState } from 'react'
 import { LogOut, Menu, ShieldCheck, UserCircle, Building2, Settings as SettingsIcon, HelpCircle } from 'lucide-react'
 import type React from 'react'
 
@@ -10,6 +11,13 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ActiveUser } from '@/lib/types'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +66,15 @@ export function Topbar({
   const organization: OrganizationInfo = {
     name: orgName,
     plan: user?.plan || null,
+  }
+
+  const [aboutOpen, setAboutOpen] = useState(false)
+
+  // Navigate to the settings view via the same custom event the sidebar uses,
+  // so the shell swaps views without a full page reload.
+  const goSettings = (tab?: string) => {
+    window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'settings' } }))
+    if (tab) window.dispatchEvent(new CustomEvent('settings-tab', { detail: { tab } }))
   }
 
   return (
@@ -157,9 +174,9 @@ export function Topbar({
                       {getInitials(user.name)}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="hidden md:flex flex-col items-start leading-tight">
-                    <div className="max-w-[140px] truncate text-xs font-medium">{user.name}</div>
-                    <div className="text-[10px] text-muted-foreground capitalize">{user.role}</div>
+                  <div className="hidden md:flex flex-col items-start leading-tight min-w-0 max-w-[220px]">
+                    <div className="max-w-full truncate text-xs font-medium">{user.name}</div>
+                    <div className="max-w-full truncate text-[10px] text-muted-foreground capitalize">{user.role}</div>
                   </div>
                 </Button>
               </DropdownMenuTrigger>
@@ -182,17 +199,17 @@ export function Topbar({
                 </div>
 
                 {/* Account menu items */}
-                <DropdownMenuItem className="gap-2 cursor-pointer">
+                <DropdownMenuItem className="gap-2 cursor-pointer" onSelect={() => goSettings('profile')}>
                   <UserCircle className="h-3.5 w-3.5" />
                   <span>Profile</span>
                 </DropdownMenuItem>
-                
-                <DropdownMenuItem className="gap-2 cursor-pointer">
+
+                <DropdownMenuItem className="gap-2 cursor-pointer" onSelect={() => goSettings()}>
                   <SettingsIcon className="h-3.5 w-3.5" />
                   <span>Settings</span>
                 </DropdownMenuItem>
-                
-                <DropdownMenuItem className="gap-2 cursor-pointer">
+
+                <DropdownMenuItem className="gap-2 cursor-pointer" onSelect={() => setAboutOpen(true)}>
                   <HelpCircle className="h-3.5 w-3.5" />
                   <span>About</span>
                 </DropdownMenuItem>
@@ -239,6 +256,39 @@ export function Topbar({
           )}
         </div>
       </div>
+
+      {/* About dialog */}
+      <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Image src="/logo.svg" alt="ryasai" width={22} height={22} className="rounded" />
+              ryasai
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              Enterprise AI assistant — SQL, RAG, and REST routing with guardrails.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Organization</span>
+              <span className="font-medium truncate">{orgName || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Plan</span>
+              <span className="font-medium capitalize">{user?.plan || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Signed in as</span>
+              <span className="font-medium truncate">{user?.email || '—'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Version</span>
+              <span className="font-mono">{process.env.NEXT_PUBLIC_APP_VERSION || '0.4.0'}</span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 

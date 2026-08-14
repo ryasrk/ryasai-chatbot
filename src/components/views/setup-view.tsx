@@ -170,7 +170,7 @@ function TestModelStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
         Verify the LLM connection by syncing the model list.
       </p>
       {modelCount !== null && (
-        <div className="flex items-center gap-2 text-xs text-emerald-600">
+        <div className="flex items-center gap-2 text-xs text-success">
           <CheckCircle2 className="h-4 w-4" />
           {modelCount} models available.
         </div>
@@ -242,7 +242,7 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
         }}
       />
       {uploaded && (
-        <div className="flex items-center gap-2 text-xs text-emerald-600">
+        <div className="flex items-center gap-2 text-xs text-success">
           <CheckCircle2 className="h-4 w-4" />
           Document uploaded and indexing.
         </div>
@@ -350,7 +350,7 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
         </div>
       )}
       {warned && (
-        <p className="text-xs text-amber-600">
+        <p className="text-xs text-warning">
           Chat test failed — make sure the LLM configuration is correct. You can still complete setup.
         </p>
       )}

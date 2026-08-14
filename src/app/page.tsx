@@ -399,7 +399,7 @@ export default function Home() {
               duration: reduceMotion ? 0 : 0.3,
               ease: [0.23, 1, 0.32, 1] 
             }}
-            className="hidden md:flex shrink-0 flex-col border-r bg-background sticky top-[57px] h-[calc(100vh-57px)] overflow-hidden"
+            className="hidden md:flex shrink-0 flex-col border-r bg-background sticky top-14 h-[calc(100vh-3.5rem)] overflow-hidden"
             suppressHydrationWarning
           >
             {/* Sidebar Header with Collapse Toggle */}
@@ -488,7 +488,7 @@ export default function Home() {
             )}
           </AnimatePresence>
 
-          <main className="flex-1 min-w-0 flex flex-col h-[calc(100vh-57px)] sticky top-[57px]" suppressHydrationWarning>
+          <main className="flex-1 min-w-0 flex flex-col h-[calc(100vh-3.5rem)] sticky top-14" suppressHydrationWarning>
             <div className="shrink-0 bg-background border-b px-4 md:px-6 py-2.5" suppressHydrationWarning>
               <ViewHeader view={view} action={renderHeaderAction(view)} />
             </div>

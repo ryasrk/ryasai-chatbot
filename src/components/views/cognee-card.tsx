@@ -278,15 +278,15 @@ export function CogneeCard() {
                 <div className="text-[10px] text-muted-foreground">Total Docs</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-green-600">{stats.documents.cognified}</div>
+                <div className="text-lg font-bold text-success">{stats.documents.cognified}</div>
                 <div className="text-[10px] text-muted-foreground">Cognified</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-amber-600">{stats.documents.pending}</div>
+                <div className="text-lg font-bold text-warning">{stats.documents.pending}</div>
                 <div className="text-[10px] text-muted-foreground">Pending</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-red-600">{stats.documents.failed}</div>
+                <div className="text-lg font-bold text-destructive">{stats.documents.failed}</div>
                 <div className="text-[10px] text-muted-foreground">Failed</div>
               </div>
             </div>

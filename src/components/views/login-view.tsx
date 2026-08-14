@@ -215,7 +215,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               <CardDescription>Step 2 of 2 — Enter your license key</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 text-xs text-emerald-600">
+              <div className="flex items-center gap-2 text-xs text-success">
                 <BadgeCheck className="h-4 w-4" />
                 Account created: {email}
               </div>

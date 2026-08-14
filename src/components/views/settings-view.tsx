@@ -58,6 +58,16 @@ const initials = (name: string) =>
 export function SettingsView() {
   const [tab, setTab] = useState('profile')
 
+  // Topbar account menu ("Profile") dispatches settings-tab after navigating here.
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const t = (e as CustomEvent<{ tab: string }>).detail?.tab
+      if (t) setTab(t)
+    }
+    window.addEventListener('settings-tab', onTab as EventListener)
+    return () => window.removeEventListener('settings-tab', onTab as EventListener)
+  }, [])
+
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full">
       <TabsList className="w-max">
@@ -1005,15 +1015,15 @@ function NotificationsTab() {
           ) : (
             <div className="space-y-2">
               {configs.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-medium truncate">{c.name}</span>
-                      <Badge variant="outline" className="text-[10px]">{c.type}</Badge>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{c.type}</Badge>
                       {c.isActive ? (
-                        <Badge className="text-[10px] bg-green-600">active</Badge>
+                        <Badge variant="success" className="text-[10px] shrink-0">active</Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px]">inactive</Badge>
+                        <Badge variant="secondary" className="text-[10px] shrink-0">inactive</Badge>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 truncate font-mono">

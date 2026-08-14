@@ -386,8 +386,8 @@ function CogneeStatusBar() {
         {docs && (
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <span>{docs.cognified} graphed</span>
-            {docs.pending > 0 && <span className="text-amber-600">{docs.pending} pending</span>}
-            {docs.failed > 0 && <span className="text-red-600">{docs.failed} failed</span>}
+            {docs.pending > 0 && <span className="text-warning">{docs.pending} pending</span>}
+            {docs.failed > 0 && <span className="text-destructive">{docs.failed} failed</span>}
             <span>· batch {cognee.batchSize}</span>
           </div>
         )}

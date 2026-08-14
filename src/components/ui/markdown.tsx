@@ -36,7 +36,7 @@ function CodeBlock({ children, language }: { children: string; language?: string
           className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted"
           aria-label="Copy code"
         >
-          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
+          {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
         </button>
       </div>
       <pre className="bg-muted/40 border border-t-0 border-border/70 rounded-b-md p-2.5 overflow-x-auto text-xs">

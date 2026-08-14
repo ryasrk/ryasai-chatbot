@@ -99,8 +99,8 @@ export function RequestLogsPanel() {
                         variant="outline"
                         className={
                           log.status < 400
-                            ? 'text-emerald-600'
-                            : 'text-rose-600'
+                            ? 'text-success'
+                            : 'text-destructive'
                         }
                       >
                         {log.status}
@@ -112,7 +112,7 @@ export function RequestLogsPanel() {
                     <TableCell className="text-xs text-muted-foreground">
                       {format(new Date(log.createdAt), 'dd MMM HH:mm:ss', { locale: localeId })}
                     </TableCell>
-                    <TableCell className="text-xs text-rose-600 max-w-[200px] truncate">
+                    <TableCell className="text-xs text-destructive max-w-[200px] truncate">
                       {log.errorMessage || '—'}
                     </TableCell>
                   </TableRow>

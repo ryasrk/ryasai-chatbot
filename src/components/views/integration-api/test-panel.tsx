@@ -280,13 +280,13 @@ export function TestPanel() {
                   {response.statusCode}
                 </Badge>
               ) : (
-                <Badge variant="outline" className="bg-red-500/15 text-red-600 border-red-500/30">
+                <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
                   Failed
                 </Badge>
               )}
               <span className="text-xs text-muted-foreground">{response.latencyMs}ms</span>
               {response.error && (
-                <span className="text-xs text-rose-600 truncate">{response.error}</span>
+                <span className="text-xs text-destructive truncate">{response.error}</span>
               )}
             </div>
 
