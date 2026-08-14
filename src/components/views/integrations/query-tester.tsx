@@ -129,18 +129,13 @@ function QueryTesterContent({ integration }: { integration: Integration }) {
              <p className="text-xs text-muted-foreground">
                Pre-fill: example query. Edit as needed.
              </p>
-             <Button onClick={handleRun} disabled={running || !query.trim()}>
-               {running ? (
-                 <>
-                   <Loader2 className="h-4 w-4 animate-spin" />
-                   Running…
-                 </>
-               ) : (
-                 <>
-                   <Terminal className="h-4 w-4" />
-                   Run
-                 </>
-               )}
+             <Button
+               size="sm"
+               icon={running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
+               onClick={handleRun}
+               disabled={running || !query.trim()}
+             >
+               {running ? 'Running…' : 'Run'}
              </Button>
            </div>
 

@@ -443,8 +443,7 @@ export function SchedulesView() {
                 </CardDescription>
               </div>
             </div>
-            <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs gap-1.5">
               Add Schedule
             </Button>
           </div>
@@ -490,8 +489,7 @@ export function SchedulesView() {
               icon={Clock}
               title="No execution schedules yet"
               action={
-                <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5">
-                  <Plus className="h-3.5 w-3.5" />
+                <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs gap-1.5">
                   Add Schedule
                 </Button>
               }
@@ -839,11 +837,11 @@ export function SchedulesView() {
             </Button>
             <Button
               size="sm"
+              icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
               onClick={handleSave}
               disabled={saving}
               className="h-7 text-xs gap-1.5"
             >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
               Save
             </Button>
           </DialogFooter>
@@ -890,12 +888,10 @@ export function SchedulesView() {
 
           {historySchedule && (
             <div className="flex items-center gap-2 pb-2 border-b">
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'json')}>
-                <Download className="h-3 w-3" />
+              <Button size="sm" variant="outline" icon={<Download className="h-3 w-3" />} className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'json')}>
                 Export JSON
               </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'csv')}>
-                <Download className="h-3 w-3" />
+              <Button size="sm" variant="outline" icon={<Download className="h-3 w-3" />} className="h-7 text-xs gap-1.5" onClick={() => handleExport(historySchedule, 'csv')}>
                 Export CSV
               </Button>
             </div>

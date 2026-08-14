@@ -83,8 +83,7 @@ function KeyValueEditor({
           </div>
         ))
       )}
-      <Button variant="outline" size="sm" className="text-xs" onClick={onAdd}>
-        <Plus className="h-3.5 w-3.5" />
+      <Button variant="outline" size="sm" className="text-xs" icon={<Plus className="h-3.5 w-3.5" />} onClick={onAdd}>
         Add
       </Button>
     </div>
@@ -179,7 +178,7 @@ export function TestPanel() {
           </CardTitle>
           <CardDescription className="text-xs">Build and send HTTP requests to test the API</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           <div className="flex gap-2">
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger className="w-[110px] text-xs">
@@ -243,8 +242,7 @@ export function TestPanel() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Body</Label>
-                  <Button size="sm" variant="ghost" className="text-xs" onClick={formatJson}>
-                    <Braces className="h-3.5 w-3.5" />
+                  <Button size="sm" variant="ghost" className="text-xs" icon={<Braces className="h-3.5 w-3.5" />} onClick={formatJson}>
                     Format JSON
                   </Button>
                 </div>
@@ -258,8 +256,12 @@ export function TestPanel() {
             </>
           )}
 
-          <Button onClick={sendRequest} disabled={sending || !url.trim()}>
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <Button
+            size="sm"
+            icon={sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            onClick={sendRequest}
+            disabled={sending || !url.trim()}
+          >
             Send Request
           </Button>
         </CardContent>
@@ -273,7 +275,7 @@ export function TestPanel() {
               Response
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             <div className="flex items-center gap-3">
               {response.ok ? (
                 <Badge variant="outline" className={statusBadgeClass(response.statusCode)}>
@@ -293,8 +295,12 @@ export function TestPanel() {
             {resHeaders.length > 0 && (
               <Collapsible defaultOpen={false}>
                 <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-xs group">
-                    <ChevronDown className="h-3.5 w-3.5 group-data-[state=open]:rotate-180 transition-transform" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs group"
+                    icon={<ChevronDown className="h-3.5 w-3.5 group-data-[state=open]:rotate-180 transition-transform" />}
+                  >
                     Response Headers ({resHeaders.length})
                   </Button>
                 </CollapsibleTrigger>
@@ -326,18 +332,18 @@ export function TestPanel() {
                       size="sm"
                       variant="outline"
                       className="text-xs"
+                      icon={<Copy className="h-3.5 w-3.5" />}
                       onClick={() => copyText(pretty?.text ?? response.body, 'Response copied.')}
                     >
-                      <Copy className="h-3.5 w-3.5" />
                       Copy
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       className="text-xs"
+                      icon={<Download className="h-3.5 w-3.5" />}
                       onClick={() => downloadBody(pretty?.text ?? response.body, pretty?.isJson ?? false)}
                     >
-                      <Download className="h-3.5 w-3.5" />
                       Download
                     </Button>
                   </div>

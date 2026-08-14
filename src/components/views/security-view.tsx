@@ -486,12 +486,14 @@ export function SecurityView() {
                       onClick={() => load(page - 1)}
                       className="h-7"
                     >
-                      {loading && page > 1 ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                      )}
-                      Previous
+                      <span className="inline-flex items-center gap-1.5">
+                        {loading && page > 1 ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        )}
+                        Previous
+                      </span>
                     </Button>
                     <Button
                       size="sm"
@@ -500,12 +502,14 @@ export function SecurityView() {
                       onClick={() => load(page + 1)}
                       className="h-7"
                     >
-                      Next
-                      {loading && page < totalPages ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
+                      <span className="inline-flex items-center gap-1.5">
+                        Next
+                        {loading && page < totalPages ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
+                      </span>
                     </Button>
                   </div>
                 </div>

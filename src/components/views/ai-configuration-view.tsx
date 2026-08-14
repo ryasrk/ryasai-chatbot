@@ -259,11 +259,10 @@ export function AIConfigurationView() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      icon={syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                       onClick={handleFetchModels}
                       disabled={syncing || !baseUrl}
-                      className="gap-1.5"
                     >
-                      {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                       Fetch Models
                     </Button>
                   </div>
@@ -298,8 +297,11 @@ export function AIConfigurationView() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button onClick={handleSave} disabled={saving || !baseUrl} className="gap-1.5">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button
+                  icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  onClick={handleSave}
+                  disabled={saving || !baseUrl}
+                >
                   Save Configuration
                 </Button>
               </div>
@@ -415,8 +417,11 @@ export function AIConfigurationView() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <Button onClick={handleSave} disabled={saving || !embeddingBaseUrl} className="gap-1.5">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button
+                  icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  onClick={handleSave}
+                  disabled={saving || !embeddingBaseUrl}
+                >
                   Save Configuration
                 </Button>
               </div>

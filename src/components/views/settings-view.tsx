@@ -363,19 +363,19 @@ function ThemeTab() {
             <Button
               size="sm"
               variant={!dark ? 'default' : 'outline'}
+              icon={<Sun className="h-3.5 w-3.5" />}
               onClick={() => handleDark(false)}
               className="h-8"
             >
-              <Sun className="h-3.5 w-3.5" />
               Light
             </Button>
             <Button
               size="sm"
               variant={dark ? 'default' : 'outline'}
+              icon={<Moon className="h-3.5 w-3.5" />}
               onClick={() => handleDark(true)}
               className="h-8"
             >
-              <Moon className="h-3.5 w-3.5" />
               Dark
             </Button>
           </div>
@@ -600,16 +600,20 @@ function TeamTab() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" size="sm" disabled={inviting || !inviteEmail}>
-                {inviting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              <Button
+                type="submit"
+                size="sm"
+                icon={inviting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
+                disabled={inviting || !inviteEmail}
+              >
                 Send Invite
               </Button>
             </form>
             {inviteUrl && (
               <div className="mt-2.5 flex items-center gap-2 rounded-md border bg-muted/40 p-2">
                 <code className="flex-1 truncate text-[11px] font-mono">{inviteUrl}</code>
-                <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(inviteUrl); toast.success('Link copied.') }}>
-                  <Copy className="h-3.5 w-3.5" /> Copy
+                <Button size="sm" variant="outline" icon={<Copy className="h-3.5 w-3.5" />} onClick={() => { void navigator.clipboard.writeText(inviteUrl); toast.success('Link copied.') }}>
+                  Copy
                 </Button>
               </div>
             )}
@@ -867,8 +871,13 @@ function OrgTab() {
             </div>
           </div>
           {isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => void handleRevalidate()} disabled={revalidating}>
-              {revalidating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            <Button
+              size="sm"
+              variant="outline"
+              icon={revalidating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              onClick={() => void handleRevalidate()}
+              disabled={revalidating}
+            >
               Revalidate
             </Button>
           )}
@@ -1001,8 +1010,8 @@ function NotificationsTab() {
               Channels for scheduled-run results. Created configs appear in the Scheduler&apos;s channel selector.
             </p>
           </div>
-          <Button size="sm" onClick={() => { reset(); setDialogOpen(true) }} className="gap-1.5">
-            <Bell className="h-3.5 w-3.5" /> Add Channel
+          <Button size="sm" icon={<Bell className="h-3.5 w-3.5" />} onClick={() => { reset(); setDialogOpen(true) }}>
+            Add Channel
           </Button>
         </CardHeader>
         <CardContent>
@@ -1122,8 +1131,11 @@ function NotificationsTab() {
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              <Button
+                icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                onClick={handleSave}
+                disabled={saving}
+              >
                 Save Channel
               </Button>
             </div>

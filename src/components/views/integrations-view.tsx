@@ -247,23 +247,22 @@ export function IntegrationsView() {
 
       <Tabs defaultValue="database" onValueChange={(v) => setActiveTab(v as 'database' | 'rest')} className="min-h-[500px]">
         <div className="flex items-center justify-between gap-2">
-          <TabsList className="w-max">
-            <TabsTrigger value="database" className="gap-1.5 text-xs">
-              <Server className="h-3.5 w-3.5" />
-              Database
-            </TabsTrigger>
-            <TabsTrigger value="rest" className="gap-1.5 text-xs">
-              <Globe className="h-3.5 w-3.5" />
-              REST API
-            </TabsTrigger>
-          </TabsList>
-          <div className="flex gap-1.5">
-            <Button variant="outline" size="sm" onClick={fetchList} disabled={loading}>
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-            </Button>
+          <div className="min-w-0 overflow-x-auto -mx-1 px-1 pb-1">
+            <TabsList className="w-max">
+              <TabsTrigger value="database" className="gap-1.5 text-xs">
+                <Server className="h-3.5 w-3.5" />
+                Database
+              </TabsTrigger>
+              <TabsTrigger value="rest" className="gap-1.5 text-xs">
+                <Globe className="h-3.5 w-3.5" />
+                REST API
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <Button variant="outline" size="sm" icon={<RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />} onClick={fetchList} disabled={loading} />
             {activeTab === 'database' && (
-              <Button onClick={() => setCreateOpen(true)} size="sm">
-                <Plus className="h-3.5 w-3.5" />
+              <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setCreateOpen(true)}>
                 Add Database
               </Button>
             )}

@@ -133,8 +133,12 @@ function LlmStep({ onNext }: { onNext: () => void }) {
         <Button variant="outline" className="flex-1" onClick={onNext} disabled={saving}>
           Skip
         </Button>
-        <Button className="flex-1" onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button
+          className="flex-1"
+          icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          onClick={handleSave}
+          disabled={saving}
+        >
           Save & Continue
         </Button>
       </div>
@@ -177,15 +181,18 @@ function TestModelStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onPrev}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+        <Button variant="outline" icon={<ArrowLeft className="h-4 w-4" />} onClick={onPrev}>
           Back
         </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
           Skip
         </Button>
-        <Button className="flex-1" onClick={handleSync} disabled={syncing}>
-          {syncing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button
+          className="flex-1"
+          icon={syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          onClick={handleSync}
+          disabled={syncing}
+        >
           Test Connection
         </Button>
       </div>
@@ -248,8 +255,12 @@ function DocumentStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => vo
         </div>
       )}
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onPrev} disabled={uploading}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+        <Button
+          variant="outline"
+          icon={<ArrowLeft className="h-4 w-4" />}
+          onClick={onPrev}
+          disabled={uploading}
+        >
           Back
         </Button>
         <Button variant="outline" className="flex-1" onClick={onNext}>
@@ -276,8 +287,7 @@ function DataSourceStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => 
         assistant read access to your internal data.
       </p>
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onPrev}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+        <Button variant="outline" icon={<ArrowLeft className="h-4 w-4" />} onClick={onPrev}>
           Back
         </Button>
         <Button className="flex-1" onClick={onNext}>
@@ -339,8 +349,12 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
           disabled={sending}
         />
       </div>
-      <Button className="w-full" onClick={handleSend} disabled={sending || !message.trim()}>
-        {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+      <Button
+        className="w-full"
+        icon={sending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+        onClick={handleSend}
+        disabled={sending || !message.trim()}
+      >
         Send Test
       </Button>
       {reply && (
@@ -355,8 +369,12 @@ function TestChatStep({ onFinish, onPrev }: { onFinish: () => void; onPrev: () =
         </p>
       )}
       <div className="flex gap-2">
-        <Button variant="outline" onClick={onPrev} disabled={sending}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+        <Button
+          variant="outline"
+          icon={<ArrowLeft className="h-4 w-4" />}
+          onClick={onPrev}
+          disabled={sending}
+        >
           Back
         </Button>
         <Button className="flex-1" variant={warned ? 'destructive' : 'default'} onClick={onFinish}>

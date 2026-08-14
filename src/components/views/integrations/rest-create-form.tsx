@@ -113,7 +113,7 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
           value={restBaseUrl}
           onChange={(e) => setRestBaseUrl(e.target.value)}
           placeholder="https://api.example.com"
-          className="md:col-span-2 font-mono text-sm"
+          className="md:col-span-2 font-mono text-xs"
         />
         <Select value={restAuthType} onValueChange={setRestAuthType}>
           <SelectTrigger>
@@ -128,10 +128,11 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
           </SelectContent>
         </Select>
         <Button
+          size="sm"
+          icon={restCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           onClick={handleCreateRestConnector}
           disabled={restCreating || !restName.trim() || !restBaseUrl.trim()}
         >
-          {restCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Add REST
         </Button>
       </div>
@@ -142,7 +143,7 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
           onChange={(e) => setRestToken(e.target.value)}
           placeholder={restAuthType === 'BEARER' ? 'Bearer token' : 'API key'}
           type="password"
-          className="font-mono text-sm"
+          className="font-mono text-xs"
         />
       )}
 
@@ -152,14 +153,14 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
             value={restBasicUser}
             onChange={(e) => setRestBasicUser(e.target.value)}
             placeholder="Username"
-            className="font-mono text-sm"
+            className="font-mono text-xs"
           />
           <Input
             value={restBasicPass}
             onChange={(e) => setRestBasicPass(e.target.value)}
             placeholder="Password"
             type="password"
-            className="font-mono text-sm"
+            className="font-mono text-xs"
           />
         </div>
       )}
@@ -170,28 +171,28 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
             value={restOauthUrl}
             onChange={(e) => setRestOauthUrl(e.target.value)}
             placeholder="Token URL (https://auth.example.com/oauth/token)"
-            className="font-mono text-sm"
+            className="font-mono text-xs"
           />
           <div className="grid grid-cols-2 gap-2">
             <Input
               value={restOauthClientId}
               onChange={(e) => setRestOauthClientId(e.target.value)}
               placeholder="Client ID"
-              className="font-mono text-sm"
+              className="font-mono text-xs"
             />
             <Input
               value={restOauthClientSecret}
               onChange={(e) => setRestOauthClientSecret(e.target.value)}
               placeholder="Client Secret"
               type="password"
-              className="font-mono text-sm"
+              className="font-mono text-xs"
             />
           </div>
           <Input
             value={restOauthScope}
             onChange={(e) => setRestOauthScope(e.target.value)}
             placeholder="Scope (optional, e.g. read:api)"
-            className="font-mono text-sm"
+            className="font-mono text-xs"
           />
         </div>
       )}

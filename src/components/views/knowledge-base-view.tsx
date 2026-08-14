@@ -232,23 +232,24 @@ export function KnowledgeBaseView() {
 
       <Tabs defaultValue="documents">
         <div className="flex items-center justify-between gap-2">
-          <TabsList>
-            <TabsTrigger value="documents" className="gap-1.5 text-xs">
-              <FileText className="h-3.5 w-3.5" />
-              Documents
-            </TabsTrigger>
-            <TabsTrigger value="vector" className="gap-1.5 text-xs">
-              <Database className="h-3.5 w-3.5" />
-              Vector Store
-            </TabsTrigger>
-            <TabsTrigger value="cognee" className="gap-1.5 text-xs">
-              <Brain className="h-3.5 w-3.5" />
-              AI Memory
-            </TabsTrigger>
-          </TabsList>
-          <div className="flex gap-1.5">
-            <Button onClick={() => setUploadOpen(true)} size="sm">
-              <UploadCloud className="h-3.5 w-3.5" />
+          <div className="min-w-0 overflow-x-auto -mx-1 px-1 pb-1">
+            <TabsList className="w-max">
+              <TabsTrigger value="documents" className="gap-1.5 text-xs">
+                <FileText className="h-3.5 w-3.5" />
+                Documents
+              </TabsTrigger>
+              <TabsTrigger value="vector" className="gap-1.5 text-xs">
+                <Database className="h-3.5 w-3.5" />
+                Vector Store
+              </TabsTrigger>
+              <TabsTrigger value="cognee" className="gap-1.5 text-xs">
+                <Brain className="h-3.5 w-3.5" />
+                AI Memory
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <Button size="sm" icon={<UploadCloud className="h-3.5 w-3.5" />} onClick={() => setUploadOpen(true)}>
               Upload
             </Button>
           </div>

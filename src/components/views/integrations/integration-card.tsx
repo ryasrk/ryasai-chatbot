@@ -195,12 +195,14 @@ export function IntegrationCard({
             onClick={onTest}
             disabled={testing}
             className="text-xs"
+            icon={
+              testing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )
+            }
           >
-            {testing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
             Test Connection
           </Button>
           <Button
@@ -208,8 +210,8 @@ export function IntegrationCard({
             variant="outline"
             onClick={onSchema}
             className="text-xs"
+            icon={<Eye className="h-3.5 w-3.5" />}
           >
-            <Eye className="h-3.5 w-3.5" />
             Schema
           </Button>
           <Button
@@ -217,8 +219,8 @@ export function IntegrationCard({
             variant="outline"
             onClick={onQuery}
             className="text-xs"
+            icon={<Terminal className="h-3.5 w-3.5" />}
           >
-            <Terminal className="h-3.5 w-3.5" />
             Query
           </Button>
           <Button
@@ -227,12 +229,14 @@ export function IntegrationCard({
             onClick={onDelete}
             disabled={deleting}
             className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+            icon={
+              deleting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )
+            }
           >
-            {deleting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5" />
-            )}
             {deleting ? 'Deleting' : 'Delete'}
           </Button>
         </div>

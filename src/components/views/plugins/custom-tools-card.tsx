@@ -53,7 +53,7 @@ export function CustomToolCard({
   onDelete,
 }: CardProps) {
   return (
-    <Card key={p.id} className="rounded-lg border p-4 flex flex-col gap-3">
+    <Card key={p.id} className="rounded-lg border flex flex-col gap-2.5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
@@ -114,19 +114,20 @@ export function CustomToolCard({
       )}
 
       <div className="flex items-center gap-1 pt-1 border-t border-border/40 mt-auto">
-        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={onTest}>
-          <Play className="h-3 w-3" /> Test
+        <Button variant="outline" size="sm" icon={<Play className="h-3 w-3" />} className="h-7 text-xs" onClick={onTest}>
+          Test
         </Button>
-        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={onEdit}>
-          <Pencil className="h-3 w-3" /> Edit
+        <Button variant="ghost" size="sm" icon={<Pencil className="h-3 w-3" />} className="h-7 text-xs" onClick={onEdit}>
+          Edit
         </Button>
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+          icon={<Trash2 className="h-3 w-3" />}
+          className="h-7 text-xs text-destructive hover:text-destructive"
           onClick={onDelete}
         >
-          <Trash2 className="h-3 w-3" /> Delete
+          Delete
         </Button>
       </div>
     </Card>

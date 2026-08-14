@@ -89,8 +89,13 @@ export function DocCard({
 
       <CardContent className="flex-1 flex flex-col gap-2 pt-0">
         <div className="mt-auto grid grid-cols-2 gap-2">
-          <Button size="sm" variant="outline" onClick={onDetail} className="text-xs h-7">
-            <Eye className="h-3 w-3" />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onDetail}
+            className="text-xs h-7"
+            icon={<Eye className="h-3 w-3" />}
+          >
             Details
           </Button>
           <Button
@@ -99,12 +104,12 @@ export function DocCard({
             onClick={onDelete}
             disabled={deleting}
             className="text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            {deleting ? (
+            icon={deleting ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <Trash2 className="h-3 w-3" />
             )}
+          >
             {deleting ? 'Deleting' : 'Delete'}
           </Button>
         </div>

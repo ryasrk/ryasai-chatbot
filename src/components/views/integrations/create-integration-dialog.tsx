@@ -176,7 +176,7 @@ export function CreateIntegrationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3 py-2">
           <div className="space-y-1.5">
             <Label htmlFor="int-name">
               Integration Name <span className="text-destructive">*</span>
@@ -330,20 +330,19 @@ export function CreateIntegrationDialog({
         <DialogFooter>
           <Button
             variant="outline"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
           >
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Creating & testing…
-              </>
-            ) : (
-              'Create & Test Connection'
-            )}
+          <Button
+            size="sm"
+            icon={submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? 'Creating & testing…' : 'Create & Test Connection'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -200,12 +200,21 @@ export function VectorStorePanel() {
           />
         </div>
         <div className="flex justify-end gap-2 md:col-span-2">
-          <Button variant="outline" onClick={test} disabled={testing || isInternal}>
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={test}
+            disabled={testing || isInternal}
+            icon={testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          >
             Test
           </Button>
-          <Button onClick={save} disabled={saving || loadError}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          <Button
+            size="sm"
+            onClick={save}
+            disabled={saving || loadError}
+            icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          >
             Save
           </Button>
         </div>

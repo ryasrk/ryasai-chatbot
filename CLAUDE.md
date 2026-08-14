@@ -1,7 +1,7 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Last updated 2026-07-27. Version 0.4.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
+> Last updated 2026-08-14. Version 0.4.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
 
 ---
 
@@ -1060,3 +1060,26 @@ All free/open-source stack (no paid subscriptions). Deps pre-installed: `fast-ch
 - New files: 73 (43 src/lib, 6 docs, 4 API routes, 23 test files, CHANGELOG, runbook, 8 ADRs)
 - Modified files: 16
 - Prisma models added: DocumentVersion, SavedPrompt, User.ssoSubject, User.role, Document.version
+
+### 2026-08-14 — UI verification + app-wide compact/contrast audit (post-90135b9)
+
+`npx impeccable install` re-run for this session (installed into `.github` — GitHub Copilot harness detected as this repo's target; `impeccable detect` over `src/components` + `globals.css` reported 0 anti-patterns, consistent with the 2026-07-24 sweep).
+
+**Live-verified commit 90135b9's fixes** (dead account menu, mobile tab overflow, WCAG contrast) against a fresh e2e run (isolated git worktree + Postgres DB, avoiding the running dev server's `.next` lock) — Profile/Settings/About all navigate correctly, "Add Database" renders single-line/no-overflow at 1920/1366/1280px. The bug report that triggered this session reflected a stale pre-fix browser tab, not a live regression.
+
+**Independent WCAG audit (4-agent workflow) found what 90135b9 missed** — that commit only touched `--muted-foreground`/`--success`/`--warning`/`--info`, never `--primary-foreground` or `--accent`/`--accent-foreground`:
+- **Critical**: `src/app/page.tsx` sidebar nav tooltips (collapsed + expanded, lines ~592/636) rendered their description/shortcut line as `text-muted-foreground` nested inside a `TooltipContent` with `bg-primary` — a token pair never designed to sit together. Contrast ratio 1.01–1.52 (need 4.5) in **all 10** theme×mode combinations — the description text was effectively invisible. This is almost certainly what the bug report meant by "hover text color on menu popups." Fixed: `text-muted-foreground` → `text-primary-foreground/70` (description) / `/60` (shortcut hint), which is guaranteed to contrast against `bg-primary` in every theme by construction.
+- **Enterprise Blue (default) light-mode** `--accent`/`--accent-foreground` (dropdown/menubar hover text) measured 4.07:1, just under the 4.5:1 AA floor. Darkened `--accent` `oklch(0.60 0.22 290)` → `oklch(0.53 0.22 290)` in both `globals.css` and `themes.ts`.
+- All other theme×mode combinations for `--primary`/`--primary-foreground`, `--muted`/`--muted-foreground`, `--popover`/`--popover-foreground` independently re-verified as passing (exact OKLab→sRGB conversion, not an approximation).
+
+**Systemic icon+text button spacing bug** (workflow-audited, ~71 occurrences across 24 files): `Button` (`src/components/ui/button.tsx`) has a dedicated `icon=` prop that renders icon+text in separate, properly-gapped spans — but nearly every icon+text button in the app instead passes the icon as a JSX child (`<Button><Plus/>Add Thing</Button>`), which falls through to a code path that jams icon and text into one bare `<span>` with zero gap. This was the literal cause of the reported "Add Database button looks oversized/wrong" — not overflow, but missing icon/text spacing making the button read as cramped. Fixed by converting every occurrence to the `icon=` prop (or a manual `gap-1.5` span for the few icon-after-text cases like "Continue →") across 31 files total.
+
+**Compact-theme deviations** (19 findings from the same audit): `size="sm"` missing on several toolbar/dialog-footer buttons that defaulted to h-10 next to h-8 siblings (`vector-store-panel.tsx`, `test-panel.tsx`, `api-keys-panel.tsx`, `rest-create-form.tsx`, `query-tester.tsx`, dialog footers in `upload-dialog.tsx`/`create-integration-dialog.tsx`); `Card` `p-4`/`gap-3` overrides fighting the established `py-3 px-3.5 gap-2.5` default (`custom-tools-card.tsx`, `mcp-servers-tab.tsx`); `space-y-4`→`space-y-3` rhythm fixes; 11 Input fields still at `text-sm` where the rest of the app uses `text-xs` (`rest-create-form.tsx`, `rest-connector-sheet.tsx`); chat bubble padding (`message-bubble.tsx` px-4→px-3.5, `thinking-card.tsx`, one arbitrary `p-[18px]` in `tool-execution-card.tsx`→`p-3.5`); `chart-renderer.tsx` chart height `h-64`→`h-[140px]` to match the Dashboard's already-compacted chart convention.
+
+**Also fixed 2 additional overflow-prone tab+button rows** beyond the one 90135b9 fixed at the component level: `integrations-view.tsx` and `knowledge-base-view.tsx` both had a `TabsList` + action-button-group row with no wrap/scroll safety net on the outer flex row itself. Wrapped each `TabsList` in its own `min-w-0 overflow-x-auto` container (matching the existing pattern in `integration-api-view.tsx`/`security-view.tsx`) and added `shrink-0` to the button group.
+
+**Execution**: 2 research workflows (4 agents: icon-bug sweep, overflow-row sweep, 5-theme×2-mode contrast audit, compact-spacing sweep) + 1 fix workflow (12 agents, one per file group, zero cross-file conflicts) + 3 critical fixes applied directly (sidebar tooltip color, accent token, 2 overflow rows).
+
+**Verified**: `tsc --noEmit` 0 errors · `bun run lint` 0 errors (160 pre-existing warnings, mostly in `.github/skills/impeccable`, unrelated to this session) · `bun run test` 1616 pass / 0 fail / 8 skip across 102 files · live e2e re-check (isolated worktree, same Postgres/mock-LLM/mock-license harness as the automated suite) confirms the sidebar tooltip text is now legible and "Add Database" still renders single-line at all tested widths.
+
+**Next**: visual spot-check the other 4 non-default themes (Midnight/Forest/Slate/Sandstone) in a real browser session — the contrast audit computed all 10 combinations mathematically but only Enterprise Blue/dark was screenshotted this session. Consider running `impeccable detect` again once impeccable's ruleset catches structural patterns like the icon-prop bug (currently out of its scope — it's a project-specific `Button` API convention, not a general anti-pattern).

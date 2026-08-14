@@ -254,10 +254,10 @@ export function CogneeCard() {
               <Button
                 size="sm"
                 className="h-7 text-xs"
+                icon={saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                 onClick={handleSaveConfig}
                 disabled={saving}
               >
-                {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                 Save Configuration
               </Button>
               <Button
@@ -301,31 +301,31 @@ export function CogneeCard() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs gap-1.5"
+                className="h-7 text-xs"
+                icon={actionLoading === 'recognify' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
                 onClick={() => handleAction('recognify')}
                 disabled={actionLoading !== null}
               >
-                {actionLoading === 'recognify' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
                 Re-cognify All
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs gap-1.5"
+                className="h-7 text-xs"
+                icon={actionLoading === 'forget_kb' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                 onClick={() => handleAction('forget_kb')}
                 disabled={actionLoading !== null}
               >
-                {actionLoading === 'forget_kb' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                 Clear Graph
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs gap-1.5"
+                className="h-7 text-xs"
+                icon={actionLoading === 'reset' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                 onClick={() => handleAction('reset')}
                 disabled={actionLoading !== null}
               >
-                {actionLoading === 'reset' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                 Full Reset
               </Button>
             </div>

@@ -59,21 +59,14 @@ function CodeBlock({ code, language = 'javascript', label }: { code: string; lan
           size="sm"
           variant="ghost"
           className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
+          icon={copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           onClick={() => {
             void navigator.clipboard.writeText(code)
             setCopied(true)
             setTimeout(() => setCopied(false), 2000)
           }}
         >
-          {copied ? (
-            <>
-              <Check className="h-3 w-3" /> Copied
-            </>
-          ) : (
-            <>
-              <Copy className="h-3 w-3" /> Copy
-            </>
-          )}
+          {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
       <SyntaxHighlighter
@@ -252,9 +245,9 @@ print(resp.json()['choices'][0]['message']['content'])`
             <Button
               size="sm"
               variant="outline"
+              icon={<Copy className="h-3.5 w-3.5" />}
               onClick={() => copyText(baseUrl, 'Base URL copied.')}
             >
-              <Copy className="h-3.5 w-3.5" />
               Copy
             </Button>
           </div>
@@ -272,8 +265,7 @@ print(resp.json()['choices'][0]['message']['content'])`
           in the API Keys tab, then use its value (prefixed with <code className="font-mono">rya_</code>)
           in every request.
         </p>
-        <Button size="sm" variant="outline" onClick={() => onSwitchTab('keys')}>
-          <KeyRound className="h-3.5 w-3.5" />
+        <Button size="sm" variant="outline" icon={<KeyRound className="h-3.5 w-3.5" />} onClick={() => onSwitchTab('keys')}>
           Open API Keys tab
         </Button>
         <CodeBlock code="Authorization: Bearer rya_xxxxxxxxxxxx" language="text" label="header" />

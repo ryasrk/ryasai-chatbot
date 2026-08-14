@@ -253,8 +253,8 @@ export function CustomToolsTab() {
             ))}
           </div>
         </div>
-        <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5 shrink-0">
-          <Plus className="h-3.5 w-3.5" /> Add Tool
+        <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs shrink-0">
+          Add Tool
         </Button>
       </div>
 
@@ -265,8 +265,8 @@ export function CustomToolsTab() {
             <p className="text-sm text-muted-foreground">
               {plugins.length === 0 ? 'No custom tools registered yet' : 'No matching tools'}
             </p>
-            <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add Custom Tool
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs">
+              Add Custom Tool
             </Button>
           </CardContent>
         </Card>
@@ -313,8 +313,13 @@ export function CustomToolsTab() {
                 className="text-xs font-mono min-h-[56px]"
               />
             </div>
-            <Button size="sm" onClick={handleRunTest} disabled={testing} className="h-7 text-xs gap-1.5 w-full">
-              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            <Button
+              size="sm"
+              icon={testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              onClick={handleRunTest}
+              disabled={testing}
+              className="h-7 text-xs w-full"
+            >
               Run Test
             </Button>
             {testResult && <TestResultBlock result={testResult} />}

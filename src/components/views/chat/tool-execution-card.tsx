@@ -44,7 +44,7 @@ export function ToolExecutionCard({
   return (
     <div
       className={cn(
-        'rounded-sm border p-[18px] bg-muted flex items-start gap-3',
+        'rounded-sm border p-3.5 bg-muted flex items-start gap-3',
         borderTone,
       )}
     >

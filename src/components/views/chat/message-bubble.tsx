@@ -83,8 +83,8 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
           {!isStreaming && message.toolType && message.toolHasResults && TOOL_BADGE[message.toolType] && (
             <DataSourceBadge toolType={message.toolType} />
           )}
-          <Card className="overflow-hidden py-3 gap-3 shadow-none bg-transparent border-0">
-          <CardContent className="min-w-0 px-4 pt-0 pb-0">
+          <Card className="overflow-hidden py-3 gap-2.5 shadow-none bg-transparent border-0">
+          <CardContent className="min-w-0 px-3.5 pt-0 pb-0">
             {isStreaming ? (
               <ThinkingCard />
             ) : (
@@ -94,21 +94,21 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 
           {/* Citations */}
           {message.citations && message.citations.length > 0 && (
-            <CardContent className="px-4 pt-0">
+            <CardContent className="px-3.5 pt-0">
               <CitationList citations={message.citations} />
             </CardContent>
           )}
 
           {/* Chart */}
           {message.chartData && (
-            <CardContent className="px-4 pt-0">
+            <CardContent className="px-3.5 pt-0">
               <ChartRenderer data={message.chartData} />
             </CardContent>
           )}
 
           {/* Integration footer — only when tool returned results */}
           {message.integration && message.toolHasResults && (
-            <CardContent className="px-4 pt-0">
+            <CardContent className="px-3.5 pt-0">
               <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Database className="h-3 w-3" />
                 Source: {message.integration.name}

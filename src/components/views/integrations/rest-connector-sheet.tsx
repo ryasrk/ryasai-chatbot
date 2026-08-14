@@ -310,7 +310,7 @@ function RestConnectorContent({
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="/customers"
-              className="sm:col-span-4 font-mono text-sm"
+              className="sm:col-span-4 font-mono text-xs"
             />
           </div>
           <Input
@@ -322,8 +322,8 @@ function RestConnectorContent({
             onClick={handleAddEndpoint}
             disabled={submitting || !path.trim()}
             size="sm"
+            icon={submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Add Endpoint
           </Button>
         </div>
@@ -415,14 +415,14 @@ function RestConnectorContent({
               value={testPath}
               onChange={(e) => setTestPath(e.target.value)}
               placeholder="/customers"
-              className="sm:col-span-4 font-mono text-sm"
+              className="sm:col-span-4 font-mono text-xs"
             />
           </div>
           <Input
             value={testQuery}
             onChange={(e) => setTestQuery(e.target.value)}
             placeholder="limit=10&status=active"
-            className="font-mono text-sm"
+            className="font-mono text-xs"
           />
           {testMethod !== 'GET' && (
             <Textarea
@@ -437,8 +437,8 @@ function RestConnectorContent({
             onClick={handleTestEndpoint}
             disabled={testing || !testPath.trim()}
             size="sm"
+            icon={testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
           >
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
             Run Test
           </Button>
           {testResult !== null && (

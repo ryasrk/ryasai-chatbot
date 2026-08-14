@@ -43,7 +43,7 @@ export function ChartRenderer({ data }: { data: ChartData }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-64 w-full">
+          <div className="h-[140px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               {data.type === 'bar' ? (
                 <BarChart

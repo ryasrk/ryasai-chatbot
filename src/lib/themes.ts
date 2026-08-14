@@ -61,7 +61,7 @@ export const THEME_CSS: Record<ThemeId, { light: string; dark: string }> = {
       --primary: oklch(0.55 0.20 255); --primary-foreground: oklch(0.98 0.01 250);
       --secondary: oklch(0.96 0.02 255); --secondary-foreground: oklch(0.30 0.03 260);
       --muted: oklch(0.96 0.01 250); --muted-foreground: oklch(0.45 0.02 260);
-      --accent: oklch(0.60 0.22 290); --accent-foreground: oklch(0.98 0.01 290);
+      --accent: oklch(0.53 0.22 290); --accent-foreground: oklch(0.98 0.01 290);
       --destructive: oklch(0.55 0.24 27); --destructive-foreground: oklch(0.98 0.01 27);
       --success: oklch(0.50 0.15 145); --success-foreground: oklch(0.98 0.01 145);
       --warning: oklch(0.55 0.15 65); --warning-foreground: oklch(0.98 0.01 65);

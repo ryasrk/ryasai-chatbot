@@ -415,13 +415,15 @@ function SchemaViewerContent({
                   variant="outline"
                   size="sm"
                   className="h-7 px-2 text-xs gap-1"
+                  icon={
+                    allOpen ? (
+                      <ChevronsDownUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronsUpDown className="h-3.5 w-3.5" />
+                    )
+                  }
                   onClick={allOpen ? handleCollapseAll : handleExpandAll}
                 >
-                  {allOpen ? (
-                    <ChevronsDownUp className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronsUpDown className="h-3.5 w-3.5" />
-                  )}
                   {allOpen ? 'Collapse' : 'Expand'}
                 </Button>
               </TooltipTrigger>
@@ -433,9 +435,9 @@ function SchemaViewerContent({
               variant="outline"
               size="sm"
               className="h-7 px-2 text-xs gap-1"
+              icon={<Download className="h-3.5 w-3.5" />}
               onClick={handleDownload}
             >
-              <Download className="h-3.5 w-3.5" />
               JSON
             </Button>
           </div>

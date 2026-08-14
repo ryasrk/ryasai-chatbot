@@ -159,8 +159,8 @@ export function McpServersTab() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> Add Server
+        <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs">
+          Add Server
         </Button>
       </div>
 
@@ -171,15 +171,15 @@ export function McpServersTab() {
             <p className="text-sm text-muted-foreground">
               {servers.length === 0 ? 'No MCP servers configured' : 'No matching servers'}
             </p>
-            <Button size="sm" onClick={openCreate} className="h-7 text-xs gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Add MCP Server
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={openCreate} className="h-7 text-xs">
+              Add MCP Server
             </Button>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((s) => (
-            <Card key={s.id} className="rounded-lg border p-4 flex flex-col gap-2.5">
+            <Card key={s.id} className="rounded-lg border flex flex-col gap-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 shrink-0">
@@ -217,16 +217,17 @@ export function McpServersTab() {
               )}
 
               <div className="flex items-center gap-1 pt-1 border-t border-border/40 mt-auto">
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openEdit(s)}>
-                  <Pencil className="h-3 w-3" /> Edit
+                <Button variant="ghost" size="sm" icon={<Pencil className="h-3 w-3" />} className="h-7 text-xs" onClick={() => openEdit(s)}>
+                  Edit
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+                  icon={<Trash2 className="h-3 w-3" />}
+                  className="h-7 text-xs text-destructive hover:text-destructive"
                   onClick={() => setDeleteId(s.id)}
                 >
-                  <Trash2 className="h-3 w-3" /> Delete
+                  Delete
                 </Button>
               </div>
             </Card>

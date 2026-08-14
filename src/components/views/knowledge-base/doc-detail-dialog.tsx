@@ -164,18 +164,13 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
             size="sm"
             onClick={loadMore}
             disabled={loadingMore}
-          >
-            {loadingMore ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
-              </>
+            icon={loadingMore ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <>
-                <Layers className="h-3.5 w-3.5" />
-                Load more chunks (page {page + 1}/{totalPages})
-              </>
+              <Layers className="h-3.5 w-3.5" />
             )}
+          >
+            {loadingMore ? 'Loading…' : `Load more chunks (page ${page + 1}/${totalPages})`}
           </Button>
         </div>
       )}
@@ -236,8 +231,14 @@ function VersionHistory({ docId }: { docId: string }) {
           <History className="h-3.5 w-3.5" />
           Version History
         </div>
-        <Button variant="outline" size="sm" onClick={createSnapshot} disabled={creating} className="h-6 text-xs gap-1">
-          {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={createSnapshot}
+          disabled={creating}
+          className="h-6 text-xs"
+          icon={creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+        >
           Snapshot
         </Button>
       </div>
@@ -262,9 +263,9 @@ function VersionHistory({ docId }: { docId: string }) {
                 size="sm"
                 onClick={() => restore(v.id)}
                 disabled={restoringId === v.id}
-                className="h-6 text-xs gap-1"
+                className="h-6 text-xs"
+                icon={restoringId === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
               >
-                {restoringId === v.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
                 Restore
               </Button>
             </div>

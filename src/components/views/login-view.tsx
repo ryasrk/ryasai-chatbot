@@ -152,21 +152,35 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
             <CardFooter className="flex flex-col gap-2">
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+              <Button
+                type="submit"
+                className="w-full"
+                icon={submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                disabled={submitting}
+              >
                 Sign In
               </Button>
               {(oidcConfigured || samlConfigured) && (
                 <div className="flex flex-col gap-2 w-full">
                   {oidcConfigured && (
-                    <Button type="button" variant="outline" className="w-full" onClick={() => { window.location.href = '/api/auth/sso/login' }}>
-                      <KeyRound className="mr-2 h-4 w-4" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      icon={<KeyRound className="h-4 w-4" />}
+                      onClick={() => { window.location.href = '/api/auth/sso/login' }}
+                    >
                       Sign in with SSO
                     </Button>
                   )}
                   {samlConfigured && (
-                    <Button type="button" variant="outline" className="w-full" onClick={() => { window.location.href = '/api/auth/saml/login' }}>
-                      <KeyRound className="mr-2 h-4 w-4" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      icon={<KeyRound className="h-4 w-4" />}
+                      onClick={() => { window.location.href = '/api/auth/saml/login' }}
+                    >
                       Sign in with SAML
                     </Button>
                   )}
@@ -199,8 +213,12 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
             <CardFooter className="flex flex-col gap-2">
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+              <Button
+                type="submit"
+                className="w-full"
+                icon={submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                disabled={submitting}
+              >
                 Continue
               </Button>
               <button type="button" className="text-xs text-muted-foreground hover:text-foreground mt-2" onClick={() => { setMode('login'); resetSignup() }}>
@@ -230,8 +248,12 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
             <CardFooter className="flex flex-col gap-2">
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+              <Button
+                type="submit"
+                className="w-full"
+                icon={submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                disabled={submitting}
+              >
                 Activate & Continue
               </Button>
               <button type="button" className="text-xs text-muted-foreground hover:text-foreground mt-2 flex items-center gap-1" onClick={() => setSignupStep(0)}>

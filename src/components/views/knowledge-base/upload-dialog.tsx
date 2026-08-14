@@ -129,7 +129,7 @@ export function UploadDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-3 py-2">
           {/* Drag & drop area */}
           <div
             onDragOver={(e) => {
@@ -258,23 +258,23 @@ export function UploadDialog({
         <DialogFooter>
           <Button
             variant="outline"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={submitting}
           >
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={submitting || !file}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Processing &amp; chunking…
-              </>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitting || !file}
+            icon={submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <>
-                <UploadCloud className="h-4 w-4" />
-                Upload
-              </>
+              <UploadCloud className="h-4 w-4" />
             )}
+          >
+            {submitting ? 'Processing & chunking…' : 'Upload'}
           </Button>
         </DialogFooter>
       </DialogContent>

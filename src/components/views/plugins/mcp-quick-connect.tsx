@@ -91,11 +91,11 @@ export function McpQuickConnect({ onConnected }: QuickConnectProps) {
         />
         <Button
           size="sm"
+          icon={quickConnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
           onClick={handleQuickConnect}
           disabled={quickConnecting || !quickUrl.trim()}
-          className="h-7 text-xs gap-1.5 shrink-0"
+          className="h-7 text-xs shrink-0"
         >
-          {quickConnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
           Connect
         </Button>
       </div>

@@ -193,8 +193,12 @@ export function ApiKeysPanel() {
               />
             </div>
           </div>
-          <Button onClick={handleCreate} disabled={creating || !label.trim()}>
-            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <Button
+            size="sm"
+            icon={creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            onClick={handleCreate}
+            disabled={creating || !label.trim()}
+          >
             Generate API Key
           </Button>
 
@@ -209,9 +213,9 @@ export function ApiKeysPanel() {
                   <Button
                     size="sm"
                     variant="outline"
+                    icon={<Copy className="h-3.5 w-3.5" />}
                     onClick={() => copyText(newKey, 'API key copied.')}
                   >
-                    <Copy className="h-3.5 w-3.5" />
                     Copy
                   </Button>
                 </div>

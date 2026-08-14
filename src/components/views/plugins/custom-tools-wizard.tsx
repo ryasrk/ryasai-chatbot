@@ -456,10 +456,10 @@ export function CustomToolsWizard({ open, editing, onClose, onSaved }: WizardPro
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs gap-1.5 w-full"
+                icon={testingInWizard ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 onClick={handleWizardTest}
                 disabled={testingInWizard}
               >
-                {testingInWizard ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                 Test Now
               </Button>
               {wizardTestResult && <TestResultBlock result={wizardTestResult} />}
@@ -474,17 +474,23 @@ export function CustomToolsWizard({ open, editing, onClose, onSaved }: WizardPro
             onClick={() => setStep((s) => Math.max(s - 1, 1))}
             disabled={step === 1}
             className="h-7 text-xs gap-1"
+            icon={<ChevronLeft className="h-3.5 w-3.5" />}
           >
-            <ChevronLeft className="h-3.5 w-3.5" /> Back
+            Back
           </Button>
           <div className="flex items-center gap-2">
             {step < 4 ? (
               <Button size="sm" onClick={nextStep} className="h-7 text-xs gap-1">
-                Continue <ChevronRight className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-1.5">Continue<ChevronRight className="h-3.5 w-3.5" /></span>
               </Button>
             ) : (
-              <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs gap-1.5">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              <Button
+                size="sm"
+                onClick={handleSave}
+                disabled={saving}
+                className="h-7 text-xs gap-1.5"
+                icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              >
                 Save
               </Button>
             )}

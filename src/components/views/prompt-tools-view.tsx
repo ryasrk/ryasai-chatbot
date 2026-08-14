@@ -404,8 +404,7 @@ function PromptLibrary() {
               Save and reuse prompt templates across sessions.
             </CardDescription>
           </div>
-          <Button size="sm" onClick={() => { setEditing(null); setShowForm(true) }} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
+          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => { setEditing(null); setShowForm(true) }} className="gap-1.5">
             New
           </Button>
         </div>
@@ -493,8 +492,7 @@ function PromptForm({
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
-          <Button size="sm" disabled={!title.trim() || !content.trim()} onClick={() => onSave({ title: title.trim(), content: content.trim(), category: category.trim() || undefined, isPublic })}>
-            <Save className="h-3.5 w-3.5 mr-1" />
+          <Button size="sm" icon={<Save className="h-3.5 w-3.5" />} disabled={!title.trim() || !content.trim()} onClick={() => onSave({ title: title.trim(), content: content.trim(), category: category.trim() || undefined, isPublic })}>
             {initial ? 'Update' : 'Create'}
           </Button>
         </div>

@@ -589,9 +589,9 @@ function SidebarContent({
                 <TooltipContent side="right" align="center" className="z-50">
                   <div className="flex flex-col">
                     <span className="font-medium">{item.label}</span>
-                    <span className="text-xs text-muted-foreground">{item.desc}</span>
+                    <span className="text-xs text-primary-foreground/70">{item.desc}</span>
                     {item.shortcut && (
-                      <span className="mt-1 text-[10px] text-muted-foreground">
+                      <span className="mt-1 text-[10px] text-primary-foreground/60">
                         ⌘{item.shortcut}
                       </span>
                     )}
@@ -633,7 +633,7 @@ function SidebarContent({
               <TooltipContent side="left" className="max-w-[200px]">
                 <div className="flex flex-col">
                   <span className="font-medium">{item.label}</span>
-                  <span className="text-xs text-muted-foreground mt-1">{item.desc}</span>
+                  <span className="text-xs text-primary-foreground/70 mt-1">{item.desc}</span>
                 </div>
               </TooltipContent>
             </Tooltip>

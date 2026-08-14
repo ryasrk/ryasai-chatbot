@@ -304,8 +304,8 @@ export function McpServerDialog({ open, editing, onClose, onSaved }: DialogProps
             onClick={handleSave}
             disabled={saving}
             className="h-7 text-xs gap-1.5"
+            icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
           >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             {mcpTestResult?.status === 'error' ? 'Retry' : 'Save'}
           </Button>
         </DialogFooter>
