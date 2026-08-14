@@ -11,6 +11,7 @@ import {
 const PUBLIC_API_PATHS = new Set([
   '/api',
   '/api/v1/health',
+  '/api/health',
   '/api/v1/chat/completions',
   '/api/v1/agent/run',
   '/api/webhooks/incoming',

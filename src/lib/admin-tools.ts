@@ -513,7 +513,7 @@ async function mcpInstallAction(
       
       // Check for common patterns and suggest fixes
       let suggestions: string[] = []
-      
+
       // Pattern 1: If user mentioned "weather-mcp" but it tried @dangahagan/weather-mcp
       if ((serverName?.toLowerCase().includes('weather') || pkgArg.toLowerCase().includes('weather'))) {
         const weatherPkgs = ['@dangahagan/weather-mcp', 'weather-mcp']
@@ -522,16 +522,19 @@ async function mcpInstallAction(
           suggestions.push(`Try: ${matching[0]} instead?`)
         }
       }
-      
+
       // Pattern 2: @scope/package pattern where scope might be wrong
       if (pkgArg.startsWith('@') && hits.length > 0) {
         // Maybe they meant a different scoped package
         const similar = hits.slice(0, 3).map(n => `  • ${n}`)
         suggestions.push(`Similar packages:\n${similar.join('\n')}`)
       }
-      
-      // Pattern 3: Generic fuzzy matches
-      if (hits.length > 0 && suggestions.length === 0) {
+
+      // Pattern 3: Generic fuzzy matches — ALWAYS include real registry hits.
+      // ponytail: this used to be gated on suggestions.length === 0, so a
+      // hardcoded pattern (weather) suppressed the actual npm search results
+      // and the user never saw the real candidates.
+      if (hits.length > 0 && !suggestions.some(s => s.includes('Similar packages'))) {
         suggestions.push(`Real npm packages matching "${serverName}":\n${hits.slice(0, 5).map(n => `  • ${n}`).join('\n')}`)
       }
       

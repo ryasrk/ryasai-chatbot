@@ -101,6 +101,8 @@ export async function analyzeIntent(args: {
   documentNames?: string[]
   integrationNames?: string[]
   schemaSummaries?: string[]
+  /** REST endpoint descriptions — same first-scan rationale as the others. */
+  restEndpointSummaries?: string[]
 }): Promise<IntentAnalysis> {
   const cfg = await getRoleLlmConfig('keyword')
   if (!cfg) {
@@ -122,13 +124,16 @@ export async function analyzeIntent(args: {
     args.hasDocuments ? 'Documents available: yes' : 'Documents available: no',
     args.hasIntegrations ? 'Databases available: yes' : 'Databases available: no',
     args.documentNames && args.documentNames.length > 0
-      ? `Document names: ${args.documentNames.slice(0, 20).join(', ')}`
+      ? `Documents (name [category] — what it is about):\n${args.documentNames.slice(0, 20).join('\n')}`
       : '',
     args.integrationNames && args.integrationNames.length > 0
       ? `Database names: ${args.integrationNames.slice(0, 20).join(', ')}`
       : '',
     args.schemaSummaries && args.schemaSummaries.length > 0
       ? `Database table descriptions:\n${args.schemaSummaries.slice(0, 40).join('\n')}`
+      : '',
+    args.restEndpointSummaries && args.restEndpointSummaries.length > 0
+      ? `REST API endpoints (what each returns):\n${args.restEndpointSummaries.slice(0, 20).join('\n')}`
       : '',
   ].filter(Boolean).join('\n')
 

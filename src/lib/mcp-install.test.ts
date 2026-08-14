@@ -164,16 +164,20 @@ describe('command arriving as a whole command line', () => {
 
 describe('a package name that was guessed rather than read', () => {
   test('a name with no real package reports that, with candidates, and writes no row', async () => {
-    stubRegistry([], ['weather-mcp', '@atorresg/weather-mcp'])
+    // 'stockquote' is deliberately NOT in the curated MCP_PACKAGES map — this
+    // exercises the @modelcontextprotocol/server-<name> guessing branch.
+    // (It used to use 'weather-mcp', which was later added to the map, so the
+    // guess branch stopped firing and the assertion went stale.)
+    stubRegistry([], ['stockquote-mcp', '@atorresg/stockquote-mcp'])
 
-    const res = await install({ name: 'weather-mcp' })
+    const res = await install({ name: 'stockquote' })
 
     expect(res.ok).toBe(false)
     // The old behaviour: create the row, spawn npx, surface "Connection closed".
     expect(res.output).not.toContain('Connection closed')
     expect(rows).toHaveLength(0)
-    expect(res.output).toContain('@modelcontextprotocol/server-weather-mcp')
-    expect(res.output).toContain('@atorresg/weather-mcp')
+    expect(res.output).toContain('@modelcontextprotocol/server-stockquote')
+    expect(res.output).toContain('@atorresg/stockquote-mcp')
   })
 
   test('a registry outage does not block an install that would otherwise work', async () => {

@@ -85,7 +85,8 @@ async function _runNonStreamingChatCompletion(args: {
   args.signal?.throwIfAborted()
 
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
-  const [docCount, intCount, docNames, intNames, schemaRows, restEndpointCount, promptSettings] = dbData
+  const [docCount, intCount, docRows, intNames, schemaRows, restEndpoints, promptSettings] = dbData
+  const restEndpointCount = restEndpoints.length
   const schemaSummaries = schemaRows.map((s) => `${s.integration.name}.${s.tableName}: ${s.description}`)
 
   args.signal?.throwIfAborted()
@@ -94,8 +95,9 @@ async function _runNonStreamingChatCompletion(args: {
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
     chatHistory: args.chatHistory,
     hasDocuments: docCount > 0, hasIntegrations: intCount > 0,
-    documentNames: docNames.map((d) => d.category ? `${d.name} [${d.category}]` : d.name),
+    documentNames: docRows.map((d) => formatDocForIntent(d)),
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
+    restEndpointSummaries: restEndpoints.map((e) => `${e.method} ${e.path}: ${e.description ?? ''}`).filter((s) => !s.endsWith(': ')),
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
@@ -168,15 +170,17 @@ async function _runStreamingChatCompletion(args: {
   }
 
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
-  const [docCount, intCount, docNames, intNames, schemaRows, restEndpointCount, promptSettings] = dbData
+  const [docCount, intCount, docRows, intNames, schemaRows, restEndpoints, promptSettings] = dbData
+  const restEndpointCount = restEndpoints.length
   const schemaSummaries = schemaRows.map((s) => `${s.integration.name}.${s.tableName}: ${s.description}`)
 
   const intent = await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
     chatHistory: args.chatHistory,
     hasDocuments: docCount > 0, hasIntegrations: intCount > 0,
-    documentNames: docNames.map((d) => d.category ? `${d.name} [${d.category}]` : d.name),
+    documentNames: docRows.map((d) => formatDocForIntent(d)),
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
+    restEndpointSummaries: restEndpoints.map((e) => `${e.method} ${e.path}: ${e.description ?? ''}`).filter((s) => !s.endsWith(': ')),
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
@@ -235,10 +239,23 @@ async function loadDbData() {
   const queries = Promise.all([
     db.document.count({ where: { status: 'ready', isEnabled: true } }),
     db.integration.count({ where: { status: 'active' } }),
-    db.document.findMany({ where: { status: 'ready', isEnabled: true }, select: { name: true, category: true }, take: 20 }),
+    // ponytail: description included — the LLM first-scan (source-init) writes
+    // it when the uploader doesn't. "invoice_sop_2024.pdf — Refund policy for
+    // enterprise customers…" routes RAG questions far better than a file name.
+    db.document.findMany({
+      where: { status: 'ready', isEnabled: true },
+      select: { name: true, category: true, description: true },
+      take: 20,
+    }),
     db.integration.findMany({ where: { status: 'active' }, select: { name: true }, take: 20 }),
     db.integrationSchema.findMany({ where: { integration: { status: 'active' }, description: { not: null } }, select: { tableName: true, description: true, integration: { select: { name: true } } }, take: 40 }),
-    db.restApiEndpoint.count({ where: { isEnabled: true, connector: { isActive: true } } }),
+    // ponytail: endpoint descriptions too — same first-scan rationale; they
+    // tell the router which REST source answers which question.
+    db.restApiEndpoint.findMany({
+      where: { isEnabled: true, connector: { isActive: true } },
+      select: { path: true, description: true, method: true },
+      take: 20,
+    }),
     getPromptSettings(db),
   ])
   // ponytail: shared 15s ceiling across the whole pre-stream DB batch so a slow
@@ -258,13 +275,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 type DbData = Awaited<ReturnType<typeof loadDbData>>
 
+/**
+ * Render a document row for the intent prompt: name [category] — description.
+ * The description comes from the uploader or the LLM first-scan (source-init);
+ * it is what lets the router tell "annual leave SOP" from "Q3 invoice export".
+ */
+function formatDocForIntent(d: { name: string; category: string | null; description: string | null }): string {
+  const label = d.category ? `${d.name} [${d.category}]` : d.name
+  return d.description ? `${label} — ${d.description}` : label
+}
+
 async function resolveRouting(
   args: { question: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] },
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
 ): Promise<{ decision: RouteDecision; clarification?: string; resolvedIntegrationId: string | undefined }> {
-  const [docCount, intCount, , , , restEndpointCount] = dbData
+  const [docCount, intCount, , , , restEndpoints] = dbData
+  const restEndpointCount = restEndpoints.length
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
   let decision: RouteDecision
   let resolvedIntegrationId = args.integrationId

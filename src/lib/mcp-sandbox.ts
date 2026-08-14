@@ -13,7 +13,8 @@
  * - Resource quota enforcement per organization
  */
 import { mkdir, chmod, rm } from 'node:fs/promises'
-import { statSync } from 'node:fs'
+import { statSync, readdirSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 
 const BASE_SANDBOX_DIR = '/var/mcp/isolated'
@@ -139,13 +140,8 @@ export async function getSandboxMetadata(
     
     // Calculate cache size (approximate)
     let npxCacheSize = 0
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
     try {
-      const { execSync } = require('child_process')
       npxCacheSize = parseInt(
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
         execSync(`du -sb "${join(sandboxPath, 'npx-cache')}" 2>/dev/null | cut -f1`).toString()
       ) || 0
     } catch {}
@@ -167,16 +163,14 @@ export async function getSandboxMetadata(
 /**
  * Simple directory counter for monitoring.
  */
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
 function countDirectories(dir: string): number {
   try {
-    const { readdirSync } = require('fs')
     let count = 0
-    
+
     const traverse = (path: string): void => {
       const items = readdirSync(path, { withFileTypes: true })
       count += items.filter(item => item.isDirectory()).length
-      
+
       for (const item of items) {
         if (item.isDirectory()) {
           traverse(join(path, item.name))

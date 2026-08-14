@@ -8,6 +8,7 @@ const mockIntegrationCount = mock(async () => 0)
 const mockDocumentCount = mock(async () => 0)
 const mockDocumentFindMany = mock(async () => [] as unknown[])
 const mockRestEndpointCount = mock(async () => 0)
+const mockRestEndpointFindMany = mock(async () => [] as Array<{ method: string; path: string; description: string | null }>)
 const mockIntegrationFindFirst = mock(async () => null as unknown)
 const mockIntegrationFindMany = mock(async () => [] as Array<{ name: string }>)
 const mockIntegrationSchemaFindMany = mock(async () => [] as Array<{ tableName: string; description: string | null; integration: { name: string } }>)
@@ -27,7 +28,7 @@ mock.module('@/lib/db', () => ({
     integrationSchema: { findMany: mockIntegrationSchemaFindMany },
     document: { count: mockDocumentCount, findMany: mockDocumentFindMany },
     documentChunk: { findMany: mockDocChunkFindMany },
-    restApiEndpoint: { count: mockRestEndpointCount },
+    restApiEndpoint: { count: mockRestEndpointCount, findMany: mockRestEndpointFindMany },
     toolRun: { findMany: mockToolRunFindMany },
     auditLog: { create: mockAuditLogCreate },
     queryHistory: { create: mockQueryHistoryCreate },

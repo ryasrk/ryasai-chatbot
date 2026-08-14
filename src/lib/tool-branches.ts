@@ -221,6 +221,7 @@ export async function runSqlBranch(args: {
       columns: safeParseColumns(schema.columns),
       rowCount: schema.rowCount ?? undefined,
       sampleRow: safeParseSampleRow(schema.sampleRow),
+      description: schema.description,
     })),
   )
   const llm = await generateSql({
