@@ -1,5 +1,5 @@
 import { defineConfig } from '@playwright/test'
-import { E2E_LICENSE_PUBKEY_HEX } from './e2e/mock-license-validator'
+import { E2E_LICENSE_PUBKEY_HEX } from './e2e-keys'
 
 // Postgres-only schema — the e2e DB is a dedicated database, not a SQLite file.
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e'

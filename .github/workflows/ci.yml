@@ -28,6 +28,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # ponytail: bun install does NOT run prisma generate in CI the way a dev
+      # checkout does — without this every Prisma type resolves to {} and tsc
+      # emits ~130 errors. Cache restore must not resurrect a stale client
+      # either, hence the rm below.
+      - name: Generate Prisma client
+        run: |
+          rm -rf node_modules/.prisma
+          bunx prisma generate
+
       - name: Lint (errors only — pre-existing warnings are tracked separately)
         run: bun run lint
 
@@ -69,6 +78,11 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: |
+          rm -rf node_modules/.prisma
+          bunx prisma generate
 
       - name: Install Playwright browsers
         run: bunx playwright install chromium --with-deps

@@ -15,9 +15,8 @@
 import http from 'http'
 import crypto from 'crypto'
 
-// Deterministic test keypair (DER hex). Test-only; never used in production.
-export const E2E_LICENSE_PUBKEY_HEX =
-  '302a300506032b657003210030d9afe8c7f308d2d4cbdb0749ca5f8829b5fd629e14ac837f39bcee53168e80'
+// Keypair lives in ../e2e-keys (importable by playwright.config without
+// dragging playwright types into the production build).
 const E2E_LICENSE_PRIVKEY_HEX =
   '302e020100300506032b6570042204209c969e5fa3b454cc4d7718cebcb07732e3c3671f66de8d533ba12cd3c7961832'
 

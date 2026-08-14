@@ -12,7 +12,8 @@
  */
 import { execSync } from 'child_process'
 import { startMockLlm } from './mock-llm'
-import { startMockLicenseValidator, E2E_LICENSE_PUBKEY_HEX } from './mock-license-validator'
+import { startMockLicenseValidator } from './mock-license-validator'
+import { E2E_LICENSE_PUBKEY_HEX } from '../e2e-keys'
 import type { Server } from 'http'
 
 export default async function globalSetup() {
