@@ -39,7 +39,11 @@ export function VectorStorePanel() {
     setProvider(id)
     if (p) {
       setVectorSize(String(p.defaultVectorSize))
-      if (p.baseUrlPlaceholder && !baseUrl) setBaseUrl(p.baseUrlPlaceholder)
+      // A base URL belongs to exactly one provider — a Qdrant URL can never
+      // serve a Milvus config. Always swap it to the new provider's default;
+      // leaving the old provider's URL behind produced configs that saved and
+      // then failed at test/search time with a confusing cross-provider error.
+      setBaseUrl(p.baseUrlPlaceholder)
     }
   }
 

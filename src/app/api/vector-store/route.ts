@@ -5,6 +5,8 @@ import { ensureVectorCollection, getVectorStoreRuntimeConfig } from '@/lib/vecto
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { maskSecret, normalizeBaseUrl } from '@/lib/llm-config'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { getVectorStorePreset } from '@/lib/db-provider-presets'
+import { AppError } from '@/lib/errors'
 
 export async function GET() {
   try {
@@ -57,6 +59,20 @@ export async function PUT(req: NextRequest) {
     const distance = (body.distance ?? 'Cosine').trim() || 'Cosine'
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
     const existing = await db.vectorStoreConfig.findFirst()
+
+    // Fail-closed: an external backend without a base URL is a config that
+    // cannot work — reject at save time instead of failing later at search
+    // time with an opaque error. (The UI presets the URL per provider; this
+    // also catches a stale URL from a provider switch the client missed.)
+    const preset = getVectorStorePreset(provider)
+    if (preset && preset.backend !== 'INTERNAL' && !baseUrl) {
+      throw new AppError('VALIDATION_ERROR', `Base URL is required for ${preset.label}.`, {
+        hint: `Example: ${preset.baseUrlPlaceholder}`,
+      })
+    }
+    if (preset && preset.needsApiKey && !apiKey && !(existing && existing.encryptedApiKey)) {
+      throw new AppError('VALIDATION_ERROR', `API key is required for ${preset.label}.`)
+    }
 
     const payload = {
       provider,
