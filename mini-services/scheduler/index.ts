@@ -109,7 +109,7 @@ async function cleanupOldLogs(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function processJob(job: ScheduleJob): Promise<void> {
-  const { runId, name, prompt, notificationConfigId } = job.data
+  const { runId, name, prompt, notificationConfigId, integrationId } = job.data
   const now = new Date()
   const isLastAttempt = job.attemptsMade >= (job.opts?.attempts ?? 3) - 1
   console.log(`[scheduler] executing "${name}" (attempt ${job.attemptsMade + 1})`)
@@ -142,11 +142,27 @@ async function processJob(job: ScheduleJob): Promise<void> {
   let abortController: AbortController | null = null
 
   try {
+    // ponytail: when a schedule pins a specific source, resolve its name for
+    // a human-readable directive and skip the "pick automatically" language —
+    // integrationId is a routing PREFERENCE (smartRoute can still override it
+    // for a question that's clearly about something else), so the explicit
+    // "only use X" instruction is what actually keeps the run on that source.
+    let sourceDirective = 'pick the most relevant data source automatically'
+    if (integrationId) {
+      const source = await db.integration.findUnique({
+        where: { id: integrationId },
+        select: { name: true },
+      })
+      if (source) {
+        sourceDirective = `use ONLY the "${source.name}" data source — do not query or reference any other database, API, or document`
+      }
+    }
+
     // Autonomy directive — scheduled runs are unattended, so the LLM
     // must make reasonable assumptions instead of asking clarifying questions.
     // Passed as systemPromptPrefix (not in the question) so it doesn't confuse
     // the intent analyzer.
-    const autonomyPrefix = `This is an automated scheduled execution. No human is available to answer questions. Make reasonable assumptions, use the current date (${now.toISOString().split('T')[0]} UTC), pick the most relevant data source automatically, and provide the answer directly. Do NOT ask clarifying questions.`
+    const autonomyPrefix = `This is an automated scheduled execution. No human is available to answer questions. Make reasonable assumptions, use the current date (${now.toISOString().split('T')[0]} UTC), ${sourceDirective}, and provide the answer directly. Do NOT ask clarifying questions.`
 
     // ponytail: if the scheduled run references a saved prompt, prepend its
     // content to the autonomy directive so user-defined system instructions
@@ -172,6 +188,7 @@ async function processJob(job: ScheduleJob): Promise<void> {
         userId,
         skipClarification: true,
         systemPromptPrefix,
+        integrationId: integrationId ?? undefined,
         signal: abortController.signal,
       }),
       RUN_TIMEOUT_MS,

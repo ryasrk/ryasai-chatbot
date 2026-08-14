@@ -70,6 +70,7 @@ export function SettingsView() {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full">
+      <div className="min-w-0 overflow-x-auto -mx-1 px-1 pb-1">
       <TabsList className="w-max">
         <TabsTrigger value="profile" className="gap-1.5 text-xs">
           <UserIcon className="h-3.5 w-3.5" />
@@ -100,6 +101,7 @@ export function SettingsView() {
           Notifications
         </TabsTrigger>
       </TabsList>
+      </div>
 
       <TabsContent value="profile" className="mt-3">
         <ProfileTab />

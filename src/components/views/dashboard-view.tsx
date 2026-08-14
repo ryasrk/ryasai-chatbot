@@ -20,6 +20,7 @@ import { ErrorState, StatGridSkeleton } from '@/components/ui/view-states'
 import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
 import { DashboardCharts } from '@/components/views/dashboard-charts'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
+import { useCachedViewData } from '@/hooks/use-cached-view-data'
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
 
@@ -37,15 +38,14 @@ interface MonitoringStats {
 }
 
 export function DashboardView() {
-  const [data, setData] = useState<AnalyticsData | null>(null)
-  const [monitoring, setMonitoring] = useState<MonitoringStats | null>(null)
-  const [activeSchedules, setActiveSchedules] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const showSkeleton = useDelayedLoading(loading)
-  const [error, setError] = useState<string | null>(null)
+  interface DashboardBundle {
+    data: AnalyticsData
+    monitoring: MonitoringStats | null
+    activeSchedules: number
+  }
 
-  const fetchAll = useCallback(() => {
-    Promise.all([
+  const fetchDashboard = useCallback(async (): Promise<DashboardBundle> => {
+    const [a, m, s] = await Promise.all([
       fetch('/api/analytics', { cache: 'no-store' }).then(async (response) => {
         if (!response.ok) throw new Error('Failed to load analytics data.')
         return response.json() as Promise<AnalyticsData>
@@ -67,24 +67,13 @@ export function DashboardView() {
         })
         .catch(() => 0),
     ])
-      .then(([a, m, s]) => {
-        setData(a)
-        setMonitoring(m)
-        setActiveSchedules(s)
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error.'))
-      .finally(() => setLoading(false))
+    return { data: a, monitoring: m, activeSchedules: s }
   }, [])
 
-  const handleRefresh = useCallback(() => {
-    setLoading(true)
-    setError(null)
-    fetchAll()
-  }, [fetchAll])
-
-  useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
+  // ponytail: cached across menu switches — revisiting Dashboard renders the
+  // last-fetched data instantly (no skeleton) while quietly refetching.
+  const { data: bundle, loading, error, refresh: handleRefresh } = useCachedViewData('dashboard', fetchDashboard)
+  const showSkeleton = useDelayedLoading(loading)
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -98,9 +87,10 @@ export function DashboardView() {
   if (loading) {
     return showSkeleton ? <StatGridSkeleton /> : null
   }
-  if (error || !data) {
+  if (error || !bundle) {
     return <ErrorState message={error ?? 'Data unavailable.'} onRetry={handleRefresh} />
   }
+  const { data, monitoring, activeSchedules } = bundle
 
   const stats: { label: string; value: number | string; icon: typeof Database; iconClass: string }[] = [
     { label: 'Queries (24h)', value: monitoring?.toolRunCount24h ?? 0, icon: Activity, iconClass: 'text-primary' },

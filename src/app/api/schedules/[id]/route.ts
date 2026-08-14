@@ -51,6 +51,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       prompt?: string
       isActive?: boolean
       notificationConfigId?: string | null
+      integrationId?: string | null
       timezone?: string | null
     }
 
@@ -61,6 +62,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       isActive?: boolean
       nextRunAt?: Date | null
       notificationConfigId?: string | null
+      integrationId?: string | null
       timezone?: string
     } = {}
 
@@ -68,6 +70,17 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     if (typeof body.prompt === 'string' && body.prompt.trim()) data.prompt = body.prompt.trim()
     if (body.notificationConfigId !== undefined) data.notificationConfigId = body.notificationConfigId || null
     if (body.timezone !== undefined) data.timezone = normalizeTimezone(body.timezone)
+    if (body.integrationId !== undefined) {
+      if (body.integrationId) {
+        const source = await db.integration.findFirst({ where: { id: body.integrationId }, select: { id: true } }) // nosemgrep
+        if (!source) {
+          return NextResponse.json({ ok: false, error: 'Selected data source not found.' }, { status: 400 })
+        }
+        data.integrationId = source.id
+      } else {
+        data.integrationId = null
+      }
+    }
 
     const changingCron = typeof body.cronExpr === 'string'
     if (changingCron) {
@@ -89,7 +102,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       data.nextRunAt = null
     } else if (changingCron || becomingActive) {
       const cronExpr = typeof data.cronExpr === 'string' ? data.cronExpr : existing.cronExpr
-      data.nextRunAt = nextRun(cronExpr, new Date())
+      const timezone = data.timezone ?? existing.timezone ?? 'UTC'
+      data.nextRunAt = nextRun(cronExpr, new Date(), timezone)
     }
 
     if (Object.keys(data).length === 0) {
@@ -123,6 +137,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
           prompt: updated.prompt,
           isActive: updated.isActive,
           notificationConfigId: updated.notificationConfigId,
+          integrationId: updated.integrationId,
           timezone: updated.timezone,
         })
       } else {

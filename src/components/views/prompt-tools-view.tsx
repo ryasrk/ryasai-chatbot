@@ -215,8 +215,12 @@ export function PromptToolsView() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSave} disabled={!dirty || saving || loadError} className="gap-1.5">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!dirty || saving || loadError}
+                  icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                >
                   Save
                 </Button>
               </div>

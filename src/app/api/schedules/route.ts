@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       prompt?: string
       promptId?: string | null
       notificationConfigId?: string | null
+      integrationId?: string | null
       timezone?: string | null
     }
 
@@ -52,7 +53,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Prompt is required.' }, { status: 400 })
     }
 
-    const nextRunAt = nextRun(cronExpr, new Date())
+    let integrationId: string | null = null
+    if (body.integrationId) {
+      const source = await db.integration.findFirst({ where: { id: body.integrationId }, select: { id: true } }) // nosemgrep
+      if (!source) {
+        return NextResponse.json({ ok: false, error: 'Selected data source not found.' }, { status: 400 })
+      }
+      integrationId = source.id
+    }
+
+    const timezone = normalizeTimezone(body.timezone)
+    const nextRunAt = nextRun(cronExpr, new Date(), timezone)
     const schedule = await db.scheduledRun.create({
       data: {
         organizationId: user.organizationId,
@@ -60,10 +71,11 @@ export async function POST(req: NextRequest) {
         cronExpr,
         prompt,
         promptId: body.promptId || null,
-        timezone: normalizeTimezone(body.timezone),
+        timezone,
         isActive: true,
         nextRunAt,
         notificationConfigId: body.notificationConfigId || null,
+        integrationId,
       },
     })
 
@@ -76,6 +88,7 @@ export async function POST(req: NextRequest) {
         prompt: schedule.prompt,
         isActive: schedule.isActive,
         notificationConfigId: schedule.notificationConfigId,
+        integrationId: schedule.integrationId,
         timezone: schedule.timezone,
       })
     } catch (e) {

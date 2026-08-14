@@ -151,11 +151,11 @@ export function formatRelativeTime(date: string | null, now: Date = new Date()):
   return target.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export function previewNextRuns(expr: string, from: Date = new Date(), count: number = 5): Date[] {
+export function previewNextRuns(expr: string, from: Date = new Date(), count: number = 5, timezone: string = 'UTC'): Date[] {
   const runs: Date[] = []
   let cursor = from
   for (let i = 0; i < count; i++) {
-    const next = nextRun(expr, cursor)
+    const next = nextRun(expr, cursor, timezone)
     if (!next) break
     runs.push(next)
     cursor = new Date(next.getTime() + 60000)

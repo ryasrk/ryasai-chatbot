@@ -77,4 +77,23 @@ describe('nextRun', () => {
     const result = nextRun('*/15 * * * *', new Date('2026-07-24T10:00:00Z'))
     expect(result).toEqual(new Date('2026-07-24T10:15:00Z'))
   })
+
+  test('timezone-aware: "0 9 * * *" in Asia/Jakarta (UTC+7) means 09:00 local, not 09:00 UTC', () => {
+    // 09:00 Jakarta === 02:00 UTC (no DST)
+    const result = nextRun('0 9 * * *', new Date('2026-07-24T10:00:00Z'), 'Asia/Jakarta')
+    expect(result).toEqual(new Date('2026-07-25T02:00:00Z'))
+  })
+})
+
+describe('parseCron with timezone', () => {
+  test('"0 9 * * *" matches 02:00 UTC in Asia/Jakarta, not 09:00 UTC', () => {
+    const c = parseCron('0 9 * * *', 'Asia/Jakarta')!
+    expect(c.match(new Date('2026-07-24T02:00:00Z'))).toBe(true)
+    expect(c.match(new Date('2026-07-24T09:00:00Z'))).toBe(false)
+  })
+
+  test('default timezone is UTC (backward compatible)', () => {
+    const c = parseCron('0 9 * * *')!
+    expect(c.match(new Date('2026-07-24T09:00:00Z'))).toBe(true)
+  })
 })

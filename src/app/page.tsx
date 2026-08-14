@@ -403,7 +403,10 @@ export default function Home() {
             suppressHydrationWarning
           >
             {/* Sidebar Header with Collapse Toggle */}
-            <div className="flex items-center justify-between px-3 py-2 border-b">
+            <div className={cn(
+              'flex items-center px-3 py-2 border-b',
+              sidebarCollapsed ? 'justify-center' : 'justify-between',
+            )}>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <Button

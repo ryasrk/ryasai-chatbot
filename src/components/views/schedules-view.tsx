@@ -1,9 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History, Play, Search, Bell, Activity, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History, Play, Search, Bell, Activity, CheckCircle2, AlertCircle, Database } from 'lucide-react'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { Stagger, StaggerItem } from '@/components/motion'
 
@@ -63,6 +62,14 @@ interface NotificationConfig {
   isActive: boolean
 }
 
+interface IntegrationOption {
+  id: string
+  name: string
+  type: string
+  provider: string
+  status: string
+}
+
 const QUICK_PRESETS = [
   { label: 'Every minute', cron: '* * * * *' },
   { label: 'Every 5 min', cron: '*/5 * * * *' },
@@ -111,13 +118,48 @@ interface Schedule {
   nextRunAt: string | null
   lastResult: string | null
   notificationConfigId: string | null
+  integrationId: string | null
+  timezone: string
   createdAt: string
   updatedAt: string
 }
 
-function fmtDate(date: string | null): string {
+const BROWSER_TIMEZONE = (typeof Intl !== 'undefined' && Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC'
+
+// ponytail: Intl.supportedValuesOf isn't in every runtime's lib.d.ts target —
+// feature-detect and fall back to a curated list covering major regions.
+const TIMEZONES: string[] = (() => {
+  try {
+    const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone')
+    if (supported && supported.length > 0) return supported
+  } catch {}
+  return [
+    'UTC', 'Asia/Jakarta', 'Asia/Singapore', 'Asia/Bangkok', 'Asia/Manila', 'Asia/Kuala_Lumpur',
+    'Asia/Tokyo', 'Asia/Seoul', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Kolkata', 'Asia/Dubai',
+    'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Sao_Paulo',
+    'Australia/Sydney', 'Pacific/Auckland',
+  ]
+})()
+
+function fmtDate(date: string | null, timezone: string = 'UTC'): string {
   if (!date) return '-'
-  return format(new Date(date), 'dd MMM yyyy HH:mm')
+  return fmtInTz(new Date(date), timezone)
+}
+
+function fmtInTz(date: Date, timezone: string, withComma: boolean = false): string {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+  const parts = fmt.formatToParts(date)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${get('day')} ${get('month')} ${get('year')}${withComma ? ',' : ''} ${get('hour')}:${get('minute')}`
 }
 
 function lastStatusFromResult(lastResult: string | null): 'success' | 'error' | null {
@@ -148,8 +190,9 @@ export function SchedulesView() {
   const [loadError, setLoadError] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Schedule | null>(null)
-  const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '' })
+  const [form, setForm] = useState({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '', integrationId: '' })
   const [scheduleTime, setScheduleTime] = useState('09:00')
+  const [scheduleTimezone, setScheduleTimezone] = useState(BROWSER_TIMEZONE)
   const timeInputRef = useRef<HTMLInputElement>(null)
   const [repeatType, setRepeatType] = useState<RepeatType>('daily')
   const [selectedDays, setSelectedDays] = useState<number[]>([])
@@ -167,6 +210,7 @@ export function SchedulesView() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [notificationConfigs, setNotificationConfigs] = useState<NotificationConfig[]>([])
+  const [integrations, setIntegrations] = useState<IntegrationOption[]>([])
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
@@ -194,6 +238,11 @@ export function SchedulesView() {
     fetch('/api/notifications')
       .then((r) => r.json())
       .then((d) => { if (d.ok) setNotificationConfigs(d.configs) })
+      .catch(() => {})
+    // Fetch data sources for the "restrict to this source" selector
+    fetch('/api/integrations')
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setIntegrations(d.data) })
       .catch(() => {})
   }, [fetchSchedules])
 
@@ -228,8 +277,9 @@ export function SchedulesView() {
 
   function openCreate() {
     setEditing(null)
-    setForm({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '' })
+    setForm({ name: '', cronExpr: '', prompt: '', isActive: true, notificationConfigId: '', integrationId: '' })
     setScheduleTime('09:00')
+    setScheduleTimezone(BROWSER_TIMEZONE)
     setRepeatType('daily')
     setSelectedDays([])
     setCustomCron(null)
@@ -238,8 +288,9 @@ export function SchedulesView() {
 
   function openEdit(s: Schedule) {
     setEditing(s)
+    setScheduleTimezone(s.timezone || BROWSER_TIMEZONE)
     const parsed = parseCron(s.cronExpr)
-    setForm({ name: s.name, cronExpr: s.cronExpr, prompt: s.prompt, isActive: s.isActive, notificationConfigId: s.notificationConfigId ?? '' })
+    setForm({ name: s.name, cronExpr: s.cronExpr, prompt: s.prompt, isActive: s.isActive, notificationConfigId: s.notificationConfigId ?? '', integrationId: s.integrationId ?? '' })
     setScheduleTime(parsed.time)
     setRepeatType(parsed.repeat)
     setSelectedDays(parsed.selectedDays)
@@ -285,6 +336,8 @@ export function SchedulesView() {
         prompt: form.prompt.trim(),
         isActive: form.isActive,
         notificationConfigId: form.notificationConfigId || null,
+        integrationId: form.integrationId || null,
+        timezone: scheduleTimezone,
       }
 
       const res = await fetch(url, {
@@ -439,7 +492,7 @@ export function SchedulesView() {
               <div>
                 <CardTitle className="text-sm">Execution Schedules</CardTitle>
                 <CardDescription className="text-xs">
-                  Automate prompt execution based on cron schedules. Times are in UTC.
+                  Automate prompt execution based on cron schedules. Each schedule runs in its own configured timezone.
                 </CardDescription>
               </div>
             </div>
@@ -533,12 +586,21 @@ export function SchedulesView() {
                               {notificationConfigs.find((c) => c.id === s.notificationConfigId)?.name ?? 'Notification'}
                             </span>
                           )}
+                          {s.integrationId && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <Database className="h-2.5 w-2.5" />
+                              {integrations.find((i) => i.id === s.integrationId)?.name ?? 'Restricted source'}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-xs">{describeCron(s.cronExpr)}</span>
-                          <code className="font-mono text-xs bg-muted/40 px-1.5 py-0.5 rounded w-fit">{s.cronExpr}</code>
+                          <div className="flex items-center gap-1.5">
+                            <code className="font-mono text-xs bg-muted/40 px-1.5 py-0.5 rounded w-fit">{s.cronExpr}</code>
+                            <span className="text-[10px] text-muted-foreground">{s.timezone || 'UTC'}</span>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5 max-w-[200px]">
@@ -546,13 +608,13 @@ export function SchedulesView() {
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-xs">{fmtDate(s.nextRunAt)}</span>
+                          <span className="text-xs">{fmtDate(s.nextRunAt, s.timezone)}</span>
                           <span className="text-xs text-muted-foreground">{formatRelativeTime(s.nextRunAt)}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-xs">{fmtDate(s.lastRunAt)}</span>
+                          <span className="text-xs">{fmtDate(s.lastRunAt, s.timezone)}</span>
                           <span className="text-xs text-muted-foreground">{formatRelativeTime(s.lastRunAt)}</span>
                         </div>
                       </TableCell>
@@ -734,6 +796,19 @@ export function SchedulesView() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground shrink-0">Timezone</Label>
+                <Select value={scheduleTimezone} onValueChange={setScheduleTimezone}>
+                  <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {TIMEZONES.map((tz) => (
+                      <SelectItem key={tz} value={tz} className="text-xs">{tz}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {repeatType === 'custom' && (
                 <div className="flex gap-1.5 flex-wrap">
                   {WEEKDAYS.map((day, i) => {
@@ -766,15 +841,15 @@ export function SchedulesView() {
                 return (
                   <>
                     <p className="text-xs text-muted-foreground">
-                      {describeCron(cronExpr)} &nbsp; <code className="font-mono text-[10px] bg-muted/40 px-1 py-0.5 rounded">{cronExpr}</code>
+                      {describeCron(cronExpr)} ({scheduleTimezone}) &nbsp; <code className="font-mono text-[10px] bg-muted/40 px-1 py-0.5 rounded">{cronExpr}</code>
                     </p>
                     {describeCron(cronExpr) !== 'Invalid cron expression' && (
                       <div className="rounded-none border border-border/70 bg-muted/20 p-2 space-y-1">
                         <div className="text-xs uppercase tracking-wide text-muted-foreground">Next 5 Executions</div>
-                        {previewNextRuns(cronExpr).map((run, i) => (
+                        {previewNextRuns(cronExpr, new Date(), 5, scheduleTimezone).map((run, i) => (
                           <div key={i} className="text-xs flex items-center gap-2">
                             <span className="text-muted-foreground">{i + 1}.</span>
-                            <span>{format(run, 'dd MMM yyyy, HH:mm')}</span>
+                            <span>{fmtInTz(run, scheduleTimezone, true)}</span>
                             <span className="text-muted-foreground">({formatRelativeTime(run.toISOString())})</span>
                           </div>
                         ))}
@@ -793,12 +868,39 @@ export function SchedulesView() {
                 className="text-xs min-h-[80px]"
               />
             </div>
-            {notificationConfigs.length > 0 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs flex items-center gap-1.5">
-                  <Bell className="h-3 w-3" />
-                  Notification Channel
-                </Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Database className="h-3 w-3" />
+                Data Source
+              </Label>
+              <Select
+                value={form.integrationId || 'auto'}
+                onValueChange={(v) => setForm({ ...form, integrationId: v === 'auto' ? '' : v })}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (let the AI choose)</SelectItem>
+                  {integrations.map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.name} ({i.provider})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {form.integrationId
+                  ? 'This run will be instructed to use only this source.'
+                  : 'The AI automatically picks the most relevant source per run.'}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1.5">
+                <Bell className="h-3 w-3" />
+                Notification Channel
+              </Label>
+              {notificationConfigs.length > 0 ? (
                 <Select
                   value={form.notificationConfigId || 'none'}
                   onValueChange={(v) => setForm({ ...form, notificationConfigId: v === 'none' ? '' : v })}
@@ -815,8 +917,24 @@ export function SchedulesView() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center justify-between gap-2 rounded-none border border-dashed border-border/70 px-2.5 py-2 text-xs text-muted-foreground">
+                  <span>No channels yet — Telegram, Email &amp; Webhook are supported.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 shrink-0 text-[11px]"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'settings' } }))
+                      window.dispatchEvent(new CustomEvent('settings-tab', { detail: { tab: 'notifications' } }))
+                    }}
+                  >
+                    Add channel
+                  </Button>
+                </div>
+              )}
+            </div>
             <Separator />
             <div className="flex items-center justify-between">
               <Label className="text-xs">Active</Label>

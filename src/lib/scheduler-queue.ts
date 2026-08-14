@@ -28,6 +28,7 @@ export interface ScheduleJobData {
   name: string
   prompt: string
   notificationConfigId: string | null
+  integrationId: string | null
 }
 
 export const scheduleQueue = new Queue<ScheduleJobData>('scheduled-runs', {
@@ -88,6 +89,7 @@ export async function syncSchedule(run: {
   prompt: string
   isActive: boolean
   notificationConfigId: string | null
+  integrationId?: string | null
   timezone?: string | null
 }): Promise<void> {
   const key = REPEAT_KEY(run.id)
@@ -111,6 +113,7 @@ export async function syncSchedule(run: {
       name: run.name,
       prompt: run.prompt,
       notificationConfigId: run.notificationConfigId,
+      integrationId: run.integrationId ?? null,
     },
     {
       repeat: { pattern: run.cronExpr, tz },
@@ -150,6 +153,7 @@ export async function syncAllSchedules(): Promise<void> {
       prompt: true,
       isActive: true,
       notificationConfigId: true,
+      integrationId: true,
       timezone: true,
     },
   })

@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
 
     const schedule = await db.scheduledRun.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, prompt: true, notificationConfigId: true },
+      select: { id: true, name: true, prompt: true, notificationConfigId: true, integrationId: true },
     })
     if (!schedule) {
       return NextResponse.json(
@@ -38,6 +38,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
         name: schedule.name,
         prompt: schedule.prompt,
         notificationConfigId: schedule.notificationConfigId,
+        integrationId: schedule.integrationId,
       },
       { jobId: `manual-${schedule.id}-${Date.now()}` },
     )
