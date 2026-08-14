@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { THEME_INIT_SCRIPT } from "@/lib/themes";
 
 const inter = Inter({
@@ -46,8 +47,10 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrains.variable} antialiased bg-background text-foreground`}
         suppressHydrationWarning
       >
-        {children}
-        <SonnerToaster position="top-right" richColors closeButton />
+        <TooltipProvider delayDuration={300}>
+          {children}
+          <SonnerToaster position="top-right" richColors closeButton />
+        </TooltipProvider>
       </body>
     </html>
   );
