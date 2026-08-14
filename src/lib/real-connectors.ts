@@ -38,16 +38,172 @@ interface DbConfig {
   ssl?: boolean
 }
 
+/**
+ * Parse a libpq-style connection string (postgresql:// / postgres:// / mysql://)
+ * into a DbConfig. Returns null when the input isn't a URL we recognise.
+ *
+ * Managed providers (Supabase/Neon/…) hand users a connection STRING, not
+ * field-by-field credentials. Dissecting it by hand is where most setup
+ * failures come from (wrong port, dropped query params, missed password
+ * escaping) — so we accept the string directly.
+ */
+export function parseConnectionString(raw: string): Partial<DbConfig> | null {
+  const s = raw.trim()
+  if (!/^(postgres(ql)?|mysql(2)?):\/\//i.test(s)) return null
+  try {
+    const u = new URL(s)
+    const params = Object.fromEntries(u.searchParams.entries())
+    const sslmode = (params.sslmode ?? params.ssl_mode ?? '').toLowerCase()
+    const ssl =
+      sslmode === 'require' || sslmode === 'verify-ca' || sslmode === 'verify-full' ||
+      params.ssl === 'true'
+    return {
+      host: u.hostname,
+      port: u.port ? Number(u.port) : undefined,
+      database: decodeURIComponent(u.pathname.replace(/^\//, '')),
+      user: u.username ? decodeURIComponent(u.username) : undefined,
+      password: u.password ? decodeURIComponent(u.password) : undefined,
+      ssl: ssl || undefined,
+      // ?schema=foo (Supabase/Prisma convention) — falls back to ?search_path=
+      schema: params.schema ?? params.search_path ?? undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 export function readDbConfig(c: Record<string, unknown>): DbConfig {
-  return {
-    host: String(c.host ?? c.server ?? 'localhost'),
-    port: Number(c.port ?? 0) || 0,
+  // A full connection string wins — parse it and use it as the base.
+  const connStr = typeof c.connectionString === 'string' ? c.connectionString : undefined
+  const parsed = connStr ? parseConnectionString(connStr) : undefined
+
+  const host =
+    parsed?.host ??
+    (typeof c.host === 'string' && c.host ? c.host : undefined) ??
+    (typeof c.server === 'string' && c.server ? c.server : undefined) ??
+    'localhost'
+
+  const port =
+    parsed?.port ??
+    (Number(c.port) || undefined) ??
+    0
+
+  const database =
+    parsed?.database ??
+    (typeof c.database === 'string' && c.database ? c.database : undefined) ??
+    (typeof c.db === 'string' && c.db ? c.db : undefined) ??
     // database_name is what the create-integration UI/API actually sends.
-    database: String(c.database ?? c.db ?? c.database_name ?? ''),
-    user: String(c.user ?? c.username ?? ''),
-    password: String(c.password ?? ''),
-    schema: c.schema ? String(c.schema) : undefined,
-    ssl: c.ssl === true || c.ssl === 'true',
+    (typeof c.database_name === 'string' && c.database_name ? c.database_name : undefined) ??
+    ''
+
+  const user =
+    parsed?.user ??
+    (typeof c.user === 'string' && c.user ? c.user : undefined) ??
+    (typeof c.username === 'string' && c.username ? c.username : undefined) ??
+    ''
+
+  const password = parsed?.password ?? String(c.password ?? '')
+
+  const schema =
+    parsed?.schema ??
+    (c.schema ? String(c.schema) : undefined)
+
+  const ssl =
+    parsed?.ssl ??
+    (c.ssl === true || c.ssl === 'true' ? true : undefined)
+
+  return { host, port, database, user, password, schema, ssl: ssl ?? false }
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic error mapping — turn opaque driver errors into actionable hints.
+// "Connection failed. Check credentials and network." told users nothing about
+// WHY: SSL mismatch, DNS, IP allow-list, pooler usernames, timeouts all looked
+// identical. These mappers classify the failure so the UI can show a real hint.
+// ---------------------------------------------------------------------------
+
+export type ConnectionFailureReason =
+  | 'auth'
+  | 'ssl'
+  | 'dns'
+  | 'timeout'
+  | 'refused'
+  | 'database_missing'
+  | 'driver_missing'
+  | 'unknown'
+
+export interface DetailedTestResult {
+  ok: boolean
+  reason?: ConnectionFailureReason
+  message: string
+}
+
+/** Classify a raw driver/transport error into a reason + human hint. */
+export function describeConnectionError(e: unknown, providerId?: string): { reason: ConnectionFailureReason; message: string } {
+  const msg = e instanceof Error ? `${e.message}` : String(e)
+  const lower = msg.toLowerCase()
+  const providerLabel = providerId ?? 'database'
+
+  // Driver not installed — loadDriver already wraps this, but double-guard.
+  if (/driver .* is not installed|cannot find module/i.test(msg)) {
+    return {
+      reason: 'driver_missing',
+      message: 'A required database driver is not installed on the server. Ask the operator to install it (see server logs).',
+    }
+  }
+
+  // Authentication failures.
+  if (
+    /password authentication failed|authentication failed|access denied|login failed|28000|28P01|1045 \(28000\)|18456/i.test(msg)
+  ) {
+    const hint = /supabase/i.test(providerLabel)
+      ? 'Authentication failed. Supabase pooler connections need the FULL username (e.g. postgres.project-ref) and the DATABASE password (not the dashboard password).'
+      : 'Authentication failed. Check the username and password.'
+    return { reason: 'auth', message: hint }
+  }
+
+  // TLS/SSL problems.
+  if (
+    /self[- ]signed certificate|certificate has expired|unable to verify|certificate verify failed|ssl|tls|deactivated ssl|sslfactory|the server does not support ssl/i.test(lower)
+  ) {
+    return {
+      reason: 'ssl',
+      message: 'TLS/SSL handshake failed. If the server uses a self-signed or internal certificate, ask the admin to enable the SSL compatibility option (DB_SSL_REJECT_UNAUTHORIZED) or import the CA. Managed databases (Supabase/Neon) REQUIRE SSL.',
+    }
+  }
+
+  // DNS / host resolution.
+  if (/enotfound|getaddrinfo|name or service not known|no such host|eai_again/i.test(lower)) {
+    return {
+      reason: 'dns',
+      message: `Host not found (DNS). Verify the hostname is correct — ${providerLabel} hostnames must match exactly what the provider shows in its connection info.`,
+    }
+  }
+
+  // Firewall / IP not allowed — connection hangs then times out.
+  if (/etimedout|timeout timed out|connection timeout|econnaborted.*timeout/i.test(lower)) {
+    return {
+      reason: 'timeout',
+      message: 'Connection timed out. The host may be unreachable or your server IP is not on the provider allow-list (Supabase/Neon require IP allow-listing). Also check the port.',
+    }
+  }
+
+  // Actively refused — nothing listening / wrong port.
+  if (/econnrefused|connection refused|connect econnrefused/i.test(lower)) {
+    return {
+      reason: 'refused',
+      message: 'Connection refused. Nothing is listening at that host:port — check the port and that the database accepts direct connections.',
+    }
+  }
+
+  // Database does not exist.
+  if (/database .* does not exist|3d000|1049 unknown database|cannot open database/i.test(lower)) {
+    return { reason: 'database_missing', message: 'The database name is wrong or the database does not exist on that server.' }
+  }
+
+  return {
+    reason: 'unknown',
+    message: `Connection failed: ${msg.slice(0, 300)}`,
   }
 }
 
@@ -120,6 +276,39 @@ export async function loadDriver(name: string): Promise<Record<string, unknown>>
 }
 
 // ---------------------------------------------------------------------------
+// Detailed test helper — SELECT 1 with a classified error instead of boolean.
+// ---------------------------------------------------------------------------
+
+/** Anything that can run a one-shot SELECT 1 and be drained afterwards. */
+interface PingablePool {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: (...args: any[]) => Promise<unknown>
+  end?: () => Promise<unknown>
+  close?: () => Promise<unknown>
+}
+
+/** Run SELECT 1 through a freshly built pool, classifying failures. */
+async function detailedPing(
+  buildPool: () => Promise<PingablePool>,
+  providerId?: string,
+): Promise<DetailedTestResult> {
+  let pool: PingablePool | null = null
+  try {
+    pool = await buildPool()
+    await pool.query('SELECT 1')
+    return { ok: true, message: 'Connection successful.' }
+  } catch (e) {
+    const d = describeConnectionError(e, providerId)
+    return { ok: false, reason: d.reason, message: d.message }
+  } finally {
+    // ponytail: fire-and-forget cleanup — ping pools are throwaway.
+    const p = pool
+    if (p?.end) p.end().catch(() => {})
+    else if (p?.close) p.close().catch(() => {})
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Schema assembly (shared by all three connectors)
 // ---------------------------------------------------------------------------
 
@@ -166,6 +355,16 @@ function assembleSchema(cols: RawColumnRow[], tables: RawTableRow[]): ReflectedT
 // ponytail: distinctValues + sampleRow passes mirror SqliteDemoConnector.
 // Non-fatal — errors in enrichment never fail fetchSchema.
 // rowCount guard uses the catalog estimate; LIMIT 21 bounds worst case.
+//
+// BUDGET: on big managed databases (Supabase projects routinely have 100+
+// tables) the old code ran one sequential SELECT DISTINCT per text column plus
+// one sample-row query per table — thousands of round-trips at 50–300ms RTT
+// each. Creation appeared to hang and eventually timed out, which users read
+// as "connection failed". A hard query budget + bounded concurrency keeps
+// first-time reflection fast; ?refresh=1 re-runs it and picks up the rest.
+const ENRICH_QUERY_BUDGET = 150
+const ENRICH_CONCURRENCY = 6
+
 async function enrichSchema(
   tables: ReflectedTable[],
   runQuery: (sql: string) => Promise<QueryRow[]>,
@@ -173,6 +372,12 @@ async function enrichSchema(
   qualify?: (t: string) => string,
 ): Promise<void> {
   const q = qualify ?? ((t: string) => quote(t))
+
+  // Phase 1 — build the full work list, then stop when the budget is spent.
+  interface EnrichJob {
+    run: () => Promise<void>
+  }
+  const jobs: EnrichJob[] = []
   for (const table of tables) {
     const rc = table.rowCount ?? 0
     if (rc <= 0 || rc > 10000) continue
@@ -180,27 +385,46 @@ async function enrichSchema(
       if (col.primaryKey || col.foreignKey) continue
       const t = col.type.toUpperCase()
       if (!t.includes('TEXT') && !t.includes('VARCHAR') && !t.includes('CHAR') && !t.includes('ENUM')) continue
-      try {
-        const rows = await runQuery(
-          `SELECT DISTINCT ${quote(col.name)} AS v FROM ${q(table.tableName)} LIMIT 21`,
-        )
-        if (rows.length <= 20) {
-          col.distinctValues = rows
-            .map((r) => (r.v === null || r.v === undefined ? null : String(r.v)))
-            .filter((v): v is string => v !== null)
+      jobs.push({
+        run: async () => {
+          try {
+            const rows = await runQuery(
+              `SELECT DISTINCT ${quote(col.name)} AS v FROM ${q(table.tableName)} LIMIT 21`,
+            )
+            if (rows.length <= 20) {
+              col.distinctValues = rows
+                .map((r) => (r.v === null || r.v === undefined ? null : String(r.v)))
+                .filter((v): v is string => v !== null)
+            }
+          } catch {
+            // non-fatal — skip column on error
+          }
+        },
+      })
+    }
+    jobs.push({
+      run: async () => {
+        try {
+          const colNames = table.columns.map((c) => quote(c.name)).join(', ')
+          const rows = await runQuery(`SELECT ${colNames} FROM ${q(table.tableName)} LIMIT 1`)
+          if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
+        } catch {
+          // non-fatal — skip sample on error
         }
-      } catch {
-        // non-fatal — skip column on error
-      }
-    }
-    try {
-      const colNames = table.columns.map((c) => quote(c.name)).join(', ')
-      const rows = await runQuery(`SELECT ${colNames} FROM ${q(table.tableName)} LIMIT 1`)
-      if (rows.length > 0) table.sampleRow = normaliseRow(rows[0])
-    } catch {
-      // non-fatal — skip sample on error
-    }
+      },
+    })
   }
+
+  // Phase 2 — run with bounded concurrency under the budget.
+  const queue = jobs.slice(0, ENRICH_QUERY_BUDGET)
+  const workers = Array.from({ length: Math.min(ENRICH_CONCURRENCY, queue.length) }, async () => {
+    while (queue.length) {
+      const job = queue.shift()
+      if (!job) break
+      await job.run()
+    }
+  })
+  await Promise.all(workers)
 }
 
 // ---------------------------------------------------------------------------
@@ -223,12 +447,19 @@ export class PostgresConnector implements BaseDatabaseConnector {
       const c = readDbConfig(this._config)
       const useSsl = resolveUseSsl(this._config, this._providerId)
       // ponytail: TLS verification ON by default; opt-out via DB_SSL_REJECT_UNAUTHORIZED=0 for dev/self-signed.
+      // A stored connectionString flows straight to pg — it carries its own sslmode.
+      const explicitConnStr =
+        typeof this._config.connectionString === 'string' && this._config.connectionString
+          ? this._config.connectionString
+          : undefined
       this._pool = new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
-        host: c.host,
-        port: c.port || 5432,
-        database: c.database,
-        user: c.user,
-        password: c.password,
+        ...(explicitConnStr ? { connectionString: explicitConnStr } : {
+          host: c.host,
+          port: c.port || 5432,
+          database: c.database,
+          user: c.user,
+          password: c.password,
+        }),
         ssl: useSsl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
         query_timeout: QUERY_TIMEOUT_MS,
         connectionTimeoutMillis: QUERY_TIMEOUT_MS,
@@ -249,17 +480,48 @@ export class PostgresConnector implements BaseDatabaseConnector {
     }
   }
 
+  /** SELECT 1 on a FRESH pool, with a classified diagnostic on failure. */
+  async testConnectionDetailed(): Promise<DetailedTestResult> {
+    return detailedPing(async () => {
+      const pg = await loadDriver('pg')
+      const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
+      const explicitConnStr =
+        typeof this._config.connectionString === 'string' && this._config.connectionString
+          ? this._config.connectionString
+          : undefined
+      return new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
+        ...(explicitConnStr ? { connectionString: explicitConnStr } : {
+          host: c.host,
+          port: c.port || 5432,
+          database: c.database,
+          user: c.user,
+          password: c.password,
+        }),
+        ssl: useSsl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined,
+        query_timeout: QUERY_TIMEOUT_MS,
+        connectionTimeoutMillis: QUERY_TIMEOUT_MS,
+        max: 1,
+      }) as unknown as PingablePool
+    }, this._providerId)
+  }
+
   async fetchSchema(): Promise<ReflectedTable[]> {
     const pool = await this.pool()
     const schema = readDbConfig(this._config).schema ?? 'public'
     // ponytail: rowCount from pg_class.reltuples (catalog estimate) — avoids
     // expensive COUNT(*) on large tables. ANALYZE refreshes the estimate.
+    // JOIN ON relname alone was WRONG: multi-schema databases (Supabase ships
+    // auth./storage./extensions…) hold same-named tables across schemas, so
+    // each information_schema row matched EVERY pg_class entry with that name —
+    // duplicated tables and mixed-up counts. Resolve the namespace FIRST, then
+    // match pg_class on (relname, relnamespace) so the join is 1:1.
     const tablesRes = await pool.query(
       `SELECT t.table_name,
               CASE WHEN c.reltuples IS NULL OR c.reltuples < 0 THEN 0 ELSE c.reltuples END AS row_count
        FROM information_schema.tables t
-       LEFT JOIN pg_class c ON c.relname = t.table_name
-       LEFT JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema
+       LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
+       LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
        WHERE t.table_schema = $1 AND t.table_type = 'BASE TABLE'`,
       [schema],
     )
@@ -362,6 +624,26 @@ export class MysqlConnector implements BaseDatabaseConnector {
     } catch {
       return false
     }
+  }
+
+  /** SELECT 1 on a FRESH pool, with a classified diagnostic on failure. */
+  async testConnectionDetailed(): Promise<DetailedTestResult> {
+    return detailedPing(async () => {
+      const mysql = await loadDriver('mysql2/promise')
+      const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
+      return (mysql.createPool as (cfg: Record<string, unknown>) => unknown)({
+        host: c.host,
+        port: c.port || 3306,
+        database: c.database,
+        user: c.user,
+        password: c.password,
+        ssl: useSsl ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== '0' } : undefined, // nosemgrep — verification enabled by default, opt-out only for dev
+        connectionLimit: 1,
+        connectTimeout: QUERY_TIMEOUT_MS,
+        enableKeepAlive: true,
+      }) as unknown as PingablePool
+    }, this._providerId)
   }
 
   async fetchSchema(): Promise<ReflectedTable[]> {
@@ -472,6 +754,40 @@ export class MssqlConnector implements BaseDatabaseConnector {
       return true
     } catch {
       return false
+    }
+  }
+
+  /** SELECT 1 on a FRESH pool, with a classified diagnostic on failure. */
+  async testConnectionDetailed(): Promise<DetailedTestResult> {
+    try {
+      const mssql = await loadDriver('mssql')
+      const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
+      const inst = new (mssql.ConnectionPool as unknown as new (cfg: Record<string, unknown>) => {
+        connect(): Promise<unknown>
+        request(): { query: (sql: string) => Promise<unknown> }
+        close(): Promise<unknown>
+      })({
+        server: c.host,
+        port: c.port || 1433,
+        database: c.database,
+        user: c.user,
+        password: c.password,
+        connectionTimeout: QUERY_TIMEOUT_MS,
+        requestTimeout: QUERY_TIMEOUT_MS,
+        options: { encrypt: useSsl, trustServerCertificate: !useSsl },
+        pool: { max: 1, idleTimeoutMillis: 5_000 },
+      })
+      await inst.connect()
+      try {
+        await inst.request().query('SELECT 1')
+        return { ok: true, message: 'Connection successful.' }
+      } finally {
+        inst.close().catch(() => {})
+      }
+    } catch (e) {
+      const d = describeConnectionError(e, this._providerId)
+      return { ok: false, reason: d.reason, message: d.message }
     }
   }
 
@@ -588,6 +904,39 @@ export class ClickHouseConnector implements BaseDatabaseConnector {
       return text.includes('"ok"')
     } catch {
       return false
+    }
+  }
+
+  /** SELECT 1 on a FRESH client, with a classified diagnostic on failure. */
+  async testConnectionDetailed(): Promise<DetailedTestResult> {
+    try {
+      const ch = await loadDriver('@clickhouse/client')
+      const c = readDbConfig(this._config)
+      const useSsl = resolveUseSsl(this._config, this._providerId)
+      const createClient = ch.createClient as (opts: Record<string, unknown>) => {
+        query: (q: { query: string; format?: string }) => Promise<{ text: () => Promise<string> }>
+        close: () => Promise<void>
+      }
+      const cl = createClient({
+        url: `${useSsl ? 'https' : 'http'}://${c.host}:${c.port || 8123}`,
+        database: c.database || 'default',
+        username: c.user,
+        password: c.password,
+        request_timeout: QUERY_TIMEOUT_MS,
+      })
+      try {
+        const rs = await cl.query({ query: 'SELECT 1 AS ok', format: 'JSONEachRow' })
+        const text = await rs.text()
+        if (!text.includes('"ok"')) {
+          return { ok: false, reason: 'unknown', message: 'Server responded but not with a valid result.' }
+        }
+        return { ok: true, message: 'Connection successful.' }
+      } finally {
+        cl.close().catch(() => {})
+      }
+    } catch (e) {
+      const d = describeConnectionError(e, this._providerId)
+      return { ok: false, reason: d.reason, message: d.message }
     }
   }
 

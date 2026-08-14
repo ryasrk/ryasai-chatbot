@@ -94,6 +94,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       columns: safeParseColumns(s.columns),
       rowCount: s.rowCount ?? undefined,
       sampleRow: safeParseSampleRow(s.sampleRow),
+      description: s.description,
     }))
     const schemaDescription = describeSchema(reflectedTables)
 

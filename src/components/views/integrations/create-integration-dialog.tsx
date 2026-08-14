@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Loader2, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,6 +25,28 @@ import { extractError } from '@/lib/extract-error'
 import { DB_PROVIDER_PRESETS, getDbProviderPreset } from '@/lib/db-provider-presets'
 import { CreateFormState, EMPTY_FORM } from './types'
 
+/**
+ * Parse a postgresql:// or mysql:// URL client-side to prefill the form.
+ * Mirrors server-side parseConnectionString — kept deliberately small; the
+ * server re-parses and is authoritative.
+ */
+function parseConnString(raw: string): Partial<CreateFormState> | null {
+  const s = raw.trim()
+  if (!/^(postgres(ql)?|mysql(2)?):\/\//i.test(s)) return null
+  try {
+    const u = new URL(s)
+    return {
+      host: u.hostname,
+      port: u.port || '',
+      username: u.username ? decodeURIComponent(u.username) : '',
+      password: u.password ? decodeURIComponent(u.password) : '',
+      database_name: decodeURIComponent(u.pathname.replace(/^\//, '')),
+    }
+  } catch {
+    return null
+  }
+}
+
 export function CreateIntegrationDialog({
   open,
   onOpenChange,
@@ -37,8 +59,11 @@ export function CreateIntegrationDialog({
   const [form, setForm] = useState<CreateFormState>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [connString, setConnString] = useState('')
 
   const preset = getDbProviderPreset(form.provider)
+  const isPostgresFamily = preset?.family === 'POSTGRESQL'
+  const isMysqlFamily = preset?.family === 'MYSQL'
 
   const update = (k: keyof CreateFormState, v: string) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -50,6 +75,23 @@ export function CreateIntegrationDialog({
       provider: providerId,
       port: p && p.defaultPort > 0 ? String(p.defaultPort) : f.port,
     }))
+  }
+
+  const handleApplyConnString = () => {
+    const parsed = parseConnString(connString)
+    if (!parsed) {
+      toast.error('Not a valid postgresql:// or mysql:// connection string.')
+      return
+    }
+    setForm((f) => ({
+      ...f,
+      host: parsed.host ?? f.host,
+      port: parsed.port ?? f.port,
+      username: parsed.username ?? f.username,
+      password: parsed.password ?? f.password,
+      database_name: parsed.database_name ?? f.database_name,
+    }))
+    toast.success('Connection string applied — review the fields before saving.')
   }
 
   const validate = (): boolean => {
@@ -69,7 +111,7 @@ export function CreateIntegrationDialog({
     if (!validate()) return
     setSubmitting(true)
     try {
-      let config: Record<string, unknown> = {
+      const config: Record<string, unknown> = {
         host: form.host.trim(),
           port: Number(form.port) || 0,
           username: form.username.trim(),
@@ -91,10 +133,13 @@ export function CreateIntegrationDialog({
       if (res.ok && json.ok) {
         toast.success('Integration created successfully & schema indexed.')
         setForm(EMPTY_FORM)
+        setConnString('')
         setErrors({})
         onCreated()
       } else {
-        toast.error(extractError(json.error, 'Failed to create integration.'))
+        toast.error(extractError(json.error, 'Failed to create integration.'), {
+          duration: 10000,
+        })
       }
     } catch (e) {
       toast.error('Network error while creating integration.')
@@ -103,6 +148,11 @@ export function CreateIntegrationDialog({
       setSubmitting(false)
     }
   }
+
+  const defaultPort = useMemo(
+    () => (preset && preset.defaultPort > 0 ? String(preset.defaultPort) : '5432'),
+    [preset],
+  )
 
   return (
     <Dialog
@@ -170,6 +220,42 @@ export function CreateIntegrationDialog({
             </p>
           )}
 
+          {/* Connection string quick-fill — managed providers hand users a URL */}
+          {(isPostgresFamily || isMysqlFamily) && (
+            <div className="space-y-1.5">
+              <Label htmlFor="int-connstring" className="flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5" />
+                Connection string (optional)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="int-connstring"
+                  value={connString}
+                  onChange={(e) => setConnString(e.target.value)}
+                  placeholder={
+                    isMysqlFamily
+                      ? 'mysql://user:pass@host:3306/db'
+                      : 'postgresql://user:pass@host:5432/db'
+                  }
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleApplyConnString}
+                  disabled={!connString.trim()}
+                  className="shrink-0"
+                >
+                  Apply
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Paste the provider's connection string to auto-fill the fields below. Fields stay editable.
+              </p>
+            </div>
+          )}
+
           {/* Config fields — connection string providers */}
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
               <div className="grid grid-cols-2 gap-3">
@@ -192,7 +278,7 @@ export function CreateIntegrationDialog({
                     inputMode="numeric"
                     value={form.port}
                     onChange={(e) => update('port', e.target.value)}
-                    placeholder={preset ? String(preset.defaultPort) : '5432'}
+                    placeholder={defaultPort}
                   />
                   {errors.port && (
                     <p className="text-xs text-destructive">{errors.port}</p>

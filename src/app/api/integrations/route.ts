@@ -112,7 +112,9 @@ export async function POST(req: NextRequest) {
     }
     const { name, type, provider, config } = validation
 
-    // Test connection BEFORE persisting — no orphan rows on failure
+    // Test connection BEFORE persisting — no orphan rows on failure.
+    // ponytail: use the DIAGNOSTIC test — a wrong password vs a TLS mismatch
+    // vs an un-allow-listed IP all used to collapse into one opaque string.
     const tempId = `temp_${Date.now()}`
     let reflectedTables: ReflectedTable[] = []
     try {
@@ -121,11 +123,19 @@ export async function POST(req: NextRequest) {
         provider,
         config as Record<string, unknown>,
       )
-      const testOk = await connector.testConnection()
-      if (!testOk) {
+      const detailed = connector.testConnectionDetailed
+        ? await connector.testConnectionDetailed()
+        : { ok: await connector.testConnection(), message: 'Connection failed. Check credentials and network.' } as const
+      if (!detailed.ok) {
         connectorRegistry.drop(tempId)
+        // Log server-side with full detail; return the classified hint to the client.
+        console.error(`[integrations] connection failed (${provider}): ${'reason' in detailed ? detailed.reason : 'unknown'} — ${detailed.message}`)
         return NextResponse.json(
-          { ok: false, error: 'Connection failed. Check credentials and network.' },
+          {
+            ok: false,
+            error: detailed.message,
+            reason: 'reason' in detailed ? detailed.reason : undefined,
+          },
           { status: 400 },
         )
       }

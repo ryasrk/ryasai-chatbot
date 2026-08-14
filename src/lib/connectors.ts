@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
 import { getDbProtocolFamily } from '@/lib/db-provider-presets'
 import { PostgresConnector, MysqlConnector, MssqlConnector, ClickHouseConnector } from './real-connectors'
+import type { DetailedTestResult } from './real-connectors'
 
 const isPostgres = () => getDbProvider() === 'postgresql'
 
@@ -24,6 +25,8 @@ export interface ReflectedTable {
   columns: ReflectedColumn[]
   rowCount?: number
   sampleRow?: QueryRow
+  /** LLM-generated business description (schema-enrichment). Rendered into the SQL prompt. */
+  description?: string | null
 }
 export interface QueryRow {
   [column: string]: unknown
@@ -37,6 +40,13 @@ export interface QueryResult {
 export interface BaseDatabaseConnector {
   readonly provider: string
   testConnection(): Promise<boolean>
+  /**
+   * SELECT 1 with a classified diagnostic on failure — surfaces WHY a
+   * connection failed (SSL / auth / DNS / timeout / refused) instead of an
+   * opaque boolean. Falls back to the boolean path for connectors that
+   * haven't implemented it.
+   */
+  testConnectionDetailed?(): Promise<DetailedTestResult>
   fetchSchema(): Promise<ReflectedTable[]>
   executeQuery(sql: string): Promise<QueryResult>
   // ponytail: optional — only real connectors with pools implement this.
@@ -165,7 +175,13 @@ export function describeSchema(tables: ReflectedTable[]): string {
     .map((t) => {
       const pkCols = t.columns.filter((c) => c.primaryKey).map((c) => c.name)
       const pkLabel = pkCols.length > 0 ? `  PK: ${pkCols.join(', ')}` : ''
-      const header = `TABLE ${t.tableName} (${t.rowCount ?? '?'} rows)${pkLabel}`
+      // ponytail: the LLM-generated business description (schema-enrichment)
+      // used to be dropped here — it only ever reached the intent router, so
+      // the Text-to-SQL model saw bare column lists and guessed business
+      // meaning from names alone. One sentence per table is the highest-value
+      // token in this prompt; render it first.
+      const desc = t.description ? `  -- ${t.description}` : ''
+      const header = `TABLE ${t.tableName} (${t.rowCount ?? '?'} rows)${pkLabel}${desc}`
       const cols = t.columns
         .map((c) => {
           let line = `  ${c.name} ${c.type}`
