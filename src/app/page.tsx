@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode, Fragment } from 'react'
 import dynamic from 'next/dynamic'
 import {
   LayoutDashboard,
@@ -19,6 +19,12 @@ import {
   RefreshCw,
   Layers,
   Hash,
+  ChevronLeft,
+  ChevronRight,
+  UserCircle,
+  Settings as SettingsIcon,
+  LogOut,
+  HelpCircle,
 } from 'lucide-react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
@@ -42,6 +48,15 @@ import {
   resolveViewFromSearch,
   type ViewKey,
 } from '@/lib/view-routing'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 // ponytail: every view except the default one is code-split. Statically
 // importing all 12 put recharts, react-markdown and react-syntax-highlighter
@@ -101,19 +116,19 @@ const SetupView = dynamic(
   { ssr: false, loading: () => <Delayed><LoadingState /></Delayed> },
 )
 
-const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, desc: 'Operational overview' },
-  { key: 'chat', label: 'Chat', icon: MessageSquare, desc: 'Internal assistant' },
-  { key: 'agentic', label: 'Agentic', icon: Bot, desc: 'AI operations console' },
-  { key: 'integrations', label: 'Data Sources', icon: Database, desc: 'Databases and REST APIs' },
-  { key: 'knowledge', label: 'Knowledge', icon: FileText, desc: 'Documents and RAG' },
-  { key: 'ai-config', label: 'AI Configuration', icon: Brain, desc: 'Provider, model, embedding' },
-  { key: 'prompt-tools', label: 'Prompt & Tools', icon: Wrench, desc: 'System prompt and routing' },
-  { key: 'plugins', label: 'Tools', icon: Puzzle, desc: 'MCP servers and custom tools' },
-  { key: 'schedules', label: 'Schedules', icon: Clock, desc: 'Automated scheduled runs' },
-  { key: 'security', label: 'Monitoring', icon: ShieldCheck, desc: 'Audit and guardrails' },
-  { key: 'integration-api', label: 'Integration API', icon: Plug, desc: 'API keys and request logs' },
-  { key: 'settings', label: 'Settings', icon: Settings, desc: 'Admin and configuration' },
+const NAV: { key: ViewKey; label: string; icon: typeof Brain; desc: string; shortcut: number | null }[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, desc: 'Operational overview', shortcut: 1 },
+  { key: 'chat', label: 'Chat', icon: MessageSquare, desc: 'Internal assistant', shortcut: 2 },
+  { key: 'agentic', label: 'Agentic', icon: Bot, desc: 'AI operations console', shortcut: 3 },
+  { key: 'integrations', label: 'Data Sources', icon: Database, desc: 'Databases and REST APIs', shortcut: 4 },
+  { key: 'knowledge', label: 'Knowledge', icon: FileText, desc: 'Documents and RAG', shortcut: null },
+  { key: 'ai-config', label: 'AI Configuration', icon: Brain, desc: 'Provider, model, embedding', shortcut: null },
+  { key: 'prompt-tools', label: 'Prompt & Tools', icon: Wrench, desc: 'System prompt and routing', shortcut: null },
+  { key: 'plugins', label: 'Tools', icon: Puzzle, desc: 'MCP servers and custom tools', shortcut: null },
+  { key: 'schedules', label: 'Schedules', icon: Clock, desc: 'Automated scheduled runs', shortcut: null },
+  { key: 'security', label: 'Monitoring', icon: ShieldCheck, desc: 'Audit and guardrails', shortcut: null },
+  { key: 'integration-api', label: 'Integration API', icon: Plug, desc: 'API keys and request logs', shortcut: null },
+  { key: 'settings', label: 'Settings', icon: Settings, desc: 'Admin and configuration', shortcut: null },
 ]
 
 function renderView(view: ViewKey) {
@@ -145,9 +160,13 @@ function renderView(view: ViewKey) {
   }
 }
 
+const SIDEBAR_WIDTH_EXPANDED = 260
+const SIDEBAR_WIDTH_COLLAPSED = 72
+
 export default function Home() {
   const [view, setViewState] = useState<ViewKey>('dashboard')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { user, orgName, loading, unauthorized, licenseError, refresh } = useActiveUser()
   const reduceMotion = useReducedMotion()
 
@@ -171,12 +190,37 @@ export default function Home() {
   const [licenseRetryFailed, setLicenseRetryFailed] = useState(false)
   const [forceSignup, setForceSignup] = useState(false)
 
+  const sidebarRef = useRef<HTMLDivElement>(null)
+
   const setView = useCallback((next: ViewKey) => {
     setViewState(next)
     const url = new URL(window.location.href)
     url.searchParams.set('view', next)
     window.history.replaceState(null, '', url)
   }, [])
+
+  // Handle keyboard shortcuts (Cmd/Ctrl + 1-4)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only trap when on desktop and sidebar is visible
+      if (window.innerWidth < 768) return
+      
+      // Check for Cmd/Ctrl + number
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        const num = parseInt(e.key, 10)
+        if (!isNaN(num) && num >= 1 && num <= 9) {
+          const navItem = NAV.find(item => item.shortcut === num)
+          if (navItem) {
+            e.preventDefault()
+            setView(navItem.key)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [setView])
 
   // Real license revalidation: hit POST /api/license/retry (calls the
   // License-Validator service, updates org.licenseStatus in DB), then refresh
@@ -243,6 +287,18 @@ export default function Home() {
       cancelled = true
     }
   }, [setupRefreshKey])
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(prev => !prev)
+  }, [])
+
+  // ponytail: RACE FIX — /api/me typically resolves before /api/setup/status,
+  // so the `!loading && unauthorized` branch below used to mount LoginView in
+  // LOGIN mode first; when setup-status then arrived with setupCompleted:false,
+  // re-rendering with defaultMode="signup" did NOT remount the component, so
+  // React kept the stale `mode` state and a brand-new visitor saw "Sign In"
+  // with no account in the DB. Gate every render on setup status being known.
+  if (setup === null) return null
 
   if (setup && !setup.setupCompleted) {
     if (!setup.hasAdmin) {
@@ -321,21 +377,75 @@ export default function Home() {
     )
   }
 
+  const sidebarWidth = sidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED
+
   return (
     <>
       <div className="min-h-screen flex flex-col bg-muted/25" suppressHydrationWarning>
-        <Topbar user={user} orgName={orgName} loading={loading} onMenuClick={() => setMobileOpen((v) => !v)} />
+        <Topbar 
+          user={user} 
+          orgName={orgName} 
+          loading={loading} 
+          onMenuClick={() => setMobileOpen((v) => !v)} 
+        />
 
         <div className="flex flex-1 w-full" suppressHydrationWarning>
-          <aside
+          {/* Sidebar */}
+          <motion.div
+            ref={sidebarRef}
+            initial={false}
+            animate={{ width: sidebarWidth }}
+            transition={{ 
+              duration: reduceMotion ? 0 : 0.3,
+              ease: [0.23, 1, 0.32, 1] 
+            }}
+            className="hidden md:flex shrink-0 flex-col border-r bg-background sticky top-[57px] h-[calc(100vh-57px)] overflow-hidden"
             suppressHydrationWarning
-            className={cn(
-              'hidden md:flex md:w-52 lg:w-60 shrink-0 flex-col border-r bg-background',
-              'sticky top-[57px] h-[calc(100vh-57px)]',
-            )}
           >
-            <SidebarContent view={view} setView={setView} role={user?.role} />
-          </aside>
+            {/* Sidebar Header with Collapse Toggle */}
+            <div className="flex items-center justify-between px-3 py-2 border-b">
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleSidebar}
+                    className="h-8 w-8 p-0"
+                    title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  >
+                    {sidebarCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronLeft className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" align="start">
+                  <p>{sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</p>
+                </TooltipContent>
+              </Tooltip>
+              
+              {!sidebarCollapsed && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <Badge variant="outline" className="text-xs">
+                    Organization
+                  </Badge>
+                </motion.div>
+              )}
+            </div>
+            
+            <SidebarContent 
+              view={view} 
+              setView={setView} 
+              role={user?.role}
+              collapsed={sidebarCollapsed}
+            />
+          </motion.div>
 
           <AnimatePresence>
             {mobileOpen && (
@@ -371,6 +481,7 @@ export default function Home() {
                       setMobileOpen(false)
                     }}
                     role={user?.role}
+                    collapsed={false}
                   />
                 </motion.aside>
               </div>
@@ -423,46 +534,109 @@ export default function Home() {
   )
 }
 
+interface SidebarContentProps {
+  view: ViewKey
+  setView: (v: ViewKey) => void
+  role?: string
+  collapsed?: boolean
+}
+
 function SidebarContent({
   view,
   setView,
   role,
-}: {
-  view: ViewKey
-  setView: (v: ViewKey) => void
-  role?: string
-}) {
+  collapsed = false,
+}: SidebarContentProps) {
+  const navItems = NAV.filter((item) => !(item.key === 'agentic' && role === 'viewer'))
+
   return (
     <div className="flex flex-col h-full">
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {NAV.filter((item) => !(item.key === 'agentic' && role === 'viewer')).map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon
           const active = view === item.key
+          
+          if (collapsed) {
+            /* Collapsed state - icon only with tooltip */
+            return (
+              <Tooltip key={item.key} delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setView(item.key)}
+                    className={cn(
+                      'relative w-full flex items-center justify-center rounded-md px-2.5 py-2 text-left transition-colors group',
+                      active ? 'bg-primary/10' : 'hover:bg-muted',
+                    )}
+                    aria-label={item.label}
+                    title={undefined} // Tooltip handles the title
+                  >
+                    {active && (
+                      <motion.div
+                        layoutId="nav-active-pill-collapsed"
+                        className="absolute left-0 right-0 top-1/2 h-6 w-1 rounded-full bg-primary"
+                        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                        style={{ zIndex: -1 }}
+                      />
+                    )}
+                    <Icon
+                      className={cn(
+                        'h-5 w-5 shrink-0 relative',
+                        active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                      )}
+                    />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" align="center" className="z-50">
+                  <div className="flex flex-col">
+                    <span className="font-medium">{item.label}</span>
+                    <span className="text-xs text-muted-foreground">{item.desc}</span>
+                    {item.shortcut && (
+                      <span className="mt-1 text-[10px] text-muted-foreground">
+                        ⌘{item.shortcut}
+                      </span>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )
+          }
+          
+          /* Expanded state - full navigation item */
           return (
-            <button
-              key={item.key}
-              onClick={() => setView(item.key)}
-              className={cn(
-                'relative w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
-                active ? 'text-primary-foreground' : 'hover:bg-muted text-foreground',
-              )}
-            >
-              {active && (
-                <motion.div
-                  layoutId="nav-active-pill"
-                  className="absolute inset-0 rounded-md bg-primary"
-                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                  style={{ zIndex: -1 }}
-                />
-              )}
-              <Icon
-                className={cn(
-                  'h-4 w-4 shrink-0 relative',
-                  active ? '' : 'text-muted-foreground',
-                )}
-              />
-              <span className="text-xs font-medium truncate relative">{item.label}</span>
-            </button>
+            <Tooltip key={item.key} delayDuration={300}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setView(item.key)}
+                  className={cn(
+                    'relative w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+                    active ? 'text-primary-foreground' : 'hover:bg-muted text-foreground',
+                  )}
+                  aria-label={item.label}
+                >
+                  {active && (
+                    <motion.div
+                      layoutId="nav-active-pill-expanded"
+                      className="absolute inset-0 rounded-md bg-primary"
+                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                      style={{ zIndex: -1 }}
+                    />
+                  )}
+                  <Icon
+                    className={cn(
+                      'h-5 w-5 shrink-0 relative z-10',
+                      active ? '' : 'text-muted-foreground',
+                    )}
+                  />
+                  <span className="text-sm font-medium truncate relative z-10">{item.label}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-[200px]">
+                <div className="flex flex-col">
+                  <span className="font-medium">{item.label}</span>
+                  <span className="text-xs text-muted-foreground mt-1">{item.desc}</span>
+                </div>
+              </TooltipContent>
+            </Tooltip>
           )
         })}
       </nav>
@@ -476,8 +650,8 @@ function ViewHeader({ view, action }: { view: ViewKey; action?: ReactNode }) {
   const Icon = item.icon
   return (
     <div className="flex items-center justify-between gap-4">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+      <div className="flex items-center gap-3 min-w-0">
+        <Icon className="h-5 w-5 text-muted-foreground shrink-0" />
         <div className="min-w-0">
           <h1 className="text-sm font-semibold tracking-tight">{item.label}</h1>
           <p className="text-xs text-muted-foreground">{item.desc}</p>
@@ -497,11 +671,11 @@ function renderHeaderAction(view: ViewKey): ReactNode {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7"
+          className="h-8 w-8"
           title="Reload"
           onClick={() => dispatch('refresh')}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="h-4 w-4" />
         </Button>
       )
     case 'knowledge':
@@ -510,20 +684,20 @@ function renderHeaderAction(view: ViewKey): ReactNode {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-8 w-8"
             title="Rebuild Embeddings"
             onClick={() => dispatch('rebuild-embeddings')}
           >
-            <Layers className="h-3.5 w-3.5" />
+            <Layers className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-8 w-8"
             title="Rebuild BM25"
             onClick={() => dispatch('rebuild-bm25')}
           >
-            <Hash className="h-3.5 w-3.5" />
+            <Hash className="h-4 w-4" />
           </Button>
         </div>
       )

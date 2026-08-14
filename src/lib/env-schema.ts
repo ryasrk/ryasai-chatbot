@@ -20,7 +20,7 @@ const EnvSchema = z.object({
 
   NODE_ENV: z.enum(['development', 'test', 'production', 'test-e2e']).optional(),
 
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required. Set to file:./prisma/dev.db for SQLite.').optional(),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required — a postgresql:// URL (pgvector).').optional(),
 
   AUTH_DEMO_FALLBACK: z.enum(['true', 'false']).optional(),
 
@@ -77,6 +77,15 @@ const EnvSchema = z.object({
   DEFAULT_API_RATE_PER_MINUTE: z.coerce.number().int().min(0).optional(),
   DEFAULT_API_DAILY_LIMIT: z.coerce.number().int().min(0).optional(),
   DB_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).optional(),
+
+  // ponytail: SSRF escape hatch for tests. Refused outright in production —
+  // combined with NODE_ENV=production this is always a misconfiguration.
+  LLM_ALLOW_BLOCKED_HOSTS: z
+    .enum(['true', 'false'])
+    .optional()
+    .refine((v) => v !== 'true' || process.env.NODE_ENV !== 'production', {
+      message: 'LLM_ALLOW_BLOCKED_HOSTS=true is not allowed in production.',
+    }),
 })
 
 export type EnvSchema = z.infer<typeof EnvSchema>

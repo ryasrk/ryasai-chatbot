@@ -41,6 +41,11 @@ export function normalizeBaseUrl(raw: string): string {
 
 export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (blockedHostAllowlistEnabled()) {
+    // E2E/test only: the mock LLM + license validator run on localhost. This
+    // flag is refused in production via env-schema validation.
+    return false
+  }
   if (h === 'localhost') return true
   if (h === '::1' || h === '::') return true
   // Cloud metadata endpoints
@@ -57,6 +62,15 @@ export function isBlockedHost(hostname: string): boolean {
   if (/^fd[0-9a-f]/.test(h)) return true
   if (/^fe[89ab][0-9a-f]/.test(h)) return true
   return false
+}
+
+/**
+ * Test escape hatch for the SSRF blocklist. Reads env lazily so tests can set
+ * it after import. NEVER enable in production — env-schema rejects the
+ * combination explicitly.
+ */
+function blockedHostAllowlistEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.LLM_ALLOW_BLOCKED_HOSTS === 'true'
 }
 
 /**
