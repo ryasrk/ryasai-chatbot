@@ -1,31 +1,23 @@
 /**
- * E2E database seeder.
+ * E2E database seeder — PostgreSQL.
  *
- * Deletes any previous e2e DB, runs prisma db push against a fresh file, then
- * applies the FTS5 virtual table SQL. Does NOT create any rows — the setup
- * wizard spec is responsible for creating the admin on a truly fresh DB.
+ * Uses the dedicated e2e database (E2E_DATABASE_URL, default ryasai_e2e on
+ * localhost). Schema is Postgres-only now, so the old SQLite file flow is gone.
+ * Does NOT create rows — the setup-wizard spec creates the admin on a fresh DB.
  */
 import { $ } from 'bun'
-import { resolve } from 'node:path'
 
-// Use an ABSOLUTE path so that Prisma (which resolves relative to schema.prisma)
-// and sqlite3 (which resolves relative to cwd) operate on the SAME file.
-const E2E_DB_PATH = resolve(process.cwd(), 'db/e2e.db')
-const E2E_DB = `file:${E2E_DB_PATH}`
+const E2E_DB = process.env.E2E_DATABASE_URL ?? 'postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e'
 
-console.log('[e2e-seed] Resetting e2e database…', E2E_DB_PATH)
-await $`rm -f ${E2E_DB_PATH} ${E2E_DB_PATH}-journal`
+console.log('[e2e-seed] Resetting e2e database…', E2E_DB)
 
-// Also clean up any stale DB created by previous relative-path runs.
-await $`rm -f ${resolve(process.cwd(), 'prisma/db/e2e.db')}`
-await $`rm -f ${resolve(process.cwd(), 'prisma/db/e2e.db-journal')}`
+// Drop & recreate — a schema reset must be total between runs.
+await $`env DATABASE_URL=${E2E_DB} bunx prisma db push --accept-data-loss --skip-generate`
+  .quiet()
 
-console.log('[e2e-seed] Running prisma db push…')
-await $`env DATABASE_URL=${E2E_DB} bunx prisma db push --skip-generate`
+// db push only guarantees SCHEMA, not emptiness — an unchanged schema leaves
+// rows from the previous run alive, which made the setup-wizard spec skip
+// signup (hasAdmin=true → Sign In) on every run after the first.
+await $`env DATABASE_URL=${E2E_DB} bun run scripts/e2e-truncate.ts`.quiet()
 
-console.log('[e2e-seed] Applying FTS5 SQL…')
-await $`sqlite3 ${E2E_DB_PATH} < prisma/rag-fts.sql`
-
-console.log('[e2e-seed] ✅ e2e db ready')
-
-console.log('[e2e-seed] ✅ e2e db ready')
+console.log('[e2e-seed] ✅ e2e db ready (postgres, emptied)')

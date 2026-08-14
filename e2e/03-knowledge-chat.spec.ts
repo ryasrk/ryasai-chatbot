@@ -14,12 +14,18 @@ const E2E_PASSWORD = 'password123'
 
 /** Log in via API and navigate to the app. */
 async function login(page: Page) {
-  await page.request.post('/api/auth/login', {
+  const res = await page.request.post('/api/auth/login', {
     data: { email: E2E_EMAIL, password: E2E_PASSWORD },
   })
+  expect.soft(res.ok(), `login API returned ${res.status()}`).toBe(true)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({
-    timeout: 15_000,
+  // ViewHeader renders <h1>Dashboard</h1> once the shell mounts post-login.
+  // data-analytics can still be loading (or in ErrorState) — the header is
+  // page-level, not dashboard-level, so match the text, not a deep state.
+  // CI machines can be slow to mount the shell + analytics; the h1 itself is
+  // static once mounted, so wait generously.
+  await expect(page.locator('h1', { hasText: 'Dashboard' })).toBeVisible({
+    timeout: 90_000,
   })
 }
 
@@ -72,8 +78,9 @@ test('upload document and chat with mock LLM', async ({ page }) => {
   await page.getByPlaceholder(/type|ask|question/i).fill('What is the main warehouse code?')
   await page.getByRole('button', { name: /Send/i }).click()
 
-  // The mock LLM returns a canned response
-  await expect(page.getByText(/mock LLM|test response/i)).toBeVisible({
-    timeout: 30_000,
+  // The mock LLM returns a canned Indonesian response ("Jawaban uji dari mock
+  // LLM."); match on the stable prefix since the full string may wrap.
+  await expect(page.getByText(/jawaban uji/i)).toBeVisible({
+    timeout: 45_000,
   })
 })

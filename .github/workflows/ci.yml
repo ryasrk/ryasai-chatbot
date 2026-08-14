@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint (errors only — pre-existing warnings are tracked separately)
+        run: bun run lint
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      # Unit suite needs no database: scripts/test.ts injects a fallback
+      # ENCRYPTION_SECRET_KEY and runs each file in its own bun process.
+      - name: Unit tests
+        run: bun run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: lint-typecheck-test
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ryasai
+          POSTGRES_PASSWORD: ryasai_dev
+          POSTGRES_DB: ryasai_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ryasai"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      E2E_DATABASE_URL: postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e
+      ENCRYPTION_SECRET_KEY: cca10b7d1b0e1d1a2f99a3f4c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium --with-deps
+
+      # The app build itself is validated by build-images.yml; this job proves
+      # the e2e DB + mock stack works from a clean checkout.
+      - name: Run e2e suite
+        run: bun run e2e
+
+      - name: Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
