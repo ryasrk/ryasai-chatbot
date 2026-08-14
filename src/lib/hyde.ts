@@ -32,42 +32,53 @@ export async function generateHypotheticalDocument(query: string): Promise<strin
   }
 }
 
-const COMPLEX_RE = /\b(and|vs|versus)\b/i
+// ponytail: bilingual comparison markers. The old regexes were English-only
+// ("and|vs|compared to|difference between") while the product's eval set and
+// users are Indonesian — "selisih pendapatan Q1 dan Q2" never decomposed.
+// Order matters in DIFF_PATTERNS: longer phrases first so "perbedaan antara"
+// wins over a bare conjunction.
+const DIFF_PATTERNS: RegExp[] = [
+  /difference between (.+?) and (.+)/i,
+  /perbedaan (?:antara |dari )?(.+?) (?:dengan|dan|terhadap) (.+)/i,
+  /selisih (.+?) (?:dengan|dan|terhadap) (.+)/i,
+  /(.+?) compared to (.+)/i,
+  /(.+?) dibanding(?:kan)? (?:dengan )?(.+)/i,
+]
+
+/** Conjunctions a clause split may cut through (bilingual). */
+const CLAUSE_SPLIT_RE = /\s+(?:and|dan|serta|vs\.?|versus)\s+/i
 
 export function isComplexQuery(query: string): boolean {
-  const lower = query.toLowerCase()
-  if (/\bcompared to\b/.test(lower)) return true
-  if (/difference between/.test(lower)) return true
-  return COMPLEX_RE.test(query)
+  if (DIFF_PATTERNS.some((re) => re.test(query))) return true
+  return CLAUSE_SPLIT_RE.test(query)
 }
 
 export function decomposeQuery(query: string): string[] {
   if (!isComplexQuery(query)) return [query]
 
-  const diffMatch = query.match(/difference between (.+?) and (.+)/i)
-  if (diffMatch) return [diffMatch[1].trim(), diffMatch[2].trim()].filter((s) => s.length > 2)
-
-  const cmpMatch = query.match(/(.+?) compared to (.+)/i)
-  if (cmpMatch) return [cmpMatch[1].trim(), cmpMatch[2].trim()].filter((s) => s.length > 2)
-
-  if (/\band\b/i.test(query)) {
-    const parts = query.split(/\s+and\s+/i).map((p) => p.trim())
-    // Every part must be a clause, not a bare word. Splitting on any "and" turned
-    // "terms and conditions" into ["terms", "conditions"] and "profit and loss
-    // statement" into ["profit", "loss statement"] — two retrievals for half a
-    // noun phrase each, on by default for every query containing the word.
-    // ponytail: word count is the cheap proxy for "is this its own question".
-    // Ceiling: an LLM splitter would handle "revenue and margin by region"
-    // properly; add one when decomposition demonstrably beats single retrieval.
-    if (parts.length >= 2 && parts.every(isStandaloneClause)) return parts.slice(0, 3)
+  for (const re of DIFF_PATTERNS) {
+    const m = query.match(re)
+    if (m) {
+      // >1 char, not >2: "selisih pendapatan Q1 dan Q2" legitimately yields the
+      // short token "Q2" as a side — dropping it would lose half the comparison.
+      const parts = [m[1], m[2]].map((s) => s.trim()).filter((s) => s.length > 1)
+      if (parts.length === 2) return parts
+    }
   }
 
-  if (/\bvs\b|\bversus\b/i.test(query)) {
-    // vs/versus is an explicit comparison — a bare "A vs B" is exactly the case
-    // decomposition is for, so no clause-length requirement here.
-    const parts = query.split(/\s+(?:vs|versus)\s+/i).map((p) => p.trim()).filter((p) => p.length > 2)
-    if (parts.length >= 2) return parts.slice(0, 3)
-  }
+  // vs/versus is an explicit comparison — a bare "A vs B" is exactly the case
+  // decomposition is for, so no clause-length requirement here.
+  const vsParts = query.split(/\s+(?:vs\.?|versus)\s+/i).map((p) => p.trim()).filter((p) => p.length > 2)
+  if (vsParts.length >= 2) return vsParts.slice(0, 3)
+
+  // Conjunction split — every part must be its own clause, not half a noun
+  // phrase. "terms and conditions" / "syarat dan ketentuan" stay whole; a bare
+  // word on either side means the conjunction was internal to a phrase.
+  const parts = query.split(CLAUSE_SPLIT_RE).map((p) => p.trim())
+  // ponytail: word count is the cheap proxy for "is this its own question".
+  // Ceiling: an LLM splitter would handle "revenue and margin by region"
+  // properly; add one when decomposition demonstrably beats single retrieval.
+  if (parts.length >= 2 && parts.every(isStandaloneClause)) return parts.slice(0, 3)
 
   return [query]
 }

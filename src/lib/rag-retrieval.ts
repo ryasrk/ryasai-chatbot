@@ -83,9 +83,12 @@ export async function retrieveRelevantChunks(args: {
     vectorQuery = await generateHypotheticalDocument(args.query)
   }
 
-  // ponytail: rerank is opt-in (RAG_LLM_RERANK=false is no longer the default) —
-  // default OFF avoids an extra LLM call on every retrieval. Enable for precision.
-  const rerankEnabled = process.env.RAG_LLM_RERANK === 'true'
+  // ponytail: rerank ON by default — precision is the metric users judge, and a
+  // cross-encoder (RERANKER_URL) costs ~100ms while the LLM fallback is skipped
+  // entirely when chunks.length <= topK. Opt OUT with RAG_LLM_RERANK=false.
+  // (Was opt-in for years while CLAUDE.md claimed the opposite — the drift
+  // meant the flagship precision feature never ran anywhere.)
+  const rerankEnabled = process.env.RAG_LLM_RERANK !== 'false'
   const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
 
   const [kgResult, cogneeGraphContext] = await Promise.all([

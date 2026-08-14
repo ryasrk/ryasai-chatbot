@@ -9,12 +9,48 @@ mock.module('@/lib/document-parsers', () => ({
   extractXlsxTextFromBuffer: () => '',
 }))
 
-import { chunkText, chunkTextParentDoc } from './rag-chunking'
+import { chunkText, chunkTextParentDoc, splitStructuralBlocks } from './rag-chunking'
 
 describe('chunkText', () => {
   test('splits on double newlines', () => {
     const result = chunkText('Para one.\n\nPara two.', { maxChars: 100 })
     expect(result).toEqual(['Para one.', 'Para two.'])
+  })
+
+  // Structure-aware contracts: a chunk must never straddle two sections, and a
+  // table must stay with its header row.
+  test('heading starts a new chunk (sections never merge)', () => {
+    const doc = 'Intro paragraph about refunds.\n\nBAB II PROSEDUR\n\nKirim formulir ke HR.'
+    const result = chunkText(doc, { maxChars: 500 })
+    expect(result.length).toBeGreaterThanOrEqual(2)
+    expect(result.some((c) => c.includes('Intro paragraph') && c.includes('Kirim formulir'))).toBe(false)
+  })
+
+  test('markdown heading starts a new chunk', () => {
+    const doc = 'first section text\n\n## Refund Policy\n\nCustomers may request refunds.'
+    const result = chunkText(doc, { maxChars: 500 })
+    expect(result.some((c) => c.startsWith('## Refund Policy'))).toBe(true)
+    expect(result.some((c) => c.includes('first section') && c.includes('Customers may request'))).toBe(false)
+  })
+
+  test('table stays whole with its header row', () => {
+    const table = 'Kategori\tBiaya\tTermin\nReguler\tGratis\t7 hari\nEnterprise\tGratis\t30 hari'
+    const result = chunkText(`Intro sentence here.\n\n${table}`, { maxChars: 5000 })
+    const tableChunk = result.find((c) => c.includes('Kategori'))
+    expect(tableChunk).toBeDefined()
+    expect(tableChunk).toContain('Enterprise')
+    expect(tableChunk).not.toContain('Intro sentence')
+  })
+
+  test('ordinary capitalized sentence is NOT treated as a heading', () => {
+    expect(splitStructuralBlocks('Para one.\n\nPara two.')).toEqual(['Para one.', 'Para two.'])
+  })
+
+  test('numbered outline headings split sections', () => {
+    const doc = '1. Penerimaan Barang\nBarang diperiksa dua staf.\n2. Penyimpanan\nBarang masuk rak.'
+    const blocks = splitStructuralBlocks(doc)
+    expect(blocks.some((b) => b.startsWith('1. Penerimaan'))).toBe(true)
+    expect(blocks.some((b) => b.startsWith('2. Penyimpanan'))).toBe(true)
   })
 
   test('returns empty for empty input', () => {

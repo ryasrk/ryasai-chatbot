@@ -77,6 +77,28 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
       FROM "Document" d
       WHERE "DocumentChunk"."documentId" = d."id" AND d."status" = 'ready' AND d."isEnabled" = true
     `)
+    // ponytail: refresh corpus-level document frequency for BM25. ts_stat reads
+    // from the tsv column (GIN-indexed source of truth) — one grouped query per
+    // rebuild instead of per search. Dollar-quoting avoids the nested-escape
+    // mess a plain string literal needs. Capped vocabulary guards pathological
+    // corpora; ranking falls back to pool-local IDF when this is stale/empty.
+    try {
+      const stats = await db.$queryRawUnsafe<Array<{ word: string; ndoc: number }>>(
+        `SELECT word, ndoc FROM ts_stat($query$
+           SELECT tsv FROM "DocumentChunk" c
+           JOIN "Document" d ON c."documentId" = d."id"
+           WHERE d."status" = 'ready' AND d."isEnabled" = true
+         $query$)
+         ORDER BY ndoc DESC
+         LIMIT 50000`,
+      )
+      const { CORPUS_DF, CORPUS_N } = await import('@/lib/rag-ranking')
+      CORPUS_DF.clear()
+      for (const row of stats) CORPUS_DF.set(row.word, Number(row.ndoc))
+      CORPUS_N.total = chunks.length
+    } catch (e) {
+      console.warn('[rag-fts] corpus stats refresh failed (BM25 falls back to pool-local IDF):', e)
+    }
     return { indexed: chunks.length }
   }
   await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts')

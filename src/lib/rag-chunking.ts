@@ -36,15 +36,103 @@ export function chunkText(
   // ponytail: stop building chunks once maxChunks is reached — avoids materializing
   // tens of thousands of chunk strings only to slice them down to 500 afterwards.
   const chunks: string[] = []
-  for (const paragraph of content.split(/\n\n+/)) {
-    const trimmed = paragraph.trim()
-    if (!trimmed || chunks.length >= maxChunks) continue
-    for (const chunk of splitLongChunk(trimmed, maxChars, overlapChars)) {
-      if (chunks.length >= maxChunks) break
+  for (const block of splitStructuralBlocks(content)) {
+    for (const chunk of splitLongChunk(block, maxChars, overlapChars)) {
+      if (chunks.length >= maxChunks) return chunks
       chunks.push(chunk)
     }
   }
   return chunks
+}
+
+/**
+ * Structure-aware block splitting: heading-delimited sections and tables become
+ * their own blocks BEFORE size-based chunking, so a chunk never straddles two
+ * sections and a table never gets cut mid-row from its header.
+ *
+ * Recognized (cheap, format-agnostic — PDF/DOCX extractors lose real heading
+ * markup, so plain-text heuristics are all we get):
+ *   - Markdown/ASCII headings: lines starting with #, or ALL-CAPS/Title Case
+ *     short lines ending without sentence punctuation, numbered "1."/"1.1"
+ *   - Tables: ≥2 consecutive lines containing a tab or 2+ spaces-around-pipes,
+ *     or markdown pipe tables
+ *
+ * Ceiling: a heading detector can misfire on aggressive ALL-CAPS prose; the
+ * section heuristic requires short + no-terminal-punctuation, which excludes
+ * most sentences. Structural misfires cost a chunk boundary, not content.
+ */
+export function splitStructuralBlocks(content: string): string[] {
+  const lines = content.split('\n')
+  const blocks: string[] = []
+  let current: string[] = []
+  let inTable = false
+
+  const flush = () => {
+    if (current.length > 0) {
+      const text = current.join('\n').trim()
+      if (text) blocks.push(text)
+      current = []
+    }
+  }
+
+  for (const line of lines) {
+    // Blank line = paragraph boundary — flush so paragraphs stay separate chunks
+    // (this is what the old split(/\n\n+/) did; structure awareness must not
+    // merge what used to be distinct).
+    if (!line.trim()) {
+      flush()
+      inTable = false
+      continue
+    }
+
+    const isTableLine = isTableRow(line)
+    if (isTableLine && !inTable) {
+      flush()
+      inTable = true
+    } else if (!isTableLine && inTable) {
+      flush()
+      inTable = false
+    }
+
+    if (isHeadingLine(line)) {
+      flush()
+      inTable = false
+      current.push(line)
+      flush()
+      continue
+    }
+
+    current.push(line)
+  }
+  flush()
+  return blocks
+}
+
+function isHeadingLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  // Markdown heading
+  if (/^#{1,6}\s+\S/.test(trimmed)) return true
+  // Numbered/outline section markers: "1. Foo", "1.1 Foo", "A. Foo", "BAB II Foo".
+  // Single letters REQUIRE the dot (outline style) — without it, any capitalized
+  // first word ("Para one.") would match the bare [A-Z] alternative.
+  if (/^(?:\d+(?:\.\d+)*\.|[A-Z]\.|\bBAB\b\s+[IVXLC\d]+)\s+\S/.test(trimmed) && trimmed.length <= 80 && !/[.!?]$/.test(trimmed)) return true
+  // ALL-CAPS short line without terminal punctuation
+  if (trimmed.length <= 80 && trimmed === trimmed.toUpperCase() && /[A-Z]/.test(trimmed) && !/[.!?;,]$/.test(trimmed)) return true
+  return false
+}
+
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  // Markdown pipe table row (| a | b |) including separator rows (|---|---|)
+  if (/^\|.*\|$/.test(trimmed)) return true
+  // Tab-separated with ≥1 tab and at least 2 non-empty cells
+  if (trimmed.includes('\t')) {
+    const cells = trimmed.split('\t').filter((c) => c.trim().length > 0)
+    if (cells.length >= 2) return true
+  }
+  return false
 }
 
 /**

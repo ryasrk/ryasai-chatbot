@@ -100,6 +100,28 @@ describe('decomposeQuery', () => {
     expect(result).toEqual(['postgres', 'mysql performance'])
   })
 
+  // Bilingual contracts — the product's eval set and users are Indonesian;
+  // the English-only regexes never fired for these.
+  test('"selisih X dan Y" (ID) → [X, Y]', () => {
+    expect(decomposeQuery('selisih pendapatan Q1 dan Q2')).toEqual(['pendapatan Q1', 'Q2'])
+  })
+
+  test('"perbedaan X dengan Y" (ID) → [X, Y]', () => {
+    expect(decomposeQuery('perbedaan kebijakan refund dengan kebijakan cuti')).toEqual(['kebijakan refund', 'kebijakan cuti'])
+  })
+
+  test('"X dibandingkan dengan Y" (ID) → [X, Y]', () => {
+    expect(decomposeQuery('penjualan online dibandingkan dengan offline')).toEqual(['penjualan online', 'offline'])
+  })
+
+  test('Indonesian conjunction split with real clauses', () => {
+    expect(decomposeQuery('kebijakan sakit dan cuti tahunan')).toEqual(['kebijakan sakit', 'cuti tahunan'])
+  })
+
+  test('"syarat dan ketentuan" (ID noun phrase) stays whole', () => {
+    expect(decomposeQuery('syarat dan ketentuan')).toEqual(['syarat dan ketentuan'])
+  })
+
   test('filters out very short fragments', () => {
     const result = decomposeQuery('a and real query here')
     expect(result.every((r) => r.length > 2)).toBe(true)

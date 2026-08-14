@@ -21,6 +21,19 @@
  * a fourth retriever a one-line change at the call site.
  */
 
+// Corpus-level document frequency, refreshed by the FTS rebuild and read here
+// as an optional override. Pool-local IDF remains the fallback when empty —
+// relative rarity within a pool usually decides ordering anyway, but a term
+// common in the pool yet rare corpus-wide was under-weighted.
+export const CORPUS_DF: Map<string, number> = new Map()
+export const CORPUS_N = { total: 0 }
+
+/** Test seam — reset corpus stats. */
+export function resetCorpusStats(): void {
+  CORPUS_DF.clear()
+  CORPUS_N.total = 0
+}
+
 // Standard Okapi parameters. k1 controls term-frequency saturation, b controls
 // how strongly length normalisation applies.
 const K1 = 1.2
@@ -62,11 +75,21 @@ export function bm25Rank(queryTokens: string[], docs: Bm25Doc[]): RankedId[] {
     return freq
   })
 
-  const docFreq = new Map<string, number>()
+  // Corpus-level df when we have it (populated by the FTS rebuild from ts_stat);
+  // pool-local otherwise. Corpus stats see the whole org's corpus, so a term
+  // that is rare overall but happens to be in every pool document keeps its
+  // discriminating weight instead of collapsing toward 0.
+  const corpusAvailable = CORPUS_DF.size > 0 && CORPUS_N.total > n
+  const resolveCorpusDf = (token: string, poolDf: number): { df: number; n: number } =>
+    corpusAvailable && CORPUS_DF.has(token)
+      ? { df: CORPUS_DF.get(token) ?? 0, n: CORPUS_N.total }
+      : { df: poolDf, n }
+
+  const poolDocFreq = new Map<string, number>()
   for (const token of uniqueQueryTokens) {
     let df = 0
     for (const freq of termFreqs) if (freq.has(token)) df += 1
-    docFreq.set(token, df)
+    poolDocFreq.set(token, df)
   }
 
   const scored: RankedId[] = docs.map((doc, index) => {
@@ -76,10 +99,11 @@ export function bm25Rank(queryTokens: string[], docs: Bm25Doc[]): RankedId[] {
     for (const token of uniqueQueryTokens) {
       const tf = freq.get(token) ?? 0
       if (tf === 0) continue
-      const df = docFreq.get(token) ?? 0
+      const { df, n: nEff } = resolveCorpusDf(token, poolDocFreq.get(token) ?? 0)
+      if (df <= 0) continue
       // Smoothed IDF — the +0.5 terms keep it positive even when every doc in
       // the pool contains the term (the unsmoothed form goes negative there).
-      const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5))
+      const idf = Math.log(1 + (nEff - df + 0.5) / (df + 0.5))
       const denom = tf + K1 * (1 - B + (B * docLength) / avgdl)
       score += idf * ((tf * (K1 + 1)) / denom)
     }
