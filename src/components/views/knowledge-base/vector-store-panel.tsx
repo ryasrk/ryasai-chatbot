@@ -121,7 +121,7 @@ export function VectorStorePanel() {
           <div>
             <CardTitle className="text-xs">Vector DB</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Qdrant/Milvus for external semantic retrieval. Internal remains as fallback.
+              Qdrant / Milvus / Pinecone / Chroma for external semantic retrieval. Internal pgvector remains as fallback.
             </p>
           </div>
         </div>

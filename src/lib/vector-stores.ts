@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { decryptConfig } from '@/lib/crypto'
 import { normalizeBaseUrl } from '@/lib/llm-config'
 
-export type VectorStoreProvider = 'INTERNAL' | 'QDRANT' | 'MILVUS'
+export type VectorStoreProvider = 'INTERNAL' | 'QDRANT' | 'MILVUS' | 'PINECONE' | 'CHROMA'
 
 export interface VectorStoreRuntimeConfig {
   provider: VectorStoreProvider
@@ -72,6 +72,32 @@ export function buildMilvusSearchBody(
   }
 }
 
+// Pinecone: vector + topK + metadata filtering; `includeMetadata` is what makes
+// the chunkId payload come back on query hits.
+export function buildPineconeSearchBody(
+  vector: number[],
+  limit: number,
+) {
+  return {
+    vector,
+    topK: limit,
+    includeMetadata: true,
+  }
+}
+
+// Chroma: query_embeddings (plural, batched) + n_results; `include` controls
+// which fields return — documents/metadata come back unless excluded.
+export function buildChromaSearchBody(
+  vector: number[],
+  limit: number,
+) {
+  return {
+    query_embeddings: [vector],
+    n_results: limit,
+    include: ['metadatas', 'documents', 'distances'],
+  }
+}
+
 export function parseQdrantSearchResponse(payload: unknown): VectorSearchHit[] {
   const result = asRecord(payload).result
   return Array.isArray(result)
@@ -92,6 +118,40 @@ export function parseMilvusSearchResponse(payload: unknown): VectorSearchHit[] {
         return { chunkId: String(entity.chunkId ?? ''), score: Number(row.score ?? row.distance ?? 0) }
       }).filter((hit) => hit.chunkId)
     : []
+}
+
+export function parsePineconeSearchResponse(payload: unknown): VectorSearchHit[] {
+  const matches = asRecord(payload).matches
+  return Array.isArray(matches)
+    ? matches.map((item) => {
+        const row = asRecord(item)
+        const metadata = asRecord(row.metadata)
+        return { chunkId: String(metadata.chunkId ?? ''), score: Number(row.score ?? 0) }
+      }).filter((hit) => hit.chunkId)
+    : []
+}
+
+export function parseChromaSearchResponse(payload: unknown): VectorSearchHit[] {
+  // Chroma returns columnar lists: ids/metadatas/distances are arrays-of-arrays
+  // (one inner array per query embedding — we always send exactly one).
+  const ids = asRecord(payload).ids
+  const metadatas = asRecord(payload).metadatas
+  const distances = asRecord(payload).distances
+  if (!Array.isArray(ids) || !Array.isArray(ids[0])) return []
+  const rowIds = ids[0]
+  const rowMeta = Array.isArray(metadatas) && Array.isArray(metadatas[0]) ? metadatas[0] : []
+  const rowDist = Array.isArray(distances) && Array.isArray(distances[0]) ? distances[0] : []
+  return rowIds
+    .map((chunkId, i) => {
+      const meta = asRecord(rowMeta[i])
+      const distance = Number(rowDist[i] ?? 0)
+      // Chroma returns cosine DISTANCE (0 = identical, 2 = opposite); RRF only
+      // consumes ordering, but the reported similarity should not be a raw
+      // distance — convert to similarity so bigger = better, like every other
+      // provider.
+      return { chunkId: String(meta.chunkId ?? chunkId), score: Math.max(0, 1 - distance) }
+    })
+    .filter((hit) => hit.chunkId)
 }
 
 export async function getVectorStoreRuntimeConfig(
@@ -124,6 +184,11 @@ export async function getVectorStoreRuntimeConfig(
 // HTTP round-trip on every document embed batch after the first one in this process.
 const ensuredCollections = new Set<string>()
 
+/** Test seam — forget which collections were ensured this process. */
+export function resetEnsuredCollections(): void {
+  ensuredCollections.clear()
+}
+
 export async function ensureVectorCollection(config: VectorStoreRuntimeConfig) {
   if (config.provider === 'INTERNAL') return
   const key = `${config.provider}:${config.baseUrl}:${config.collectionName}`
@@ -147,6 +212,44 @@ export async function ensureVectorCollection(config: VectorStoreRuntimeConfig) {
       }),
     }).catch((e) => { console.warn('[vector-stores] milvus collection create failed:', e) })
   }
+  if (config.provider === 'PINECONE') {
+    // ponytail: index creation is a CONTROL-PLANE op that takes minutes and is
+    // usually done in the Pinecone console — never auto-create. Describe instead:
+    // a 404 gives the operator an actionable "create it first" error.
+    const described = await vectorFetchAllow404(
+      config,
+      `/describe_index_stats`,
+      { method: 'POST', body: '{}' },
+    )
+    if (described.notFound) {
+      throw new Error(
+        `Pinecone index not reachable at ${config.baseUrl}. Create the index (dimension ${config.vectorSize}) in the Pinecone console first, then set Base URL to the index host (https://<index-name>-<project>.svc.<region>.pinecone.io).`,
+      )
+    }
+  }
+  if (config.provider === 'CHROMA') {
+    // Chroma create_collection is idempotent-friendly only via get-or-create.
+    await vectorFetch(
+      config,
+      `/api/v1/collections/${encodeURIComponent(config.collectionName)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          get_or_create: true,
+          // cosine is Chroma's default; honor the configured metric
+          metadata: { hnsw: { space: chromaSpace(config.distance) } },
+        }),
+      },
+    )
+  }
+}
+
+/** Chroma's `space` values map 1:1 from our distance metric names. */
+function chromaSpace(distance: string): 'cosine' | 'l2' | 'ip' {
+  const d = distance.toLowerCase()
+  if (d === 'euclidean' || d === 'l2') return 'l2'
+  if (d === 'dot' || d === 'inner' || d === 'ip') return 'ip'
+  return 'cosine'
 }
 
 export async function upsertVectorPoints(
@@ -183,6 +286,40 @@ export async function upsertVectorPoints(
       }),
     })
   }
+  if (config.provider === 'PINECONE') {
+    await vectorFetch(config, '/vectors/upsert', {
+      method: 'POST',
+      body: JSON.stringify({
+        vectors: points.map((point) => ({
+          id: point.id,
+          values: point.vector,
+          metadata: point.payload,
+        })),
+      }),
+    })
+  }
+  if (config.provider === 'CHROMA') {
+    await vectorFetch(
+      config,
+      `/api/v1/collections/${encodeURIComponent(config.collectionName)}/upsert`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          ids: points.map((point) => point.id),
+          embeddings: points.map((point) => point.vector),
+          // ponytail: Chroma requires non-empty metadata per doc — nulls break
+          // the batch, so strip them (Qdrant/Milvus tolerate nulls).
+          metadatas: points.map((point) => {
+            const meta: Record<string, string | number | boolean> = {}
+            for (const [k, v] of Object.entries(point.payload)) {
+              if (v !== null && v !== undefined) meta[k] = v
+            }
+            return meta
+          }),
+        }),
+      },
+    )
+  }
 }
 
 export async function searchVectorStore(args: {
@@ -214,6 +351,24 @@ export async function searchVectorStore(args: {
     })
     return parseMilvusSearchResponse(response)
   }
+  if (args.config.provider === 'PINECONE') {
+    const response = await vectorFetch(args.config, '/query', {
+      method: 'POST',
+      body: JSON.stringify(buildPineconeSearchBody(args.vector, args.limit)),
+    })
+    return parsePineconeSearchResponse(response)
+  }
+  if (args.config.provider === 'CHROMA') {
+    const response = await vectorFetch(
+      args.config,
+      `/api/v1/collections/${encodeURIComponent(args.config.collectionName)}/query`,
+      {
+        method: 'POST',
+        body: JSON.stringify(buildChromaSearchBody(args.vector, args.limit)),
+      },
+    )
+    return parseChromaSearchResponse(response)
+  }
   return []
 }
 
@@ -221,6 +376,8 @@ function normalizeVectorStoreProvider(provider: string): VectorStoreProvider {
   const upper = provider.trim().toUpperCase()
   if (upper === 'QDRANT' || upper === 'QDRANT_CLOUD') return 'QDRANT'
   if (upper === 'MILVUS') return 'MILVUS'
+  if (upper === 'PINECONE') return 'PINECONE'
+  if (upper === 'CHROMA' || upper === 'CHROMADB') return 'CHROMA'
   return 'INTERNAL'
 }
 
@@ -229,14 +386,7 @@ async function vectorFetch(
   path: string,
   init: RequestInit,
 ): Promise<unknown> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> | undefined),
-  }
-  if (config.apiKey) {
-    headers.Authorization = `Bearer ${config.apiKey}`
-    headers['api-key'] = config.apiKey
-  }
+  const headers = await vectorHeaders(config, init)
   const res = await fetch(`${config.baseUrl}${path}`, {
     ...init,
     headers,
@@ -244,6 +394,49 @@ async function vectorFetch(
   })
   if (!res.ok) throw new Error(`Vector DB error (HTTP ${res.status}).`)
   return res.json().catch(() => ({}))
+}
+
+/** Like vectorFetch but reports 404 instead of throwing — for existence probes. */
+async function vectorFetchAllow404(
+  config: VectorStoreRuntimeConfig,
+  path: string,
+  init: RequestInit,
+): Promise<{ notFound: boolean; payload: unknown }> {
+  const headers = await vectorHeaders(config, init)
+  const res = await fetch(`${config.baseUrl}${path}`, {
+    ...init,
+    headers,
+    signal: AbortSignal.timeout(60000),
+  })
+  if (res.status === 404) return { notFound: true, payload: null }
+  if (!res.ok) throw new Error(`Vector DB error (HTTP ${res.status}).`)
+  return { notFound: false, payload: await res.json().catch(() => ({})) }
+}
+
+/**
+ * Per-provider auth headers. Every provider until now used Bearer, but:
+ *   - Pinecone requires `Api-Key` and ignores Authorization.
+ *   - Chroma (token auth) uses `X-Chroma-Token`; no-auth local Chroma works too.
+ */
+async function vectorHeaders(
+  config: VectorStoreRuntimeConfig,
+  init: RequestInit,
+): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> | undefined),
+  }
+  if (config.apiKey) {
+    if (config.provider === 'PINECONE') {
+      headers['Api-Key'] = config.apiKey
+    } else if (config.provider === 'CHROMA') {
+      headers['X-Chroma-Token'] = config.apiKey
+    } else {
+      headers.Authorization = `Bearer ${config.apiKey}`
+      headers['api-key'] = config.apiKey
+    }
+  }
+  return headers
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
