@@ -104,6 +104,15 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       },
     })
 
+    // ponytail: LLM first-scan — when no manual description was given, have the
+    // LLM read method/path/params/sampleResponse and write one. The description
+    // is what generateRestCall matches questions against; an empty one
+    // ("description: -" in its prompt) degrades endpoint routing badly.
+    if (!item.description) {
+      const { initRestEndpointContext } = await import('@/lib/source-init')
+      void initRestEndpointContext(item.id).catch(() => null)
+    }
+
     return NextResponse.json({ ok: true, data: item }, { status: 201 })
   } catch (e) {
     return handleApiError(e, 'Failed to create endpoint whitelist.')

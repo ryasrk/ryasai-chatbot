@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { restoreDocVersion } from '@/lib/doc-versioning'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string; versionId: string }>
@@ -9,7 +10,8 @@ interface RouteContext {
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    const { id, versionId } = await ctx.params
+    enterWithOrg(user.organizationId)
+        const { id, versionId } = await ctx.params
     const result = await restoreDocVersion(id, versionId)
     await writeAudit({
       userId: user.userId,

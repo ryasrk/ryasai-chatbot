@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { validateLicense, generateMachineId } from '@/lib/license-client'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/auth/activate-license
@@ -14,7 +15,8 @@ import { validateLicense, generateMachineId } from '@/lib/license-client'
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const body = await req.json().catch(() => null)
+    enterWithOrg(user.organizationId)
+        const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
     }

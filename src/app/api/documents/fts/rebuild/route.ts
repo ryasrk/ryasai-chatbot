@@ -2,13 +2,15 @@ import { NextResponse } from 'next/server'
 import { rebuildFts } from '@/lib/rag-fts'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { jobQueue, checkRedisHealth } from '@/lib/redis'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
 export async function POST() {
   try {
     const user = await getActiveUser()
-    requireRole(user, 'admin')
+    enterWithOrg(user.organizationId)
+        requireRole(user, 'admin')
 
     // ponytail: enqueue to Redis when available, run synchronously when Redis is down.
     const health = await checkRedisHealth()

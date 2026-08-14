@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -23,7 +24,8 @@ const VALID_ROLES = new Set(['admin', 'analyst', 'viewer'])
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    requireRole(user, 'admin')
+    enterWithOrg(user.organizationId)
+        requireRole(user, 'admin')
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {

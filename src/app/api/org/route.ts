@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError, requireRole, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const ORG_SELECT = {
   id: true,
@@ -20,7 +21,8 @@ const ORG_SELECT = {
 export async function GET() {
   try {
     const user = await getActiveUser()
-    const organization = await bypassOrg(() =>
+    enterWithOrg(user.organizationId)
+        const organization = await bypassOrg(() =>
       db.organization.findUnique({
         where: { id: user.organizationId },
         select: ORG_SELECT,
@@ -47,7 +49,8 @@ interface PatchBody {
 export async function PATCH(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    requireRole(user, 'admin')
+    enterWithOrg(user.organizationId)
+        requireRole(user, 'admin')
 
     const body = (await req.json().catch(() => ({}))) as PatchBody
     const data: { name?: string; brandingJson?: string } = {}

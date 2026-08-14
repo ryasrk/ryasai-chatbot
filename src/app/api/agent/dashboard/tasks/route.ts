@@ -5,7 +5,7 @@ import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 
 export async function GET(req: NextRequest) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const searchParams = req.nextUrl.searchParams
     const taskId = searchParams.get('taskId')
     if (taskId) {
@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const body = (await req.json().catch(() => ({}))) as { type?: string; question?: string }
+    enterWithOrg(user.organizationId)
+        const body = (await req.json().catch(() => ({}))) as { type?: string; question?: string }
     const type = body.type ?? 'chat'
     if (type === 'chat' && body.question) {
       const taskId = enqueue('chat', { question: body.question, userId: user.userId })
@@ -43,3 +44,4 @@ registerHandler('chat', async (task) => {
 })
 
 import { registerHandler } from '@/lib/async-worker'
+import { enterWithOrg } from '@/lib/prisma-tenant'

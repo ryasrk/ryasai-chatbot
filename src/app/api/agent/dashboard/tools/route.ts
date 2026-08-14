@@ -1,4 +1,5 @@
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const DASHBOARD_TOOLS = [
   { id: 'database.connect', category: 'database', name: 'Connect Database', description: 'Connect a new database', status: 'available' },
@@ -33,7 +34,7 @@ const DASHBOARD_TOOLS = [
 
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     return Response.json({ tools: DASHBOARD_TOOLS })
   } catch (e) {
     return handleApiError(e, 'Failed to load tools list.')

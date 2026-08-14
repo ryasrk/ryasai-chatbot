@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { getPrompt, updatePrompt, deletePrompt } from '@/lib/prompt-library'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -8,7 +9,7 @@ interface RouteContext {
 
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const prompt = await getPrompt(id)
     if (!prompt) return NextResponse.json({ ok: false, error: 'Prompt not found.' }, { status: 404 })
@@ -21,7 +22,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    const { id } = await ctx.params
+    enterWithOrg(user.organizationId)
+        const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as {
       title?: string
       content?: string
@@ -46,7 +48,8 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
-    const { id } = await ctx.params
+    enterWithOrg(user.organizationId)
+        const { id } = await ctx.params
     const existing = await getPrompt(id)
     if (!existing) return NextResponse.json({ ok: false, error: 'Prompt not found.' }, { status: 404 })
     await deletePrompt(id)

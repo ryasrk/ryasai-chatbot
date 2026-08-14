@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { exportSession } from '@/lib/conversation-export'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -8,7 +9,7 @@ interface RouteContext {
 
 export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
     const format = req.nextUrl.searchParams.get('format') === 'markdown' ? 'markdown' : 'json'
     const output = await exportSession(id, format)

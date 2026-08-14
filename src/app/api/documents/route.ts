@@ -11,6 +11,7 @@ import {
 import { upsertChunkFts } from '@/lib/rag-fts'
 import { MAX_EXTRACTED_TEXT_CHARS } from '@/lib/rag-chunking'
 import { enqueueOrSync } from '@/lib/job-processor'
+import { mapWithConcurrency } from '@/lib/bounded-concurrency'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
 import { enterWithOrg } from '@/lib/prisma-tenant'
@@ -129,9 +130,15 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
-  // Check MIME type if provided (some browsers don't set it correctly)
-  if (file.type && !ALLOWED_MIME_TYPES.has(file.type) && file.type !== 'application/octet-stream') {
-    return NextResponse.json({ error: `MIME type ${file.type} is not allowed.` }, { status: 400 })
+  // Check MIME type if provided (some browsers don't set it correctly).
+  // ponytail: compare the media type only — clients routinely append parameters
+  // ("text/plain;charset=utf-8"), which failed the old exact-match check and
+  // rejected uploads the extension list explicitly allows.
+  if (file.type) {
+    const mimeType = file.type.split(';')[0].trim().toLowerCase()
+    if (!ALLOWED_MIME_TYPES.has(mimeType) && mimeType !== 'application/octet-stream') {
+      return NextResponse.json({ error: `MIME type ${file.type} is not allowed.` }, { status: 400 })
+    }
   }
 
   try {
@@ -230,7 +237,22 @@ export async function POST(req: NextRequest) {
     await enqueueOrSync('document-embed', { type: 'document-embed', documentId: doc.id, organizationId: user.organizationId })
     void enqueueOrSync('document-cognify', { type: 'document-cognify', documentId: doc.id, organizationId: user.organizationId }).catch(() => null)
     // ponytail: LightRAG-style entity-relation extraction — fire-and-forget, enhances RAG with KG.
-    void Promise.all(persistedChunks.map((c) => indexChunkKnowledgeGraph({ chunkId: c.id, content: c.content }).catch(() => null)))
+    // BOUNDED: 500 chunks used to fire 500 simultaneous LLM calls (Promise.all
+    // over the whole list), bypassing every queue and rate limit. 5 at a time
+    // matches the doc-worker's throughput shape; errors are per-chunk and
+    // non-fatal (allSettled semantics).
+    void mapWithConcurrency(persistedChunks, 5, (c) =>
+      indexChunkKnowledgeGraph({ chunkId: c.id, content: c.content }),
+    ).catch(() => null)
+
+    // ponytail: LLM first-scan — when the uploader gave no description, have the
+    // LLM read the content and write one. Descriptions feed the intent router,
+    // which decides RAG-vs-SQL-vs-REST; a file name alone ("scan_001.pdf")
+    // carries no routing signal. Fire-and-forget, never blocks the upload.
+    if (!description) {
+      const { initDocumentContext } = await import('@/lib/source-init')
+      void initDocumentContext(doc.id).catch(() => null)
+    }
 
     await writeAudit({
       userId: user.userId,

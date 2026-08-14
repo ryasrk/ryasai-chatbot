@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { getPromptSettings, mergePromptSettings, type PromptSettings } from '@/lib/prompt-settings'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/prompt-tools → { ok: true, settings: PromptSettings }
@@ -10,7 +11,7 @@ import { getPromptSettings, mergePromptSettings, type PromptSettings } from '@/l
  */
 export async function GET() {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const settings = await getPromptSettings(db)
     return NextResponse.json({ ok: true, settings })
   } catch (e) {
@@ -21,7 +22,8 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const body = await req.json().catch(() => ({}))
+    enterWithOrg(user.organizationId)
+        const body = await req.json().catch(() => ({}))
     const current = await getPromptSettings(db)
     const merged: PromptSettings = mergePromptSettings(current, body)
 

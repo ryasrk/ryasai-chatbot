@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { listPrompts, createPrompt } from '@/lib/prompt-library'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const sp = req.nextUrl.searchParams
+    enterWithOrg(user.organizationId)
+        const sp = req.nextUrl.searchParams
     const filter: { userId?: string; category?: string; isPublic?: boolean } = {}
     if (sp.get('userId')) filter.userId = sp.get('userId')!
     if (sp.get('category')) filter.category = sp.get('category')!
@@ -21,7 +23,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
-    const body = (await req.json().catch(() => ({}))) as {
+    enterWithOrg(user.organizationId)
+        const body = (await req.json().catch(() => ({}))) as {
       title?: string
       content?: string
       category?: string

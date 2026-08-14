@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/auth/logout
@@ -11,7 +12,8 @@ export async function POST() {
   try {
     try {
       const user = await getActiveUser()
-      await writeAudit({
+    enterWithOrg(user.organizationId)
+          await writeAudit({
         userId: user.userId,
         action: 'LOGOUT',
         detail: { email: user.email },

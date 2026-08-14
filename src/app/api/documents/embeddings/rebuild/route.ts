@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { embedCompanyDocuments } from '@/lib/embeddings'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { jobQueue, checkRedisHealth } from '@/lib/redis'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     // Only admins may trigger re-embedding — it consumes org embedding quota.
     requireRole(user, 'admin')
 

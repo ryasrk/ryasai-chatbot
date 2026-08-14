@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/setup/complete (auth required)
@@ -10,7 +11,8 @@ import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/se
 export async function POST() {
   try {
     const user = await getActiveUser()
-    requireRole(user, 'admin')
+    enterWithOrg(user.organizationId)
+        requireRole(user, 'admin')
     const existing = await db.appConfig.findFirst()
     if (existing) {
       await db.appConfig.update({ where: { id: existing.id }, data: { setupCompleted: true } })

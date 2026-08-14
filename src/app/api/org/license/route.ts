@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
 import { validateLicense, generateMachineId, licenseStatusFromResult } from '@/lib/license-client'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * GET /api/org/license
@@ -11,7 +12,8 @@ import { validateLicense, generateMachineId, licenseStatusFromResult } from '@/l
 export async function GET() {
   try {
     const user = await getActiveUser()
-    const org = await bypassOrg(() =>
+    enterWithOrg(user.organizationId)
+        const org = await bypassOrg(() =>
       db.organization.findUnique({
         where: { id: user.organizationId },
         select: {
@@ -47,7 +49,8 @@ export async function GET() {
 export async function POST() {
   try {
     const user = await getActiveUser()
-    if (user.role !== 'admin') {
+    enterWithOrg(user.organizationId)
+        if (user.role !== 'admin') {
       return NextResponse.json({ error: 'Admin access required.' }, { status: 403 })
     }
 

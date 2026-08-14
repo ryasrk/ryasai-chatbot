@@ -8,12 +8,14 @@ import {
 } from '@/lib/rag-eval'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
     const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     // Up to 50 full retrievals per call, each able to fan out into HyDE, rerank
     // and KG extraction LLM calls — admin-only, same as the other spend endpoints.
     requireRole(user, 'admin')

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchUrlForPlanner } from '@/lib/web-fetch'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
  * POST /api/fetch-url — read a public web page as text.
@@ -19,7 +20,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
  */
 export async function POST(req: NextRequest) {
   try {
-    await getActiveUser()
+    enterWithOrg((await getActiveUser()).organizationId)
     const { url } = (await req.json().catch(() => ({}))) as { url?: string }
     if (!url) return NextResponse.json({ error: 'url is required.' }, { status: 400 })
 

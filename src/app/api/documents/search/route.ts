@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { retrieveRelevantChunks } from '@/lib/rag'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
 
@@ -39,7 +40,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const user = await getActiveUser()
-
+    enterWithOrg(user.organizationId)
+    
     const retrieval = await retrieveRelevantChunks({
       query,
       topK,
