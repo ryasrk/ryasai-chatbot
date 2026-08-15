@@ -1,0 +1,2288 @@
+{
+  "summary": {
+    "scenarios": 40,
+    "passed": 31,
+    "loopCount": 0,
+    "clarifyCount": 0
+  },
+  "results": [
+    {
+      "scenarioId": "prinl-001",
+      "kind": "long_session",
+      "description": "Compliance walkthrough: permits → expiring → site drill-down → doc policy → back to counts",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa total permit yang terdaftar di sistem?",
+          "answerExcerpt": "Total permit yang terdaftar di sistem adalah **32**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3471,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dari itu, yang sudah EXPIRED ada berapa?",
+          "answerExcerpt": "Jumlah permit yang **sudah EXPIRED** adalah **9** dari total **32** permit terdaftar di sistem.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5498,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Yang aktif, mana yang expired dalam 90 hari ke depan?",
+          "answerExcerpt": "Jumlah permit **aktif** yang akan **EXPIRED dalam 90 hari ke depan** adalah **8**.Jumlah permit **aktif** yang akan **expired dalam 90 hari ke depan** (ExpiryDate antara hari ini dan hari ini + 90 hari) adalah **8**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 10217,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Di site Bengalon ada berapa pemegang permit aktif?",
+          "answerExcerpt": "Jumlah **pemegang permit aktif** di site **Bengalon** adalah **0**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5612,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Menurut dokumen, bagaimana prosedur renewal permit yang sudah expired?",
+          "answerExcerpt": "Saya belum menemukan **bagian “prosedur renewal permit yang sudah expired”** di dokumen yang tampil pada konteks RAG (potongan yang ada hanya membahas topik lain seperti *resource recovery* dan *farmers/synthetic soils*).\n\nAgar saya bisa jawab sesuai dokumen, tolong kirim/rujuk **dokumen yang memuat prosedur renewal permit** (atau kirim kutipan/halaman yang relevan). Setelah itu saya bisa rangkum ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4789,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 6,
+          "question": "Jadi kalau digabung: berapa total yang perlu renewal sekarang dan apa langkah pertamanya?",
+          "answerExcerpt": "Total permit yang perlu renewal **sekarang** adalah **3**.\n\nUntuk **langkah pertama** prosedur renewal permit yang sudah expired **menurut dokumen**, saya belum menerima isi dokumen/prosedurnya di konteks yang tersedia saat ini. Silakan kirim kutipan atau bagian dokumen yang membahas “renewal permit yang sudah expired”, nanti saya ambil dan sebutkan **langkah pertama** secara tepat.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5088,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 7,
+          "question": "Dan berapa lagi yang akan ikut expired bulan depan?",
+          "answerExcerpt": "- **Permit yang akan ikut expired bulan depan:** **7**\n- **Total yang perlu renewal bulan depan:** **4**- **Permit yang akan ikut expired bulan depan (expired_permits_next_month): 3**\n- **Total yang perlu renewal bulan depan (total_need_renewal_next_month): 1**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 11340,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-002",
+      "kind": "long_session",
+      "description": "MCU audit trail: totals → FIT stats → overdue list → policy → vendor breakdown",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa total registrasi MCU sampai sekarang?",
+          "answerExcerpt": "Total registrasi MCU sampai sekarang adalah **28**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3299,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Berapa hasilnya yang FIT?",
+          "answerExcerpt": "Hasil **FIT** dari total registrasi MCU sampai sekarang adalah **16** dari **36**.Total **hasil FIT MCU** sampai sekarang adalah **17** dari total **registrasi MCU** **44**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 10287,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Siapa saja yang NextMcuDate-nya sudah lewat?",
+          "answerExcerpt": "Berikut **peserta yang NextMcuDate-nya sudah lewat** (dibanding tanggal sekarang **2026-08-15**):\n\n1. **Yehezkiel Simbuang** — NextMcuDate: **2026-06-18 16:59:59.999Z**\n2. **Demo MCU Expiring 30 Days** — NextMcuDate: **2026-06-21 00:00:00.000Z**\n3. **Demo Unfit Stop Flow** — NextMcuDate: **2026-06-27 00:00:00.000Z**\n4. **Andhika** — NextMcuDate: **2026-07-02 16:00:00.000Z**\n5. **Irfan Setiawan** —",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5973,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apa standar kategori FIT vs UNFIT menurut dokumen K3?",
+          "answerExcerpt": "Saya belum bisa menjawab **standar kategori FIT vs UNFIT menurut dokumen K3** dari konteks yang tersedia.\n\nDi **CONTEXT/RAG** yang Anda berikan, isinya membahas topik lain (mis. standar konstruksi, regulasi limbah, smart living/teknologi rumah), dan **tidak ada kutipan/ketentuan** yang menjelaskan definisi atau kriteria **FIT** dan **UNFIT** sesuai dokumen K3.\n\nKalau Anda bisa kirim:\n1) nama dokum",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6426,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Vendor mana yang karyawannya paling banyak overdue MCU?",
+          "answerExcerpt": "Vendor dengan **karyawan paling banyak overdue MCU** (NextMcuDate sudah lewat) adalah:\n\n- **PT DARMA HENWA** — **2** overdue MCU  \n- **PT Prima Multi Mineral** — **2** overdue MCU  \n\n**Catatan:** Ada 2 vendor yang tie di nilai tertinggi (**2**).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5153,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 6,
+          "question": "Bandingkan dengan vendor yang paling banyak ikut training — sama atau beda?",
+          "answerExcerpt": "Terjadi **SQL execution error**: **syntax error at or near \"CompanyId\"**.  \nKarena query gagal dieksekusi, saya belum bisa menghitung dan membandingkan:\n\n1) **vendor dengan karyawan paling banyak overdue MCU**, dan  \n2) **vendor dengan karyawan paling banyak ikut training** (apakah sama atau berbeda).\n\nKalau Anda kirim ulang SQL-nya (atau bagian yang memuat `CompanyId`), saya bisa bantu perbaiki s",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 18516,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-003",
+      "kind": "long_session",
+      "description": "Training deep-dive with topic switch contamination test",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Ada berapa training batch tahun ini?",
+          "answerExcerpt": "Tahun ini, jumlah **training batch** adalah **14**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3407,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Batch mana yang pesertanya paling banyak?",
+          "answerExcerpt": "Berdasarkan data **batch training tahun ini**, jumlah peserta per batch semuanya **1**. Jadi **batch dengan peserta terbanyak** adalah **semua batch** yang ada di data, masing-masing dengan **1 peserta**:\n\n- TRN-2026-c — 1  \n- DEMO-TRN-SIMPER-20260527 — 1  \n- TRN-2026-B — 1  \n- TEST-03 — 1  \n- TRN-03 — 1  \n- TRN-01 — 1  \n- TRN-02 — 1  \n- TRN-2026-A — 1  \n- TRN-06 — 1  \n- DEMO-TRN-KIMPAK-20260527 —",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5812,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Siapa trainernya dan dari site mana?",
+          "answerExcerpt": "Berikut **trainer untuk setiap batch training tahun ini** beserta **site-nya**:\n\n- **TRN-06** — **Ibnu Setyo Wardani** — *Asam-Asam Site*\n- **123test** — **Aman Maulana** — *Kintap Coal Project*\n- **20260731-ENV** — **Aman Maulana** — *Bengalon Coal Project*\n- **TRN-05** — **Aman Maulana** — *Asam-Asam Site*\n- **TRN-03** — **Demo Trainer OTPD** — *Asam-Asam Site*\n- **TRN-02** — **Demo Trainer OTPD",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6963,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Sekarang ganti topik — berapa tag aktif yang belum dilepas?",
+          "answerExcerpt": "Jumlah **tag aktif yang belum dilepas** adalah **2**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4322,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Kembali ke training: berapa rata-rata skor semua peserta?",
+          "answerExcerpt": "Rata-rata skor semua peserta training tahun ini adalah **97.09**.Rata-rata skor semua peserta training tahun ini adalah **97.09**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 9820,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 6,
+          "question": "Apa syarat kelulusan training menurut dokumen?",
+          "answerExcerpt": "Saya belum menemukan **bagian dokumen** yang secara eksplisit menyebut **syarat kelulusan training** (mis. nilai minimum, kehadiran, kelulusan “pass/fail”, atau ketentuan evaluasi).\n\nYang muncul di konteks RAG/Knowledge Graph hanya informasi umum bahwa **virtual reality/virtual reality technologies akan digunakan untuk training**, tanpa rincian kriteria kelulusan.\n\nKalau Anda bisa kirim **judul do",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6718,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-004",
+      "kind": "long_session",
+      "description": "Pronoun-heavy follow-up chain on one participant cluster",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Siapa pemegang KIMPER saat ini?",
+          "answerExcerpt": "Saya belum punya data apa pun di **CONTEXT (SQL)** untuk mengetahui siapa pemegang **KIMPER** saat ini.  \n\nTolong berikan tabel/kolom yang menyimpan informasi “pemegang KIMPER” (atau kirim hasil query SQL terkait), nanti saya bisa jawab dengan tepat.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"2\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 6200,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Mereka bekerja di site mana?",
+          "answerExcerpt": "Berikut **site lokasi pemegang KIMPER saat ini** (berdasarkan data pada CONTEXT):\n\n1. **ACP** — *Asam Coal Project*  \n   - Pemegang: **Dashboard KIMPAK Technician** (NIK: **DASH006**)  \n   - No. Izin KIMPER: **DASH-PERMIT-006**\n\n2. **DEMO_SITE** — *Demo Integrated Site*  \n   - Pemegang: **Demo KIMPAK Full Flow** (NIK: **DEMO-E2E-KIMPAK**)  \n   - No. Izin KIMPER: **DEMO-KP-KIMPAK**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7231,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Dan perusahaannya siapa?",
+          "answerExcerpt": "Berdasarkan site **ACP** dan **DEMO_SITE**, perusahaan pemegang **KIMPER** saat ini adalah:\n\n1. **ACP (Asam Coal Project)**  \n   - Pemegang: **Dashboard KIMPAK Technician** (NIK: **DASH006**)  \n   - No. Izin KIMPER: **DASH-PERMIT-006**\n\n2. **DEMO_SITE (Demo Integrated Site)**  \n   - Pemegang: **Demo KIMPAK Full Flow** (NIK: **DEMO-E2E-KIMPAK**)  \n   - No. Izin KIMPER: **DEMO-KP-KIMPAK**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6510,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apakah mereka sudah MCU terakhir ini?",
+          "answerExcerpt": "Saya belum bisa memastikan apakah **pemegang KIMPER** tersebut sudah **MCU terakhir** karena **CONTEXT (SQL) kosong** (tidak ada data MCU/riwayat MCU untuk **DASH006** dan **DEMO-E2E-KIMPAK**).\n\nYang bisa saya konfirmasi dari percakapan sebelumnya, pemegang KIMPER yang dimaksud adalah:\n- **Dashboard KIMPAK Technician** — NIK: **DASH006**\n- **Demo KIMPAK Full Flow** — NIK: **DEMO-E2E-KIMPAK**\n\nKala",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7337,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Kalau dilihat dari dokumen, apa saja kewajiban pemegang KIMPER?",
+          "answerExcerpt": "Berdasarkan **dokumen** yang muncul di CONTEXT RAG, tidak ada bagian yang secara spesifik menyebut **“kewajiban pemegang KIMPER”** (mis. kewajiban MCU, pelaporan, masa berlaku, atau kewajiban kepatuhan tertentu).\n\nYang relevan yang terlihat justru membahas hal umum terkait **rekam medis pribadi** dan **pengendalian/penyimpanan data** (misalnya “in-depth personal medical histories will be on record",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7419,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 6,
+          "question": "Jadi keseluruhan, apakah mereka compliant? Ringkas.",
+          "answerExcerpt": "Berdasarkan **CONTEXT (RAG)** yang Anda berikan, saya **tidak bisa menilai “compliant”** untuk pemegang **KIMPER** (NIK **DASH006** dan **DEMO-E2E-KIMPAK**) karena:\n\n1. **Dokumen kewajiban KIMPER**  \n   - Di potongan dokumen yang muncul pada RAG, tidak ada bagian yang secara spesifik memuat **kewajiban pemegang KIMPER** (mis. kewajiban MCU, pelaporan, masa berlaku, audit, dsb.).  \n   - Potongan ya",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7978,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-005",
+      "kind": "long_session",
+      "description": "Induction vs training comparison with doc rules",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa induction batch dan training batch saat ini?",
+          "answerExcerpt": "Saat ini:\n\n- **Induction batch (hari ini open): 28**\n- **Training batch (hari ini berjalan): 0**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 36307,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Induction yang statusnya COMPLETED berapa persen?",
+          "answerExcerpt": "Persentase **induction batch status COMPLETED** adalah **0,00%**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5800,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Kalau training, berapa persen lulusnya?",
+          "answerExcerpt": "Persentase **training batch** dengan status **lulus** saat ini adalah **0%**.Persentase **lulus training batch saat ini** (kriteria: **PassedAt tidak null** atau **ExamStatus = 'PASSED'**) adalah **0,00%**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 11687,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Dokumen menyebut kapan induction wajib vs training wajib — apa bedanya?",
+          "answerExcerpt": "Berdasarkan **dokumen yang tersedia di konteks RAG**, tidak ada informasi yang membahas **“induction wajib” vs “training wajib”** atau **kapan masing-masing wajib dilakukan** (mis. aturan jadwal, definisi status wajib, atau kriteria kapan induction harus dilakukan dan kapan training harus dilakukan).\n\nYang bisa ditarik dari konteks RAG hanya pernyataan umum bahwa **teknologi virtual reality akan d",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 65050,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Siapa yang sudah kerja (punya permit) tapi belum pernah induction?",
+          "answerExcerpt": "Berikut **orang yang sudah punya permit (ada LatestPermitExpiryDate)** tapi **belum pernah induction** (berdasarkan konteks yang tersedia, data induction tidak ditampilkan sehingga semuanya dianggap belum pernah induction):\n\n1. **DASH005** — Dashboard SIMPER Light Vehicle  \n2. **DASH003** — Dashboard Mine Permit Pit Crew  \n3. **DASH006** — Dashboard KIMPAK Technician  \n4. **DASH002** — Dashboard M",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5270,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-006",
+      "kind": "long_session",
+      "description": "Vendor risk assessment multi-turn",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Vendor SUBCON kita ada berapa perusahaan?",
+          "answerExcerpt": "Vendor **SUBCON** kita ada **7 perusahaan**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3558,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Yang karyawannya paling banyak?",
+          "answerExcerpt": "Saya belum punya data daftar **vendor SUBCON** beserta **jumlah karyawan** di konteks/SQL yang tersedia, jadi saya belum bisa menentukan **vendor SUBCON dengan karyawan terbanyak**.\n\nKalau Anda bisa kirim tabel/kolom yang berisi:\n- nama vendor SUBCON\n- jumlah karyawan (atau headcount)\n\nsaya bisa langsung urutkan dan sebutkan yang terbanyak.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5695,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Vendor itu — ada berapa yang permitnya expired?",
+          "answerExcerpt": "Jumlah vendor **SUBCON** yang permitnya **expired** adalah **0**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6041,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Bagaimana dengan MCU mereka?",
+          "answerExcerpt": "Jumlah **MCU vendor SUBCON** yang **permitnya expired**: **0**.Jumlah **MCU vendor SUBCON** yang **permitnya expired** adalah **3** dengan rincian:\n\n- **Tipe MCU:** **NEW_HIRE** — **3**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 11906,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Dari dokumen: apa konsekuensi vendor yang tidak compliant?",
+          "answerExcerpt": "Saya belum menerima **dokumen/ketentuan** yang dimaksud (mis. pasal/aturan “vendor SUBCON tidak compliant” dan konsekuensinya), dan **CONTEXT SQL kosong**—jadi saya tidak bisa memastikan konsekuensi yang tertulis di dokumen tersebut.\n\nBisa kirim salah satu dari ini supaya saya bisa jawab tepat sesuai dokumen:\n1) potongan teks/halaman dokumen “vendor SUBCON tidak compliant”, atau  \n2) nama dokumen ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6878,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 6,
+          "question": "Buat ringkasan risiko vendor itu dalam 3 poin.",
+          "answerExcerpt": "Saya belum bisa menyusun **ringkasan risiko vendor SUBCON yang tidak compliant** dalam **3 poin konsekuensi** karena **CONTEXT RAG yang tersedia tidak memuat isi dokumen** yang membahas “vendor SUBCON tidak compliant” maupun **konsekuensinya**.\n\nYang muncul di konteks hanya kalimat umum seperti:\n- “**Quality, service, and reliability** will be routine business criteria …” (kriteria bisnis rutin: k",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6649,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-007",
+      "kind": "long_session",
+      "description": "Ellipsis chain (\"yang itu\", \"dia\") on trainers",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Siapa trainer yang mengajar batch paling banyak?",
+          "answerExcerpt": "Trainer yang mengajar batch paling banyak adalah **Demo Trainer OTPD** (TrainerId: **6932c3bf-8ce3-4e90-855f-99ef33f9a8db**) dengan jumlah **5 batch**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3919,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dia berasal dari site mana?",
+          "answerExcerpt": "Site asal **Demo Trainer OTPD** (TrainerId **6932c3bf-8ce3-4e90-855f-99ef33f9a8db**) adalah:\n\n- **ASAM-ASAM** — *Asam-Asam Site*\n- **BCP** — *Bengalon Coal Project*\n- **ACP** — *Asam Coal Project*\n- **DEMO_SITE** — *Demo Integrated Site*",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5557,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Rata-rata skor pesertanya berapa?",
+          "answerExcerpt": "Rata-rata skor peserta untuk **Demo Trainer OTPD** (TrainerId **6932c3bf-8ce3-4e90-855f-99ef33f9a8db**) adalah **null** (tidak ada nilai rata-rata yang tercatat pada data yang diberikan).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5176,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apa kriteria penunjukan trainer menurut dokumen?",
+          "answerExcerpt": "Berdasarkan dokumen yang tersedia di konteks RAG, **tidak ada bagian yang secara spesifik menjelaskan “kriteria penunjukan trainer”**.\n\nYang muncul di konteks hanya pernyataan umum, misalnya:\n- **Virtual-reality technologies** akan menjadi hal yang umum untuk pelatihan (tidak terkait kriteria penunjukan trainer).\n- **Quality, service, and reliability** akan menjadi kriteria bisnis yang rutin (ini ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6332,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Apakah dia memenuhi kriteria itu berdasarkan datanya?",
+          "answerExcerpt": "Berdasarkan **data yang tersedia pada konteks RAG**, **tidak ada informasi** yang membahas **“kriteria penunjukan trainer”** maupun penilaian apakah **TrainerId `6932c3bf-8ce3-4e90-855f-99ef33f9a8db`** memenuhi kriteria tersebut.\n\nSelain itu, pada percakapan sebelumnya juga sudah disebutkan bahwa **dokumen yang tersedia tidak memuat bagian spesifik tentang kriteria penunjukan trainer**. Jadi, **ti",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6837,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-008",
+      "kind": "long_session",
+      "description": "Site-by-site sweep with pivot to policy",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Site mana yang pesertanya paling banyak?",
+          "answerExcerpt": "Site dengan peserta paling banyak adalah **Bontang (SiteCode: BONTANG)** dengan jumlah peserta **2.613**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4800,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Site terkecil mana?",
+          "answerExcerpt": "Site terkecil dengan jumlah peserta paling sedikit adalah **KCP (Kintap Coal Project)** dengan jumlah peserta **2**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6162,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Di site terkecil itu, semua orang sudah punya permit?",
+          "answerExcerpt": "Berdasarkan konteks yang ada, **site terkecil adalah KCP (Kintap Coal Project) dengan jumlah peserta 2**.\n\nNamun, **tidak ada informasi di konteks/data yang menunjukkan apakah semua orang di KCP sudah punya permit**. Jadi saya belum bisa memastikan status permit untuk kedua peserta tersebut dari data yang tersedia.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5748,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apa tanggung jawab darurat site menurut dokumen?",
+          "answerExcerpt": "Menurut dokumen yang tersedia di konteks, bagian yang membahas **tanggung jawab darurat site** tidak dijelaskan secara spesifik (misalnya daftar tugas/penanggung jawab saat kondisi darurat di lokasi).\n\nYang ada di konteks hanya menyebut bahwa pada konsep **smart home/community safety systems** ada sistem untuk **fire, flood, storm, dan accident losses** (keamanan & keselamatan komunitas), tetapi *",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6396,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Nomor darurat site itu sudah terisi belum di sistem?",
+          "answerExcerpt": "Saya belum bisa memastikan **nomor darurat site** sudah terisi atau belum di sistem, karena **tidak ada data/hasil query pada CONTEXT (SQL: kosong)** yang menunjukkan status pengisian nomor darurat tersebut.\n\nKalau Anda bisa berikan:\n- nama tabel/kolom yang menyimpan **nomor darurat site**, atau\n- contoh **site code** yang ingin dicek,\n\nsaya bisa bantu cek statusnya.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5402,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-009",
+      "kind": "long_session",
+      "description": "Equipment certification chain",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Equipment model terdaftar ada berapa?",
+          "answerExcerpt": "Berdasarkan data pada CONTEXT, **equipment model terdaftar ada 1** (nilai yang terdaftar: **850**).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3316,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Brand apa yang paling banyak?",
+          "answerExcerpt": "Brand paling banyak pada **equipment model terdaftar** adalah:\n\n- **Untuk model “txt”**: **brand terbanyak = 2**\n- **Untuk model “pdf”**: **brand terbanyak = 1**Maaf, query yang diperlukan **gagal dieksekusi** karena **SQL error: `syntax error at or near \"QUALIFY\"`**.  \n\nAkibatnya, saya belum bisa menghitung **brand paling banyak** untuk **equipment model terdaftar** (txt dan pdf) serta **jumlah b",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 20921,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Equipment mana yang dipakai di training tapi tidak di permit?",
+          "answerExcerpt": "Saya belum bisa menjawab pertanyaan **“equipment yang dipakai di training tapi tidak di permit”** karena **CONTEXT SQL kosong (tidak ada data/hasil query yang bisa saya gunakan)**.\n\nKalau Anda kirim:\n1) tabel/kolom yang dipakai untuk **training**, **equipment**, dan **permit** (atau kirim SQL yang Anda pakai), atau  \n2) hasil query sementara (mis. daftar equipment yang dipakai training dan daftar ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5506,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Dokumen mensyaratkan inspeksi equipment seperti apa?",
+          "answerExcerpt": "Berdasarkan **CONTEXT** yang tersedia, dokumen yang dirujuk tidak menyebutkan secara spesifik **“jenis/standar inspeksi equipment”** yang disyaratkan.\n\nYang muncul di konteks justru adalah rujukan umum tentang **standar** (mis. “International Agreement on Standards in Construction” dan “International Materials Characterization Standards”), serta contoh regulasi/standar terkait bahan/konservasi, te",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7663,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Berapa equipment yang terkait sertifikasi permit saat ini?",
+          "answerExcerpt": "Jumlah **equipment yang terkait sertifikasi permit saat ini** adalah **5**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5502,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-010",
+      "kind": "long_session",
+      "description": "Age demographics → insurance → policy",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa usia rata-rata peserta?",
+          "answerExcerpt": "Usia rata-rata peserta adalah **34,89 tahun**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4102,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Yang di atas 55 tahun ada berapa?",
+          "answerExcerpt": "Maaf, query gagal karena **relation “participants” tidak ditemukan** (error: *relation \"participants\" does not exist*).  \n\nKalau Anda bisa kirim nama tabel yang benar (mis. tabel peserta/participant) atau struktur skemanya, saya bisa hitungkan **jumlah peserta yang berusia di atas 55 tahun**.Maaf, query gagal karena **relation `participants` tidak ditemukan** (error: *“relation \"participants\" does",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 18407,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 3,
+          "question": "Mereka masih aktif semua?",
+          "answerExcerpt": "Perhitungan **jumlah peserta berusia di atas 55 tahun yang masih aktif** belum bisa dijalankan karena **SQL gagal** dengan error:\n\n- **relation `participants` does not exist**\n\nArtinya tabel yang berisi data peserta (yang sebelumnya disebut `participants`) tidak ditemukan di database yang sedang digunakan, sehingga saya tidak bisa memfilter berdasarkan:\n1) **usia > 55**, dan  \n2) **status peserta ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 8706,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apa aturan kesehatan untuk pekerja senior menurut dokumen?",
+          "answerExcerpt": "Saya belum menemukan bagian dokumen yang secara spesifik memuat **“aturan kesehatan untuk pekerja senior”** pada potongan konteks yang tersedia.\n\nPotongan yang muncul hanya membahas hal umum seperti:\n- proyeksi bahwa orang di negara maju akan hidup hingga pertengahan usia 80-an (chunk #29),\n- peran ukuran/ kebijakan terkait kualitas hidup, pekerjaan, dan aktivitas (chunk #135),\n- pernyataan tentan",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6254,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Berdasarkan itu, berapa yang perlu MCU khusus?",
+          "answerExcerpt": "Menurut dokumen yang tersedia di konteks **MCU khusus untuk pekerja senior tidak disebutkan secara spesifik** (tidak ada bagian yang menyatakan “aturan kesehatan pekerja senior” atau “MCU khusus” yang harus dilakukan untuk kelompok usia senior).\n\nYang muncul di konteks hanya hal umum, misalnya:\n- pembahasan tentang **smart card/disk** (chunk #28),\n- pola kerja (termasuk pekerja di rumah/centers) d",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6957,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-011",
+      "kind": "long_session",
+      "description": "Tag incident review meeting simulation",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Tag belum dilepas ada berapa?",
+          "answerExcerpt": "Tag belum dilepas ada **2**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3710,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Yang paling lama diterapkan kapan?",
+          "answerExcerpt": "Tag **DEMO-IT-20260527** (Status: **1**, *tag belum dilepas*) paling lama diterapkan adalah mulai dari **27 Mei 2026** (AppliedDate: **2026-05-27T00:00:00.000Z**).Tag belum dilepas paling lama (yaitu yang **ActualReleaseDate IS NULL** dan **AppliedDate paling awal**) diterapkan pada:\n\n**AppliedDate: 2026-05-27 00:00:00.000Z**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 10542,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Alasannya apa saja?",
+          "answerExcerpt": "Alasan **tag belum dilepas** pada **DEMO-IT-20260527** (AppliedDate **2026-05-27**, **Status = 1**, **ActualReleaseDate IS NULL**) adalah karena **tag tersebut masih berstatus “belum dilepas”**—terlihat dari:\n\n- **ActualReleaseDate IS NULL** → menandakan **belum ada tanggal rilis aktual**, sehingga tag belum masuk proses pelepasan.\n- **Status = 1** → konsisten dengan kondisi **tag belum dilepas**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6345,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Prosedur pelepasan tag dari dokumen bagaimana?",
+          "answerExcerpt": "Saya belum menemukan **prosedur langkah-langkah release tag dari dokumen** maupun **persyaratan spesifik** yang menyebutkan kondisi **`ActualReleaseDate IS NULL`** dan **`Status = 1`** di CONTEXT yang tersedia (dokumen yang terambil tidak memuat aturan release tag tersebut).\n\nNamun, berdasarkan percakapan sebelumnya, makna kondisi tersebut adalah:\n\n- **`ActualReleaseDate IS NULL`** → tag **belum m",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7937,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Siapa yang berwenang melepas berdasarkan data historis?",
+          "answerExcerpt": "Berdasarkan **data historis `ActualReleaseDate` dan `Status`** yang Anda sebutkan (“**tag belum dilepas**”), **tidak ada informasi di konteks/data yang tersedia** yang menunjukkan **siapa (nama/jabatan/user) yang berwenang** melepas tag.\n\nYang bisa disimpulkan dari kondisi tersebut hanya:\n- **`ActualReleaseDate IS NULL`** → tag **belum memiliki tanggal rilis aktual**, sehingga statusnya tetap **“t",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6424,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-012",
+      "kind": "long_session",
+      "description": "Department audit with hierarchy",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Department terbesar yang mana?",
+          "answerExcerpt": "Department terbesar adalah **Equipment** dengan **1.265** peserta.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5114,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Punya sub-department berapa?",
+          "answerExcerpt": "Saya belum punya data **sub-department** untuk **Department terbesar: Equipment (1.265 peserta)** di konteks yang tersedia, jadi saya tidak bisa menghitung jumlah sub-department-nya.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4838,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Karyawannya tersebar di site mana saja?",
+          "answerExcerpt": "Berdasarkan data **department terbesar: Equipment (1.265 peserta)** dan informasi **sub-department** yang tersedia pada konteks ini, karyawan tersebar di site berikut (berdasarkan **jumlah karyawan per site**):\n\n- **BONTANG (Bontang)**: **2.613**\n- **BANJARBARU (Banjarbaru)**: **1.970**\n- **JKT (JKT Head Office)**: **261**\n- **ASAM-ASAM (Asam-Asam Site)**: **62**\n- **BENGALON (Bengalon Site)**: **",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6935,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Apa struktur department ideal menurut dokumen?",
+          "answerExcerpt": "Menurut dokumen yang tersedia di **CONTEXT**, tidak ada penjelasan tentang **struktur department yang “ideal”** (mis. pembagian department, sub-department, atau hierarki organisasi).\n\nYang disebut hanya konteks peran **Department of Commerce** dalam “teasing out the exact contribution of information technology to the economy” (mengurai kontribusi IT terhadap ekonomi). Dokumen juga membahas daftar ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6232,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Bandingkan dengan struktur aktual — sesuai atau tidak?",
+          "answerExcerpt": "Berdasarkan **CONTEXT** yang tersedia, dokumen **tidak membahas “struktur department aktual” maupun “struktur department ideal”** (mis. pembagian department/sub-department, hierarki, atau model organisasi).\n\nYang ada di konteks dokumen hanya menyebut **Department of Commerce** berperan untuk *“tease out the exact contribution of information technology to the economy”* serta daftar teknologi/alat (",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6670,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-013",
+      "kind": "long_session",
+      "description": "Cross-entity comparison: two sites end-to-end",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Bandingkan Asam-Asam dan Bengalon: jumlah peserta masing-masing?",
+          "answerExcerpt": "Berikut perbandingan jumlah peserta:\n\n- **Asam-Asam:** **0** peserta  \n- **Bengalon:** **3** peserta",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3823,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Permit aktifnya masing-masing berapa?",
+          "answerExcerpt": "Berdasarkan data yang tersedia pada percakapan sebelumnya:\n\n- **Asam-Asam (permit aktif): 0 peserta**\n- **Bengalon (permit aktif): 3 peserta**Berikut **jumlah permit aktif** masing-masing:\n\n- **Asam-Asam (MINE_PERMIT): 14**\n- **Bengalon (KIMPER): 2**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 12072,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "MCU overdue-nya mana yang lebih banyak?",
+          "answerExcerpt": "MCU overdue yang **lebih banyak** adalah **Asam-Asam dan Bengalon sama banyak** (masing-masing **1** overdue).Berdasarkan **hasil eksekusi SQL pada CONTEXT**, perhitungan **jumlah overdue per lokasi** tidak bisa ditentukan karena query **FAILED** dengan error:\n\n- **`column r.ClinicId does not exist`**\n\nJadi saya belum bisa membandingkan **MCU overdue count** antara **Asam-Asam** vs **Bengalon** da",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 20909,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Dokumen menetapkan standar rasio apa untuk site operasional?",
+          "answerExcerpt": "Di dalam **CONTEXT** yang tersedia, tidak ada informasi yang menyebutkan **“standar rasio untuk site operasional dokumen”** (misalnya rasio tertentu seperti perbandingan jumlah dokumen, komponen, atau metrik operasional).\n\nYang disebut terkait “standards” hanya konteks **standar konstruksi** (misalnya standar yang “fully wired for broadband” dan standar yang mengembangkan *performance measures* un",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5889,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Site mana yang lebih compliant? Kesimpulan.",
+          "answerExcerpt": "Berdasarkan **CONTEXT** yang Anda berikan, tidak ada data tentang **“site operasional”** (mis. Asam-Asam vs Bengalon) maupun metrik **compliance** per site.\n\nYang ada di dokumen ini hanya pembahasan konsep **off-site/distributed work** vs **traditional central workplace**, misalnya:\n- Pola kerja off-site meningkat (disebutkan hingga sekitar **40%** bekerja off-site beberapa jam per minggu).\n- Mayo",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6503,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-014",
+      "kind": "long_session",
+      "description": "Numbers-then-why: anomaly hunting",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Ada peserta yang punya banyak permit sekaligus?",
+          "answerExcerpt": "Ada peserta yang punya banyak permit sekaligus, yaitu:\n\n- **Ruby** — **4** permit  \n- **Demo MCU Expiring 30 Days** — **3** permit",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3816,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Ada NIK duplikat?",
+          "answerExcerpt": "NIK peserta yang **duplikat** (punya **banyak permit sekaligus**) adalah:\n\n- **5714563818786** — Ruby — **4** permit  \n- **DEMO-E2E-MCU30** — Demo MCU Expiring 30 Days — **3** permit",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6171,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Ada yang MCU overdue tapi permit masih aktif?",
+          "answerExcerpt": "Berikut peserta yang **MCU overdue** (tanggal MCU berikutnya sudah lewat) tapi **permit masih aktif**:\n\n1) **Yehezkiel Simbuang** (NIK: 1111)  \n- **NextMcuDate:** 2026-06-18 16:59:59.999Z *(overdue)*  \n- **McuRegistrationStatus:** COMPLETED  \n- **ActivePermitNo:** SP-202605-00001 (SIMPER)  \n- **PermitExpiryDate:** 2027-05-21 04:01:40.348Z *(masih aktif)*  \n\n2) **Irfan Setiawan** (NIK: 640904170994",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7118,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Dokumen bilang apa soal data ganda/konflik seperti ini?",
+          "answerExcerpt": "Dokumen di konteks yang kamu berikan **tidak membahas secara spesifik** aturan/ketentuan tentang:\n\n- **data ganda/konflik peserta** (mis. NIK duplikat),\n- kasus **MCU overdue** tapi **permit masih aktif**,\n- atau “banyak permit sekaligus” sebagai kategori konflik data.\n\nYang ada di dokumen tersebut lebih bersifat umum tentang **risiko penyalahgunaan “personal identifier numbers”** (mis. dipakai un",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7129,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Prioritas perbaikan mana yang paling urgent?",
+          "answerExcerpt": "Prioritas perbaikan paling urgent untuk **konflik data peserta** pada dua kasus yang kamu sebutkan adalah:\n\n1) **NIK duplikat (data ganda/identitas tidak unik) — paling urgent**\n- Alasan: dokumen menekankan bahwa “personal identifier numbers” dapat memfasilitasi **harassment** (mis. panggilan berulang) dan penyalahgunaan identitas. Kalau NIK duplikat, risiko salah-rujuk/penyalahgunaan meningkat ka",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7841,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-015",
+      "kind": "long_session",
+      "description": "Exam quality review",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Exam questions aktif ada berapa?",
+          "answerExcerpt": "Jumlah **exam questions aktif** yang ada adalah **34**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3366,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Yang belum pernah dijawab ada berapa?",
+          "answerExcerpt": "Jumlah **exam questions yang belum pernah dijawab** adalah **33**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5605,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Rata-rata skor exam per batch?",
+          "answerExcerpt": "Rata-rata skor exam **per batch** adalah:\n\n- **DEMO-TRN-KIMPAK-20260527**: **90.00**\n- **DEMO-TRN-SIMPER-20260527**: **92.00**\n- **TRN-01**: **100.00**\n- **TRN-02**: **100.00**\n- **TRN-03**: **100.00**\n- **TRN-05**: **100.00**\n- **TRN-2026-B**: **100.00**\n- **TRN-2026-c**: **100.00**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4256,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Dokumen mensyaratkan review soal seperti apa?",
+          "answerExcerpt": "Berdasarkan konteks dokumen yang Anda berikan, “review soal yang disyaratkan dokumen” tampaknya mengarah pada **cara menyusun dan meninjau “asumsi/alternatif” untuk skenario masa depan**—bukan sekadar jawaban tunggal.\n\nIntinya, dokumen menekankan bahwa:\n\n- **Asumsi harus dirumuskan secara sederhana dan langsung** (“as simply and in as straightforward a manner as possible”).\n- Sebagian asumsi bersi",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6785,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-016",
+      "kind": "long_session",
+      "description": "Onboarding flow check",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Peserta terbaru siapa?",
+          "answerExcerpt": "Peserta terbaru adalah **Mohamad Fahrur Rozak** (ParticipantId: `4a018302-f7fb-4617-8351-c1fb3297c24a`), dengan **CreatedAt: 2026-08-15T04:54:50.215Z**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4298,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Sudah punya permit dan MCU belum?",
+          "answerExcerpt": "Untuk **peserta terbaru: Mohamad Fahrur Rozak** (ParticipantId: `4a018302-f7fb-4617-8351-c1fb3297c24a`):\n\n- **Permit**: **belum** ada (PermitCount: **0**), **LastPermitExpiryDate: null**\n- **MCU**: **belum** ada (McuResultCount: **0**), **LastMcuResultDate: null** dan **LastMcuNextDate: null**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6303,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Sudah ikut induction?",
+          "answerExcerpt": "Untuk **peserta terbaru: Mohamad Fahrur Rozak** (ParticipantId: `4a018302-f7fb-4617-8351-c1fb3297c24a`), **status induction belum bisa saya konfirmasi** karena **tidak ada data induction di CONTEXT** yang diberikan.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6219,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Urutan onboarding yang benar menurut dokumen apa?",
+          "answerExcerpt": "Saya belum bisa menentukan **urutan onboarding yang benar menurut dokumen** untuk peserta **Mohamad Fahrur Rozak (ParticipantId: 4a018302-f7fb-4617-8351-c1fb3297c24a)**, karena **dokumen yang muncul di CONTEXT tidak memuat bagian “onboarding/urutan onboarding”**—yang terlihat hanya potongan topik umum (mis. moon mining/asteroid harvesting, identification cards, dan in-depth personal medical histor",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6247,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Jadi dia sudah sejauh mana di flow itu?",
+          "answerExcerpt": "Berikut status **Mohamad Fahrur Rozak** (ParticipantId: `4a018302-f7fb-4617-8351-c1fb3297c24a`) sejauh mana di flow onboarding **(permit → MCU → induction)** berdasarkan data yang ada:\n\n1. **Induction**\n   - **Belum masuk induction**\n   - InductionParticipantId: `null`\n   - InductionBatchId / BatchNo: `null`\n   - InductionBatchStatus: `null`\n   - InductionStartDate: `null`\n   - Induction module & ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 9834,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-017",
+      "kind": "long_session",
+      "description": "Clinic performance review",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Klinik mitra ada berapa?",
+          "answerExcerpt": "Klinik mitra ada **1**.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"8\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 3882,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Yang menangani registrasi terbanyak?",
+          "answerExcerpt": "Yang menangani registrasi terbanyak di **Klinik Mitra** adalah **Klinik Mitra Sehat** dengan **1** registrasi.Klinik **yang menangani registrasi terbanyak** adalah **Demo Klinik MCU** dengan **10 registrasi**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 9899,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Kategori MCU apa yang paling seriing ditanganinya?",
+          "answerExcerpt": "Kategori MCU yang paling sering ditangani adalah:\n\n- **Demo Klinik MCU**: **Demo MCU Operator** ( **8** registrasi )\n- **Klinik Mitra Sehat**: **Kategori A - Operator Alat Berat** ( **2** registrasi )",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5161,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Standar pemilihan klinik dari dokumen apa?",
+          "answerExcerpt": "Standar pemilihan klinik dari **dokumen “International Agreement on Standards in Construction”** (Perjanjian Internasional tentang Standar dalam Konstruksi).Berdasarkan konteks yang tersedia, **standar pemilihan klinik** yang dimaksud tidak dijelaskan sebagai berasal dari dokumen **“International Agreement on Standards in Construction”**.\n\nYang tercatat di konteks adalah bahwa **“international agr",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 12729,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-018",
+      "kind": "long_session",
+      "description": "Aggressive topic-switching stress test",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa permit SIMPER aktif?",
+          "answerExcerpt": "Jumlah **permit SIMPER aktif** adalah **7**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3404,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Lalu berapa karyawan department Engineering?",
+          "answerExcerpt": "Jumlah karyawan pada **department Engineering** adalah **2**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4021,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Lalu berapa klinik aktif?",
+          "answerExcerpt": "Jumlah **klinik aktif** adalah **8**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5872,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Lalu apa itu tag type menurut dokumen?",
+          "answerExcerpt": "Menurut dokumen, **tag type** adalah **jenis/tipe tag** (misalnya **chemical tags** atau tag lain) yang termasuk dalam keluarga teknologi “Information Age”. Dalam konteks itu, tag digunakan untuk **mengidentifikasi** atau **memberi penanda** pada suatu material/objek agar dapat dikenali dan diproses dengan lebih akurat.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6337,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Dan sekarang: rata-rata umur peserta?",
+          "answerExcerpt": "Maaf, perhitungan **rata-rata umur peserta** tidak bisa dilakukan karena terjadi error saat menjalankan SQL: **relation `participants` does not exist** (tabel `participants` tidak ditemukan).Maaf, perhitungan **rata-rata umur peserta** tidak bisa dilakukan karena terjadi error saat menjalankan SQL: **relation `participants` does not exist**.Maaf, perhitungan **rata-rata umur peserta** tidak bisa d",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 21341,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 6,
+          "question": "Terakhir: ringkas 4 topik tadi masing-masing satu kalimat.",
+          "answerExcerpt": "Berikut cara mendapatkan **rata-rata umur peserta (avg age)** dengan asumsi tabel **`participants` tidak ada**. Karena di **CONTEXT** sudah ada hasil `avg_age_years = 34.89`, query yang benar adalah yang menghasilkan nilai tersebut.\n\n## 1) Cari tabel & kolom umur / birth date / dob\n### PostgreSQL\n```sql\nSELECT\n  table_schema,\n  table_name,\n  column_name,\n  data_type\nFROM information_schema.columns",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6572,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-019",
+      "kind": "long_session",
+      "description": "Failed-training remediation flow",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Siapa yang pernah gagal training?",
+          "answerExcerpt": "Saya belum punya data di **CONTEXT (SQL)** untuk mengetahui siapa yang pernah gagal training—karena konteksnya kosong (`[]`).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4167,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Ada yang kemudian lulus di attempt berikutnya?",
+          "answerExcerpt": "Saya belum bisa menjawab karena **CONTEXT (SQL) kosong** (`[]`), jadi tidak ada data siapa yang **gagal training** lalu **lulus pada attempt berikutnya**.Berdasarkan **CONTEXT**, query yang diperlukan untuk menjawab pertanyaan tersebut **tidak bisa dieksekusi** karena terjadi error:\n\n- **SQL execution error:** `column p.NextAttendedAt does not exist`\n\nAkibatnya, saya belum bisa menarik data untuk ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 23032,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Berapa lama jaraknya rata-rata?",
+          "answerExcerpt": "Saya belum bisa menghitung **rata-rata jarak waktu** antara **attempt gagal training** dan **attempt berikutnya lulus** karena **CONTEXT (SQL) kosong (`[]`)**, sehingga tidak ada data untuk:\n\n- mengidentifikasi **ParticipantId**\n- menentukan **ExamStatus** (gagal vs lulus)\n- mengambil timestamp **PassedAt/AttendedAt**\n- mengurutkan berdasarkan **TrainingBatchNo** (atau kolom attempt/batch terkait)",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 8793,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 4,
+          "question": "Aturan retake dari dokumen bagaimana?",
+          "answerExcerpt": "Saya belum bisa menjawab “aturan retake dari dokumen untuk training (retake attempt berikutnya)” karena **CONTEXT (SQL) kosong (`[]`)** dan tidak ada isi dokumen/aturan retake yang bisa saya rujuk.\n\nAgar saya bisa tarik jawabannya, mohon kirim salah satu dari ini:\n1) **Teks/isi dokumen** bagian “retake/attempt berikutnya”, atau  \n2) **Nama tabel + kolom** yang menyimpan aturan retake (mis. tabel m",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6942,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Siapa yang masih perlu dijadwalkan ulang sekarang?",
+          "answerExcerpt": "Saya belum bisa menentukan **siapa yang masih perlu dijadwalkan ulang sekarang** karena **CONTEXT (SQL) kosong (`[]`)**, sehingga tidak ada data/akses tabel untuk mengecek status peserta training (mis. yang gagal/belum lulus, belum selesai, atau yang memang masuk kategori “perlu jadwal ulang”).\n\nAgar saya bisa jawab, mohon kirim salah satu dari berikut:\n1) **Nama tabel + kolom** yang menyimpan sta",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6448,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "prinl-020",
+      "kind": "long_session",
+      "description": "Executive summary build-up (final turn must synthesize)",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Beri saya angka kunci compliance: total peserta, permit aktif, MCU FIT, training lulus.",
+          "answerExcerpt": "Berikut **angka kunci compliance** berdasarkan data pada konteks:\n\n- **Total peserta:** 5.044  \n- **Permit aktif:** 23  \n- **MCU FIT:** 22  \n- **Training lulus:** 10",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5434,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Sekarang risiko terbesar dari masing-masing area apa?",
+          "answerExcerpt": "Berikut **risiko terbesar** per area compliance berdasarkan kondisi angka pada konteks (prioritas risiko saya: **Training lulus paling rendah**, lalu **MCU FIT paling rendah**, lalu **Permit aktif paling rendah**; “total peserta” dipakai sebagai konteks skala):\n\n| Area | Total Peserta | Permit Aktif | MCU FIT | Training Lulus | Risiko Terbesar |\n|---|---:|---:|---:|---:|---|\n| **1223** | 3 | 3 | 2",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7630,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Apa yang dokumen K3 tegaskan soal prioritas keselamatan?",
+          "answerExcerpt": "Berdasarkan **dokumen yang muncul di konteks RAG** saat ini, bagian yang terlihat hanya menegaskan **tiga poin penting** (namun teks rinci “prioritas keselamatan” tidak ikut tampil di cuplikan yang tersedia). Cuplikan yang ada adalah:\n\n1) **Tiga poin penting untuk dipertimbangkan** (judul/kalimat pembuka, tanpa rincian poinnya di cuplikan).  \n2) **Riwayat medis personal yang mendalam** akan dicata",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6598,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 4,
+          "question": "Susun executive summary 5 bullet untuk direksi dari semua di atas.",
+          "answerExcerpt": "Berikut **Executive Summary 5 bullet untuk Direksi** berdasarkan **angka kunci compliance** dan **risiko terbesar per area** (dari percakapan sebelumnya), serta temuan **dokumen K3** yang tersedia di konteks RAG.\n\n- **Total peserta:** **5.044** → skala program besar, sehingga gap kecil berpotensi berdampak luas pada kepatuhan.\n- **Permit aktif:** **23** → terdapat area dengan permit aktif yang tid",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 9024,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Ubah jadi versi Bahasa Indonesia formal satu paragraf.",
+          "answerExcerpt": "Berdasarkan evaluasi kepatuhan, program ini melibatkan **5.044** peserta dengan **23** permit aktif, **22** hasil MCU yang dinyatakan **FIT**, serta **10** peserta yang **lulus training**; dengan skala tersebut, setiap deviasi berpotensi berdampak luas terhadap kesinambungan operasional dan pemenuhan standar. Dari sisi risiko terbesar per area, prioritas perbaikan difokuskan pada **1223** (trainin",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5006,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "princ-001",
+      "kind": "cross_session",
+      "description": "Fact established in A, referenced elliptically in B",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Vendor dengan karyawan terbanyak siapa?",
+          "answerExcerpt": "Vendor dengan karyawan terbanyak adalah **Demo Vendor Mining Services** dengan jumlah karyawan **6**.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"PT DARMA HENWA\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 3945,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Ingat nama vendor itu untuk pertanyaan berikutnya.",
+          "answerExcerpt": "Vendor dengan karyawan terbanyak adalah **Demo Vendor Mining Services** dengan jumlah karyawan **5**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6078,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Vendor yang tadi saya tanyakan di percakapan sebelumnya — berapa permit expired karyawannya?",
+          "answerExcerpt": "Berdasarkan data yang tadi Anda tanyakan, jumlah **permit yang expired** untuk karyawan adalah **0**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4523,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": [
+        "PT DARMA HENWA"
+      ]
+    },
+    {
+      "scenarioId": "princ-002",
+      "kind": "cross_session",
+      "description": "Person established in A, profile asked in B",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Siapa pemegang KIMPER pertama yang terdaftar?",
+          "answerExcerpt": "Maaf, saya tidak bisa menjawab pertanyaan itu dari konteks yang diberikan karena eksekusi SQL **gagal**.\n\n**Alasan kegagalan:** `column r.RegistrationDate does not exist` (kolom `RegistrationDate` pada alias `r` tidak ditemukan), sehingga data “pemegang KIMPER pertama yang terdaftar” tidak berhasil diambil.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4622,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Orang yang saya tanyakan barusan — department dia apa?",
+          "answerExcerpt": "Saya belum punya data tentang “orang” yang Anda tanyakan barusan (tidak ada konteks/SQL yang berisi nama atau daftar departemen).  \n\nTolong kirim salah satu ini supaya saya bisa jawab:\n1) Nama orangnya (atau ID karyawan), atau  \n2) Cuplikan data/hasil query yang Anda lihat sebelumnya.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4879,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-003",
+      "kind": "cross_session",
+      "description": "Policy learned in A applied to data question in B",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Apa interval MCU berkala menurut dokumen K3?",
+          "answerExcerpt": "Saya belum menerima **dokumen K3** atau isi yang memuat “interval MCU berkala” pada konteks yang diberikan (CONTEXT kosong).  \n\nTolong kirimkan **kutipan/halaman dokumen K3** yang membahas **MCU berkala**, atau unggah dokumennya, nanti saya ambil dan jawab **intervalnya** sesuai dokumen.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4771,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dengan interval itu, siapa saja yang sudah melewati batas MCU-nya sekarang?",
+          "answerExcerpt": "Dengan waktu sekarang **2026-08-15 11:39 UTC**, yang **sudah melewati batas MCU** adalah peserta yang **NextMcuDate < sekarang**.\n\nDari data yang ada, **NextMcuDate** yang sudah lewat:\n- **Budi** (Nik: 1231231) — Next MCU: **2026-08-07 15:59:59.999Z**  \n- **Demo MCU Expiring 30 Days** (Nik: DEMO-E2E-MCU30) — Next MCU: **2026-06-21 00:00:00.000Z**  \n- **Demo Unfit Stop Flow** (Nik: DEMO-E2E-UNFIT) ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6188,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-004",
+      "kind": "cross_session",
+      "description": "Site context in A, drill-down in B must not hallucinate",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Site dengan MCU FIT rate tertinggi yang mana?",
+          "answerExcerpt": "Saya belum bisa menentukan **site dengan MCU FIT rate tertinggi** karena pada **CONTEXT (SQL)** tidak ada data/kueri yang berisi tabel atau nilai FIT rate per site (CONTEXT kosong).\n\nKalau Anda kirim:\n1) nama tabel/kolom yang menyimpan **site** dan **MCU FIT rate**, atau  \n2) hasil query/SQL yang relevan,  \n\nsaya bisa bantu hitungkan dan sebutkan **site dengan FIT rate tertinggi**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5162,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Di site yang FIT rate-nya tertinggi itu, siapa yang belum punya permit aktif?",
+          "answerExcerpt": "Saya belum bisa menjawab karena **tidak ada data/hasil SQL di CONTEXT** (CONTEXT kosong).  \n\nAgar saya bisa menentukan “di site dengan FIT rate tertinggi, siapa yang belum punya permit aktif”, mohon kirimkan salah satu dari ini:\n1) hasil query yang berisi **site dengan FIT rate tertinggi** beserta daftar orang/permitnya, atau  \n2) struktur tabel + kolom yang relevan (mis. `site`, `fit_rate`, `perm",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4789,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-005",
+      "kind": "cross_session",
+      "description": "Cross-session contradiction check: B asks opposite, must not stick to A answer",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Urutkan site dari peserta terbanyak ke tersedikit.",
+          "answerExcerpt": "Berikut urutan site dari **peserta terbanyak ke tersedikit**:\n\n1. **BONTANG (Bontang)** — 2.613  \n2. **BANJARBARU (Banjarbaru)** — 1.970  \n3. **JKT (JKT Head Office)** — 261  \n4. **ASAM-ASAM (Asam-Asam Site)** — 68  \n5. **BCP (Bengalon Coal Project)** — 32  \n6. **BENGALON (Bengalon Site)** — 28  \n7. **DEMO_SITE (Demo Integrated Site)** — 8  \n8. **ACP (Asam Coal Project)** — 8  \n9. **KCP (Kintap Co",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4857,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Sekarang urutkan site dari peserta tersedikit ke terbanyak.",
+          "answerExcerpt": "Berikut urutan **site dari peserta tersedikit ke terbanyak**:\n\n1. **KCP** — Kintap Coal Project — **2**\n2. **ACP** — Asam Coal Project — **8**\n3. **DEMO_SITE** — Demo Integrated Site — **8**\n4. **BENGALON** — Bengalon Site — **28**\n5. **BCP** — Bengalon Coal Project — **32**\n6. **ASAM-ASAM** — Asam-Asam Site — **68**\n7. **JKT** — JKT Head Office — **261**\n8. **BANJARBARU** — Banjarbaru — **1,970**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4889,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-006",
+      "kind": "cross_session",
+      "description": "Number in A, percentage recompute in B",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Berapa total peserta dan berapa yang SUBCON?",
+          "answerExcerpt": "Total peserta: **5.044**  \nJumlah SUBCON: **20**",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"5044\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 6223,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dari angka yang saya dapat sebelumnya, berapa persen SUBCON dari total?",
+          "answerExcerpt": "Berdasarkan data sebelumnya, **SUBCON dari total = 0.39651070578905630452%**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3053,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-007",
+      "kind": "cross_session",
+      "description": "Trainer fact in A, schedule question in B",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Trainer paling sibuk siapa dan mengajar berapa batch?",
+          "answerExcerpt": "Trainer paling sibuk adalah **Demo Trainer OTPD** (TrainerId: **6932c3bf-8ce3-4e90-855f-99ef33f9a8db**), dan dia mengajar **5 batch**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4000,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Trainer itu batch terakhirnya kapan dan di site mana?",
+          "answerExcerpt": "Trainer **Ibnu Setyo Wardani** batch terakhirnya adalah **TRN-06**, dimulai pada **2026-08-13** di **Asam-Asam Site** (kode **ASAM-ASAM**).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4453,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-008",
+      "kind": "cross_session",
+      "description": "Doc rule in A, exception hunt in B",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Apa syarat wajib induction sebelum mulai kerja menurut dokumen?",
+          "answerExcerpt": "Saya belum menemukan informasi tentang **syarat wajib induction sebelum mulai kerja** di dokumen yang tersedia pada konteks RAG/Knowledge Graph di atas. Potongan dokumen yang muncul hanya membahas topik umum seperti smart living, teknologi, energi, dan bab-bab lain, tetapi **tidak memuat ketentuan induction/ onboarding kerja**.\n\nKalau Anda bisa kirim **dokumen yang dimaksud** (atau bagian/halaman ",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5674,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        },
+        {
+          "index": 2,
+          "question": "Cari siapa yang melanggar syarat itu — sudah kerja tapi belum induction.",
+          "answerExcerpt": "Saya belum bisa menentukan “siapa yang melanggar syarat itu” karena **tidak ada data/SQL di CONTEXT** (daftar tabel/kolom atau hasil query kosong).\n\nAgar saya bisa cari namanya, mohon kirim salah satu dari ini:\n1) **SQL/struktur tabel** yang berisi status “sudah kerja” dan “sudah induction”, atau  \n2) **Nama tabel + kolom** yang relevan (mis. `employee`, `status`, `induction_date`, `start_date`, d",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6218,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-009",
+      "kind": "cross_session",
+      "description": "Establish list in A, ask for member detail in B",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Sebutkan semua training type yang aktif.",
+          "answerExcerpt": "Saya belum bisa menyebutkan **semua training type yang aktif** karena pada eksekusi SQL yang tersedia di **CONTEXT** terjadi error:\n\n- **SQL execution error:** `column \"id\" does not exist`\n\nAkibatnya, data training type aktif tidak berhasil diambil.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"HI\"",
+            "missing expected token: \"MTR\"",
+            "missing expected token: \"PLH\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 4286,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dari training type yang saya sebut tadi, mana yang pesertanya paling sedikit?",
+          "answerExcerpt": "Peserta paling sedikit ada pada **“Demo KIMPAK Tools Training”** dengan jumlah **1 peserta**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5465,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "princ-010",
+      "kind": "cross_session",
+      "description": "Long gap simulation: A policy, B applies to live number",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 1,
+          "question": "Dokumen menyebut batas maksimal peserta per batch training — berapa?",
+          "answerExcerpt": "Batas maksimal peserta per **batch training** adalah **30 peserta** (nilai **MaxParticipants = 30** pada sebagian besar batch).",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3824,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 2,
+          "question": "Dengan batas itu, batch mana yang melebihi kuota saat ini?",
+          "answerExcerpt": "Terjadi **SQL execution error**: **column `cogneeBatchSize` does not exist**. Karena query gagal dieksekusi, saya **tidak bisa menentukan batch mana yang melebihi kuota saat ini** dari hasil tersebut.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 7291,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ],
+      "memoryProbeHits": [],
+      "memoryProbeMissed": []
+    },
+    {
+      "scenarioId": "print-001",
+      "kind": "source_toggle",
+      "description": "SQL off → DB question must be refused honestly, not fabricated",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Berapa total peserta di database?",
+          "answerExcerpt": "Saya bisa bantu, tapi saya perlu tahu **database mana** dan **tabel/kolom apa** yang menyimpan “peserta”.\n\nTolong jawab salah satu:\n1) Nama **database** + **tabel** (mis. `participants`) dan kolom id/nama peserta, atau  \n2) Kirimkan skema singkat (mis. `participants(id, ...)`).\n\nKalau Anda pakai tabel bernama `participants` dan kolom id bernama `id`, query-nya biasanya:\n```sql\nSELECT COUNT(*) AS t",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 2124,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 3,
+          "question": "Menurut dokumen, apa prosedur MCU?",
+          "answerExcerpt": "Saya bisa bantu, tapi saya perlu konteks dokumennya dulu.\n\n1) Dokumen yang dimaksud yang mana (nama/judul atau bagian/halaman)?  \n2) “MCU” di dokumen itu singkatan dari apa (mis. *Microcontroller Unit*, *Master Control Unit*, atau istilah lain di organisasi Anda)?  \n3) Anda ingin prosedur MCU untuk proses apa (mis. pengujian, perakitan, instalasi, pemeliharaan, atau persetujuan)?\n\nKalau Anda bisa ",
+          "pass": false,
+          "failureReasons": [
+            "expected knowledge answer, got answers-chat"
+          ],
+          "outcome": "answered",
+          "latencyMs": 3589,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 5,
+          "question": "Sekarang berapa total peserta di database?",
+          "answerExcerpt": "Total peserta di database adalah **5.044**.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"5044\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 3334,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-002",
+      "kind": "source_toggle",
+      "description": "RAG off → knowledge question must not cite docs",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Apa prosedur pelepasan tag menurut dokumen?",
+          "answerExcerpt": "Berdasarkan **dokumen yang tersedia di konteks**, tidak ada bagian yang menjelaskan **prosedur pelepasan tag**.\n\nYang terlihat hanya data tag (mis. `TagType`, `Reason`, `Status`, `AppliedDate`, serta kolom pelepasan seperti `ExpectedReleaseDate`, `ActualReleaseDate`, dan `ReleaseNotes`), namun **kolom-kolom pelepasan tersebut bernilai `null`** untuk semua entri, sehingga **tidak ada informasi pros",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4946,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Berapa tag yang belum dilepas di database?",
+          "answerExcerpt": "Jumlah **tag yang belum dilepas (unreleased)** di database adalah **0**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 5087,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Ulangi: apa prosedur pelepasan tag menurut dokumen?",
+          "answerExcerpt": "Saya belum menemukan informasi di **dokumen/teks pada konteks** yang membahas **“prosedur pelepasan tag”**. Potongan yang tersedia hanya berisi topik lain (mis. teknologi kontrol kelahiran, mikroorganisme rekayasa genetika, privatisasi jalan tol), sehingga tidak ada langkah prosedur pelepasan tag yang bisa saya kutip atau rangkum.\n\nKalau Anda bisa kirim:\n1) nama dokumen yang dimaksud, atau  \n2) ba",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6106,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-003",
+      "kind": "source_toggle",
+      "description": "Both off → chat must answer honestly as plain LLM",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Berapa total permit kita?",
+          "answerExcerpt": "Saya perlu konteks dulu: “total permit” yang Anda maksud permit apa (mis. izin usaha, IMB, IMTA, parkir, dll.) dan datanya ada di sistem/database mana?\n\nKalau Anda bisa kirim:\n1) nama tabel/jenis permit,  \n2) periode (mis. semua waktu atau bulan/tahun tertentu), dan  \n3) filter tambahan (wilayah/unit/status),\n\nsaya bisa hitungkan totalnya.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 2568,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 3,
+          "question": "Halo, kamu bisa apa saja?",
+          "answerExcerpt": "Halo! Saya bisa bantu berbagai hal, terutama untuk kebutuhan enterprise. Ini beberapa yang paling sering saya kerjakan:\n\n- **Chat & konsultasi umum**: menjawab pertanyaan, merangkum, menyusun ide/strategi, dan membantu penulisan.\n- **Database (SQL)**: menulis/optimasi query, analisis data, membuat laporan berbasis data.\n- **Document search / RAG**: mencari informasi dari dokumen internal (mis. SOP",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 2843,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-004",
+      "kind": "source_toggle",
+      "description": "Hybrid question with SQL off → answers doc half, honest about DB half",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Jelaskan aturan renewal permit dari dokumen dan berapa yang perlu renewal sekarang.",
+          "answerExcerpt": "Bisa. Namun saya perlu dokumen/isi aturan renewal permit yang Anda maksud (atau akses ke dokumennya) supaya saya bisa:\n\n1) Menjelaskan **aturan renewal** sesuai teks dokumen (mis. periode berlaku, tenggat sebelum expired, dokumen yang dibutuhkan, denda/penalti, dsb).  \n2) Menghitung **berapa permit yang perlu renewal sekarang** berdasarkan data permit yang ada di dokumen/sistem.\n\nTolong kirim sala",
+          "pass": false,
+          "failureReasons": [
+            "expected knowledge answer, got answers-chat"
+          ],
+          "outcome": "answered",
+          "latencyMs": 3618,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-005",
+      "kind": "source_toggle",
+      "description": "Hybrid question with RAG off → answers DB half, honest about doc half",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Apa aturan MCU berkala dan siapa yang overdue?",
+          "answerExcerpt": "Berikut **aturan MCU berkala** dan **siapa yang overdue** berdasarkan data pada CONTEXT:\n\n## Aturan MCU berkala\nDi data yang tersedia, kolom yang dipakai untuk menentukan status adalah:\n- **LastMcuDate** (tanggal MCU terakhir)\n- **NextMcuDate** (tanggal MCU berikutnya)\n- **IsOverdue** (status overdue)\n\nNamun, **nilai “aturan periodenya” (mis. tiap 6 bulan / 1 tahun)** tidak tercantum di CONTEXT. Y",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 10507,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-006",
+      "kind": "source_toggle",
+      "description": "Toggle flap: off→on mid-conversation, same session",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Berapa permit EXPIRED?",
+          "answerExcerpt": "Bisa—tapi saya perlu konteksnya dulu: **“permit” yang mana** dan datanya ada di **sistem/database apa**?\n\nTolong kirim salah satu dari ini:\n1) Nama tabel/endpoint (mis. `permits`, `permit_status`, dll) + kolom status tanggalnya, atau  \n2) Contoh record/field yang dimaksud (mis. kolom `status`, `expired_at`, dll), atau  \n3) Kalau ini dari dashboard tertentu, sebutkan nama dashboard/reportnya.\n\nSete",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3022,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 4,
+          "question": "Coba jawab lagi pertanyaan saya barusan.",
+          "answerExcerpt": "Pertanyaan Anda barusan apa (tolong tulis ulang persis)?",
+          "pass": false,
+          "failureReasons": [
+            "expected DB answer, got answers-chat",
+            "missing expected token: \"9\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 1042,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-007",
+      "kind": "source_toggle",
+      "description": "Typo robustness must survive toggles (router must not get confused)",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "berapa permints actve sekarng?",
+          "answerExcerpt": "Jumlah **permits aktif saat ini** adalah **23**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 4505,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "dan dokumen bilang soal permit expierd apa?",
+          "answerExcerpt": "Di konteks yang kamu berikan, **tidak ada informasi yang menyebut “permit expired”** atau dokumen yang membahas **izin/permit kedaluwarsa**.\n\nYang muncul di konteks hanya cuplikan buku tentang topik teknologi (mis. *information age*, jaringan, fiber optik, chip, dll.), bukan soal administrasi permit.\n\nKalau kamu mau, kirim **teks/kalimat dokumen** yang dimaksud (bagian yang menyebut “permit expire",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 6200,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-008",
+      "kind": "source_toggle",
+      "description": "Switch-back stability: rag off → on, verify citation returns",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Apa syarat SIMPER menurut dokumen?",
+          "answerExcerpt": "Saya bisa bantu, tapi saya perlu konteks dulu: **“SIMPER”** yang Anda maksud itu dokumen apa (mis. dokumen perusahaan/instansi tertentu), dan **dokumen yang dimaksud sudah pernah Anda unggah/dibahas di sesi ini atau belum**?\n\nTolong kirim salah satu dari ini:\n1) **Nama dokumen + bagian/halaman** yang memuat “syarat SIMPER”, atau  \n2) **Teks kutipan** dari dokumen tersebut, atau  \n3) **Upload dokum",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3803,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 4,
+          "question": "Tanya lagi: syarat SIMPER menurut dokumen apa saja?",
+          "answerExcerpt": "Saya belum menemukan informasi tentang **“syarat SIMPER”** di dokumen yang tersedia pada **CONTEXT** maupun **Knowledge Graph** yang Anda berikan.  \n\nKalau Anda bisa kirim **judul/dokumen SIMPER** yang dimaksud (atau potongan teksnya), saya bisa bantu jawab: **syarat SIMPER itu menurut dokumen apa saja**.",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3658,
+          "cited": {
+            "docs": true,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-009",
+      "kind": "source_toggle",
+      "description": "Long-session + toggle combined stress",
+      "pass": false,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "Berapa total peserta?",
+          "answerExcerpt": "Total peserta adalah **5.044**.",
+          "pass": false,
+          "failureReasons": [
+            "missing expected token: \"5044\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 2956,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 3,
+          "question": "Yang SUBCON berapa?",
+          "answerExcerpt": "SUBCON: **20**",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3310,
+          "cited": {
+            "docs": false,
+            "db": true
+          }
+        },
+        {
+          "index": 5,
+          "question": "Sekarang berapa peserta VISITOR?",
+          "answerExcerpt": "Saya perlu konteks dulu: **“VISITOR”** yang Anda maksud itu **nama event/role/kolom di sistem apa**?\n\nTolong kirim salah satu dari ini supaya saya bisa jawab angka pastinya:\n1) Nama **database/table** atau **dashboard** tempat “VISITOR” tercatat, atau  \n2) Screenshot/teks query yang biasa dipakai, atau  \n3) Endpoint/API yang digunakan (mis. REST URL) + parameter event/tanggal.\n\nKalau “VISITOR” itu",
+          "pass": false,
+          "failureReasons": [
+            "unexpected token (fabrication): \"1\""
+          ],
+          "outcome": "answered",
+          "latencyMs": 2836,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    },
+    {
+      "scenarioId": "print-010",
+      "kind": "source_toggle",
+      "description": "Bilingual honesty under toggle (ID + EN mixed)",
+      "pass": true,
+      "turnResults": [
+        {
+          "index": 2,
+          "question": "How many permits do we have right now?",
+          "answerExcerpt": "I can help, but I need one detail: **which “permits” system/source** are you referring to (e.g., a specific database table, product, or region)?\n\nIf you tell me the **permit type** and where it’s stored (or share the table/API name), I’ll return the exact count “right now.”",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 2910,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        },
+        {
+          "index": 3,
+          "question": "Dan sekarang ceritakan apa yang kamu masih bisa bantu.",
+          "answerExcerpt": "Tentu. Ini daftar hal yang masih bisa aku bantu untuk kamu (berdasarkan kemampuan yang tersedia di sesi ini):\n\n1) **Chat & penjelasan umum**\n- Menjawab pertanyaan, merangkum topik, menjelaskan konsep, bantu brainstorming ide.\n\n2) **Database (SQL)**\n- Menulis/men-debug query SQL (SELECT/JOIN/CTE/window function, dsb.)\n- Bantu merancang skema sederhana dan strategi query untuk kebutuhan laporan/anal",
+          "pass": true,
+          "failureReasons": [],
+          "outcome": "answered",
+          "latencyMs": 3251,
+          "cited": {
+            "docs": false,
+            "db": false
+          }
+        }
+      ]
+    }
+  ]
+}

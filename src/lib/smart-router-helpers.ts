@@ -15,12 +15,21 @@ export const STOPWORDS = new Set([
   'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out',
   'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'please',
   'tell', 'give', 'me', 'my', 'our', 'your', 'their', 'his', 'her', 'its',
+  // Common query words that pollute schema keyword matching
+  'many', 'total', 'sum', 'count', 'number', 'amount', 'list', 'issued',
+  'have', 'been', 'configured', 'registered', 'active', 'available',
+  'system', 'sistem', 'data', 'database', 'table', 'column', 'field',
+  'record', 'row', 'entry', 'stored', 'found', 'exist', 'exists',
+  // Indonesian query words
+  'jumlah', 'banyak', 'berapa', 'terdaftar', 'sebagai', 'dalam', 'aktif',
+  'di', 'ke', 'dari', 'untuk', 'yang', 'dan', 'atau', 'juga', 'sudah',
+  'dengan', 'ini', 'itu', 'ada', 'bisa', 'apa', 'bagaimana',
 ])
 
 const SYNONYMS: Record<string, string[]> = {
   negara: ['country'], negara2: ['country'], kota: ['city'],
   populasi: ['population'], penduduk: ['population'], bahasa: ['language'],
-  benua: ['continent'], wilayah: ['region'], jumlah: ['count', 'total', 'sum'],
+  benua: ['continent'], wilayah: ['region'],
   rata: ['avg', 'average'], tertinggi: ['max', 'highest', 'top'],
   terendah: ['min', 'lowest', 'bottom'], terbesar: ['max', 'largest', 'biggest'],
   terkecil: ['min', 'smallest'], terbanyak: ['max', 'most'],
@@ -29,6 +38,22 @@ const SYNONYMS: Record<string, string[]> = {
   gaji: ['salary'], karyawan: ['employee'], faktur: ['invoice'],
   pendapatan: ['revenue', 'income'], film: ['film', 'movie'],
   artis: ['artist'], album: ['album'], lagu: ['track', 'song'], genre: ['genre'],
+  // PRINASA domain terms — Indonesian ↔ English table/column names
+  peserta: ['participant', 'participants'],
+  perusahaan: ['company', 'companies'],
+  izin: ['permit', 'permits'],
+  pelatihan: ['training', 'trainings'],
+  pengajar: ['trainer', 'instructor', 'instructors'],
+  lokasi: ['site', 'sites'],
+  departemen: ['department', 'departments'],
+  klinik: ['clinic', 'clinics'],
+  peralatan: ['equipment', 'equipments'],
+  pegawai: ['employee', 'employees'],
+  ujian: ['exam', 'exams'],
+  induksi: ['induction'],
+  sertifikat: ['certificate', 'certificates'],
+  asuransi: ['insurance'],
+  karyawan_aktif: ['employee_active', 'active_employee'],
 }
 
 export function expandWithSynonyms(tokens: string[]): string[] {
@@ -41,7 +66,12 @@ export function expandWithSynonyms(tokens: string[]): string[] {
 }
 
 export function tokenize(text: string): string[] {
-  return text
+  // ponytail: strip session context prefix that the send route adds
+  // ([Session started: ...] [Current time: ...]) — these meta-tokens
+  // ("session", "started", "time") match app-internal schema columns
+  // (ChatSession, startedAt, etc.) and pollute integration selection.
+  const cleaned = text.replace(/^\[Session started:[^\]]*\]\s*\[Current time:[^\]]*\]\s*/i, '')
+  return cleaned
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length >= 3 && !STOPWORDS.has(t))

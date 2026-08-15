@@ -359,7 +359,6 @@ export async function runStreamingAgenticLoop(
       if (hasError && result.toolRuns.every((tr) => tr.status === 'error' || tr.status === 'blocked')) {
         confidenceHistory.push({ confident: false, confidence: 0, reason: 'all tools failed' })
         log.info('Streaming agentic loop continuing (all tools failed)', { iteration: iteration + 1 })
-        yield '\n\n_Continuing analysis..._\n\n'
         continue
       }
 
@@ -407,7 +406,6 @@ export async function runStreamingAgenticLoop(
         : ''
       accumulatedEvidence += toolHint
       log.info('Streaming agentic loop continuing', { iteration: iteration + 1, confidence: confidence.confidence, reason: confidence.reason, nextToolHint: confidence.nextToolHint })
-      yield '\n\n_Continuing analysis..._\n\n'
     }
 
     // Max iterations reached without a confident answer — final synthesis.

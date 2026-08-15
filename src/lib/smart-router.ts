@@ -14,6 +14,38 @@ import {
 export { tokenize, invalidateSourceEmbeddingCache, keywordOverlap }
 export type { SmartRouteResult, AmbiguousIntegration, ToolScore, PerfMetrics }
 
+/**
+ * Generic column names that appear in virtually every database schema (both
+ * the app's own internal tables and external ones). These never help
+ * discriminate which integration a question is about — they just add noise
+ * to keyword matching. Removed from schema keyword sets before scoring.
+ */
+const GENERIC_SCHEMA_TOKENS = new Set([
+  'id', 'uuid', 'guid', 'uid',
+  'name', 'title', 'description', 'label', 'code',
+  'status', 'state', 'type', 'category', 'active', 'isactive', 'enabled',
+  'created', 'createdat', 'createddate', 'updated', 'updatedat', 'updateddate',
+  'deleted', 'deletedat', 'deleteddate', 'modified', 'modifiedat',
+  'organization', 'organizationid', 'orgid',
+  'userid', 'user', 'users', 'username', 'email',
+  'version', 'versionid', 'revision',
+  'timestamp', 'time', 'date', 'datetime',
+  'foreignkey', 'primarykey', 'primary',
+  'sessionid', 'session', 'token', 'tokens',
+  'hash', 'password', 'passwordhash', 'role', 'roleid',
+  'key', 'value', 'data', 'content', 'text', 'json', 'metadata',
+  'count', 'total', 'sum', 'avg', 'min', 'max',
+  'index', 'seq', 'sequence', 'order', 'sort',
+  // App-internal table/column names that pollute matching
+  'started', 'startedat', 'timeout', 'timeoutms', 'tokencount',
+  'requestsummary', 'chatsession', 'chatmessage', 'llmusagelog',
+  'apikey', 'apirequestlog', 'auditlog', 'queryhistory',
+  'integration', 'integrationschema', 'restapiconnector', 'restapiendpoint',
+  'restapirequestlog', 'plugin', 'toolrun', 'scheduledrun', 'scheduledrunlog',
+  'vectorstoreconfig', 'document', 'documentchunk', 'documentversion',
+  'kgrelation', 'mcpserver', 'appconfig', 'agentrun',
+])
+
 export async function smartRoute(args: {
   question: string
   hasIntegrations: boolean
@@ -82,16 +114,25 @@ export async function smartRoute(args: {
   let reason = best.reason
 
   if (best.finalScore - second.finalScore < 0.1 && best.finalScore > 0) {
-    const llmResult = await routeQuery({
-      question: args.question,
-      hasIntegrations: args.hasIntegrations,
-      hasDocuments: args.hasDocuments,
-      hasRestApis: args.hasRestApis,
-      memoryContext: args.memoryContext,
-    })
-    llmUsed = true
-    decision = llmResult.decision
-    reason = `LLM tiebreaker: ${llmResult.reason} (scores: ${best.tool}=${best.finalScore.toFixed(2)}, ${second.tool}=${second.finalScore.toFixed(2)})`
+    // ponytail: skip LLM tiebreaker when the best tool has a strong schema
+    // match (schemaScore > 0.3 means real keyword overlap with DB tables/docs).
+    // The LLM router prompt doesn't know domain-specific terms (participants,
+    // permits, etc.), so it would override SQL→CHAT on every PRINASA question
+    // because CHAT's neutral score (~0.66) is within 0.1 of SQL's score.
+    if (best.schemaScore > 0.3) {
+      reason = `${best.tool}: schema match strong (${(best.schemaScore * 100).toFixed(0)}%), skipping LLM tiebreaker`
+    } else {
+      const llmResult = await routeQuery({
+        question: args.question,
+        hasIntegrations: args.hasIntegrations,
+        hasDocuments: args.hasDocuments,
+        hasRestApis: args.hasRestApis,
+        memoryContext: args.memoryContext,
+      })
+      llmUsed = true
+      decision = llmResult.decision
+      reason = `LLM tiebreaker: ${llmResult.reason} (scores: ${best.tool}=${best.finalScore.toFixed(2)}, ${second.tool}=${second.finalScore.toFixed(2)})`
+    }
   }
 
   if (best.finalScore === 0 && !llmUsed) {
@@ -109,9 +150,15 @@ export async function smartRoute(args: {
     } else if (args.preferredIntegrationId) {
       integrationId = args.preferredIntegrationId
     } else {
-      const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens, args.question)
-      integrationId = pickResult?.integrationId
-      ambiguousIntegrations = pickResult?.ambiguous
+      // ponytail: try keyword-only first (fast, no embedding API), then embedding
+      const kwResult = await pickBestIntegrationByKeywords(expandedTokens)
+      if (kwResult) {
+        integrationId = kwResult
+      } else {
+        const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens, args.question)
+        integrationId = pickResult?.integrationId
+        ambiguousIntegrations = pickResult?.ambiguous
+      }
     }
   }
 
@@ -147,7 +194,7 @@ function keywordScoreForTool(
     case 'RAG': return keywordOverlap(tokens, docMeta)
     case 'PLUGIN': return pluginRelevant.length > 0 ? pluginRelevant[0].score : 0
     case 'CHAT':
-    case 'CONTEXTUAL_CHAT': return 0.1
+    case 'CONTEXTUAL_CHAT': return 0 // ponytail: CHAT has no schema match — neutral baseline only. A non-zero value caused false LLM tiebreakers on every SQL/RAG question.
     default: return 0
   }
 }
@@ -187,12 +234,22 @@ async function detectMentionedIntegration(
         }
       } catch { /* skip */ }
     }
+    // Filter out generic app-internal column names that pollute keyword matching
+    // (id, status, createdat, etc.) — these appear in every integration's schema
+    // and never help discriminate between domain databases.
+    for (const generic of GENERIC_SCHEMA_TOKENS) schemaKeywords.delete(generic)
+    // Also filter stopwords — common words like "many", "total", "system"
+    // match column names in app-internal tables and cause false positives.
+    for (const sw of STOPWORDS) schemaKeywords.delete(sw)
+
     let matches = 0
+    const matchedTokens: string[] = []
     for (const token of tokens) {
-      if (schemaKeywords.has(token)) { matches++; continue }
+      if (schemaKeywords.has(token)) { matches++; matchedTokens.push(token); continue }
       for (const kw of schemaKeywords) {
         if (kw.length >= 4 && (kw.includes(token) || token.includes(kw))) {
           matches++
+          matchedTokens.push(`${token}→${kw}`)
           break
         }
       }
@@ -201,15 +258,12 @@ async function detectMentionedIntegration(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  if (scored[0].score > 0 && (scored.length === 1 || scored[0].score > scored[1].score * 1.5)) {
+  // ponytail: pick the top-scoring integration. Only return undefined if NO
+  // integration has any keyword overlap at all. Previous code blocked with a
+  // clarification when two integrations had similar scores — that caused the
+  // "which database?" loop on every question when 2+ DBs were active.
+  if (scored[0].score > 0) {
     return { integrationId: scored[0].id }
-  }
-  if (scored[0].score > 0 && scored[1] && scored[1].score >= scored[0].score * 0.8) {
-    const topScore = scored[0].score
-    const ambiguous = scored
-      .filter((s) => s.score >= topScore * 0.8)
-      .map((s) => ({ integrationId: s.id, integrationName: s.name, score: s.score }))
-    return { ambiguous }
   }
   return undefined
 }
@@ -239,14 +293,21 @@ async function pickBestIntegrationWithAmbiguity(
     const queryEmb = await getQuestionEmbedding(question, config)
     if (queryEmb.length > 0) {
       try {
-        const integEmbs = await embedTexts(config, integTexts)
+        // ponytail: race embeddings against a 5s timeout — if the API is slow
+        // or the integration list is large (30+ tables), fall back to keyword-
+        // only matching rather than blocking the chat pipeline for 30s.
+        const embPromise = embedTexts(config, integTexts)
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('embedding timeout')), 5_000),
+        )
+        const integEmbs = await Promise.race([embPromise, timeoutPromise])
         semanticScores = integrations.map((_, i) => {
           const emb = integEmbs[i]
           if (!emb || emb.length === 0) return 0
           return cosineSimilarity(queryEmb, emb)
         })
       } catch {
-        // embedding API unavailable — fall back to keyword-only
+        // embedding API unavailable or timed out — fall back to keyword-only
       }
     }
   }
@@ -262,11 +323,17 @@ async function pickBestIntegrationWithAmbiguity(
         }
       } catch { /* skip */ }
     }
-    const nameSet = new Set(allNames)
+    // Filter generic tokens same as detectMentionedIntegration
+    const nameSet = new Set(
+      allNames.filter((n) => !GENERIC_SCHEMA_TOKENS.has(n)),
+    )
     let matches = 0
     for (const t of tokens) {
       if (nameSet.has(t)) { matches++; continue }
-      if (allNames.some((n) => n.includes(t) || t.includes(n))) matches++
+      // Only match on non-generic tokens to avoid false positives
+      for (const n of nameSet) {
+        if (n.length >= 4 && (n.includes(t) || t.includes(n))) matches++
+      }
     }
     const keywordScore = tokens.length > 0 ? Math.min(matches / tokens.length, 1) : 0
     const semanticScore = semanticScores[idx] ?? 0
@@ -277,19 +344,8 @@ async function pickBestIntegrationWithAmbiguity(
   scored.sort((a, b) => b.score - a.score)
 
   if (scored[0].score === 0) return undefined
-  if (scored.length === 1 || scored[0].score > scored[1].score * 1.5) {
-    return { integrationId: scored[0].id }
-  }
-
-  const topScore = scored[0].score
-  const secondScore = scored[1].score
-  if (secondScore >= topScore * 0.8) {
-    const ambiguous = scored
-      .filter((s) => s.score >= topScore * 0.8)
-      .map((s) => ({ integrationId: s.id, integrationName: s.name, score: s.score }))
-    return { ambiguous }
-  }
-
+  // ponytail: always pick the best — no ambiguity blocking. The previous 0.8x
+  // threshold caused "which database?" loops on every multi-DB question.
   return { integrationId: scored[0].id }
 }
 
@@ -299,6 +355,47 @@ export async function pickBestIntegration(
 ): Promise<string | undefined> {
   const result = await pickBestIntegrationWithAmbiguity(tokens, question ?? '')
   return result?.integrationId
+}
+
+/**
+ * Fast keyword-only integration picker — no embedding API call.
+ * Used as a first-choice fallback when the embedding-based picker is
+ * unavailable or too slow. Filters generic schema tokens (id, name, etc.)
+ * to avoid false matches on app-internal tables.
+ */
+export async function pickBestIntegrationByKeywords(tokens: string[]): Promise<string | undefined> {
+  const integrations = await db.integration.findMany({
+    where: { status: 'active' },
+    include: { schemas: { select: { tableName: true, columns: true } } },
+  })
+  if (integrations.length === 0) return undefined
+  if (integrations.length === 1) return integrations[0].id
+
+  const scored = integrations.map((integ) => {
+    const allNames: string[] = []
+    for (const s of integ.schemas) {
+      allNames.push(s.tableName.toLowerCase())
+      try {
+        const cols = JSON.parse(s.columns) as Array<{ name?: string }>
+        for (const c of cols) {
+          if (c.name) allNames.push(c.name.toLowerCase())
+        }
+      } catch { /* skip */ }
+    }
+    const nameSet = new Set(allNames.filter((n) => !GENERIC_SCHEMA_TOKENS.has(n)))
+    let matches = 0
+    for (const t of tokens) {
+      if (nameSet.has(t)) { matches++; continue }
+      for (const n of nameSet) {
+        if (n.length >= 4 && (n.includes(t) || t.includes(n))) { matches++; break }
+      }
+    }
+    return { id: integ.id, name: integ.name, score: matches }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+  if (scored[0].score > 0) return scored[0].id
+  return undefined
 }
 
 export async function getRoutingScores(): Promise<{

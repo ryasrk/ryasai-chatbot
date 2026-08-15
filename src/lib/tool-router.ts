@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
-import { smartRoute, pickBestIntegration, tokenize } from '@/lib/smart-router'
+import { smartRoute, pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
 import { analyzeIntent, rewriteQuery } from '@/lib/intent-pipeline'
 import { getPromptSettings } from '@/lib/prompt-settings'
 import { recallContext, rememberChatTurn } from '@/lib/cognee'
@@ -73,8 +73,31 @@ async function _runNonStreamingChatCompletion(args: {
   }
 
   if (args.allowMultiStepDag) {
-    const dagResult = await runMultiStepDag(args)
-    if (dagResult) return dagResult
+    // ponytail: pre-route to check if this is a clear single-tool question.
+    // When the smart router confidently picks SQL or RAG, skip the LLM
+    // planner (which would overthink simple data questions and route to
+    // CHAT, causing the "asks for clarification instead of querying" bug).
+    // The planner is only valuable for genuine multi-step questions that
+    // need data from multiple tools (e.g. "compare revenue with the policy
+    // doc for Q3").
+    const [docCount, intCount, , , , restEndpoints, promptSettings] = await loadDbData()
+    const restCount = restEndpoints.length
+    const quickRoute = await smartRoute({
+      question: args.question,
+      hasIntegrations: intCount > 0,
+      hasDocuments: docCount > 0,
+      hasRestApis: restCount > 0,
+      preferredIntegrationId: args.integrationId,
+    })
+    const clearSingleTool =
+      (quickRoute.decision === 'SQL' || quickRoute.decision === 'RAG' || quickRoute.decision === 'REST') &&
+      quickRoute.scores[0] && quickRoute.scores[0].finalScore > 0.5 &&
+      (!quickRoute.scores[1] || quickRoute.scores[0].finalScore - quickRoute.scores[1].finalScore > 0.05)
+
+    if (!clearSingleTool) {
+      const dagResult = await runMultiStepDag(args)
+      if (dagResult) return dagResult
+    }
   }
 
   // ponytail: cooperative abort — check between pipeline stages so an external
@@ -110,10 +133,7 @@ async function _runNonStreamingChatCompletion(args: {
 
   args.signal?.throwIfAborted()
 
-  const { decision, resolvedIntegrationId, clarification } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
-  if (clarification && !args.skipClarification) {
-    return { answer: clarification, citations: [], chartData: null, toolRuns: [] }
-  }
+  const { decision, resolvedIntegrationId } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
 
   let effectiveDecision = chooseAvailableDecision(decision, {
     hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0,
@@ -192,12 +212,7 @@ async function _runStreamingChatCompletion(args: {
     return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: args.systemPromptPrefix, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
 
-  const { decision, resolvedIntegrationId, clarification } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
-  if (clarification && !args.skipClarification) {
-    const text = clarification
-    async function* clarifyStream() { yield text }
-    return { stream: clarifyStream(), toolRuns: [], citations: [], chartData: null }
-  }
+  const { decision, resolvedIntegrationId } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
 
   let effectiveDecision = chooseAvailableDecision(decision, {
     hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0,
@@ -206,11 +221,15 @@ async function _runStreamingChatCompletion(args: {
   if (effectiveDecision === 'RAG' && !promptSettings.tools.rag) effectiveDecision = 'CHAT'
   if (effectiveDecision === 'REST' && !promptSettings.tools.restApi) effectiveDecision = 'CHAT'
 
+  // DEBUG: trace routing decisions
+
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
   const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: mergedPrefix, memoryContext, chatHistory: args.chatHistory ?? [] }
 
-  if (effectiveDecision === 'SQL') return await prepareSqlStream(branchArgs)
+  if (effectiveDecision === 'SQL') {
+    return await prepareSqlStream(branchArgs)
+  }
   if (effectiveDecision === 'RAG') return await prepareRagStream(branchArgs)
   if (effectiveDecision === 'REST') return await prepareRestStream(branchArgs)
   if (effectiveDecision === 'PLUGIN') return await preparePluginStream(branchArgs)
@@ -290,7 +309,7 @@ async function resolveRouting(
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
-): Promise<{ decision: RouteDecision; clarification?: string; resolvedIntegrationId: string | undefined }> {
+): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined }> {
   const [docCount, intCount, , , , restEndpoints] = dbData
   const restEndpointCount = restEndpoints.length
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
@@ -304,16 +323,29 @@ async function resolveRouting(
     const routed = await smartRoute({ question: effectiveQuestion, hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0, memoryContext, preferredIntegrationId: args.integrationId })
     decision = routed.decision
     resolvedIntegrationId = routed.integrationId ?? args.integrationId
-    if (routed.ambiguousIntegrations && routed.ambiguousIntegrations.length > 1) {
-      const names = routed.ambiguousIntegrations.map((a) => a.integrationName)
-      const list = names.map((n, i) => `${i + 1}. ${n}`).join('\n')
-      return { decision: 'CHAT' as RouteDecision, clarification: `I found multiple databases that could answer this question. Which one do you mean?\n\n${list}\n\nPlease specify the database name or select it from the dropdown.`, resolvedIntegrationId }
+    // ponytail: when multiple integrations look plausible, pick the best-scoring
+    // one rather than blocking with a clarification question. The user can
+    // always narrow via the integration dropdown, but blocking on every
+    // question with 2+ DBs was the #1 complaint ("chatbot asks which database
+    // endlessly"). If ambiguity is genuine (no schema keyword overlap), the
+    // score will be 0 and pickBestIntegration below will try semantic match.
+    if (!resolvedIntegrationId && routed.ambiguousIntegrations && routed.ambiguousIntegrations.length > 0) {
+      resolvedIntegrationId = routed.ambiguousIntegrations
+        .sort((a, b) => b.score - a.score)[0]?.integrationId
     }
   }
 
   if (decision === 'SQL' && !resolvedIntegrationId) {
+    // ponytail: last-resort integration selection. pickBestIntegration uses
+    // embedding API which can be slow/unavailable. Try keyword matching first
+    // (fast, no API call), then fall back to pickBestIntegration.
     const tokens = tokenize(effectiveQuestion)
-    resolvedIntegrationId = await pickBestIntegration(tokens) ?? undefined
+    const kwId = await pickBestIntegrationByKeywords(tokens)
+    if (kwId) {
+      resolvedIntegrationId = kwId
+    } else {
+      resolvedIntegrationId = await pickBestIntegration(tokens) ?? undefined
+    }
   }
 
   return { decision, resolvedIntegrationId }

@@ -106,10 +106,14 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
         content:
           'You are an enterprise AI router. Determine the handling ROUTE for the user message. ' +
           'Answer ONLY with one word: SQL, RAG, REST, CHAT, or CONTEXTUAL_CHAT.\n' +
-          '- SQL: questions about structured data (stock, sales, customers, invoices, numbers, totals, lists from the database; customers/sales/data/numbers).\n' +
-          '- RAG: questions about policies, SOPs, documents, procedures, guidelines, regulations, or non-structural text; policy/terms/faq/guide.\n' +
-          '- REST: questions that need to call whitelisted REST API endpoints on external systems; API/endpoint/service.\n' +
-          '- CHAT: greetings, small talk, or general questions that do not need internal data; general/greeting.\n' +
+          '- SQL: questions about structured data in connected databases — any question asking for ' +
+          'counts, totals, lists, or data from database tables (e.g. participants, permits, companies, ' +
+          'employees, departments, sites, clinics, training, equipment, vendors, invoices, sales, ' +
+          'inventory, customers, stock, revenue, etc.). If the question asks "how many", "berapa", ' +
+          '"count", "total", "list", "show me", and databases are available, route to SQL.\n' +
+          '- RAG: questions about policies, SOPs, documents, procedures, guidelines, regulations, or non-structural text.\n' +
+          '- REST: questions that need to call whitelisted REST API endpoints on external systems.\n' +
+          '- CHAT: greetings, small talk, or general questions that do not need internal data.\n' +
           '- CONTEXTUAL_CHAT: the user refers to a previous conversation OR provides new information/facts.\n' +
           '  Examples of CONTEXTUAL_CHAT:\n' +
           '  - "mention your answer again" → CONTEXTUAL_CHAT (not SQL)\n' +
@@ -120,7 +124,11 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           '  Examples of SQL/RAG (not CONTEXTUAL_CHAT):\n' +
           '  - "what is the stock of SKU-902?" → SQL (specific product mentioned + asking for data)\n' +
           '  - "what is the stock opname procedure?" → RAG (asking about a document)\n' +
-          '  IMPORTANT RULE: if the message does NOT end with a question mark AND contains the words "is/that is/namely", it is likely a statement → CONTEXTUAL_CHAT.',
+          '  IMPORTANT RULE: if the message does NOT end with a question mark AND contains the words "is/that is/namely", it is likely a statement → CONTEXTUAL_CHAT.\n' +
+          '  IMPORTANT: When databases are available and the question asks about data (counts, lists, ' +
+          'totals, or mentions any table/entity name), prefer SQL over CHAT. Do NOT route to CHAT ' +
+          'just because the question does not mention "sales" or "customers" — any structured data ' +
+          'question goes to SQL.',
       },
       {
         role: 'user',
@@ -188,7 +196,16 @@ export async function generateSql(args: {
           '5. Do not wrap with markdown code fence.\n' +
           '6. When filtering by date, always cast string literals to the column type, e.g. WHERE order_date >= DATE \'2026-07-30\' or WHERE order_date::date = CURRENT_DATE. Never compare a date column directly to a bare string literal.\n' +
           '7. "hari ini" / "today" means CURRENT_DATE. "kemarin" / "yesterday" means CURRENT_DATE - 1.\n' +
-          '8. If the question mentions a date but does not specify one, use CURRENT_DATE.',
+          '8. If the question mentions a date but does not specify one, use CURRENT_DATE.\n' +
+          '9. IMPORTANT: Always double-quote table and column names to preserve case sensitivity. ' +
+          'For example, use "SELECT COUNT(*) FROM "participants" WHERE "IsDeleted" = false" ' +
+          'NOT "SELECT COUNT(*) FROM participants WHERE IsDeleted = false". ' +
+          'PostgreSQL lowercases unquoted identifiers, which causes "column does not exist" errors ' +
+          'when the actual column name has uppercase letters.\n' +
+          '10. Do NOT filter by "IsDeleted" or "DeletedAt" unless the user asks about deleted records. ' +
+          'Most count queries should count ALL rows (active + deleted) unless the user specifically ' +
+          'asks for "active" or "non-deleted" records. Adding "WHERE IsDeleted = false" to every ' +
+          'query causes errors when the column exists but has unexpected values.',
       },
       {
         role: 'user',

@@ -173,16 +173,53 @@ export async function prepareSqlStream(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  const integration = args.integrationId
+  let integration = args.integrationId
     ? await db.integration.findFirst({
         where: { id: args.integrationId, status: 'active' },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
-    : await db.integration.findFirst({
-        where: { status: 'active' },
-        orderBy: { createdAt: 'asc' },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
+    : null
+
+  // ponytail: when no specific integration was resolved by the router (e.g.
+  // embedding API timed out during pickBestIntegration), fall back to picking
+  // the integration whose schema keywords best match the question — NOT just
+  // the oldest one. The old `findFirst({ orderBy: { createdAt: 'asc' } })`
+  // always picked "Local Postgres Test" (the app's own DB) over PRINASA.
+  if (!integration) {
+    const allIntegrations = await db.integration.findMany({
+      where: { status: 'active' },
+      include: { schemas: { orderBy: { tableName: 'asc' } } },
+    })
+    if (allIntegrations.length === 1) {
+      integration = allIntegrations[0]
+    } else if (allIntegrations.length > 1) {
+      const qLower = args.question.toLowerCase()
+      const qTokens = qLower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)
+      let bestMatch: typeof allIntegrations[0] | null = null
+      let bestScore = 0
+      for (const integ of allIntegrations) {
+        let score = 0
+        for (const s of integ.schemas) {
+          if (qLower.includes(s.tableName.toLowerCase())) score += 2
+          try {
+            const cols = JSON.parse(s.columns) as Array<{ name?: string }>
+            for (const c of cols) {
+              if (c.name && qLower.includes(c.name.toLowerCase())) score += 1
+            }
+          } catch { /* skip */ }
+        }
+        // Also check integration name keywords
+        for (const word of integ.name.toLowerCase().split(/\s+/)) {
+          if (word.length >= 4 && qLower.includes(word)) score += 3
+        }
+        if (score > bestScore) {
+          bestScore = score
+          bestMatch = integ
+        }
+      }
+      integration = bestMatch ?? allIntegrations[0]
+    }
+  }
 
   if (!integration || integration.schemas.length === 0) {
     return prepareChatStream(args)
@@ -264,8 +301,28 @@ export async function prepareSqlStream(args: {
       integrationId: integration.id,
       stream,
     }
-  } catch {
-    return prepareChatStream(args)
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e)
+    return {
+      toolRuns: [{
+        type: 'SQL',
+        status: 'error',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: '',
+        errorMessage: errMsg.slice(0, 500),
+      }],
+      citations: [],
+      chartData: null,
+      stream: streamAnswer({
+        question: args.question,
+        context: `SQL execution error: ${errMsg}`,
+        source: 'SQL',
+        systemPromptPrefix: args.systemPromptPrefix,
+        memoryContext: args.memoryContext,
+        chatHistory: args.chatHistory,
+      }),
+    }
   }
 }
 

@@ -70,18 +70,31 @@ const INTENT_SYSTEM_PROMPT = `You are an intent analyzer for an enterprise AI as
 3. If this is a follow-up question, rewrite it as a standalone search query.
 
 Rules:
-- "What is the procedure?" → needs context from conversation → rewrite to "procedure for [topic from history]"
-- "Show me the invoice" → ambiguous ONLY if there are multiple invoice-related sources → ask which one
-- "How do I apply for leave?" → clear intent → no clarification needed
+- "What is the procedure?" with history → rewrite to "procedure for [topic from history]"
 - "Hello" / "Thanks" / "What is Python?" → no retrieval needed
-- "Company reimbursement policy" → retrieval needed, no clarification
-- Only ask ONE clarification question — the single highest-value one (progressive slot filling)
 - When rewriting, preserve the user's original language (English/Indonesian)
-- IMPORTANT: Do NOT ask for clarification if the available data sources clearly match the question.
-  If there is only ONE database that could answer, do not ask "which database?".
-  If there is only ONE document category that matches, do not ask "which document?".
-  Only ask for clarification when there is GENUINE ambiguity (multiple sources could answer
-  with different results, or the question is missing a critical parameter like date range).
+
+CRITICAL — DEFAULT TO NOT CLARIFYING:
+- The system has a smart router that automatically selects the best database
+  integration and generates appropriate SQL queries. You do NOT need to know
+  which table or column to query — the system figures that out.
+- When databases are available, questions like "how many participants?",
+  "total permits", "list companies", "active departments" are NOT ambiguous.
+  They clearly need database retrieval and the system will find the right table.
+- NEVER ask "which database?" or "which table?" or "which system?" — the system
+  resolves that automatically.
+- NEVER ask the user to provide a table name, column name, or schema.
+- Only ask for clarification when the question is TRULY unanswerable:
+  (a) a pronoun reference with no antecedent ("how many of THOSE?"), or
+  (b) a date-range question with no clear time frame ("show me recent data"), or
+  (c) a question about a specific entity when multiple with same name exist
+- If the question mentions any domain noun (participants, permits, companies,
+  trainers, training, sites, departments, clinics, equipment, employees, exams,
+  induction, MCU, medical, certificate, vendor, invoice, etc.) AND databases
+  are available, set needsRetrieval=true, needsClarification=false.
+- If documents are available and the question asks about a procedure, policy,
+  rule, guideline, or "what does [document] say", set needsRetrieval=true,
+  needsClarification=false.
 
 Output ONLY valid JSON (no markdown fence):
 {
@@ -147,6 +160,29 @@ export async function analyzeIntent(args: {
     ], 0, 'intent-analysis')
 
     const parsed = parseIntentJson(raw)
+    // ponytail: heuristic guard — LLM intent sometimes returns needsClarification=true
+    // even when databases are available and the question contains clear domain nouns.
+    // This was the root cause of the "chatbot asks endless clarification" bug.
+    // When data sources are available and the question looks like a data query
+    // (contains domain nouns or count/list words), force needsClarification=false.
+    if (parsed.needsClarification && (args.hasDocuments || args.hasIntegrations)) {
+      const qLower = args.question.toLowerCase()
+      const DOMAIN_NOUNS = [
+        'participant', 'peserta', 'permit', 'izin', 'company', 'perusahaan',
+        'vendor', 'trainer', 'instructor', 'pengajar', 'training', 'pelatihan',
+        'site', 'lokasi', 'department', 'departemen', 'clinic', 'klinik',
+        'equipment', 'peralatan', 'employee', 'karyawan', 'pegawai',
+        'exam', 'ujian', 'induction', 'induksi', 'mcu', 'medical',
+        'certificate', 'sertifikat', 'insurance', 'asuransi',
+        'count', 'jumlah', 'total', 'berapa', 'how many', 'list', 'daftar',
+        'show', 'tampilkan', 'display',
+      ]
+      const hasDomainNoun = DOMAIN_NOUNS.some((n) => qLower.includes(n))
+      if (hasDomainNoun) {
+        parsed.needsClarification = false
+        parsed.clarificationQuestion = undefined
+      }
+    }
     return parsed
   } catch (e) {
     console.warn('[intent] analyzeIntent LLM call failed:', e instanceof Error ? e.message : String(e))
