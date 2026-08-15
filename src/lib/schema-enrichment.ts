@@ -32,7 +32,7 @@ export async function enrichSchemaDescriptions(integrationId: string, integratio
   }
 }
 
-function safeParseColumns(raw: string): TableSummaryInput['columns'] {
+export function safeParseColumns(raw: string): TableSummaryInput['columns'] {
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -46,7 +46,7 @@ function safeParseColumns(raw: string): TableSummaryInput['columns'] {
   }
 }
 
-function safeParseSampleRow(raw: string | null | undefined): Record<string, unknown> | null {
+export function safeParseSampleRow(raw: string | null | undefined): Record<string, unknown> | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)

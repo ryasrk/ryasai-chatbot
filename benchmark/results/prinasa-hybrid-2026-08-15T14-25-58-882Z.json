@@ -1,0 +1,153 @@
+{
+  "summary": {
+    "total": 5,
+    "answered": 5,
+    "looped": 0,
+    "clarified": 0,
+    "errored": 0,
+    "timeout": 0,
+    "dbTokenAccuracy": 100,
+    "kbTokenAccuracy": null,
+    "avgLatency": 5660
+  },
+  "results": [
+    {
+      "questionId": "prin-001",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah peserta (participants) yang terdaftar dalam sistem?",
+      "outcome": "answered",
+      "answer": "Jumlah peserta (participants) yang terdaftar dalam sistem adalah **5.044**.",
+      "answerTruncated": "Jumlah peserta (participants) yang terdaftar dalam sistem adalah **5.044**.",
+      "llmCalls": 2,
+      "latencyMs": 11683,
+      "dbTokensHit": [
+        "5044"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"participants_count\" FROM \"participants\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-002",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many permits have been issued in total?",
+      "outcome": "answered",
+      "answer": "A total of **32 permits** have been issued.",
+      "answerTruncated": "A total of **32 permits** have been issued.",
+      "llmCalls": 2,
+      "latencyMs": 4084,
+      "dbTokensHit": [
+        "32"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT COUNT(*) AS \"total_permits_issued\" FROM \"permits\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-003",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa banyak perusahaan (companies) terdaftar sebagai vendor?",
+      "outcome": "answered",
+      "answer": "Terdapat **13** perusahaan (companies) yang terdaftar sebagai vendor.",
+      "answerTruncated": "Terdapat **13** perusahaan (companies) yang terdaftar sebagai vendor.",
+      "llmCalls": 2,
+      "latencyMs": 4270,
+      "dbTokensHit": [
+        "13"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.companies",
+          "query_used": "SELECT COUNT(*) AS \"vendor_companies_count\"\nFROM \"companies\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-004",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many sites are configured in the system?",
+      "outcome": "answered",
+      "answer": "There are **10** sites configured in the system.",
+      "answerTruncated": "There are **10** sites configured in the system.",
+      "llmCalls": 2,
+      "latencyMs": 4582,
+      "dbTokensHit": [
+        "10"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.sites",
+          "query_used": "SELECT COUNT(*) AS \"site_count\" FROM \"sites\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-005",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah department yang aktif?",
+      "outcome": "answered",
+      "answer": "Jumlah **department yang aktif** adalah **239**.",
+      "answerTruncated": "Jumlah **department yang aktif** adalah **239**.",
+      "llmCalls": 2,
+      "latencyMs": 3682,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.departments",
+          "query_used": "SELECT COUNT(*) AS \"active_department_count\"\nFROM \"departments\"\nWHERE \"IsActive\" = true LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    }
+  ]
+}

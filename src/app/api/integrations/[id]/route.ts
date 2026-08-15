@@ -63,6 +63,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
         createdAt: integration.createdAt,
         updatedAt: integration.updatedAt,
         config: masked,
+        businessContext: integration.businessContext,
         tables,
         tableCount: tables.length,
       },
@@ -75,6 +76,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 interface PatchBody {
   status?: 'active' | 'inactive' | 'error'
   name?: string
+  businessContext?: string
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
@@ -96,7 +98,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    const data: { status?: string; name?: string } = {}
+    const data: { status?: string; name?: string; businessContext?: string } = {}
     if (body.status) {
       const s = body.status.toLowerCase()
       if (s !== 'active' && s !== 'inactive' && s !== 'error') {
@@ -109,6 +111,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     }
     if (typeof body.name === 'string' && body.name.trim()) {
       data.name = body.name.trim()
+    }
+    if (typeof body.businessContext === 'string') {
+      data.businessContext = body.businessContext
     }
 
     if (Object.keys(data).length === 0) {

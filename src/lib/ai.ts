@@ -180,6 +180,8 @@ export async function generateSql(args: {
   dialectHint?: string
   memoryContext?: string
   systemPromptPrefix?: string
+  /** Rich business context: domain overview, glossary, relationships, query hints */
+  businessContext?: string | null
 }): Promise<{ sql: string; explanation: string }> {
   const raw = await chatOnce(
     [
@@ -222,7 +224,10 @@ export async function generateSql(args: {
         role: 'user',
         content:
           `Dialect: ${args.provider}\n` +
-          `Database schema:\n${args.schemaDescription}\n\n` +
+          (args.businessContext
+            ? `\n## BUSINESS CONTEXT\n${args.businessContext}\n`
+            : '') +
+          `\nDatabase schema:\n${args.schemaDescription}\n\n` +
           (args.systemPromptPrefix ? `Context: ${args.systemPromptPrefix}\n\n` : '') +
           `User question: ${args.question}\n\n` +
           (args.memoryContext ? `Memory: a similar query previously succeeded with:\n${args.memoryContext}\n\n` : '') +
@@ -350,6 +355,70 @@ export async function generateSchemaDescriptions(args: {
     // ponytail: LLM returned malformed JSON — return empty, don't block schema reflection
     return {}
   }
+}
+
+// ---------------------------------------------------------------------------
+// Database Profile generation — LLM analyzes the full schema and produces a
+// rich business context document. This is the "what database is this?" answer
+// that gets injected into every Text-to-SQL call so the model understands:
+//   1. What business domain the database serves (mining safety, HR, e-commerce)
+//   2. How tables relate to each other (participants → companies → sites)
+//   3. Domain vocabulary (MCU = medical check-up, KIMPAK = equipment cert)
+//   4. Querying hints (which columns to filter on, what "active" means)
+//
+// Generated once at connection test time, stored in Integration.businessContext.
+// ---------------------------------------------------------------------------
+
+export async function generateDatabaseProfile(args: {
+  integrationName: string
+  tables: TableSummaryInput[]
+}): Promise<string> {
+  if (args.tables.length === 0) return ''
+
+  const tableTexts = args.tables.map((t) => {
+    const cols = t.columns.map((c) => `${c.name}:${c.type}${c.primaryKey ? ' (PK)' : ''}`).join(', ')
+    const sample = t.sampleRow ? `\n  Sample: ${JSON.stringify(t.sampleRow).slice(0, 300)}` : ''
+    const rows = t.rowCount != null ? ` (${t.rowCount} rows)` : ''
+    return `${t.tableName}${rows}: ${cols}${sample}`
+  }).join('\n')
+
+  const raw = await chatOnce(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a database analyst. Analyze the complete schema of a database and produce a ' +
+          'BUSINESS CONTEXT document that will help a Text-to-SQL AI understand the domain. ' +
+          'The document must be plain text (not JSON) with these sections:\n\n' +
+          '## DOMAIN\nWhat business domain is this database for? (e.g. "mining safety compliance", ' +
+          '"HR and payroll", "e-commerce"). What organization type?\n\n' +
+          '## CORE ENTITIES\nList the 5-10 most important tables and what they represent in business ' +
+          'terms. Use the business name, not the table name (e.g. "participants — workers/employees ' +
+          'who need safety training and permits").\n\n' +
+          '## KEY RELATIONSHIPS\nHow do the core entities connect? (e.g. "participants belong to ' +
+          'companies, work at sites, attend training batches, hold permits")\n\n' +
+          '## DOMAIN GLOSSARY\nDefine domain-specific terms and abbreviations found in table/column ' +
+          'names (e.g. "MCU = Medical Check-Up", "KIMPAK = equipment certification", "DH = Direct ' +
+          'Hire", "SUBCON = Subcontractor"). Include Indonesian terms if present.\n\n' +
+          '## QUERY HINTS\nPractical tips for writing correct SQL:\n' +
+          '- Which column indicates "active" status for key tables\n' +
+          '- Which tables should be used for common questions (e.g. "for vendor count, use companies table")\n' +
+          '- Which columns to avoid filtering on unnecessarily\n' +
+          '- Common pitfalls (e.g. "IsDeleted is boolean, not timestamp")\n\n' +
+          'Keep it concise — aim for 300-500 words total. Do NOT include SQL examples.',
+      },
+      {
+        role: 'user',
+        content:
+          `Database name: ${args.integrationName}\n\n` +
+          `Complete schema (${args.tables.length} tables):\n${tableTexts}\n\n` +
+          `Generate the business context document.`,
+      },
+    ],
+    { purpose: 'schema-description' },
+  )
+
+  return raw.trim()
 }
 
 /** Pure non-streaming chat (no SQL/RAG) for external API and general questions. */

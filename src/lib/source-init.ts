@@ -132,6 +132,44 @@ export async function initRestEndpointContext(endpointId: string): Promise<void>
 export async function initIntegrationContext(integrationId: string): Promise<void> {
   const { enrichSchemaDescriptions } = await import('@/lib/schema-enrichment')
   await enrichSchemaDescriptions(integrationId, '').catch(() => {})
+  // Generate the business context profile (domain overview, glossary, query hints)
+  await generateIntegrationBusinessContext(integrationId).catch(() => {})
+}
+
+/**
+ * Generate a rich business context document for an integration by feeding the
+ * full schema to the LLM. Stored in Integration.businessContext and injected
+ * into every Text-to-SQL prompt so the model understands the domain.
+ */
+async function generateIntegrationBusinessContext(integrationId: string): Promise<void> {
+  const { db } = await import('@/lib/db')
+  const { generateDatabaseProfile } = await import('@/lib/ai')
+
+  const integration = await db.integration.findUnique({
+    where: { id: integrationId },
+    include: { schemas: { select: { tableName: true, columns: true, rowCount: true, sampleRow: true } } },
+  })
+  if (!integration || integration.schemas.length === 0) return
+
+  const { safeParseColumns, safeParseSampleRow } = await import('@/lib/schema-enrichment')
+  const tables = integration.schemas.map((s) => ({
+    tableName: s.tableName,
+    columns: safeParseColumns(s.columns),
+    rowCount: s.rowCount,
+    sampleRow: safeParseSampleRow(s.sampleRow),
+  }))
+
+  const profile = await generateDatabaseProfile({
+    integrationName: integration.name,
+    tables,
+  })
+  if (profile) {
+    await db.integration.update({
+      where: { id: integrationId },
+      data: { businessContext: profile },
+    })
+    log.info('Business context generated', { integrationId, length: profile.length })
+  }
 }
 
 /** Exposed for tests. */

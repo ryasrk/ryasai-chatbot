@@ -123,6 +123,10 @@ model Integration {
   status          String   @default("active") // active | inactive | error
   lastTestedAt    DateTime?
   lastTestOk      Boolean?
+  /// LLM-generated business context: domain overview, table relationships,
+  /// domain glossary, and query hints. Injected into the SQL prompt so the
+  /// Text-to-SQL model understands the business domain, not just raw schema.
+  businessContext String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
