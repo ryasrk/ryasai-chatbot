@@ -54,6 +54,15 @@ const SYNONYMS: Record<string, string[]> = {
   sertifikat: ['certificate', 'certificates'],
   asuransi: ['insurance'],
   karyawan_aktif: ['employee_active', 'active_employee'],
+  // Additional domain synonyms for robustness/paraphrase questions
+  medical: ['mcu', 'medical_checkup', 'mcu_registration'],
+  checkup: ['mcu', 'medical_checkup', 'mcu_registration'],
+  'check-ups': ['mcu', 'medical_checkup'],
+  workforce: ['participant', 'employee', 'participants', 'employees'],
+  vendor: ['company', 'companies'],
+  kontraktor: ['company', 'companies', 'contractor'],
+  tag: ['tags', 'safetytag', 'safetytags'],
+  'safety tags': ['tags', 'safetytag'],
 }
 
 export function expandWithSynonyms(tokens: string[]): string[] {

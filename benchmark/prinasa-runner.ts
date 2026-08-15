@@ -214,7 +214,33 @@ function classifyOutcome(answer: string, llmCalls: number): HybridOutcome {
 
 function scoreTokens(answer: string, tokens: string[]) {
   const lower = answer.toLowerCase()
-  const hit = tokens.filter((t) => lower.includes(t.toLowerCase()))
+  // Normalize digit separators: Indonesian locale uses "." as thousands
+  // separator (5.044 = 5044). Strip dots/commas between digits so "5044"
+  // matches "5.044" and "5,044".
+  const normalizedAnswer = lower.replace(/(\d)[.,](?=\d{3}\b)/g, '$1')
+  // Indonesian-English translation map for common status values
+  const translations: Record<string, string[]> = {
+    'active': ['aktif'],
+    'expired': ['kadaluarsa', 'kedaluwarsa'],
+    'inactive': ['tidak aktif'],
+    'pending': ['menunggu'],
+    'approved': ['disetujui'],
+    'rejected': ['ditolak'],
+    'completed': ['selesai'],
+    'cancelled': ['dibatalkan'],
+  }
+  const hit = tokens.filter((t) => {
+    const tl = t.toLowerCase()
+    if (lower.includes(tl)) return true
+    // Try normalized form for numeric tokens
+    if (/^\d+$/.test(tl)) {
+      return normalizedAnswer.includes(tl)
+    }
+    // Try Indonesian translation
+    const trans = translations[tl]
+    if (trans && trans.some(tr => lower.includes(tr))) return true
+    return false
+  })
   return { hit, missed: tokens.filter((t) => !hit.includes(t)) }
 }
 

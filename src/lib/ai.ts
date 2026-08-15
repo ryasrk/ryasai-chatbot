@@ -204,8 +204,19 @@ export async function generateSql(args: {
           'when the actual column name has uppercase letters.\n' +
           '10. Do NOT filter by "IsDeleted" or "DeletedAt" unless the user asks about deleted records. ' +
           'Most count queries should count ALL rows (active + deleted) unless the user specifically ' +
-          'asks for "active" or "non-deleted" records. Adding "WHERE IsDeleted = false" to every ' +
-          'query causes errors when the column exists but has unexpected values.',
+          'asks for "active" or "non-deleted" records.\n' +
+          '11. When asked for a TOTAL count, use SELECT COUNT(*) FROM "table" — do NOT add WHERE ' +
+          'clauses unless the user specifies a filter. Adding unnecessary filters (e.g. WHERE ' +
+          '"Code" ILIKE \'V%\') causes wrong counts.\n' +
+          '12. When asked for "vendor companies", count rows in the "companies" table — do NOT ' +
+          'search for a "vendor" table or filter by code patterns unless the schema has a vendor ' +
+          'flag column.\n' +
+          '13. When asked for "medical check-ups" or "MCU", use the "mcu_registrations" table.\n' +
+          '14. When asked for "safety tags", use the "tags" table.\n' +
+          '15. When asked for "workforce by employment type", group by "ParticipantType" in the ' +
+          '"participants" table.\n' +
+          '16. When asked for a count of ALL equipment models, use SELECT COUNT(*) FROM ' +
+          '"equipment_models" — do NOT group by class unless the user asks for a breakdown.',
       },
       {
         role: 'user',

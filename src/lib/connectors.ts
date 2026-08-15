@@ -181,10 +181,20 @@ export function describeSchema(tables: ReflectedTable[]): string {
       // meaning from names alone. One sentence per table is the highest-value
       // token in this prompt; render it first.
       const desc = t.description ? `  -- ${t.description}` : ''
-      const header = `TABLE ${t.tableName} (${t.rowCount ?? '?'} rows)${pkLabel}${desc}`
+      // Quote table name if it contains uppercase letters (same rationale as
+      // column quoting below — PostgreSQL lowercases unquoted identifiers).
+      const hasUpperName = /[A-Z]/.test(t.tableName)
+      const tableLabel = hasUpperName ? `"${t.tableName}"` : t.tableName
+      const header = `TABLE ${tableLabel} (${t.rowCount ?? '?'} rows)${pkLabel}${desc}`
       const cols = t.columns
         .map((c) => {
-          let line = `  ${c.name} ${c.type}`
+          // ponytail: quote column names that contain uppercase letters.
+          // PostgreSQL lowercases unquoted identifiers, so "Id" becomes "id"
+          // which doesn't exist. Showing the column quoted in the schema
+          // description nudges the LLM to quote it in its SQL.
+          const hasUpper = /[A-Z]/.test(c.name)
+          const colName = hasUpper ? `"${c.name}"` : c.name
+          let line = `  ${colName} ${c.type}`
           if (c.primaryKey) line += ' PRIMARY KEY'
           else if (c.notNull) line += ' NOT NULL'
           if (c.foreignKey) line += ` -> ${c.foreignKey}`

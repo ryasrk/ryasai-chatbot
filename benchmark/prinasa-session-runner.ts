@@ -195,13 +195,16 @@ function scoreTurn(
 ): TurnResult {
   const reasons: string[] = []
   const l = lower(answer)
+  const normalizedAnswer = l.replace(/(\d)[.,](?=\d{3}\b)/g, '$1')
 
   let outcome: TurnResult['outcome'] = 'answered'
   if (isLooping(answer)) { outcome = 'looped'; reasons.push('loop marker in answer') }
   else if (isClarifying(answer)) { outcome = 'clarified'; reasons.push('clarification instead of answer') }
 
   for (const tok of turn.expectContains ?? []) {
-    if (!l.includes(tok.toLowerCase())) reasons.push(`missing expected token: "${tok}"`)
+    const tl = tok.toLowerCase()
+    const tokMatch = l.includes(tl) || (/^\d+$/.test(tl) && normalizedAnswer.includes(tl))
+    if (!tokMatch) reasons.push(`missing expected token: "${tok}"`)
   }
   for (const tok of turn.expectNotContains ?? []) {
     if (l.includes(tok.toLowerCase())) reasons.push(`contamination/fabrication: unexpected "${tok}"`)

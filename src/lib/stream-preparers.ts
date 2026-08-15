@@ -268,7 +268,19 @@ export async function prepareSqlStream(args: {
   )
 
   try {
-    const result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
+    // ponytail: retry on transient connection errors (ECONNRESET is common
+    // with remote PRINASA DB under load — a single retry recovers most cases).
+    let result: { rows: Record<string, unknown>[] }
+    try {
+      result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
+    } catch (e) {
+      if (/ECONNRESET|ETIMEDOUT|EPIPE|socket hang up/i.test(e instanceof Error ? e.message : String(e))) {
+        await new Promise((r) => setTimeout(r, 1000))
+        result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
+      } else {
+        throw e
+      }
+    }
     const context = JSON.stringify(result.rows, null, 2)
     const chartData = buildChartDataFromRows(result.rows)
     const stream = streamAnswer({

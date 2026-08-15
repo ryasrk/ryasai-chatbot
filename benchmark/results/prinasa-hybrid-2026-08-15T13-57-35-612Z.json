@@ -1,0 +1,1375 @@
+{
+  "summary": {
+    "total": 50,
+    "answered": 50,
+    "looped": 0,
+    "clarified": 0,
+    "errored": 0,
+    "timeout": 0,
+    "dbTokenAccuracy": 100,
+    "kbTokenAccuracy": null,
+    "avgLatency": 4388
+  },
+  "results": [
+    {
+      "questionId": "prin-001",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah peserta (participants) yang terdaftar dalam sistem?",
+      "outcome": "answered",
+      "answer": "Jumlah peserta (participants) yang terdaftar dalam sistem adalah **5.044**.",
+      "answerTruncated": "Jumlah peserta (participants) yang terdaftar dalam sistem adalah **5.044**.",
+      "llmCalls": 2,
+      "latencyMs": 3835,
+      "dbTokensHit": [
+        "5044"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"participants_count\" FROM \"participants\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-002",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many permits have been issued in total?",
+      "outcome": "answered",
+      "answer": "A total of **32 permits** have been issued.",
+      "answerTruncated": "A total of **32 permits** have been issued.",
+      "llmCalls": 2,
+      "latencyMs": 4147,
+      "dbTokensHit": [
+        "32"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT COUNT(*) AS \"total_permits_issued\" FROM \"permits\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-003",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa banyak perusahaan (companies) terdaftar sebagai vendor?",
+      "outcome": "answered",
+      "answer": "Terdapat **13** perusahaan (companies) yang terdaftar sebagai vendor.",
+      "answerTruncated": "Terdapat **13** perusahaan (companies) yang terdaftar sebagai vendor.",
+      "llmCalls": 2,
+      "latencyMs": 3851,
+      "dbTokensHit": [
+        "13"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.companies",
+          "query_used": "SELECT COUNT(*) AS \"vendor_company_count\"\nFROM \"companies\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-004",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many sites are configured in the system?",
+      "outcome": "answered",
+      "answer": "There are **10** sites configured in the system.",
+      "answerTruncated": "There are **10** sites configured in the system.",
+      "llmCalls": 2,
+      "latencyMs": 3436,
+      "dbTokensHit": [
+        "10"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.sites",
+          "query_used": "SELECT COUNT(*) AS \"site_count\" FROM \"sites\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-005",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah department yang aktif?",
+      "outcome": "answered",
+      "answer": "Jumlah **department yang aktif** adalah **239**.",
+      "answerTruncated": "Jumlah **department yang aktif** adalah **239**.",
+      "llmCalls": 2,
+      "latencyMs": 3447,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.departments",
+          "query_used": "SELECT COUNT(*) AS \"active_department_count\"\nFROM \"departments\"\nWHERE \"IsActive\" = true LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-006",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many MCU (medical check-up) registrations exist?",
+      "outcome": "answered",
+      "answer": "There are **28** MCU (medical check-up) registrations.",
+      "answerTruncated": "There are **28** MCU (medical check-up) registrations.",
+      "llmCalls": 2,
+      "latencyMs": 3868,
+      "dbTokensHit": [
+        "28"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.mcu_registrations",
+          "query_used": "SELECT COUNT(*) AS \"mcu_registration_count\" FROM \"mcu_registrations\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-007",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah batch pelatihan (training batches) yang ada?",
+      "outcome": "answered",
+      "answer": "Jumlah batch pelatihan (training batches) adalah **14**.",
+      "answerTruncated": "Jumlah batch pelatihan (training batches) adalah **14**.",
+      "llmCalls": 2,
+      "latencyMs": 6863,
+      "dbTokensHit": [
+        "14"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.training_batches",
+          "query_used": "SELECT COUNT(*) AS \"total_training_batches\" FROM \"training_batches\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-008",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many induction batches are recorded?",
+      "outcome": "answered",
+      "answer": "There are **31** induction batches recorded.",
+      "answerTruncated": "There are **31** induction batches recorded.",
+      "llmCalls": 2,
+      "latencyMs": 3921,
+      "dbTokensHit": [
+        "31"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.induction_batches",
+          "query_used": "SELECT COUNT(*) AS \"induction_batch_count\" FROM \"induction_batches\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-009",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Sebutkan semua tipe peserta (participant types) yang ada.",
+      "outcome": "answered",
+      "answer": "Berikut semua tipe peserta (participant types) yang ada:\n\n- **DH**\n- **SUBCON**\n- **VISITOR**",
+      "answerTruncated": "Berikut semua tipe peserta (participant types) yang ada:\n\n- **DH**\n- **SUBCON**\n- **VISITOR**",
+      "llmCalls": 2,
+      "latencyMs": 3855,
+      "dbTokensHit": [
+        "DH",
+        "SUBCON",
+        "VISITOR"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT DISTINCT \"ParticipantType\" FROM \"participants\" ORDER BY \"ParticipantType\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-010",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "What are the distinct permit statuses?",
+      "outcome": "answered",
+      "answer": "The distinct permit statuses are:\n\n- **ACTIVE**\n- **EXPIRED**",
+      "answerTruncated": "The distinct permit statuses are:\n\n- **ACTIVE**\n- **EXPIRED**",
+      "llmCalls": 2,
+      "latencyMs": 3499,
+      "dbTokensHit": [
+        "ACTIVE",
+        "EXPIRED"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT DISTINCT \"Status\" FROM \"permits\" ORDER BY \"Status\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-011",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah karyawan (employee profiles) yang tercatat?",
+      "outcome": "answered",
+      "answer": "Jumlah karyawan (employee profiles) yang tercatat adalah **5.020**.",
+      "answerTruncated": "Jumlah karyawan (employee profiles) yang tercatat adalah **5.020**.",
+      "llmCalls": 2,
+      "latencyMs": 3507,
+      "dbTokensHit": [
+        "5020"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.employee_profiles",
+          "query_used": "SELECT COUNT(*) AS \"employee_profiles_count\" FROM \"employee_profiles\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-012",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many equipment models are registered?",
+      "outcome": "answered",
+      "answer": "**850** equipment models are registered.",
+      "answerTruncated": "**850** equipment models are registered.",
+      "llmCalls": 2,
+      "latencyMs": 3278,
+      "dbTokensHit": [
+        "850"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.equipment_models",
+          "query_used": "SELECT COUNT(*) AS \"equipment_model_count\" FROM \"equipment_models\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-013",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Sebutkan kode dan nama semua site.",
+      "outcome": "answered",
+      "answer": "Berikut **kode dan nama semua site**:\n\n1. **ACP** — Asam Coal Project  \n2. **ASAM-ASAM** — Asam-Asam Site  \n3. **BANJARBARU** — Banjarbaru  \n4. **BCP** — Bengalon Coal Project  \n5. **BENGALON** — Bengalon Site  \n6. **BONTANG** — Bontang  \n7. **DEMO_SITE** — Demo Integrated Site  \n8. **JKT** — JKT Head Office  \n9. **KCP** — Kintap Coal Project  \n10. **MELAK** — Melak Site",
+      "answerTruncated": "Berikut **kode dan nama semua site**:\n\n1. **ACP** — Asam Coal Project  \n2. **ASAM-ASAM** — Asam-Asam Site  \n3. **BANJARBARU** — Banjarbaru  \n4. **BCP** — Bengalon Coal Project  \n5. **BENGALON** — Bengalon Site  \n6. **BONTANG** — Bontang  \n7. **DEMO_SITE** — Demo Integrated Site  \n8. **JKT** — JKT Head Office  \n9. **KCP** — Kintap Coal Project  \n10. **MELAK** — Melak Site",
+      "llmCalls": 2,
+      "latencyMs": 4670,
+      "dbTokensHit": [
+        "ACP",
+        "BANJARBARU",
+        "JKT"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.sites",
+          "query_used": "SELECT \"Code\", \"Name\" FROM \"sites\" ORDER BY \"Code\" ASC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-014",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "List all company codes and names.",
+      "outcome": "answered",
+      "answer": "- **ABC** — PT. ABC  \n- **APB** — PT APB  \n- **DEF** — PT.DEF  \n- **DEMO_VENDOR** — Demo Vendor Mining Services  \n- **DGP** — PT DGP  \n- **DH** — PT DARMA HENWA  \n- **GHI** — PT.GHI  \n- **KPY** — PT KPY  \n- **PARTSINDO** — PT. Partsindo  \n- **PRIMA** — PT Prima Multi Mineral  \n- **PTKB** — PT KB  \n- **RUBY** — PT Ruby Smart  \n- **SUBCON** — Vendor / Contractor",
+      "answerTruncated": "- **ABC** — PT. ABC  \n- **APB** — PT APB  \n- **DEF** — PT.DEF  \n- **DEMO_VENDOR** — Demo Vendor Mining Services  \n- **DGP** — PT DGP  \n- **DH** — PT DARMA HENWA  \n- **GHI** — PT.GHI  \n- **KPY** — PT KPY  \n- **PARTSINDO** — PT. Partsindo  \n- **PRIMA** — PT Prima Multi Mineral  \n- **PTKB** — PT KB  \n- **RUBY** — PT Ruby Smart  \n- **SUBCON** — Vendor / Contractor",
+      "llmCalls": 2,
+      "latencyMs": 4846,
+      "dbTokensHit": [
+        "DH",
+        "PT DARMA HENWA"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.companies",
+          "query_used": "SELECT \"Code\", \"Name\" FROM \"companies\" ORDER BY \"Code\" ASC, \"Name\" ASC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-015",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Apa saja tipe permit yang diterbitkan?",
+      "outcome": "answered",
+      "answer": "Tipe permit yang diterbitkan adalah:\n\n- **KIMPER**\n- **MINE_PERMIT**\n- **SIMPER**",
+      "answerTruncated": "Tipe permit yang diterbitkan adalah:\n\n- **KIMPER**\n- **MINE_PERMIT**\n- **SIMPER**",
+      "llmCalls": 2,
+      "latencyMs": 5066,
+      "dbTokensHit": [
+        "MINE_PERMIT",
+        "KIMPER",
+        "SIMPER"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT DISTINCT \"PermitType\" FROM \"permits\" ORDER BY \"PermitType\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-016",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "What are the distinct MCU result statuses?",
+      "outcome": "answered",
+      "answer": "The distinct **MCU result statuses** are:\n\n- **FIT**\n- **FIT_WITH_GLASSES**\n- **ID_BERKALA**\n- **UNFIT**",
+      "answerTruncated": "The distinct **MCU result statuses** are:\n\n- **FIT**\n- **FIT_WITH_GLASSES**\n- **ID_BERKALA**\n- **UNFIT**",
+      "llmCalls": 2,
+      "latencyMs": 3679,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.mcu_results",
+          "query_used": "SELECT DISTINCT \"ResultStatus\" FROM \"mcu_results\" ORDER BY \"ResultStatus\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-017",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah trainer yang terdaftar?",
+      "outcome": "answered",
+      "answer": "Jumlah trainer yang terdaftar adalah **6**.",
+      "answerTruncated": "Jumlah trainer yang terdaftar adalah **6**.",
+      "llmCalls": 2,
+      "latencyMs": 3344,
+      "dbTokensHit": [
+        "6"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.trainers",
+          "query_used": "SELECT COUNT(*) AS \"trainer_count\" FROM \"trainers\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-018",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many clinics are registered?",
+      "outcome": "answered",
+      "answer": "There are **8** clinics registered.",
+      "answerTruncated": "There are **8** clinics registered.",
+      "llmCalls": 2,
+      "latencyMs": 3444,
+      "dbTokensHit": [
+        "8"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.clinics",
+          "query_used": "SELECT COUNT(*) AS \"clinic_count\" FROM \"clinics\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-019",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Sebutkan nama semua training types yang aktif.",
+      "outcome": "answered",
+      "answer": "Berikut nama **semua training types yang aktif**:\n\n1. **TRAINING ALAT BERAT**\n2. **PLH**\n3. **MTR**\n4. **HI**\n5. **Demo SIMPER Equipment Training**\n6. **Demo KIMPAK Tools Training**",
+      "answerTruncated": "Berikut nama **semua training types yang aktif**:\n\n1. **TRAINING ALAT BERAT**\n2. **PLH**\n3. **MTR**\n4. **HI**\n5. **Demo SIMPER Equipment Training**\n6. **Demo KIMPAK Tools Training**",
+      "llmCalls": 2,
+      "latencyMs": 3787,
+      "dbTokensHit": [
+        "HI",
+        "MTR",
+        "PLH"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.training_types",
+          "query_used": "SELECT \"Name\"\nFROM \"training_types\"\nWHERE \"IsActive\" = true\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-020",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many vehicle types exist?",
+      "outcome": "answered",
+      "answer": "There are **5** vehicle types.",
+      "answerTruncated": "There are **5** vehicle types.",
+      "llmCalls": 2,
+      "latencyMs": 3663,
+      "dbTokensHit": [
+        "5"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.vehicle_types",
+          "query_used": "SELECT COUNT(*) AS \"vehicle_type_count\" FROM \"vehicle_types\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-021",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah workpits yang terdaftar?",
+      "outcome": "answered",
+      "answer": "Jumlah **workpits** yang terdaftar adalah **10**.",
+      "answerTruncated": "Jumlah **workpits** yang terdaftar adalah **10**.",
+      "llmCalls": 2,
+      "latencyMs": 3864,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.workpits",
+          "query_used": "SELECT COUNT(*) AS \"workpits_count\" FROM \"workpits\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-022",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "List all MCU category names.",
+      "outcome": "answered",
+      "answer": "- Demo MCU Operator  \n- Kategori A - Operator Alat Berat  \n- Kategori B - Pekerja Umum  \n- Kategori C - Pekerja Ketinggian  \n- Kategori D - Penyelam test  \n- MCU Type A",
+      "answerTruncated": "- Demo MCU Operator  \n- Kategori A - Operator Alat Berat  \n- Kategori B - Pekerja Umum  \n- Kategori C - Pekerja Ketinggian  \n- Kategori D - Penyelam test  \n- MCU Type A",
+      "llmCalls": 2,
+      "latencyMs": 4101,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.mcu_categories",
+          "query_used": "SELECT \"Name\" FROM \"mcu_categories\" ORDER BY \"Name\" ASC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-023",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah tag (safety tags) yang pernah diterbitkan?",
+      "outcome": "answered",
+      "answer": "Jumlah tag (safety tags) yang pernah diterbitkan adalah **8**.",
+      "answerTruncated": "Jumlah tag (safety tags) yang pernah diterbitkan adalah **8**.",
+      "llmCalls": 2,
+      "latencyMs": 3753,
+      "dbTokensHit": [
+        "8"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.tags",
+          "query_used": "SELECT COUNT(*) AS \"total_tags\" FROM \"tags\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-024",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa peserta bertipe DH (direct hire)?",
+      "outcome": "answered",
+      "answer": "Jumlah peserta bertipe **DH (direct hire)** adalah **5.023**.",
+      "answerTruncated": "Jumlah peserta bertipe **DH (direct hire)** adalah **5.023**.",
+      "llmCalls": 2,
+      "latencyMs": 3376,
+      "dbTokensHit": [
+        "5023"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"dh_participants_count\"\nFROM \"participants\"\nWHERE \"ParticipantType\" = 'DH'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-025",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many participants are SUBCON?",
+      "outcome": "answered",
+      "answer": "There are **20** participants in **SUBCON**.",
+      "answerTruncated": "There are **20** participants in **SUBCON**.",
+      "llmCalls": 2,
+      "latencyMs": 3741,
+      "dbTokensHit": [
+        "20"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"subcon_count\"\nFROM \"participants\"\nWHERE \"ParticipantType\" = 'SUBCON'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-026",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Sebutkan nama site yang berlokasi di kota Banjarmasin jika ada.",
+      "outcome": "answered",
+      "answer": "Saya belum menerima data/hasil SQL pada **CONTEXT (SQL)** (terlihat kosong), jadi saya tidak bisa menyebutkan nama site yang berlokasi di **kota Banjarmasin** dari informasi yang tersedia saat ini.",
+      "answerTruncated": "Saya belum menerima data/hasil SQL pada **CONTEXT (SQL)** (terlihat kosong), jadi saya tidak bisa menyebutkan nama site yang berlokasi di **kota Banjarmasin** dari informasi yang tersedia saat ini.",
+      "llmCalls": 2,
+      "latencyMs": 3936,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.sites",
+          "query_used": "SELECT \"Name\" FROM \"sites\" WHERE \"Location\" ILIKE '%Banjarmasin%' LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-027",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Which sites require MCU HE input date?",
+      "outcome": "answered",
+      "answer": "I can’t determine which sites require **MCU HE input date** because the provided **CONTEXT (SQL) is empty**—there’s no data/query or schema information to identify those sites.\n\nIf you share the relevant table(s) or the SQL you’re using (or the columns that indicate “MCU HE input date” requirement), I can write the exact query and return the list of sites.",
+      "answerTruncated": "I can’t determine which sites require **MCU HE input date** because the provided **CONTEXT (SQL) is empty**—there’s no data/query or schema information to identify those sites.\n\nIf you share the relevant table(s) or the SQL you’re using (or the columns that indicate “MCU HE input date” requirement), I can write the exact query and return the list of sites.",
+      "llmCalls": 2,
+      "latencyMs": 3876,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.sites",
+          "query_used": "SELECT \"Id\", \"Code\", \"Name\" FROM \"sites\" WHERE \"RequireMcuHeInputDate\" = true LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-028",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah peserta yang memiliki email terdaftar?",
+      "outcome": "answered",
+      "answer": "Jumlah peserta yang memiliki email terdaftar adalah **4.965**.",
+      "answerTruncated": "Jumlah peserta yang memiliki email terdaftar adalah **4.965**.",
+      "llmCalls": 2,
+      "latencyMs": 3223,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"total_peserta_dengan_email\" FROM \"participants\" WHERE \"Email\" IS NOT NULL AND \"Email\" <> '' LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-029",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Tampilkan 10 department pertama secara alfabetis.",
+      "outcome": "answered",
+      "answer": "Berikut **10 department pertama** secara **alfabetis** (berdasarkan `Name`):\n\n1. **Accounting**\n2. **Accounting & Reporting**\n3. **Accounting & Tax**\n4. **Accounting & Tax Approver**\n5. **Asset Management**\n6. **Auxiliary BCP Group A**\n7. **Auxiliary BCP Group B**\n8. **Board**\n9. **Board of Commissioner**\n10. **Boards**",
+      "answerTruncated": "Berikut **10 department pertama** secara **alfabetis** (berdasarkan `Name`):\n\n1. **Accounting**\n2. **Accounting & Reporting**\n3. **Accounting & Tax**\n4. **Accounting & Tax Approver**\n5. **Asset Management**\n6. **Auxiliary BCP Group A**\n7. **Auxiliary BCP Group B**\n8. **Board**\n9. **Board of Commissioner**\n10. **Boards**",
+      "llmCalls": 2,
+      "latencyMs": 4015,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.departments",
+          "query_used": "SELECT \"Id\", \"Name\" FROM \"departments\" ORDER BY \"Name\" ASC NULLS LAST LIMIT 10;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-030",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "What is the total number of induction modules?",
+      "outcome": "answered",
+      "answer": "The total number of induction modules is **16**.",
+      "answerTruncated": "The total number of induction modules is **16**.",
+      "llmCalls": 2,
+      "latencyMs": 3572,
+      "dbTokensHit": [
+        "16"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.induction_modules",
+          "query_used": "SELECT COUNT(*) AS \"total_induction_modules\" FROM \"induction_modules\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-031",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah audit log yang tercatat?",
+      "outcome": "answered",
+      "answer": "Jumlah audit log yang tercatat adalah **555.832**.",
+      "answerTruncated": "Jumlah audit log yang tercatat adalah **555.832**.",
+      "llmCalls": 2,
+      "latencyMs": 4057,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.audit_logs",
+          "query_used": "SELECT COUNT(*) AS \"audit_log_count\" FROM \"audit_logs\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-032",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many users exist in the system?",
+      "outcome": "answered",
+      "answer": "There are **2 users** in the system.",
+      "answerTruncated": "There are **2 users** in the system.",
+      "llmCalls": 2,
+      "latencyMs": 5731,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "Local Postgres Test.User",
+          "query_used": "SELECT COUNT(*) AS \"user_count\" FROM \"User\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-033",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Sebutkan nama-nama trainer.",
+      "outcome": "answered",
+      "answer": "Nama-nama trainer yang tersedia:\n\n1. Aman Maulana  \n2. Demo Trainer OTPD  \n3. Ibnu Setyo Wardani  \n4. Soepriyadi  \n5. Yehezkiel Simbuang  \n6. trainier kcp",
+      "answerTruncated": "Nama-nama trainer yang tersedia:\n\n1. Aman Maulana  \n2. Demo Trainer OTPD  \n3. Ibnu Setyo Wardani  \n4. Soepriyadi  \n5. Yehezkiel Simbuang  \n6. trainier kcp",
+      "llmCalls": 2,
+      "latencyMs": 4433,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.trainers",
+          "query_used": "SELECT DISTINCT \"trainers\".\"Name\"\nFROM \"trainers\"\nWHERE \"trainers\".\"IsDeleted\" = false\nORDER BY \"trainers\".\"Name\" ASC\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-034",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "List induction types by name.",
+      "outcome": "answered",
+      "answer": "- Demo Safety Induction  \n- Environmental Induction  \n- Reciprocal New  \n- Safety Induction  \n- Site Specific Induction",
+      "answerTruncated": "- Demo Safety Induction  \n- Environmental Induction  \n- Reciprocal New  \n- Safety Induction  \n- Site Specific Induction",
+      "llmCalls": 2,
+      "latencyMs": 3408,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.induction_types",
+          "query_used": "SELECT \"Name\" FROM \"induction_types\" ORDER BY \"Name\" ASC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-035",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many training requests are in the system?",
+      "outcome": "answered",
+      "answer": "There are **15** training requests in the system.",
+      "answerTruncated": "There are **15** training requests in the system.",
+      "llmCalls": 2,
+      "latencyMs": 3787,
+      "dbTokensHit": [
+        "15"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.training_requests",
+          "query_used": "SELECT COUNT(*) AS \"training_request_count\" FROM \"training_requests\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-036",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa jumlah equipment model terdaftar?",
+      "outcome": "answered",
+      "answer": "Jumlah **equipment model terdaftar** adalah **850**.",
+      "answerTruncated": "Jumlah **equipment model terdaftar** adalah **850**.",
+      "llmCalls": 2,
+      "latencyMs": 3870,
+      "dbTokensHit": [
+        "850"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.equipment_models",
+          "query_used": "SELECT COUNT(*) AS \"total_equipment_models\" FROM \"equipment_models\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-037",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Show all active companies.",
+      "outcome": "answered",
+      "answer": "Active companies (IsActive = true, IsDeleted = false):\n\n1. **DH** — PT DARMA HENWA  \n2. **PRIMA** — PT Prima Multi Mineral  \n3. **SUBCON** — Vendor / Contractor  \n4. **DEMO_VENDOR** — Demo Vendor Mining Services  \n5. **PARTSINDO** — PT. Partsindo  \n6. **RUBY** — PT Ruby Smart  \n7. **ABC** — PT. ABC  \n8. **DEF** — PT.DEF  \n9. **GHI** — PT.GHI  \n10. **KPY** — PT KPY  \n11. **DGP** — PT DGP  \n12. **PTKB** — PT KB  \n13. **APB** — PT APB",
+      "answerTruncated": "Active companies (IsActive = true, IsDeleted = false):\n\n1. **DH** — PT DARMA HENWA  \n2. **PRIMA** — PT Prima Multi Mineral  \n3. **SUBCON** — Vendor / Contractor  \n4. **DEMO_VENDOR** — Demo Vendor Mining Services  \n5. **PARTSINDO** — PT. Partsindo  \n6. **RUBY** — PT Ruby Smart  \n7. **ABC** — PT. ABC  \n8. **DEF** — PT.DEF  \n9. **GHI** — PT.GHI  \n10. **KPY** — PT KPY  \n11. **DGP** — PT DGP  \n12. **PTKB** — PT KB  \n13. **APB** — PT APB",
+      "llmCalls": 2,
+      "latencyMs": 4799,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.companies",
+          "query_used": "SELECT \"Id\", \"Code\", \"Name\", \"Address\", \"Phone\", \"IsActive\", \"CreatedAt\", \"UpdatedAt\", \"CreatedBy\", \"UpdatedBy\", \"DeletedAt\", \"DeletedBy\", \"IsDeleted\" FROM \"companies\" WHERE \"IsActive\" = true LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-038",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Training batch yang ExamMode-nya ONLINE ada berapa?",
+      "outcome": "answered",
+      "answer": "Training batch yang **ExamMode-nya ONLINE** ada **7**.",
+      "answerTruncated": "Training batch yang **ExamMode-nya ONLINE** ada **7**.",
+      "llmCalls": 2,
+      "latencyMs": 3354,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.training_batches",
+          "query_used": "SELECT COUNT(*) AS \"online_training_batches_count\"\nFROM \"training_batches\"\nWHERE \"ExamMode\" = 'ONLINE'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-039",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "Berapa peserta VISITOR yang terdaftar?",
+      "outcome": "answered",
+      "answer": "Jumlah peserta **VISITOR** yang terdaftar adalah **1**.",
+      "answerTruncated": "Jumlah peserta **VISITOR** yang terdaftar adalah **1**.",
+      "llmCalls": 2,
+      "latencyMs": 3960,
+      "dbTokensHit": [
+        "1"
+      ],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT COUNT(*) AS \"visitor_registered_participants\" \nFROM \"participants\" \nWHERE \"ParticipantType\" = 'VISITOR' \n  AND \"Status\" = 'ACTIVE'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-040",
+      "category": "simple_select",
+      "difficulty": "easy",
+      "question": "How many subcon profiles exist?",
+      "outcome": "answered",
+      "answer": "There are **17** subcon profiles.",
+      "answerTruncated": "There are **17** subcon profiles.",
+      "llmCalls": 2,
+      "latencyMs": 4238,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.subcon_profiles",
+          "query_used": "SELECT COUNT(*) AS \"subcon_profiles_count\" FROM \"subcon_profiles\" LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-041",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Siapa saja peserta dengan status INACTIVE?",
+      "outcome": "answered",
+      "answer": "Saya belum bisa menentukan siapa saja peserta berstatus **INACTIVE** karena pada **CONTEXT** tidak ada data/SQL yang berisi daftar peserta atau tabel yang perlu di查询.\n\nJika Anda berikan:\n- tabel/kolom yang menyimpan **status** (mis. `participants.status`), dan\n- nama tabelnya (mis. `participants`),\n\nsaya bisa bantu susunkan query untuk mengambil semua peserta dengan status **INACTIVE**.",
+      "answerTruncated": "Saya belum bisa menentukan siapa saja peserta berstatus **INACTIVE** karena pada **CONTEXT** tidak ada data/SQL yang berisi daftar peserta atau tabel yang perlu di查询.\n\nJika Anda berikan:\n- tabel/kolom yang menyimpan **status** (mis. `participants.status`), dan\n- nama tabelnya (mis. `participants`),\n\nsaya bisa bantu susunkan query untuk mengambil semua peserta dengan status **INACTIVE**.",
+      "llmCalls": 2,
+      "latencyMs": 4591,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT \"Id\", \"ParticipantType\", \"SourceType\", \"ExternalId\", \"Nik\", \"FullName\", \"Gender\", \"BirthDate\", \"CompanyId\", \"Position\", \"SiteId\", \"Photo\", \"Email\", \"Phone\", \"Status\", \"LastMcuDate\", \"NextMcuDate\", \"CreatedAt\", \"UpdatedAt\", \"CreatedBy\", \"UpdatedBy\", \"DeletedAt\", \"DeletedBy\", \"IsDeleted\", \"ExternalCompanyName\", \"BloodType\", \"WorkExperienceLetterDate\", \"LastHeInputDate\", \"LastHiInputDate\", \"KtpPhoto\", \"SimPhoto\"\nFROM \"participants\"\nWHERE \"Status\" = 'INACTIVE'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-042",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Show all ACTIVE permits with their permit numbers.",
+      "outcome": "answered",
+      "answer": "Active permits (PermitNo):\n\n- MP-202608-00018  \n- MP-202608-00022  \n- SP-202607-00007  \n- SP-202605-00001  \n- MP-202605-00002  \n- SP-202605-00002  \n- DEMO-MP-FIT  \n- DEMO-MP-BERSYARAT  \n- DEMO-SP-SIMPER  \n- DEMO-KP-KIMPAK  \n- MP-202605-00006  \n- MP-202607-00010  \n- MP-202607-00011  \n- DASH-PERMIT-001  \n- DASH-PERMIT-004  \n- DASH-PERMIT-005  \n- SP-202607-00006  \n- DASH-PERMIT-003  \n- DASH-PERMIT-006  \n- DASH-PERMIT-002  \n- MP-202606-00009  \n- MP-202607-00015  \n- MP-202607-00016",
+      "answerTruncated": "Active permits (PermitNo):\n\n- MP-202608-00018  \n- MP-202608-00022  \n- SP-202607-00007  \n- SP-202605-00001  \n- MP-202605-00002  \n- SP-202605-00002  \n- DEMO-MP-FIT  \n- DEMO-MP-BERSYARAT  \n- DEMO-SP-SIMPER  \n- DEMO-KP-KIMPAK  \n- MP-202605-00006  \n- MP-202607-00010  \n- MP-202607-00011  \n- DASH-PERMIT-001  \n- DASH-PERMIT-004  \n- DASH-PERMIT-005  \n- SP-202607-00006  \n- DASH-PERMIT-003  \n- DASH-PERMIT-006  \n- DASH-PERMIT-002  \n- MP-202606-00009  \n- MP-202607-00015  \n- MP-202607-00016",
+      "llmCalls": 2,
+      "latencyMs": 5141,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT \"p\".\"Id\", \"p\".\"PermitNo\", \"p\".\"PermitType\", \"p\".\"IssueDate\", \"p\".\"ExpiryDate\", \"p\".\"Status\", \"p\".\"ParticipantId\"\nFROM \"permits\" \"p\"\nWHERE \"p\".\"Status\" = 'ACTIVE'\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-043",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Permit mana saja yang sudah EXPIRED?",
+      "outcome": "answered",
+      "answer": "Berikut **permit yang sudah EXPIRED** (berdasarkan data pada konteks):\n\n1. **MP-202608-00018** — Expiry: **2026-09-09 15:59:59.999Z** — Id: **019fc74d-ef12-705b-ac14-45dc3f74d219**  \n2. **MP-202608-00018** — Expiry: **2026-09-09 15:59:59.999Z** — Id: **019fc74f-19cd-7e43-91fa-6873a0428939**  \n3. **DH/02386/XIV-M/09.26** — Expiry: **2026-07-29 15:59:59.999Z** — Id: **019facd6-681a-70bf-a4d4-116c9de25ae1**  \n4. **DEMO-MP-MCU30** — Expiry: **2026-06-21 00:00:00.000Z** — Id: **2cdd7780-52b4-4d80-be69-c5d808c49634**  \n5. **DEMO-MP-MCU30** — Expiry: **2026-06-21 00:00:00.000Z** — Id: **019e728a-4a75-710e-ae35-adc7b564e398**  \n6. **MP-202608-00018** — Expiry: **2026-09-09 15:59:59.999Z** — Id: **019fc747-35a3-75b8-b701-4122624c77f5**  \n7. **MP-202606-00009** — Expiry: **2026-08-29 23:59:59.999Z** — Id: **019e9ae2-6d6a-741c-a1c3-85099379b35c**  \n8. **MP-202605-00001** — Expiry: **2026-05-21 16:00:00.000Z** — Id: **019e3ed1-8570-720e-9ac8-8aeb3d1a7c6f**  \n9. **DEMO-MP-MCU30** — Expiry: **2026-06-21 00:00:00.000Z** — Id: **019e728b-d0c4-7fb6-b6dd-72119aac4824**  \n\nTotal: **9** record permit dengan **Status = EXPIRED**.",
+      "answerTruncated": "Berikut **permit yang sudah EXPIRED** (berdasarkan data pada konteks):\n\n1. **MP-202608-00018** — Expiry: **2026-09-09 15:59:59.999Z** — Id: **019fc74d-ef12-705b-ac14-45dc3f74d219**  \n2. **MP-202608-00018** — Expiry: **2026-09-09 15:59:59.999Z** — Id: **019fc74f-19cd-7e43-91fa-6873a0428939**  \n3. **DH/02386/XIV-M/09.26** — Expiry: **2026-07-29 15:59:59.999Z** — Id: **019facd6-681a-70bf-a4d4-116c9de25ae1**  \n4. **DEMO-MP-MCU30** — Expiry: **2026-06-21 00:00:00.000Z** — Id: **2cdd7780-52b4-4d80-be6",
+      "llmCalls": 2,
+      "latencyMs": 11145,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT \"Id\", \"ParticipantId\", \"PermitType\", \"PermitNo\", \"IssueDate\", \"ExpiryDate\", \"Status\", \"PrintedAt\", \"IssuedAt\", \"CreatedAt\", \"UpdatedAt\", \"CreatedBy\", \"UpdatedBy\", \"DeletedAt\", \"DeletedBy\", \"IsDeleted\", \"RenewalReason\", \"RenewedFromPermitId\", \"JdeSnapshot\", \"NikSnapshot\", \"PositionSnapshot\", \"CompanyNameSnapshot\", \"DepartmentSnapshot\", \"NameSnapshot\" FROM \"permits\" WHERE \"Status\" = 'EXPIRED' LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-044",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Which permits expired before 1 January 2026?",
+      "outcome": "answered",
+      "answer": "I can’t determine which permits expired before **1 January 2026** because the provided **CONTEXT (SQL) is empty**—there’s no permit/expiration data or query to evaluate.",
+      "answerTruncated": "I can’t determine which permits expired before **1 January 2026** because the provided **CONTEXT (SQL) is empty**—there’s no permit/expiration data or query to evaluate.",
+      "llmCalls": 2,
+      "latencyMs": 4709,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.permits",
+          "query_used": "SELECT \"Id\", \"ParticipantId\", \"PermitType\", \"PermitNo\", \"IssueDate\", \"ExpiryDate\", \"Status\", \"PrintedAt\", \"IssuedAt\", \"CreatedAt\", \"UpdatedAt\", \"CreatedBy\", \"UpdatedBy\", \"DeletedAt\", \"DeletedBy\", \"IsDeleted\", \"RenewalReason\", \"RenewedFromPermitId\", \"JdeSnapshot\", \"NikSnapshot\", \"PositionSnapshot\", \"CompanyNameSnapshot\", \"DepartmentSnapshot\", \"NameSnapshot\" FROM \"permits\" WHERE \"ExpiryDate\" < DATE '2026-01-01' ORDER BY \"ExpiryDate\" ASC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-045",
+      "category": "filtering",
+      "difficulty": "medium",
+      "question": "Peserta wanita siapa saja yang terdaftar di site Asam-Asam?",
+      "outcome": "answered",
+      "answer": "Peserta wanita yang terdaftar di site **Asam-Asam** (SiteId: `3e8c8891-1152-49b9-bb7e-eacacdac4af2`) adalah:\n\n1. **Apriliani** (ParticipantId: `abc812e6-d727-4689-9b53-c238e2e7881d`)\n2. **Angelia Apriani** (ParticipantId: `51931c59-a943-4bd3-8c0e-cb6ac11e10f7`)\n3. **Naila Noor Yzzah** (ParticipantId: `4a07eddb-7664-4d6a-a967-d5c6d92ad0bd`)\n4. **Winarto** (ParticipantId: `6ffac6d1-dc70-4f90-a8dd-eede2d7a3a95`)",
+      "answerTruncated": "Peserta wanita yang terdaftar di site **Asam-Asam** (SiteId: `3e8c8891-1152-49b9-bb7e-eacacdac4af2`) adalah:\n\n1. **Apriliani** (ParticipantId: `abc812e6-d727-4689-9b53-c238e2e7881d`)\n2. **Angelia Apriani** (ParticipantId: `51931c59-a943-4bd3-8c0e-cb6ac11e10f7`)\n3. **Naila Noor Yzzah** (ParticipantId: `4a07eddb-7664-4d6a-a967-d5c6d92ad0bd`)\n4. **Winarto** (ParticipantId: `6ffac6d1-dc70-4f90-a8dd-eede2d7a3a95`)",
+      "llmCalls": 2,
+      "latencyMs": 5584,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT p.\"Id\" AS \"ParticipantId\", p.\"FullName\" AS \"FullName\", p.\"Nik\" AS \"Nik\", p.\"Gender\" AS \"Gender\", p.\"ParticipantType\" AS \"ParticipantType\", p.\"CompanyId\" AS \"CompanyId\", p.\"SiteId\" AS \"SiteId\"\nFROM \"participants\" p\nWHERE p.\"Gender\" IN ('F','FEMALE')\n  AND p.\"SiteId\" IN (\n    SELECT s.\"Id\"\n    FROM \"sites\" s\n    WHERE s.\"Name\" ILIKE '%Asam-Asam%'\n       OR s.\"Code\" ILIKE '%Asam-Asam%'\n  )\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-046",
+      "category": "filtering",
+      "difficulty": "medium",
+      "question": "List participants hired by PT DARMA HENWA at Bengalon Site.",
+      "outcome": "answered",
+      "answer": "I can’t list the participants hired by **PT DARMA HENWA** at **Bengalon Site** because no SQL/context data was provided (the CONTEXT is empty).",
+      "answerTruncated": "I can’t list the participants hired by **PT DARMA HENWA** at **Bengalon Site** because no SQL/context data was provided (the CONTEXT is empty).",
+      "llmCalls": 2,
+      "latencyMs": 5238,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT \"p\".\"Id\" AS \"ParticipantId\", \"p\".\"ParticipantType\", \"p\".\"FullName\", \"p\".\"Nik\", \"p\".\"Gender\", \"p\".\"Phone\", \"p\".\"Email\", \"p\".\"Status\", \"p\".\"CreatedAt\" AS \"ParticipantCreatedAt\"\nFROM \"participants\" \"p\"\nJOIN \"companies\" \"c\" ON \"c\".\"Id\" = \"p\".\"CompanyId\"\nJOIN \"sites\" \"s\" ON \"s\".\"Id\" = \"p\".\"SiteId\"\nWHERE \"p\".\"Status\" = 'ACTIVE'\n  AND \"p\".\"ParticipantType\" = 'SUBCON'\n  AND \"p\".\"SourceType\" = 'API'\n  AND \"p\".\"ExternalCompanyName\" = 'PT DARMA HENWA'\n  AND \"s\".\"Name\" = 'Bengalon'\nORDER BY \"p\".\"CreatedAt\" DESC\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-047",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Which MCU registrations are still PENDING?",
+      "outcome": "answered",
+      "answer": "The only MCU registration shown in the provided context has **Status = `REGISTERED`** (Id: `5a0b7070-f3e5-4fff-b5c9-4f2cc56e0e7c`).\n\n✅ **MCU registrations still PENDING:** **None** (no records with a `PENDING` status are present in the provided data).",
+      "answerTruncated": "The only MCU registration shown in the provided context has **Status = `REGISTERED`** (Id: `5a0b7070-f3e5-4fff-b5c9-4f2cc56e0e7c`).\n\n✅ **MCU registrations still PENDING:** **None** (no records with a `PENDING` status are present in the provided data).",
+      "llmCalls": 2,
+      "latencyMs": 4745,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.mcu_registrations",
+          "query_used": "SELECT \"Id\", \"ParticipantId\", \"McuCategoryId\", \"RegistrationDate\", \"ScheduledDate\", \"Notes\", \"Status\", \"CreatedAt\", \"UpdatedAt\", \"CreatedBy\", \"UpdatedBy\", \"DeletedAt\", \"DeletedBy\", \"IsDeleted\", \"McuType\", \"RegistrationType\", \"HospitalName\", \"ClinicId\", \"WorkpitId\" FROM \"mcu_registrations\" WHERE \"Status\" = 'REGISTERED' ORDER BY \"RegistrationDate\" DESC, \"CreatedAt\" DESC LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-048",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Tampilkan peserta yang belum pernah MCU (LastMcuDate kosong).",
+      "outcome": "answered",
+      "answer": "Berikut peserta **yang belum pernah MCU** (kondisi: **LastMcuDate = kosong / NULL**):\n\n1. Denar Nico Akmaldi  \n2. Oky Toury Alfareza  \n3. Ardiansyah  \n4. Agus Salim  \n5. Irfan Febri Kurniawan  \n6. Alex Della  \n7. Arik Mahbudianto  \n8. Rizal Syaiful Anwar  \n9. Ahmad Rais Ramadani  \n10. Donatus Mangalla  \n11. Rivaldo Pakala Lembang  \n12. Ahmad Nur  \n13. Armin  \n14. Nurul Hikmah  \n15. Bahtiar  \n16. Mohamad Fahrur Rozak  \n17. Suyatmin  \n18. Muhammad Jayadi  \n19. Abdullah Nor  \n20. Yogi Pratama  \n21. Misjan Sakrani Junaidi  \n22. Muhammad Sholihin  \n23. Ahmad Sarwani  \n24. Noldy Adjie Pratama  \n25. Riduansyah  \n26. Ariansa  \n27. Muhammad Taufik Rahman  \n28. Zuliansyah  \n29. Robby Rekiya Efendy  \n30. Ilyas Maulana  \n31. Syamsudin  \n32. Mirsal Palayukan  \n33. Basrun  \n34. Moch Alfin Ardiansyah  \n35. Fandi Yanuar Ramadana  \n36. Dodi Emanuel Gesi Witak  \n37. Hermanto Nawir  \n38. Raka Aji Pranata  \n39. Arwandi  \n40. Muhammad Zaini Saputra  \n41. Abdul Hamid  \n42. Valentinus Singgih Yudanto  \n43. Agung Jefri Susanto  \n44. Juswanto  \n45. Rudi Hermawan  \n46. Deardo Pangondian Napitu  \n47. Leo Kaesar Awali Akbar  \n48. Edi Suprianto  \n49. Andri Ilham Nurdin, SE  \n50. m.nawir  \n51. Navi Antar  \n52. Kesya Nanda Nugroho  \n53. Khairun Nufus  \n54. Michail Tandi Palimbunga  \n55. Ananda Try Wardana  \n56. Halidah Tunnisa  \n57. Raka Nusantara  \n58. Arini Nathania Siagian  \n59. Lestari Adi  \n60. Bima Syahrul Tarwoco  \n61. Firmansyah  \n62. Atu Adhayati Solihah  \n63. Aisyah Az Zahra Yunus  \n64. Yasmin Anindita Azzahra  \n65. Muhammad Anshari Saleh  \n66. Hendri Yani  \n67. Haidir Rahman  \n68. Muhammad Jaya Saputra  \n69. Jumberi  \n70. Fariadi Yuda Sampurna  \n71. Sadrianor  \n72. M. Iqballudin  \n73. Hendri  \n74. Ferry Meidita Yusmawan  \n75. Gajali Rahman  \n76. Muhammad Fauzan Alghifari  \n77. Muchsin Hermawan  \n78. Irham Habibi Fanindra  \n79. Fridho Yudha Santoso  \n80. Mardoni  \n81. Givandi Aditama  \n82. Nyuwarno  \n83. Muhammad Taufik  \n84. Muhammad Riko  \n85. As'ad Syamsul Arifin  \n86. Arbain  \n87. Gilang Arjunanda  \n88. Andi Bahruddin  \n89. Aswad  \n90. Erwinson Siallagan  \n91. Anwarudin  \n92. Dani  \n93. Dandy Wijaya  \n94. Ahmad Rizki  \n95. Syariffuddin  \n96. Hendra  \n97. Farrel Ablian Anggoro  \n98. Satriya Genta Jaya  \n99. M. Ansyar  \n100. Hairuddin  \n\nJumlah: **100 peserta**.",
+      "answerTruncated": "Berikut peserta **yang belum pernah MCU** (kondisi: **LastMcuDate = kosong / NULL**):\n\n1. Denar Nico Akmaldi  \n2. Oky Toury Alfareza  \n3. Ardiansyah  \n4. Agus Salim  \n5. Irfan Febri Kurniawan  \n6. Alex Della  \n7. Arik Mahbudianto  \n8. Rizal Syaiful Anwar  \n9. Ahmad Rais Ramadani  \n10. Donatus Mangalla  \n11. Rivaldo Pakala Lembang  \n12. Ahmad Nur  \n13. Armin  \n14. Nurul Hikmah  \n15. Bahtiar  \n16. Mohamad Fahrur Rozak  \n17. Suyatmin  \n18. Muhammad Jayadi  \n19. Abdullah Nor  \n20. Yogi Pratama  \n21.",
+      "llmCalls": 2,
+      "latencyMs": 8630,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT \"p\".\"Id\", \"p\".\"ParticipantType\", \"p\".\"FullName\", \"p\".\"Nik\", \"p\".\"CompanyId\", \"p\".\"SiteId\", \"p\".\"LastMcuDate\", \"p\".\"NextMcuDate\", \"p\".\"CreatedAt\"\nFROM \"participants\" \"p\"\nWHERE \"p\".\"LastMcuDate\" IS NULL\nORDER BY \"p\".\"CreatedAt\" DESC\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-049",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Which participants have no company assigned?",
+      "outcome": "answered",
+      "answer": "The participant with **no company assigned** is:\n\n- **Ahmad Sabirin Noas** (ParticipantType: **DH**) — **CompanyId: null**",
+      "answerTruncated": "The participant with **no company assigned** is:\n\n- **Ahmad Sabirin Noas** (ParticipantType: **DH**) — **CompanyId: null**",
+      "llmCalls": 2,
+      "latencyMs": 3503,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.participants",
+          "query_used": "SELECT \"p\".\"Id\", \"p\".\"FullName\", \"p\".\"ParticipantType\", \"p\".\"CompanyId\"\nFROM \"participants\" \"p\"\nWHERE \"p\".\"CompanyId\" IS NULL\nLIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    },
+    {
+      "questionId": "prin-050",
+      "category": "filtering",
+      "difficulty": "easy",
+      "question": "Show tags that are still active (ActualReleaseDate is null).",
+      "outcome": "answered",
+      "answer": "Tags that are still active (where **ActualReleaseDate IS NULL**):\n\n| TagNo | TagType | SiteId | WorkArea | Reason | AppliedDate | Status |\n|---|---:|---|---|---|---|---:|\n| DEMO-IT-20260527 | 1 | 732765f8-ba0b-4a76-83c7-bca2494593ad | Demo Plant | Demo maintenance lockout | 2026-05-27T00:00:00.000Z | 1 |\n| DEMO-DT-20260527 | 0 | 732765f8-ba0b-4a76-83c7-bca2494593ad | Demo Workshop | Demo isolation work | 2026-05-27T00:00:00.000Z | 1 |\n| DT-202606-0002 | 0 | 732765f8-ba0b-4a76-83c7-bca2494593ad | jjjj | n | 2026-06-06T03:04:30.254Z | 0 |\n| DT-202607-0003 | 0 | 672b53ae-1338-42da-96dd-4415df9e5699 | Workshop A | Test | 2026-07-02T06:24:07.734Z | 0 |\n| DT-202607-0004 | 0 | 1b3b3e0a-fbcd-44d4-80ff-86bf7becbd27 | 1223 | RQ | 2026-07-15T01:45:20.547Z | 0 |\n| DT-202607-0005 | 0 | 1b3b3e0a-fbcd-44d4-80ff-86bf7becbd27 | ADQWED | A | 2026-07-15T02:43:04.381Z | 0 |\n| DT-202607-0006 | 0 | 1b3b3e0a-fbcd-44d4-80ff-86bf7becbd27 | 1223 | q | 2026-07-15T02:44:26.806Z | 0 |\n| DT-202607-0007 | 0 | 1b3b3e0a-fbcd-44d4-80ff-86bf7becbd27 | 1223 | tes | 2026-07-15T03:37:00.629Z | 0 |",
+      "answerTruncated": "Tags that are still active (where **ActualReleaseDate IS NULL**):\n\n| TagNo | TagType | SiteId | WorkArea | Reason | AppliedDate | Status |\n|---|---:|---|---|---|---|---:|\n| DEMO-IT-20260527 | 1 | 732765f8-ba0b-4a76-83c7-bca2494593ad | Demo Plant | Demo maintenance lockout | 2026-05-27T00:00:00.000Z | 1 |\n| DEMO-DT-20260527 | 0 | 732765f8-ba0b-4a76-83c7-bca2494593ad | Demo Workshop | Demo isolation work | 2026-05-27T00:00:00.000Z | 1 |\n| DT-202606-0002 | 0 | 732765f8-ba0b-4a76-83c7-bca2494593ad |",
+      "llmCalls": 2,
+      "latencyMs": 7015,
+      "dbTokensHit": [],
+      "dbTokensMissed": [],
+      "knowledgeKeywordsHit": [],
+      "knowledgeKeywordsMissed": [],
+      "citations": [
+        {
+          "type": "DATABASE",
+          "source": "PRINASA Production.tags",
+          "query_used": "SELECT \"TagNo\", \"TagType\", \"ParticipantId\", \"SiteId\", \"WorkArea\", \"Reason\", \"Description\", \"AppliedDate\", \"ExpectedReleaseDate\", \"ActualReleaseDate\", \"Status\", \"CreatedAt\", \"UpdatedAt\" FROM \"tags\" WHERE \"ActualReleaseDate\" IS NULL AND \"IsDeleted\" = false LIMIT 100;"
+        }
+      ],
+      "toolRunTypes": [
+        "SQL"
+      ],
+      "isHybrid": false
+    }
+  ]
+}
