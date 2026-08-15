@@ -116,9 +116,9 @@ export async function smartRoute(args: {
   if (best.finalScore - second.finalScore < 0.1 && best.finalScore > 0) {
     // ponytail: skip LLM tiebreaker when the best tool has a strong schema
     // match (schemaScore > 0.3 means real keyword overlap with DB tables/docs).
-    // The LLM router prompt doesn't know domain-specific terms (participants,
-    // permits, etc.), so it would override SQL→CHAT on every PRINASA question
-    // because CHAT's neutral score (~0.66) is within 0.1 of SQL's score.
+    // The LLM router prompt doesn't know domain-specific terms, so it would
+    // override SQL→CHAT on every data question because CHAT's neutral score
+    // is within 0.1 of SQL's score.
     if (best.schemaScore > 0.3) {
       reason = `${best.tool}: schema match strong (${(best.schemaScore * 100).toFixed(0)}%), skipping LLM tiebreaker`
     } else {

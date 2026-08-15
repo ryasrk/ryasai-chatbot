@@ -35,34 +35,14 @@ const SYNONYMS: Record<string, string[]> = {
   terkecil: ['min', 'smallest'], terbanyak: ['max', 'most'],
   terdikit: ['min', 'fewest', 'least'], pelanggan: ['customer'],
   produk: ['product'], pesanan: ['order'], gudang: ['warehouse', 'inventory'],
-  gaji: ['salary'], karyawan: ['employee'], faktur: ['invoice'],
+  gaji: ['salary'], karyawan: ['employee', 'employees'], faktur: ['invoice'],
   pendapatan: ['revenue', 'income'], film: ['film', 'movie'],
   artis: ['artist'], album: ['album'], lagu: ['track', 'song'], genre: ['genre'],
-  // PRINASA domain terms — Indonesian ↔ English table/column names
-  peserta: ['participant', 'participants'],
+  // General Indonesian ↔ English business terms (not domain-specific)
   perusahaan: ['company', 'companies'],
-  izin: ['permit', 'permits'],
-  pelatihan: ['training', 'trainings'],
-  pengajar: ['trainer', 'instructor', 'instructors'],
-  lokasi: ['site', 'sites'],
-  departemen: ['department', 'departments'],
-  klinik: ['clinic', 'clinics'],
-  peralatan: ['equipment', 'equipments'],
   pegawai: ['employee', 'employees'],
-  ujian: ['exam', 'exams'],
-  induksi: ['induction'],
-  sertifikat: ['certificate', 'certificates'],
-  asuransi: ['insurance'],
-  karyawan_aktif: ['employee_active', 'active_employee'],
-  // Additional domain synonyms for robustness/paraphrase questions
-  medical: ['mcu', 'medical_checkup', 'mcu_registration'],
-  checkup: ['mcu', 'medical_checkup', 'mcu_registration'],
-  'check-ups': ['mcu', 'medical_checkup'],
-  workforce: ['participant', 'employee', 'participants', 'employees'],
-  vendor: ['company', 'companies'],
-  kontraktor: ['company', 'companies', 'contractor'],
-  tag: ['tags', 'safetytag', 'safetytags'],
-  'safety tags': ['tags', 'safetytag'],
+  vendor: ['company', 'companies', 'supplier', 'vendor'],
+  kontraktor: ['contractor', 'company'],
 }
 
 export function expandWithSynonyms(tokens: string[]): string[] {

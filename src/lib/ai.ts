@@ -107,10 +107,8 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           'You are an enterprise AI router. Determine the handling ROUTE for the user message. ' +
           'Answer ONLY with one word: SQL, RAG, REST, CHAT, or CONTEXTUAL_CHAT.\n' +
           '- SQL: questions about structured data in connected databases — any question asking for ' +
-          'counts, totals, lists, or data from database tables (e.g. participants, permits, companies, ' +
-          'employees, departments, sites, clinics, training, equipment, vendors, invoices, sales, ' +
-          'inventory, customers, stock, revenue, etc.). If the question asks "how many", "berapa", ' +
-          '"count", "total", "list", "show me", and databases are available, route to SQL.\n' +
+          'counts, totals, lists, or data from database tables. If the question asks "how many", ' +
+          '"berapa", "count", "total", "list", "show me", and databases are available, route to SQL.\n' +
           '- RAG: questions about policies, SOPs, documents, procedures, guidelines, regulations, or non-structural text.\n' +
           '- REST: questions that need to call whitelisted REST API endpoints on external systems.\n' +
           '- CHAT: greetings, small talk, or general questions that do not need internal data.\n' +
@@ -208,17 +206,9 @@ export async function generateSql(args: {
           'Most count queries should count ALL rows (active + deleted) unless the user specifically ' +
           'asks for "active" or "non-deleted" records.\n' +
           '11. When asked for a TOTAL count, use SELECT COUNT(*) FROM "table" — do NOT add WHERE ' +
-          'clauses unless the user specifies a filter. Adding unnecessary filters (e.g. WHERE ' +
-          '"Code" ILIKE \'V%\') causes wrong counts.\n' +
-          '12. When asked for "vendor companies", count rows in the "companies" table — do NOT ' +
-          'search for a "vendor" table or filter by code patterns unless the schema has a vendor ' +
-          'flag column.\n' +
-          '13. When asked for "medical check-ups" or "MCU", use the "mcu_registrations" table.\n' +
-          '14. When asked for "safety tags", use the "tags" table.\n' +
-          '15. When asked for "workforce by employment type", group by "ParticipantType" in the ' +
-          '"participants" table.\n' +
-          '16. When asked for a count of ALL equipment models, use SELECT COUNT(*) FROM ' +
-          '"equipment_models" — do NOT group by class unless the user asks for a breakdown.',
+          'clauses unless the user specifies a filter.\n' +
+          '12. Use the BUSINESS CONTEXT (if provided) to identify the correct table for domain ' +
+          'terms. If the business context maps a domain term to a specific table, use that table.',
       },
       {
         role: 'user',
@@ -363,7 +353,7 @@ export async function generateSchemaDescriptions(args: {
 // that gets injected into every Text-to-SQL call so the model understands:
 //   1. What business domain the database serves (mining safety, HR, e-commerce)
 //   2. How tables relate to each other (participants → companies → sites)
-//   3. Domain vocabulary (MCU = medical check-up, KIMPAK = equipment cert)
+//   3. Domain vocabulary (abbreviations, non-English terms)
 //   4. Querying hints (which columns to filter on, what "active" means)
 //
 // Generated once at connection test time, stored in Integration.businessContext.
@@ -390,21 +380,21 @@ export async function generateDatabaseProfile(args: {
           'You are a database analyst. Analyze the complete schema of a database and produce a ' +
           'BUSINESS CONTEXT document that will help a Text-to-SQL AI understand the domain. ' +
           'The document must be plain text (not JSON) with these sections:\n\n' +
-          '## DOMAIN\nWhat business domain is this database for? (e.g. "mining safety compliance", ' +
-          '"HR and payroll", "e-commerce"). What organization type?\n\n' +
+          '## DOMAIN\nWhat business domain is this database for? (e.g. "HR and payroll", ' +
+          '"e-commerce", "inventory management"). What organization type?\n\n' +
           '## CORE ENTITIES\nList the 5-10 most important tables and what they represent in business ' +
-          'terms. Use the business name, not the table name (e.g. "participants — workers/employees ' +
-          'who need safety training and permits").\n\n' +
-          '## KEY RELATIONSHIPS\nHow do the core entities connect? (e.g. "participants belong to ' +
-          'companies, work at sites, attend training batches, hold permits")\n\n' +
+          'terms. Use the business name, not the table name.\n\n' +
+          '## KEY RELATIONSHIPS\nHow do the core entities connect? (e.g. "employees belong to ' +
+          'departments, have payroll records, attend training sessions")\n\n' +
           '## DOMAIN GLOSSARY\nDefine domain-specific terms and abbreviations found in table/column ' +
-          'names (e.g. "MCU = Medical Check-Up", "KIMPAK = equipment certification", "DH = Direct ' +
-          'Hire", "SUBCON = Subcontractor"). Include Indonesian terms if present.\n\n' +
+          'names. Include non-English terms if present.\n\n' +
           '## QUERY HINTS\nPractical tips for writing correct SQL:\n' +
           '- Which column indicates "active" status for key tables\n' +
-          '- Which tables should be used for common questions (e.g. "for vendor count, use companies table")\n' +
+          '- Which tables should be used for common business questions\n' +
           '- Which columns to avoid filtering on unnecessarily\n' +
-          '- Common pitfalls (e.g. "IsDeleted is boolean, not timestamp")\n\n' +
+          '- When to use COUNT(*) vs filtering (e.g. "for vendor count, count ALL companies — do NOT filter by name patterns")\n' +
+          '- Common pitfalls (e.g. soft-delete columns, case sensitivity)\n' +
+          '- For each core entity, note: which table to query, what "active" means, and what NOT to filter on\n\n' +
           'Keep it concise — aim for 300-500 words total. Do NOT include SQL examples.',
       },
       {

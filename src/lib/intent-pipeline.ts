@@ -78,9 +78,8 @@ CRITICAL — DEFAULT TO NOT CLARIFYING:
 - The system has a smart router that automatically selects the best database
   integration and generates appropriate SQL queries. You do NOT need to know
   which table or column to query — the system figures that out.
-- When databases are available, questions like "how many participants?",
-  "total permits", "list companies", "active departments" are NOT ambiguous.
-  They clearly need database retrieval and the system will find the right table.
+- When databases are available, questions like "how many X?",
+  "total Y", "list Z" are NOT ambiguous — the system auto-selects the right table.
 - NEVER ask "which database?" or "which table?" or "which system?" — the system
   resolves that automatically.
 - NEVER ask the user to provide a table name, column name, or schema.
@@ -88,11 +87,10 @@ CRITICAL — DEFAULT TO NOT CLARIFYING:
   (a) a pronoun reference with no antecedent ("how many of THOSE?"), or
   (b) a date-range question with no clear time frame ("show me recent data"), or
   (c) a question about a specific entity when multiple with same name exist
-- If the question mentions any domain noun (participants, permits, companies,
-  trainers, training, sites, departments, clinics, equipment, employees, exams,
-  induction, MCU, medical, certificate, vendor, invoice, etc.) AND databases
-  are available, set needsRetrieval=true, needsClarification=false.
-- If documents are available and the question asks about a procedure, policy,
+- If the question mentions any noun that matches a table or column name from ' +
+          'the schema summaries AND databases are available, set needsRetrieval=true, ' +
+          'needsClarification=false.\n' +
+          '- If documents are available and the question asks about a procedure, policy,
   rule, guideline, or "what does [document] say", set needsRetrieval=true,
   needsClarification=false.
 
@@ -167,18 +165,23 @@ export async function analyzeIntent(args: {
     // (contains domain nouns or count/list words), force needsClarification=false.
     if (parsed.needsClarification && (args.hasDocuments || args.hasIntegrations)) {
       const qLower = args.question.toLowerCase()
-      const DOMAIN_NOUNS = [
-        'participant', 'peserta', 'permit', 'izin', 'company', 'perusahaan',
-        'vendor', 'trainer', 'instructor', 'pengajar', 'training', 'pelatihan',
-        'site', 'lokasi', 'department', 'departemen', 'clinic', 'klinik',
-        'equipment', 'peralatan', 'employee', 'karyawan', 'pegawai',
-        'exam', 'ujian', 'induction', 'induksi', 'mcu', 'medical',
-        'certificate', 'sertifikat', 'insurance', 'asuransi',
+      // ponytail: heuristic guard — when data sources are available and the
+      // question contains query-oriented words (count, list, how many, show,
+      // total) or domain nouns from the schema summaries, force
+      // needsClarification=false. The LLM intent analyzer sometimes asks
+      // "which database?" even when the system auto-selects integrations.
+      const QUERY_INDICATORS = [
         'count', 'jumlah', 'total', 'berapa', 'how many', 'list', 'daftar',
-        'show', 'tampilkan', 'display',
+        'show', 'tampilkan', 'display', 'report', 'laporan', 'summary',
+        'breakdown', 'detail', 'statistics', 'statistik',
       ]
-      const hasDomainNoun = DOMAIN_NOUNS.some((n) => qLower.includes(n))
-      if (hasDomainNoun) {
+      // Check if any schema table/column name appears in the question
+      const schemaTerms = (args.schemaSummaries ?? []).join(' ').toLowerCase()
+      const questionHasSchemaTerm = schemaTerms.split(/[^a-z0-9_]+/)
+        .filter((w) => w.length >= 4 && !QUERY_INDICATORS.includes(w))
+        .some((w) => qLower.includes(w))
+      const hasQueryIndicator = QUERY_INDICATORS.some((n) => qLower.includes(n))
+      if (hasQueryIndicator || questionHasSchemaTerm) {
         parsed.needsClarification = false
         parsed.clarificationQuestion = undefined
       }
