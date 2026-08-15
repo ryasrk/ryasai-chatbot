@@ -233,13 +233,26 @@ export async function recallKnowledgeGraph(args: {
   const c = await getCogneeClient()
   if (!c) return ''
 
-  // ponytail: graceful degradation — falls back to empty string when cognee graph search fails
+  // ponytail: guard against "dataset not found" — see recallFromGraph. The KB
+  // dataset only exists after the first document cognify succeeds; searching
+  // before that is a guaranteed runtime error per strategy.
+  const kb = kbDatasetFor()
+  try {
+    const exists = await c.datasets?.has?.(kb)
+    if (exists === false) return ''
+  } catch {
+    // datasets.has unavailable — fall through
+  }
+
+  // ponytail: only SearchType values the cognee-ts SDK actually serializes.
+  // GRAPH_ENTITIES/GRAPH_RELATIONSHIPS were never valid — the Rust side rejects
+  // them with "unknown SearchType" validation errors. The 15 valid names are in
+  // @cognee/cognee-ts/lib/types.d.ts (SearchTypeString).
   const topK = args.topK ?? 5
   const strategies = [
     { searchType: 'SUMMARIES', topK },
     { searchType: 'CHUNKS', topK },
-    { searchType: 'GRAPH_ENTITIES', topK: topK * 2 },
-    { searchType: 'GRAPH_RELATIONSHIPS', topK: topK * 2 },
+    { searchType: 'NATURAL_LANGUAGE', topK: topK * 2 },
   ]
 
   const results: string[] = []
@@ -284,14 +297,24 @@ export async function recallKnowledgeGraphStructured(args: {
   const c = await getCogneeClient()
   if (!c) return []
 
+  // ponytail: guard against "dataset not found" — see recallKnowledgeGraph.
+  try {
+    const exists = await c.datasets?.has?.(kbDatasetFor())
+    if (exists === false) return []
+  } catch {
+    // datasets.has unavailable — fall through
+  }
+
   const topK = args.topK ?? 5
   const results: GraphSearchResult[] = []
 
+  // ponytail: see recallKnowledgeGraph — GRAPH_ENTITIES/GRAPH_RELATIONSHIPS are
+  // not valid SearchType names in the SDK; NATURAL_LANGUAGE is the graph-native
+  // entity/relationship retriever.
   const strategies: Array<{ searchType: string; topK: number; source: GraphSearchResult['source'] }> = [
     { searchType: 'SUMMARIES', topK, source: 'summary' },
     { searchType: 'CHUNKS', topK, source: 'chunk' },
-    { searchType: 'GRAPH_ENTITIES', topK: topK * 2, source: 'entity' },
-    { searchType: 'GRAPH_RELATIONSHIPS', topK: topK * 2, source: 'relationship' },
+    { searchType: 'NATURAL_LANGUAGE', topK: topK * 2, source: 'entity' },
   ]
 
   for (const strategy of strategies) {

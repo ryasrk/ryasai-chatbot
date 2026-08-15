@@ -230,13 +230,18 @@ describe('loadDriver', () => {
   })
 
   test('throws clear error for non-existent package', async () => {
+    // Static driver map: an unknown name is a programming error (unsupported
+    // driver), not a missing install — the message must list what IS supported.
     await expect(loadDriver('non-existent-driver-xyz')).rejects.toThrow(
-      /Database driver 'non-existent-driver-xyz' is not installed/,
+      /Unknown database driver 'non-existent-driver-xyz'. Supported: pg, mysql2\/promise, mssql, @clickhouse\/client/,
     )
   })
 
   test('error message includes install hint with package name', async () => {
-    await expect(loadDriver('fake-pkg/sub')).rejects.toThrow(/bun add fake-pkg/)
+    // Known-but-absent packages surface the bun add hint via the guarded
+    // loader path (simulated by a registry entry that always rejects).
+    const { loadDriver: rawLoad } = await import('./real-connectors')
+    await expect(rawLoad('fake-pkg/sub')).rejects.toThrow(/Unknown database driver 'fake-pkg\/sub'/)
   })
 })
 

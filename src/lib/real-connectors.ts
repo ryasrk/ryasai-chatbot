@@ -264,15 +264,39 @@ export function normaliseRow(r: QueryRow): QueryRow {
   return out
 }
 
-export async function loadDriver(name: string): Promise<Record<string, unknown>> {
-  try {
-    return (await import(name)) as Record<string, unknown>
-  } catch (e) {
-    const pkg = name.split('/')[0]
-    throw new Error(
-      `Database driver '${name}' is not installed. Run: bun add ${pkg}. Original error: ${(e as Error).message}`,
-    )
+/**
+ * Static driver registry — the ONLY reliable way to load optional drivers under
+ * Turbopack/webpack. `await import(variable)` cannot be traced by any bundler:
+ * dev (Turbopack) rewrites it to a chunk lookup that misses, and standalone
+ * output tracing drops the package from node_modules entirely. Both failure
+ * modes surfaced to users as "driver not installed". A STATIC import map keeps
+ * the specifier analyzable; each entry is guarded with try/catch so a missing
+ * optional package still degrades to the actionable loadDriver error.
+ */
+type DriverModule = Record<string, unknown>
+
+const DRIVER_LOADERS: Record<string, () => Promise<DriverModule>> = {
+  pg: async () => import('pg'),
+  'mysql2/promise': async () => import('mysql2/promise'),
+  mssql: async () => import('mssql'),
+  '@clickhouse/client': async () => import('@clickhouse/client'),
+}
+
+export async function loadDriver(name: string): Promise<DriverModule> {
+  const loader = DRIVER_LOADERS[name]
+  if (loader) {
+    try {
+      return await loader()
+    } catch (e) {
+      const pkg = name.split('/')[0]
+      throw new Error(
+        `Database driver '${name}' is not installed. Run: bun add ${pkg}. Original error: ${(e as Error).message}`,
+      )
+    }
   }
+  throw new Error(
+    `Unknown database driver '${name}'. Supported: ${Object.keys(DRIVER_LOADERS).join(', ')}.`,
+  )
 }
 
 // ---------------------------------------------------------------------------

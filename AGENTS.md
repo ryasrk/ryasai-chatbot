@@ -6,6 +6,48 @@ Multi-tenant SaaS AI assistant (NL → SQL, RAG, REST, streaming chat) with lice
 
 > `CLAUDE.md` is a large living log (1000+ lines) of session history — trust it for *why* decisions were made, but verify current state against the code. An earlier "single-tenant refactor" mentioned in its progress log was reverted; the codebase is multi-tenant. `docs/adr/0001-single-tenant-architecture.md` and the helm chart description are likewise stale — the code (org-scoped models, tenant extension) is the source of truth.
 
+## ⛔ Non-negotiable invariants (read before touching these areas)
+
+`src/lib/invariants.test.ts` statically enforces the rules below, and CI runs
+it on every push. These encode real production incidents — including incidents
+introduced by AI-assisted changes. **If a guard fails your change, do not
+delete or weaken the guard**; read the comment block above the failing
+assertion (it documents the outage) and restructure your change.
+
+1. **One boot file**: `src/instrumentation.ts` is the ONLY instrumentation
+   file, and it MUST call `startJobWorker()`. Never create a root
+   `instrumentation.ts` — Next.js resolves it FIRST and silently shadows
+   `src/`, which once left the BullMQ worker dead for 16+ hours while 40
+   document jobs piled up unprocessed (docs uploaded but never embedded →
+   "chatbot doesn't know my documents").
+2. **cognee searchTypes**: only literal names from the SDK's own
+   `SearchTypeString` union (`node_modules/@cognee/cognee-ts/lib/types.d.ts`).
+   `GRAPH_ENTITIES`/`GRAPH_RELATIONSHIPS` came from *Python* cognee docs and
+   were never valid in the TS SDK. When upgrading `@cognee/cognee-ts`, the
+   guard re-reads the union — fix any renamed literal THERE, not by deleting
+   the guard.
+3. **DB drivers load through the static `DRIVER_LOADERS` map** in
+   `real-connectors.ts` — `async () => import('pg')` literals, never
+   `await import(variable)`. A variable specifier is invisible to Turbopack
+   (breaks dev) and to output tracing (drivers silently vanish from the
+   standalone Docker image → "driver not installed" in production only).
+   Adding a driver = one map entry + `serverExternalPackages` +
+   `outputFileTracingIncludes` in `next.config.ts` (all three, guarded).
+4. **PDF/DOCX/XLSX extraction must stay lossless-or-empty**: `document-parsers.ts`
+   never "falls back" to dumping printable ASCII from raw bytes — that noise
+   gets chunked, embedded, and served as knowledge. Image-only PDFs return `''`
+   so the doc is marked a placeholder. Behavioral tests live in
+   `document-parsers.test.ts` (FlateDecode, `<hex>` strings, multi-stream
+   `endstream` resumption, noise-free empty) — extend them when touching the
+   parser.
+
+**Verification ritual after touching any of the above**: `bun test src/lib/invariants.test.ts`
+plus the area's own test file. For ingestion changes, upload a REAL PDF
+(`test-data/coates.2025.book.1996.pdf`, 2.7MB) through `POST /api/documents`
+and confirm: chunkCount > 100, embeddings written (`DocumentChunk.embeddingJson`
+non-null), `Document.cognifyStatus = 'completed'`, then ask the chatbot a
+question only the document can answer and check for citations.
+
 ## Commands
 
 ```bash
@@ -52,7 +94,7 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/` — server-only libraries. Never import `db`, `crypto`, `config`, or `session` into client components (they touch secrets).
 - `mini-services/scheduler/` — separate Bun process, BullMQ worker (repeatable jobs, no manual polling). Imports parent libs via relative paths. Disables cognee (file-lock conflict with dev server). Requires Redis.
 - `prisma/schema.prisma` — 30 models. Every model except `Organization` and `Invitation` carries `organizationId`.
-- `instrumentation.ts` — Next.js server boot: graceful shutdown (`db.$disconnect` + `disconnectRedis`). OTel init is in `src/lib/otel.ts` (optional, `OTEL_ENABLED=true`).
+- `src/instrumentation.ts` — Next.js server boot (the ONLY instrumentation file — see invariants): env validation, BullMQ job worker (`startJobWorker()` — document embed/cognify jobs die in Redis without it), OTel init, plugin auto-heal, license revalidation, graceful shutdown. OTel init itself is in `src/lib/otel.ts` (optional, `OTEL_ENABLED=true`).
 - `src/lib/db.ts` — Prisma client + tenant extension. Singleton cached on `globalThis` in non-prod.
 - `src/lib/redis.ts` — two connections: `redis` for BullMQ (`maxRetriesPerRequest: null`, blocks/retries forever) and `cmd` (fails fast, used by `rateLimit()` / `checkRedisHealth()` so callers fall back to DB-based limiting). `jobQueue` = single `document-processing` queue, `type` field dispatches.
 - `src/lib/scheduler-queue.ts` — `scheduleQueue` (BullMQ repeatable jobs). `syncSchedule()` bridges `ScheduledRun` DB row → BullMQ repeatable job. Removing a repeatable job requires exact `pattern` + `tz` match (BullMQ hashes the key from these; look up the stored job first or removal silently no-ops).
@@ -75,8 +117,8 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/intent-pipeline.ts` — intent analysis, query rewriting, expansion, reflection, confidence.
 - `src/lib/planner.ts` — multi-step DAG planner (`planQuery`, `topoSort`, `executePlan`, `synthesizeAnswer`).
 - `src/lib/guardrails.ts` — SQL AST validation (rejects DML/DDL, forces `LIMIT 100`, single-statement).
-- `src/lib/connectors.ts` + `src/lib/real-connectors.ts` — DB connector registry (Postgres/MySQL/MSSQL via `pg`/`mysql2`/`mssql`, dynamic import).
-- `src/lib/cognee.ts` — barrel over `cognee-core.ts` (settings/client cache), `cognee-memory.ts` (chat memory), `cognee-knowledge-graph.ts` (cognify/graph recall/forget). No-op unless `COGNEE_ENABLED=true` AND the per-org toggle is on; reuses the tenant's LLM config. Datasets are per-org (`org:<id>`, `org:<id>:kb`).
+- `src/lib/connectors.ts` + `src/lib/real-connectors.ts` — DB connector registry (Postgres/MySQL/MSSQL/ClickHouse via the STATIC `DRIVER_LOADERS` map — never a variable-specifier `import()`; see invariants #3).
+- `src/lib/cognee.ts` — barrel over `cognee-core.ts` (settings/client cache), `cognee-memory.ts` (chat memory), `cognee-knowledge-graph.ts` (cognify/graph recall/forget). No-op unless the per-org Settings toggle is on (`COGNEE_ENABLED=false` is only a process-wide kill switch); reuses the tenant's LLM config. Datasets are per-org (`org:<id>`, `org:<id>:kb`). Recall strategies use `SUMMARIES` → `CHUNKS` → `NATURAL_LANGUAGE` and guard missing datasets via `c.datasets.has()` (see invariants #2).
 
 ## Multi-Tenancy
 
@@ -131,4 +173,4 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `bun run build` produces `.next/standalone/`. The script also copies `.next/static` and `public/` into it.
 - Docker images: `Dockerfile` (app) + `Dockerfile.scheduler` (scheduler). CI (`build-images.yml`) builds and pushes to GHCR on `main` push and version tags. `ci.yml` runs lint + typecheck + unit tests on every push/PR, plus the e2e suite against a pgvector service container.
 - Deployment is compose-first: `docker-compose.yml` pulls prebuilt GHCR images and runs a `migrate` one-shot (scheduler image ships the Prisma CLI) before `app`/`scheduler`; plus Redis and `pgvector/pgvector:pg16`. `install.sh` is the one-liner installer (`--with-searxng` adds a private SearXNG for the web_search tool). A `helm/` chart also exists but lags the compose path.
-- `next.config.ts`: `output: "standalone"`, `serverExternalPackages` for cognee/ioredis/bullmq/OTel SDKs (dynamically imported).
+- `next.config.ts`: `output: "standalone"`, `serverExternalPackages` for cognee/ioredis/bullmq/DB drivers/OTel SDKs, `outputFileTracingIncludes` pinning the DB driver packages into the standalone output (both are guarded — see invariants #3).

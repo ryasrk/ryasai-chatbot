@@ -116,13 +116,29 @@ export async function recallContext(args: {
 }
 
 async function recallFromGraph(c: any, query: string): Promise<string> {
-  // ponytail: graceful degradation — falls back to empty string when each cognee search strategy fails
+  // ponytail: guard against "dataset not found" noise — a fresh org (or one
+  // whose cognify jobs are still queued) has no dataset yet, and every search
+  // against a missing dataset throws a runtime error that used to spam the log
+  // twice per chat turn. has() is a cheap metadata lookup.
+  const ds = datasetFor()
+  try {
+    const exists = await c.datasets?.has?.(ds)
+    if (exists === false) return ''
+  } catch {
+    // datasets.has unavailable in older SDK — fall through and let search decide
+  }
+
+  // ponytail: only SearchType values the cognee-ts SDK actually serializes.
+  // GRAPH_ENTITIES/GRAPH_RELATIONSHIPS were never valid — the Rust side rejects
+  // them with "unknown SearchType" validation errors (they came from a Python
+  // cognee version we never shipped). SUMMARIES→CHUNKS is the graph-grounded
+  // pair; NATURAL_LANGUAGE (graph→Cypher) covers entity/relationship questions.
   const strategies = [
     { searchType: 'SUMMARIES', topK: 5 },
     { searchType: 'CHUNKS', topK: 5 },
-    { searchType: 'GRAPH_ENTITIES', topK: 10 },
-    { searchType: 'GRAPH_RELATIONSHIPS', topK: 10 },
+    { searchType: 'NATURAL_LANGUAGE', topK: 10 },
   ]
+  const results: string[] = []
   for (const strategy of strategies) {
     try {
       const result = await c.search(query, {
@@ -132,11 +148,12 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
         userId: getCogneeOwnerId(),
       })
       const formatted = formatSearchResponse(result)
-      if (formatted) return formatted
+      if (formatted) results.push(formatted)
     } catch (e) {
       console.warn('[cognee] graph recall strategy failed:', e instanceof Error ? e.message : String(e))
     }
   }
+  if (results.length > 0) return dedupeJoin(results)
   // Last resort: no dataset filter
   try {
     const result = await c.search(query, { topK: 5, userId: getCogneeOwnerId() })
@@ -145,6 +162,20 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
     console.warn('[cognee] graph recall failed:', e instanceof Error ? e.message : String(e))
     return ''
   }
+}
+
+/** Dedupe overlapping strategy outputs before joining — mirrors the KB recall path. */
+function dedupeJoin(results: string[]): string {
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const r of results) {
+    const key = r.slice(0, 100)
+    if (!seen.has(key)) {
+      seen.add(key)
+      deduped.push(r)
+    }
+  }
+  return deduped.join('\n')
 }
 
 async function recallFromSession(c: any, query: string, sessionId: string): Promise<string> {
@@ -157,7 +188,12 @@ async function recallFromSession(c: any, query: string, sessionId: string): Prom
     })
     return formatSearchResponse(result)
   } catch (e) {
-    console.warn('[cognee] session recall failed:', e instanceof Error ? e.message : String(e))
+    // Session search without any session history is expected pre-first-cognify;
+    // only warn when it's not the known missing-dataset/no-history shapes.
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!/dataset not found|no (session|history|qa)/i.test(msg)) {
+      console.warn('[cognee] session recall failed:', msg)
+    }
     return ''
   }
 }

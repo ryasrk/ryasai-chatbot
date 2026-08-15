@@ -90,7 +90,31 @@ export function startJobWorker(): Worker<JobData> {
     { connection: redis, concurrency: 3, lockDuration: 300_000, stalledInterval: 30_000, maxStalledCount: 1 },
   )
   worker.on('failed', (job, err) => console.error('[worker] job failed:', job?.data.type, err.message))
+  // ponytail: orphaned-job recovery. If the app crashes/redeploys mid-job the
+  // job stays on the `active` list holding a stale lock; BullMQ's stalled
+  // checker re-queues it, but jobs enqueued by a process whose worker never
+  // started (the duplicated-root-instrumentation bug) sit on `wait` forever
+  // with zero attempts — `wait`-side jobs are picked up automatically once a
+  // live worker exists, so this only needs to log what we adopted.
+  void adoptStuckJobs().catch(() => null)
   return worker
+}
+
+/** Log the queue depth the moment a worker first attaches — makes backlog visible. */
+async function adoptStuckJobs(): Promise<void> {
+  try {
+    const health = await checkRedisHealth()
+    if (!health.connected) {
+      console.warn('[worker] Redis not reachable — queued jobs will wait until it is.')
+      return
+    }
+    const waiting = await redis.llen('bull:document-processing:wait')
+    if (waiting > 0) {
+      console.log(`[worker] Adopting ${waiting} queued document job(s) from a previous run.`)
+    }
+  } catch {
+    // diagnostics only — never block worker startup
+  }
 }
 
 // ponytail: enqueue to Redis when available, run handler synchronously when Redis is down.
