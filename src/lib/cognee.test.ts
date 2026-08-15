@@ -164,37 +164,47 @@ describe('cognee — COGNEE_ENABLED env var', () => {
     enterWithOrg(TEST_ORG)
   })
 
-  test('COGNEE_ENABLED=false → disabled even if DB says enabled', async () => {
-    process.env.COGNEE_ENABLED = 'false'
+  async function setDbEnabled(enabled: boolean) {
     try {
       const config = await db.appConfig.findFirst()
-      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
+      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: enabled } })
     } catch {}
     invalidateCogneeSettings()
+  }
+
+  test('COGNEE_ENABLED=false → kill switch, disabled even if DB says enabled', async () => {
+    process.env.COGNEE_ENABLED = 'false'
+    await setDbEnabled(true)
     const health = await cogneeHealth()
     expect(health.enabled).toBe(false)
   })
 
   test('COGNEE_ENABLED=true → enabled when DB also says enabled', async () => {
     process.env.COGNEE_ENABLED = 'true'
-    try {
-      const config = await db.appConfig.findFirst()
-      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
-    } catch {}
-    invalidateCogneeSettings()
+    await setDbEnabled(true)
     const health = await cogneeHealth()
     expect(health.enabled).toBe(true)
   })
 
-  test('COGNEE_ENABLED unset → disabled (fail closed)', async () => {
-    // Was "defaults to enabled". Cognee writes org data into an external graph
-    // store and spends LLM budget; neither may switch on from an unset env var.
+  test('COGNEE_ENABLED unset → follows the Settings toggle (on)', async () => {
+    // The env var is a kill switch, not a second toggle: leaving it unset must
+    // not silently override an admin who enabled cognee in Settings.
     delete process.env.COGNEE_ENABLED
-    try {
-      const config = await db.appConfig.findFirst()
-      if (config) await db.appConfig.update({ where: { id: config.id }, data: { cogneeEnabled: true } })
-    } catch {}
-    invalidateCogneeSettings()
+    await setDbEnabled(true)
+    const health = await cogneeHealth()
+    expect(health.enabled).toBe(true)
+  })
+
+  test('COGNEE_ENABLED unset → follows the Settings toggle (off)', async () => {
+    delete process.env.COGNEE_ENABLED
+    await setDbEnabled(false)
+    const health = await cogneeHealth()
+    expect(health.enabled).toBe(false)
+  })
+
+  test('COGNEE_ENABLED=true → still disabled when DB says off', async () => {
+    process.env.COGNEE_ENABLED = 'true'
+    await setDbEnabled(false)
     const health = await cogneeHealth()
     expect(health.enabled).toBe(false)
   })

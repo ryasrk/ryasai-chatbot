@@ -44,9 +44,20 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
   const cached = _settingsCache.get(orgId)
   if (cached && Date.now() - cached.at < SETTINGS_TTL) return cached.settings
 
-  // ponytail: fail closed — cognee stays off unless COGNEE_ENABLED is explicitly
-  // "true". It writes org data into an external graph store and spends LLM budget;
-  // neither should switch on because an env var was left unset.
+  // ponytail: COGNEE_ENABLED is a kill switch, not a second toggle. Only the
+  // literal "false" forces cognee off process-wide — the scheduler worker sets it
+  // (ladybugdb's graph file lock cannot be shared between processes), and a
+  // hardened deployment can too. Any other value defers to the org's Settings
+  // toggle, which is the switch an admin actually sees.
+  //
+  // It used to be ANDed with the DB flag, so an admin who enabled cognee in
+  // Settings on a server whose env var was merely *unset* got a silent no-op
+  // plus a UI telling them to ask an administrator — who was themselves.
+  const envKilled = process.env.COGNEE_ENABLED === 'false'
+
+  // No AppConfig row = nothing configured yet (pre-setup). Nobody has opted in,
+  // so keep the old fail-closed rule there: external graph writes and LLM spend
+  // need an explicit "true".
   const envEnabled = process.env.COGNEE_ENABLED === 'true'
 
   const envFallback = (): CogneeSettings => ({
@@ -63,7 +74,7 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
     const config = await db.appConfig.findFirst()
     settings = config
       ? {
-          enabled: envEnabled && config.cogneeEnabled,
+          enabled: !envKilled && config.cogneeEnabled,
           dbProvider: config.cogneeDbProvider === 'postgres' ? 'postgres' : 'local',
           dbUrl: config.cogneeDbUrl ?? process.env.COGNEE_DB_URL ?? null,
           batchSize: config.cogneeBatchSize || parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),

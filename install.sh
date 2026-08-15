@@ -110,7 +110,9 @@ DB_QUERY_LOG=false
 WS_CORS_ORIGIN=http://localhost:3000
 
 # Toggles
-COGNEE_ENABLED=false
+# COGNEE_ENABLED is a kill switch: leave it unset so the AI Memory toggle in
+# Settings decides, set it to false to force cognee off regardless of Settings.
+# COGNEE_ENABLED=
 CONTEXTUAL_RETRIEVAL=true
 NEXT_PUBLIC_APP_VERSION=0.5.0
 NEXT_PUBLIC_WS_PORT=3003

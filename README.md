@@ -176,7 +176,7 @@ Copy `.env.example` to `.env`:
 | `DATABASE_URL` | Yes | Postgres |
 | `ENCRYPTION_SECRET_KEY` | Yes | 64-char (AES-256-GCM) |
 | `ADMIN_INITIAL_PASSWORD` | Yes | Initial password |
-| `COGNEE_ENABLED` | No | true (default) |
+| `COGNEE_ENABLED` | No | kill switch — leave unset, Settings > AI Memory decides; `false` forces off |
 | `RAG_LLM_RERANK` | No | true (optional) |
 | `CONTEXTUAL_RETRIEVAL` | No | true (optional, -49% failures) |
 | `LOG_LEVEL` | No | debug/info/warn/error |

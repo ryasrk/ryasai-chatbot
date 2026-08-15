@@ -42,7 +42,7 @@ Copy `.env.example` to `.env` and set **at minimum** these variables:
 | `AUTH_DEMO_FALLBACK` | Yes (prod) | `false` | **Must be `false` in production.** When `true`, unauthenticated requests impersonate the admin. |
 | `NODE_ENV` | Set by compose | `production` | Enables secure cookies, disables dev overlays |
 | `PORT` | No | `3000` | Next.js listen port (Dockerfile default: 3000) |
-| `COGNEE_ENABLED` | No | `false` | Enable AI memory layer (adds Postgres dependency for prod) |
+| `COGNEE_ENABLED` | No | unset | Kill switch for the AI memory layer. Unset = the per-org toggle in Settings decides; `false` = force off everywhere; `true` = also on before an org is set up. (Adds a Postgres dependency in prod.) |
 | `NEXT_PUBLIC_APP_VERSION` | No | `2.0.0` | Shown in UI footer |
 
 **Generate an encryption key:**

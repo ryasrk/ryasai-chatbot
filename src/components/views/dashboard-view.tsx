@@ -350,11 +350,10 @@ function CogneeStatusBar() {
   if (!cognee) return null
 
   if (!cognee.enabled) {
-    // DB-side "enabled" (config.enabled) can be true while the effective
-    // `enabled` stays false because the server's COGNEE_ENABLED env var is
-    // off — a deliberate fail-closed gate, not something Settings controls
-    // alone. Say so instead of telling an admin who already enabled it to
-    // "enable in Settings" again.
+    // DB-side "enabled" (config.enabled) can still be true while the effective
+    // `enabled` stays false — COGNEE_ENABLED=false is a server kill switch that
+    // overrides Settings. Say so instead of telling an admin who already
+    // enabled it to "enable in Settings" again.
     const envBlocked = !!cognee.config?.enabled
     return (
       <Card className="border-dashed">
@@ -366,7 +365,7 @@ function CogneeStatusBar() {
           </Badge>
           <span className="text-[10px]">
             {envBlocked
-              ? '— enabled in Settings, but COGNEE_ENABLED is off on the server; ask an admin to set it'
+              ? '— enabled in Settings, but the server runs with COGNEE_ENABLED=false, which force-disables it'
               : '— enable in Settings for cross-session memory & knowledge graph'}
           </span>
         </CardContent>

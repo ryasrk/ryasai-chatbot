@@ -43,7 +43,9 @@ resources:
 config:
   NODE_ENV: production
   LOG_LEVEL: info
-  COGNEE_ENABLED: "false"
+  # Kill switch only — unset means the per-org AI Memory toggle in Settings
+  # decides. Set to "false" to force cognee off for the whole release.
+  # COGNEE_ENABLED: "false"
   RAG_LLM_RERANK: "true"
   SCHEDULER_POLL_INTERVAL_SEC: "60"
   LOG_RETENTION_DAYS: "90"
