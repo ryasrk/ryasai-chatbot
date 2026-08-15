@@ -63,6 +63,7 @@ export function IntegrationsView() {
   const [createOpen, setCreateOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'database' | 'rest'>('database')
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [initContextId, setInitContextId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null)
   const [schemaTarget, setSchemaTarget] = useState<Integration | null>(null)
@@ -137,6 +138,27 @@ export function IntegrationsView() {
       console.error(e)
     } finally {
       setTestingId(null)
+    }
+  }
+
+  const handleInitContext = async (id: string) => {
+    setInitContextId(id)
+    try {
+      const res = await fetch(`/api/integrations/${id}/init-context`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        toast.error(extractError(json.error, 'Failed to initialize context.'))
+      } else {
+        toast.success(
+          `Business context generated (${json.data?.contextLength ?? 0} chars, ${json.data?.tableCount ?? 0} tables).`,
+        )
+        await fetchList()
+      }
+    } catch (e) {
+      toast.error('Network error while initializing context.')
+      console.error(e)
+    } finally {
+      setInitContextId(null)
     }
   }
 
@@ -294,6 +316,8 @@ export function IntegrationsView() {
               integration={it}
               onTest={() => handleTest(it.id)}
               testing={testingId === it.id}
+              onInitContext={() => handleInitContext(it.id)}
+              initContexting={initContextId === it.id}
               deleting={deletingId === it.id}
               onSchema={() => setSchemaTarget(it)}
               onQuery={() => setQueryTarget(it)}

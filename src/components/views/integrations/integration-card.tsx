@@ -14,6 +14,7 @@ import {
   Terminal,
   Trash2,
   Table2,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,6 +30,8 @@ export function IntegrationCard({
   integration,
   onTest,
   testing,
+  onInitContext,
+  initContexting,
   deleting,
   onSchema,
   onQuery,
@@ -38,6 +41,8 @@ export function IntegrationCard({
   integration: Integration
   onTest: () => void
   testing: boolean
+  onInitContext?: () => void
+  initContexting?: boolean
   deleting?: boolean
   onSchema: () => void
   onQuery: () => void
@@ -188,7 +193,7 @@ export function IntegrationCard({
         </details>
 
         {/* action buttons */}
-        <div className="mt-auto grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+        <div className="mt-auto grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
           <Button
             size="sm"
             variant="outline"
@@ -204,6 +209,23 @@ export function IntegrationCard({
             }
           >
             Test Connection
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onInitContext}
+            disabled={initContexting}
+            className="text-xs"
+            title="Generate business context (domain, glossary, query hints) for better SQL generation"
+            icon={
+              initContexting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )
+            }
+          >
+            Init Context
           </Button>
           <Button
             size="sm"

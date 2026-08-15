@@ -212,6 +212,38 @@ async function detectMentionedIntegration(
 
   const lower = question.toLowerCase()
 
+  // ponytail: check business context domain terms first — when 10 DBs are
+  // connected, schema keyword matching alone can't tell them apart if they
+  // share generic table names. But each DB's businessContext contains domain
+  // terms ("mining safety", "payroll", "inventory", "CRM") that are far more
+  // discriminative. If the question matches 2+ domain terms in one
+  // integration's businessContext, prefer that integration immediately.
+  for (const integ of integrations) {
+    if (!integ.businessContext) continue
+    const ctxLower = integ.businessContext.toLowerCase()
+    const glossaryTerms = new Set<string>()
+    // Match "TERM = definition" patterns in DOMAIN GLOSSARY
+    for (const m of ctxLower.matchAll(/(?:^|\n)[-*]\s+\*{0,2}([a-z][a-z0-9_/ -]{2,30})\*{0,2}\s*=/g)) {
+      glossaryTerms.add(m[1].trim())
+    }
+    // Match "## DOMAIN" section first paragraph for domain keywords
+    const domainMatch = ctxLower.match(/## domain\n([\s\S]+?)(\n##|\n\n)/)
+    if (domainMatch) {
+      for (const word of domainMatch[1].split(/[^a-z0-9]+/)) {
+        if (word.length >= 4 && !STOPWORDS.has(word) && !GENERIC_SCHEMA_TOKENS.has(word)) {
+          glossaryTerms.add(word)
+        }
+      }
+    }
+    let ctxMatches = 0
+    for (const term of glossaryTerms) {
+      if (term.length >= 4 && lower.includes(term)) ctxMatches++
+    }
+    if (ctxMatches >= 2) {
+      return { integrationId: integ.id }
+    }
+  }
+
   for (const integ of integrations) {
     const nameLower = integ.name.toLowerCase()
     if (lower.includes(nameLower)) return { integrationId: integ.id }

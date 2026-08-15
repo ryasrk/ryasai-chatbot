@@ -131,6 +131,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
     if (tablesCount > 0) {
       const { enrichSchemaDescriptions } = await import('@/lib/schema-enrichment')
       void enrichSchemaDescriptions(id, integration.name).catch(() => null)
+      // Also regenerate the business context profile (domain, glossary, hints)
+      const { initIntegrationContext } = await import('@/lib/source-init')
+      void initIntegrationContext(id).catch(() => null)
     }
 
     await writeAudit({
