@@ -129,6 +129,7 @@ export function RestCreateForm({ onCreated }: { onCreated: () => void }) {
         </Select>
         <Button
           size="sm"
+          className="w-fit"
           icon={restCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           onClick={handleCreateRestConnector}
           disabled={restCreating || !restName.trim() || !restBaseUrl.trim()}

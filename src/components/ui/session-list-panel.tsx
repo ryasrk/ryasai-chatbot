@@ -107,8 +107,8 @@ export function SessionListPanel({
           size="sm"
           className="w-full h-7 text-[11px]"
           variant="ghost"
+          icon={<Plus className="h-3 w-3" />}
         >
-          <Plus className="h-3 w-3" />
           {title} Baru
         </Button>
       </div>

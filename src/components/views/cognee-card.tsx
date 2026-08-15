@@ -73,6 +73,13 @@ export function CogneeCard() {
     fetchStats()
   }, [])
 
+  // Settings can save `cogneeEnabled=true` to the DB, but cognee-core.ts also
+  // requires the server's COGNEE_ENABLED env var — a deliberate fail-closed
+  // gate (external graph store + LLM spend), not something the UI can flip.
+  // Surface that split state instead of just saying "Disabled" and implying
+  // the Configure toggle alone is enough.
+  const envBlocked = !!stats?.config?.enabled && !stats?.enabled
+
   const handleAction = async (action: string) => {
     setActionLoading(action)
     try {
@@ -159,6 +166,8 @@ export function CogneeCard() {
                 </Badge>
                 <Badge variant="outline" className="text-[10px]">{stats.mode}</Badge>
               </>
+            ) : envBlocked ? (
+              <Badge variant="destructive" className="text-[10px]">Blocked by server config</Badge>
             ) : (
               <Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
             )}
@@ -330,6 +339,14 @@ export function CogneeCard() {
               </Button>
             </div>
           </>
+        ) : envBlocked ? (
+          <div className="flex items-start gap-2 text-xs text-muted-foreground py-2">
+            <Brain className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              Enabled in Configure, but the server has <code className="font-mono">COGNEE_ENABLED</code> off,
+              so memory stays disabled. Ask an administrator to set that environment variable and restart the server.
+            </span>
+          </div>
         ) : (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
             <Brain className="h-3.5 w-3.5" />

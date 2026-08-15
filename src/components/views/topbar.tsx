@@ -163,18 +163,20 @@ export function Topbar({
           {user && !loading && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="sm"
                   className="h-auto px-2 gap-2 hover:bg-accent transition-colors"
                   aria-label="Account menu"
+                  icon={
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">
+                        {getInitials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                  }
                 >
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">
-                      {getInitials(user.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="hidden md:flex flex-col items-start leading-tight min-w-0 max-w-[220px]">
+                  <div className="hidden md:flex flex-col items-start leading-tight min-w-0 max-w-[160px]">
                     <div className="max-w-full truncate text-xs font-medium">{user.name}</div>
                     <div className="max-w-full truncate text-[10px] text-muted-foreground capitalize">{user.role}</div>
                   </div>

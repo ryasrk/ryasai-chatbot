@@ -298,7 +298,9 @@ export function AIConfigurationView() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button
-                  icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  size="sm"
+                  className="h-7 text-xs"
+                  icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   onClick={handleSave}
                   disabled={saving || !baseUrl}
                 >
@@ -418,7 +420,9 @@ export function AIConfigurationView() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <Button
-                  icon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  size="sm"
+                  className="h-7 text-xs"
+                  icon={saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   onClick={handleSave}
                   disabled={saving || !embeddingBaseUrl}
                 >

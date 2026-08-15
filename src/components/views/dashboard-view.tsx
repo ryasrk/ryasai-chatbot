@@ -337,6 +337,7 @@ function CogneeStatusBar() {
     mode: string
     documents?: { total: number; cognified: number; pending: number; failed: number }
     batchSize?: number
+    config?: { enabled: boolean } | null
   } | null>(null)
 
   useEffect(() => {
@@ -349,13 +350,25 @@ function CogneeStatusBar() {
   if (!cognee) return null
 
   if (!cognee.enabled) {
+    // DB-side "enabled" (config.enabled) can be true while the effective
+    // `enabled` stays false because the server's COGNEE_ENABLED env var is
+    // off — a deliberate fail-closed gate, not something Settings controls
+    // alone. Say so instead of telling an admin who already enabled it to
+    // "enable in Settings" again.
+    const envBlocked = !!cognee.config?.enabled
     return (
       <Card className="border-dashed">
         <CardContent className="py-2 px-3 flex items-center gap-2 text-xs text-muted-foreground">
           <Brain className="h-3.5 w-3.5" />
           <span>AI Memory (Cognee)</span>
-          <Badge variant="outline" className="text-[10px]">Disabled</Badge>
-          <span className="text-[10px]">— enable in Settings for cross-session memory & knowledge graph</span>
+          <Badge variant={envBlocked ? 'destructive' : 'outline'} className="text-[10px]">
+            {envBlocked ? 'Blocked by server config' : 'Disabled'}
+          </Badge>
+          <span className="text-[10px]">
+            {envBlocked
+              ? '— enabled in Settings, but COGNEE_ENABLED is off on the server; ask an admin to set it'
+              : '— enable in Settings for cross-session memory & knowledge graph'}
+          </span>
         </CardContent>
       </Card>
     )
