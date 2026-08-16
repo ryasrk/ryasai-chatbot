@@ -271,8 +271,10 @@ describe('analyzeIntent', () => {
       }),
     )
 
+    // ponytail: use a question without query indicators (show, count, total,
+    // list, etc.) so the heuristic guard doesn't override needsClarification.
     const result = await analyzeIntent({
-      question: 'show me the invoice',
+      question: 'xyz ambiguous reference',
       hasDocuments: true,
       hasIntegrations: true,
     })

@@ -22,7 +22,8 @@ describe('smart-router tokenize', () => {
   })
 
   test('handles numbers', () => {
-    expect(tokenize('invoice 2024 total')).toEqual(['invoice', '2024', 'total'])
+    // 'total' is now a stopword (common query word that pollutes schema matching)
+    expect(tokenize('invoice 2024 total')).toEqual(['invoice', '2024'])
   })
 })
 
