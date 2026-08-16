@@ -4,10 +4,11 @@
  * + robustness questions live in prinasa-hybrid.ts.
  *
  * Ground truth was verified against the PRINASA snapshot (52 tables;
- * participants=5044 DH=5023/SUBCON=20/VISITOR=1, permits=32 ACTIVE=23/
+ * participants=5060 DH=5039/SUBCON=20/VISITOR=1, permits=32 ACTIVE=23/
  * EXPIRED=9 MINE_PERMIT=23/KIMPER=2/SIMPER=7, mcu_registrations=28,
- * training_batches=14, induction_batches=31, tags=8, departments=239,
- * sites=10, companies=13, equipment_models=850, employee_profiles=5020).
+ * training_batches=14, training_types=5 (HI/MTR/PLH/DEMO_SIMPER/DEMO_KIMPAK/TAB),
+ * induction_batches=31, trainers=6, tags=8,
+ * sites=10, companies=13, equipment_models=850, employee_profiles=5036).
  *
  * Bilingual (EN/ID mix) — exercises the router's language handling.
  * PascalCase quoted identifiers match the live schema exactly.
@@ -28,7 +29,7 @@ function q(
 
 export const prinasaSqlQuestions: BenchmarkQuestion[] = [
   // ═════════ simple_select (40) ═════════
-  q('prin-001', 'simple_select', 'easy', 'Berapa jumlah peserta (participants) yang terdaftar dalam sistem?', 'SELECT COUNT(*) AS total FROM participants', ['5044'], ['total']),
+  q('prin-001', 'simple_select', 'easy', 'Berapa jumlah peserta (participants) yang terdaftar dalam sistem?', 'SELECT COUNT(*) AS total FROM participants', ['5060'], ['total']),
   q('prin-002', 'simple_select', 'easy', 'How many permits have been issued in total?', 'SELECT COUNT(*) AS total FROM permits', ['32'], ['total']),
   q('prin-003', 'simple_select', 'easy', 'Berapa banyak perusahaan (companies) terdaftar sebagai vendor?', 'SELECT COUNT(*) AS total FROM companies', ['13'], ['total']),
   q('prin-004', 'simple_select', 'easy', 'How many sites are configured in the system?', 'SELECT COUNT(*) AS total FROM sites', ['10'], ['total']),
@@ -38,7 +39,7 @@ export const prinasaSqlQuestions: BenchmarkQuestion[] = [
   q('prin-008', 'simple_select', 'easy', 'How many induction batches are recorded?', 'SELECT COUNT(*) AS total FROM induction_batches', ['31'], ['total']),
   q('prin-009', 'simple_select', 'easy', 'Sebutkan semua tipe peserta (participant types) yang ada.', 'SELECT DISTINCT "ParticipantType" FROM participants', ['DH', 'SUBCON', 'VISITOR'], ['ParticipantType']),
   q('prin-010', 'simple_select', 'easy', 'What are the distinct permit statuses?', 'SELECT DISTINCT "Status" FROM permits ORDER BY "Status"', ['ACTIVE', 'EXPIRED'], ['Status']),
-  q('prin-011', 'simple_select', 'easy', 'Berapa jumlah karyawan (employee profiles) yang tercatat?', 'SELECT COUNT(*) AS total FROM employee_profiles', ['5020'], ['total']),
+  q('prin-011', 'simple_select', 'easy', 'Berapa jumlah karyawan (employee profiles) yang tercatat?', 'SELECT COUNT(*) AS total FROM employee_profiles', ['5036'], ['total']),
   q('prin-012', 'simple_select', 'easy', 'How many equipment models are registered?', 'SELECT COUNT(*) AS total FROM equipment_models', ['850'], ['total']),
   q('prin-013', 'simple_select', 'easy', 'Sebutkan kode dan nama semua site.', 'SELECT "Code", "Name" FROM sites ORDER BY "Code"', ['ACP', 'BANJARBARU', 'JKT'], ['Code', 'Name']),
   q('prin-014', 'simple_select', 'easy', 'List all company codes and names.', 'SELECT "Code", "Name" FROM companies ORDER BY "Code"', ['DH', 'PT DARMA HENWA'], ['Code', 'Name']),
@@ -51,7 +52,7 @@ export const prinasaSqlQuestions: BenchmarkQuestion[] = [
   q('prin-021', 'simple_select', 'easy', 'Berapa jumlah workpits yang terdaftar?', 'SELECT COUNT(*) AS total FROM workpits', [], ['total']),
   q('prin-022', 'simple_select', 'easy', 'List all MCU category names.', 'SELECT "Name" FROM mcu_categories ORDER BY "Name"', [], ['Name']),
   q('prin-023', 'simple_select', 'easy', 'Berapa jumlah tag (safety tags) yang pernah diterbitkan?', 'SELECT COUNT(*) AS total FROM tags', ['8'], ['total']),
-  q('prin-024', 'simple_select', 'easy', 'Berapa peserta bertipe DH (direct hire)?', 'SELECT COUNT(*) AS total FROM participants WHERE "ParticipantType" = \'DH\'', ['5023'], ['total']),
+  q('prin-024', 'simple_select', 'easy', 'Berapa peserta bertipe DH (direct hire)?', 'SELECT COUNT(*) AS total FROM participants WHERE "ParticipantType" = \'DH\'', ['5039'], ['total']),
   q('prin-025', 'simple_select', 'easy', 'How many participants are SUBCON?', 'SELECT COUNT(*) AS total FROM participants WHERE "ParticipantType" = \'SUBCON\'', ['20'], ['total']),
   q('prin-026', 'simple_select', 'easy', 'Sebutkan nama site yang berlokasi di kota Banjarmasin jika ada.', 'SELECT "Name", "Location" FROM sites WHERE "Location" ILIKE \'%banjarmasin%\'', [], ['Name', 'Location']),
   q('prin-027', 'simple_select', 'easy', 'Which sites require MCU HE input date?', 'SELECT "Name" FROM sites WHERE "RequireMcuHeInputDate" = true', [], ['Name']),

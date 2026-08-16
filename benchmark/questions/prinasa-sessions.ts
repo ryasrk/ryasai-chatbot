@@ -292,7 +292,7 @@ export const prinasaCrossSessionScenarios: CrossSessionScenario[] = [
     {
       sessionKey: 'A',
       turns: [
-        { question: 'Berapa total peserta dan berapa yang SUBCON?', expectContains: ['5044', '20'], kind: 'sql' },
+        { question: 'Berapa total peserta dan berapa yang SUBCON?', expectContains: ['5060', '20'], kind: 'sql' },
       ],
     },
     {
@@ -366,10 +366,10 @@ export const prinasaCrossSessionScenarios: CrossSessionScenario[] = [
 export const prinasaToggleScenarios: ToggleScenario[] = [
   toggle('print-001', 'hard', 'SQL off → DB question must be refused honestly, not fabricated', [
     { action: 'set-tools', tools: { sql: false, rag: true } },
-    { action: 'ask', question: 'Berapa total peserta di database?', expectBehavior: 'refuses-db', expectNotContains: ['5044'], note: 'Must NOT fabricate the number with SQL disabled' },
+    { action: 'ask', question: 'Berapa total peserta di database?', expectBehavior: 'refuses-db', expectNotContains: ['5060'], note: 'Must NOT fabricate the number with SQL disabled' },
     { action: 'ask', question: 'Menurut dokumen, apa prosedur MCU?', expectBehavior: 'answers-knowledge', note: 'Knowledge path must still work' },
     { action: 'set-tools', tools: { sql: true, rag: true } },
-    { action: 'ask', question: 'Sekarang berapa total peserta di database?', expectContains: ['5044'], expectBehavior: 'answers-db', note: 'Re-enabled → same question now answers with data' },
+    { action: 'ask', question: 'Sekarang berapa total peserta di database?', expectContains: ['5060'], expectBehavior: 'answers-db', note: 'Re-enabled → same question now answers with data' },
     { action: 'restore-tools' },
   ]),
   toggle('print-002', 'hard', 'RAG off → knowledge question must not cite docs', [
@@ -418,7 +418,7 @@ export const prinasaToggleScenarios: ToggleScenario[] = [
   ]),
   toggle('print-009', 'hard', 'Long-session + toggle combined stress', [
     { action: 'set-tools', tools: { sql: true, rag: true } },
-    { action: 'ask', question: 'Berapa total peserta?', expectContains: ['5044'], expectBehavior: 'answers-db' },
+    { action: 'ask', question: 'Berapa total peserta?', expectContains: ['5060'], expectBehavior: 'answers-db' },
     { action: 'ask', question: 'Yang SUBCON berapa?', expectContains: ['20'], expectBehavior: 'answers-db', followsUpOn: 'participant totals' },
     { action: 'set-tools', tools: { sql: false, rag: true } },
     { action: 'ask', question: 'Sekarang berapa peserta VISITOR?', expectBehavior: 'refuses-db', expectNotContains: ['1'] },

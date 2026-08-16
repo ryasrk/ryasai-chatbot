@@ -41,7 +41,7 @@ function h(
 
 export const prinasaRobustnessQuestions: BenchmarkQuestion[] = [
   // ═════════ robustness_typo (20) ═════════
-  q('prin-321', 'robustness_typo', 'medium', 'berapa jumlah peserta yang terdaftar dlm sistem?', 'SELECT COUNT(*) AS total FROM participants', ['5044'], ['total']),
+  q('prin-321', 'robustness_typo', 'medium', 'berapa jumlah peserta yang terdaftar dlm sistem?', 'SELECT COUNT(*) AS total FROM participants', ['5060'], ['total']),
   q('prin-322', 'robustness_typo', 'medium', 'How many permints are ACTIVE rite now?', 'SELECT COUNT(*) AS total FROM permits WHERE "Status" = \'ACTIVE\'', ['23'], ['total']),
   q('prin-323', 'robustness_typo', 'medium', 'list participents at Bengalon cite', 'SELECT p."FullName" FROM participants p JOIN sites s ON p."SiteId" = s."Id" WHERE s."Name" ILIKE \'%bengalon%\'', [], ['FullName']),
   q('prin-324', 'robustness_typo', 'medium', 'siapa saja yg punya permit kadaluarsa', 'SELECT p."FullName" FROM permits pm JOIN participants p ON pm."ParticipantId" = p."Id" WHERE pm."Status" = \'EXPIRED\'', [], ['FullName']),
@@ -63,7 +63,7 @@ export const prinasaRobustnessQuestions: BenchmarkQuestion[] = [
   q('prin-340', 'robustness_typo', 'medium', 'compnies with zero participants', 'SELECT c."Name" FROM companies c WHERE NOT EXISTS (SELECT 1 FROM participants p WHERE p."CompanyId" = c."Id")', [], ['Name']),
 
   // ═════════ robustness_paraphrase (20) ═════════
-  q('prin-341', 'robustness_paraphrase', 'medium', 'Sebanyak apa total orang yang tercatat dalam database peserta?', 'SELECT COUNT(*) AS total FROM participants', ['5044'], ['total']),
+  q('prin-341', 'robustness_paraphrase', 'medium', 'Sebanyak apa total orang yang tercatat dalam database peserta?', 'SELECT COUNT(*) AS total FROM participants', ['5060'], ['total']),
   q('prin-342', 'robustness_paraphrase', 'medium', 'Give me the number of medical check-ups that have been registered so far.', 'SELECT COUNT(*) AS total FROM mcu_registrations', ['28'], ['total']),
   q('prin-343', 'robustness_paraphrase', 'medium', 'Saya ingin tahu izin kerja yang masih berlaku ada berapa.', 'SELECT COUNT(*) AS total FROM permits WHERE "Status" = \'ACTIVE\'', ['23'], ['total']),
   q('prin-344', 'robustness_paraphrase', 'medium', 'Which locations do we operate in?', 'SELECT "Name" FROM sites ORDER BY "Name"', [], ['Name']),
