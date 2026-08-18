@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Cinzel, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,6 +15,18 @@ const jetbrains = JetBrains_Mono({
   subsets: ["latin"],
   // ponytail: mono is only used inside code blocks / chat, never above the
   // fold — preloading it just competes with the real critical resources.
+  preload: false,
+});
+
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
+  subsets: ["latin"],
+  preload: false,
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
   preload: false,
 });
 
@@ -44,7 +56,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body
-        className={`${inter.variable} ${jetbrains.variable} antialiased bg-background text-foreground`}
+        className={`${inter.variable} ${jetbrains.variable} ${cinzel.variable} ${cormorant.variable} antialiased bg-background text-foreground`}
         suppressHydrationWarning
       >
         <TooltipProvider delayDuration={300}>
