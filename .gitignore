@@ -90,3 +90,6 @@ README.md.bak
 /run
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# git worktrees (local isolation)
+.worktrees/
