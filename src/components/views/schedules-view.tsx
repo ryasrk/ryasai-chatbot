@@ -10,6 +10,7 @@ import { describeCron, formatRelativeTime, previewNextRuns } from '@/lib/cron-de
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ListRowsSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
+import { TelegramChannelDialog, type CreatedChannel } from '@/components/telegram-channel-dialog'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -211,6 +213,7 @@ export function SchedulesView() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [notificationConfigs, setNotificationConfigs] = useState<NotificationConfig[]>([])
   const [integrations, setIntegrations] = useState<IntegrationOption[]>([])
+  const [telegramDialogOpen, setTelegramDialogOpen] = useState(false)
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
@@ -296,6 +299,11 @@ export function SchedulesView() {
     setSelectedDays(parsed.selectedDays)
     setCustomCron(parsed ? null : s.cronExpr)
     setDialogOpen(true)
+  }
+
+  function handleChannelCreated(config: CreatedChannel) {
+    setNotificationConfigs((prev) => [config, ...prev])
+    setForm((f) => ({ ...f, notificationConfigId: config.id }))
   }
 
   async function handleRunNow(s: Schedule) {
@@ -915,6 +923,17 @@ export function SchedulesView() {
                         {c.name} ({c.type})
                       </SelectItem>
                     ))}
+                    <SelectSeparator />
+                    <SelectItem
+                      value="__add_telegram__"
+                      onPointerDown={(e) => e.preventDefault()}
+                      onSelect={(e) => {
+                        e.preventDefault()
+                        setTelegramDialogOpen(true)
+                      }}
+                    >
+                      <Plus className="h-3 w-3" /> Add Telegram channel
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               ) : (
@@ -925,10 +944,7 @@ export function SchedulesView() {
                     size="sm"
                     variant="outline"
                     className="h-6 shrink-0 text-[11px]"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('navigate-view', { detail: { view: 'settings' } }))
-                      window.dispatchEvent(new CustomEvent('settings-tab', { detail: { tab: 'notifications' } }))
-                    }}
+                    onClick={() => setTelegramDialogOpen(true)}
                   >
                     Add channel
                   </Button>
@@ -1073,6 +1089,12 @@ export function SchedulesView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TelegramChannelDialog
+        open={telegramDialogOpen}
+        onOpenChange={setTelegramDialogOpen}
+        onCreated={handleChannelCreated}
+      />
     </div>
   )
 }
