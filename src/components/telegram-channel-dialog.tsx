@@ -55,7 +55,11 @@ export function TelegramChannelDialog({ open, onOpenChange, onCreated }: Telegra
       return
     }
     // Mirrors settings-view's payload: token format 123456:ABC..., chat id numeric or @channel
-    const config = { botToken: botToken.trim(), chatId: chatId.trim(), botUsername: botUsername.trim() }
+    const config: { botToken: string; chatId: string; botUsername?: string } = {
+      botToken: botToken.trim(),
+      chatId: chatId.trim(),
+      ...(botUsername.trim() && { botUsername: botUsername.trim() }), // backend accepts optional, skip empty
+    }
     const finalName = name.trim() || 'telegram config'
 
     setSaving(true)

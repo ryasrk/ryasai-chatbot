@@ -924,6 +924,7 @@ export function SchedulesView() {
                       </SelectItem>
                     ))}
                     <SelectSeparator />
+                    {/* Sentinel value — never reaches form.notificationConfigId, just triggers modal */}
                     <SelectItem
                       value="__add_telegram__"
                       onPointerDown={(e) => e.preventDefault()}

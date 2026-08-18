@@ -62,18 +62,19 @@ test('create Telegram channel inline from Add Schedule dialog', async ({ page })
   let addChannelMethodFound = false
 
   try {
-    // Dropdown path (channels exist)
+    // Dropdown path (channels exist) — only attempt if combobox isn't disabled
     const channelCombobox = page.getByLabel('Notification Channel')
-    if (channelCombobox && await channelCombobox.isDisabled()) {
-      throw new Error('combobox disabled')
+    if (channelCombobox && !(await channelCombobox.isDisabled())) {
+      await channelCombobox.click()
+      const option = page.getByRole('option', { name: /Add Telegram channel/i })
+      if (!(await option.isVisible())) {
+        throw new Error('option not found in dropdown')
+      }
+      await option.click()
+      addChannelMethodFound = true
+    } else {
+      throw new Error('combobox disabled or missing')
     }
-    await channelCombobox.click()
-    const option = page.getByRole('option', { name: /Add Telegram channel/i })
-    if (!(await option.isVisible())) {
-      throw new Error('option not found in dropdown')
-    }
-    await option.click()
-    addChannelMethodFound = true
   } catch {
     // Fallback: empty-state button (no channels yet)
     const addBtn = page.getByRole('button', { name: /add channel/i, exact: true })
