@@ -584,7 +584,10 @@ describe('runNonStreamingChatCompletion', () => {
     expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)
   })
 
-  test('SQL branch: guardrail block returns blocked status', async () => {
+  // ponytail: with the SQL repair loop, a guardrail rejection is retried
+  // (SQL_REPAIR_ATTEMPTS) before giving up — the terminal status is 'error'
+  // with the last guardrail reason. 'blocked' is reserved for rate limits.
+  test('SQL branch: persistent guardrail rejection retries then returns error status', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
     mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
     mockIntegrationFindFirst.mockImplementation(async () => ({
@@ -603,9 +606,48 @@ describe('runNonStreamingChatCompletion', () => {
     })
 
     expect(result.toolRuns[0].type).toBe('SQL')
-    expect(result.toolRuns[0].status).toBe('blocked')
+    expect(result.toolRuns[0].status).toBe('error')
     expect(result.toolRuns[0].errorMessage).toContain('DROP')
-    expect(mockAuditLogCreate).toHaveBeenCalledTimes(1)
+    // 1 initial + 2 repair attempts
+    expect(mockGenerateSql).toHaveBeenCalledTimes(3)
+  })
+
+  test('SQL branch: guardrail rejection recovers on repair attempt', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'int-1',
+      name: 'Test DB',
+      provider: 'POSTGRESQL',
+      encryptedConfig: 'encrypted',
+      schemas: [{ tableName: 'users', columns: '[]', rowCount: 10, sampleRow: null }],
+    }))
+    let call = 0
+    mockGenerateSql.mockImplementation(async () => {
+      call++
+      return call === 1
+        ? { sql: 'DELETE FROM users', explanation: 'bad' }
+        : { sql: 'SELECT * FROM users LIMIT 10', explanation: 'fixed' }
+    })
+    let guardCall = 0
+    mockValidateSql.mockImplementation(() => {
+      guardCall++
+      return guardCall === 1
+        ? { ok: false, reason: 'DELETE not allowed', detectedNodes: [] }
+        : { ok: true, sanitized: 'SELECT * FROM users LIMIT 10' }
+    })
+    mockExecuteQuery.mockImplementation(async () => ({ rows: [{ id: 1, name: 'Alice' }], rowCount: 1, executionMs: 5 }))
+
+    const result = await runNonStreamingChatCompletion({
+      question: 'Show users',
+      userId: 'user-1',
+    })
+
+    expect(result.toolRuns[0].status).toBe('success')
+    expect(mockGenerateSql).toHaveBeenCalledTimes(2)
+    // repair feedback reached the second generateSql call
+    const secondCallArgs = (mockGenerateSql.mock.calls as unknown as Array<[{ repairFeedback?: string }]>)[1]?.[0]
+    expect(secondCallArgs?.repairFeedback).toContain('DELETE not allowed')
   })
 
   test('SQL branch: execute error returns error status with sanitized message', async () => {

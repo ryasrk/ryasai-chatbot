@@ -151,6 +151,21 @@ export function sanitizeSqlError(msg: string): string {
 // Text + JSON helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * ponytail: the send route wraps the user's text with meta-prefixes
+ * ("[Session started: ...] [Current time: ...]") so the LLM can resolve
+ * temporal references. Anything downstream that does STRING/SEMANTIC matching
+ * (memory recall, query rewriting, integration keyword scoring) must strip
+ * them first — otherwise "session", "started", "time" pollute the query.
+ * DB still stores the original text unchanged.
+ */
+export function stripSessionWrapper(text: string): string {
+  return text
+    .replace(/^\[Session started:[^\]]*\]\s*\[Current time:[^\]]*\]\s*/i, '')
+    .replace(/^\[Session started:[^\]]*\]\s*/i, '')
+    .trim()
+}
+
 export function summarize(value: string): string {
   return value.length > 1000 ? `${value.slice(0, 1000)}...` : value
 }

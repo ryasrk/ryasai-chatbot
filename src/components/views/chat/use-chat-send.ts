@@ -81,10 +81,16 @@ export function useChatSend() {
           )
           break
         }
-        case 'thinking':
+        case 'thinking': {
+          // ponytail: server sends granular stage labels ("Understanding your
+          // question in context...", "Preparing answer...") — use them instead
+          // of a hardcoded "Analyzing question..." so the long pre-token phase
+          // shows progress.
+          const label = (data.content as string | undefined) ?? 'Analyzing question...'
           setPipeline((p) => ({ ...p, thinking: 'running' }))
-          chat.setStatus('thinking', 'Analyzing question...')
+          chat.setStatus('thinking', label)
           break
+        }
         case 'tool_start': {
           const tool = (data.tool as string) ?? ''
           const label =

@@ -9,12 +9,13 @@ const log = scopedLogger('tool-router')
 
 export {
   withSqlConcurrency, buildChartDataFromRows, buildDocumentCitation,
-  sanitizeSqlError, summarize,
+  sanitizeSqlError, summarize, stripSessionWrapper,
   type PendingToolRun, type CompletionResult, type ChatHistoryEntry, type StreamingCompletionResult,
 } from '@/lib/tool-utils'
 export { parseRestCallJson } from '@/lib/ai'
 
 import {
+  stripSessionWrapper,
   type CompletionResult, type ChatHistoryEntry, type StreamingCompletionResult,
 } from '@/lib/tool-utils'
 import {
@@ -243,13 +244,19 @@ async function loadIntentPipeline(args: {
   sessionId?: string
 }): Promise<[string, Awaited<ReturnType<typeof loadDbData>>, string]> {
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
+  // ponytail: recall + rewrite do semantic/string matching — the session
+  // meta-wrapper ("[Session started: ...] [Current time: ...]") must not
+  // leak into the recall query or the rewrite prompt.
+  const cleanQuestion = stripSessionWrapper(args.question)
   const [effectiveQuestion, dbData, memoryContext] = await Promise.all([
-    hasHistory ? rewriteQuery({ question: args.question, chatHistory: args.chatHistory! }) : Promise.resolve(args.question),
+    hasHistory
+      ? rewriteQuery({ question: cleanQuestion, chatHistory: args.chatHistory! })
+      : Promise.resolve(cleanQuestion),
     loadDbData(),
-    recallContext({ query: args.question, sessionId: args.sessionId }).catch(() => ''),
+    recallContext({ query: cleanQuestion, sessionId: args.sessionId }).catch(() => ''),
   ])
   if (hasHistory) {
-    log.debug('Query rewritten', { original: args.question.slice(0, 50), rewritten: effectiveQuestion.slice(0, 50) })
+    log.debug('Query rewritten', { original: cleanQuestion.slice(0, 50), rewritten: effectiveQuestion.slice(0, 50) })
   }
   return [effectiveQuestion, dbData, memoryContext]
 }

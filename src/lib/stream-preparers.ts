@@ -6,6 +6,7 @@ import {
   describeSchema,
 } from '@/lib/connectors'
 import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
+import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT } from '@/lib/constants'
 import {
   generateRestCall,
   generateSql,
@@ -234,88 +235,64 @@ export async function prepareSqlStream(args: {
       description: schema.description,
     })),
   )
-  const llm = await generateSql({
-    question: args.question,
-    schemaDescription,
-    provider: integration.provider,
-    memoryContext: args.memoryContext,
-    systemPromptPrefix: args.systemPromptPrefix,
-    businessContext: integration.businessContext,
-  })
-  const guard = validateAndSanitizeLlmSql(llm.sql)
-  if (!guard.ok) {
-    return {
-      toolRuns: [{
-        type: 'SQL',
-        status: 'blocked',
-        latencyMs: Date.now() - started,
-        inputSummary: summarize(args.question),
-        errorMessage: guard.reason,
-      }],
-      citations: [],
-      chartData: null,
-      stream: streamChat(
-        `The SQL query was blocked by guardrails: ${guard.reason}. Please rephrase. ${args.question}`,
-        args.memoryContext, args.systemPromptPrefix, args.chatHistory,
-      ),
-    }
-  }
-
-  const sql = guard.sanitized
   const connector = connectorRegistry.getConnector(
     integration.id,
     integration.provider,
     decryptConfig(integration.encryptedConfig),
   )
+  // ponytail: SQL error-correction loop, streaming twin of runSqlBranch's.
+  // A failed execution feeds the DB error back to generateSql for a corrected
+  // retry instead of ending the turn with a canned apology.
+  let lastSqlError = ''
+  const attemptedSql: string[] = []
+  let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
+  let finalSql = ''
 
-  try {
-    // ponytail: retry on transient connection errors (ECONNRESET is common
-    // with remote PRINASA DB under load — a single retry recovers most cases).
-    let result: { rows: Record<string, unknown>[] }
-    try {
-      result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
-    } catch (e) {
-      if (/ECONNRESET|ETIMEDOUT|EPIPE|socket hang up/i.test(e instanceof Error ? e.message : String(e))) {
-        await new Promise((r) => setTimeout(r, 1000))
-        result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sql))
-      } else {
-        throw e
-      }
-    }
-    const context = JSON.stringify(result.rows, null, 2)
-    const chartData = buildChartDataFromRows(result.rows)
-    const stream = streamAnswer({
+  for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
+    const feedback = attempt > 0
+      ? `The previous SQL was:\n${attemptedSql[attemptedSql.length - 1]}\nIt failed with error:\n${lastSqlError}`
+      : undefined
+    const candidate = await generateSql({
       question: args.question,
-      context,
-      source: 'SQL',
-      systemPromptPrefix: args.systemPromptPrefix,
+      schemaDescription,
+      provider: integration.provider,
       memoryContext: args.memoryContext,
-      chatHistory: args.chatHistory,
+      systemPromptPrefix: args.systemPromptPrefix,
+      businessContext: integration.businessContext,
+      repairFeedback: feedback,
     })
-
-    const citations: Citation[] = [
-      {
-        type: 'DATABASE',
-        source: `${integration.name}.${extractTableName(sql)}`,
-        query_used: sql,
-      },
-    ]
-
-    return {
-      toolRuns: [{
-        type: 'SQL',
-        status: 'success',
-        latencyMs: Date.now() - started,
-        inputSummary: summarize(args.question),
-        outputSummary: summarize(sql),
-      }],
-      citations,
-      chartData,
-      integrationId: integration.id,
-      stream,
+    const guard = validateAndSanitizeLlmSql(candidate.sql)
+    if (!guard.ok) {
+      lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
+      attemptedSql.push(candidate.sql)
+      continue // guardrail rejection is retryable
     }
-  } catch (e) {
-    const errMsg = e instanceof Error ? e.message : String(e)
+    const sanitizedSql = guard.sanitized
+    try {
+      // ponytail: retry on transient connection errors (ECONNRESET is common
+      // with remote PRINASA DB under load — a single retry recovers most cases).
+      let result: Awaited<ReturnType<typeof connector.executeQuery>>
+      try {
+        result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sanitizedSql))
+      } catch (e) {
+        if (/ECONNRESET|ETIMEDOUT|EPIPE|socket hang up/i.test(e instanceof Error ? e.message : String(e))) {
+          await new Promise((r) => setTimeout(r, 1000))
+          result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sanitizedSql))
+        } else {
+          throw e
+        }
+      }
+      executed = result
+      finalSql = sanitizedSql
+      break
+    } catch (e) {
+      lastSqlError = e instanceof Error ? e.message : String(e)
+      attemptedSql.push(sanitizedSql)
+    }
+  }
+
+  if (!executed) {
+    const errMsg = lastSqlError
     return {
       toolRuns: [{
         type: 'SQL',
@@ -329,13 +306,49 @@ export async function prepareSqlStream(args: {
       chartData: null,
       stream: streamAnswer({
         question: args.question,
-        context: `SQL execution error: ${errMsg}`,
+        context: `SQL execution error after ${SQL_REPAIR_ATTEMPTS + 1} attempts: ${errMsg}`,
         source: 'SQL',
         systemPromptPrefix: args.systemPromptPrefix,
         memoryContext: args.memoryContext,
         chatHistory: args.chatHistory,
       }),
     }
+  }
+
+  const result = executed
+  const context = JSON.stringify(result.rows, null, 2)
+  const chartData = buildChartDataFromRows(result.rows)
+  const stream = streamAnswer({
+    question: args.question,
+    context,
+    source: 'SQL',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+    rowCount: result.rowCount,
+    truncated: result.rowCount >= SQL_MAX_LIMIT,
+  })
+
+  const citations: Citation[] = [
+    {
+      type: 'DATABASE',
+      source: `${integration.name}.${extractTableName(finalSql)}`,
+      query_used: finalSql,
+    },
+  ]
+
+  return {
+    toolRuns: [{
+      type: 'SQL',
+      status: 'success',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      outputSummary: summarize(finalSql),
+    }],
+    citations,
+    chartData,
+    integrationId: integration.id,
+    stream,
   }
 }
 

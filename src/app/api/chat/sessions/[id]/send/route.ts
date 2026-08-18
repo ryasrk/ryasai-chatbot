@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { runStreamingChatCompletion, type ChatHistoryEntry, type StreamingCompletionResult } from '@/lib/tool-router'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { rememberChatTurn } from '@/lib/cognee'
+import { generateSessionTitle, generateSessionSummary } from '@/lib/ai'
+import { stripSessionWrapper } from '@/lib/tool-utils'
 
 // ponytail: hard ceiling for the whole handler (Next.js route segment config) —
 // the agentic loop can otherwise pin a worker for minutes across iterations.
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     const session = await db.chatSession.findFirst({ // nosemgrep
       where: { id, userId: user.userId },
-      select: { id: true, title: true, createdAt: true },
+      select: { id: true, title: true, createdAt: true, summary: true, summaryUpTo: true },
     })
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 })
@@ -117,6 +120,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
       const prompt = await db.savedPrompt.findUnique({ where: { id: body.promptId } })
       if (prompt) systemPromptPrefix = prompt.content
     }
+    // ponytail: inject the rolling session summary so turns older than the
+    // 10-message window still inform the answer (topics, facts, decisions).
+    if (session.summary) {
+      const summaryBlock = `[Earlier in this session (summary of older turns): ${session.summary}]`
+      systemPromptPrefix = systemPromptPrefix
+        ? `${summaryBlock}\n\n${systemPromptPrefix}`
+        : summaryBlock
+    }
 
     const userMessage =
       existingUserMessage ??
@@ -130,19 +141,26 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         },
       }))
     const tz = body.timezone || 'UTC'
+    // ponytail: full date, not just HH:mm — sessions spanning midnight
+    // ("kemarin", "that report from yesterday") need the day to disambiguate.
     const chatHistory: ChatHistoryEntry[] = recentMessages
       .reverse()
       .filter((m) => m.text && m.text.trim())
       .map((m) => {
-        const ts = m.createdAt.toLocaleString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false })
+        const ts = m.createdAt.toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
         return {
           role: m.sender === 'user' ? 'user' as const : 'assistant' as const,
           content: `[${ts} ${tz}] ${m.text}`,
         }
       })
 
+    // ponytail: accept BOTH default titles — the schema default is "Sesi Baru"
+    // but the sessions API creates with "New Session"; checking only one left
+    // Indonesian-default sessions stuck untitled forever.
     const shouldRetitle =
-      session.title === 'New Session' || session.title.trim().length === 0
+      session.title === 'New Session' ||
+      session.title === 'Sesi Baru' ||
+      session.title.trim().length === 0
     const started = Date.now()
 
     // --- SSE stream ---
@@ -205,6 +223,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           const sessionStart = session.createdAt.toLocaleString('en-US', fmtOpts)
           const currentTime = new Date().toLocaleString('en-US', fmtOpts)
           const contextualizedText = `[Session started: ${sessionStart} ${tz}]\n[Current time: ${currentTime} ${tz}]\n\n${text}`
+          // ponytail: granular pipeline status — the pre-token phase (intent →
+          // rewrite → routing) can take 5-15s; a single static "Analyzing..."
+          // made the bot feel dead. Emit stage labels as the pipeline moves.
+          send('thinking', { content: 'Understanding your question in context...' })
           streaming = await runStreamingChatCompletion({
             question: contextualizedText,
             userId: user.userId,
@@ -214,6 +236,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             allowMultiStepDag: true,
             systemPromptPrefix,
           })
+          send('thinking', { content: 'Preparing answer...' })
 
           // 4. Emit tool execution events (skip for pure CHAT — no tool to show).
           const toolRun = streaming.toolRuns[0]
@@ -313,14 +336,45 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             ),
           )
 
-          // update session
+          // update session (+ LLM-generated title on the first turn — falls
+          // back to the raw-text slice if the LLM call fails)
+          let newTitle: string | undefined
+          if (shouldRetitle) {
+            try {
+              newTitle = await generateSessionTitle(text)
+            } catch {
+              newTitle = text.slice(0, 60) // best-effort — keep old behavior
+            }
+          }
           await db.chatSession.update({
             where: { id: session.id },
             data: {
               updatedAt: new Date(),
-              ...(shouldRetitle ? { title: text.slice(0, 60) } : {}),
+              ...(newTitle ? { title: newTitle } : {}),
             },
           })
+
+          // ponytail: chat memory write for the STREAMING path — this used to
+          // happen only in the non-streaming router, so the main chat UI never
+          // accumulated memory. Fire-and-forget, same shape as tool-router.ts.
+          void rememberChatTurn({
+            sessionId: session.id,
+            userMessage: stripSessionWrapper(text),
+            aiMessage: fullAnswer,
+            toolRuns: streaming.toolRuns.map((t) => ({ type: t.type, status: t.status, latencyMs: t.latencyMs ?? 0 })),
+          }).catch(() => { /* memory is best-effort */ })
+
+          // ponytail: rolling summary — fold messages that fell out of the
+          // 10-message history window into ChatSession.summary so long
+          // sessions don't silently lose their beginning. Fire-and-forget.
+          void maybeUpdateSessionSummary({
+            sessionId: session.id,
+            organizationId: user.organizationId,
+            previousSummary: session.summary,
+            summaryUpTo: session.summaryUpTo,
+            newUserMessage: userMessage.id,
+            newAiMessage: aiMessage.id,
+          }).catch(() => { /* summary is best-effort */ })
 
           // 7. Answer event with full content + metadata (so client can finalize).
           //    toolHasResults recomputed from the FINAL toolRuns — the agentic
@@ -406,14 +460,61 @@ function isPrismaMissingSessionRace(error: unknown): boolean {
   return code === 'P2003' || code === 'P2025'
 }
 
+/**
+ * ponytail: rolling session summary — when the session has more messages than
+ * the 10-message history window, fold everything older into ChatSession.summary.
+ * Called fire-and-forget after each successful turn; failure is non-fatal
+ * (the summary simply updates on the next turn).
+ */
+const HISTORY_WINDOW = 10
+
+async function maybeUpdateSessionSummary(args: {
+  sessionId: string
+  organizationId: string
+  previousSummary: string | null
+  summaryUpTo: Date | null
+  newUserMessage: string
+  newAiMessage: string
+}): Promise<void> {
+  const all = await db.chatMessage.findMany({ // nosemgrep
+    where: {
+      sessionId: args.sessionId,
+      sender: { in: ['user', 'ai'] },
+      status: { not: 'error' },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, sender: true, text: true, createdAt: true },
+  })
+  if (all.length <= HISTORY_WINDOW) return
+
+  // Messages strictly older than the live window AND not yet summarized.
+  const overflow = all.slice(0, all.length - HISTORY_WINDOW).filter((m) => {
+    if (!args.summaryUpTo) return true
+    return m.createdAt > args.summaryUpTo
+  })
+  if (overflow.length === 0) return
+
+  const summary = await generateSessionSummary({
+    previousSummary: args.previousSummary,
+    messages: overflow.map((m) => ({
+      role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.text,
+    })),
+  })
+  const lastOverflowAt = overflow[overflow.length - 1].createdAt
+  await db.chatSession.update({
+    where: { id: args.sessionId },
+    data: { summary, summaryUpTo: lastOverflowAt },
+  })
+}
+
 async function persistAssistantError(args: {
   sessionId: string
   userId: string
   organizationId: string
   input: string
   text?: string
-}) {
-  const text = args.text ?? LLM_NOT_CONFIGURED_TEXT
+}) {  const text = args.text ?? LLM_NOT_CONFIGURED_TEXT
   const aiMessage = await db.chatMessage.create({
     data: {
       organizationId: args.organizationId,

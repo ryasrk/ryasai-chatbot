@@ -5,6 +5,7 @@ import {
   buildDocumentCitation,
   sanitizeSqlError,
   summarize,
+  stripSessionWrapper,
   safeJson,
   safeParseColumns,
   safeParseSampleRow,
@@ -167,6 +168,24 @@ describe('tool-utils — summarize', () => {
   test('exactly 1000 chars → unchanged', () => {
     const exact = 'x'.repeat(1000)
     expect(summarize(exact)).toBe(exact)
+  })
+})
+
+describe('tool-utils — stripSessionWrapper', () => {
+  // ponytail: recall/rewrite do string+semantic matching — the send route's
+  // meta-wrapper must not leak into those queries.
+  test('strips full session wrapper (start + current time)', () => {
+    const wrapped = '[Session started: Aug 15, 2026, 09:00 WIB] [Current time: Aug 15, 2026, 10:30 WIB]\n\nBerapa total pendapatan Q1?'
+    expect(stripSessionWrapper(wrapped)).toBe('Berapa total pendapatan Q1?')
+  })
+
+  test('strips lone session-start wrapper', () => {
+    const wrapped = '[Session started: Aug 15, 2026, 09:00 WIB]\n\nHalo, tanya data'
+    expect(stripSessionWrapper(wrapped)).toBe('Halo, tanya data')
+  })
+
+  test('plain text passes through unchanged', () => {
+    expect(stripSessionWrapper('plain question')).toBe('plain question')
   })
 })
 

@@ -258,6 +258,31 @@ describe('analyzeIntent', () => {
     expect(result.confidence).toBe(0)
   })
 
+  // ponytail: this prompt once accumulated literal ' + / \n' + string-concat
+  // artifacts (from a pasted template) that were sent to the LLM verbatim,
+  // garbling follow-up intent detection. Keep the prompt text clean.
+  test('system prompt contains no string-concatenation artifacts', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () =>
+      JSON.stringify({ needsRetrieval: true, needsClarification: false, confidence: 0.9 }),
+    )
+
+    await analyzeIntent({
+      question: 'what is the leave policy?',
+      hasDocuments: true,
+      hasIntegrations: true,
+    })
+
+    const firstCall = (mockChatOnce.mock.calls as unknown as Array<
+      [unknown, Array<{ role: string; content: string }>]
+    >)[0]
+    const sysMsg = firstCall?.[1]?.find((m) => m.role === 'system')
+    expect(sysMsg).toBeDefined()
+    expect(sysMsg!.content).toContain('schema summaries')
+    expect(sysMsg!.content).not.toContain("' +")
+    expect(sysMsg!.content).not.toContain("\\n' +")
+  })
+
   test('parses valid JSON response from LLM correctly', async () => {
     mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
     mockChatOnce.mockImplementation(async () =>

@@ -5,6 +5,9 @@
 
 // Guardrails
 export const SQL_MAX_LIMIT = 100
+// SQL error-correction loop: how many regeneration attempts (with the DB
+// error fed back to the LLM) after a failed execution or guardrail rejection.
+export const SQL_REPAIR_ATTEMPTS = 2
 
 // RAG
 export const RAG_CHUNK_SIZE = 1400

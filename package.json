@@ -15,6 +15,7 @@
     "test": "bun scripts/test.ts",
     "test:integration": "bun scripts/test.ts --integration",
     "rag-eval": "bun benchmark/rag-eval.ts",
+    "sql-eval": "bun benchmark/sql-eval.ts",
     "bench:prinasa": "bun benchmark/prinasa-runner.ts",
     "bench:prinasa-hybrid": "bun benchmark/prinasa-runner.ts --only-hybrid",
     "bench:prinasa-sessions": "bun benchmark/prinasa-session-runner.ts",

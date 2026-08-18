@@ -6,6 +6,7 @@ import {
   describeSchema,
 } from '@/lib/connectors'
 import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
+import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT } from '@/lib/constants'
 import {
   generateAnswer,
   generateChat,
@@ -224,50 +225,8 @@ export async function runSqlBranch(args: {
       description: schema.description,
     })),
   )
-  const llm = await generateSql({
-    question: args.question,
-    schemaDescription,
-    provider: integration.provider,
-    memoryContext: args.memoryContext,
-    systemPromptPrefix: args.systemPromptPrefix,
-  })
-  const guard = validateAndSanitizeLlmSql(llm.sql)
-  if (!guard.ok) {
-    await db.auditLog.create({
-      data: {
-        organizationId: getOrgContext()!,
-        userId: args.userId,
-        action: 'GUARDRAIL_BLOCK',
-        severity: 'critical',
-        detail: JSON.stringify({
-          integrationId: integration.id,
-          naturalQuery: args.question,
-          generatedSql: llm.sql,
-          reason: guard.reason,
-          detectedNodes: guard.detectedNodes,
-        }),
-      },
-    })
-    return {
-      answer:
-        'The question was rejected because the system detected a risky query against company data.',
-      citations: [],
-      chartData: null,
-      integrationId: integration.id,
-      toolRuns: [
-        {
-          type: 'SQL',
-          status: 'blocked',
-          latencyMs: Date.now() - started,
-          inputSummary: summarize(args.question),
-          errorMessage: guard.reason ?? 'SQL blocked by guardrail',
-        },
-      ],
-    }
-  }
-
-  const sql = guard.sanitized
-
+  // ponytail: rate-limit BEFORE burning LLM calls — the repair loop can make
+  // up to 3 generation calls per turn.
   const orgId = getOrgContext()
   if (orgId) {
     const rl = await checkToolRateLimit('sql', orgId)
@@ -296,93 +255,88 @@ export async function runSqlBranch(args: {
     decryptConfig(integration.encryptedConfig),
   )
 
-  try {
-    const result = await withSqlConcurrency(integration.id, () =>
-      withToolSandbox('sql', () => connector.executeQuery(sql)),
-    )
-    await db.queryHistory.create({
-      data: {
-        organizationId: getOrgContext()!,
-        integrationId: integration.id,
-        userId: args.userId,
-        naturalQuery: args.question,
-        generatedSql: sql,
-        rowCount: result.rowCount,
-        executionMs: result.executionMs,
-        success: true,
-      },
-    })
-    await db.auditLog.create({
-      data: {
-        organizationId: getOrgContext()!,
-        userId: args.userId,
-        action: 'SQL_EXECUTE',
-        severity: 'info',
-        detail: JSON.stringify({
-          integrationId: integration.id,
-          sql,
-          rowCount: result.rowCount,
-          executionMs: result.executionMs,
-        }),
-      },
-    })
+  // ponytail: SQL error-correction loop — a failed execution used to be a
+  // dead end ("Sorry, the database query failed to execute"). Common failures
+  // (wrong column name, type mismatch, dialect quirk, guardrail rejection)
+  // are fixable when the error is fed back to generateSql for a retry.
+  let lastSqlError = ''
+  const attemptedSql: string[] = []
+  let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
+  let finalSql = ''
 
-    const answer = await generateAnswer({
+  for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
+    const feedback = attempt > 0
+      ? `The previous SQL was:\n${attemptedSql[attemptedSql.length - 1]}\nIt failed with error:\n${lastSqlError}`
+      : undefined
+    const candidate = await generateSql({
       question: args.question,
-      context: JSON.stringify(result.rows, null, 2),
-      source: 'SQL',
-      systemPromptPrefix: args.systemPromptPrefix,
+      schemaDescription,
+      provider: integration.provider,
       memoryContext: args.memoryContext,
-      chatHistory: args.chatHistory,
+      systemPromptPrefix: args.systemPromptPrefix,
+      repairFeedback: feedback,
     })
-    const citations: Citation[] = [
-      {
-        type: 'DATABASE',
-        source: `${integration.name}.${extractTableName(sql)}`,
-        query_used: sql,
-      },
-    ]
-
-    return {
-      answer,
-      citations,
-      chartData: buildChartDataFromRows(result.rows),
-      integrationId: integration.id,
-      usage: getLastLlmUsage(),
-      toolRuns: [
-        {
-          type: 'SQL',
-          status: 'success',
-          latencyMs: Date.now() - started,
-          inputSummary: summarize(args.question),
-          outputSummary: summarize(sql),
+    const guard = validateAndSanitizeLlmSql(candidate.sql)
+    if (!guard.ok) {
+      // Guardrail rejection is retryable — the model often just needs to be
+      // told the system only allows SELECT. Log it and let the loop retry.
+      lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
+      attemptedSql.push(candidate.sql)
+      await db.auditLog.create({
+        data: {
+          organizationId: getOrgContext()!,
+          userId: args.userId,
+          action: 'GUARDRAIL_BLOCK',
+          severity: 'critical',
+          detail: JSON.stringify({
+            integrationId: integration.id,
+            naturalQuery: args.question,
+            generatedSql: candidate.sql,
+            reason: guard.reason,
+            detectedNodes: guard.detectedNodes,
+            attempt,
+          }),
         },
-      ],
+      })
+      continue
     }
-  } catch (e) {
-    const errorMessage = e instanceof Error ? e.message : String(e)
-    await db.queryHistory.create({
-      data: {
-        organizationId: getOrgContext()!,
-        integrationId: integration.id,
-        userId: args.userId,
-        naturalQuery: args.question,
-        generatedSql: sql,
-        success: false,
-        errorMessage,
-      },
-    })
-    await db.auditLog.create({
-      data: {
-        organizationId: getOrgContext()!,
-        userId: args.userId,
-        action: 'SQL_EXECUTE_ERROR',
-        severity: 'warning',
-        detail: JSON.stringify({ integrationId: integration.id, sql, error: errorMessage }),
-      },
-    })
+    const sanitizedSql = guard.sanitized
+    try {
+      const result = await withSqlConcurrency(integration.id, () =>
+        withToolSandbox('sql', () => connector.executeQuery(sanitizedSql)),
+      )
+      executed = result
+      finalSql = sanitizedSql
+      break
+    } catch (e) {
+      lastSqlError = e instanceof Error ? e.message : String(e)
+      attemptedSql.push(sanitizedSql)
+      await db.queryHistory.create({
+        data: {
+          organizationId: getOrgContext()!,
+          integrationId: integration.id,
+          userId: args.userId,
+          naturalQuery: args.question,
+          generatedSql: sanitizedSql,
+          success: false,
+          errorMessage: `attempt ${attempt + 1}: ${lastSqlError}`,
+        },
+      })
+      await db.auditLog.create({
+        data: {
+          organizationId: getOrgContext()!,
+          userId: args.userId,
+          action: 'SQL_EXECUTE_ERROR',
+          severity: 'warning',
+          detail: JSON.stringify({ integrationId: integration.id, sql: sanitizedSql, error: lastSqlError, attempt }),
+        },
+      })
+    }
+  }
+
+  if (!executed) {
     return {
-      answer: `Sorry, the database query failed to execute.\n\nError: ${sanitizeSqlError(errorMessage)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
+      answer: `Sorry, the database query failed after ${SQL_REPAIR_ATTEMPTS + 1} attempts.\n\nLast error: ${sanitizeSqlError(lastSqlError)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
       citations: [],
       chartData: null,
       integrationId: integration.id,
@@ -392,10 +346,75 @@ export async function runSqlBranch(args: {
           status: 'error',
           latencyMs: Date.now() - started,
           inputSummary: summarize(args.question),
-          errorMessage,
+          errorMessage: lastSqlError,
         },
       ],
     }
+  }
+
+  const result = executed
+  await db.queryHistory.create({
+    data: {
+      organizationId: getOrgContext()!,
+      integrationId: integration.id,
+      userId: args.userId,
+      naturalQuery: args.question,
+      generatedSql: finalSql,
+      rowCount: result.rowCount,
+      executionMs: result.executionMs,
+      success: true,
+    },
+  })
+  await db.auditLog.create({
+    data: {
+      organizationId: getOrgContext()!,
+      userId: args.userId,
+      action: 'SQL_EXECUTE',
+      severity: 'info',
+      detail: JSON.stringify({
+        integrationId: integration.id,
+        sql: finalSql,
+        rowCount: result.rowCount,
+        executionMs: result.executionMs,
+        attempts: attemptedSql.length + 1,
+      }),
+    },
+  })
+
+  const truncated = result.rowCount >= SQL_MAX_LIMIT
+  const answer = await generateAnswer({
+    question: args.question,
+    context: JSON.stringify(result.rows, null, 2),
+    source: 'SQL',
+    systemPromptPrefix: args.systemPromptPrefix,
+    memoryContext: args.memoryContext,
+    chatHistory: args.chatHistory,
+    rowCount: result.rowCount,
+    truncated,
+  })
+  const citations: Citation[] = [
+    {
+      type: 'DATABASE',
+      source: `${integration.name}.${extractTableName(finalSql)}`,
+      query_used: finalSql,
+    },
+  ]
+
+  return {
+    answer,
+    citations,
+    chartData: buildChartDataFromRows(result.rows),
+    integrationId: integration.id,
+    usage: getLastLlmUsage(),
+    toolRuns: [
+      {
+        type: 'SQL',
+        status: 'success',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: summarize(finalSql),
+      },
+    ],
   }
 }
 

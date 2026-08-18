@@ -87,10 +87,10 @@ CRITICAL — DEFAULT TO NOT CLARIFYING:
   (a) a pronoun reference with no antecedent ("how many of THOSE?"), or
   (b) a date-range question with no clear time frame ("show me recent data"), or
   (c) a question about a specific entity when multiple with same name exist
-- If the question mentions any noun that matches a table or column name from ' +
-          'the schema summaries AND databases are available, set needsRetrieval=true, ' +
-          'needsClarification=false.\n' +
-          '- If documents are available and the question asks about a procedure, policy,
+- If the question mentions any noun that matches a table or column name from
+  the schema summaries AND databases are available, set needsRetrieval=true,
+  needsClarification=false.
+- If documents are available and the question asks about a procedure, policy,
   rule, guideline, or "what does [document] say", set needsRetrieval=true,
   needsClarification=false.
 

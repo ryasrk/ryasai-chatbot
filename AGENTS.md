@@ -61,6 +61,7 @@ bun run test             # unit tests — custom per-file runner (see below)
 bun run test:integration # integration tests (need live Postgres / network)
 bun run e2e              # Playwright (5 specs / 8 tests — Postgres e2e DB, mock LLM + mock license validator)
 bun run rag-eval         # RAGAS RAG quality eval (LLM-as-judge)
+bun run sql-eval         # Text-to-SQL eval — needs EVAL_ORG_ID + --integration <id>
 bash start.sh            # Next.js + scheduler worker (seeds empty DB if empty)
 e2e prerequisites: Postgres DB `ryasai_e2e` (created once: sudo -u postgres createdb -O ryasai ryasai_e2e && CREATE EXTENSION vector) + `bunx playwright install chromium`
 bash reset.sh            # DROP SCHEMA → recreate → prisma db push → seed (empty)
@@ -116,9 +117,53 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/smart-router.ts` — self-adjusting tool router (schema + performance + latency scoring, circuit breaker, LLM tiebreaker).
 - `src/lib/intent-pipeline.ts` — intent analysis, query rewriting, expansion, reflection, confidence.
 - `src/lib/planner.ts` — multi-step DAG planner (`planQuery`, `topoSort`, `executePlan`, `synthesizeAnswer`).
-- `src/lib/guardrails.ts` — SQL AST validation (rejects DML/DDL, forces `LIMIT 100`, single-statement).
+- `src/lib/guardrails.ts` — SQL validation (rejects DML/DDL, forces `LIMIT 100`, single-statement). Hand-rolled tokenizer + scanner, NOT a real SQL parser — see "LLM → Database safety" below for the full picture.
 - `src/lib/connectors.ts` + `src/lib/real-connectors.ts` — DB connector registry (Postgres/MySQL/MSSQL/ClickHouse via the STATIC `DRIVER_LOADERS` map — never a variable-specifier `import()`; see invariants #3).
 - `src/lib/cognee.ts` — barrel over `cognee-core.ts` (settings/client cache), `cognee-memory.ts` (chat memory), `cognee-knowledge-graph.ts` (cognify/graph recall/forget). No-op unless the per-org Settings toggle is on (`COGNEE_ENABLED=false` is only a process-wide kill switch); reuses the tenant's LLM config. Datasets are per-org (`org:<id>`, `org:<id>:kb`). Recall strategies use `SUMMARIES` → `CHUNKS` → `NATURAL_LANGUAGE` and guard missing datasets via `c.datasets.has()` (see invariants #2).
+
+### Chat session context & memory (why the bot can feel "confused" mid-session)
+
+- **History window**: `send/route.ts` fetches the last **10 messages** (`take: 10`); every downstream consumer truncates again — final-answer prompts `history.slice(-10)` with a 2000-char/message cap (`historyToMessages` in `ai.ts`), the LLM router `slice(-8)` at 400 chars, intent/rewrite `slice(-6)`.
+- History reaches the LLM as **native alternating user/assistant turns** (`historyToMessages` — exported, tested) preceded by a short system label. Do NOT flatten history back into one system message — that change caused weak follow-up grounding. `generateSql()` still gets no history; follow-up resolution for SQL depends on `rewriteQuery`.
+- **Rolling summary**: messages that fall out of the 10-message window are folded into `ChatSession.summary` (LLM-generated, merged with the previous summary) by `maybeUpdateSessionSummary` in the send route; injected into every turn as a `[Earlier in this session...]` system prefix. `summaryUpTo` tracks the fold watermark.
+- **Session wrapper stripping**: the send route wraps user text with `[Session started: …] [Current time: …]`. Downstream string/semantic consumers must `stripSessionWrapper()` (tool-utils) first — recall, rewrite, and memory writes already do. The contextualized version still goes to SQL/answer prompts (temporal resolution).
+- **Cognee memory writes on BOTH paths**: `rememberChatTurn` in `_runNonStreamingChatCompletion` AND in the send route (fire-and-forget). Memory is per-**org** (dataset `org:<id>`), recall `.catch(() => '')` — silent no-op when cognee is down.
+- **Session titles**: `generateSessionTitle` (LLM, 3-6 words, same language, `purpose: 'title'`) on first turn; falls back to `text.slice(0, 60)`. Retitle check accepts BOTH `"New Session"` and `"Sesi Baru"` — the schema default and the API default differ.
+- History timestamps include the full date (multi-day sessions).
+- Error AI rows (`status: 'error'`) are excluded from the summary fold but still enter the live history window.
+- **Prompts are load-bearing code**: `INTENT_SYSTEM_PROMPT` once shipped with literal `' +` / `\n' +` string-concat artifacts (from a pasted template) sent verbatim to the LLM, degrading every follow-up intent decision. Prompt-artifact guards exist in `intent-pipeline.test.ts` and `ai.test.ts` — when editing ANY LLM prompt, keep those tests green and artifact-free.
+
+### Text-to-SQL prompt conventions
+
+- The single SQL-generation prompt lives inline in `generateSql()` (`src/lib/ai.ts`). Rules 13–16 encode hard-won behavior — do not drop them when restructuring:
+  - String search must be **case-insensitive per dialect**: PostgreSQL `ILIKE '%x%'` (or `LOWER()`), MySQL/MSSQL `LOWER(col) LIKE`, ClickHouse `positionCaseInsensitive(col, 'x') > 0`. Bare `=` or case-sensitive `LIKE` misses real user data.
+  - `%`/`_` inside a search term need an explicit `ESCAPE` clause; never strip user wildcards silently.
+  - `IS NULL` / `COALESCE`, never `= NULL`; LIKE on a NULL column returns NULL.
+  - Substring match for "contains / menyebut / terkait / tentang"; exact case-insensitive equality for "exactly / persis".
+- **SQL error-correction loop** (`SQL_REPAIR_ATTEMPTS=2` in `constants.ts`): both `runSqlBranch` (non-streaming) and `prepareSqlStream` regenerate SQL with the DB error fed back as `repairFeedback` when execution fails or the guardrail rejects. Terminal failure status is `error` (not `blocked` — that's rate-limit only). Guard tests: `tool-router.test.ts` ("persistent guardrail rejection…", "guardrail rejection recovers…").
+- **Empty-result & truncation honesty**: callers pass `rowCount`/`truncated` to `generateAnswer`/`streamAnswer`; the synthesis prompt then instructs the model to state "no matching data" plainly (no invented explanations) or disclose "showing the first N rows" when `rowCount >= SQL_MAX_LIMIT`. Keep both notes in sync between `generateAnswer` and `streamAnswer`.
+- `ai.test.ts` asserts on this prompt text — extend those assertions when adding rules.
+- **SQL eval harness**: `bun run sql-eval --integration <id>` (`benchmark/sql-eval.ts`, needs `EVAL_ORG_ID`) measures execution accuracy + keyword presence (ILIKE/CURRENT_DATE/LIMIT) against a golden question set (`--file` for custom sets, `--out` for JSON results). Prompt changes should be measured with it, not vibes.
+
+### Text-to-SQL prompt conventions
+
+- The single SQL-generation prompt lives inline in `generateSql()` (`src/lib/ai.ts`). Rules 13–16 encode hard-won behavior — do not drop them when restructuring:
+  - String search must be **case-insensitive per dialect**: PostgreSQL `ILIKE '%x%'` (or `LOWER()`), MySQL/MSSQL `LOWER(col) LIKE`, ClickHouse `positionCaseInsensitive(col, 'x') > 0`. Bare `=` or case-sensitive `LIKE` misses real user data.
+  - `%`/`_` inside a search term need an explicit `ESCAPE` clause; never strip user wildcards silently.
+  - `IS NULL` / `COALESCE`, never `= NULL`; LIKE on a NULL column returns NULL.
+  - Substring match for "contains / menyebut / terkait / tentang"; exact case-insensitive equality for "exactly / persis".
+- `ai.test.ts` asserts on this prompt text — extend those assertions when adding rules.
+
+### LLM → Database safety (audit-verified)
+
+**Enforced**: `guardrails.ts` — SELECT/WITH-only, mutation-keyword + injection-pattern rejection (string-literal-aware scan), single statement, LIMIT clamped/forced to `SQL_MAX_LIMIT=100` (`constants.ts`); re-checked at the execution boundary by `assertSelectOnly()` in `real-connectors.ts`. Driver-level timeouts (30s `QUERY_TIMEOUT_MS`) for pg/MySQL/MSSQL; per-integration semaphore `SQL_MAX_CONCURRENT=3` (`tool-utils.ts`, per-instance not distributed); verified TLS by default; `queryHistory` rows + audit trail (`GUARDRAIL_BLOCK` logged critical).
+
+**Known gaps — do not assume these exist**:
+- **No read-only enforcement at the DB layer** (no `SET TRANSACTION READ ONLY`, no read-only role). Safety is regex-only, and the "tokenizer + AST walker" in `guardrails.ts` is hand-rolled lexical scanning, not a real SQL parser.
+- **LIMIT 100 is enforced textually + by prompt disclosure only** — no row cap enforced at execution time (the synthesis prompt now tells the model to disclose truncation).
+- The SQL repair loop regenerates on guardrail/execution errors, but transient-network retry (streaming) still re-runs *identical* SQL.
+- ClickHouse `executeQuery` has **no timeout**; the streaming SQL path skips `withToolSandbox` and the SQL rate limit (both are non-streaming-only).
+- Integration selection fallback differs by path: non-streaming takes the oldest active integration; streaming uses keyword scoring over table/column names (`stream-preparers.ts`).
 
 ## Multi-Tenancy
 

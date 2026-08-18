@@ -289,6 +289,10 @@ model ChatSession {
   organizationId  String
   userId          String
   title           String   @default("Sesi Baru")
+  // ponytail: rolling summary of messages that fell out of the 10-message
+  // history window — without it, long sessions silently lose their beginning.
+  summary         String?
+  summaryUpTo     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
