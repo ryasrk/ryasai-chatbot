@@ -185,47 +185,56 @@ export const THEME_CSS: Record<ThemeId, { light: string; dark: string }> = {
     `,
   },
   slate: {
+    // Neo-Olympian — classical marble + brushed gold by daylight. Same identity
+    // as the dark variant (below), recomposed for a lit gallery instead of a
+    // void: warm marble ground, ink-dark ink, gold kept as accent not fill.
     light: `
-      --radius: 16px;
-      --background: oklch(0.918 0.032 190.4); --foreground: oklch(0.191 0.014 167.1);
-      --card: oklch(0.97 0.01 190); --card-foreground: oklch(0.191 0.014 167.1);
-      --popover: oklch(0.97 0.01 190); --popover-foreground: oklch(0.191 0.014 167.1);
-      --primary: oklch(0.65 0.085 282.7); --primary-foreground: oklch(0.918 0.032 190.4);
-      --secondary: oklch(0.88 0.02 190); --secondary-foreground: oklch(0.25 0.015 167.1);
-      --muted: oklch(0.90 0.015 190); --muted-foreground: oklch(0.45 0.02 192);
-      --accent: oklch(0.70 0.07 275.8); --accent-foreground: oklch(0.918 0.032 190.4);
-      --destructive: oklch(0.45 0.10 353.8); --destructive-foreground: oklch(0.918 0.032 190.4);
-      --success: oklch(0.52 0.12 155); --success-foreground: oklch(0.918 0.032 190.4);
-      --warning: oklch(0.68 0.13 70); --warning-foreground: oklch(0.918 0.032 190.4);
-      --info: oklch(0.60 0.06 250); --info-foreground: oklch(0.918 0.032 190.4);
-      --border: oklch(0.85 0.015 190); --input: oklch(0.85 0.015 190); --ring: oklch(0.65 0.085 282.7);
-      --sidebar: oklch(0.94 0.012 190); --sidebar-foreground: oklch(0.25 0.015 167.1);
-      --sidebar-primary: oklch(0.65 0.085 282.7); --sidebar-primary-foreground: oklch(0.918 0.032 190.4);
-      --sidebar-accent: oklch(0.90 0.015 190); --sidebar-accent-foreground: oklch(0.191 0.014 167.1);
-      --sidebar-border: oklch(0.85 0.015 190); --sidebar-ring: oklch(0.65 0.085 282.7);
-      --hover: oklch(0.93 0.012 190);
-      --chart-1: oklch(0.65 0.085 282.7); --chart-2: oklch(0.918 0.032 190.4); --chart-3: oklch(0.50 0.02 192); --chart-4: oklch(0.846 0.063 273.0); --chart-5: oklch(0.45 0.10 353.8);
+      --radius: 10px;
+      --background: oklch(0.94 0.012 85); --foreground: oklch(0.20 0.015 90);
+      --card: oklch(0.98 0.006 85); --card-foreground: oklch(0.20 0.015 90);
+      --popover: oklch(0.98 0.006 85); --popover-foreground: oklch(0.20 0.015 90);
+      --primary: oklch(0.54 0.11 75); --primary-foreground: oklch(0.99 0.008 85);
+      --secondary: oklch(0.90 0.01 85); --secondary-foreground: oklch(0.25 0.02 90);
+      --muted: oklch(0.92 0.008 85); --muted-foreground: oklch(0.45 0.02 90);
+      --accent: oklch(0.50 0.12 75); --accent-foreground: oklch(0.99 0.008 85);
+      --destructive: oklch(0.47 0.13 25); --destructive-foreground: oklch(0.98 0.01 30);
+      --success: oklch(0.46 0.12 155); --success-foreground: oklch(0.98 0.01 155);
+      --warning: oklch(0.52 0.14 65); --warning-foreground: oklch(0.98 0.01 65);
+      --info: oklch(0.48 0.06 230); --info-foreground: oklch(0.98 0.01 230);
+      --border: oklch(0.85 0.015 85); --input: oklch(0.85 0.015 85); --ring: oklch(0.54 0.11 75);
+      --sidebar: oklch(0.96 0.008 85); --sidebar-foreground: oklch(0.25 0.02 90);
+      --sidebar-primary: oklch(0.54 0.11 75); --sidebar-primary-foreground: oklch(0.99 0.008 85);
+      --sidebar-accent: oklch(0.90 0.01 85); --sidebar-accent-foreground: oklch(0.20 0.015 90);
+      --sidebar-border: oklch(0.85 0.015 85); --sidebar-ring: oklch(0.54 0.11 75);
+      --hover: oklch(0.89 0.01 85);
+      --chart-1: oklch(0.54 0.11 75); --chart-2: oklch(0.30 0.02 90); --chart-3: oklch(0.55 0.015 90); --chart-4: oklch(0.52 0.14 65); --chart-5: oklch(0.47 0.13 25);
     `,
+    // Neo-Olympian — obsidian void + brushed gold. Palette lifted directly
+    // from the divine-intelligence reference: near-black ground (never pure
+    // #000), marble ivory text, gold reserved for accent/primary rather than
+    // filling the UI. Radius drops to 10px (precision-engineering, not the
+    // soft 16px used elsewhere) — see obsidian-void/gold-card in globals.css
+    // for the surface treatment these tokens feed.
     dark: `
-      --radius: 16px;
-      --background: oklch(0.144 0.010 169.9); --foreground: oklch(0.933 0.033 190.0);
-      --card: oklch(0.191 0.014 167.1); --card-foreground: oklch(0.933 0.033 190.0);
-      --popover: oklch(0.191 0.014 167.1); --popover-foreground: oklch(0.933 0.033 190.0);
-      --primary: oklch(0.706 0.069 282.7); --primary-foreground: oklch(0.144 0.010 169.9);
-      --secondary: oklch(0.24 0.015 167.1); --secondary-foreground: oklch(0.918 0.032 190.4);
-      --muted: oklch(0.22 0.012 169.9); --muted-foreground: oklch(0.608 0.022 192.5);
-      --accent: oklch(0.760 0.070 275.8); --accent-foreground: oklch(0.144 0.010 169.9);
-      --destructive: oklch(0.467 0.097 353.8); --destructive-foreground: oklch(0.933 0.033 190.0);
-      --success: oklch(0.60 0.10 155); --success-foreground: oklch(0.144 0.010 169.9);
-      --warning: oklch(0.75 0.12 70); --warning-foreground: oklch(0.144 0.010 169.9);
-      --info: oklch(0.70 0.06 250); --info-foreground: oklch(0.144 0.010 169.9);
-      --border: oklch(0.25 0.015 169.9); --input: oklch(0.25 0.015 169.9); --ring: oklch(0.706 0.069 282.7);
-      --sidebar: oklch(0.165 0.010 169.9); --sidebar-foreground: oklch(0.933 0.033 190.0);
-      --sidebar-primary: oklch(0.706 0.069 282.7); --sidebar-primary-foreground: oklch(0.144 0.010 169.9);
-      --sidebar-accent: oklch(0.22 0.012 169.9); --sidebar-accent-foreground: oklch(0.933 0.033 190.0);
-      --sidebar-border: oklch(0.25 0.015 169.9); --sidebar-ring: oklch(0.706 0.069 282.7);
-      --hover: oklch(0.215 0.012 169.9);
-      --chart-1: oklch(0.706 0.069 282.7); --chart-2: oklch(0.918 0.032 190.4); --chart-3: oklch(0.608 0.022 192.5); --chart-4: oklch(0.846 0.063 273.0); --chart-5: oklch(0.467 0.097 353.8);
+      --radius: 10px;
+      --background: oklch(0.143 0.004 227.5); --foreground: oklch(0.934 0.014 88.7);
+      --card: oklch(0.189 0.006 236.9); --card-foreground: oklch(0.934 0.014 88.7);
+      --popover: oklch(0.189 0.006 236.9); --popover-foreground: oklch(0.934 0.014 88.7);
+      --primary: oklch(0.737 0.101 82.7); --primary-foreground: oklch(0.16 0.01 88);
+      --secondary: oklch(0.24 0.008 236.9); --secondary-foreground: oklch(0.90 0.012 88.7);
+      --muted: oklch(0.22 0.006 236.9); --muted-foreground: oklch(0.63 0.012 93.6);
+      --accent: oklch(0.875 0.097 86.5); --accent-foreground: oklch(0.16 0.01 88);
+      --destructive: oklch(0.477 0.106 21.9); --destructive-foreground: oklch(0.95 0.01 88.7);
+      --success: oklch(0.62 0.10 155); --success-foreground: oklch(0.15 0.02 155);
+      --warning: oklch(0.72 0.14 65); --warning-foreground: oklch(0.15 0.02 65);
+      --info: oklch(0.68 0.05 230); --info-foreground: oklch(0.15 0.02 230);
+      --border: oklch(0.30 0.02 85); --input: oklch(0.30 0.02 85); --ring: oklch(0.737 0.101 82.7);
+      --sidebar: oklch(0.165 0.005 230); --sidebar-foreground: oklch(0.90 0.012 88.7);
+      --sidebar-primary: oklch(0.737 0.101 82.7); --sidebar-primary-foreground: oklch(0.16 0.01 88);
+      --sidebar-accent: oklch(0.22 0.008 230); --sidebar-accent-foreground: oklch(0.95 0.01 88.7);
+      --sidebar-border: oklch(0.28 0.02 85); --sidebar-ring: oklch(0.737 0.101 82.7);
+      --hover: oklch(0.20 0.006 230);
+      --chart-1: oklch(0.737 0.101 82.7); --chart-2: oklch(0.919 0.014 88.7); --chart-3: oklch(0.55 0.015 90); --chart-4: oklch(0.72 0.14 65); --chart-5: oklch(0.477 0.106 21.9);
     `,
   },
   sandstone: {
@@ -277,10 +286,10 @@ export const THEME_CSS: Record<ThemeId, { light: string; dark: string }> = {
 const STORAGE_KEY = 'ryasai-theme'
 const DARK_KEY = 'ryasai-dark-mode'
 
-/** Get saved theme or default. */
+/** Get saved theme or default. Neo-Olympian (slate) is the app's default identity. */
 export function getStoredTheme(): ThemeId {
-  if (typeof window === 'undefined') return 'enterprise'
-  return (localStorage.getItem(STORAGE_KEY) as ThemeId) || 'enterprise'
+  if (typeof window === 'undefined') return 'slate'
+  return (localStorage.getItem(STORAGE_KEY) as ThemeId) || 'slate'
 }
 
 /** Get saved dark mode preference (dark is the default). */
@@ -317,6 +326,10 @@ export function setTheme(theme: ThemeId, dark: boolean) {
   localStorage.setItem(STORAGE_KEY, theme)
   localStorage.setItem(DARK_KEY, String(dark))
   applyTheme(theme, dark)
+  // Views stay mounted across menu switches in this app, so anything that
+  // branches on the active theme (e.g. useIsNeoOlympian) needs a signal to
+  // re-check — there's no other React state tying it back to this module.
+  window.dispatchEvent(new Event('ryasai-theme-changed'))
 }
 
 /** Inline script to prevent FOUC — reads localStorage, injects theme CSS vars. */
@@ -324,7 +337,7 @@ export const THEME_INIT_SCRIPT = `
 (function(){
   try {
     var root = document.documentElement;
-    var t = localStorage.getItem('ryasai-theme') || 'enterprise';
+    var t = localStorage.getItem('ryasai-theme') || 'slate';
     var d = localStorage.getItem('ryasai-dark-mode');
     var dark = d === null ? true : d === 'true';
     root.setAttribute('data-theme', t);
@@ -338,7 +351,7 @@ export const THEME_INIT_SCRIPT = `
     document.head.appendChild(style);
   } catch(e){
     var root = document.documentElement;
-    root.setAttribute('data-theme', 'enterprise');
+    root.setAttribute('data-theme', 'slate');
     root.classList.add('dark');
   }
 })();

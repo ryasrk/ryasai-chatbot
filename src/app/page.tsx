@@ -399,6 +399,7 @@ export default function Home() {
               duration: reduceMotion ? 0 : 0.3,
               ease: [0.23, 1, 0.32, 1] 
             }}
+            data-sidebar-shell
             className="hidden md:flex shrink-0 flex-col border-r bg-background sticky top-14 h-[calc(100vh-3.5rem)] overflow-hidden"
             suppressHydrationWarning
           >
@@ -576,6 +577,7 @@ function SidebarContent({
                     {active && (
                       <motion.div
                         layoutId="nav-active-pill-collapsed"
+                        data-nav-pill
                         className="absolute left-0 right-0 top-1/2 h-6 w-1 rounded-full bg-primary"
                         transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                         style={{ zIndex: -1 }}
@@ -619,6 +621,7 @@ function SidebarContent({
                   {active && (
                     <motion.div
                       layoutId="nav-active-pill-expanded"
+                      data-nav-pill
                       className="absolute inset-0 rounded-md bg-primary"
                       transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                       style={{ zIndex: -1 }}

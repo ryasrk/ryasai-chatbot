@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ComponentType } from 'react'
 import {
   Activity,
   Brain,
@@ -21,8 +21,21 @@ import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
 import { DashboardCharts } from '@/components/views/dashboard-charts'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { useCachedViewData } from '@/hooks/use-cached-view-data'
+import { useIsNeoOlympian } from '@/hooks/use-is-neo-olympian'
+import {
+  TempleIcon,
+  LaurelIcon,
+  ColumnIcon,
+  CoinIcon,
+  ThunderboltIcon,
+  GearMotifIcon,
+  HourglassIcon,
+  ShieldMotifIcon,
+} from '@/components/icons/greek-motifs'
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
+
+type StatIcon = ComponentType<{ className?: string }>
 
 const formatNumber = (n: number) => n.toLocaleString('en-US')
 
@@ -74,6 +87,7 @@ export function DashboardView() {
   // last-fetched data instantly (no skeleton) while quietly refetching.
   const { data: bundle, loading, error, refresh: handleRefresh } = useCachedViewData('dashboard', fetchDashboard)
   const showSkeleton = useDelayedLoading(loading)
+  const isNeoOlympian = useIsNeoOlympian()
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -92,15 +106,15 @@ export function DashboardView() {
   }
   const { data, monitoring, activeSchedules } = bundle
 
-  const stats: { label: string; value: number | string; icon: typeof Database; iconClass: string }[] = [
-    { label: 'Queries (24h)', value: monitoring?.toolRunCount24h ?? 0, icon: Activity, iconClass: 'text-primary' },
-    { label: 'Success Rate', value: `${data.querySuccessRate}%`, icon: CheckCircle2, iconClass: 'text-success' },
-    { label: 'Integrations', value: data.totals.integrations, icon: Database, iconClass: 'text-success' },
-    { label: 'LLM Tokens (24h)', value: monitoring?.llmTotalTokens24h ?? 0, icon: Coins, iconClass: 'text-warning' },
-    { label: 'LLM Calls (24h)', value: monitoring?.llmCalls24h ?? 0, icon: Zap, iconClass: 'text-primary' },
-    { label: 'Plugin Calls', value: '—', icon: Puzzle, iconClass: 'text-muted-foreground' },
-    { label: 'Active Schedules', value: activeSchedules, icon: Clock, iconClass: 'text-success' },
-    { label: 'Guardrail Blocks', value: data.totals.guardrailBlocks, icon: ShieldAlert, iconClass: 'text-destructive' },
+  const stats: { label: string; value: number | string; icon: StatIcon; iconClass: string }[] = [
+    { label: 'Queries (24h)', value: monitoring?.toolRunCount24h ?? 0, icon: isNeoOlympian ? TempleIcon : Activity, iconClass: 'text-primary' },
+    { label: 'Success Rate', value: `${data.querySuccessRate}%`, icon: isNeoOlympian ? LaurelIcon : CheckCircle2, iconClass: 'text-success' },
+    { label: 'Integrations', value: data.totals.integrations, icon: isNeoOlympian ? ColumnIcon : Database, iconClass: 'text-success' },
+    { label: 'LLM Tokens (24h)', value: monitoring?.llmTotalTokens24h ?? 0, icon: isNeoOlympian ? CoinIcon : Coins, iconClass: 'text-warning' },
+    { label: 'LLM Calls (24h)', value: monitoring?.llmCalls24h ?? 0, icon: isNeoOlympian ? ThunderboltIcon : Zap, iconClass: 'text-primary' },
+    { label: 'Plugin Calls', value: '—', icon: isNeoOlympian ? GearMotifIcon : Puzzle, iconClass: 'text-muted-foreground' },
+    { label: 'Active Schedules', value: activeSchedules, icon: isNeoOlympian ? HourglassIcon : Clock, iconClass: 'text-success' },
+    { label: 'Guardrail Blocks', value: data.totals.guardrailBlocks, icon: isNeoOlympian ? ShieldMotifIcon : ShieldAlert, iconClass: 'text-destructive' },
   ]
 
   const chatTrend = data.chatTrend.map((item) => ({
@@ -261,7 +275,7 @@ function MetricCard({
 }: {
   label: string
   value: number | string
-  icon: typeof Database
+  icon: StatIcon
   iconClass: string
 }) {
   return (

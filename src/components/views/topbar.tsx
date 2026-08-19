@@ -108,8 +108,8 @@ export function Topbar({
                 </div>
               ) : (
                 <>
-                  <div 
-                    className="text-sm font-semibold leading-tight truncate flex items-center gap-1.5"
+                  <div
+                    className="brand-title text-sm font-semibold leading-tight truncate flex items-center gap-1.5"
                     suppressHydrationWarning
                   >
                     {organization.name || 'ryasai'}
@@ -263,7 +263,7 @@ export function Topbar({
       <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="brand-title flex items-center gap-2">
               <Image src="/logo.svg" alt="ryasai" width={22} height={22} className="rounded" />
               ryasai
             </DialogTitle>

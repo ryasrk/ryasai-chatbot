@@ -101,8 +101,12 @@
   --chart-5: oklch(0.55 0.24 27);
 }
 
-/* Neo-Olympian serif activation — Cinzel/Cormorant only when slate theme is active */
-:root[data-theme="slate"] {
+/* Neo-Olympian serif activation — Cinzel/Cormorant only when slate theme is
+   active. Scoped to `body`, not `:root`: next/font's --font-cinzel/--font-
+   cormorant variables are injected via a className on <body> (see
+   layout.tsx), so a :root-level rule can never see them — custom properties
+   don't cascade upward from a descendant to its ancestor. */
+:root[data-theme="slate"] body {
   --font-display: var(--font-cinzel);
   --font-serif: var(--font-cormorant);
 }
@@ -270,6 +274,149 @@
   box-shadow:
     0 0 0 1px color-mix(in oklab, var(--primary) 15%, transparent) inset,
     0 24px 70px color-mix(in oklab, var(--primary) 12%, transparent);
+}
+
+/* Auto-applied Neo-Olympian surface — every Card picks up the gold hairline +
+   inner glow the moment the theme is selected, no per-component class needed.
+   Kept intentionally subtle (thin border, soft shadow) per the brief: gold is
+   an accent, not a fill. */
+[data-theme="slate"] [data-slot="card"] {
+  border-color: color-mix(in oklab, var(--primary) 28%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 8%, transparent) inset,
+    0 12px 32px color-mix(in oklab, var(--foreground) 5%, transparent);
+  transition: transform 250ms var(--ease-out), box-shadow 250ms var(--ease-out), border-color 250ms var(--ease-out);
+}
+[data-theme="slate"] [data-slot="card"]:hover {
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 16%, transparent) inset,
+    0 16px 40px color-mix(in oklab, var(--primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+/* Glass translucency only in dark mode — light mode reads as lit marble
+   (opaque), dark mode reads as obsidian glass over the void glow below. */
+:root[data-theme="slate"].dark [data-slot="card"] {
+  background-color: color-mix(in oklab, var(--card) 82%, transparent);
+  backdrop-filter: blur(16px);
+  /* Ornamental corner brackets — 4 tiny L-marks + dot, one per corner, drawn
+     as separate background-image layers (a single SVG can't be reused
+     mirrored per-layer without a transform, which background-image doesn't
+     support). Gold is hardcoded rather than var(--primary): data-URI SVGs
+     are static text, and this only ever renders under the fixed Neo-Olympian
+     dark palette anyway. Dark-mode only — on lit marble the corner marks
+     read as dirt/artifacts rather than an intentional frame. */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M1 9 L1 1 L9 1' fill='none' stroke='%23C9A45C' stroke-opacity='0.5' stroke-width='1'/%3E%3Ccircle cx='1' cy='1' r='1.3' fill='%23C9A45C' fill-opacity='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M9 1 L17 1 L17 9' fill='none' stroke='%23C9A45C' stroke-opacity='0.5' stroke-width='1'/%3E%3Ccircle cx='17' cy='1' r='1.3' fill='%23C9A45C' fill-opacity='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M1 9 L1 17 L9 17' fill='none' stroke='%23C9A45C' stroke-opacity='0.5' stroke-width='1'/%3E%3Ccircle cx='1' cy='17' r='1.3' fill='%23C9A45C' fill-opacity='0.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M9 17 L17 17 L17 9' fill='none' stroke='%23C9A45C' stroke-opacity='0.5' stroke-width='1'/%3E%3Ccircle cx='17' cy='17' r='1.3' fill='%23C9A45C' fill-opacity='0.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: top 5px left 5px, top 5px right 5px, bottom 5px left 5px, bottom 5px right 5px;
+  background-size: 18px 18px;
+}
+:root[data-theme="slate"].dark body {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, color-mix(in oklab, var(--primary) 7%, transparent), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%, color-mix(in oklab, var(--primary) 4%, transparent), transparent 70%),
+    var(--background);
+  background-attachment: fixed;
+}
+
+/* Brand mark — classical display serif, used sparingly (logo wordmark only)
+   so the "ancient typography x modern telemetry" contrast reads as an accent,
+   not a full re-skin of the UI's working text. */
+.brand-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+/* Modals — dialogs/alert-dialogs get the same gold-hairline + inner-glow
+   language as cards, but a touch stronger (they're the "decision" surface).
+   No custom entrance animation here on purpose: Radix + tailwindcss-animate
+   already drive data-[state=open]:zoom-in-95/fade-in-0 through a single
+   `animation` shorthand on these elements — a second competing `animation`
+   declaration would just clobber it. The border/glow is static and rides
+   along with that existing scale-in for free. */
+[data-theme="slate"] [data-slot="dialog-content"],
+[data-theme="slate"] [data-slot="alert-dialog-content"] {
+  border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 10%, transparent) inset,
+    0 24px 64px color-mix(in oklab, var(--foreground) 10%, transparent),
+    0 0 40px color-mix(in oklab, var(--primary) 6%, transparent);
+}
+:root[data-theme="slate"].dark [data-slot="dialog-content"],
+:root[data-theme="slate"].dark [data-slot="alert-dialog-content"] {
+  background-color: color-mix(in oklab, var(--background) 88%, transparent);
+  backdrop-filter: blur(20px);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M1 11 L1 1 L11 1' fill='none' stroke='%23C9A45C' stroke-opacity='0.55' stroke-width='1'/%3E%3Ccircle cx='1' cy='1' r='1.5' fill='%23C9A45C' fill-opacity='0.55'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 1 L21 1 L21 11' fill='none' stroke='%23C9A45C' stroke-opacity='0.55' stroke-width='1'/%3E%3Ccircle cx='21' cy='1' r='1.5' fill='%23C9A45C' fill-opacity='0.55'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M1 11 L1 21 L11 21' fill='none' stroke='%23C9A45C' stroke-opacity='0.55' stroke-width='1'/%3E%3Ccircle cx='1' cy='21' r='1.5' fill='%23C9A45C' fill-opacity='0.55'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 21 L21 21 L21 11' fill='none' stroke='%23C9A45C' stroke-opacity='0.55' stroke-width='1'/%3E%3Ccircle cx='21' cy='21' r='1.5' fill='%23C9A45C' fill-opacity='0.55'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: top 6px left 6px, top 6px right 6px, bottom 6px left 6px, bottom 6px right 6px;
+  background-size: 22px 22px;
+}
+
+/* Floating surfaces — popover/dropdown/select/hover-card/context-menu/menubar
+   share the same thin gold edge so nothing in this theme reads as a bare
+   default-gray flyout. Tooltip stays out of the glow treatment; it's a
+   transient one-liner and a shadow there would just look noisy. */
+[data-theme="slate"] [data-slot="popover-content"],
+[data-theme="slate"] [data-slot="dropdown-menu-content"],
+[data-theme="slate"] [data-slot="dropdown-menu-sub-menu-content"],
+[data-theme="slate"] [data-slot="select-content"],
+[data-theme="slate"] [data-slot="hover-card-content"],
+[data-theme="slate"] [data-slot="context-menu-content"],
+[data-theme="slate"] [data-slot="context-menu-sub-menu-content"],
+[data-theme="slate"] [data-slot="menubar-content"],
+[data-theme="slate"] [data-slot="menubar-sub-menu-content"] {
+  border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 8%, transparent) inset,
+    0 12px 32px color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+:root[data-theme="slate"].dark [data-slot="popover-content"],
+:root[data-theme="slate"].dark [data-slot="dropdown-menu-content"],
+:root[data-theme="slate"].dark [data-slot="select-content"],
+:root[data-theme="slate"].dark [data-slot="hover-card-content"],
+:root[data-theme="slate"].dark [data-slot="context-menu-content"],
+:root[data-theme="slate"].dark [data-slot="menubar-content"] {
+  background: color-mix(in oklab, var(--popover) 90%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+/* Sidebar shell — thin gold-tinted edge + a soft second line just inside it,
+   echoing the ornamental double-rule frame without drawing a literal second
+   border (which reads noisy at 1px). */
+:root[data-theme="slate"].dark [data-sidebar-shell] {
+  border-right-color: color-mix(in oklab, var(--primary) 25%, var(--border));
+  box-shadow: inset -3px 0 0 -2px color-mix(in oklab, var(--primary) 18%, transparent);
+}
+
+/* Active sidebar pill — the framer-motion layoutId div already renders
+   bg-primary (gold); this just adds the "divine" glow the brief asks for.
+   Scoped to [data-nav-pill] rather than .bg-primary so it can never bleed
+   onto an unrelated gold-filled element elsewhere in the sidebar. */
+[data-theme="slate"] [data-nav-pill] {
+  box-shadow: 0 0 16px 1px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+
+/* Loading spinners — every Loader2/animate-spin in the app picks up a soft
+   gold glow under this theme, so "loading" reads as "the oracle is thinking"
+   rather than a bare system spinner. Filter only; timing is untouched. */
+[data-theme="slate"] .animate-spin {
+  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--primary) 55%, transparent));
+}
+
+/* Chart strokes — the dashboard's hand-rolled SVG charts set stroke="var(--
+   chart-1)" as a literal SVG attribute, so it's addressable directly as a
+   CSS attribute selector. Adds the "very subtle glow" the brief asks for on
+   the gold primary line, without touching chart markup. */
+[data-theme="slate"] [stroke="var(--chart-1)"] {
+  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--chart-1) 45%, transparent));
 }
 
 /* ── end Neo-Olympian utilities ─────────────────────────────────────────── */

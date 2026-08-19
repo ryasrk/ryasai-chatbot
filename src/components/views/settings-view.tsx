@@ -328,8 +328,8 @@ function SecurityTab() {
 
 function ThemeTab() {
   const [theme, setThemeState] = useState<ThemeId>(() => {
-    if (typeof window === 'undefined') return 'enterprise'
-    return (localStorage.getItem('ryasai-theme') as ThemeId) || 'enterprise'
+    if (typeof window === 'undefined') return 'slate'
+    return (localStorage.getItem('ryasai-theme') as ThemeId) || 'slate'
   })
   const [dark, setDarkState] = useState(() => {
     if (typeof window === 'undefined') return true
