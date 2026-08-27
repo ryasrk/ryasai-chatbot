@@ -77,7 +77,10 @@ interface PatchBody {
   status?: 'active' | 'inactive' | 'error'
   name?: string
   businessContext?: string
+  contextPrompt?: string
 }
+
+const INTEGRATION_PROMPT_MAX = 4000
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
@@ -89,7 +92,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
 
     const existing = await db.integration.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, contextPrompt: true },
     })
     if (!existing) {
       return NextResponse.json(
@@ -98,7 +101,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       )
     }
 
-    const data: { status?: string; name?: string; businessContext?: string } = {}
+    const data: { status?: string; name?: string; businessContext?: string; contextPrompt?: string } = {}
     if (body.status) {
       const s = body.status.toLowerCase()
       if (s !== 'active' && s !== 'inactive' && s !== 'error') {
@@ -114,6 +117,16 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
     }
     if (typeof body.businessContext === 'string') {
       data.businessContext = body.businessContext
+    }
+    if (typeof body.contextPrompt === 'string') {
+      const trimmed = body.contextPrompt.trim()
+      if (trimmed.length > INTEGRATION_PROMPT_MAX) {
+        return NextResponse.json(
+          { ok: false, error: `contextPrompt must be at most ${INTEGRATION_PROMPT_MAX} characters.` },
+          { status: 400 },
+        )
+      }
+      data.contextPrompt = trimmed
     }
 
     if (Object.keys(data).length === 0) {
@@ -141,7 +154,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       userId: user.userId,
       action: 'INTEGRATION_UPDATE',
       severity: 'info',
-      detail: { integrationId: id, before: existing, after: data },
+      detail: {
+        integrationId: id,
+        before: existing,
+        after: data,
+        contextPromptLength:
+          typeof data.contextPrompt === 'string' ? data.contextPrompt.length : undefined,
+      },
     })
 
     return NextResponse.json({
@@ -150,6 +169,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
         id: updated.id,
         name: updated.name,
         status: updated.status,
+        contextPrompt: updated.contextPrompt,
         updatedAt: updated.updatedAt,
       },
     })

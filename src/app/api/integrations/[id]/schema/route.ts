@@ -1,8 +1,12 @@
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { requireRole, writeAudit } from '@/lib/session'
 /**
  * Spec §3.2 / §5.1 — Return cached reflected schema (tables + columns + rowCount).
  * ----------------------------------------------------------------------------
- * GET /api/integrations/[id]/schema
+ * GET    /api/integrations/[id]/schema          — cached reflected schema (?refresh=1 re-reflects)
+ * PATCH  /api/integrations/[id]/schema          — edit a table description (admin),
+ *        locking it from re-enrichment via `manualDescription`. `{ description: null }`
+ *        clears the lock + the description so the next enrichment regenerates it.
  *
  * Server-only route handler. No 'use client'.
  */
@@ -105,6 +109,112 @@ export async function GET(req: NextRequest, ctx: RouteCtx) {
     })
   } catch (e) {
     return handleApiError(e, 'Failed to load integration schema.')
+  }
+}
+
+interface SchemaPatchBody {
+  table: string
+  description: string | null
+}
+
+const SCHEMA_DESC_MAX = 500
+
+/**
+ * PATCH /api/integrations/[id]/schema
+ * Edit (or reset) the natural-language description of a single table.
+ *
+ * - `description` is a non-null string (≤500 chars, trimmed) → persist it and set
+ *   `manualDescription=true` so `enrichSchemaDescriptions` skips this row on
+ *   re-enrichment (the admin's edit survives).
+ * - `description: null` → clear `description` AND set `manualDescription=false`,
+ *   marking the row for re-enrichment on the next refresh.
+ *
+ * Admin-only. Tenant-scoped: the integration is fetched via `findFirst` (the
+ * prisma-tenant auto-scopes `IntegrationSchema`, but we scope the parent lookup
+ * explicitly).
+ */
+export async function PATCH(req: NextRequest, ctx: RouteCtx) {
+  try {
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
+    requireRole(user, 'admin')
+    const { id } = await ctx.params
+    const body = (await req.json().catch(() => ({}))) as Partial<SchemaPatchBody>
+
+    if (typeof body.table !== 'string' || !body.table.trim()) {
+      return NextResponse.json(
+        { ok: false, error: 'Field table (string) is required.' },
+        { status: 400 },
+      )
+    }
+    if (body.description !== null && typeof body.description !== 'string') {
+      return NextResponse.json(
+        { ok: false, error: 'Field description must be a string or null.' },
+        { status: 400 },
+      )
+    }
+
+    const integration = await db.integration.findFirst({ // nosemgrep
+      where: { id },
+      select: { id: true },
+    })
+    if (!integration) {
+      return NextResponse.json(
+        { ok: false, error: 'Integration not found.' },
+        { status: 404 },
+      )
+    }
+
+    const row = await db.integrationSchema.findFirst({ // nosemgrep
+      where: { integrationId: id, tableName: body.table.trim() },
+      select: { id: true, tableName: true, description: true, manualDescription: true },
+    })
+    if (!row) {
+      return NextResponse.json(
+        { ok: false, error: 'Schema row not found for this table.' },
+        { status: 404 },
+      )
+    }
+
+    let description: string | null
+    let manualDescription: boolean
+    if (body.description === null) {
+      // Reset to auto: clear the description and the lock so re-enrichment regenerates it.
+      description = null
+      manualDescription = false
+    } else {
+      const trimmed = body.description!.trim()
+      if (trimmed.length > SCHEMA_DESC_MAX) {
+        return NextResponse.json(
+          { ok: false, error: `description must be at most ${SCHEMA_DESC_MAX} characters.` },
+          { status: 400 },
+        )
+      }
+      description = trimmed
+      manualDescription = true
+    }
+
+    const updated = await db.integrationSchema.update({
+      where: { id: row.id },
+      data: { description, manualDescription },
+      select: { id: true, tableName: true, description: true, manualDescription: true },
+    })
+
+    await writeAudit({
+      userId: user.userId,
+      action: 'SCHEMA_DESC_UPDATE',
+      severity: 'info',
+      detail: {
+        integrationId: id,
+        tableName: row.tableName,
+        manual: manualDescription,
+        descriptionLength: description === null ? 0 : description.length,
+      },
+    })
+
+    return NextResponse.json({ ok: true, schema: updated })
+  } catch (e) {
+    return handleApiError(e, 'Failed to update schema description.')
   }
 }
 

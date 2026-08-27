@@ -86,12 +86,18 @@ export async function GET(
 
 interface PatchBody {
   isEnabled?: boolean
+  contextPrompt?: string
 }
+
+const DOC_PROMPT_MAX = 4000
 
 /**
  * PATCH /api/documents/[id]
- * Toggles document enabled state. Disabled documents are excluded from RAG
- * retrieval (see tool-router.ts) but remain stored and can be re-enabled.
+ * Toggles document enabled state (admin) and/or sets the admin-editable
+ * `contextPrompt` (≤4000 chars, trimmed) injected into RAG answer synthesis
+ * when chunks from this document contribute to an answer (buildSourceGuidance
+ * in source-guidance.ts). Disabled documents are excluded from RAG retrieval
+ * (see tool-router.ts) but remain stored and can be re-enabled.
  */
 export async function PATCH(
   req: NextRequest,
@@ -106,7 +112,7 @@ export async function PATCH(
 
     const existing = await db.document.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, isEnabled: true },
+      select: { id: true, name: true, isEnabled: true, contextPrompt: true },
     })
 
     if (!existing) {
@@ -116,17 +122,32 @@ export async function PATCH(
       )
     }
 
-    if (typeof body.isEnabled !== 'boolean') {
+    const data: { isEnabled?: boolean; contextPrompt?: string } = {}
+    if (typeof body.isEnabled === 'boolean') {
+      data.isEnabled = body.isEnabled
+    }
+    if (typeof body.contextPrompt === 'string') {
+      const trimmed = body.contextPrompt.trim()
+      if (trimmed.length > DOC_PROMPT_MAX) {
+        return NextResponse.json(
+          { error: `contextPrompt must be at most ${DOC_PROMPT_MAX} characters.` },
+          { status: 400 },
+        )
+      }
+      data.contextPrompt = trimmed
+    }
+
+    if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { error: 'Field isEnabled (boolean) is required.' },
+        { error: 'Field isEnabled (boolean) or contextPrompt (string) is required.' },
         { status: 400 },
       )
     }
 
     const updated = await db.document.update({
       where: { id: existing.id },
-      data: { isEnabled: body.isEnabled },
-      select: { id: true, isEnabled: true, updatedAt: true },
+      data,
+      select: { id: true, isEnabled: true, contextPrompt: true, updatedAt: true },
     })
     // Retrieval filters on isEnabled, but cached results were computed before the
     // toggle — without this a disabled document keeps answering for the cache TTL.
@@ -156,8 +177,10 @@ export async function PATCH(
       detail: {
         documentId: existing.id,
         name: existing.name,
-        before: { isEnabled: existing.isEnabled },
-        after: { isEnabled: body.isEnabled },
+        before: { isEnabled: existing.isEnabled, contextPrompt: existing.contextPrompt },
+        after: data,
+        contextPromptLength:
+          typeof data.contextPrompt === 'string' ? data.contextPrompt.length : undefined,
       },
     })
 
