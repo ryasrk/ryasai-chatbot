@@ -4,6 +4,7 @@ import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 import { hashPassword } from '@/lib/passwords'
 import { signSession } from '@/lib/crypto'
 import { handleApiError, writeAudit } from '@/lib/session'
+import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
 /**
  * GET /api/auth/accept-invite?token=...
@@ -83,6 +84,34 @@ export async function POST(req: NextRequest) {
     )
     if (existingUser) {
       return NextResponse.json({ error: 'Email already registered.' }, { status: 409 })
+    }
+
+    // maxUsers quota. Accepting an invite is the ONLY way an org gains a user
+    // after signup — signup/register each create a fresh org whose first user is
+    // always within quota — so this is the one place the limit must be enforced.
+    // The org's plan comes from the org row, not the caller (the invitee has no
+    // session yet and their plan field would be meaningless).
+    const org = await bypassOrg(() =>
+      db.organization.findUnique({
+        where: { id: invitation.organizationId },
+        select: { licensePlan: true, licenseStatus: true },
+      }),
+    )
+    if (!org) {
+      return NextResponse.json({ error: 'Invitation organization not found.' }, { status: 400 })
+    }
+    const memberCount = await bypassOrg(() =>
+      db.user.count({ where: { organizationId: invitation.organizationId } }),
+    )
+    const quota = checkQuota(org.licensePlan, 'maxUsers', memberCount)
+    if (!quota.allowed) {
+      return NextResponse.json(
+        {
+          error: quotaExceededMessage('maxUsers', quota),
+          code: 'QUOTA_EXCEEDED',
+        },
+        { status: 402 },
+      )
     }
 
     const user = await bypassOrg(() =>

@@ -15,6 +15,7 @@ import { mapWithConcurrency } from '@/lib/bounded-concurrency'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
 export const runtime = 'nodejs'
 
@@ -146,6 +147,18 @@ export async function POST(req: NextRequest) {
     enterWithOrg(user.organizationId)
     // Viewer read access is fine for documents, but mutating the corpus is admin-only.
     requireRole(user, 'admin')
+
+    // Quota check before extraction/embedding — those are the expensive steps,
+    // and refusing after paying for them would waste an embedding call per
+    // over-quota upload.
+    const docCount = await db.document.count()
+    const quota = checkQuota(user.plan, 'maxDocuments', docCount)
+    if (!quota.allowed) {
+      return NextResponse.json(
+        { ok: false, error: quotaExceededMessage('maxDocuments', quota), code: 'QUOTA_EXCEEDED' },
+        { status: 402 },
+      )
+    }
 
     const docType = detectDocType(file.name)
     const { text: extracted, isPlaceholder } = await extractFileText(file)

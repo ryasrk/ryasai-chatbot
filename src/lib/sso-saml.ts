@@ -15,6 +15,8 @@ import { signSession } from '@/lib/crypto'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { redisCmd } from '@/lib/redis'
 import { scopedLogger } from '@/lib/logger'
+import { resolveSsoOrganizationId } from '@/lib/sso'
+import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
 const log = scopedLogger('sso-saml')
 
@@ -288,9 +290,23 @@ export async function getOrCreateSsoUser(userInfo: SamlUserInfo): Promise<SamlUs
     }
   }
 
+  // Same org-resolution + quota rules as the OIDC path — see
+  // `resolveSsoOrganizationId` in sso.ts for why the old hardcoded
+  // 'org-default' was a foreign-key violation, and why we fail closed rather
+  // than guess a tenant.
+  const orgId = await resolveSsoOrganizationId()
+  const org = await bypassOrg(() =>
+    db.organization.findUnique({ where: { id: orgId }, select: { licensePlan: true } }),
+  )
+  const memberCount = await bypassOrg(() => db.user.count({ where: { organizationId: orgId } }))
+  const quota = checkQuota(org?.licensePlan, 'maxUsers', memberCount)
+  if (!quota.allowed) {
+    throw new Error(quotaExceededMessage('maxUsers', quota))
+  }
+
   const created = await bypassOrg(() => db.user.create({
     data: {
-      organizationId: 'org-default',
+      organizationId: orgId,
       email,
       name,
       ssoSubject: userInfo.sub,

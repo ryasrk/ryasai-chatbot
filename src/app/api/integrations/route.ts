@@ -15,6 +15,7 @@ import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { logSwallowed } from '@/lib/logger'
+import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
 const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLICKHOUSE', 'SUPABASE', 'NEON', 'PLANETSCALE', 'TIDB', 'COCKROACHDB'])
 
@@ -112,6 +113,18 @@ export async function POST(req: NextRequest) {
       )
     }
     const { name, type, provider, config } = validation
+
+    // Quota check BEFORE the connection test. A rejected create must not cost a
+    // round-trip to the customer's database, and it must not surface as
+    // "Connection failed" when the real reason is the plan ceiling.
+    const integrationCount = await db.integration.count()
+    const quota = checkQuota(user.plan, 'maxIntegrations', integrationCount)
+    if (!quota.allowed) {
+      return NextResponse.json(
+        { ok: false, error: quotaExceededMessage('maxIntegrations', quota), code: 'QUOTA_EXCEEDED' },
+        { status: 402 },
+      )
+    }
 
     // Test connection BEFORE persisting — no orphan rows on failure.
     // ponytail: use the DIAGNOSTIC test — a wrong password vs a TLS mismatch

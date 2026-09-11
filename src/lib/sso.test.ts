@@ -13,6 +13,12 @@ const mockDbState = {
   createResult: { id: 'user_new', name: 'Test', email: 'test@test.com' } as any,
   createArgs: null as any,
   updateResult: { id: 'user_1', sessionVersion: 2, name: 'Test', email: 'test@test.com' } as any,
+  // SSO provisioning now resolves the target org and enforces maxUsers. Defaults
+  // describe the normal single-org self-hosted case on 'flat' (uncapped enough
+  // for these tests).
+  orgs: [{ id: 'org_1', name: 'Acme' }] as Array<{ id: string; name: string }>,
+  orgLookup: { id: 'org_1', licensePlan: 'flat' } as any,
+  userCount: 1,
 }
 
 mock.module('@/lib/db', () => ({
@@ -25,6 +31,11 @@ mock.module('@/lib/db', () => ({
         return Promise.resolve(mockDbState.createResult)
       },
       update: () => Promise.resolve(mockDbState.updateResult),
+      count: () => Promise.resolve(mockDbState.userCount),
+    },
+    organization: {
+      findMany: () => Promise.resolve(mockDbState.orgs),
+      findUnique: () => Promise.resolve(mockDbState.orgLookup),
     },
   },
 }))
@@ -319,16 +330,23 @@ describe('getOrCreateSsoUser', () => {
     mockDbState.findFirstResult = null
     mockDbState.findUniqueResult = null
     mockDbState.createResult = { id: 'user_sso', name: 'SSOUser', email: '' }
-    // override create to return the email from args
+    // Re-mock keeps `organization` + `user.count` — provisioning resolves the
+    // target org and checks maxUsers before creating, so an incomplete stub
+    // here would fail for the wrong reason.
     mock.module('@/lib/db', () => ({
       db: {
         user: {
           findFirst: () => Promise.resolve(mockDbState.findFirstResult),
           findUnique: () => Promise.resolve(mockDbState.findUniqueResult),
+          count: () => Promise.resolve(mockDbState.userCount),
           create: (args: any) => Promise.resolve({
             id: 'user_sso', name: 'SSOUser', email: args.data.email,
           }),
           update: () => Promise.resolve(mockDbState.updateResult),
+        },
+        organization: {
+          findMany: () => Promise.resolve(mockDbState.orgs),
+          findUnique: () => Promise.resolve(mockDbState.orgLookup),
         },
       },
     }))
@@ -336,6 +354,79 @@ describe('getOrCreateSsoUser', () => {
     const result = await getOrCreateSsoUser({ sub: 'sub999' })
     expect(result.email).toContain('sso_')
     expect(result.email).toContain('@sso.local')
+  })
+})
+
+describe('SSO org resolution + maxUsers quota', () => {
+  // Regression: provisioning used to write the literal 'org-default'. That is a
+  // foreign key on User.organizationId, so on a real DB the insert threw and
+  // first-time SSO login was broken — invisible to a mocked `db`.
+  beforeEach(() => {
+    mockDbState.findFirstResult = null
+    mockDbState.findUniqueResult = null
+    mockDbState.createResult = { id: 'user_new', name: 'Test', email: 'test@test.com' }
+    mockDbState.orgs = [{ id: 'org_1', name: 'Acme' }]
+    mockDbState.orgLookup = { id: 'org_1', licensePlan: 'flat' }
+    mockDbState.userCount = 1
+    delete process.env.SSO_ORGANIZATION_ID
+  })
+
+  test('provisions into the resolved org, never the literal org-default', async () => {
+    mockDbState.createResult = { id: 'user_new', name: 'Test', email: 'test@test.com' }
+    await getOrCreateSsoUser({ sub: 'sub_fk', email: 'fk@test.com' })
+    expect(mockDbState.createArgs.data.organizationId).toBe('org_1')
+    expect(mockDbState.createArgs.data.organizationId).not.toBe('org-default')
+  })
+
+  test('throws rather than guessing when multiple orgs exist', async () => {
+    mockDbState.orgs = [
+      { id: 'org_1', name: 'A' },
+      { id: 'org_2', name: 'B' },
+    ]
+    await expect(getOrCreateSsoUser({ sub: 'sub_amb', email: 'amb@test.com' })).rejects.toThrow(
+      /multiple organizations/i,
+    )
+  })
+
+  test('SSO_ORGANIZATION_ID selects the org explicitly', async () => {
+    process.env.SSO_ORGANIZATION_ID = 'org_1'
+    await getOrCreateSsoUser({ sub: 'sub_explicit', email: 'explicit@test.com' })
+    expect(mockDbState.createArgs.data.organizationId).toBe('org_1')
+  })
+
+  test('a dangling SSO_ORGANIZATION_ID fails loudly', async () => {
+    process.env.SSO_ORGANIZATION_ID = 'org_missing'
+    mockDbState.orgLookup = null
+    await expect(getOrCreateSsoUser({ sub: 'sub_bad', email: 'bad@test.com' })).rejects.toThrow(
+      /no such organization/i,
+    )
+  })
+
+  test('refuses to provision past the maxUsers ceiling', async () => {
+    // starter.maxUsers = 3
+    mockDbState.orgLookup = { id: 'org_1', licensePlan: 'starter' }
+    mockDbState.userCount = 3
+    await expect(getOrCreateSsoUser({ sub: 'sub_over', email: 'over@test.com' })).rejects.toThrow(
+      /allows up to 3 users/i,
+    )
+  })
+
+  test('still provisions when under the ceiling', async () => {
+    mockDbState.orgLookup = { id: 'org_1', licensePlan: 'starter' }
+    mockDbState.userCount = 2
+    mockDbState.createResult = { id: 'user_ok', name: 'Ok', email: 'ok@test.com' }
+    const result = await getOrCreateSsoUser({ sub: 'sub_ok', email: 'ok@test.com' })
+    expect(result.created).toBe(true)
+  })
+
+  test('quota is NOT checked for an existing user (login, not growth)', async () => {
+    // An org already at its limit must still let existing members log in.
+    mockDbState.orgLookup = { id: 'org_1', licensePlan: 'starter' }
+    mockDbState.userCount = 99
+    mockDbState.findFirstResult = { id: 'user_1', name: 'Existing', email: 'e@test.com' }
+    const result = await getOrCreateSsoUser({ sub: 'sub_existing', email: 'e@test.com' })
+    expect(result.created).toBe(false)
+    expect(result.userId).toBe('user_1')
   })
 })
 

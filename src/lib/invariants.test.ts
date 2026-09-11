@@ -350,3 +350,88 @@ describe('invariant: SSRF test hatch cannot ship', () => {
     expect(cfg).toContain('E2E_TEST_MODE=true')
   })
 })
+
+describe('invariant: plan quotas are enforced, not decorative', () => {
+  // PLAN_FEATURES shipped for a long time with maxUsers/maxIntegrations/
+  // maxDocuments checked NOWHERE — the tiers were advertising limits that no
+  // code imposed. These guards assert the enforcement is still wired at each
+  // creation path, so the numbers cannot silently become decoration again.
+
+  test('the quota helper exists and is a pure predicate (no db import)', () => {
+    const src = readRepo('src/lib/plan-gating.ts')
+    expect(src).toContain('export function checkQuota')
+    expect(src).toContain('export function quotaFor')
+    expect(src).toContain('export function quotaExceededMessage')
+    // Purity matters: this module is imported by client components and tests.
+    // A `db` import here would drag Prisma into the client bundle.
+    expect(src).not.toMatch(/from '\.\/db'|from '@\/lib\/db'|new PrismaClient/)
+  })
+
+  test('an unknown plan falls back to the MOST restrictive tier', () => {
+    const src = readRepo('src/lib/plan-gating.ts')
+    // Must be starter, never flat/enterprise — a typo'd plan must not unlock the
+    // biggest quotas.
+    expect(src).toMatch(/PLAN_FEATURES\[plan\] \?\? PLAN_FEATURES\.starter/)
+    expect(src).not.toMatch(/PLAN_FEATURES\[plan\] \?\? PLAN_FEATURES\.(flat|enterprise)/)
+  })
+
+  test('every creation path consults checkQuota', () => {
+    const paths: Array<[string, string, string]> = [
+      ['src/app/api/integrations/route.ts', 'maxIntegrations', 'user.plan'],
+      ['src/app/api/documents/route.ts', 'maxDocuments', 'user.plan'],
+      // accept-invite has no session: the plan must come from the ORG row, not
+      // from a caller-supplied user object.
+      ['src/app/api/auth/accept-invite/route.ts', 'maxUsers', 'org.licensePlan'],
+    ]
+    for (const [file, key, planExpr] of paths) {
+      const src = readRepo(file)
+      expect(src, `${file} must import checkQuota`).toContain('checkQuota')
+      // Assert on the INVOCATION, not on the presence of a name or a string.
+      // An earlier version of this guard only looked for 'QUOTA_EXCEEDED' and
+      // was satisfied by a disabled `if (false)` that still contained it —
+      // the guard passed while the limit was unenforced.
+      expect(src, `${file} must actually CALL checkQuota with ${key}`).toContain(
+        `checkQuota(${planExpr}, '${key}'`,
+      )
+      // A check whose result is ignored is not a check.
+      expect(src, `${file} must branch on the decision`).toMatch(/if \(!quota\.allowed\)/)
+      expect(src, `${file} must refuse with 402`).toContain('status: 402')
+    }
+  })
+
+  test('the quota decision is never hardcoded to allowed', () => {
+    // Directly pins the bypass found above: a literal `{ allowed: true }`
+    // standing in for the real predicate must not satisfy these routes.
+    for (const f of [
+      'src/app/api/integrations/route.ts',
+      'src/app/api/documents/route.ts',
+      'src/app/api/auth/accept-invite/route.ts',
+    ]) {
+      const src = readRepo(f)
+      expect(src, `${f} must not stub the quota decision`).not.toMatch(
+        /const quota\s*=\s*\{\s*allowed:\s*true/,
+      )
+    }
+  })
+
+  test('the integration quota is checked BEFORE the connection test', () => {
+    // Otherwise an over-quota create still pays a round-trip to the customer's
+    // database, and the operator sees "Connection failed" instead of the ceiling.
+    const src = readRepo('src/app/api/integrations/route.ts')
+    const quotaIdx = src.indexOf("checkQuota(user.plan, 'maxIntegrations'")
+    const connectIdx = src.indexOf('connector.fetchSchema()')
+    expect(quotaIdx).toBeGreaterThan(-1)
+    expect(connectIdx).toBeGreaterThan(-1)
+    expect(quotaIdx).toBeLessThan(connectIdx)
+  })
+
+  test('signup and register are NOT quota-gated (they create a brand-new org)', () => {
+    // Guarding these would lock a new customer out of their own first user.
+    // Pin the reasoning so a future "add the check everywhere" sweep does not
+    // break onboarding.
+    for (const f of ['src/app/api/auth/signup/route.ts', 'src/app/api/auth/register/route.ts']) {
+      const src = readRepo(f)
+      expect(src, `${f} must not gate the first user on maxUsers`).not.toMatch(/checkQuota\([^)]*'maxUsers'/)
+    }
+  })
+})

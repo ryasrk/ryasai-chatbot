@@ -11,6 +11,7 @@ import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { signSession } from '@/lib/crypto'
 import { bypassOrg } from '@/lib/prisma-tenant'
+import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
 export interface OidcConfig {
   issuer: string
@@ -244,6 +245,50 @@ export async function fetchUserInfo(accessToken: string, config: OidcConfig): Pr
   return (await res.json()) as OidcUserInfo
 }
 
+/**
+ * Which org does an SSO-provisioned user belong to?
+ *
+ * Resolution order:
+ *   1. `SSO_ORGANIZATION_ID` — explicit, required once a deployment has more
+ *      than one org (the only unambiguous answer).
+ *   2. Exactly one org in the DB — unambiguous, so accept it. This is the
+ *      normal self-hosted case and keeps a one-org install working with no
+ *      extra configuration.
+ *
+ * Anything else THROWS. Guessing would attach the user to an arbitrary tenant,
+ * which is a cross-tenant data leak — the one failure this codebase treats as
+ * unacceptable. Failing closed here means the operator sees a clear error on
+ * first SSO login instead of a silent mis-attribution.
+ */
+export async function resolveSsoOrganizationId(): Promise<string> {
+  const explicit = process.env.SSO_ORGANIZATION_ID?.trim()
+  if (explicit) {
+    const found = await bypassOrg(() =>
+      db.organization.findUnique({ where: { id: explicit }, select: { id: true } }),
+    )
+    if (!found) {
+      throw new Error(
+        `SSO_ORGANIZATION_ID is set to "${explicit}" but no such organization exists.`,
+      )
+    }
+    return explicit
+  }
+
+  const orgs = await bypassOrg(() =>
+    db.organization.findMany({ select: { id: true, name: true }, take: 2 }),
+  )
+  if (orgs.length === 0) {
+    throw new Error('SSO login attempted before any organization exists. Complete signup first.')
+  }
+  if (orgs.length > 1) {
+    throw new Error(
+      'SSO cannot determine which organization to provision into: multiple organizations exist. ' +
+        'Set SSO_ORGANIZATION_ID to the target organization id.',
+    )
+  }
+  return orgs[0].id
+}
+
 export async function getOrCreateSsoUser(userInfo: OidcUserInfo): Promise<SsoUserResult> {
   if (!userInfo.sub) throw new Error('SSO userinfo missing sub claim')
   const email = (userInfo.email ?? `sso_${userInfo.sub}@sso.local`).toLowerCase()
@@ -281,9 +326,42 @@ export async function getOrCreateSsoUser(userInfo: OidcUserInfo): Promise<SsoUse
     }
   }
 
+  // Resolve the org this IdP provisions into.
+  //
+  // ponytail: this used to be the literal string 'org-default', a leftover from
+  // the reverted single-tenant refactor. `User.organizationId` is a foreign key,
+  // so on a real multi-tenant DB that literal matched no row and create() threw
+  // an FK violation — SSO's first-time login was broken, and the failure was
+  // invisible to any test that mocked `db`.
+  //
+  // SSO is configured process-wide via env, so it carries no per-org signal.
+  // Rather than guess (which would silently attach an SSO user to the WRONG
+  // tenant — a cross-tenant leak, strictly worse than the FK error), the target
+  // org must be named explicitly. Single-org deployments set SSO_ORGANIZATION_ID
+  // or simply have exactly one org, which we resolve unambiguously.
+  const orgId = await resolveSsoOrganizationId()
+
+  // maxUsers quota — SSO auto-provisions users into an EXISTING org, so it is
+  // the same class of growth as accepting an invite and must respect the same
+  // ceiling. Without this, an org could exceed its plan limit by simply logging
+  // in via SSO, which would make the invite-path check trivially bypassable.
+  const org = await bypassOrg(() =>
+    db.organization.findUnique({
+      where: { id: orgId },
+      select: { licensePlan: true },
+    }),
+  )
+  const memberCount = await bypassOrg(() => db.user.count({ where: { organizationId: orgId } }))
+  const quota = checkQuota(org?.licensePlan, 'maxUsers', memberCount)
+  if (!quota.allowed) {
+    // Thrown, not returned: both callers are OAuth/SAML callbacks whose only
+    // recourse is to surface the message on the login screen.
+    throw new Error(quotaExceededMessage('maxUsers', quota))
+  }
+
   const created = await bypassOrg(() => db.user.create({
     data: {
-      organizationId: 'org-default',
+      organizationId: orgId,
       email,
       name,
       ssoSubject: userInfo.sub,

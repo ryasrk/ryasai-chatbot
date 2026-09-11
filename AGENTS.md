@@ -205,7 +205,33 @@ New env: `MIDTRANS_SERVER_KEY`, `NEXT_PUBLIC_MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_
 
 Still open before charging real customers:
 
-- **Plan quotas are defined but unenforced**: `PLAN_FEATURES` limits (`maxUsers`/`maxIntegrations`/`maxDocuments`) in `plan-gating.ts:25` are checked nowhere. Only 3 boolean `hasPlan` gates exist (agent dashboard, `/api/schedules`, `/api/mcp/servers`). Moot under flat pricing but breaks the moment tiers return.
+- **Plan quotas are now ENFORCED** (2026-09 audit): `checkQuota()` / `quotaFor()` /
+  `quotaExceededMessage()` in `plan-gating.ts` gate every resource-creation path —
+  `maxIntegrations` in `POST /api/integrations` (checked BEFORE the connection test, so a
+  refused create costs no round-trip to the customer DB and does not surface as
+  "Connection failed"), `maxDocuments` in `POST /api/documents` (before extraction/
+  embedding, so no embedding call is wasted), and `maxUsers` in `accept-invite` plus BOTH
+  SSO provisioning paths (`sso.ts`, `sso-saml.ts`). Signup/register are deliberately NOT
+  gated — they create a fresh org whose first user is always within quota; gating them
+  would lock a new customer out of their own account. Refusals are HTTP 402 with
+  `code: 'QUOTA_EXCEEDED'`. An unknown/null plan resolves to `starter`, the MOST
+  restrictive tier, so a typo'd plan cannot unlock the largest quotas. `invariants.test.ts`
+  pins the wiring by asserting on the actual `checkQuota(...)` invocation rather than on a
+  nearby string, and forbids a hardcoded `{ allowed: true }`; both guards were
+  negative-controlled (a disabled `if (false)` with the QUOTA_EXCEEDED string still present
+  initially slipped past a weaker version of the guard).
+  **Known limit — do not overstate**: this is a check, not a lock. Two concurrent creates
+  can both read `current = limit - 1` and overshoot by one. Acceptable for a commercial
+  boundary; if a quota ever gates something expensive or security-relevant it must be
+  re-implemented as an atomic check-and-insert.
+- **SSO provisions into an explicitly-resolved org, never a hardcoded one**:
+  `resolveSsoOrganizationId()` (`sso.ts`) uses `SSO_ORGANIZATION_ID` when set, otherwise
+  accepts the single-org case, and **throws** when several orgs exist. INCIDENT (2026-09):
+  both SSO providers wrote the literal `'org-default'`, a leftover from the reverted
+  single-tenant refactor. `User.organizationId` is a foreign key, so on a real multi-tenant
+  DB that insert threw an FK violation — first-time SSO login was simply broken, and no test
+  caught it because the `db` mock accepted any value. Guessing a tenant instead would be
+  strictly worse than the FK error (cross-tenant attribution), hence fail-closed.
 - **License-Validator deployment story** is undocumented (issue/revoke/machine-slot ops live in that other repo).
 - No trial path — deliberate choice (locked until paid); revisit if conversion suffers.
 - `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off) — set it per deployment or chat spend is uncapped.
