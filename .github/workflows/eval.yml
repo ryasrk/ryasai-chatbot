@@ -1,0 +1,100 @@
+# RAG / Text-to-SQL quality evaluation gate.
+# =============================================================================
+# ponytail: NOT a hard merge gate. These evals need a LIVE LLM (generator +
+# judge) and a seeded demo org (EVAL_ORG_ID) with indexed content — none of
+# which exist in standard CI. They run weekly + on demand against a configured
+# environment and are marked continue-on-error so a quality regression shows up
+# as a visible failed check/annotation to REVIEW, not a blocked pipeline.
+#
+# Required repo secrets/variables:
+#   EVAL_DATABASE_URL   — postgresql:// URL of the eval Postgres (pgvector),
+#                         seeded via scripts/migrate-demo-to-postgres.ts
+#   EVAL_ORG_ID         — organization id owning the eval integration/content
+#   EVAL_LLM_BASE_URL   — OpenAI-compatible endpoint for the generator LLM
+#   EVAL_LLM_KEY        — its API key
+#   EVAL_LLM_MODEL      — generator model id
+#   EVAL_JUDGE_BASE_URL / EVAL_JUDGE_KEY / EVAL_JUDGE_MODEL
+#                       — judge config; MUST differ from the generator or the
+#                         run is flagged self-judged (see benchmark/rag-eval.ts)
+# =============================================================================
+
+name: Quality Evals
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays 03:00 UTC — off-peak; results reviewed, not gating
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  rag-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true # quality signal, not a hard gate (no live LLM in CI otherwise)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: |
+          rm -rf node_modules/.prisma
+          bunx prisma generate
+
+      # ponytail: failures here are QUALITY REGRESSIONS to review — they do not
+      # block merges. Check the job summary/threshold output before bumping
+      # prompts or retrieval defaults.
+      - name: Run RAGAS RAG evaluation
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.EVAL_DATABASE_URL }}
+          EVAL_ORG_ID: ${{ secrets.EVAL_ORG_ID }}
+          LLM_BASE_URL: ${{ secrets.EVAL_LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.EVAL_LLM_KEY }}
+          LLM_MODEL: ${{ secrets.EVAL_LLM_MODEL }}
+          RAGAS_JUDGE_BASE_URL: ${{ secrets.EVAL_JUDGE_BASE_URL }}
+          RAGAS_JUDGE_KEY: ${{ secrets.EVAL_JUDGE_KEY }}
+          RAGAS_JUDGE_MODEL: ${{ secrets.EVAL_JUDGE_MODEL }}
+        run: |
+          echo "::warning::RAG eval failure = quality regression to review (not a hard gate). Requires live LLM secrets."
+          bun run rag-eval
+
+  sql-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: |
+          rm -rf node_modules/.prisma
+          bunx prisma generate
+
+      # Needs EVAL_ORG_ID to own the target integration (live DB connection).
+      - name: Run Text-to-SQL evaluation
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.EVAL_DATABASE_URL }}
+          EVAL_ORG_ID: ${{ secrets.EVAL_ORG_ID }}
+          LLM_BASE_URL: ${{ secrets.EVAL_LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.EVAL_LLM_KEY }}
+          LLM_MODEL: ${{ secrets.EVAL_LLM_MODEL }}
+        run: |
+          echo "::warning::SQL eval failure = execution-accuracy regression to review (not a hard gate)."
+          bun run sql-eval --integration "${{ secrets.EVAL_INTEGRATION_ID }}"

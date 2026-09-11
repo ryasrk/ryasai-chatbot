@@ -40,7 +40,13 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", ".opencode/**", "load/**", "observability/**", "graphify-out/**", "static_analysis_semgrep_*/**"]
+  // ponytail: `.github/skills/**` is third-party tool scaffolding (the impeccable
+  // critique system) installed per developer, not project source. It was only
+  // matched by the bare "skills" entry for a root-level dir, so eslint still
+  // walked .github/skills/ and printed a Babel deoptimisation warning on every
+  // run because impeccable/scripts/live-browser.js exceeds 500KB. Both spellings
+  // are listed so the warning stays gone wherever the tool installs itself.
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "**/skills/**", ".opencode/**", "load/**", "observability/**", "graphify-out/**", "static_analysis_semgrep_*/**"]
 }];
 
 export default eslintConfig;

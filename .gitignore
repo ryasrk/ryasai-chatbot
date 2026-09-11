@@ -100,3 +100,12 @@ tsconfig.tsbuildinfo
 # deliberately (it is the curated input, not a run artifact).
 benchmark/results/*.json
 !benchmark/results/ground-truth-failures.json
+
+# Third-party tool scaffolding (impeccable critique system). Installed locally
+# per developer, not project source: nothing under src/ or the build references
+# it, and .github/skills/impeccable/scripts/live-browser.js is a 500KB+ bundle
+# that made every lint run print a Babel deoptimisation warning.
+.github/skills/
+.github/agents/
+.github/hooks/
+.github/impeccable.json
