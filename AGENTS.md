@@ -59,7 +59,7 @@ bun run lint             # eslint (0 errors expected; warnings are pre-existing)
 bunx tsc --noEmit        # typecheck (0 errors expected)
 bun run test             # unit tests — custom per-file runner (see below)
 bun run test:integration # integration tests (need live Postgres / network)
-bun run e2e              # Playwright (5 specs / 8 tests — Postgres e2e DB, mock LLM + mock license validator)
+bun run e2e              # Playwright (7 specs / 10 tests — Postgres e2e DB, mock LLM + mock license validator)
 bun run rag-eval         # RAGAS RAG quality eval (LLM-as-judge)
 bun run sql-eval         # Text-to-SQL eval — needs EVAL_ORG_ID + --integration <id>
 bash start.sh            # Next.js + scheduler worker (seeds empty DB if empty)
@@ -77,7 +77,7 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/cognee.e2e.test.ts` is skipped unless `RUN_COGNEE_E2E=true` (needs a live cognee backend).
 - e2e mock stack: `e2e/global-setup.ts` seeds the e2e DB, starts a mock License-Validator on `:4546` (Ed25519 test keypair from `e2e-keys.ts` → `LICENSE_SIGNING_PUBLIC_KEY`) and a mock LLM on `:4545`; the app runs on `:3105` with `E2E_DATABASE_URL`. Playwright `workers: 1` (shared DB).
 - `src/lib/tenant-route-guard.test.ts` statically enforces org-context entry on every route — if it fails for a new route, add `enterWithOrg((await getActiveUser()).organizationId)` (or `bypassOrg` if genuinely cross-org).
-- 102 test files across `src/`. Every new lib file should ship with a `*.test.ts`.
+- 132 `*.test.ts` files across `src/` (129 run as unit tests; 3 integration files opt in via `bun run test:integration`). Every new lib file should ship with a `*.test.ts`.
 
 ### Pre-commit hook
 
@@ -90,11 +90,11 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 
 ## Architecture
 
-- `src/app/api/` — 93 REST routes (session auth via `getActiveUser()`, external API key auth via `requireExternalApiKey()`).
+- `src/app/api/` — 99 REST routes (session auth via `getActiveUser()`, external API key auth via `requireExternalApiKey()`).
 - `src/components/views/` — feature views registered in `src/lib/view-routing.ts` (`VIEW_KEYS`): dashboard, chat, integrations, knowledge, ai-config, prompt-tools, integration-api, security, agentic, plugins, schedules, settings. Plus sub-components (topbar, chat cards, dialogs).
 - `src/lib/` — server-only libraries. Never import `db`, `crypto`, `config`, or `session` into client components (they touch secrets).
 - `mini-services/scheduler/` — separate Bun process, BullMQ worker (repeatable jobs, no manual polling). Imports parent libs via relative paths. Disables cognee (file-lock conflict with dev server). Requires Redis.
-- `prisma/schema.prisma` — 30 models. Every model except `Organization` and `Invitation` carries `organizationId`.
+- `prisma/schema.prisma` — 31 models. Every model except `Organization` and `Invitation` carries `organizationId`.
 - `src/instrumentation.ts` — Next.js server boot (the ONLY instrumentation file — see invariants): env validation, BullMQ job worker (`startJobWorker()` — document embed/cognify jobs die in Redis without it), OTel init, plugin auto-heal, license revalidation, graceful shutdown. OTel init itself is in `src/lib/otel.ts` (optional, `OTEL_ENABLED=true`).
 - `src/lib/db.ts` — Prisma client + tenant extension. Singleton cached on `globalThis` in non-prod.
 - `src/lib/redis.ts` — two connections: `redis` for BullMQ (`maxRetriesPerRequest: null`, blocks/retries forever) and `cmd` (fails fast, used by `rateLimit()` / `checkRedisHealth()` so callers fall back to DB-based limiting). `jobQueue` = single `document-processing` queue, `type` field dispatches.
@@ -117,7 +117,7 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/smart-router.ts` — self-adjusting tool router (schema + performance + latency scoring, circuit breaker, LLM tiebreaker).
 - `src/lib/intent-pipeline.ts` — intent analysis, query rewriting, expansion, reflection, confidence.
 - `src/lib/planner.ts` — multi-step DAG planner (`planQuery`, `topoSort`, `executePlan`, `synthesizeAnswer`).
-- `src/lib/guardrails.ts` — SQL validation (rejects DML/DDL, forces `LIMIT 100`, single-statement). Hand-rolled tokenizer + scanner, NOT a real SQL parser — see "LLM → Database safety" below for the full picture.
+- `src/lib/guardrails.ts` — SQL validation (rejects DML/DDL, rejects side-effecting functions via `detectDangerousFunctions`, forces `LIMIT 100`, single-statement). Hand-rolled tokenizer + scanner, NOT a real SQL parser — see "LLM → Database safety" below for the full picture, including which layer actually blocks what.
 - `src/lib/connectors.ts` + `src/lib/real-connectors.ts` — DB connector registry (Postgres/MySQL/MSSQL/ClickHouse via the STATIC `DRIVER_LOADERS` map — never a variable-specifier `import()`; see invariants #3).
 - `src/lib/cognee.ts` — barrel over `cognee-core.ts` (settings/client cache), `cognee-memory.ts` (chat memory), `cognee-knowledge-graph.ts` (cognify/graph recall/forget). No-op unless the per-org Settings toggle is on (`COGNEE_ENABLED=false` is only a process-wide kill switch); reuses the tenant's LLM config. Datasets are per-org (`org:<id>`, `org:<id>:kb`). Recall strategies use `SUMMARIES` → `CHUNKS` → `NATURAL_LANGUAGE` and guard missing datasets via `c.datasets.has()` (see invariants #2).
 
@@ -156,13 +156,15 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 
 ### LLM → Database safety (audit-verified)
 
-**Enforced**: `guardrails.ts` — SELECT/WITH-only, mutation-keyword + injection-pattern rejection (string-literal-aware scan), single statement, LIMIT clamped/forced to `SQL_MAX_LIMIT=100` (`constants.ts`); re-checked at the execution boundary by `assertSelectOnly()` in `real-connectors.ts`. Driver-level timeouts (30s `QUERY_TIMEOUT_MS`) for pg/MySQL/MSSQL; per-integration semaphore `SQL_MAX_CONCURRENT=3` (`tool-utils.ts`, per-instance not distributed); verified TLS by default; `queryHistory` rows + audit trail (`GUARDRAIL_BLOCK` logged critical).
+**Enforced**: `guardrails.ts` — SELECT/WITH-only, mutation-keyword + injection-pattern rejection (string-literal-aware scan), **side-effecting-function denial** (`detectDangerousFunctions`: `pg_read_file`, `dblink`, `set_config`, `load_file`, `file()`, `url()`, `openrowset`, …), single statement, LIMIT clamped/forced to `SQL_MAX_LIMIT=100` (`constants.ts`); re-checked at the execution boundary by `assertSelectOnly()` + `assertNoDangerousFunctions()` in `real-connectors.ts` (shared function list — do NOT create a second copy, that divergence is what made the boundary weaker than the guard). **DB-layer read-only**: Postgres `SET TRANSACTION READ ONLY` + `SET LOCAL statement_timeout`, MySQL `SET TRANSACTION READ ONLY` / `START TRANSACTION READ ONLY`, ClickHouse `readonly=1` + `request_timeout`, MSSQL `readOnlyIntent` (see gap below). Driver-level timeouts (30s `QUERY_TIMEOUT_MS`) for pg/MySQL/MSSQL/ClickHouse; per-integration semaphore `SQL_MAX_CONCURRENT=3` (`tool-utils.ts`, per-instance not distributed); verified TLS by default; `queryHistory` rows + audit trail (`GUARDRAIL_BLOCK` logged critical).
 
 **Known gaps — do not assume these exist**:
-- **No read-only enforcement at the DB layer** (no `SET TRANSACTION READ ONLY`, no read-only role). Safety is regex-only, and the "tokenizer + AST walker" in `guardrails.ts` is hand-rolled lexical scanning, not a real SQL parser.
+- **`SET TRANSACTION READ ONLY` does NOT cover read-type side effects.** Measured on Postgres 16 with scanners bypassed: it blocks INSERT/UPDATE/DELETE/TRUNCATE/DDL, but `pg_read_file()`, `set_config()` and `pg_sleep()` still run (they are reads). Those three are handled by the function deny-list + `statement_timeout`, not by read-only mode. Do not describe read-only mode as "blocks everything".
+- **MSSQL has no per-transaction read-only mode.** `readOnlyIntent` only routes to a read replica when the server has an Availability Group; otherwise a read-write login still permits write side effects. A real fix needs an operator-granted read-only role (a customer-side DB setup step). The function deny-list covers `xp_cmdshell`/`OPENROWSET`/`BULK INSERT`/`OPENDATASOURCE`.
+- The "tokenizer + AST walker" in `guardrails.ts` is hand-rolled lexical scanning, not a real SQL parser. The deny-list is the load-bearing part for functions; the DB read-only mode is the load-bearing part for mutation.
 - **LIMIT 100 is enforced textually + by prompt disclosure only** — no row cap enforced at execution time (the synthesis prompt now tells the model to disclose truncation).
 - The SQL repair loop regenerates on guardrail/execution errors, but transient-network retry (streaming) still re-runs *identical* SQL.
-- ClickHouse `executeQuery` has **no timeout**; the streaming SQL path skips `withToolSandbox` and the SQL rate limit (both are non-streaming-only).
+- The streaming SQL path skips `withToolSandbox` and the SQL rate limit (both are non-streaming-only).
 - Integration selection fallback differs by path: non-streaming takes the oldest active integration; streaming uses keyword scoring over table/column names (`stream-preparers.ts`).
 
 ## Multi-Tenancy
@@ -174,7 +176,53 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - **RBAC**: `admin > analyst > viewer`. `requireRole(user, 'admin')` guards admin routes.
 - **Plan gating**: `starter | pro | enterprise`. `hasPlan(user.plan, 'pro')` gates premium features (`src/lib/plan-gating.ts`).
 - **License validation**: external License-Validator service (`LICENSE_VALIDATOR_URL`, default `http://localhost:9000`). Ed25519 signed responses + grace period + periodic revalidation. `getActiveUser()` checks license status and throws `LicenseError` on expiry.
+- **License enforcement covers background work too**: `getLockdownReason` (`license-client.ts`) is the single predicate for "is this org locked down"; the HTTP path reaches it via `getActiveUser()`, and the **scheduler worker calls it directly in `processJob`** before doing any work. INCIDENT (2026-09): the worker had no gate, so a locked-down org's scheduled runs kept calling the LLM and touching the DB unattended. A locked org's job is **skipped** (not retried — a bad license is permanent, and retrying burns all 3 attempts per tick), recorded as `ScheduledRunLog.status='skipped'` + a `warning` audit row, and rendered as a "Skipped" badge in the schedules view. `unreachable`-within-grace still runs. **Any new process that executes work for an org must consult `getLockdownReason`** — never re-implement the status→lockdown mapping (`invariants.test.ts` enforces both).
 - **Key files**: `src/lib/prisma-tenant.ts`, `src/lib/session.ts`, `src/lib/license-client.ts`, `src/lib/plan-gating.ts`, `src/lib/api-keys.ts`.
+
+## Sell-readiness gaps (target: ~100k IDR/month per-org subscriptions)
+
+Billing via QRIS is IMPLEMENTED (spec: `docs/superpowers/specs/2026-08-26-qris-billing-design.md`):
+Midtrans Snap checkout, flat `'flat'` plan (all features), packs 1/3/6/12 months
+(`src/lib/pricing.ts`), register-free → locked-until-paid (`licenseStatus 'unpaid'`),
+webhook-driven license issuance via the License-Validator's
+`POST /internal/licenses/generate` (X-Internal-Secret auth, in `~/ryasai/ryasai-LicenseValidator`,
+separate repo). Key pieces: `src/lib/midtrans.ts`, `src/lib/license-issue.ts`,
+`src/app/api/billing/*`, buy-license dialog, `license-expiry-reminder` scheduler job.
+New env: `MIDTRANS_SERVER_KEY`, `NEXT_PUBLIC_MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`,
+`NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION`, `LICENSE_INTERNAL_SECRET`.
+
+Still open before charging real customers:
+
+- **Plan quotas are defined but unenforced**: `PLAN_FEATURES` limits (`maxUsers`/`maxIntegrations`/`maxDocuments`) in `plan-gating.ts:25` are checked nowhere. Only 3 boolean `hasPlan` gates exist (agent dashboard, `/api/schedules`, `/api/mcp/servers`). Moot under flat pricing but breaks the moment tiers return.
+- **License-Validator deployment story** is undocumented (issue/revoke/machine-slot ops live in that other repo).
+- No trial path — deliberate choice (locked until paid); revisit if conversion suffers.
+- `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off) — set it per deployment or chat spend is uncapped.
+- Quality evals (`rag-eval`/`sql-eval`) run only via the manual/scheduled `eval.yml` workflow — no hard CI gate on answer quality.
+
+## Editable context prompts (spec: `docs/superpowers/specs/2026-08-26-editable-context-prompts-design.md`)
+
+Admins can attach free-text prompts that shape LLM answers per source:
+- `Document.contextPrompt` → injected into RAG answer synthesis (only when that doc's chunks are retrieved). Editor: Knowledge view → document "Details" dialog.
+- `Integration.contextPrompt` → injected into SQL synthesis (both the SQL-generation step and the final answer prose). Editor: Data Sources view → integration "Schema" sheet.
+- Org-wide `ragContextPrompt` (in `AppConfig.promptSettings` JSON) → every RAG answer. Editor: Prompt & Tools view.
+- Org-wide `systemPrompt` (existing, same JSON) → chat + agentic. The Prompt & Tools editor now has char counters, a default-template button, and injection explainers.
+- Per-table `IntegrationSchema.description` is admin-editable and `manualDescription`-locked: `enrichSchemaDescriptions` skips locked rows, and schema `?refresh=1` carries locked descriptions + flags across re-reflection (older code wiped them on every refresh).
+
+Injection helper: `buildSourceGuidance()` (`src/lib/source-guidance.ts`) — budget-capped (2000 chars), preserves retrieval order, truncates with an ellipsis marker, notes omitted prompts. RAG branch prepends the block to the evidence `context` (not as a system message); SQL branch appends `Context guidance:` to the effective prefix for both `generateSql` and `generateAnswer`. Empty prompts are no-ops. All writes are admin-only + audit-logged.
+
+Post-audit hardening now in place: billing webhook uses a conditional settlement claim
+(race-safe) + hourly `order-reconcile` sweep for settled-but-unissued orders +
+gross_amount validation; env validation is fatal for missing DATABASE_URL/
+ENCRYPTION_SECRET_KEY and prints a consolidated degradation warning block otherwise;
+install.sh requires an operator-supplied LICENSE_SIGNING_PUBLIC_KEY; web-fetch follows
+redirects manually with per-hop SSRF checks; chat send has org rate limit
+(`CHAT_RATE_LIMIT_PER_MIN`) + optional spend budget; `/api/metrics` is token/admin-gated;
+document jobs have retry (`POST /api/documents/[id]/reprocess` + UI button); purchase
+flow is e2e-tested via mock Midtrans (:4547, `MIDTRANS_BASE_URL` test seam).
+
+**Remove before shipping a customer image:**
+- Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables, `test-data/` PDFs), dev artifacts (`dev.log`, `README.md.bak`), and stale docs (`docs/adr/0001-single-tenant-architecture.md` contradicts the multi-tenant code; PRODUCT.md still says "single-tenant" and "Indonesian UI" while the codebase convention is English strings).
+- `helm/` chart lags docker-compose — don't point customers at it until reconciled.
 
 ## Conventions
 

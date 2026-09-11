@@ -7,6 +7,7 @@ import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { traceLlmCall } from '@/lib/observability'
 import { db } from '@/lib/db'
 import { getOrgContext } from '@/lib/prisma-tenant'
+import { logSwallowed } from '@/lib/logger'
 import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BACKOFF_BASE_MS,
@@ -64,7 +65,7 @@ export function logLlmUsage(
         latencyMs: latencyMs ?? null,
       },
     })
-    .catch(() => {})
+    .catch(logSwallowed('llm-client: llmUsageLog.create'))
 }
 
 // ---------------------------------------------------------------------------

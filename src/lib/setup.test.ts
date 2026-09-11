@@ -2,6 +2,8 @@ import { describe, expect, it, mock } from 'bun:test'
 
 let appConfigRow: { setupCompleted: boolean } | null = null
 let appConfigCalls: unknown[] = []
+let appConfigCount = 0
+let countCalls: unknown[] = []
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -9,6 +11,10 @@ mock.module('@/lib/db', () => ({
       findFirst: async (args: unknown) => {
         appConfigCalls.push(args)
         return appConfigRow
+      },
+      count: async (args: unknown) => {
+        countCalls.push(args)
+        return appConfigCount
       },
     },
     user: {
@@ -58,13 +64,59 @@ describe('getSetupState — org scoping', () => {
     expect(state.setupCompleted).toBe(false)
   })
 
-  it('does not read any AppConfig row and reports setupCompleted:true pre-login', async () => {
+  it('does not read any single AppConfig row pre-login', async () => {
     // appConfigRow simulates some OTHER org's still-incomplete wizard — with no
-    // organizationId (no session yet), getSetupState must not touch it at all.
+    // organizationId (no session yet), getSetupState must not read a single row:
+    // row ordering would make the answer depend on which org is physically first.
     appConfigRow = { setupCompleted: false }
     appConfigCalls = []
-    const state = await getSetupState(db as never)
+    await getSetupState(db as never)
     expect(appConfigCalls.length).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fresh-install gate
+// ---------------------------------------------------------------------------
+// INCIDENT (2026-09): the pre-login branch used to hardcode
+// `setupCompleted: true`. On a genuinely fresh install — 0 users, 0 orgs, 0
+// AppConfig rows, exactly what `install.sh` produces before the first signup —
+// that told the client setup was already done, so page.tsx skipped its whole
+// `if (!setup.setupCompleted)` signup block and rendered the app shell with no
+// session. A brand-new customer never received a Sign Up form. Reproduced
+// against a clean `prisma db push` database.
+//
+// The previous test asserted the buggy value directly ("reports
+// setupCompleted:true pre-login"), which is why it shipped. The contract is
+// now: the anonymous answer means "has ANY setup EVER been completed?", so it
+// must be false on an empty database.
+describe('getSetupState — fresh install must reach signup', () => {
+  it('reports setupCompleted:false when no org has completed setup', async () => {
+    appConfigCount = 0
+    countCalls = []
+    const state = await getSetupState(db as never)
+    expect(state.setupCompleted).toBe(false)
+    // count() cannot be skewed by row ordering — the original motive for the hardcode.
+    expect(countCalls[0]).toMatchObject({ where: { setupCompleted: true } })
+  })
+
+  it('reports setupCompleted:true once any org has completed setup', async () => {
+    appConfigCount = 1
+    const state = await getSetupState(db as never)
     expect(state.setupCompleted).toBe(true)
+  })
+
+  it('still reports hasAdmin:false on an empty database', async () => {
+    appConfigCount = 0
+    const state = await getSetupState(db as never)
+    // page.tsx branches on this to choose signup over login.
+    expect(state.hasAdmin).toBe(false)
+  })
+
+  it('does not consult the anonymous count when an org is known', async () => {
+    appConfigRow = { setupCompleted: true }
+    countCalls = []
+    await getSetupState(db as never, 'org-a')
+    expect(countCalls.length).toBe(0)
   })
 })

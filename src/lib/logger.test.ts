@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
-import { logger, scopedLogger } from './logger'
+import { logger, scopedLogger, logSwallowed } from './logger'
 
 const originalConsole = { ...console }
 const logs: string[] = []
@@ -87,5 +87,75 @@ describe('scopedLogger — component prefix', () => {
     const parsed = JSON.parse(logs[0])
     expect(parsed.level).toBe('info')
     expect(parsed.component).toBe('verify-level')
+  })
+})
+
+describe('logSwallowed — never-throw catch handler', () => {
+  test('logs one error entry with the right component', () => {
+    logSwallowed('planner: toolRun.create')(new Error('insert failed'))
+
+    expect(logs).toHaveLength(1)
+    const parsed = JSON.parse(logs[0])
+    expect(parsed.level).toBe('error')
+    expect(parsed.component).toBe('planner: toolRun.create')
+    expect(parsed.msg).toBe('swallowed error')
+    expect(parsed.err).toBe('insert failed')
+  })
+
+  test('works as a direct .catch() argument', async () => {
+    await Promise.reject(new Error('fire and forget failed'))
+      .catch(logSwallowed('llm-client: llmUsageLog.create'))
+
+    const parsed = JSON.parse(logs[0])
+    expect(parsed.component).toBe('llm-client: llmUsageLog.create')
+    expect(parsed.err).toBe('fire and forget failed')
+  })
+
+  test('non-Error values do not throw and still log', () => {
+    const handler = logSwallowed('non-error')
+
+    for (const value of ['boom', undefined, null, { a: 1 }]) {
+      expect(() => handler(value)).not.toThrow()
+    }
+
+    expect(logs).toHaveLength(4)
+    expect(logs.map((l) => JSON.parse(l).err)).toEqual([
+      'boom',
+      'undefined',
+      'null',
+      '[object Object]',
+    ])
+    for (const line of logs) {
+      expect(JSON.parse(line).level).toBe('error')
+      expect(JSON.parse(line).component).toBe('non-error')
+    }
+  })
+
+  test('does not throw when console.error is replaced by a throwing stub', () => {
+    console.error = () => {
+      throw new Error('console exploded')
+    }
+
+    const handler = logSwallowed('throwing-console')
+    expect(() => handler(new Error('original failure'))).not.toThrow()
+    expect(() => handler('boom')).not.toThrow()
+  })
+
+  test('truncates a very long stack to <= 500 chars', () => {
+    const err = new Error('deep')
+    err.stack = `Error: deep\n${'at frame()\n'.repeat(500)}`
+
+    logSwallowed('long-stack')(err)
+
+    const parsed = JSON.parse(logs[0])
+    expect(parsed.stack.length).toBe(500)
+    expect(parsed.err).toBe('deep')
+  })
+
+  test('omits stack for non-Error values', () => {
+    logSwallowed('no-stack')({ message: 'not an error' })
+    const parsed = JSON.parse(logs[0])
+    expect(parsed.stack).toBeUndefined()
+    expect(parsed.err).toBe('[object Object]')
   })
 })

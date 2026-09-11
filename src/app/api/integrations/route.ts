@@ -14,6 +14,7 @@ import { encryptConfig } from '@/lib/crypto'
 import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
+import { logSwallowed } from '@/lib/logger'
 
 const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLICKHOUSE', 'SUPABASE', 'NEON', 'PLANETSCALE', 'TIDB', 'COCKROACHDB'])
 
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
 
     // Cache schema rows
     if (reflectedTables.length > 0) {
-      await db.integrationSchema.deleteMany({ where: { integrationId: integration.id } }).catch(() => {})
+      await db.integrationSchema.deleteMany({ where: { integrationId: integration.id } }).catch(logSwallowed('integrations: integrationSchema.deleteMany (create)'))
       await db.integrationSchema.createMany({
         data: reflectedTables.map((t) => ({
           organizationId: user.organizationId,
@@ -180,7 +181,7 @@ export async function POST(req: NextRequest) {
       invalidateSourceEmbeddingCache()
 
       // Generate LLM descriptions for each table (fire-and-forget, non-blocking)
-      enrichSchemaDescriptions(integration.id, integration.name).catch(() => {})
+      enrichSchemaDescriptions(integration.id, integration.name).catch(logSwallowed('integrations: enrichSchemaDescriptions'))
     }
 
     await db.integration.update({

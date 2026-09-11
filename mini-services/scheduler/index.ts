@@ -27,9 +27,10 @@ import { db } from '../../src/lib/db'
 import { runNonStreamingChatCompletion } from '../../src/lib/tool-router'
 import { sendNotificationWithRetry, type NotificationResult } from '../../src/lib/notifications'
 import { serverConfig } from '../../src/lib/config'
-import { syncAllSchedules, type ScheduleJob, type ScheduleJobData } from '../../src/lib/scheduler-queue'
+import { syncAllSchedules, ensureLicenseReminderRepeatable, LICENSE_REMINDER_JOB_NAME, type ScheduleJob, type ScheduleJobData } from '../../src/lib/scheduler-queue'
 import { bypassOrg, enterWithOrg } from '../../src/lib/prisma-tenant'
-import { validateLicense, generateMachineId } from '../../src/lib/license-client'
+import { validateLicense, generateMachineId, getLockdownReason } from '../../src/lib/license-client'
+import { runLicenseExpiryReminders } from '../../src/lib/license-reminder'
 
 const RUN_TIMEOUT_MS = 60_000
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -128,6 +129,89 @@ async function processJob(job: ScheduleJob): Promise<void> {
   }
   const orgId = scheduledRun.organizationId
   enterWithOrg(orgId)
+
+  // ---------------------------------------------------------------------------
+  // LICENSE GATE — scheduled runs must honour the same lockdown as the web app.
+  // ---------------------------------------------------------------------------
+  // INCIDENT (2026-09): every HTTP route is gated by `getActiveUser()`, which
+  // throws on a locked-down org. This worker process never consults licenses
+  // before executing, so an org with `licenseStatus` expired/suspended/unpaid
+  // kept consuming LLM tokens and database access indefinitely, unattended.
+  // Verified: with the org locked down the worker still executed the job and
+  // wrote ScheduledRunLog rows.
+  //
+  // This is deliberately the SAME predicate the web app uses
+  // (`getLockdownReason`), not a re-implementation — a second copy of license
+  // logic is how the SQL guardrail boundary drifted weaker than its guard.
+  // `isWithinGracePeriod` is handled inside getLockdownReason, so an
+  // 'unreachable' org inside its 7-day grace window still runs.
+  //
+  // The job is NOT retried: a locked license is a permanent condition, and
+  // retrying would burn all 3 BullMQ attempts per scheduled tick. A `skipped`
+  // log row keeps the pause visible in the run history / export.
+  const org = await bypassOrg(() =>
+    db.organization.findUnique({
+      where: { id: orgId },
+      select: { licenseStatus: true, licenseValidatedAt: true },
+    }),
+  )
+  const lockdownReason = getLockdownReason(
+    org?.licenseStatus ?? 'invalid',
+    org?.licenseValidatedAt ?? null,
+  )
+  if (lockdownReason) {
+    console.warn(
+      `[scheduler] org ${orgId} is locked down (${lockdownReason}) — skipping "${name}"`,
+    )
+    // Record the skip so operators can see WHY the schedule went quiet.
+    try {
+      await db.scheduledRunLog.create({
+        data: {
+          organizationId: orgId,
+          scheduledRunId: runId,
+          status: 'skipped',
+          error: `License ${lockdownReason} — scheduled run skipped. Renew the license to resume.`,
+          latencyMs: 0,
+        },
+      })
+    } catch (e) {
+      console.error(`[scheduler] failed to log license skip for "${name}":`, e)
+    }
+    // Mark lastResult so the UI shows a reason rather than a stale success.
+    try {
+      await db.scheduledRun.update({
+        where: { id: runId },
+        data: {
+          lastRunAt: now,
+          lastResult: JSON.stringify({
+            skipped: true,
+            reason: `license_${lockdownReason}`,
+          }),
+        },
+      })
+    } catch (e) {
+      console.error(`[scheduler] failed to mark license skip for "${name}":`, e)
+    }
+    try {
+      await db.auditLog.create({
+        data: {
+          organizationId: orgId,
+          userId: null,
+          action: 'SCHEDULED_RUN',
+          severity: 'warning',
+          detail: JSON.stringify({
+            id: runId,
+            name,
+            skipped: true,
+            reason: `license_${lockdownReason}`,
+          }),
+        },
+      })
+    } catch (e) {
+      console.error(`[scheduler] failed to audit license skip for "${name}":`, e)
+    }
+    return
+  }
 
   const admin = await db.user.findFirst({
     where: { isActive: true },
@@ -418,6 +502,16 @@ async function bootstrap(): Promise<void> {
     console.warn('[scheduler] failed to sync schedules on startup (non-fatal):', e)
   }
 
+  // Daily license-expiry reminder — platform-owned repeatable job on the same
+  // queue. Idempotent: re-ensures pattern/tz on every boot (and the periodic
+  // re-sync heals it after a Redis restart, since syncAllSchedules never prunes it).
+  try {
+    await ensureLicenseReminderRepeatable()
+    console.log(`[scheduler] license-expiry reminder job ensured ("${LICENSE_REMINDER_JOB_NAME}")`)
+  } catch (e) {
+    console.warn('[scheduler] failed to ensure license reminder job (non-fatal):', e)
+  }
+
   // ponytail: housekeeping runs on fixed intervals, independent of whether any
   // scheduled job actually fires that day (previously cleanup + license
   // validation only ran when a schedule tick happened to land).
@@ -435,6 +529,20 @@ async function bootstrap(): Promise<void> {
   _worker = new Worker<ScheduleJobData>(
     'scheduled-runs',
     async (job) => {
+      // Platform-owned license-expiry reminder — branch on job name BEFORE the
+      // scheduled-run path (its payload is not a ScheduleJobData run).
+      if (job.name === LICENSE_REMINDER_JOB_NAME) {
+        try {
+          const summary = await runLicenseExpiryReminders()
+          console.log(
+            `[scheduler] license-expiry reminder: checked ${summary.checked}, notified ${summary.notified}, ` +
+            `no-channel ${summary.skippedNoChannel}, failed ${summary.failed}`,
+          )
+        } catch (e) {
+          console.error('[scheduler] license-expiry reminder failed:', e)
+        }
+        return
+      }
       // ponytail: per-fire-tick dedup marker. A crashed/stalled job is
       // re-queued with the same job.id; SET NX makes the second start a no-op.
       // Deleted on settle so BullMQ retries (same job.id) can re-acquire.

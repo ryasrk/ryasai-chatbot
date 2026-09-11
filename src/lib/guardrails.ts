@@ -1,8 +1,9 @@
 /**
- * 4.3 — Guardrails: AST Anti-SQL-Injection & Mutation Guard
+ * 4.3 — Guardrails: SQL Anti-Injection & Mutation Guard
  * ----------------------------------------------------------------------------
- * Adapted from the spec's Python `sqlglot`-based validator. Because we run on
- * Node/Next.js, we implement an equivalent tokenizer + AST walker in pure TS.
+ * Adapted from the spec's Python `sqlglot`-based validator. This is a
+ * hand-rolled lexical scanner (tokenizer + keyword walk) — deliberately NOT a
+ * real SQL parser, so treat it as a fast-reject filter, not a security proof.
  *
  * Enforced rules (mirrors spec §4.3):
  *   1. REJECT all DML/DDL mutation statements: DELETE, UPDATE, INSERT, DROP,
@@ -10,8 +11,15 @@
  *   2. REJECT multiple statements separated by `;` after the first (injection guard).
  *   3. REJECT dangerous comments / hidden payloads (`--`, `/*`, `xp_`, `sp_`, `;`).
  *   4. REJECT `INTO`, `OUTPUT`, `BULK`, `LOAD_FILE`, `UNION` with system tables.
- *   5. Force a LIMIT 100 safety cap if no LIMIT is present.
- *   6. Whitelist only `SELECT` (with optional WITH/CTE) as the leading keyword.
+ *   5. REJECT host-file / outbound-network FUNCTIONS (pg_read_file, dblink,
+ *      file(), …) — a keyword scan cannot see these, and they were the hole
+ *      that let `SELECT pg_read_file('/etc/passwd')` return host file content.
+ *   6. Force a LIMIT 100 safety cap if no LIMIT is present.
+ *   7. Whitelist only `SELECT` (with optional WITH/CTE) as the leading keyword.
+ *
+ * The real security boundary is the DATABASE's own read-only mode, applied in
+ * `real-connectors.ts` (`SET TRANSACTION READ ONLY`, ClickHouse `readonly=1`).
+ * Rules here must never be the only thing standing between the LLM and data.
  */
 import { SQL_MAX_LIMIT } from '@/lib/constants'
 import { inc } from './metrics'
@@ -50,6 +58,82 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\battach\s+database\b/i, label: 'SQLite attach database' },
 ]
 
+/**
+ * Side-effecting server functions that a leading-`SELECT` keyword check cannot
+ * see. These read/write host files or open outbound connections from the DB
+ * server, so they bypass "no mutation keywords" entirely.
+ *
+ * INCIDENT (2026-09): `SELECT pg_read_file('/etc/passwd')` passed every rule
+ * above and returned the database host's `/etc/passwd`. Same for `pg_sleep`,
+ * `set_config`, `dblink`, `lo_import`. This list — plus the DB-layer read-only
+ * mode in `real-connectors.ts` — closes that class.
+ *
+ * Scanned against string-masked SQL so a literal such as
+ * `WHERE note = 'pg_read_file('` is not a false positive.
+ */
+const DANGEROUS_FUNCTIONS: Array<{ re: RegExp; label: string }> = [
+  // Postgres
+  { re: /\bpg_read_(file|binary_file)\s*\(/i, label: 'pg_read_file' },
+  { re: /\bpg_write_file\s*\(/i, label: 'pg_write_file' },
+  { re: /\bpg_ls_dir\s*\(/i, label: 'pg_ls_dir' },
+  { re: /\bpg_stat_file\s*\(/i, label: 'pg_stat_file' },
+  { re: /\blo_(import|export)\s*\(/i, label: 'lo_import/lo_export' },
+  { re: /\bdblink(_connect)?\s*\(/i, label: 'dblink' },
+  { re: /\bpg_sleep(_for|_until)?\s*\(/i, label: 'pg_sleep' },
+  { re: /\bset_config\s*\(/i, label: 'set_config' },
+  { re: /\bpostgres_fdw\b/i, label: 'postgres_fdw' },
+  // MySQL
+  { re: /\bload_file\s*\(/i, label: 'load_file' },
+  { re: /\bsleep\s*\(/i, label: 'sleep' },
+  { re: /\bbenchmark\s*\(/i, label: 'benchmark' },
+  // MSSQL
+  { re: /\bopenrowset\s*\(/i, label: 'openrowset' },
+  { re: /\bopendatasource\s*\(/i, label: 'opendatasource' },
+  { re: /\bbulk\s+insert\b/i, label: 'bulk insert' },
+  // ClickHouse table functions
+  { re: /\b(url|file|s3|hdfs|remote|remoteSecure|mysql|postgresql|jdbc|odbc|input)\s*\(/i, label: 'ClickHouse table function' },
+]
+
+/**
+ * Replace the CONTENT of quoted literals with filler, preserving offsets and
+ * quote structure, so regex scans cannot match text inside a string literal.
+ */
+function maskStringLiterals(sql: string): string {
+  let out = ''
+  let i = 0
+  while (i < sql.length) {
+    const ch = sql[i]
+    if (ch === "'" || ch === '"') {
+      out += ch
+      i++
+      while (i < sql.length) {
+        if (sql[i] === ch) {
+          if (sql[i + 1] === ch) { out += '__'; i += 2; continue }
+          out += ch
+          i++
+          break
+        }
+        out += '_'
+        i++
+      }
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
+/** Names of side-effecting functions present in `sql` (string-literal-aware). */
+export function detectDangerousFunctions(sql: string): string[] {
+  const masked = maskStringLiterals(sql)
+  const found: string[] = []
+  for (const { re, label } of DANGEROUS_FUNCTIONS) {
+    if (re.test(masked)) found.push(label)
+  }
+  return found
+}
+
 /** Tokenise SQL preserving keywords, identifiers, string literals. */
 function tokenize(sql: string): string[] {
   // Strip trailing semicolon; we explicitly disallow internal semicolons elsewhere.
@@ -73,6 +157,11 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
     if (re.test(generatedSql)) {
       detected.push(label)
     }
+  }
+  // 1b. Side-effecting function scan (pg_read_file, dblink, file(), …). Runs
+  // against masked SQL so literals can't produce false positives or hide a call.
+  for (const label of detectDangerousFunctions(generatedSql)) {
+    detected.push(label)
   }
   if (detected.length > 0) {
     inc('guardrail_blocks_total', { type: 'dangerous_pattern' })

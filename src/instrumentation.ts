@@ -3,18 +3,37 @@
 // Guarded to nodejs runtime (Edge can't run BullMQ). Handlers register at module load.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
-  const { validateEnv } = await import('@/lib/env-schema')
+  // ponytail: E2E_TEST_MODE unlocks the localhost SSRF hatch for the prod-build
+  // e2e suite (see playwright.prod.config.ts). It must NEVER be on in a customer
+  // deployment: it disables the LLM/REST SSRF guard. The predicate lives in
+  // env-schema.ts as a pure function so it can be unit-tested directly — a test
+  // that re-derived the logic could drift from what actually runs at boot.
+  const { shouldRefuseBootForTestMode, validateEnv } = await import('@/lib/env-schema')
+  if (shouldRefuseBootForTestMode()) {
+    console.error('='.repeat(68))
+    console.error('[instrumentation] FATAL: E2E_TEST_MODE=true on what looks like a deployment.')
+    console.error('E2E_TEST_MODE disables the SSRF guard and must never reach production.')
+    console.error('Remove it from the deployment environment.')
+    console.error('='.repeat(68))
+    process.exit(1)
+  }
+  // ponytail: this catch MUST exit. It once logged-and-continued, letting a
+  // prod container boot without required env and fail every request instead.
   try {
     validateEnv()
   } catch (e) {
-    console.error('[instrumentation] Env validation failed:', e instanceof Error ? e.message : e)
+    console.error('='.repeat(68))
+    console.error('[instrumentation] FATAL: environment validation failed.')
+    console.error(e instanceof Error ? e.message : e)
+    console.error('Fix .env (see .env.example) and restart the server.')
+    console.error('='.repeat(68))
+    process.exit(1)
   }
   const { startJobWorker } = await import('@/lib/job-processor')
   const docWorker = startJobWorker()
 
   const { initOtel } = await import('@/lib/otel')
   await initOtel()
-
   const { setupGracefulShutdown } = await import('@/lib/graceful-shutdown')
   const { db } = await import('@/lib/db')
   const { disconnectRedis } = await import('@/lib/redis')

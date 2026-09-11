@@ -17,6 +17,7 @@ import {
   resetClientCache,
 } from './cognee-core'
 import { db } from '@/lib/db'
+import { logSwallowed } from '@/lib/logger'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -362,7 +363,7 @@ export async function forgetAll(): Promise<boolean> {
     // Reset all document cognify statuses
     await db.document.updateMany({
       data: { cognifyStatus: null },
-    }).catch(() => {})
+    }).catch(logSwallowed('cognee: document.updateMany (forgetAll)'))
     return true
   } catch (err) {
     console.warn('[cognee] forget failed:', err)
@@ -381,7 +382,7 @@ export async function forgetKnowledgeGraph(): Promise<boolean> {
     await db.document.updateMany({
       where: { cognifyStatus: { not: null } },
       data: { cognifyStatus: null },
-    }).catch(() => {})
+    }).catch(logSwallowed('cognee: document.updateMany (forgetKnowledgeGraph)'))
     return true
   } catch (err) {
     console.warn('[cognee] forgetKnowledgeGraph failed:', err)
@@ -403,7 +404,7 @@ export async function resetCognee(): Promise<boolean> {
     // Reset all document cognify statuses
     await db.document.updateMany({
       data: { cognifyStatus: null },
-    }).catch(() => {})
+    }).catch(logSwallowed('cognee: document.updateMany (resetCognee)'))
     return true
   } catch (err) {
     console.warn('[cognee] reset failed:', err)

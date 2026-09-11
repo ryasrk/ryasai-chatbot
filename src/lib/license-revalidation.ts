@@ -4,7 +4,7 @@
  */
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
-import { validateLicense, generateMachineId, licenseStatusFromResult, REVALIDATION_INTERVAL_MS } from '@/lib/license-client'
+import { validateLicense, generateMachineId, licenseStatusFromResult, licenseUpdateFromResult, REVALIDATION_INTERVAL_MS } from '@/lib/license-client'
 import { scopedLogger } from '@/lib/logger'
 
 const log = scopedLogger('license-reval')
@@ -38,12 +38,11 @@ async function runRevalidation() {
         await bypassOrg(() =>
           db.organization.update({
             where: { id: org.id },
-            data: {
-              licenseStatus: newStatus,
-              licensePlan: result.signatureVerified ? result.plan : undefined,
-              licenseValidatedAt: result.signatureVerified && result.valid ? new Date() : undefined,
-              licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : undefined,
-            },
+            // ponytail: planFallback keeps a paid plan from being cleared when
+            // the signed response omits `plan` — previously this site used a
+            // bare `result.plan` while license-issue used `?? 'flat'`, so the
+            // two paths disagreed on the same response.
+            data: licenseUpdateFromResult(result, { planFallback: 'flat' }),
           }),
         )
         log.info(`Org ${org.slug}: ${newStatus}`)

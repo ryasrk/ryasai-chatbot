@@ -89,8 +89,22 @@ jobs:
 
       # The app build itself is validated by build-images.yml; this job proves
       # the e2e DB + mock stack works from a clean checkout.
-      - name: Run e2e suite
+      - name: Run e2e suite (dev server)
         run: bun run e2e
+
+      # ponytail: e2e against the PRODUCTION artifact. Until this existed the
+      # only e2e coverage was `next dev`, so the thing we actually ship — the
+      # standalone build, with minified client code, prerendered server
+      # components, real security headers, and outputFileTracing deciding which
+      # packages exist at runtime — was never exercised. Every blocker found in
+      # the 2026-09 audit surfaced by changing the environment, never by
+      # re-reading code. A missing DB driver or a hydration mismatch is
+      # invisible in dev and fatal here.
+      - name: Build production bundle
+        run: bun run build
+
+      - name: Run e2e suite (production build)
+        run: bunx playwright test -c playwright.prod.config.ts
 
       - name: Upload trace on failure
         if: failure()

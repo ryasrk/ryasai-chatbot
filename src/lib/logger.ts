@@ -35,6 +35,35 @@ export const logger = {
   error: (msg: string, meta?: Record<string, unknown>) => log('error', msg, meta),
 }
 
+/**
+ * Build a `.catch()` handler that records the error instead of discarding it.
+ * ----------------------------------------------------------------------------
+ * ponytail: this replaces silent `.catch(() => {})` on fire-and-forget writes
+ * (usage logs, request logs, schema cache resets). Those swallows were chosen
+ * deliberately — a failed observability write must never fail the user request
+ * — but they were undebuggable: when ToolRun/LlmUsageLog/ApiRequestLog rows
+ * stopped appearing nobody could tell whether the insert threw or never ran.
+ *
+ * ponytail: this handler must NEVER throw. A catch handler that throws turns
+ * the original rejection into an unhandled rejection and can crash the process
+ * under Bun — strictly worse than the silent swallow it replaces. Hence the
+ * whole body is wrapped, and console output is expected to succeed silently.
+ *
+ * Usage: `db.toolRun.create(...).catch(logSwallowed('planner: toolRun.create'))`
+ */
+export function logSwallowed(component: string): (e: unknown) => void {
+  return (e: unknown): void => {
+    try {
+      const message = e instanceof Error ? e.message : String(e)
+      const stack = e instanceof Error && e.stack ? e.stack.slice(0, 500) : undefined
+      scopedLogger(component).error('swallowed error', { err: message, stack })
+    } catch {
+      // ponytail: intentionally empty — see never-throw above. Nothing left to
+      // do if even logging fails (e.g. a throwing console stub in tests).
+    }
+  }
+}
+
 /** Scoped logger — prefixes all messages with a component name. */
 export function scopedLogger(component: string) {
   return {

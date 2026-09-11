@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   licenseStatusFromResult,
+  licenseUpdateFromResult,
   getLockdownReason,
   isWithinGracePeriod,
   generateMachineId,
@@ -75,6 +76,10 @@ describe('getLockdownReason', () => {
     expect(getLockdownReason('suspended', null)).toBe('deactivated')
   })
 
+  test('unpaid → unpaid (licenseless signup, locked until purchase)', () => {
+    expect(getLockdownReason('unpaid', null)).toBe('unpaid')
+  })
+
   test('unreachable + within grace → null', () => {
     const recent = new Date(Date.now() - 60_000)
     expect(getLockdownReason('unreachable', recent)).toBeNull()
@@ -120,5 +125,85 @@ describe('generateMachineId', () => {
 
   test('different slug → different id', () => {
     expect(generateMachineId('acme')).not.toBe(generateMachineId('globex'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// licenseUpdateFromResult
+// ---------------------------------------------------------------------------
+// INCIDENT (2026-09): this four-field update payload was copy-pasted across
+// four call sites (periodic revalidation, post-issue validation, admin
+// revalidate route, retry route). They had already drifted — license-issue.ts
+// wrote `result.plan ?? 'flat'`, the other three wrote bare `result.plan` — so
+// the same signed response produced different DB writes depending on which code
+// path handled it. These tests pin the two rules the helper now owns.
+describe('licenseUpdateFromResult — verified+valid is the only path that advances state', () => {
+  test('verified + valid sets status, plan, validatedAt and expiry', () => {
+    const out = licenseUpdateFromResult(
+      result({ valid: true, signatureVerified: true, plan: 'flat', expiresAt: '2030-01-01T00:00:00.000Z' }),
+    )
+    expect(out.licenseStatus).toBe('valid')
+    expect(out.licensePlan).toBe('flat')
+    expect(out.licenseValidatedAt).toBeInstanceOf(Date)
+    expect(out.licenseExpiresAt).toBeInstanceOf(Date)
+  })
+
+  test('unsigned/unreachable NEVER advances licenseValidatedAt', () => {
+    // Advancing validatedAt here would silence the 7-day grace window and lock
+    // out a paying customer during a validator outage.
+    const out = licenseUpdateFromResult(result({ message: 'timeout' }))
+    expect(out.licenseStatus).toBe('unreachable')
+    expect(out.licenseValidatedAt).toBeUndefined()
+  })
+
+  test('unsigned/unreachable NEVER wipes a known expiry', () => {
+    // A network blip must not erase expiry metadata — a later grace check would
+    // then see no expiry at all.
+    const out = licenseUpdateFromResult(result({ message: 'timeout', expiresAt: '2030-01-01T00:00:00.000Z' }))
+    expect(out.licenseExpiresAt).toBeUndefined()
+    expect(out.licensePlan).toBeUndefined()
+  })
+
+  test('signed-but-expired does not advance validatedAt but keeps expiry', () => {
+    const out = licenseUpdateFromResult(
+      result({ valid: false, signatureVerified: true, message: 'license expired', expiresAt: '2020-01-01T00:00:00.000Z' }),
+    )
+    expect(out.licenseStatus).toBe('expired')
+    expect(out.licenseValidatedAt).toBeUndefined()
+    expect(out.licenseExpiresAt).toBeInstanceOf(Date)
+  })
+
+  test('planFallback applies ONLY when the signed response omits a plan', () => {
+    // The drift that motivated the helper: post-issue validation must not lose
+    // the plan, and an admin revalidate must not invent one.
+    const noPlan = licenseUpdateFromResult(
+      result({ valid: true, signatureVerified: true, plan: null }),
+      { planFallback: 'flat' },
+    )
+    expect(noPlan.licensePlan).toBe('flat')
+
+    const withPlan = licenseUpdateFromResult(
+      result({ valid: true, signatureVerified: true, plan: 'enterprise' }),
+      { planFallback: 'flat' },
+    )
+    expect(withPlan.licensePlan).toBe('enterprise')
+  })
+
+  test('unsigned responses never write a plan, even with a fallback', () => {
+    // An unsigned response is untrusted — it must not be able to set a plan.
+    const out = licenseUpdateFromResult(result({ plan: 'enterprise' }), { planFallback: 'flat' })
+    expect(out.licensePlan).toBeUndefined()
+  })
+
+  test('no planFallback leaves plan untouched when response omits it', () => {
+    const out = licenseUpdateFromResult(result({ valid: true, signatureVerified: true, plan: null }))
+    expect(out.licensePlan).toBeUndefined()
+  })
+
+  test('undefined fields mean "leave previous value" for Prisma update', () => {
+    // Prisma ignores `undefined` in update data, which is what makes the
+    // conditional spreads safe. Assert we emit undefined, not null.
+    const out = licenseUpdateFromResult(result({ message: 'blip' }))
+    expect(Object.values(out).filter((v) => v === null)).toHaveLength(0)
   })
 })

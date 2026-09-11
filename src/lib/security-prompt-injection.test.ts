@@ -62,10 +62,25 @@ describe('Prompt Injection — system prompt isolation', () => {
       expect(result.ok).toBe(false)
     })
 
-    test('LLM generates time-based blind injection → guardrail catches stacked query', () => {
-      const llmOutput = "SELECT * FROM users WHERE IF(1=1, SLEEP(5), 0)"
+    test('LLM generates time-based blind injection → guardrail catches it', () => {
+      // Audit fix (2026-09): this previously asserted `toBe(true)` — the test
+      // ENCODED the vulnerability rather than catching it. `SLEEP()` is a
+      // side-effecting function smuggled through a valid leading `SELECT`, so a
+      // mutation-keyword scan cannot see it. The function deny-list now blocks
+      // it; the test name always said "guardrail catches it", and that is now
+      // true of the assertion too.
+      const llmOutput = 'SELECT * FROM users WHERE IF(1=1, SLEEP(5), 0)'
       const result = validateAndSanitizeLlmSql(llmOutput)
-      expect(result.ok).toBe(true)
+      expect(result.ok).toBe(false)
+      expect(result.reason).toMatch(/dangerous pattern/i)
+    })
+
+    test('LLM generates host-file read → guardrail catches it', () => {
+      // Reproduces the reported finding: this returned the DB host's
+      // /etc/passwd through POST /api/integrations/[id]/query.
+      const result = validateAndSanitizeLlmSql("SELECT pg_read_file('/etc/passwd')")
+      expect(result.ok).toBe(false)
+      expect(result.reason).toMatch(/pg_read_file/)
     })
   })
 

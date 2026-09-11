@@ -93,3 +93,10 @@ tsconfig.tsbuildinfo
 
 # git worktrees (local isolation)
 .worktrees/
+
+# Benchmark run artifacts — timestamped output of benchmark/prinasa-runner.ts
+# (38+ files per run). Regenerate with `bun run bench:prinasa`. Kept out of the
+# tree so `git status` stays reviewable; ground-truth-failures.json is tracked
+# deliberately (it is the curated input, not a run artifact).
+benchmark/results/*.json
+!benchmark/results/ground-truth-failures.json

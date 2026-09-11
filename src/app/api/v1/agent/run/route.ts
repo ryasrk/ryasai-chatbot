@@ -7,6 +7,7 @@ import { planQuery, executePlan, synthesizeAnswer } from '@/lib/planner'
 import { rememberChatTurn } from '@/lib/cognee'
 import { rateLimit } from '@/lib/redis'
 import { getOrgContext } from '@/lib/prisma-tenant'
+import { logSwallowed } from '@/lib/logger'
 
 async function writeApiLog(args: {
   apiKeyId: string | null
@@ -25,7 +26,7 @@ async function writeApiLog(args: {
       latencyMs: args.latencyMs,
       errorMessage: args.errorMessage ?? null,
     },
-  }).catch(() => {})
+  }).catch(logSwallowed('v1/agent/run: apiRequestLog.create'))
 }
 
 interface AgentRunBody {
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
       await db.agentRun.update({
         where: { id: agentRun.id },
         data: { status: 'error', errorMessage: e instanceof Error ? e.message : String(e) },
-      }).catch(() => {})
+      }).catch(logSwallowed('v1/agent/run: agentRun.update (error status)'))
     }
     await writeApiLog({
       apiKeyId,

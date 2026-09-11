@@ -23,6 +23,7 @@ import { decryptConfig } from '@/lib/crypto'
 import { connectorRegistry, type ReflectedTable } from '@/lib/connectors'
 import { describeConnectionError } from '@/lib/real-connectors'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
+import { logSwallowed } from '@/lib/logger'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -74,7 +75,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
           where: { id },
           data: { lastTestedAt: new Date(), lastTestOk: false },
         })
-        .catch(() => {})
+        .catch(logSwallowed('integrations/test: lastTestOk=false update'))
       await writeAudit({
         userId: user.userId,
         action: 'INTEGRATION_TEST_FAILED',
@@ -102,7 +103,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
       const tables: ReflectedTable[] = await connector.fetchSchema()
       tablesCount = tables.length
       if (tables.length > 0) {
-        await db.integrationSchema.deleteMany({ where: { integrationId: id } }).catch(() => {})
+        await db.integrationSchema.deleteMany({ where: { integrationId: id } }).catch(logSwallowed('integrations/test: integrationSchema.deleteMany (refresh)'))
         await db.integrationSchema.createMany({
           data: tables.map((t) => ({
             organizationId: integration.organizationId,
@@ -130,10 +131,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
     // would render them bare. Fire-and-forget, never blocks the response.
     if (tablesCount > 0) {
       const { enrichSchemaDescriptions } = await import('@/lib/schema-enrichment')
-      void enrichSchemaDescriptions(id, integration.name).catch(() => null)
+      void enrichSchemaDescriptions(id, integration.name).catch(logSwallowed('integrations/test: enrichSchemaDescriptions'))
       // Also regenerate the business context profile (domain, glossary, hints)
       const { initIntegrationContext } = await import('@/lib/source-init')
-      void initIntegrationContext(id).catch(() => null)
+      void initIntegrationContext(id).catch(logSwallowed('integrations/test: initIntegrationContext'))
     }
 
     await writeAudit({

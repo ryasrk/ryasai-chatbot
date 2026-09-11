@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError, type ActiveUser } from '@/lib/session'
-import { validateLicense, generateMachineId, licenseStatusFromResult } from '@/lib/license-client'
+import { validateLicense, generateMachineId, licenseStatusFromResult , licenseUpdateFromResult } from '@/lib/license-client'
 
 /**
  * POST /api/license/retry
@@ -40,14 +40,10 @@ export async function POST() {
     await bypassOrg(() =>
       db.organization.update({
         where: { id: org.id },
-        data: {
-          licenseStatus: newStatus,
-          licensePlan: result.signatureVerified ? result.plan : undefined,
-          licenseValidatedAt: result.signatureVerified && result.valid ? new Date() : undefined,
-          // Preserve last known expiry when we got no definitive answer
-          // (unreachable / unsigned) — a network blip must not wipe metadata.
-          licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : undefined,
-        },
+        // ponytail: shared builder — see licenseUpdateFromResult(). Keeps a
+        // network blip from wiping expiry metadata and from advancing
+        // licenseValidatedAt (which would silence the 7-day grace window).
+        data: licenseUpdateFromResult(result, { planFallback: 'flat' }),
       }),
     )
 

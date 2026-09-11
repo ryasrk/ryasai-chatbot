@@ -24,8 +24,8 @@ model Organization {
   slug                String   @unique
   brandingJson        String?
   licenseKey          String?  // license key from License-Validator
-  licensePlan         String?  // starter | pro | enterprise
-  licenseStatus       String   @default("none") // none | valid | expired | invalid | suspended
+  licensePlan         String?  // flat | enterprise | pro | starter
+  licenseStatus       String   @default("none") // none | valid | expired | invalid | suspended | unpaid
   licenseValidatedAt  DateTime?
   licenseExpiresAt    DateTime?
   createdAt           DateTime @default(now())
@@ -60,6 +60,30 @@ model Organization {
   agentRuns           AgentRun[]
   llmUsageLogs        LlmUsageLog[]
   savedPrompts        SavedPrompt[]
+  orders              Order[]
+}
+
+// ------------------------------------------------------------------
+// Order — QRIS subscription purchase (Midtrans Snap)
+// ------------------------------------------------------------------
+model Order {
+  id                   String    @id @default(cuid())
+  organizationId       String
+  months               Int
+  amountIdr            Int
+  currency             String    @default("IDR")
+  midtransOrderId      String    @unique
+  snapToken            String?
+  status               String    @default("pending") // pending | settlement | expire | deny | cancel | failure
+  paidAt               DateTime?
+  licenseKeyIssued     String?
+  rawNotificationJson  String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
 
 // ------------------------------------------------------------------
@@ -127,6 +151,9 @@ model Integration {
   /// domain glossary, and query hints. Injected into the SQL prompt so the
   /// Text-to-SQL model understands the business domain, not just raw schema.
   businessContext String?
+  /// Admin-editable context prompt injected into SQL answer synthesis when
+  /// this integration is used. Empty by default → injects nothing.
+  contextPrompt    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -148,6 +175,9 @@ model IntegrationSchema {
   rowCount        Int?
   sampleRow       String?  // JSON: {col: value} — 1 representative row for LLM format understanding
   description     String?  // LLM-generated natural language summary of this table
+  /// When true, enrichSchemaDescriptions MUST skip this row — an admin has
+  /// manually edited `description` and the edit must survive re-enrichment.
+  manualDescription Boolean @default(false)
   reflectedAt     DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -199,6 +229,9 @@ model Document {
   isEnabled       Boolean   @default(true)
   category        String?   // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
   description     String?
+  /// Admin-editable context prompt prepended to RAG answer synthesis when
+  /// chunks from this document contribute to an answer. Empty → no-op.
+  contextPrompt   String?
   contentText     String
   uploadPath      String?
   cognifyStatus   String?   // null | processing | completed | failed
@@ -429,8 +462,8 @@ model ToolRun {
   organizationId    String
   chatMessageId     String?
   restApiEndpointId String?
-  type              String   // RAG | SQL | REST_API | CHAT
-  status            String   // success | error | blocked
+  type              String   // RAG | SQL | REST_API | CHAT | PLUGIN — must match PendingToolRun['type'] (tool-utils.ts); metrics filter on these exact strings, so a novel literal is silently ignored
+  status            String   // success | error | blocked | skipped
   latencyMs         Int?
   inputSummary      String
   outputSummary     String?
@@ -626,7 +659,7 @@ model ScheduledRunLog {
   id              String   @id @default(cuid())
   organizationId  String
   scheduledRunId  String
-  status          String   // 'success' | 'error'
+  status          String   // 'success' | 'error' | 'skipped' (skipped = license lockdown, see scheduler processJob)
   answer          String?  // full LLM answer
   error           String?  // error message if failed
   toolRunsJson    String?  // JSON array of tool run summaries

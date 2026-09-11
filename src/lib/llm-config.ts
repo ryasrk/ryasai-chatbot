@@ -70,7 +70,21 @@ export function isBlockedHost(hostname: string): boolean {
  * combination explicitly.
  */
 function blockedHostAllowlistEnabled(): boolean {
-  return process.env.NODE_ENV !== 'production' && process.env.LLM_ALLOW_BLOCKED_HOSTS === 'true'
+  if (process.env.LLM_ALLOW_BLOCKED_HOSTS !== 'true') return false
+  if (process.env.NODE_ENV !== 'production') return true
+  // ponytail: a PRODUCTION BUILD under test (`next build` + `bun .next/standalone/
+  // server.js`, i.e. `bunx playwright test -c playwright.prod.config.ts`) runs
+  // with NODE_ENV=production but still points at the localhost mock LLM on :4545
+  // and mock license validator on :4546. Without this escape the whole prod-build
+  // e2e suite dies at boot in env-schema before a single spec runs, so the
+  // artifact we actually ship was never testable.
+  //
+  // This is a SEPARATE, explicit marker — deliberately NOT derived from
+  // NODE_ENV — so a real deployment cannot reach it by accident: it requires
+  // the operator to set E2E_TEST_MODE=true AND the SSRF hatch AND to bypass
+  // env-schema, rather than merely having NODE_ENV=production. E2E_TEST_MODE is
+  // also asserted absent in the production-boot test (env-schema.test.ts).
+  return process.env.E2E_TEST_MODE === 'true'
 }
 
 /**

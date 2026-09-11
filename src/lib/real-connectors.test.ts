@@ -4,6 +4,7 @@ import {
   normaliseRow,
   loadDriver,
   assertSelectOnly,
+  assertNoDangerousFunctions,
   PostgresConnector,
   MysqlConnector,
   MssqlConnector,
@@ -117,6 +118,76 @@ describe('assertSelectOnly', () => {
   test('allows mutation keywords inside string literals', () => {
     expect(() =>
       assertSelectOnly("SELECT * FROM demo_orders WHERE status = 'UPDATE' AND note = 'delete'"),
+    ).not.toThrow()
+  })
+
+  // Audit finding (2026-09): this list was strictly weaker than guardrails.ts —
+  // it accepted transaction-control keywords that a `SELECT` can hide inside
+  // (BEGIN/COMMIT/START) and `INTO`. The execution boundary must reject
+  // everything the primary guard rejects.
+  test('rejects transaction-control keywords (parity with guardrails.ts)', () => {
+    for (const sql of [
+      'SELECT 1 START TRANSACTION',
+      'SELECT 1 BEGIN',
+      'SELECT 1 COMMIT',
+      'SELECT 1 ROLLBACK',
+      'SELECT 1 SAVEPOINT s1',
+    ]) {
+      expect(() => assertSelectOnly(sql)).toThrow('Only SELECT/WITH')
+    }
+  })
+
+  test('rejects SELECT ... INTO (creates a table)', () => {
+    expect(() => assertSelectOnly('SELECT * INTO new_tbl FROM demo_orders')).toThrow('Only SELECT/WITH')
+  })
+
+  test('rejects maintenance/lock keywords', () => {
+    for (const sql of ['SELECT 1 VACUUM', 'SELECT 1 REINDEX', 'SELECT 1 LOCK TABLE t']) {
+      expect(() => assertSelectOnly(sql)).toThrow('Only SELECT/WITH')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// assertNoDangerousFunctions — execution-boundary backstop for the scanner
+// ---------------------------------------------------------------------------
+
+describe('assertNoDangerousFunctions', () => {
+  test('rejects host-file and outbound-network functions per dialect', () => {
+    for (const sql of [
+      "SELECT pg_read_file('/etc/passwd')",
+      "SELECT pg_write_file('/tmp/x', 'y')",
+      "SELECT pg_ls_dir('/')",
+      "SELECT pg_stat_file('/etc/passwd')",
+      "SELECT lo_import('/etc/passwd')",
+      "SELECT set_config('a.b', '1', false)",
+      'SELECT pg_sleep(2)',
+      "SELECT load_file('/etc/passwd')",
+      'SELECT sleep(5)',
+      "SELECT * FROM dblink('host=evil', 'SELECT 1') AS t(x int)",
+      "SELECT * FROM openrowset('SQLNCLI', 'evil', 'SELECT 1')",
+      "SELECT * FROM url('http://169.254.169.254/', CSV)",
+      "SELECT * FROM file('/etc/passwd', CSV)",
+      "SELECT * FROM s3('http://evil/x', 'k', 's', CSV)",
+    ]) {
+      expect(() => assertNoDangerousFunctions(sql)).toThrow(/not permitted on a read-only data source/)
+    }
+  })
+
+  test('passes ordinary SELECTs', () => {
+    for (const sql of [
+      'SELECT count(*) FROM demo_orders',
+      "SELECT lower(name) FROM users WHERE status = 'active'",
+      'WITH t AS (SELECT 1 AS n) SELECT n FROM t',
+    ]) {
+      expect(() => assertNoDangerousFunctions(sql)).not.toThrow()
+    }
+  })
+
+  test('function name inside a string literal is not a false positive', () => {
+    expect(() => assertNoDangerousFunctions("SELECT 'pg_read_file(' AS note")).not.toThrow()
+    expect(() =>
+      assertNoDangerousFunctions("SELECT * FROM t WHERE note = 'called dblink('"),
     ).not.toThrow()
   })
 })

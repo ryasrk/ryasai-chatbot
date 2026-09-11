@@ -12,8 +12,18 @@ import { test, expect } from '@playwright/test'
 test('first run: register → activate license → setup wizard → dashboard', async ({ page }) => {
   await page.goto('/')
 
+  // On a genuinely fresh install (0 users, 0 orgs) the app must open directly
+  // on the signup form — there is nobody to log in as, so showing "Sign In"
+  // first would strand the first customer with no way forward.
+  //
+  // This assertion previously read "Hero login shows Sign In by default — flip
+  // to signup" and clicked a `Sign up` toggle. That only ever worked because
+  // /api/setup/status hardcoded `setupCompleted: true` for anonymous callers,
+  // which sent the fresh-install case down the login branch. With that bug
+  // fixed the signup form is the FIRST screen, so there is no toggle to click.
+  await expect(page.getByText('Create Account')).toBeVisible({ timeout: 15_000 })
+
   // Step 1: Create Account
-  await expect(page.getByText('Create Account')).toBeVisible()
   await page.locator('#name').fill('Admin E2E')
   await page.locator('#email').fill('admin@e2e.test')
   await page.locator('#password').fill('password123')

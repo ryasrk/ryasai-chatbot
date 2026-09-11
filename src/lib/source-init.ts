@@ -19,7 +19,7 @@
  *   - input truncated to a few KB (enough for a summary, capped cost)
  */
 import { db } from '@/lib/db'
-import { scopedLogger } from '@/lib/logger'
+import { scopedLogger, logSwallowed } from '@/lib/logger'
 
 const log = scopedLogger('source-init')
 
@@ -75,7 +75,7 @@ export async function initDocumentContext(documentId: string): Promise<void> {
   await db.document.update({
     where: { id: documentId },
     data: { description },
-  }).catch(() => {})
+  }).catch(logSwallowed('source-init: document.update (description)'))
   log.info('document context initialized', { documentId, chars: description.length })
 }
 
@@ -116,7 +116,7 @@ export async function initRestEndpointContext(endpointId: string): Promise<void>
   await db.restApiEndpoint.update({
     where: { id: endpointId },
     data: { description },
-  }).catch(() => {})
+  }).catch(logSwallowed('source-init: restApiEndpoint.update (description)'))
   log.info('REST endpoint context initialized', { endpointId })
 }
 
@@ -131,9 +131,9 @@ export async function initRestEndpointContext(endpointId: string): Promise<void>
  */
 export async function initIntegrationContext(integrationId: string): Promise<void> {
   const { enrichSchemaDescriptions } = await import('@/lib/schema-enrichment')
-  await enrichSchemaDescriptions(integrationId, '').catch(() => {})
+  await enrichSchemaDescriptions(integrationId, '')
   // Generate the business context profile (domain overview, glossary, query hints)
-  await generateIntegrationBusinessContext(integrationId).catch(() => {})
+  await generateIntegrationBusinessContext(integrationId).catch(logSwallowed('source-init: businessContext'))
 }
 
 /**

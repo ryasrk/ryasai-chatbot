@@ -35,6 +35,67 @@ async function withAgenticDeadline<T>(deadline: number, fn: () => Promise<T>): P
   })
 }
 
+/**
+ * Map a planner/tool-registry tool id to a persisted `ToolRun.type` value.
+ *
+ * FIX (2026-09): the old inline expression cast `r.tool.toUpperCase()` straight
+ * to `PendingToolRun['type']`, so tool ids that had no constant-case equivalent
+ * — `db_query`/`web_fetch`/`chat` — were written to the DB as `SQL`/`WEB_FETCH`/
+ * `CHAT`. Only `RAG | SQL | REST_API | CHAT | PLUGIN` are valid (see
+ * `tool-utils.ts` and the `ToolRun.type` column comment); anything else is
+ * invisible to `loadPerformanceMetrics()`, which filters by those exact strings
+ * when computing success rate, latency and the circuit breaker.
+ */
+export function toolRunTypeFor(tool: string): PendingToolRun['type'] {
+  if (tool.startsWith('plugin:') || tool.startsWith('mcp:')) return 'PLUGIN'
+  const up = tool.toUpperCase()
+  if (up === 'SQL' || up === 'DB_QUERY' || up === 'DATABASE') return 'SQL'
+  if (up === 'RAG' || up === 'KNOWLEDGE' || up === 'DOCUMENTS') return 'RAG'
+  if (up === 'REST' || up === 'REST_API' || up === 'API') return 'REST_API'
+  if (up === 'CHAT' || up === 'ANSWER' || up === 'WEB_FETCH' || up === 'WEB_SEARCH') return 'CHAT'
+  // ponytail: unknown tool → CHAT rather than an invalid literal. An invalid
+  // type is silently dropped by every metrics query, which is worse than
+  // slightly mislabelling an exotic tool.
+  return 'CHAT'
+}
+
+/**
+ * Append `incoming` tool runs to `target`, collapsing repeats.
+ *
+ * INCIDENT (2026-09): `runStreamingAgenticLoop` pushes each iteration's
+ * `result.toolRuns` onto `allToolRuns`, and a streaming round always reports at
+ * least one run (the CHAT preparers emit one unconditionally). A single chat
+ * turn that looped twice therefore persisted FOUR identical CHAT rows.
+ *
+ * Those rows are not cosmetic: `loadPerformanceMetrics()` reads the last 50
+ * ToolRuns per type (`take: 50`, 24h window) to compute `successRate`,
+ * `avgLatencyMs`, `total` and `recentFailRate` (the smart router's circuit
+ * breaker). Duplicates inflate `total` and skew every derived score, so the
+ * router's tool selection silently degrades.
+ *
+ * Two runs collapse only when they are genuinely the same observation —
+ * same type, status, input and output summary. A retry that produced a
+ * different summary is a real, distinct event and is preserved.
+ */
+export function appendToolRuns(target: PendingToolRun[], incoming: PendingToolRun[]): void {
+  const seen = new Set(
+    target.map((t) => `${t.type}|${t.status}|${t.inputSummary}|${t.outputSummary ?? ''}`),
+  )
+  for (const run of incoming) {
+    const key = `${run.type}|${run.status}|${run.inputSummary}|${run.outputSummary ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    target.push(run)
+  }
+}
+
+/** Non-mutating form of {@link appendToolRuns} — same collapse rule. */
+export function dedupeToolRuns(runs: PendingToolRun[]): PendingToolRun[] {
+  const out: PendingToolRun[] = []
+  appendToolRuns(out, runs)
+  return out
+}
+
 interface AgenticIterationResult {
   answer: string
   citations: Citation[]
@@ -84,7 +145,7 @@ export async function runMultiStepDag(args: {
     const toolRuns: PendingToolRun[] = results
       .filter((r) => !r.tool.startsWith('mcp:'))
       .map((r) => ({
-        type: r.tool.startsWith('plugin:') ? 'PLUGIN' : r.tool.startsWith('mcp:') ? 'PLUGIN' : (r.tool.toUpperCase() as PendingToolRun['type']),
+        type: toolRunTypeFor(r.tool),
         status: r.ok ? 'success' : 'error',
         latencyMs: r.latencyMs,
         inputSummary: summarize(args.question),
@@ -156,7 +217,7 @@ export async function runAgenticLoop(
       return { answer: `${result.answer}\n\n[Note: token budget exhausted — answer may be incomplete.]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
     }
 
-    allToolRuns.push(...result.toolRuns)
+    appendToolRuns(allToolRuns, result.toolRuns)
     if (result.citations) allCitations.push(...result.citations)
 
     if (result.toolRuns.length === 0) {
@@ -238,7 +299,7 @@ export async function runAgenticLoop(
     throw e
   }
 
-  return { answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: [...allToolRuns, ...finalResult.toolRuns], iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
+  return { answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: dedupeToolRuns([...allToolRuns, ...finalResult.toolRuns]), iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
 }
 
 export async function runStreamingAgenticLoop(
@@ -296,7 +357,7 @@ export async function runStreamingAgenticLoop(
         throw e
       }
 
-      allToolRuns.push(...result.toolRuns)
+      appendToolRuns(allToolRuns, result.toolRuns)
       if (result.citations) allCitations.push(...result.citations)
 
       // No tools ran — stream the answer directly and finish.
@@ -430,7 +491,7 @@ export async function runStreamingAgenticLoop(
       }
       throw e
     }
-    allToolRuns.push(...finalResult.toolRuns)
+    appendToolRuns(allToolRuns, finalResult.toolRuns)
     if (finalResult.citations) allCitations.push(...finalResult.citations)
     output.chartData = finalResult.chartData
     output.citationTrail = finalResult.citationTrail

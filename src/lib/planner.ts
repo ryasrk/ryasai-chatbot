@@ -22,6 +22,7 @@ import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { extractJson } from '@/lib/constrained-output'
 import { withToolSandbox } from '@/lib/tool-sandbox'
+import { logSwallowed } from '@/lib/logger'
 import type { ToolDef } from '@/lib/tool-registry'
 
 // ---------------------------------------------------------------------------
@@ -606,7 +607,7 @@ async function executeStep(
             outputSummary: result.output.slice(0, 500) || null,
             errorMessage: result.error ?? null,
           },
-        }).catch(() => {})
+        }).catch(logSwallowed('planner: toolRun.create (MCP)'))
       }
       return {
         stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,

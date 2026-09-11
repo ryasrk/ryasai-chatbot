@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
-import { validateLicense, generateMachineId, licenseStatusFromResult } from '@/lib/license-client'
+import { validateLicense, generateMachineId, licenseStatusFromResult , licenseUpdateFromResult } from '@/lib/license-client'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
 /**
@@ -71,14 +71,11 @@ export async function POST() {
     await bypassOrg(() =>
       db.organization.update({
         where: { id: org.id },
-        data: {
-          licenseStatus: newStatus,
-          licensePlan: result.signatureVerified ? result.plan : undefined,
-          licenseValidatedAt: result.signatureVerified && result.valid ? new Date() : undefined,
-          // Preserve last known expiry when no definitive answer came back
-          // (unreachable / unsigned) — consistent with retry + revalidation.
-          licenseExpiresAt: result.signatureVerified && result.expiresAt ? new Date(result.expiresAt) : undefined,
-        },
+        // ponytail: shared builder — see licenseUpdateFromResult(). It encodes
+        // the two rules this block used to restate inline: never advance
+        // licenseValidatedAt on an unsigned/unreachable answer (that would
+        // silence the grace period) and never wipe a known expiry on a blip.
+        data: licenseUpdateFromResult(result, { planFallback: 'flat' }),
       }),
     )
 

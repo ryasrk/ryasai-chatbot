@@ -20,6 +20,7 @@ import type {
   ReflectedTable,
 } from './connectors'
 import { getDbProviderPreset } from '@/lib/db-provider-presets'
+import { detectDangerousFunctions } from '@/lib/guardrails'
 
 // ponytail: 30s query timeout — matches the REST/LLM timeout convention (CLAUDE.md §6).
 const QUERY_TIMEOUT_MS = 30_000
@@ -220,8 +221,60 @@ const MUTATION_KEYWORDS = new Set([
   'DELETE', 'UPDATE', 'INSERT', 'DROP', 'ALTER', 'TRUNCATE',
   'CREATE', 'GRANT', 'REVOKE', 'MERGE', 'REPLACE', 'CALL',
   'EXEC', 'EXECUTE', 'RENAME', 'ATTACH', 'DETACH', 'PRAGMA',
-  'VACUUM', 'REINDEX', 'ANALYZE', 'LOCK', 'UNLOCK',
+  // ponytail: kept in sync with guardrails.ts. This list was missing the
+  // transaction-control and maintenance keywords, so it accepted BEGIN/COMMIT/
+  // START and `--` comments that the primary guard rejects — the execution
+  // boundary was strictly weaker than the guard it was meant to back up.
+  'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT', 'TRANSACTION', 'START',
+  'VACUUM', 'REINDEX', 'ANALYZE', 'LOCK', 'UNLOCK', 'HANDLER',
+  'INTO',
 ])
+
+// ---------------------------------------------------------------------------
+// Read-only enforcement at the DATABASE LAYER
+// ---------------------------------------------------------------------------
+// INCIDENT (2026-09): the lexical scanners (guardrails.ts + assertSelectOnly)
+// only reject mutation KEYWORDS. Any SELECT that triggers a server-side side
+// effect passed straight through. Verified end-to-end through the real route:
+//
+//   SELECT pg_read_file('/etc/passwd')  → returned the DB host's /etc/passwd
+//   SELECT pg_sleep(2)                  → burned 2s of real DB time
+//   set_config / dblink / lo_import     → also allowed
+//
+// A keyword scanner cannot close this class, so enforcement is layered, and
+// each layer is measured rather than assumed (Postgres 16, scanners bypassed):
+//
+//   1. `SET TRANSACTION READ ONLY` — the server itself refuses writes and DDL:
+//      "cannot execute INSERT/UPDATE/DELETE/CREATE … in a read-only transaction".
+//      It does NOT cover pg_read_file/set_config/pg_sleep: those are reads.
+//   2. `assertNoDangerousFunctions()` — denies host-file and outbound-network
+//      functions per dialect (this is what covers layer 1's blind spot).
+//   3. `SET LOCAL statement_timeout` — bounds pg_sleep/expensive scans at the
+//      server, so a slow query cannot hang a chat turn.
+//   4. The lexical scanners — fast rejects, defence-in-depth only.
+//
+// Layers 1 and 3 need BEGIN/SET/SELECT/COMMIT on the SAME backend, hence an
+// explicit connect() rather than pool.query().
+// ---------------------------------------------------------------------------
+
+/**
+ * Server-side functions that read/write host files or open outbound
+ * connections. Denied by the shared list in `guardrails.ts` so the execution
+ * boundary and the primary guard agree on exactly what is unsafe — a divergent
+ * second list is how `assertSelectOnly` ended up weaker than the guard it was
+ * supposed to back.
+ *
+ * No read-only transaction mode covers these on every dialect (ClickHouse
+ * `readonly=1` still permits file()/url()).
+ */
+export function assertNoDangerousFunctions(sql: string): void {
+  const found = detectDangerousFunctions(sql)
+  if (found.length > 0) {
+    throw new Error(
+      `Query rejected: ${found.join(', ')} is not permitted on a read-only data source.`,
+    )
+  }
+}
 
 // ponytail: execution-boundary guard. Callers (tool-branches, stream-preparers, query
 // route) already run full AST validation via guardrails.ts — this is belt-and-suspenders.
@@ -591,14 +644,51 @@ export class PostgresConnector implements BaseDatabaseConnector {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     assertSelectOnly(sql)
+    assertNoDangerousFunctions(sql)
     const pool = await this.pool()
     const start = Date.now()
-    const result = await pool.query(sql)
-    const rows: QueryRow[] = (result.rows as QueryRow[]) ?? []
-    return {
-      rows: rows.map((r) => normaliseRow(r)),
-      rowCount: result.rowCount ?? rows.length,
-      executionMs: Date.now() - start,
+    // Read-only is enforced by the DATABASE, not by the scanner: `SET
+    // TRANSACTION READ ONLY` makes the server itself reject writes and DDL
+    // ("cannot execute INSERT … in a read-only transaction").
+    //
+    // It is NOT a complete control on its own — pg_read_file/set_config/
+    // pg_sleep are reads, so read-only mode allows them. Those are covered by
+    // assertNoDangerousFunctions() above and by statement_timeout below. See
+    // the READ-ONLY block comment for the measurements.
+    //
+    // The pool hands us one backend, so BEGIN/SET/SELECT/COMMIT must all run on
+    // the SAME client — hence an explicit connect() instead of pool.query().
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('SET TRANSACTION READ ONLY')
+      // ponytail: verify what this DOES and does NOT buy us — measured against
+      // Postgres 16, scanners bypassed:
+      //   BLOCKED: INSERT/UPDATE/DELETE/TRUNCATE/DDL ("cannot execute … in a
+      //            read-only transaction")
+      //   ALLOWED: pg_read_file(), set_config(), pg_sleep() — these are not
+      //            writes, so read-only mode does not cover them.
+      // The file/config readers are therefore handled by
+      // assertNoDangerousFunctions() above, and pg_sleep by the server-side
+      // statement_timeout below. Read-only mode is the backstop for the whole
+      // mutation class the scanner can never fully enumerate.
+      await client.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`)
+      const result = await client.query(sql)
+      await client.query('COMMIT')
+      const rows: QueryRow[] = (result.rows as QueryRow[]) ?? []
+      return {
+        rows: rows.map((r) => normaliseRow(r)),
+        rowCount: result.rowCount ?? rows.length,
+        executionMs: Date.now() - start,
+      }
+    } catch (e) {
+      // ROLLBACK is best-effort: if the connection already died the client is
+      // being discarded anyway, and masking the original error would hide the
+      // real SQL failure from the repair loop.
+      try { await client.query('ROLLBACK') } catch { /* connection is gone */ }
+      throw e
+    } finally {
+      client.release()
     }
   }
 
@@ -719,14 +809,30 @@ export class MysqlConnector implements BaseDatabaseConnector {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     assertSelectOnly(sql)
+    assertNoDangerousFunctions(sql)
     const pool = await this.pool()
     const start = Date.now()
-    const [rows] = await pool.query({ sql, timeout: QUERY_TIMEOUT_MS })
-    const r: QueryRow[] = (rows as QueryRow[]) ?? []
-    return {
-      rows: r.map((row) => normaliseRow(row)),
-      rowCount: r.length,
-      executionMs: Date.now() - start,
+    // Read-only is enforced by the SERVER (see the READ-ONLY block comment):
+    // `SET TRANSACTION READ ONLY` + `START TRANSACTION READ ONLY` make InnoDB
+    // reject writes and DDL on this transaction, independent of the scanner.
+    // All statements must run on the same connection, so we check one out.
+    const conn = await pool.getConnection()
+    try {
+      await conn.query('SET TRANSACTION READ ONLY')
+      await conn.query('START TRANSACTION READ ONLY')
+      const [rows] = await conn.query({ sql, timeout: QUERY_TIMEOUT_MS })
+      await conn.commit()
+      const r: QueryRow[] = (rows as QueryRow[]) ?? []
+      return {
+        rows: r.map((row) => normaliseRow(row)),
+        rowCount: r.length,
+        executionMs: Date.now() - start,
+      }
+    } catch (e) {
+      try { await conn.rollback() } catch { /* connection is gone */ }
+      throw e
+    } finally {
+      conn.release()
     }
   }
 
@@ -762,7 +868,15 @@ export class MssqlConnector implements BaseDatabaseConnector {
         password: c.password,
         connectionTimeout: QUERY_TIMEOUT_MS,
         requestTimeout: QUERY_TIMEOUT_MS,
-        options: { encrypt: useSsl, trustServerCertificate: !useSsl },
+        // ponytail: MSSQL cannot mark a transaction read-only, so we ask the
+        // server for a read-only intent instead — on an Availability Group this
+        // routes the connection to a secondary replica. No-op elsewhere.
+        options: {
+          encrypt: useSsl,
+          trustServerCertificate: !useSsl,
+          appName: 'ryasai-chatbot',
+          readOnlyIntent: true,
+        },
         pool: { max: 10, idleTimeoutMillis: 30_000 },
       })
       await inst.connect()
@@ -871,8 +985,18 @@ export class MssqlConnector implements BaseDatabaseConnector {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     assertSelectOnly(sql)
+    assertNoDangerousFunctions(sql)
     const pool = await this.pool()
     const start = Date.now()
+    // ponytail: MSSQL has no per-transaction read-only mode. A truly read-only
+    // intent must come from the LOGIN's server role (GRANT/DENY on the target
+    // DBs), which is an operator decision we cannot make at runtime. We do what
+    // is enforceable here: ApplicationIntent=ReadOnly is set on the pool (see
+    // pool()) so servers with an Availability Group route us to a read replica,
+    // and `assertNoDangerousFunctions` blocks xp_cmdshell / OPENROWSET /
+    // BULK INSERT / OPENDATASOURCE. Residual risk: a read-write login on a
+    // non-AG server can still be used for write side effects if the scanner is
+    // somehow evaded — document this in the customer-facing DB setup guide.
     const result = await pool.request().query(sql)
     const rows: QueryRow[] = (result.recordset as QueryRow[]) ?? []
     return {
@@ -914,7 +1038,18 @@ export class ClickHouseConnector implements BaseDatabaseConnector {
         database: c.database || 'default',
         username: c.user,
         password: c.password,
-        // ponytail: no clickhouse_settings — some servers (play.clickhouse.com) are readonly
+        // ponytail: readonly=1 makes the SERVER reject writes/DDL on this client
+        // (previously absent — only the scanner stood between the LLM and the
+        // data). `max_execution_time` bounds runaway scans; the client also gets
+        // request_timeout because only testConnectionDetailed had one, leaving
+        // executeQuery able to hang a chat turn indefinitely.
+        // Note: readonly=1 does NOT cover file()/url()/s3()/remote() table
+        // functions — those are denied by assertNoDangerousFunctions().
+        request_timeout: QUERY_TIMEOUT_MS,
+        clickhouse_settings: {
+          readonly: 1,
+          max_execution_time: Math.ceil(QUERY_TIMEOUT_MS / 1000),
+        },
       })
     }
     return this._client
@@ -1005,6 +1140,7 @@ export class ClickHouseConnector implements BaseDatabaseConnector {
 
   async executeQuery(sql: string): Promise<QueryResult> {
     assertSelectOnly(sql)
+    assertNoDangerousFunctions(sql)
     const cl = await this.client()
     const start = Date.now()
     const rs = await cl.query({ query: sql, format: 'JSONEachRow' })

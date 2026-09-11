@@ -25,11 +25,16 @@ const GRACE_PERIOD_MS = (Number(process.env.LICENSE_GRACE_PERIOD_DAYS) || 7) * 2
 const REVALIDATION_INTERVAL_MS = (Number(process.env.LICENSE_REVALIDATION_INTERVAL_HOURS) || 24) * 60 * 60 * 1000
 
 // Ed25519 public key (DER hex) — not secret. Used to verify server signatures.
-const PUBLIC_KEY_HEX =
-  process.env.LICENSE_SIGNING_PUBLIC_KEY ||
-  '302a300506032b6570032100eaaadb217b2c7548bed70b3e22f357ef16d1690feb251ae7c8b178de5b95df8a'
+// ponytail: no hardcoded fallback — a missing LICENSE_SIGNING_PUBLIC_KEY must
+// fail closed (all signatures fail → lockdown), never trust a shipped default
+// key whose private half could exist somewhere.
+const PUBLIC_KEY_HEX = process.env.LICENSE_SIGNING_PUBLIC_KEY
 
 function getPublicKey(): crypto.KeyObject | null {
+  if (!PUBLIC_KEY_HEX) {
+    log.error('LICENSE_SIGNING_PUBLIC_KEY is not set — signature verification disabled (fail closed)')
+    return null
+  }
   try {
     return crypto.createPublicKey({ key: Buffer.from(PUBLIC_KEY_HEX, 'hex'), format: 'der', type: 'spki' })
   } catch {
@@ -159,12 +164,14 @@ export function isWithinGracePeriod(validatedAt: Date | null): boolean {
 /**
  * Determine if the app should be locked down based on license status.
  * Returns the lockdown reason, or null if app should run normally.
+ * 'unpaid' = licenseless signup, org hasn't purchased a subscription yet.
  */
 export function getLockdownReason(
   status: string,
   validatedAt: Date | null,
-): 'expired' | 'deactivated' | 'unreachable' | null {
+): 'expired' | 'deactivated' | 'unreachable' | 'unpaid' | null {
   if (status === 'valid' || status === 'none') return null
+  if (status === 'unpaid') return 'unpaid'
   if (status === 'expired' || status === 'invalid' || status === 'suspended') return status === 'suspended' ? 'deactivated' : 'expired'
   if (status === 'unreachable') {
     return isWithinGracePeriod(validatedAt) ? null : 'unreachable'
@@ -192,4 +199,48 @@ export function licenseStatusFromResult(result: LicenseValidationResult): string
       : 'invalid'
   }
   return 'unreachable'
+}
+
+/**
+ * Build the `Organization` update payload from a validation result — the
+ * write half of {@link licenseStatusFromResult}.
+ *
+ * INCIDENT (2026-09): this four-field payload was copy-pasted across FOUR call
+ * sites (periodic revalidation, post-issue validation, admin revalidate route,
+ * and the retry route). One of them even carried the comment "mirrors
+ * runRevalidation() exactly; the two must never diverge" — a comment that only
+ * exists because the author knew they could. They had already drifted:
+ * `license-issue.ts` wrote `result.plan ?? 'flat'` while the other three wrote
+ * `result.plan`, so a purchase that validated without a plan field kept the
+ * flat plan while an admin revalidate would have cleared it.
+ *
+ * Two invariants this encodes, both previously re-derived per site:
+ *
+ *  1. `licenseValidatedAt` advances ONLY on a verified-and-valid answer.
+ *     Writing it for an unsigned/unreachable response would silence the
+ *     7-day grace window and lock out a paying customer during an outage.
+ *  2. `licenseExpiresAt` is written ONLY when the signed response carried one.
+ *     Writing `undefined`/null on a network blip would wipe known-good expiry
+ *     metadata, so a later grace-period check would see no expiry at all.
+ *
+ * Prisma ignores `undefined` fields in `update`, which is what makes the
+ * conditional spread below leave the previous value intact.
+ */
+export function licenseUpdateFromResult(
+  result: LicenseValidationResult,
+  options: { planFallback?: string } = {},
+): {
+  licenseStatus: string
+  licensePlan?: string
+  licenseValidatedAt?: Date
+  licenseExpiresAt?: Date
+} {
+  const verified = result.signatureVerified
+  const plan = verified ? (result.plan ?? options.planFallback) : undefined
+  return {
+    licenseStatus: licenseStatusFromResult(result),
+    ...(plan ? { licensePlan: plan } : {}),
+    ...(verified && result.valid ? { licenseValidatedAt: new Date() } : {}),
+    ...(verified && result.expiresAt ? { licenseExpiresAt: new Date(result.expiresAt) } : {}),
+  }
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History, Play, Search, Bell, Activity, CheckCircle2, AlertCircle, Database } from 'lucide-react'
+import { Clock, Plus, Pencil, Trash2, Power, Loader2, Check, X, Download, History, Play, Search, Bell, Activity, CheckCircle2, AlertCircle, AlertTriangle, Database } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Stagger, StaggerItem } from '@/components/motion'
@@ -1048,6 +1048,18 @@ export function SchedulesView() {
                         <Badge className="text-xs bg-success/15 text-success border-success/20 gap-1">
                           <Check className="h-3 w-3" />
                           Success
+                        </Badge>
+                      ) : run.status === 'skipped' ? (
+                        // ponytail: a license lockdown must not render as
+                        // "Failed" — the run never executed, so telling the
+                        // operator to debug a nonexistent error wastes their
+                        // time. Show the pause, and why.
+                        <Badge
+                          className="text-xs bg-warning/15 text-warning border-warning/20 gap-1"
+                          title={run.error ?? undefined}
+                        >
+                          <AlertTriangle className="h-3 w-3" />
+                          Skipped
                         </Badge>
                       ) : (
                         <Badge className="text-xs bg-destructive/15 text-destructive border-destructive/20 gap-1">

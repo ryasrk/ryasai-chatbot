@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { looksLikeSql, validateAndSanitizeLlmSql } from './guardrails'
+import { looksLikeSql, validateAndSanitizeLlmSql, detectDangerousFunctions } from './guardrails'
 
 describe('looksLikeSql', () => {
   test('SELECT → true', () => {
@@ -229,5 +229,68 @@ describe('validateAndSanitizeLlmSql — multi-statement rejection', () => {
 
   test('SELECT 1; SELECT 2 → blocked by chaining pattern', () => {
     expect(validateAndSanitizeLlmSql('SELECT 1; SELECT 2').ok).toBe(false)
+  })
+})
+
+// Regression guard for the audit finding (2026-09): a leading `SELECT` hides
+// server-side side effects from a keyword scan. `SELECT pg_read_file('/etc/passwd')`
+// passed every rule above and returned the DB host's /etc/passwd through
+// POST /api/integrations/[id]/query. These must stay blocked.
+describe('validateAndSanitizeLlmSql — side-effecting server functions', () => {
+  const mustBlock = [
+    "SELECT pg_read_file('/etc/passwd')",
+    "SELECT pg_read_binary_file('/etc/hosts')",
+    "SELECT pg_write_file('/tmp/pwn', 'x')",
+    "SELECT pg_ls_dir('/')",
+    "SELECT pg_stat_file('/etc/passwd')",
+    "SELECT lo_import('/etc/passwd')",
+    "SELECT lo_export(1, '/tmp/x')",
+    "SELECT set_config('x.y', '1', false)",
+    "SELECT * FROM dblink('host=evil', 'SELECT 1') AS t(x int)",
+    'SELECT pg_sleep(2)',
+    'SELECT pg_sleep_for(interval \'2 seconds\')',
+    "SELECT load_file('/etc/passwd')",
+    'SELECT sleep(5)',
+    'SELECT benchmark(1000000, MD5(1))',
+    "SELECT * FROM url('http://169.254.169.254/', CSV)",
+    "SELECT * FROM file('/etc/passwd', CSV)",
+    "SELECT * FROM s3('http://evil/x', 'k', 's', CSV)",
+    "SELECT * FROM remote('evil:9000', db.t, 'u', 'p')",
+    "SELECT * FROM openrowset('SQLNCLI', 'evil';'u';'p', 'SELECT 1')",
+    "SELECT * FROM opendatasource('evil', 'x')",
+  ]
+
+  for (const sql of mustBlock) {
+    test(`BLOCKED: ${sql.slice(0, 52)}`, () => {
+      const r = validateAndSanitizeLlmSql(sql)
+      expect(r.ok).toBe(false)
+      expect(r.reason).toMatch(/dangerous pattern/i)
+    })
+  }
+
+  test('detectDangerousFunctions reports the matched label', () => {
+    expect(detectDangerousFunctions("SELECT pg_read_file('/etc/passwd')")).toContain('pg_read_file')
+    expect(detectDangerousFunctions("SELECT * FROM file('/etc/passwd', CSV)")).toContain(
+      'ClickHouse table function',
+    )
+  })
+
+  test('a function name inside a STRING LITERAL is not a false positive', () => {
+    // The docs/notes case: an admin writes a column value mentioning the name.
+    expect(detectDangerousFunctions("SELECT 'pg_read_file(' AS note")).toEqual([])
+    expect(validateAndSanitizeLlmSql("SELECT 'pg_read_file(' AS note").ok).toBe(true)
+    expect(validateAndSanitizeLlmSql("SELECT * FROM t WHERE note = 'called dblink('").ok).toBe(true)
+  })
+
+  test('ordinary aggregate/function calls still pass', () => {
+    for (const sql of [
+      'SELECT count(*) FROM users',
+      'SELECT lower(name), coalesce(email, \'-\') FROM users',
+      'SELECT date_trunc(\'month\', created_at) FROM orders GROUP BY 1',
+      'SELECT substring(name, 1, 3) FROM users',
+      'SELECT now(), version()',
+    ]) {
+      expect(validateAndSanitizeLlmSql(sql).ok).toBe(true)
+    }
   })
 })
