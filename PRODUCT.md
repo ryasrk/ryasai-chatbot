@@ -6,7 +6,7 @@ web
 
 ## Users
 
-Enterprise administrators in Indonesian companies who manage an AI assistant deployment. They connect data sources (SQL databases, REST APIs), upload knowledge documents, configure LLM providers, generate API keys for integration, and monitor usage. Their job is to keep the assistant accurate, secure, and useful for their organization.
+Enterprise administrators who manage an AI assistant deployment for their organization. They connect data sources (SQL databases, REST APIs), upload knowledge documents, configure LLM providers, generate API keys for integration, and monitor usage. Their job is to keep the assistant accurate, secure, and useful for their organization.
 
 ## Product Purpose
 
@@ -14,14 +14,14 @@ A multi-source AI chatbot that answers questions by routing to the right tool �
 
 ## Positioning
 
-Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS chatbots, all data stays in the admin's infrastructure. SQL guardrails, AES-256-GCM encrypted credentials, and audit logging are built in, not add-ons.
+Self-hosted, multi-tenant, fail-closed enterprise AI assistant. Each organization's data is isolated (org-scoped via `organizationId` + Prisma tenant extension). Unlike SaaS chatbots, all data stays in the admin's infrastructure. SQL guardrails, AES-256-GCM encrypted credentials, and audit logging are built in, not add-ons.
 
 ## Operating Context
 
 - Admin logs in, runs a setup wizard (admin account → LLM config → test model → upload docs → data sources → test chat)
 - Daily work: manage integrations, upload documents, configure AI, manage API keys, monitor audit logs, use agentic console
-- Language: Indonesian for all UI labels and system prompts
-- Deployment: single instance, dedicated admin mode
+- Language: English for all UI labels and system prompts
+- Deployment: multi-org, org-scoped data on a shared instance
 
 ## Capabilities
 
@@ -56,12 +56,12 @@ Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS cha
 
 - Name: ryasai
 - Voice: professional, direct, no jargon — admin is a low-level engineer who wants things simple but powerful
-- Language: Indonesian for all user-facing strings
+- Language: English for all user-facing strings
 - Visual: clean, compact, no wasted space — admin doesn't want to scroll for important controls
 
 ## Evidence on Hand
 
-- Full codebase (25 Prisma models, 67 API routes, 16 views, 62+ unit tests + 4 e2e)
+- Full codebase (31 Prisma models, 99 API routes, 12 views, 132 unit test files + 7 e2e specs)
 - CLAUDE.md with architecture audit and progress log
 - README.md with quick start and commands
 - PostgreSQL 16 migration complete (5 demo databases: ERP, Chinook, World, Pagila, ClickHouse)
@@ -72,7 +72,7 @@ Self-hosted, single-tenant, fail-closed enterprise AI assistant. Unlike SaaS cha
 
 1. **Compact over spacious** — every pixel earns its place, admins scan fast
 2. **Fail-closed by default** — missing config means refuse, not guess
-3. **Indonesian first** — all UI and system prompts in Bahasa Indonesia
+3. **English first** — all UI and system prompts in English
 4. **Security is visible** — guardrails, audit, encryption are shown not hidden
-5. **One admin, one deployment** — no multi-role UI complexity
+5. **Org isolation is sacred** — every model carries `organizationId`; queries auto-scoped per org
 6. **Production RAG architecture** — intent analysis, multi-pass retrieval with reflection, and agentic confidence loops are first-class, not bolted on

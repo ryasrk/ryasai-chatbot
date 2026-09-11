@@ -4,7 +4,7 @@ Goal: get a new developer productive in under 1 hour.
 
 ## Project Overview
 
-ryasai is a self-hosted, single-tenant enterprise AI assistant. It routes natural-language questions to the right tool — SQL queries, document RAG, REST API calls, external plugins, or general chat — with security guardrails (AST-level SQL validation, AES-256-GCM credential encryption, fail-closed auth). Stack: Next.js 16 + TypeScript 5 + Prisma 6 + Postgres 16 + Bun.
+ryasai is a self-hosted, multi-tenant enterprise AI assistant. It routes natural-language questions to the right tool — SQL queries, document RAG, REST API calls, external plugins, or general chat — with security guardrails (AST-level SQL validation, AES-256-GCM credential encryption, fail-closed auth, org-scoped isolation). Stack: Next.js 16 + TypeScript 5 + Prisma 6 + Postgres 16 + Bun.
 
 ## Dev Setup
 
@@ -25,11 +25,11 @@ Default login: `admin@ryas.ai` / `admin12345`
 | Directory | What's here |
 |-----------|-------------|
 | `src/lib/` | Server-only libraries — the entire AI pipeline, security, RAG, tools |
-| `src/app/api/` | 69 API routes (App Router) |
+| `src/app/api/` | 99 API routes (App Router) |
 | `src/app/page.tsx` | Main SPA — 12 views, ChatView + AgenticView always mounted |
 | `src/components/views/` | 12 feature views (Chat, RAG, Integrations, Scheduler, etc.) |
 | `src/components/ui/` | shadcn/ui primitives |
-| `prisma/schema.prisma` | 28 models — the entire data layer |
+| `prisma/schema.prisma` | 31 models — the entire data layer |
 | `mini-services/scheduler/` | Cron worker (separate process) |
 | `scripts/` | Seed, migration, and test scripts |
 
@@ -46,7 +46,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 | `src/lib/planner.ts` | Multi-step agentic planner (DAG, parallelized execution) |
 | `src/lib/crypto.ts` | AES-256-GCM encrypt/decrypt for credentials |
 | `src/lib/session.ts` | Fail-closed auth, session version, audit logging |
-| `prisma/schema.prisma` | All 28 data models |
+| `prisma/schema.prisma` | All 31 data models |
 
 ## Architecture
 
@@ -136,7 +136,7 @@ Follow the pattern in `scripts/seed-plugins.ts`. Plugins are webhook tools with 
 
 Architecture decisions are documented in [`docs/adr/`](./adr/). Read these to understand *why* the code is structured the way it is — especially:
 
-- [ADR 0001: Single-tenant](./adr/0001-single-tenant-architecture.md) — no `companyId`
+- [ADR 0001: Single-tenant](./adr/0001-single-tenant-architecture.md) — ⚠️ SUPERSEDED; the code is multi-tenant (see [Multi-Tenant Guide](../MULTI-TENANT-GUIDE.md))
 - [ADR 0002: SQL AST guardrails](./adr/0002-sql-ast-guardrails.md) — why regex isn't enough
 - [ADR 0003: Fail-closed auth](./adr/0003-fail-closed-auth.md) — why onboarding is harder
 - [ADR 0006: Agentic loop](./adr/0006-agentic-confidence-loop.md) — why max 3 iterations

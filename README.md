@@ -163,7 +163,7 @@ restructure the change to preserve the invariant.
 
 ```
 src/
-├── app/api/              # 62 API routes
+├── app/api/              # 99 API routes
 ├── app/page.tsx          # Main SPA (12 views)
 ├── components/
 │   ├── ui/               # shadcn/ui
@@ -177,7 +177,7 @@ src/
 │   └── ... (60+ files)
 ├── middleware.ts         # Edge auth
 prisma/
-└── schema.prisma         # 30 models
+└── schema.prisma         # 31 models
 docs/
 ├── ARCHITECTURE.md       # Full system design
 └── MULTI-TENANT-GUIDE.md # Org scoping guide
@@ -218,7 +218,7 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 1600+ unit tests, incl. static invariant guards (see Development)
+- ✅ 1934 unit tests across 129 files (`bun run test`), incl. static invariant guards (see Development)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
 - ✅ Error handling + graceful fallbacks

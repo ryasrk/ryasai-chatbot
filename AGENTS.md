@@ -59,7 +59,9 @@ bun run lint             # eslint (0 errors expected; warnings are pre-existing)
 bunx tsc --noEmit        # typecheck (0 errors expected)
 bun run test             # unit tests — custom per-file runner (see below)
 bun run test:integration # integration tests (need live Postgres / network)
-bun run e2e              # Playwright (7 specs / 10 tests — Postgres e2e DB, mock LLM + mock license validator)
+bun run e2e              # Playwright, DEV server (8 specs / 12 tests — Postgres e2e DB, mock LLM + mock license validator)
+bun run build && bun run e2e:prod
+                         # same specs against the PRODUCTION standalone build (see below)
 bun run rag-eval         # RAGAS RAG quality eval (LLM-as-judge)
 bun run sql-eval         # Text-to-SQL eval — needs EVAL_ORG_ID + --integration <id>
 bash start.sh            # Next.js + scheduler worker (seeds empty DB if empty)
@@ -75,6 +77,16 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - Tests inject a fallback `ENCRYPTION_SECRET_KEY` if unset, so they run on a fresh checkout without `.env`.
 - Integration tests (`*.integration.test.ts` + `connector-dummy.test.ts`) need a live Postgres (some require seeded demo content — run via `bun run test:integration`).
 - `src/lib/cognee.e2e.test.ts` is skipped unless `RUN_COGNEE_E2E=true` (needs a live cognee backend).
+- **Run both e2e modes before shipping.** `bun run e2e` uses `next dev`; `bun run e2e:prod`
+  (`playwright.prod.config.ts`) runs the same specs against `.next/standalone/server.js`
+  with `NODE_ENV=production`. Dev and the shipped artifact diverge in ways that are
+  invisible in dev and fatal in production: minified client code, prerendered server
+  components, real security headers, and `outputFileTracing` deciding which packages
+  exist at runtime (a missing DB driver only fails here). Every blocker found in the
+  2026-09 audit surfaced by changing the environment, never by re-reading code. CI runs
+  both. The prod config sets `E2E_TEST_MODE=true` so the localhost mock LLM is reachable
+  — `instrumentation.ts` fails closed if that marker ever appears on a deployment, and
+  `invariants.test.ts` asserts no production manifest ships it.
 - e2e mock stack: `e2e/global-setup.ts` seeds the e2e DB, starts a mock License-Validator on `:4546` (Ed25519 test keypair from `e2e-keys.ts` → `LICENSE_SIGNING_PUBLIC_KEY`) and a mock LLM on `:4545`; the app runs on `:3105` with `E2E_DATABASE_URL`. Playwright `workers: 1` (shared DB).
 - `src/lib/tenant-route-guard.test.ts` statically enforces org-context entry on every route — if it fails for a new route, add `enterWithOrg((await getActiveUser()).organizationId)` (or `bypassOrg` if genuinely cross-org).
 - 132 `*.test.ts` files across `src/` (129 run as unit tests; 3 integration files opt in via `bun run test:integration`). Every new lib file should ship with a `*.test.ts`.
@@ -221,8 +233,19 @@ document jobs have retry (`POST /api/documents/[id]/reprocess` + UI button); pur
 flow is e2e-tested via mock Midtrans (:4547, `MIDTRANS_BASE_URL` test seam).
 
 **Remove before shipping a customer image:**
-- Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables, `test-data/` PDFs), dev artifacts (`dev.log`, `README.md.bak`), and stale docs (`docs/adr/0001-single-tenant-architecture.md` contradicts the multi-tenant code; PRODUCT.md still says "single-tenant" and "Indonesian UI" while the codebase convention is English strings).
-- `helm/` chart lags docker-compose — don't point customers at it until reconciled.
+- Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables, `test-data/` PDFs).
+- `helm/` chart lags docker-compose — `helm/README.md` carries a NOT-PRODUCTION-READY
+  banner and a divergence table; don't point customers at it until reconciled (compose +
+  `install.sh` are the supported path).
+
+Resolved by the 2026-09 audit (kept here so they are not re-introduced):
+- Dev artifacts `dev.log` / `README.md.bak` / `tsconfig.tsbuildinfo` deleted (all were
+  gitignored but dirtied every `git status`).
+- Stale docs corrected: `docs/adr/0001` is now marked SUPERSEDED in place (body preserved
+  for the reasoning); PRODUCT.md/PRD/threat-model/helm claim multi-tenant + English and
+  the re-derived counts (31 models, 99 routes, 12 views).
+- Benchmark run artifacts are gitignored (`benchmark/results/*.json`, keeping the
+  curated `ground-truth-failures.json`) so they stop polluting the working tree.
 
 ## Conventions
 

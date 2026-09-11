@@ -378,7 +378,7 @@ requireRole(user, 'admin')  // Throws if user is analyst/viewer
 
 ## Production Readiness Checklist
 
-- [x] BM25 + RRF implemented & unit tested (1392 tests pass)
+- [x] BM25 + RRF implemented & unit tested (1934 tests pass via `bun run test`)
 - [x] Hybrid retrieval fixed (both legs always run)
 - [x] Multi-tenant isolation enforced at query layer
 - [x] Authentication required on all routes

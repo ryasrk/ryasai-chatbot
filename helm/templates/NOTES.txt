@@ -1,3 +1,7 @@
+WARNING: this chart is NOT PRODUCTION READY and is not reconciled with docker-compose.yml
+(it has no Postgres/Redis/migrate templates, a stale image repo, and missing license/redis env).
+Use docker-compose.yml or install.sh for supported deployments. See helm/README.md.
+
 ryasai-chatbot {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace {{ .Release.Namespace }}.
 
 Components:

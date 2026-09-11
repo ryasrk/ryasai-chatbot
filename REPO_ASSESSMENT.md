@@ -2,6 +2,11 @@
 
 > Generated 2026-07-30. Covers: repo rating, codebase metrics, architecture analysis,
 > newest tech landscape, competitive comparison, and moat analysis.
+>
+> ⚠️ **Point-in-time snapshot.** The metrics below are as of 2026-07-30 and have since drifted.
+> Current counts (verified 2026-09): **31 Prisma models, 99 API routes, 12 UI views, 132 `*.test.ts`
+> files (1934 tests pass via `bun run test`)**. Treat code-derived numbers in later sections as
+> historical; the code is the source of truth.
 
 ---
 

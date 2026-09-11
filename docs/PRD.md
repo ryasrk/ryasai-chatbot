@@ -234,7 +234,7 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 | Tenant root | `Organization` model; every data model carries `organizationId` |
 | Tenant isolation | Prisma extension auto-injects orgId from AsyncLocalStorage (`enterWithOrg`); `bypassOrg()` escape hatch for setup/SSO/invite flows |
 | User model | 1 user = 1 org (`User.organizationId`); email globally unique; session resolves org |
-| RBAC | Roles `admin > analyst > viewer`; `requireRole(user, 'admin')` guards admin routes (17 handlers / 14 routes) |
+| RBAC | Roles `admin > analyst > viewer`; `requireRole(user, 'admin')` guards admin routes (39 handlers across 32 route files) |
 | Team management | Invite (email → token), accept-invite, role change, deactivate; invitation scoped to org |
 | Plan gating | `starter | pro | enterprise`; `hasPlan()` gates MCP / scheduler / agent features |
 
@@ -370,7 +370,7 @@ A developer or system that integrates programmatically via the OpenAI-compatible
             ┌─────────────▼──────────────┐
             │  PostgreSQL 16             │
             │  (pgvector + pg_trgm)      │
-            │  25 Prisma models          │
+            │  31 Prisma models          │
             └────────────────────────────┘
 ```
 
@@ -386,18 +386,20 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 | Streaming end-to-end | Status updates per step + token streaming for synthesis — user never waits blind |
 | Deterministic where it matters | Routing and SQL gen at temp=0; creativity only in final synthesis |
 | Cognee as outer ring (not replacement) | Graph retrieval runs in parallel with flat RAG; falls back to flat if cognee down — no single point of failure |
-| Single-tenant (no companyId) | Simplified every query, function, route; multi-tenant is a future migration, not a premature abstraction |
+| Multi-tenant (org-scoped, no `companyId`) | Tenant isolation via `organizationId` on every data model + Prisma extension auto-scoping (`src/lib/prisma-tenant.ts`); no manual filter on every query |
 
 ---
 
 ## 7. Data Model Summary
 
-25 Prisma models, PostgreSQL backend (pgvector + pg_trgm extensions).
+31 Prisma models, PostgreSQL backend (pgvector + pg_trgm extensions).
 
 | Model | Role |
 |-------|------|
-| `User` | Admin account (scrypt hash, sessionVersion for fixation defense) |
-| `AppConfig` | Singleton config (setupCompleted, cogneeEnabled) |
+| `Organization` | Tenant root (slug, branding, license key/plan/status) |
+| `User` | Account (scrypt hash, `organizationId`, role, `sessionVersion` for fixation defense) |
+| `Invitation` | Pending team invitation (email, role, token, scoped to org) |
+| `AppConfig` | Singleton config (setupCompleted, cogneeEnabled, promptSettings) |
 | `Integration` | Data source connection (encrypted config, provider: POSTGRESQL/MYSQL/MSSQL) |
 | `IntegrationSchema` | Reflected table/column metadata cache |
 | `LlmConfig` | LLM provider config (encrypted key, OpenAI-compatible / Anthropic-native) |
@@ -414,12 +416,15 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 | `ApiRequestLog` | External API request log |
 | `AuditLog` | Security event log (GUARDRAIL_BLOCK, SQL_EXECUTE, API_KEY_GENERATED, etc.) |
 | `QueryHistory` | Past queries for similarity boosting in smart router |
-| `SmartMapping` | Source → entity field maps for routing hints |
+| `KgRelation` | Knowledge-graph relation (source → target + description, per chunk) |
+| `DocumentVersion` | Document version history (version, contentHash, chunkCount) |
+| `SavedPrompt` | Saved prompt-library entry (title, content, category, per user) |
 | `Plugin` | Custom webhook tool (manifest, encrypted credentials, isEnabled) |
-| `McpServer` | MCP server config (future tool-using agent support) |
+| `McpServer` | MCP server config (transport stdio/sse/http, command, encrypted headers) |
 | `ScheduledRun` | Cron-based scheduled run (cronExpr, prompt, isActive, nextRunAt) |
 | `ScheduledRunLog` | Execution history (status, answer, error, toolRunsJson, latencyMs, executedAt) |
 | `NotificationConfig` | Notification delivery config (webhook + email + Telegram) |
+| `Order` | QRIS subscription purchase (Midtrans Snap, months, amountIdr, status) |
 | `AgentRun` | Agentic planner run record (plan, status, output) |
 | `LlmUsageLog` | LLM token usage per purpose (router/sql/rag/rest/synthesis/chat) |
 
@@ -477,13 +482,12 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 
 | Item | Description |
 |------|-------------|
-| Multi-tenant support | Reintroduce `companyId` scoping for multi-tenant SaaS deployments |
+| Multi-tenant SaaS hardening | Tenant isolation is shipped (`organizationId` + Prisma extension); remaining work is operational — per-org quota enforcement and distributed rate limiting |
 | Real-time SSE push for scheduler | Replace 15s polling with persistent SSE connection from scheduler to UI |
-| Email/webhook notification on schedule failure | Current notification config only sends on success; add failure delivery |
 | Cognee production deployment | Single Postgres with pgvector + cognee Postgres graph backend (one container, one DB) |
 | Streaming agentic loop for external API | `/v1/agent/run` currently non-streaming; add SSE streaming variant |
 | More database connectors | MongoDB, Snowflake, Oracle (currently map to demo connector) |
-| MCP server integration | Leverage `McpServer` model for tool-using agent support |
+| MCP server hardening | MCP CRUD + stdio/SSE client shipped (`src/lib/mcp-client.ts`, `/api/mcp/servers`); remaining work is broadening transport coverage and operator-facing docs |
 | Visual dashboard for routing scores | Surface smart router scores + circuit breaker status in UI (currently API-only) |
 | ToolRun recording in scheduler | Scheduler currently creates ToolRun rows; verify all execution paths record metrics |
 
@@ -495,11 +499,11 @@ A developer or system that integrates programmatically via the OpenAI-compatible
 |--------|--------|---------|
 | Chat pass rate (20-turn multi-database test) | 100% | 100% (18/20 success, 0 errors, 2 clarifications) |
 | Avg response time per turn | < 8s | 5.1s |
-| Test coverage | Growing | 73+ unit tests (8 skip on cognee-unavailable, 0 fail) |
+| Test coverage | Growing | 132 `*.test.ts` files under `src/` (`find src -name '*.test.ts' \| wc -l`); the default unit runner executes 129 of them (3 integration files opt in via `bun run test:integration`) |
 | `tsc --noEmit` | 0 errors | 0 errors |
 | `bun run lint` | 0 errors | 0 errors |
 | Demo data migrated to Postgres | — | 66,435 rows (ERP 72, Chinook 14,926, World 5,298, Pagila 46,211) |
-| Prisma models | — | 25 |
-| API routes | — | 65 internal + external |
+| Prisma models | — | 31 |
+| API routes | — | 99 internal + external |
 | UI views | — | 12 |
 | Prebuilt plugins | — | 9 |

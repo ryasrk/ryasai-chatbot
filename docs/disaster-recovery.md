@@ -117,6 +117,10 @@ jobs:
 
 ## Blue-Green Deployment (Argo Rollouts)
 
+> ⚠️ **NOT SUPPORTED.** These Helm-based flows depend on the stale `helm/` chart, which is not
+> production-ready (see [`helm/README.md`](../helm/README.md)). Use the compose path
+> (`docker-compose.yml` / `install.sh`) with a blue-green swap at the reverse proxy instead.
+
 ```bash
 # Enable in Helm values
 helm upgrade chatbot ./helm --set blueGreen.enabled=true
@@ -132,6 +136,8 @@ kubectl argo rollouts undo chatbot
 Pre-promotion analysis: checks Prometheus for ≥99% success rate on `/api/v1/health` before swapping traffic.
 
 ## Canary Deployment (Flagger + Istio)
+
+> ⚠️ **NOT SUPPORTED** — same caveat as above; the `helm/` chart is not production-ready.
 
 ```bash
 # Enable in Helm values

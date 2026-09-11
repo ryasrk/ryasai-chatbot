@@ -29,6 +29,12 @@ bun run mini-services/scheduler/index.ts  # scheduler (separate process)
 
 ### Kubernetes (Helm)
 
+> ⚠️ **NOT SUPPORTED / NOT PRODUCTION READY.** The `helm/` chart is stale and lags
+> `docker-compose.yml` (no Postgres/Redis/migrate services, stale image repo, missing
+> license/redis env). Do **not** use it for customer deployments — use `docker-compose.yml`
+> or `install.sh`. See [`helm/README.md`](../helm/README.md). The command below is kept only
+> as a record of the WIP and will not produce a working release today.
+
 ```bash
 helm upgrade --install chatbot ./helm \
   --set image.tag=0.4.0 \
@@ -59,6 +65,8 @@ IMAGE_TAG=0.3.0 docker compose up -d
 ```
 
 ### Kubernetes (Helm)
+
+> ⚠️ Not supported — see the warning above and [`helm/README.md`](../helm/README.md).
 
 ```bash
 helm rollback chatbot 1   # rollback to previous revision

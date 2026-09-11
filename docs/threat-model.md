@@ -40,7 +40,7 @@
 | Asset | Location | Protection |
 |-------|----------|------------|
 | Encrypted credentials (DB passwords, API keys) | Postgres `Integration.encryptedConfig` | AES-256-GCM at rest, fail-closed key |
-| User data (chat history, sessions) | Postgres `ChatSession`, `ChatMessage` | Session auth, single-tenant isolation |
+| User data (chat history, sessions) | Postgres `ChatSession`, `ChatMessage` | Session auth, org-scoped isolation (`organizationId` + Prisma tenant extension) |
 | LLM API keys | Postgres `LlmConfig.encryptedApiKey` | AES-256-GCM at rest |
 | Audit logs | Postgres `AuditLog` | Append-only, fail-closed on critical writes |
 | Session tokens | Cookie `x-active-user` | HMAC-signed, sessionVersion anti-fixation |
@@ -58,21 +58,21 @@
 | **Tampering** | Credential tampering in DB | Mitigated | AES-256-GCM auth tag detects tampering (ADR 0005) |
 | **Repudiation** | User denies action | Mitigated | Audit log (fail-closed on critical severity) records all sensitive actions with userId + IP |
 | **Info disclosure** | SSRF via URL params / REST connector / MCP / plugin | Mitigated | SSRF blocklist + DNS-rebinding check (`isBlockedHostAsync`) at both registration and execution time on all outbound URLs (REST, plugin, MCP, webhook, LLM config) |
-| **Info disclosure** | Cross-tenant data leak | Mitigated | Single-tenant architecture (ADR 0001) — no `companyId`, no shared data |
-| **Info disclosure** | Prompt injection (data exfiltration) | Partialially mitigated | Fail-closed auth limits blast radius; alignment check interface available for agentic; LLM output not executed as code |
+| **Info disclosure** | Cross-tenant data leak | Mitigated | Multi-tenant org isolation — `organizationId` on every model, auto-injected by the Prisma tenant extension (`src/lib/prisma-tenant.ts`); `tenant-route-guard.test.ts` statically enforces org-context entry per route |
+| **Info disclosure** | Prompt injection (data exfiltration) | Partially mitigated | Fail-closed auth limits blast radius; alignment check wired into agentic loops but off by default (`ALIGNMENT_CHECK=true`); LLM output not executed as code |
 | **Info disclosure** | Error messages leak internals | Mitigated | Typed error responses (`{code, message}`) — no stack traces in API responses |
 | **Tampering** | SQL injection via KG relation insert | Mitigated | Parameterized `$executeRaw` per relation (was raw string interpolation) |
 | **Spoofing** | External API endpoints bypassed by middleware | Mitigated | `/api/v1/chat/completions`, `/api/v1/agent/run`, `/api/webhooks/incoming` in `PUBLIC_API_PATHS` (do their own Bearer/HMAC auth) |
 | **DoS** | Brute-force login / API abuse | Mitigated | Rate limiting (per-route, POST/PUT/DELETE/PATCH); API key rate limits (per-minute + daily) |
 | **DoS** | Unbounded SQL query | Mitigated | LIMIT 100 cap via AST guardrails; per-integration concurrency limiter (3 concurrent) |
-| **DoS** | LLM cost amplification | Partialially mitigated | Agentic loop max 3 iterations; token budget interface exists but not fully wired |
+| **DoS** | LLM cost amplification | Partially mitigated | Agentic loop max 3 iterations + per-run token budget (`AGENTIC_TOKEN_BUDGET`, default 50000); no per-org daily cost ceiling |
 | **Elevation of privilege** | Demo fallback in prod | Mitigated | `AUTH_DEMO_FALLBACK=false` default (ADR 0003) |
 | **Elevation of privilege** | RBAC bypass | Mitigated | Role field on User (`admin`/`analyst`/`viewer`); SSO subject linkage for OIDC |
 
 ## Open Items
 
-1. **Prompt injection (partial):** LLM-generated content is displayed to users but not sandboxed from indirect injection in retrieved documents. Alignment check interface (`src/lib/alignment-check.ts`) is available but not wired into the streaming agentic loop.
-2. **Token budget (partial):** `createTokenBudget` exists; `StreamingCompletionResult` now has a `usage` field but the streaming agentic loop does not populate it (budget tracking is non-streaming only). Cost-based DoS limiting is partially wired.
+1. **Prompt injection (partial):** LLM-generated content is displayed to users but not sandboxed from indirect injection in retrieved documents. Alignment check (`src/lib/alignment-check.ts`) IS wired into both agentic loops (`src/lib/tool-router-agentic.ts`) behind `ALIGNMENT_CHECK=true` / `ALIGNMENT_CHECK_URL`, but it is off by default, so the protection is opt-in.
+2. **Token budget (opt-in default):** `createTokenBudget` is wired into both agentic loops (`src/lib/tool-router-agentic.ts` — `budget.track()` + `budget.isExhausted()` per iteration); the default cap is `AGENTIC_TOKEN_BUDGET` (50000) and is enforced, but it is a per-run guard, not a per-org/daily cost ceiling.
 3. **Rate limiting not distributed:** In-memory rate limiting per instance. Redis `rateLimit()` exists but not wired into middleware. Multi-instance deployments get N× the limit.
 4. **No per-tool rate limiting:** SQL/REST/Plugin executions are not individually rate limited — only the HTTP endpoint is limited.
 5. **Key derivation not a KDF:** Non-hex `ENCRYPTION_SECRET_KEY` uses raw SHA-256, not scrypt/argon2. Enforce 64-char hex key for production.

@@ -1,15 +1,32 @@
+# =============================================================================
+# ⚠️  NOT PRODUCTION READY — DO NOT POINT CUSTOMERS/OPERATORS AT THIS CHART.
+#
+# This chart LAGS docker-compose.yml and has not been reconciled with it:
+#   - wrong image repository/tag (compose uses ghcr.io/ryasrk/ryasai-chatbot
+#     with :app + :scheduler tags)
+#   - no Postgres / Redis / schema-migrate services (compose has all three;
+#     the scheduler needs Redis, the app needs the migrate one-shot first)
+#   - LICENSE_VALIDATOR_URL / LICENSE_PRODUCT / REDIS_URL are missing here
+# It also still says "single-tenant", which contradicts the multi-tenant code.
+#
+# SUPPORTED DEPLOYMENT PATH: docker-compose.yml or install.sh
+# See helm/README.md for the full divergence list.
+# =============================================================================
+
 # ryasai-chatbot Helm chart defaults
 # Override per-environment with -f values.<env>.yaml or --set.
 
 # -- Container image. The Next.js build produces .next/standalone/server.js
 # (output: "standalone"). The web container runs it with Bun.
+# NOTE: repository/tag below are STALE — see the warning at the top of this file.
 image:
   repository: ghcr.io/ryasai/chatbot
   tag: "0.4.0"
   pullPolicy: IfNotPresent
 
-# -- Web deployment replicas. Single-tenant app — scale up only if stateless
-# paths (chat API) need throughput. Scheduler must stay at 1 (see below).
+# -- Web deployment replicas. The app is MULTI-TENANT (org-scoped), not
+# single-tenant. Scale up only if stateless paths (chat API) need throughput.
+# Scheduler must stay at 1 (see below).
 replicaCount: 1
 
 service:

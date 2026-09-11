@@ -1,6 +1,6 @@
 apiVersion: v2
 name: ryasai-chatbot
-description: Single-tenant enterprise AI assistant (Next.js 16 + Prisma 6 + Postgres 16)
+description: Multi-tenant enterprise AI assistant (Next.js 16 + Prisma 6 + Postgres 16) — STALE/UNSUPPORTED chart; see helm/README.md (use docker-compose.yml or install.sh instead)
 type: application
 version: 0.1.0
 appVersion: "0.4.0"
