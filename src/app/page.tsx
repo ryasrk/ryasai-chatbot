@@ -33,6 +33,7 @@ import { applyTheme, getStoredTheme, getStoredDarkMode } from '@/lib/themes'
 import { Button } from '@/components/ui/button'
 import { DashboardView } from '@/components/views/dashboard-view'
 import { LoginView } from '@/components/views/login-view'
+import { BuyLicenseDialog } from '@/components/views/billing/buy-license-dialog'
 import { ErrorScreen } from '@/components/ui/error-screen'
 import { Topbar } from '@/components/views/topbar'
 import {
@@ -189,6 +190,10 @@ export default function Home() {
   const [licenseRetrying, setLicenseRetrying] = useState(false)
   const [licenseRetryFailed, setLicenseRetryFailed] = useState(false)
   const [forceSignup, setForceSignup] = useState(false)
+  // Buy License checkout — reachable from the lockdown screen (unpaid orgs)
+  // and from Settings → Organization. The lockdown shell is replaced entirely,
+  // so a dialog (not a routed view) is the only entry point that works here.
+  const [buyLicenseOpen, setBuyLicenseOpen] = useState(false)
 
   const sidebarRef = useRef<HTMLDivElement>(null)
 
@@ -367,13 +372,28 @@ export default function Home() {
   }
 
   if (!loading && licenseError) {
+    // ponytail: session.ts does not expose the lockdown REASON to the client
+    // (402 body carries code+message only), so the Buy CTA shows for every
+    // license lockdown — purchasing also renews/extends expired licenses, so
+    // this is correct for 'unpaid' and 'expired' alike.
     return (
-      <ErrorScreen
-        type="license"
-        onRetry={handleLicenseRetry}
-        retrying={licenseRetrying}
-        onSignup={licenseRetryFailed ? handleSignupAgain : undefined}
-      />
+      <>
+        <ErrorScreen
+          type="license"
+          onRetry={handleLicenseRetry}
+          retrying={licenseRetrying}
+          onSignup={licenseRetryFailed ? handleSignupAgain : undefined}
+          onBuyLicense={() => setBuyLicenseOpen(true)}
+        />
+        <BuyLicenseDialog
+          open={buyLicenseOpen}
+          onOpenChange={setBuyLicenseOpen}
+          // ponytail: no onSettled here — closing the dialog or refreshing
+          // identity on settlement unmounts the lockdown shell and rips the
+          // success screen away before the user sees it. The dialog's own
+          // "Reload App" button performs a full load, which re-fetches /api/me.
+        />
+      </>
     )
   }
 

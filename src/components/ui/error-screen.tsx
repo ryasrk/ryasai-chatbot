@@ -10,9 +10,11 @@ interface ErrorScreenProps {
   retrying?: boolean
   /** Secondary action shown after a failed retry (license type only). */
   onSignup?: () => void
+  /** Opens the Buy License checkout (unpaid/expired license types). */
+  onBuyLicense?: () => void
 }
 
-export function ErrorScreen({ type, message, onRetry, retrying, onSignup }: ErrorScreenProps) {
+export function ErrorScreen({ type, message, onRetry, retrying, onSignup, onBuyLicense }: ErrorScreenProps) {
   const config = {
     forbidden: { icon: ShieldAlert, title: 'Access Denied', desc: message || 'You do not have permission to perform this action. Contact your organization administrator.' },
     license: { icon: CreditCard, title: 'License Required', desc: message || 'Your license is no longer valid. Please contact your administrator to renew.' },
@@ -32,8 +34,14 @@ export function ErrorScreen({ type, message, onRetry, retrying, onSignup }: Erro
             Try Again
           </Button>
         )}
+        {type === 'license' && onBuyLicense && (
+          <Button onClick={onBuyLicense} className="w-full" data-testid="buy-license-cta">
+            <CreditCard className="mr-2 h-4 w-4" />
+            Buy License
+          </Button>
+        )}
         {type === 'license' && onSignup && (
-          <Button onClick={onSignup} className="w-full">
+          <Button onClick={onSignup} variant="outline" className="w-full">
             <UserPlus className="mr-2 h-4 w-4" />
             Sign Up Again
           </Button>

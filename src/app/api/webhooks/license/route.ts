@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
@@ -5,6 +6,16 @@ import { handleApiError } from '@/lib/session'
 import { scopedLogger } from '@/lib/logger'
 
 const log = scopedLogger('license-webhook')
+
+// ponytail: shared-secret compare must be timing-safe — this secret grants
+// license status control over any org, so a byte-at-a-time oracle is a real
+// (if noisy) attack surface. Hash both sides so length never leaks either.
+function secretsMatch(a: string | null, b: string): boolean {
+  if (!a) return false
+  const ha = crypto.createHash('sha256').update(a).digest()
+  const hb = crypto.createHash('sha256').update(b).digest()
+  return crypto.timingSafeEqual(ha, hb)
+}
 
 /**
  * POST /api/webhooks/license
@@ -21,7 +32,7 @@ export async function POST(req: NextRequest) {
     const webhookSecret = req.headers.get('x-webhook-secret')
     const expectedSecret = process.env.LICENSE_WEBHOOK_SECRET
 
-    if (!expectedSecret || webhookSecret !== expectedSecret) {
+    if (!expectedSecret || !secretsMatch(webhookSecret, expectedSecret)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
