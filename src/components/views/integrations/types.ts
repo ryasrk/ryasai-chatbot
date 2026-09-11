@@ -57,6 +57,13 @@ export interface SchemaTable {
   reflectedAt: string
   sampleData?: Record<string, unknown>[]
   metadata?: Record<string, unknown>
+  // ponytail: admin-editable table description. When `manualDescription` is
+  // true, schema enrichment must NOT overwrite `description` (see
+  // src/lib/schema-enrichment.ts). Optional here because the schema GET
+  // route currently returns neither field — they default to ''/false until
+  // agent B extends the route's row mapping.
+  description?: string | null
+  manualDescription?: boolean
 }
 
 export interface SchemaData {

@@ -64,6 +64,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
         updatedAt: integration.updatedAt,
         config: masked,
         businessContext: integration.businessContext,
+        contextPrompt: integration.contextPrompt,
         tables,
         tableCount: tables.length,
       },

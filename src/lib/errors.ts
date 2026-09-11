@@ -10,6 +10,7 @@ import { UnauthorizedError } from '@/lib/session'
 export type ErrorCode =
   | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR'
   | 'RATE_LIMITED' | 'LLM_NOT_CONFIGURED' | 'LLM_ERROR' | 'LLM_TIMEOUT'
+  | 'LLM_BUDGET_EXCEEDED'
   | 'GUARDRAIL_BLOCK' | 'SQL_ERROR' | 'REST_ERROR' | 'PLUGIN_ERROR'
   | 'MCP_ERROR' | 'CONFIG_ERROR' | 'SETUP_REQUIRED' | 'INTERNAL_ERROR'
 
@@ -51,6 +52,7 @@ function defaultStatusForCode(code: ErrorCode): number {
     case 'NOT_FOUND': return 404
     case 'VALIDATION_ERROR': return 400
     case 'RATE_LIMITED': return 429
+    case 'LLM_BUDGET_EXCEEDED': return 429
     case 'LLM_NOT_CONFIGURED': return 503
     case 'LLM_ERROR': case 'LLM_TIMEOUT': return 502
     case 'GUARDRAIL_BLOCK': return 403

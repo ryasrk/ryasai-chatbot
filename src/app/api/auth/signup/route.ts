@@ -8,10 +8,12 @@ import { handleApiError } from '@/lib/session'
 
 /**
  * POST /api/auth/signup
- *   Body: { organizationName, slug, name, email, password, licenseKey }
+ *   Body: { organizationName, slug, name, email, password, licenseKey? }
  *
  * Flow:
- *   1. Validate license key against License-Validator
+ *   1. If licenseKey provided → validate it against License-Validator (legacy
+ *      path, org starts 'valid'). If absent → org starts 'unpaid' and is
+ *      locked down until a QRIS subscription purchase activates a license.
  *   2. Check slug + email are not taken
  *   3. Create Organization with license info
  *   4. Create admin User linked to org
@@ -25,11 +27,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
     }
 
-    const { organizationName, slug, name, email, password, licenseKey } = body as Record<string, string>
+    const { organizationName, slug, name, email, password } = body as Record<string, string>
+    const licenseKey = typeof body.licenseKey === 'string' && body.licenseKey.trim() !== ''
+      ? body.licenseKey.trim()
+      : null
 
-    if (!organizationName || !slug || !name || !email || !password || !licenseKey) {
+    if (!organizationName || !slug || !name || !email || !password) {
       return NextResponse.json(
-        { error: 'All fields are required: organizationName, slug, name, email, password, licenseKey.' },
+        { error: 'All fields are required: organizationName, slug, name, email, password.' },
         { status: 400 },
       )
     }
@@ -41,14 +46,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 })
     }
 
-    // 1. Validate license
+    // 1. Validate license when one was supplied (back-compat with the
+    // purchase-first flow). Licenseless signups land in the 'unpaid' state.
     const machineId = generateMachineId(normalizedSlug)
-    const licenseResult = await validateLicense(licenseKey.trim(), machineId)
-    if (!licenseResult.valid) {
-      return NextResponse.json(
-        { error: `License validation failed: ${licenseResult.message}` },
-        { status: 403 },
-      )
+    let licenseResult: Awaited<ReturnType<typeof validateLicense>> | null = null
+    if (licenseKey) {
+      licenseResult = await validateLicense(licenseKey, machineId)
+      if (!licenseResult.valid) {
+        return NextResponse.json(
+          { error: `License validation failed: ${licenseResult.message}` },
+          { status: 403 },
+        )
+      }
     }
 
     // 2. Check uniqueness (bypass org context — no org exists yet)
@@ -72,11 +81,20 @@ export async function POST(req: NextRequest) {
         data: {
           name: organizationName.trim(),
           slug: normalizedSlug,
-          licenseKey: licenseKey.trim(),
-          licensePlan: licenseResult.plan,
-          licenseStatus: 'valid',
-          licenseValidatedAt: new Date(),
-          licenseExpiresAt: licenseResult.expiresAt ? new Date(licenseResult.expiresAt) : null,
+          ...(licenseKey && licenseResult
+            ? {
+                licenseKey,
+                licensePlan: licenseResult.plan,
+                licenseStatus: 'valid',
+                licenseValidatedAt: new Date(),
+                licenseExpiresAt: licenseResult.expiresAt ? new Date(licenseResult.expiresAt) : null,
+              }
+            : {
+                // Licenseless signup — locked down ('unpaid') until a QRIS
+                // purchase issues and activates a license.
+                licensePlan: null,
+                licenseStatus: 'unpaid',
+              }),
         },
       }),
     )

@@ -16,6 +16,9 @@ const PUBLIC_API_PATHS = new Set([
   '/api/v1/agent/run',
   '/api/webhooks/incoming',
   '/api/webhooks/license',
+  // Midtrans calls this server-to-server with NO session cookie — authenticity
+  // is enforced by the sha512 signature check inside the route handler itself.
+  '/api/billing/webhook',
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/signup',

@@ -45,6 +45,7 @@ export class LicenseError extends Error {
       expired: 'License has expired. Please renew your license.',
       deactivated: 'License has been deactivated. Please contact support.',
       unreachable: 'License server unreachable and grace period has expired. Please check your internet connection.',
+      unpaid: 'Subscription required — buy a license to continue',
     }
     super(message ?? messages[reason] ?? 'License is no longer valid.')
     this.name = 'LicenseError'
@@ -129,10 +130,19 @@ export interface GetActiveUserOptions {
    * getActiveUser() would throw LicenseError before the caller can act.
    */
   skipLicenseCheck?: boolean
+  /**
+   * When true, let sessions through whose ONLY license problem is
+   * `licenseStatus === 'unpaid'` (licenseless signup that hasn't purchased
+   * yet). Expired/suspended/invalid/unreachable-beyond-grace still throw.
+   * Used ONLY by /api/billing/*, /api/me, and auth routes so locked users can
+   * reach checkout — every other route keeps blocking unpaid orgs.
+   */
+  allowUnlicensed?: boolean
 }
 
 export async function getActiveUser(opts: GetActiveUserOptions = {}): Promise<ActiveUser> {
   const skipLicense = opts.skipLicenseCheck === true
+  const allowUnlicensed = opts.allowUnlicensed === true
   const store = await cookies()
   const token = store.get('x-active-user')?.value
   const userId = verifySession(token)
@@ -161,9 +171,11 @@ export async function getActiveUser(opts: GetActiveUserOptions = {}): Promise<Ac
       )
       // License gate — block expired/invalid/suspended. 'unreachable' blocked only beyond grace period.
       // Skipped when the caller is performing the revalidation itself (e.g. /api/license/retry).
+      // 'unpaid' passes through when the caller explicitly allows it (billing/me/auth routes).
       if (!skipLicense && org) {
         const lockdownReason = getLockdownReason(org.licenseStatus, org.licenseValidatedAt ?? null)
-        if (lockdownReason) {
+        const waived = allowUnlicensed && lockdownReason === 'unpaid'
+        if (lockdownReason && !waived) {
           throw new LicenseError(lockdownReason)
         }
       }
@@ -199,7 +211,8 @@ export async function getActiveUser(opts: GetActiveUserOptions = {}): Promise<Ac
   )
   if (!skipLicense && fallbackOrg) {
     const lockdownReason = getLockdownReason(fallbackOrg.licenseStatus, fallbackOrg.licenseValidatedAt ?? null)
-    if (lockdownReason) {
+    const waived = allowUnlicensed && lockdownReason === 'unpaid'
+    if (lockdownReason && !waived) {
       throw new LicenseError(lockdownReason)
     }
   }

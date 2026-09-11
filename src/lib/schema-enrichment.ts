@@ -11,7 +11,17 @@ export async function enrichSchemaDescriptions(integrationId: string, integratio
   const schemas = await db.integrationSchema.findMany({ where: { integrationId } })
   if (schemas.length === 0) return
 
-  const tables: TableSummaryInput[] = schemas.map((s) => ({
+  // ponytail: skip rows an admin has manually edited — once manualDescription
+  // is set, re-enrichment must not overwrite the edit (spec). These rows are
+  // excluded from the LLM input entirely so the model can't be tempted to
+  // "improve" them, and we leave their `description` untouched below.
+  const enrichable = schemas.filter((s) => !s.manualDescription)
+  if (enrichable.length === 0) {
+    log.info('Schema descriptions skipped — all rows manually edited', { integrationId, count: schemas.length })
+    return
+  }
+
+  const tables: TableSummaryInput[] = enrichable.map((s) => ({
     tableName: s.tableName,
     columns: safeParseColumns(s.columns),
     rowCount: s.rowCount,
@@ -20,13 +30,13 @@ export async function enrichSchemaDescriptions(integrationId: string, integratio
 
   try {
     const descriptions = await generateSchemaDescriptions({ integrationName, tables })
-    for (const s of schemas) {
+    for (const s of enrichable) {
       const desc = descriptions[s.tableName]
       if (desc) {
         await db.integrationSchema.update({ where: { id: s.id }, data: { description: desc.slice(0, 500) } })
       }
     }
-    log.info('Schema descriptions enriched', { integrationId, count: Object.keys(descriptions).length })
+    log.info('Schema descriptions enriched', { integrationId, count: Object.keys(descriptions).length, skippedManual: schemas.length - enrichable.length })
   } catch (e) {
     log.warn('Schema description enrichment failed', { integrationId, error: e instanceof Error ? e.message : String(e) })
   }

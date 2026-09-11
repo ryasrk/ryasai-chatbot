@@ -16,6 +16,8 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
+import { getPromptSettings } from '@/lib/prompt-settings'
+import { buildSourceGuidance } from '@/lib/source-guidance'
 import {
   buildAuthHeaders,
   buildEndpointUrl,
@@ -141,9 +143,38 @@ export async function runRagBranch(args: {
   const reflectionNote = !retrieval.reflection.sufficient && retrieval.retrievalPasses >= 2
     ? `\n\n[Note: The retrieved evidence may not fully address the question. Answer based only on the evidence above. If the evidence doesn't contain the answer, say so.]`
     : ''
+  // Source guidance block (per-doc + org ragContextPrompt). Empty prompts
+  // inject nothing. Fetch per-doc contextPrompts for the distinct contributing
+  // documents in score order (dedupe by first-seen so a doc with 2 chunks
+  // doesn't appear twice). See docs/superpowers/specs/2026-08-26-editable-context-prompts-design.md.
+  const distinctDocIds: string[] = []
+  for (const c of topChunks) {
+    if (c.documentId && !distinctDocIds.includes(c.documentId)) distinctDocIds.push(c.documentId)
+  }
+  let sourceGuidance = ''
+  if (distinctDocIds.length > 0) {
+    const docs = await db.document.findMany({
+      where: { id: { in: distinctDocIds } },
+      select: { id: true, name: true, contextPrompt: true },
+    })
+    // Re-order by retrieval-score (first-seen) so truncation prefers the
+    // highest-scoring evidence — buildSourceGuidance keeps caller-supplied order.
+    const byId = new Map(docs.map((d) => [d.id, d]))
+    const docPrompts = distinctDocIds
+      .map((id) => byId.get(id))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d))
+      .filter((d) => d.contextPrompt && d.contextPrompt.trim())
+      .map((d) => ({ name: d.name, content: d.contextPrompt! }))
+    const orgPrompt = (await getPromptSettings(db)).ragContextPrompt
+    sourceGuidance = buildSourceGuidance(docPrompts, { budget: 2000, orgPrompt })
+  }
+  // Prepend the guidance block to the evidence (NOT as a system message —
+  // keeps systemPromptPrefix semantics untouched per the spec). Empty block
+  // (no prompts anywhere) leaves the context exactly as before.
+  const contextWithGuidance = sourceGuidance ? `${sourceGuidance}\n\n${context}` : context
   const answer = await generateAnswer({
     question: args.question,
-    context: context + reflectionNote,
+    context: contextWithGuidance + reflectionNote,
     source: 'RAG',
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
@@ -216,6 +247,21 @@ export async function runSqlBranch(args: {
     return unavailableDataSourceResult('SQL', args.question, started)
   }
 
+  // ponytail: integration.contextPrompt is admin-edited business guidance for
+  // SQL answer synthesis (spec §Injection → SQL). It's appended to BOTH the
+  // SQL-generation step and the final answer step so prose respects it too.
+  // Capped at 2000 chars so a runaway prompt can't eat the whole context. We
+  // append to the effective prefix only — args.systemPromptPrefix itself is
+  // left untouched (callers' contract unchanged).
+  const intPrompt = integration.contextPrompt && integration.contextPrompt.trim()
+    ? `\n\nContext guidance:\n${integration.contextPrompt!.slice(0, 2000)}`
+    : ''
+  const effectiveSystemPromptPrefix = args.systemPromptPrefix
+    ? `${args.systemPromptPrefix}${intPrompt}`
+    : intPrompt
+      ? intPrompt.replace(/^\s+/, '')
+      : undefined
+
   const schemaDescription = describeSchema(
     integration.schemas.map((schema) => ({
       tableName: schema.tableName,
@@ -273,7 +319,7 @@ export async function runSqlBranch(args: {
       schemaDescription,
       provider: integration.provider,
       memoryContext: args.memoryContext,
-      systemPromptPrefix: args.systemPromptPrefix,
+      systemPromptPrefix: effectiveSystemPromptPrefix,
       repairFeedback: feedback,
     })
     const guard = validateAndSanitizeLlmSql(candidate.sql)
@@ -386,7 +432,7 @@ export async function runSqlBranch(args: {
     question: args.question,
     context: JSON.stringify(result.rows, null, 2),
     source: 'SQL',
-    systemPromptPrefix: args.systemPromptPrefix,
+    systemPromptPrefix: effectiveSystemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,

@@ -25,7 +25,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--accept-data-loss", "--skip-generate"]
+    # ponytail: NO --accept-data-loss. A schema drift (e.g. a column that would
+    # be dropped) must fail the migrate job LOUDLY so an operator intervenes;
+    # silently destroying customer data on `docker compose up` is never okay.
+    # Rollback: restore the newest pg_dump from backups/ (see docs/operations.md).
+    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
     restart: "no"
     networks:
       - ryasai-net
@@ -49,6 +53,14 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # ponytail: liveness probe against /api/v1/health (no DB hit — dependency
+    # status lives at /api/health). bun is the runtime image, so no curl needed.
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://127.0.0.1:3000/api/v1/health'); process.exit(r.ok ? 0 : 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     networks:
       - ryasai-net
@@ -72,6 +84,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # ponytail: NO HTTP healthcheck — the scheduler is a BullMQ worker with no
+    # listening port. Liveness = restart: unless-stopped + Redis stalled-job
+    # detection (BullMQ re-queues a dead worker's jobs automatically).
     restart: unless-stopped
     networks:
       - ryasai-net

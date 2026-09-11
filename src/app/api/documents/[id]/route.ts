@@ -37,6 +37,7 @@ export async function GET(
         cognifyError: true,
         cognifiedAt: true,
         contentText: true,
+        contextPrompt: true,
         createdAt: true,
         updatedAt: true,
         chunks: {
@@ -73,6 +74,7 @@ export async function GET(
         category: doc.category,
         description: doc.description,
         contentText: doc.contentText,
+        contextPrompt: doc.contextPrompt,
         createdAt: doc.createdAt,
         updatedAt: doc.updatedAt,
         chunkCount: doc._count.chunks,

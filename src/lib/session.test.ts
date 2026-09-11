@@ -256,4 +256,75 @@ describe('getActiveUser', () => {
     const user = await getActiveUser({ skipLicenseCheck: true })
     expect(user.userId).toBe('user-1')
   })
+
+  test("unpaid org without allowUnlicensed → throws LicenseError (reason 'unpaid')", async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    stubAuthenticatedUser()
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'unpaid', licensePlan: null }))
+
+    const err = await captureRejection(() => getActiveUser())
+    expect(err).toBeInstanceOf(LicenseError)
+    expect((err as LicenseError).reason).toBe('unpaid')
+  })
+
+  test("unpaid org WITH allowUnlicensed → returns user (plan null)", async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    stubAuthenticatedUser()
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'unpaid', licensePlan: null }))
+
+    const user = await getActiveUser({ allowUnlicensed: true })
+    expect(user.userId).toBe('user-1')
+    expect(user.plan).toBeNull()
+  })
+
+  test('allowUnlicensed does NOT waive expired org → still throws', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    stubAuthenticatedUser()
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'expired', licensePlan: 'pro' }))
+
+    await expect(getActiveUser({ allowUnlicensed: true })).rejects.toBeInstanceOf(LicenseError)
+  })
+
+  test('allowUnlicensed does NOT waive suspended org → still throws', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    stubAuthenticatedUser()
+    mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'suspended', licensePlan: 'pro' }))
+
+    await expect(getActiveUser({ allowUnlicensed: true })).rejects.toBeInstanceOf(LicenseError)
+  })
+
+  test('allowUnlicensed does NOT waive unreachable-beyond-grace org → still throws', async () => {
+    process.env.AUTH_DEMO_FALLBACK = 'false'
+    stubAuthenticatedUser()
+    mockOrgFindUnique.mockImplementation(async () => ({
+      licenseStatus: 'unreachable',
+      licensePlan: 'pro',
+      // validatedAt long past — grace period (7 days) exhausted
+    }))
+
+    await expect(getActiveUser({ allowUnlicensed: true })).rejects.toBeInstanceOf(LicenseError)
+  })
 })
+
+function stubAuthenticatedUser() {
+  mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+  mockVerifySession.mockImplementation(() => 'user-1')
+  mockUserFindUnique.mockImplementation(async () => ({
+    id: 'user-1',
+    name: 'Admin',
+    email: 'admin@test.com',
+    isActive: true,
+    sessionVersion: 0,
+    role: 'admin',
+    organizationId: 'org-1',
+  }))
+}
+
+async function captureRejection(promiseFactory: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await promiseFactory()
+    return null
+  } catch (e) {
+    return e
+  }
+}

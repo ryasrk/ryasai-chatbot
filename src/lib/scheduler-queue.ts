@@ -47,6 +47,48 @@ export const scheduleQueue = new Queue<ScheduleJobData>('scheduled-runs', {
 const REPEAT_KEY = (runId: string) => `scheduled-run:${runId}`
 const DEFAULT_TZ = 'UTC'
 
+// ---------------------------------------------------------------------------
+// License expiry reminder — a platform-owned repeatable job on the same queue
+// as user schedules. Distinct job name so syncAllSchedules never prunes it.
+// ---------------------------------------------------------------------------
+
+export const LICENSE_REMINDER_JOB_NAME = 'license-expiry-reminder'
+export const LICENSE_REMINDER_CRON = '0 9 * * *'
+export const LICENSE_REMINDER_TZ = DEFAULT_TZ
+
+/**
+ * Idempotently ensure the daily license-expiry reminder repeatable job exists
+ * (and matches the current pattern/tz). Called from the scheduler bootstrap.
+ *
+ * ponytail: BullMQ hashes the repeatable-job key from pattern+tz, so removal
+ * must mirror the STORED pattern+tz (see syncSchedule comment) — otherwise
+ * the stale job silently survives and fires alongside the new one.
+ */
+export async function ensureLicenseReminderRepeatable(): Promise<void> {
+  const jobs = await scheduleQueue.getRepeatableJobs()
+  const existing = jobs.find((j) => j.name === LICENSE_REMINDER_JOB_NAME)
+  if (
+    existing &&
+    existing.pattern === LICENSE_REMINDER_CRON &&
+    (existing.tz ?? '') === LICENSE_REMINDER_TZ
+  ) {
+    return
+  }
+  if (existing?.pattern) {
+    await scheduleQueue.removeRepeatable(LICENSE_REMINDER_JOB_NAME, {
+      pattern: existing.pattern,
+      ...(existing.tz ? { tz: existing.tz } : {}),
+    })
+  }
+  // ponytail: the reminder carries no payload — cast keeps Queue<ScheduleJobData>
+  // generic intact. The worker MUST branch on job name before reading data.
+  await scheduleQueue.add(
+    LICENSE_REMINDER_JOB_NAME,
+    {} as unknown as ScheduleJobData,
+    { repeat: { pattern: LICENSE_REMINDER_CRON, tz: LICENSE_REMINDER_TZ } },
+  )
+}
+
 /**
  * Find the stored repeatable job for a run (matched by job name = REPEAT_KEY).
  */
@@ -161,9 +203,10 @@ export async function syncAllSchedules(): Promise<void> {
   const repeatableJobs = await scheduleQueue.getRepeatableJobs()
   const activeKeys = new Set(runs.map((r) => REPEAT_KEY(r.id)))
 
-  // Prune stale repeatable jobs (deleted/deactivated schedules).
+  // Prune stale repeatable jobs (deleted/deactivated schedules). The platform
+  // license-expiry reminder lives on this queue too — never prune it.
   for (const j of repeatableJobs) {
-    if (j.name && !activeKeys.has(j.name)) {
+    if (j.name && j.name !== LICENSE_REMINDER_JOB_NAME && !activeKeys.has(j.name)) {
       try {
         await scheduleQueue.removeRepeatableByKey(j.key)
       } catch (e) {

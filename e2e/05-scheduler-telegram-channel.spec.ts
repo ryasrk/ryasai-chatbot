@@ -45,8 +45,10 @@ test('create Telegram channel inline from Add Schedule dialog', async ({ page })
   }
   await schedulesLink.click()
 
-  // Wait for the scheduler page to load - use "Add Schedule" button as anchor point
-  const addScheduleBtn = page.getByRole('button', { name: 'Add Schedule', exact: true })
+  // Wait for the scheduler page to load - use "Add Schedule" button as anchor point.
+  // ponytail: two "Add Schedule" buttons can coexist (page header + toolbar) —
+  // target the first, which is the primary page-level action.
+  const addScheduleBtn = page.getByRole('button', { name: 'Add Schedule', exact: true }).first()
   await expect(addScheduleBtn).toBeVisible({ timeout: 15_000 })
 
   // Open Add Schedule dialog
@@ -57,31 +59,18 @@ test('create Telegram channel inline from Add Schedule dialog', async ({ page })
   // Fill part of the schedule form — must survive the nested modal flow
   await page.getByPlaceholder('Daily sales summary').fill('e2e-inline-channel')
 
-  // Try dropdown path first; if no active channels exist, use empty-state button
-  // per scheduler view logic: Select dropdown only shows + Add Telegram channel item when channels > 0
+  // Empty-state path first (deterministic on a fresh e2e DB — zero channels
+  // renders the inline "Add channel" button inside the Notification Channel
+  // combobox area); fall back to the dropdown item only if it's absent.
   let addChannelMethodFound = false
-
-  try {
-    // Dropdown path (channels exist) — only attempt if combobox isn't disabled
+  const addChannelBtn = page.getByRole('button', { name: /add channel/i })
+  if (await addChannelBtn.isVisible().catch(() => false)) {
+    await addChannelBtn.click()
+    addChannelMethodFound = true
+  } else {
     const channelCombobox = page.getByLabel('Notification Channel')
-    if (channelCombobox && !(await channelCombobox.isDisabled())) {
-      await channelCombobox.click()
-      const option = page.getByRole('option', { name: /Add Telegram channel/i })
-      if (!(await option.isVisible())) {
-        throw new Error('option not found in dropdown')
-      }
-      await option.click()
-      addChannelMethodFound = true
-    } else {
-      throw new Error('combobox disabled or missing')
-    }
-  } catch {
-    // Fallback: empty-state button (no channels yet)
-    const addBtn = page.getByRole('button', { name: /add channel/i, exact: true })
-    if (!(await addBtn.isVisible())) {
-      throw new Error('neither dropdown nor empty-state available')
-    }
-    await addBtn.click()
+    await channelCombobox.click()
+    await page.getByRole('option', { name: /Add Telegram channel/i }).click()
     addChannelMethodFound = true
   }
 

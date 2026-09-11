@@ -6,6 +6,12 @@
  * SSRF-hardened: blocks internal hosts via the same isBlockedHost /
  * isBlockedHostAsync checks used by mcp-client.ts and llm-config.ts.
  *
+ * Redirects are followed MANUALLY (redirect:'manual' + bounded hop loop): every
+ * hop's target gets the full scheme + hostname-blocklist + async-DNS re-check
+ * BEFORE its request is issued. With redirect:'follow', a single 302 from an
+ * attacker-controlled host used to reach http://169.254.169.254/ unchecked —
+ * the guard only ever inspected the initial hostname.
+ *
  * For HTML pages, strips tags and collapses whitespace. For raw text
  * (GitHub README markdown, JSON, etc.), returns as-is.
  */
@@ -14,38 +20,94 @@ import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
 const MAX_CONTENT_LENGTH = 10_000
 const FETCH_TIMEOUT_MS = 15_000
 
+// ponytail: Residual DNS-rebinding risk. isBlockedHostAsync resolves each
+// hop's hostname right before that hop's request, but the fetch then
+// RE-resolves internally — an adversarial DNS server can still flip its answer
+// between our check and the TCP connect (classic TOCTOU). Pinning the resolved
+// IP (connect by IP + Host header / custom dispatcher) is not cleanly feasible
+// here: this codebase builds under Node (Turbopack) but RUNS under Bun, whose
+// fetch ignores undici Dispatchers and exposes no custom-lookup hook, and
+// hand-rolled socket plumbing would fork TLS/certificate verification. The
+// per-hop re-validation shrinks the attack window from "anywhere in the whole
+// chain" to "within a single connection setup" and closes the unauthenticated
+// redirect vector entirely. Revisit if Bun gains undici-compatible dispatchers.
+const MAX_REDIRECT_HOPS = 5
+
 export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; content: string; title?: string; error?: string }> {
-  let parsed: URL
+  let current: URL
   try {
-    parsed = new URL(url)
+    current = new URL(url)
   } catch {
     return { ok: false, content: '', error: 'Invalid URL.' }
   }
 
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return { ok: false, content: '', error: 'URL must use http or https.' }
-  }
+  // One shared deadline across the whole redirect chain — a slow-loris chain of
+  // 5 hops each taking 14s must not turn into a 70s request.
+  const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS)
 
-  if (isBlockedHost(parsed.hostname)) {
-    return { ok: false, content: '', error: 'Host is blocked (internal/private address).' }
-  }
-  if (await isBlockedHostAsync(parsed.hostname)) {
-    return { ok: false, content: '', error: 'Host is blocked (DNS rebinding detected).' }
-  }
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    // --- Per-hop validation: EVERY hop gets the full guard suite, not just hop 0.
+    if (current.protocol !== 'http:' && current.protocol !== 'https:') {
+      return { ok: false, content: '', error: 'URL must use http or https.' }
+    }
 
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ryasai-chatbot/1.0)' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      redirect: 'follow',
-    })
+    if (isBlockedHost(current.hostname)) {
+      return { ok: false, content: '', error: 'Host is blocked (internal/private address).' }
+    }
+    if (await isBlockedHostAsync(current.hostname)) {
+      return { ok: false, content: '', error: 'Host is blocked (DNS rebinding detected).' }
+    }
+
+    // Policy: https→http redirects ARE allowed. This is a credential-free,
+    // read-only text fetch (no cookies/auth headers are ever attached), so the
+    // downgrade leaks no secrets; refusing it would break the occasional legacy
+    // mirror while adding nothing security-wise. Non-http(s) schemes remain
+    // rejected at every hop.
+    let res: Response
+    try {
+      res = await fetch(current, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ryasai-chatbot/1.0)' },
+        signal: deadline,
+        redirect: 'manual',
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, content: '', error: `Fetch error: ${msg}` }
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      if (hop === MAX_REDIRECT_HOPS) {
+        return { ok: false, content: '', error: `Too many redirects (limit ${MAX_REDIRECT_HOPS}).` }
+      }
+      const location = res.headers.get('location')
+      if (!location) {
+        return { ok: false, content: '', error: `Fetch failed: HTTP ${res.status} redirect without Location header.` }
+      }
+      let next: URL
+      try {
+        next = new URL(location, current)
+      } catch {
+        return { ok: false, content: '', error: 'Redirect target is not a valid URL.' }
+      }
+      if (next.username || next.password) {
+        return { ok: false, content: '', error: 'Redirect target must not contain embedded credentials.' }
+      }
+      current = next
+      continue
+    }
 
     if (!res.ok) {
       return { ok: false, content: '', error: `Fetch failed: HTTP ${res.status}` }
     }
 
     const contentType = res.headers.get('content-type') ?? ''
-    let text = await res.text()
+    let text: string
+    try {
+      text = await res.text()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, content: '', error: `Fetch error: ${msg}` }
+    }
 
     // Strip HTML tags if it's HTML
     let title: string | undefined
@@ -58,10 +120,11 @@ export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; co
 
     const content = text.trim().slice(0, MAX_CONTENT_LENGTH)
     return { ok: true, content, title }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return { ok: false, content: '', error: `Fetch error: ${msg}` }
   }
+
+  // Unreachable: every loop iteration either continues (bounded by hop cap),
+  // returns success, or returns an error.
+  return { ok: false, content: '', error: 'Too many redirects.' }
 }
 
 function stripHtml(html: string): string {

@@ -3,10 +3,26 @@ import { redis, jobQueue, checkRedisHealth } from '@/lib/redis'
 import { embedDocumentChunks, embedCompanyDocuments } from '@/lib/embeddings'
 import { cognifyDocument } from '@/lib/cognee'
 import { rebuildFts } from '@/lib/rag-fts'
+import {
+  issueLicenseForOrder,
+  LICENSE_ISSUE_BACKOFF_TYPE,
+  licenseIssueBackoffDelayMs,
+} from '@/lib/license-issue'
+import {
+  runOrderReconciliation,
+  ORDER_RECONCILE_JOB_NAME,
+  ORDER_RECONCILE_CRON,
+} from '@/lib/order-reconcile'
 import { db } from '@/lib/db'
 import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 
-export type JobType = 'document-embed' | 'document-cognify' | 'fts-rebuild' | 'embedding-rebuild'
+export type JobType =
+  | 'document-embed'
+  | 'document-cognify'
+  | 'fts-rebuild'
+  | 'embedding-rebuild'
+  | 'license-issue'
+  | 'order-reconcile'
 
 export interface JobData {
   type: JobType
@@ -73,7 +89,49 @@ registerJobHandler('embedding-rebuild', async (data) => {
   await embedCompanyDocuments({ documentId: data.documentId })
 })
 
+// ponytail: bounded retry for license issuance after a settled QRIS order.
+// Money state is already safe (order settled) — throwing here only triggers
+// BullMQ's attempts/backoff so the validator gets re-polled.
+registerJobHandler('license-issue', async (data) => {
+  const orderId = data.orderId as string | undefined
+  if (!orderId) return
+  const outcome = await issueLicenseForOrder(orderId)
+  if (!outcome.ok) throw new Error(`license-issue retry needed for order ${orderId}: ${outcome.reason}`)
+})
+
+// ponytail: hourly safety net — settled orders whose license never got issued
+// (crash between the 200-to-Midtrans and the retry enqueue, or exhausted
+// retries during a validator outage). issueLicenseForOrder is idempotent.
+registerJobHandler('order-reconcile', async () => {
+  await runOrderReconciliation()
+})
+
 let worker: Worker<JobData> | null = null
+
+/**
+ * ponytail: ensure the hourly 'order-reconcile' repeatable job exists (and
+ * matches the current pattern). Repeatable jobs live only in Redis, so
+ * re-ensuring on every worker boot heals a Redis restart — same pattern as
+ * ensureLicenseReminderRepeatable in scheduler-queue.ts.
+ */
+async function ensureOrderReconcileRepeatable(): Promise<void> {
+  const jobs = await jobQueue.getRepeatableJobs()
+  const existing = jobs.find((j) => j.name === ORDER_RECONCILE_JOB_NAME)
+  if (existing?.pattern === ORDER_RECONCILE_CRON) return
+  if (existing?.pattern) {
+    await jobQueue.removeRepeatable(ORDER_RECONCILE_JOB_NAME, {
+      pattern: existing.pattern,
+      ...(existing.tz ? { tz: existing.tz } : {}),
+    })
+  }
+  // No payload — the handler ignores job data entirely. Cast keeps the
+  // Queue<JobData> generic intact.
+  await jobQueue.add(
+    ORDER_RECONCILE_JOB_NAME,
+    { type: 'order-reconcile' },
+    { repeat: { pattern: ORDER_RECONCILE_CRON } },
+  )
+}
 
 // ponytail: start worker once on server boot (via instrumentation.ts).
 // BullMQ auto-reconnects when Redis comes up, so starting without Redis is safe.
@@ -87,9 +145,27 @@ export function startJobWorker(): Worker<JobData> {
       await enterJobOrg(job.data)
       await handler(job.data)
     },
-    { connection: redis, concurrency: 3, lockDuration: 300_000, stalledInterval: 30_000, maxStalledCount: 1 },
+    {
+      connection: redis,
+      concurrency: 3,
+      lockDuration: 300_000,
+      stalledInterval: 30_000,
+      maxStalledCount: 1,
+      // Custom capped exponential backoff for license-issue retries
+      // (30s → ~15min over 10 attempts). Other types use their own declared
+      // backoff; this strategy is only consulted for LICENSE_ISSUE_BACKOFF_TYPE.
+      settings: {
+        backoffStrategy: (attemptsMade, type) =>
+          type === LICENSE_ISSUE_BACKOFF_TYPE ? licenseIssueBackoffDelayMs(attemptsMade) : 30_000,
+      },
+    },
   )
   worker.on('failed', (job, err) => console.error('[worker] job failed:', job?.data.type, err.message))
+  // Ensure the reconciliation repeatable AFTER the worker exists so an hourly
+  // tick always has a consumer. Non-fatal when Redis is briefly down.
+  void ensureOrderReconcileRepeatable().catch((e) =>
+    console.warn('[worker] failed to ensure order-reconcile repeatable:', e),
+  )
   // ponytail: orphaned-job recovery. If the app crashes/redeploys mid-job the
   // job stays on the `active` list holding a stale lock; BullMQ's stalled
   // checker re-queues it, but jobs enqueued by a process whose worker never
@@ -119,10 +195,17 @@ async function adoptStuckJobs(): Promise<void> {
 
 // ponytail: enqueue to Redis when available, run handler synchronously when Redis is down.
 // This is the graceful-degradation strategy: no Redis = sync fallback (slower but works).
+// Document jobs get bounded retries with exponential backoff — without this a
+// transient embedding-provider 429/5xx permanently failed the job after one try.
+const DOCUMENT_JOB_OPTS = {
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 30_000 },
+}
+
 export async function enqueueOrSync(type: JobType, data: JobData): Promise<'queued' | 'sync'> {
   const health = await checkRedisHealth()
   if (health.connected) {
-    await jobQueue.add(type, data)
+    await jobQueue.add(type, data, DOCUMENT_JOB_OPTS)
     return 'queued'
   }
   const handler = handlers[type]

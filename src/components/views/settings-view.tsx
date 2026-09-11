@@ -26,6 +26,7 @@ import {
   BadgeCheck,
   Bell,
   Send,
+  CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -51,6 +52,8 @@ import { cn } from '@/lib/utils'
 import { extractError } from '@/lib/extract-error'
 import type { ActiveUser } from '@/lib/types'
 import { THEMES, type ThemeId, setTheme } from '@/lib/themes'
+import { BuyLicenseDialog } from './billing/buy-license-dialog'
+import { daysUntilExpiry, expiryCountdownLabel } from '@/lib/billing-ui'
 
 const initials = (name: string) =>
   name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -736,6 +739,7 @@ function OrgTab() {
   const [editName, setEditName] = useState('')
   const [savingName, setSavingName] = useState(false)
   const [revalidating, setRevalidating] = useState(false)
+  const [buyOpen, setBuyOpen] = useState(false)
 
   const isAdmin = me?.role === 'admin'
 
@@ -865,7 +869,18 @@ function OrgTab() {
             </div>
             <div>
               <div className="text-[11px] text-muted-foreground mb-1">Expires</div>
-              <div className="text-xs font-medium">{expiresAt ? fmtDate(expiresAt) : 'Lifetime'}</div>
+              <div className="text-xs font-medium">
+                {expiresAt ? (
+                  <>
+                    {fmtDate(expiresAt)}
+                    <span className={cn('ml-1.5', daysUntilExpiry(expiresAt, new Date()) <= 3 ? 'text-destructive' : 'text-muted-foreground')}>
+                      ({expiryCountdownLabel(expiresAt, new Date())})
+                    </span>
+                  </>
+                ) : (
+                  'Lifetime'
+                )}
+              </div>
             </div>
             <div>
               <div className="text-[11px] text-muted-foreground mb-1">Last Validated</div>
@@ -873,18 +888,38 @@ function OrgTab() {
             </div>
           </div>
           {isAdmin && (
-            <Button
-              size="sm"
-              variant="outline"
-              icon={revalidating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              onClick={() => void handleRevalidate()}
-              disabled={revalidating}
-            >
-              Revalidate
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                icon={revalidating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                onClick={() => void handleRevalidate()}
+                disabled={revalidating}
+              >
+                Revalidate
+              </Button>
+              <Button
+                size="sm"
+                icon={<CreditCard className="h-3.5 w-3.5" />}
+                onClick={() => setBuyOpen(true)}
+              >
+                {status === 'unpaid' || !plan ? 'Buy License' : 'Extend Subscription'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Subscription checkout — QRIS via Midtrans Snap. Settlement refreshes
+          license data (onSettled) and the local card state (load). */}
+      <BuyLicenseDialog
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+        onSettled={() => {
+          setBuyOpen(false)
+          void load()
+        }}
+      />
     </div>
   )
 }

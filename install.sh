@@ -16,6 +16,12 @@
 #   --with-searxng   Also run a private SearXNG instance and point web_search at
 #                    it instead of scraping DuckDuckGo. Costs ~256MB RAM, so it
 #                    is OFF by default — a 1GB box is already tight.
+#   --license-signing-public-key <hex>
+#                    Ed25519 public key (DER hex) used to VERIFY License-Validator
+#                    responses. Also accepted via the LICENSE_SIGNING_PUBLIC_KEY
+#                    env var (flag wins). NEVER a built-in default: every install
+#                    shipping the same verification key would mean one leaked
+#                    private key forges licenses for ALL customers.
 # =============================================================================
 set -euo pipefail
 
@@ -27,18 +33,29 @@ fail()  { echo -e "${C_RED}ERROR:${C_NC} $*" >&2; exit 1; }
 
 # --- Options ---------------------------------------------------------------
 WITH_SEARXNG=false
-for arg in "$@"; do
-  case "$arg" in
-    --with-searxng) WITH_SEARXNG=true ;;
+LICENSE_PUBKEY_ARG="${LICENSE_SIGNING_PUBLIC_KEY:-}"
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --with-searxng) WITH_SEARXNG=true; shift ;;
+    --license-signing-public-key)
+      [ $# -ge 2 ] || fail "--license-signing-public-key requires a value (DER hex)"
+      LICENSE_PUBKEY_ARG="$2"; shift 2 ;;
     # $0 is "bash" when piped from curl, so print help inline rather than self-read.
     -h|--help)
       echo "ryasai Chatbot installer"
       echo "  curl -sSL https://ryasai.my.id/install.sh | bash"
       echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng"
+      echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --license-signing-public-key <hex>"
       echo
-      echo "  --with-searxng   Run a private SearXNG for web_search (~256MB RAM)."
+      echo "  --with-searxng                  Run a private SearXNG for web_search (~256MB RAM)."
+      echo "  --license-signing-public-key <hex>"
+      echo "                                  Ed25519 public key (DER hex) for verifying license"
+      echo "                                  responses. Falls back to \$LICENSE_SIGNING_PUBLIC_KEY."
+      echo "                                  If neither is given, license verification stays"
+      echo "                                  DISABLED and the app fails closed on licensing."
       exit 0 ;;
-    *) fail "Unknown option: $arg (supported: --with-searxng)" ;;
+    *) fail "Unknown option: $1 (supported: --with-searxng, --license-signing-public-key <hex>)" ;;
   esac
 done
 
@@ -94,6 +111,11 @@ if [ ! -f .env ]; then
   info "Generating .env..."
   ENC_KEY=$(openssl rand -hex 32)
   ADMIN_PASS=$(openssl rand -hex 8)
+  # ponytail: the license signing key is NEVER defaulted. It is operator-
+  # provisioned (--license-signing-public-key or LICENSE_SIGNING_PUBLIC_KEY env);
+  # when absent we write an empty value and warn loudly post-install. A shared
+  # baked-in key meant every customer install verified licenses against the same
+  # public key — one leaked signing private key would forge licenses everywhere.
   cat > .env <<EOF
 # Database — change to an external host if you already run PostgreSQL elsewhere
 DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -125,10 +147,11 @@ ADMIN_INITIAL_PASSWORD=$ADMIN_PASS
 # RESEND_API_KEY=
 # EMAIL_FROM=ryasai@yourdomain.com
 
-# License validation — central ryasai license server
+# License validation — central ryasai license server.
+# LICENSE_SIGNING_PUBLIC_KEY must be provisioned by the operator (flag or env).
 LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
 LICENSE_PRODUCT=ryasai-chatbot
-LICENSE_SIGNING_PUBLIC_KEY=302a300506032b6570032100eaaadb217b2c7548bed70b3e22f357ef16d1690feb251ae7c8b178de5b95df8a
+LICENSE_SIGNING_PUBLIC_KEY=${LICENSE_PUBKEY_ARG}
 LICENSE_GRACE_PERIOD_DAYS=7
 LICENSE_REVALIDATION_INTERVAL_HOURS=24
 
@@ -143,6 +166,25 @@ EOF
   warn "Generated admin password: $ADMIN_PASS  (save this NOW, or run: grep ADMIN_INITIAL_PASSWORD .env)"
 else
   info ".env already exists — keeping it."
+fi
+
+# ponytail: track whether a signing key ended up configured (fresh OR existing
+# install) so the final summary can fail-loud about licensing before exit.
+LICENSE_KEY_CONFIGURED=false
+if [ -n "$LICENSE_PUBKEY_ARG" ] && grep -qE '^LICENSE_SIGNING_PUBLIC_KEY=..+' .env 2>/dev/null; then
+  LICENSE_KEY_CONFIGURED=true
+elif ! grep -q '^LICENSE_SIGNING_PUBLIC_KEY=' .env 2>/dev/null; then
+  # Existing .env from an older installer without the key line at all — add it empty
+  printf '\n# License response verification key (Ed25519 DER hex) — see install.sh --help\nLICENSE_SIGNING_PUBLIC_KEY=\n' >> .env
+fi
+if [ -n "$LICENSE_PUBKEY_ARG" ]; then
+  # Soft format sanity check — Ed25519 SPKI DER is 88 hex chars; accept any
+  # even-length hex >= 60 to tolerate alternate encodings, warn otherwise.
+  if ! printf '%s' "$LICENSE_PUBKEY_ARG" | grep -qE '^[0-9a-fA-F]{60,}$'; then
+    warn "LICENSE_SIGNING_PUBLIC_KEY does not look like a DER hex key (expected ~88 hex chars) — license verification may fail closed."
+  fi
+  sed -i "s|^LICENSE_SIGNING_PUBLIC_KEY=.*|LICENSE_SIGNING_PUBLIC_KEY=$LICENSE_PUBKEY_ARG|" .env
+  LICENSE_KEY_CONFIGURED=true
 fi
 
 # SEARXNG_URL is set/cleared on every run so the flag stays authoritative across
@@ -186,7 +228,10 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--accept-data-loss", "--skip-generate"]
+    # ponytail: NO --accept-data-loss — schema drift must fail loudly so an
+    # operator intervenes (pre-update pg_dump above is the rollback path; see
+    # docs/operations.md). Silent data loss on `up` is never acceptable.
+    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
     restart: "no"
     networks: [ryasai-net]
 
@@ -206,6 +251,14 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    # Liveness probe (no DB hit; dependency detail at /api/health). bun is the
+    # runtime image, so no curl needed.
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://127.0.0.1:3000/api/v1/health'); process.exit(r.ok ? 0 : 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     networks: [ryasai-net]
 
@@ -366,6 +419,23 @@ echo "  Access (local):   http://localhost:3000"
 echo "  Admin email:      $(grep -E '^ADMIN_EMAIL=' .env | cut -d= -f2)"
 echo "  Admin password:   $(grep -E '^ADMIN_INITIAL_PASSWORD=' .env | cut -d= -f2)"
 echo
+
+if [ "$LICENSE_KEY_CONFIGURED" != true ]; then
+  echo "**************************************************************"
+  echo "*  ⚠️  LICENSING NOT OPERATIONAL — ACTION REQUIRED            *"
+  echo "*                                                            *"
+  echo "*  LICENSE_SIGNING_PUBLIC_KEY is not set. License responses  *"
+  echo "*  cannot be signature-verified, so licensing FAILS CLOSED:  *"
+  echo "*  signup/license activation will not work.                  *"
+  echo "*                                                            *"
+  echo "*  Fix: re-run this installer with the operator-provisioned  *"
+  echo "*  key from the ryasai license server:                       *"
+  echo "*    bash install.sh --license-signing-public-key <hex>      *"
+  echo "*  (or export LICENSE_SIGNING_PUBLIC_KEY=<hex> first)        *"
+  echo "**************************************************************"
+  echo
+fi
+
 echo "  Put behind Caddy/Nginx on this server with your domain, e.g.:"
 echo ""
 echo "    license-side:   license.ryasai.my.id  -> License-Validator (already deployed)"

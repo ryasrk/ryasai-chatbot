@@ -11,4 +11,8 @@ export interface ChunkPreview {
 export interface DocDetail extends DocumentItem {
   contentText?: string
   chunkPreview: ChunkPreview[]
+  // ponytail: per-document context prompt injected into RAG answer synthesis
+  // when this document contributes chunks. Optional because older GET responses
+  // predate the column being selected — default to '' when absent.
+  contextPrompt?: string
 }

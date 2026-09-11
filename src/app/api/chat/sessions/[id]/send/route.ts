@@ -6,6 +6,7 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
 import { rememberChatTurn } from '@/lib/cognee'
 import { generateSessionTitle, generateSessionSummary } from '@/lib/ai'
 import { stripSessionWrapper } from '@/lib/tool-utils'
+import { assertChatSendRateLimit, assertWithinBudget } from '@/lib/llm-budget'
 
 // ponytail: hard ceiling for the whole handler (Next.js route segment config) —
 // the agentic loop can otherwise pin a worker for minutes across iterations.
@@ -47,6 +48,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     // Errors here return proper HTTP status codes (client hasn't opened SSE yet).
     const user = await getActiveUser()
     enterWithOrg(user.organizationId)
+    // ponytail: org-level guards BEFORE any DB writes / LLM spend — rate limit
+    // fails open when Redis is down (same contract as v1 routes); budget is
+    // disabled by default and throws AppError('LLM_BUDGET_EXCEEDED') → 429.
+    await assertChatSendRateLimit(user.organizationId)
+    await assertWithinBudget(user.organizationId)
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as SendBody
 

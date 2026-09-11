@@ -15,12 +15,14 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Lock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FormSkeleton, ListRowsSkeleton } from '@/components/ui/view-states'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
+import { useActiveUser } from '@/hooks/use-active-user'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,9 +32,13 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { extractError } from '@/lib/extract-error'
+import { PromptEditor } from '@/components/views/_shared/prompt-editor'
 
 interface PromptSettings {
   systemPrompt: string
+  // ponytail: org-wide RAG context prompt — prepended to every RAG answer
+  // synthesis (buildSourceGuidance in source-guidance.ts). Empty → no-op.
+  ragContextPrompt: string
   tools: { rag: boolean; sql: boolean; restApi: boolean }
 }
 
@@ -46,8 +52,21 @@ interface RestConnector {
 
 const DEFAULT_SETTINGS: PromptSettings = {
   systemPrompt: '',
+  ragContextPrompt: '',
   tools: { rag: true, sql: true, restApi: true },
 }
+
+// Char caps enforced server-side; the editor mirrors them so the counter
+// matches what will actually be persisted.
+const SYSTEM_PROMPT_MAX = 8000
+const RAG_PROMPT_MAX = 4000
+
+// A sensible starting template — inserted (replacing the draft) when an admin
+// clicks "Insert default template". Wording follows PRODUCT.md (English, cite
+// sources, user's language). Editable afterwards.
+const DEFAULT_SYSTEM_TEMPLATE =
+  'You are a precise assistant for this organization. Answer in the user\'s language. ' +
+  'Cite sources when using retrieved knowledge. If you are unsure, say so plainly.'
 
 const TOOL_ROWS: {
   key: keyof PromptSettings['tools']
@@ -71,6 +90,8 @@ export function PromptToolsView() {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [loadError, setLoadError] = useState(false)
+  const { user } = useActiveUser()
+  const isAdmin = user?.role === 'admin'
 
   const load = useCallback(async () => {
     try {
@@ -106,9 +127,43 @@ export function PromptToolsView() {
     setDirty(true)
   }
 
-  function updatePrompt(value: string) {
-    setSettings((prev) => ({ ...prev, systemPrompt: value }))
-    setDirty(true)
+  // PromptEditor keeps its own draft; when it asks to save we route through the
+  // same atomic PUT as the tools toggles so systemPrompt + ragContextPrompt +
+  // tools persist together (mergePromptSettings in src/lib/prompt-settings.ts
+  // applies a partial merge, so sending all fields in one call is safe).
+  async function savePromptField(next: string, field: 'systemPrompt' | 'ragContextPrompt') {
+    const payload: PromptSettings = { ...settings, [field]: next }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/prompt-tools', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        return { ok: false, error: json?.error }
+      }
+      if (json.settings) setSettings(json.settings as PromptSettings)
+      setDirty(false)
+      return { ok: true, value: (json.settings as PromptSettings | undefined)?.[field] ?? next }
+    } catch (e) {
+      return { ok: false, error: e }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleSaveSystemPrompt(next: string) {
+    const r = await savePromptField(next, 'systemPrompt')
+    if (r.ok) toast.success('System prompt saved')
+    return r
+  }
+
+  async function handleSaveRagPrompt(next: string) {
+    const r = await savePromptField(next, 'ragContextPrompt')
+    if (r.ok) toast.success('RAG context prompt saved')
+    return r
   }
 
   async function handleSave() {
@@ -180,20 +235,53 @@ export function PromptToolsView() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="system-prompt" className="text-xs">System Prompt</Label>
-                <Textarea
+              {/* System prompt — admin-only editor; non-admins see read-only text. */}
+              {isAdmin ? (
+                <PromptEditor
                   id="system-prompt"
-                  placeholder="Example: Always answer in English, be concise, and cite sources."
+                  label="System Prompt"
                   value={settings.systemPrompt}
-                  onChange={(e) => updatePrompt(e.target.value)}
-                  rows={4}
-                  className="resize-y text-xs"
+                  onSave={handleSaveSystemPrompt}
+                  maxLength={SYSTEM_PROMPT_MAX}
+                  placeholder="Example: Always answer in English, be concise, and cite sources."
+                  helperText="Where injected: chat answers + agentic runs (merged into the system prompt before the LLM call). Leave blank to use the model's default."
+                  defaultTemplate={DEFAULT_SYSTEM_TEMPLATE}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Sent as a system message before the user's question. Leave blank to use the model's default.
-                </p>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="system-prompt" className="text-xs flex items-center gap-1.5">
+                    <Lock className="h-3 w-3 text-muted-foreground" />
+                    System Prompt
+                  </Label>
+                  <Textarea
+                    id="system-prompt"
+                    value={settings.systemPrompt}
+                    readOnly
+                    rows={4}
+                    className="resize-y text-xs bg-muted/30"
+                  />
+                  <p className="text-xs text-muted-foreground">Read-only. Ask an admin to edit the system prompt.</p>
+                </div>
+              )}
+
+              {/* RAG context prompt — admin-only. Prepended to every RAG answer. */}
+              {isAdmin && (
+                <div className="rounded-md border border-border/70 p-3 space-y-2 bg-muted/20">
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                    <div className="text-xs font-medium">RAG Context Prompt</div>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">org-wide</Badge>
+                  </div>
+                  <PromptEditor
+                    id="rag-context-prompt"
+                    value={settings.ragContextPrompt}
+                    onSave={handleSaveRagPrompt}
+                    maxLength={RAG_PROMPT_MAX}
+                    placeholder="Optional guidance prepended to every RAG answer synthesis. Empty injects nothing."
+                    helperText="Where injected: RAG answer synthesis (merged with per-document prompts into a [Source guidance] block)."
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <div className="text-xs font-medium">Tool Routing</div>
