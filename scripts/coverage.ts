@@ -94,27 +94,34 @@ async function main() {
       // 139/139 test files failed there, because the runner resolves `.env` and
       // the `@/*` path alias relative to the repo root. Bun hardcodes the report
       // to `coverage/lcov.info` under the cwd and ignores COVERAGE_DIR, so the
-      // cwd cannot be moved without breaking resolution. Instead, each run
-      // STAGES the shared file into its own path immediately after exiting. The
-      // rename is the load-bearing part: a plain read-then-delete can drop a
-      // report that another worker published moments later, which is how an
-      // earlier version measured 20/529 lines for a module whose own suite
-      // covers 326/436.
-      const proc = Bun.spawn(['bun', 'test', path, '--coverage', '--coverage-reporter=lcov'], {
-        stdout: 'pipe', stderr: 'pipe', env,
-      })
-      const [out, err] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ])
-      await proc.exited
-      if (proc.exitCode !== 0) failed.push(path)
+      // cwd cannot be moved without breaking resolution.
+      //
+      // CLAIM THE REPORT INSIDE THE SAME CRITICAL SECTION AS THE SPAWN.
+      //
+      // A mutex around read+rename is NOT enough, and measuring proved it: the
+      // shared `coverage/lcov.info` is written by the CHILD process, so a worker
+      // that finishes while another holds the lock lets the NEXT worker's child
+      // overwrite the file before the lock is released. The report is then
+      // silently replaced by a later one, and because both runs DO emit records
+      // for shared modules, the merge looks plausible while being wrong:
+      // src/lib/planner.ts was reported at 69/673 (10.3%) when its own suite
+      // covers 379/578 (65.6%). The numbers are not merely imprecise — 673
+      // "lines found" exceeds the figure any single run produces, which is the
+      // tell that two different reports were blended.
+      //
+      // So the spawn itself is serialised. It costs wall-clock time (the suite
+      // is ~2 min at concurrency 8), and that is the correct trade for a number
+      // people act on. A wrong coverage figure is worse than a slow one.
       await lcovMutex(async () => {
         const shared = join(process.cwd(), 'coverage', 'lcov.info')
+        rmSync(shared, { force: true })
+        const proc = Bun.spawn(['bun', 'test', path, '--coverage', '--coverage-reporter=lcov'], {
+          stdout: 'ignore', stderr: 'ignore', env,
+        })
+        const code = await proc.exited
+        if (code !== 0) failed.push(path)
         if (!existsSync(shared)) return
         const staged = join(OUT_DIR, `lcov-${runId++}.info`)
-        // renameSync moves the file out of the shared path atomically, so no
-        // other worker can be holding a reference to this exact inode.
         try { renameSync(shared, staged) } catch { return }
         try {
           const text = readFileSync(staged, 'utf8')
