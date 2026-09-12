@@ -1,9 +1,10 @@
+import { STOPWORDS } from '@/lib/rag'
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
 import { selectRelevantPlugins, type ScoredPlugin } from '@/lib/plugin-selector'
 import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity } from '@/lib/embeddings'
 import {
-  STOPWORDS, tokenize, expandWithSynonyms, keywordOverlap, checkAvailability, buildReason,
+ tokenize, expandWithSynonyms, keywordOverlap, checkAvailability, buildReason,
   computeSemanticScore, loadSchemaMetadata, loadEndpointMetadata, loadDocumentMetadata,
   loadPerformanceMetrics, loadSimilarityBoost, getQuestionEmbedding,
   invalidateSourceEmbeddingCache,

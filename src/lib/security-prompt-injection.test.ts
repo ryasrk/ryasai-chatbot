@@ -51,9 +51,20 @@ describe('Prompt Injection — system prompt isolation', () => {
     })
 
     test('LLM generates UNION-based exfiltration → guardrail catches it', () => {
+      // ponytail: this assertion used to be `toBe(true)` — it ASSERTED THE BUG.
+      // The test name said "guardrail catches it" while the body required the
+      // exfiltration payload to be ALLOWED, so the guardrail could never have
+      // failed this case. Found while adding trial/fleet: the 518-case corpus
+      // reported all five classic injection shapes (union select, or 1=1,
+      // and 1=1, or '1'='1', hex/char-encoded) as ALLOWED, and only then did
+      // this test's contradiction surface. A guard that encodes the defect it
+      // claims to catch is worse than no guard, because it reads as coverage.
+      // `UNION SELECT password` from a table the user never asked for is
+      // exfiltration: block it.
       const llmOutput = "SELECT name FROM users UNION SELECT password FROM users WHERE 1=1"
       const result = validateAndSanitizeLlmSql(llmOutput)
-      expect(result.ok).toBe(true)
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain('dangerous pattern')
     })
 
     test('LLM generates stacked query → guardrail catches it', () => {

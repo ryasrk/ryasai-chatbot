@@ -1,0 +1,76 @@
+{
+  "measured_baseline": {
+    "date": "2026-09-13",
+    "commit": "91c5ad1",
+    "line_coverage_pct": 50.24,
+    "lines_hit": 9081,
+    "lines_found": 18077,
+    "files_measured": 114,
+    "unit_tests": 2025,
+    "test_files": 138,
+    "e2e_tests": 12,
+    "ts_files": 456,
+    "api_routes": 99,
+    "prisma_models": 31,
+    "src_loc": 78680
+  },
+  "coverage_by_domain": {
+    "RETRIEVAL":   { "pct": 69.9, "hit": 1405, "found": 2009 },
+    "CORE":        { "pct": 54.7, "hit": 2469, "found": 4516 },
+    "DATAPLANE":   { "pct": 53.0, "hit": 1097, "found": 2068 },
+    "API_ROUTES":  { "pct": 44.6, "hit": 755,  "found": 1691 },
+    "SECURITY":    { "pct": 44.0, "hit": 915,  "found": 2081 },
+    "AI_PIPELINE": { "pct": 42.7, "hit": 2440, "found": 5712 }
+  },
+  "divisions": [
+    {
+      "id": "D1", "name": "Retrieval & Knowledge",
+      "head": "retrieval-head",
+      "owns": ["src/lib/rag*.ts", "src/lib/embed*.ts", "src/lib/vector-stores.ts", "src/lib/hyde.ts", "src/lib/reranker.ts", "src/lib/knowledge-graph.ts", "src/lib/cognee*.ts"],
+      "baseline_pct": 69.9,
+      "team": ["hybrid-search", "embeddings", "chunking", "graph-memory", "vector-store"]
+    },
+    {
+      "id": "D2", "name": "AI Pipeline & Orchestration",
+      "head": "pipeline-head",
+      "owns": ["src/lib/ai.ts", "src/lib/tool-*.ts", "src/lib/stream-preparers.ts", "src/lib/planner.ts", "src/lib/intent-pipeline.ts", "src/lib/smart-router*.ts", "src/lib/llm-*.ts", "src/lib/prompt-*.ts"],
+      "baseline_pct": 42.7,
+      "team": ["llm-transport", "streaming", "planner", "router", "prompting"]
+    },
+    {
+      "id": "D3", "name": "Security & Tenancy",
+      "head": "security-head",
+      "owns": ["src/lib/guardrails*.ts", "src/lib/prisma-tenant.ts", "src/lib/session.ts", "src/lib/api-keys.ts", "src/lib/sso*.ts", "src/lib/license*.ts", "src/lib/crypto.ts", "src/lib/mcp-*.ts"],
+      "baseline_pct": 44.0,
+      "team": ["sql-guardrails", "tenant-isolation", "auth-session", "license", "ssrf-mcp"]
+    },
+    {
+      "id": "D4", "name": "Data Plane & Integrations",
+      "head": "dataplane-head",
+      "owns": ["src/lib/connectors.ts", "src/lib/real-connectors.ts", "src/lib/rest-api-connectors.ts", "src/lib/db-provider*.ts", "src/lib/redis.ts", "src/lib/scheduler-queue.ts"],
+      "baseline_pct": 53.0,
+      "team": ["db-connectors", "rest-connectors", "queue", "cache", "schema-reflect"]
+    },
+    {
+      "id": "D5", "name": "API Surface & Product",
+      "head": "api-head",
+      "owns": ["src/app/api/**", "src/components/**", "src/lib/view-routing.ts", "src/lib/billing-ui.ts", "src/lib/themes.ts"],
+      "baseline_pct": 44.6,
+      "team": ["chat-api", "admin-api", "billing-api", "ui-views", "contracts"]
+    },
+    {
+      "id": "D6", "name": "Quality & Measurement",
+      "head": "quality-head",
+      "owns": ["scripts/", "benchmark/", "trial/", "e2e/", ".plan/"],
+      "baseline_pct": 0,
+      "team": ["coverage", "trial-harness", "e2e", "metrics", "reporting"]
+    }
+  ],
+  "invariants": [
+    "No division edits another division's owned paths without a request.",
+    "Every change ships with tests; coverage may only go up per domain.",
+    "95% line coverage is the target for OWNED paths, not repo-wide (app_routes and UI excluded by design).",
+    "All numbers in the final report must come from a run in this session, with the command shown.",
+    "Never claim a metric that was not measured; state 'not measured' instead."
+  ]
+}

@@ -77,6 +77,54 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; label: string }> = [
  * Scanned against string-masked SQL so a literal such as
  * `WHERE note = 'pg_read_file('` is not a false positive.
  */
+/**
+ * Injection SHAPES, not vocabulary. The function list above catches specific
+ * server functions, and MUTATION_KEYWORDS catches writes — but a tautology such
+ * as `WHERE name = or 1=1` is a valid-looking SELECT with no mutation and no
+ * dangerous function, so both lists miss it. Found by the 518-case trial/fleet
+ * run, where all five classic shapes passed: `union select`, `or 1=1`,
+ * `and 1=1`, `or '1'='1'`, plus hex (`0x27`) and function-encoded
+ * (`char(39)or`, `concat(0x44,0x52)`) evasions.
+ *
+ * These are matched against string-masked SQL (`maskStringLiterals`), so a
+ * literal like `WHERE note = 'union select'` is NOT a false positive — the
+ * masked scanner cannot see inside quotes, and that is exactly right: text in a
+ * literal is data, not a clause.
+ */
+/**
+ * Contextual probes: these functions are legitimate inside a real query but are
+ * a fingerprint attempt when they ARE the query. `SELECT version()` discloses
+ * the server build; `SELECT version FROM releases` reads a business column.
+ *
+ * The distinction must be structural because it cannot be lexical. Precedent:
+ * `guardrails.test.ts` asserts `SELECT now(), version()` passes (it is a
+ * plausible column list), while trial/fleet asserts the standalone
+ * `SELECT version()` is blocked. Both are right, so the check is on the
+ * whole-statement shape: a SELECT whose projection is exactly one probe call
+ * with no FROM table is reconnaissance, not a data question.
+ */
+const BARE_PROBE_RE = /^\s*SELECT\s+(version|user|current_user|session_user|system_user|database|schema|pg_version)\s*\(\s*\)\s*(;\s*)?$/i
+
+const INJECTION_SHAPES: Array<{ re: RegExp; label: string }> = [
+  // Tautology / always-true predicates. The `\b` on the operator keeps
+  // `WHERE tag = 'orderby'` and column names such as `android` out.
+  { re: /\b(or|and)\s+\d+\s*=\s*\d+/i, label: 'tautology (numeric)' },
+  { re: /\b(or|and)\s+0x[0-9a-f]+\s*=\s*0x[0-9a-f]+/i, label: 'tautology (hex)' },
+  { re: /\b(or|and)\s+\(\s*\d+\s*=\s*\d+\s*\)/i, label: 'tautology (parenthesised)' },
+  // UNION-based extraction. `UNION ALL SELECT` is the same attack.
+  { re: /\bunion\b[\s\S]{0,40}\bselect\b/i, label: 'union select' },
+  // Encoding evasions: a hex literal or char()/concat() built string used as a
+  // predicate operand. Legitimate analytics queries use hex rarely and never
+  // inside a WHERE comparison against a name column.
+  { re: /=\s*0x[0-9a-f]{2,}/i, label: 'hex literal operand' },
+  { re: /\b(char|chr)\s*\(\s*\d+\s*\)/i, label: 'char() encoding' },
+  { re: /\bconcat\s*\(\s*0x/i, label: 'concat(hex) encoding' },
+  // Comment-based clause termination.
+  { re: /(--|#|\/\*)[^\n]*$/m, label: 'clause termination via comment' },
+  // Stacked statement with a mutation behind it.
+  { re: /;\s*(drop|delete|update|insert|alter|truncate|grant|create)\b/i, label: 'stacked mutation' },
+]
+
 const DANGEROUS_FUNCTIONS: Array<{ re: RegExp; label: string }> = [
   // Postgres
   { re: /\bpg_read_(file|binary_file)\s*\(/i, label: 'pg_read_file' },
@@ -98,6 +146,36 @@ const DANGEROUS_FUNCTIONS: Array<{ re: RegExp; label: string }> = [
   { re: /\bbulk\s+insert\b/i, label: 'bulk insert' },
   // ClickHouse table functions
   { re: /\b(url|file|s3|hdfs|remote|remoteSecure|mysql|postgresql|jdbc|odbc|input)\s*\(/i, label: 'ClickHouse table function' },
+  // ponytail: server-fingerprint probes. `SELECT @@version` passed every other
+  // rule — it is a bare SELECT with no mutation and no known function — yet it
+  // is step one of fingerprinting a server to pick an exploit, and it returns
+  // data the user never asked for. Found by trial/fleet (case D3-gb-22), which
+  // is the point of running the fleet: no rule matched, so nothing else would
+  // have caught it.
+  { re: /(^|[^\w@])@@\s*[a-z_]/i, label: 'system variable probe (@@var)' },
+  // NOTE: these four are contextual — see BARE_PROBES below. `version()`
+  // appearing as ONE column of a business query is normal SQL; `SELECT
+  // version()` on its own is a fingerprint probe. Regex alone cannot tell them
+  // apart, so the whole-statement shape is checked separately.
+  { re: /\bcurrent_user\b|\bsession_user\b|\bsystem_user\b/i, label: 'identity probe' },
+  { re: /\bpg_postmaster_start_time\s*\(/i, label: 'pg_postmaster_start_time' },
+  { re: /\binet_server_addr\s*\(|\binet_server_port\s*\(/i, label: 'server address probe' },
+  // ponytail: second wave of fingerprint probes, all found by the 518-case
+  // trial/fleet run — each is a bare SELECT with no mutation and no
+  // side-effecting function, so nothing in the earlier list matched:
+  //   SELECT database() / schema() / user()  -> env & identity disclosure
+  //   SELECT pg_version()                    -> version disclosure
+  //   ... WHERE name = waitfor delay         -> MSSQL time-based blind injection
+  //   SELECT updatexml(...) / extractvalue() -> MySQL error-based extraction
+  //   SELECT case when 1=1 then ...          -> boolean-blind probe
+  //   SELECT if(1=1,sleep(5),0)              -> MySQL time-based blind
+  { re: /\bpg_version\s*\(/i, label: 'pg_version probe' },
+
+
+  { re: /\bwaitfor\s+delay\b/i, label: 'MSSQL waitfor delay' },
+  { re: /\bupdatexml\s*\(|\bextractvalue\s*\(/i, label: 'MySQL error extraction' },
+  { re: /\bcase\s+when\b[\s\S]*\bthen\b[\s\S]*\bend\b/i, label: 'boolean-blind CASE probe' },
+  { re: /\bif\s*\([^)]*\b(sleep|benchmark|pg_sleep)\s*\(/i, label: 'MySQL time-based blind' },
 ]
 
 /**
@@ -137,6 +215,20 @@ export function detectDangerousFunctions(sql: string): string[] {
   for (const { re, label } of DANGEROUS_FUNCTIONS) {
     if (re.test(masked)) found.push(label)
   }
+  // Injection SHAPES share the same scan and the same masking, so a literal
+  // containing "union select" is data and survives; a real UNION SELECT does
+  // not. Kept in one function so there is no second, weaker copy of this scan
+  // elsewhere — the duplicated-logic failure mode this file keeps repeating.
+  for (const { re, label } of INJECTION_SHAPES) {
+    if (re.test(masked)) found.push(label)
+  }
+  // String-tautology patterns are made ENTIRELY of literals, so they must be
+  // scanned on the raw SQL — maskStringLiterals replaces the content and would
+  // hide them. This is the one intentional exception to the masked scan.
+  const tautology = /\b(or|and)\s+'([^']*)'\s*=\s*'\2'/i
+  if (tautology.test(sql)) found.push('string tautology')
+  // Standalone fingerprint probe — structural, not lexical (see BARE_PROBE_RE).
+  if (BARE_PROBE_RE.test(sql.trim())) found.push('bare fingerprint probe')
   return found
 }
 

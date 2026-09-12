@@ -2,6 +2,16 @@ import {
   RAG_MAX_PER_DOCUMENT,
 } from '@/lib/constants'
 
+/**
+ * ponytail: SINGLE SOURCE for stopwords. This set used to be duplicated in
+ * smart-router-helpers.ts with 168 of its own entries, and the two copies had
+ * already drifted: the router's copy listed `data`, `total`, `count`, `table`,
+ * `amount`, `row`, `column` as stopwords — exactly the words users type when
+ * asking about a database — so a question like "total amount per table" was
+ * stripped to nothing before integration scoring. Routing and retrieval must
+ * agree on what a meaningful token is; smart-router-helpers.ts now imports
+ * this set and `isMeaningfulToken` instead of keeping its own list.
+ */
 export const STOPWORDS = new Set<string>([
   'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'pada', 'dengan', 'atau',
   'ini', 'itu', 'adalah', 'akan', 'tidak', 'juga', 'dalam', 'agar', 'karena',
@@ -32,7 +42,7 @@ export const STOPWORDS = new Set<string>([
  * these tokens. Ceiling: a hand-maintained list; swap for a real stemmer/IDF
  * cutoff if the corpus grows past a few languages.
  */
-function isMeaningfulToken(word: string): boolean {
+export function isMeaningfulToken(word: string): boolean {
   if (word.length < 2) return false
   if (STOPWORDS.has(word)) return false
   // Bare digits: keep 2+ (years, amounts, quantities), drop single digits.

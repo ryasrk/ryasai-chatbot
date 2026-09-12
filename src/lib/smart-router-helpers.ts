@@ -1,31 +1,9 @@
+import { STOPWORDS, isMeaningfulToken } from '@/lib/rag'
 import { db } from '@/lib/db'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { type RouteDecision } from '@/lib/ai'
 import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity, type EmbeddingRuntimeConfig } from '@/lib/embeddings'
 
-export const STOPWORDS = new Set([
-  'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'pada', 'dengan', 'ini', 'itu',
-  'atau', 'adalah', 'akan', 'tidak', 'juga', 'saya', 'kita', 'ada', 'bisa',
-  'apa', 'bagaimana', 'siapa', 'kapan', 'dimana', 'kenapa', 'tolong', 'show',
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have',
-  'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may',
-  'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he',
-  'she', 'it', 'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why',
-  'how', 'all', 'each', 'every', 'some', 'any', 'no', 'not', 'as', 'of', 'at',
-  'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during',
-  'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out',
-  'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'please',
-  'tell', 'give', 'me', 'my', 'our', 'your', 'their', 'his', 'her', 'its',
-  // Common query words that pollute schema keyword matching
-  'many', 'total', 'sum', 'count', 'number', 'amount', 'list', 'issued',
-  'have', 'been', 'configured', 'registered', 'active', 'available',
-  'system', 'sistem', 'data', 'database', 'table', 'column', 'field',
-  'record', 'row', 'entry', 'stored', 'found', 'exist', 'exists',
-  // Indonesian query words
-  'jumlah', 'banyak', 'berapa', 'terdaftar', 'sebagai', 'dalam', 'aktif',
-  'di', 'ke', 'dari', 'untuk', 'yang', 'dan', 'atau', 'juga', 'sudah',
-  'dengan', 'ini', 'itu', 'ada', 'bisa', 'apa', 'bagaimana',
-])
 
 const SYNONYMS: Record<string, string[]> = {
   negara: ['country'], negara2: ['country'], kota: ['city'],
@@ -61,10 +39,35 @@ export function tokenize(text: string): string[] {
   // ("session", "started", "time") match app-internal schema columns
   // (ChatSession, startedAt, etc.) and pollute integration selection.
   const cleaned = text.replace(/^\[Session started:[^\]]*\]\s*\[Current time:[^\]]*\]\s*/i, '')
-  return cleaned
+  // ponytail: ONE tokenizer contract. This function previously used
+  // `[^a-z0-9]` (zero tokens for any non-Latin script) plus its own
+  // `length >= 3` floor and its own STOPWORDS copy. Both diverged from the
+  // retrieval tokenizer in rag.ts, so the same question was scored differently
+  // by routing and by retrieval. Measured (trial/fleet):
+  //   "什么是退款政策"    router: []                  rag: ["什么是退款政策"]
+  //   "total amount per table" router dropped all 4  rag: kept all 4
+  // Delegating to rag.ts's shared predicate removes the class of bug: the two
+  // paths cannot disagree because there is only one implementation.
+  const tokens = cleaned
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(' ')
+    .filter(Boolean)
+
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const t of tokens) {
+    // CJK/Han do not segment on spaces, so a whole Chinese phrase is a single
+    // token and a length floor would delete it. `isMeaningfulToken` already
+    // drops length < 2; exempt scripts that never segment.
+    const isCjk = /[\u3000-\u9fff\uac00-\ud7af\u3040-\u30ff]/.test(t)
+    if (!isCjk && !isMeaningfulToken(t)) continue
+    if (STOPWORDS.has(t)) continue
+    if (seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
 }
 
 export interface ToolScore {
