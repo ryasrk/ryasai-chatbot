@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8633653`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4d7a870`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8633653`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **74,81%** (14.732/19.693 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 151 file · **2.873 lulus · 0 gagal** | terukur |
+| Test coverage | **75,07%** (14.786/19.695 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 152 file · **2.891 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -47,7 +47,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/mcp-client.ts` | 68,97% | **96,77%** | 28 |
 | `src/lib/cognee-memory.ts` | 12,50% | **100,00%** | 26 |
 | `src/lib/web-fetch.ts` | 36,70% | **100,00%** | 20 |
-| **Total repo** | **62,44%** | **74,81%** | — |
+| `src/lib/tool-router.ts` | 50,20% | **65,79%** | 18 |
+| **Total repo** | **62,44%** | **75,07%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -107,8 +108,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Filter link DDG internal/sponsored dibuang | `web-fetch.ts:280` | 1 |
 | Hasil parse kosong dianggap sukses | `web-fetch.ts:251` | 1 |
 | Fallback SearXNG → DuckDuckGo dihapus | `web-fetch.ts:228` | 3 |
+| 3 guard settings di blok routing STREAMING dimatikan | `tool-router.ts:221-223` | 3 |
+| `skipClarification` diabaikan (guard streaming) | `tool-router.ts:207` | 1 |
+| Agentic streaming berjalan tanpa history | `tool-router.ts:185` | 1 |
+| Guard contextual di lapisan dispatch dibuang | `tool-router.ts:237` | 1 |
 
-**40 kontrol, semuanya sah.**
+**44 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -209,7 +214,44 @@ mengutip iklan), dan snippet dipotong di 200 karakter.
 Asumsi salah yang diperbaiki di test: URL pencarian dibangun dengan
 `encodeURIComponent`, jadi spasi menjadi `%20` dan **bukan** `+`.
 
-### 1.7 Insiden gate yang dicatat apa adanya
+### 1.7 Temuan: logika routing terduplikasi di dua jalur
+
+Saat mengerjakan kontrol negatif, ditemukan `chooseAvailableDecision` **dan** tiga
+guard settings yang sama persis ditulis **dua kali**: di
+`_runNonStreamingChatCompletion` (`tool-router.ts:139-144`) dan
+`_runStreamingChatCompletion` (`tool-router.ts:218-223`).
+
+Ini penting dicatat, bukan sekadar kerapian. Setiap guard yang terduplikasi di
+repo ini sudah pernah menyimpang: `checkAlignment` ada di dua loop dan yang
+non-streaming `return` ~10 baris **sebelum** pemeriksaannya sendiri, sehingga
+pertanyaan yang sama dijaga lewat SSE tapi tidak lewat HTTP, sementara
+`docs/threat-model.md` menyatakan keduanya terlindungi. Blok routing ini punya
+bentuk yang sama dan belum menyimpang — probabilitasnya bukan nol.
+
+**Sengaja TIDAK direfaktor di commit ini.** Mengekstraksi satu sumber kebenaran
+adalah perubahan **sumber**, dan menumpangkannya pada commit test akan
+menyembunyikannya dari review. Kedua salinan kini punya test terpisah, jadi
+penyimpangan berikutnya akan gagal di CI.
+
+### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
+
+Tiga percobaan kontrol negatif pertama untuk `tool-router.ts` melaporkan
+"0 gagal" — dan saya hampir menyimpulkan test-nya hampa. Ternyata saya menyunting
+**salinan yang salah**: `tool-router.ts` memuat **dua** blok guard identik
+(non-streaming baris 67 dan streaming baris 185; guard klarifikasi baris 127 dan
+207), dan `str.replace` saya selalu mengenai yang pertama.
+
+Terbukti setelah dipasang penanda yang mencetak saat block itu dievaluasi:
+`DBG-REACHED-AGENTIC-GUARD` muncul dari `_runNonStreamingChatCompletion`, yang
+memanggil `runAgenticLoop` — bukan jalur streaming yang sedang diuji. Setelah
+sasaran dikoreksi, keempat kontrol menggagalkan tepat 1–3 test yang dimaksud.
+
+**Aturan yang lahir dari sini:** untuk file dengan blok duplikat, kontrol negatif
+harus menargetkan **nomor baris**, bukan pola string — dan hasilnya wajib
+diperiksa masuk akal ("apakah gagal karena alasan yang saya klaim?"), bukan
+sekadar "ada yang merah". Ini varian dari pelajaran di §1.4, pada dimensi berbeda.
+
+### 1.9 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -224,7 +266,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 151 file · 2.873 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 152 file · 2.891 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
