@@ -755,3 +755,47 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     expect(upload).not.toMatch(/`\[Empty document: /)
   })
 })
+
+describe('invariant: HNSW filter truncation stays handled', () => {
+  // INCIDENT (2026-09 audit): a query asking pgvector for N neighbours returned
+  // ZERO when the org was a minority of the shared DocumentChunk table. HNSW
+  // applies the WHERE clause AFTER its approximate scan, so the scan walks the
+  // GLOBAL nearest-neighbour graph and the org filter discards nearly all of
+  // it. Measured (trial/98, pgvector 0.6.0, 20k vectors across 100 orgs, each
+  // 1% of the table, LIMIT 20):
+  //
+  //   hnsw_probe (HNSW index)  ->  0 rows
+  //   hnsw_exact (no index)    -> 20 rows     <- identical table, same query
+  //   ef_search=1000 (max)     ->  5 rows
+  //
+  // The failure was invisible: `pgScores.size > 0` counted as success, so a
+  // partial (or empty) vector leg silently won, the exact external vector store
+  // was never consulted, and fusion treated the survivors as the whole
+  // candidate set. `hnsw.iterative_scan` (pgvector 0.8.0+) is the real fix;
+  // this installation runs 0.6.0, so the code must probe for it and treat a
+  // short result as a failure in the meantime.
+  test('an under-filled vector leg is not mistaken for success', () => {
+    const src = readRepo('src/lib/rag-retrieval.ts')
+
+    // The old bug in one line: any non-empty result returned immediately.
+    expect(src).not.toMatch(/if \(pgScores\.size > 0\) return pgScores/)
+
+    expect(src).toContain('MIN_VECTOR_LEG_ROWS')
+    expect(src).toMatch(/pgScores\.size >= Math\.min\(wanted, MIN_VECTOR_LEG_ROWS\)/)
+  })
+
+  test('ef_search is raised and iterative_scan is probed, never assumed', () => {
+    const src = readRepo('src/lib/rag-retrieval.ts')
+
+    // Leaving ef_search at the server default (40) is the bug: it must scale
+    // with the requested limit...
+    expect(src).toMatch(/hnsw\.ef_search/)
+
+    // ...and iterative_scan must be PROBED, because issuing an unknown GUC on
+    // pgvector 0.6.x raises 42704 and would break every retrieval query.
+    expect(src).toContain('hasIterativeScan')
+    expect(src).toMatch(/SHOW hnsw\.iterative_scan/)
+    // The probe caches: one round trip per process, not per query.
+    expect(src).toMatch(/_iterativeScanSupported !== null/)
+  })
+})

@@ -99,13 +99,34 @@ Dokumentasi resmi pgvector (README, bagian "Filtering") menyatakan:
 > `hnsw.ef_search` of 40, **only 4 rows will match on average**."
 
 Arsitektur kita persis pola itu: satu tabel `DocumentChunk`, satu index HNSW,
-difilter `organizationId`. Diukur pada 1000 vektor (900 tenant mayoritas +
-100 tenant minoritas = 10%), query sebagai tenant minoritas dengan `LIMIT 10`:
+difilter `organizationId`.
+
+**Pengukuran awal** (1000 vektor, tenant 10%, `LIMIT 10`):
 
 ```
 ef_search=  40 (default) ->  5/10 baris
 ef_search= 100           ->  8/10 baris
 ef_search= 200           -> 10/10 baris
+```
+
+**Pengukuran lanjutan pada skala lebih besar** (20.000 vektor, 100 organisasi
+masing-masing 1% tabel, `LIMIT 20`) — inilah bentuk yang Anda hadapi di
+produksi, dan hasilnya jauh lebih buruk:
+
+```
+DocumentChunk + index HNSW   ->  0 baris
+Tabel sama TANPA index       -> 20 baris      <- query identik
+ef_search = 1000 (maksimum)  ->  5 baris
+```
+
+Dua tabel berisi data yang sama, query yang sama. **Index HNSW mengembalikan
+nol; tanpa index mengembalikan 20.** Dikonfirmasi lewat `EXPLAIN`:
+
+```
+Limit
+  -> Index Scan using hnsw_probe_v_idx
+        Order By: (v <=> '[0.5,...]'::vector)
+        Filter: (tenant = 7)          <- filter SETELAH index scan
 ```
 
 **Kontrak retrieval kita rusak.** `rag-retrieval.ts:231` meminta

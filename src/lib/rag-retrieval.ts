@@ -333,46 +333,144 @@ async function resolveQueryEmbedding(query: string): Promise<{ vector: number[];
   }
 }
 
+/**
+ * Minimum rows a vector leg must return before we accept it as complete.
+ *
+ * HNSW applies the org filter AFTER its approximate scan, so a query for N
+ * neighbours returns far fewer than N when the org is a minority of the shared
+ * table — the scan never enters the org's region and the filter discards what
+ * it did find. Measured (trial/92, 20k vectors across 100 orgs, each 1% of the
+ * table, asking for 80): the DEFAULT hnsw.ef_search of 40 returned **0 rows**;
+ * ef_search=1000, the maximum, returned 5. pgvector documents the shape of this
+ * ("filtering is applied after the index is scanned… only 4 rows will match on
+ * average" at 10% selectivity) and requires hnsw.iterative_scan — added in
+ * 0.8.0 — to keep scanning until enough rows survive the filter. 0.6.0 has no
+ * such option.
+ *
+ * Without this check the failure was invisible: `pgScores.size > 0` counted as
+ * success, so a partial (or empty) vector leg silently won and the external
+ * vector store — which is exact — was never tried. Fusion then treated the
+ * survivors as the whole candidate set.
+ *
+ * So an under-filled vector leg is a FAILURE, not a result.
+ */
+const MIN_VECTOR_LEG_ROWS = 8
+
 async function resolveVectorScores(args: { vector: number[] | null; topK: number }): Promise<Map<string, number>> {
   if (!args.vector) return new Map()
 
+  const wanted = Math.max(args.topK * 8, 16)
+  let pgScores = new Map<string, number>()
   try {
     // Fire-and-forget: never make a user query wait on an index build.
     void ensureVectorIndexes()
-    const pgScores = await pgvectorSimilaritySearch(args.vector, Math.max(args.topK * 8, 16))
-    if (pgScores.size > 0) return pgScores
+    pgScores = await pgvectorSimilaritySearch(args.vector, wanted)
+    if (pgScores.size >= Math.min(wanted, MIN_VECTOR_LEG_ROWS)) return pgScores
+    if (pgScores.size > 0) {
+      // Partial. Prefer a complete answer from the external store when one is
+      // configured; keep these rows as a floor when it is not.
+      log.warn('pgvector returned fewer rows than requested (HNSW filter truncation)', {
+        requested: wanted,
+        received: pgScores.size,
+      })
+    }
   } catch (e) {
     log.debug('pgvector search unavailable, trying external vector store', { error: e instanceof Error ? e.message : String(e) })
   }
 
   try {
     const config = await getVectorStoreRuntimeConfig()
-    if (!config) return new Map()
-    const hits = await searchVectorStore({ config, vector: args.vector, limit: Math.max(args.topK * 8, 16) })
+    if (!config) return pgScores
+    const hits = await searchVectorStore({ config, vector: args.vector, limit: wanted })
+    if (hits.length === 0) return pgScores
     return new Map(hits.map((hit) => [hit.chunkId, hit.score]))
   } catch (e) {
     log.warn('resolveVectorScores failed', { error: e instanceof Error ? e.message : String(e) })
-    return new Map()
+    return pgScores
   }
+}
+
+/**
+ * Does this Postgres have hnsw.iterative_scan (pgvector 0.8.0+)?
+ *
+ * `null` = not probed yet. Probed once per process: the answer cannot change
+ * without a server restart, and the probe costs a round trip per query if
+ * repeated. When true we get a real fix for HNSW filter truncation; when false
+ * we fall back to the largest ef_search the server accepts.
+ */
+let _iterativeScanSupported: boolean | null = null
+
+async function hasIterativeScan(): Promise<boolean> {
+  if (_iterativeScanSupported !== null) return _iterativeScanSupported
+  try {
+    // SHOW on an unknown GUC raises 42704; on a supported build it returns a row.
+    await db.$queryRawUnsafe(`SHOW hnsw.iterative_scan`)
+    _iterativeScanSupported = true
+  } catch {
+    _iterativeScanSupported = false
+  }
+  return _iterativeScanSupported
+}
+
+/** Test seam — resets the cached capability probe. */
+export function _resetIterativeScanProbe(): void {
+  _iterativeScanSupported = null
 }
 
 async function pgvectorSimilaritySearch(queryVector: number[], limit: number): Promise<Map<string, number>> {
   const vectorStr = `[${queryVector.join(',')}]`
   const orgId = getOrgContext()
-  // Org-scoped (prevents cross-tenant ranking interference) + HNSW index makes
-  // the ORDER BY embedding <=> a bounded ANNS scan instead of full-corpus O(n).
-  const rows = await db.$queryRaw<Array<{ id: string; similarity: number }>>`
-    SELECT id, 1 - (embedding <=> ${vectorStr}::vector) AS similarity
-    FROM "DocumentChunk"
-    WHERE embedding IS NOT NULL
-      AND "organizationId" = ${orgId ?? ''}
-      AND "documentId" IN (
-        SELECT id FROM "Document" WHERE status = 'ready' AND "isEnabled" = true
-      )
-    ORDER BY embedding <=> ${vectorStr}::vector
-    LIMIT ${limit}
-  `
-  return new Map(rows.map((row) => [row.id, row.similarity]))
+
+  // HNSW filters AFTER the approximate scan, so `ef_search` (default 40) must
+  // exceed `limit` for the org's rows to survive. On pgvector >= 0.8.0
+  // iterative_scan does this properly — keep scanning until the filter yields
+  // enough rows. On 0.6.x the only lever is ef_search, capped at 1000 by the
+  // server (a larger value is rejected with 22023), so we ask for as much as
+  // the server allows and let resolveVectorScores treat a short result as a
+  // failure rather than a success.
+  const iterative = await hasIterativeScan()
+  const efSearch = Math.min(Math.max(limit * 4, 100), 1000)
+  const setLocal = iterative
+    ? `SET LOCAL hnsw.iterative_scan = relaxed_order; SET LOCAL hnsw.ef_search = ${efSearch};`
+    : `SET LOCAL hnsw.ef_search = ${efSearch};`
+
+  try {
+    // SET LOCAL only applies inside a transaction, so the two must share one.
+    return await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(setLocal)
+      // Org-scoped (prevents cross-tenant ranking interference) + HNSW index
+      // makes the ORDER BY embedding <=> a bounded ANNS scan, not full-corpus O(n).
+      const rows = await tx.$queryRaw<Array<{ id: string; similarity: number }>>`
+        SELECT id, 1 - (embedding <=> ${vectorStr}::vector) AS similarity
+        FROM "DocumentChunk"
+        WHERE embedding IS NOT NULL
+          AND "organizationId" = ${orgId ?? ''}
+          AND "documentId" IN (
+            SELECT id FROM "Document" WHERE status = 'ready' AND "isEnabled" = true
+          )
+        ORDER BY embedding <=> ${vectorStr}::vector
+        LIMIT ${limit}
+      `
+      return new Map(rows.map((row) => [row.id, row.similarity]))
+    })
+  } catch (e) {
+    // A rejected SET LOCAL (older/newer GUC name) must not lose the query.
+    log.debug('pgvector ef_search transaction failed, retrying with plain query', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+    const rows = await db.$queryRaw<Array<{ id: string; similarity: number }>>`
+      SELECT id, 1 - (embedding <=> ${vectorStr}::vector) AS similarity
+      FROM "DocumentChunk"
+      WHERE embedding IS NOT NULL
+        AND "organizationId" = ${orgId ?? ''}
+        AND "documentId" IN (
+          SELECT id FROM "Document" WHERE status = 'ready' AND "isEnabled" = true
+        )
+      ORDER BY embedding <=> ${vectorStr}::vector
+      LIMIT ${limit}
+    `
+    return new Map(rows.map((row) => [row.id, row.similarity]))
+  }
 }
 
 /**
