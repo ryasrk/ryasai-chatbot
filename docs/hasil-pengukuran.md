@@ -12,7 +12,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2224a57`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **59,32%** (10.629/17.917 baris, 116 file) | terukur, **belum 95%** |
+| Test coverage | **62,24%** (12.129/19.489 baris, 126 file) | terukur, **belum 95%** |
 | Test suite | 139 file · **2.417 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
@@ -78,10 +78,10 @@ lingkungan ini. Ini angka lantai untuk perencanaan, bukan angka penagihan.
 
 ---
 
-## 5. Coverage — 59,32% (dari 51,35%)
+## 5. Coverage — 62,24% (dari 51,35%)
 
 Diukur `bun run coverage` (→ `scripts/coverage.ts`, merge lcov per-file).
-Total: **10.629 / 17.917 baris** di 116 file. Naik **+7,97 poin persen**.
+Total: **12.129 / 19.489 baris** di 126 file. Naik **+10,89 poin persen**.
 
 Peningkatan per modul sesi ini:
 
@@ -96,17 +96,17 @@ Sisa celah terbesar (baris belum tertutup):
 
 | File | Belum tertutup | Coverage |
 |---|---|---|
-| `src/lib/planner.ts` | 604 | 10,3% |
+| `src/lib/planner.ts` | 302 | 55,7% |
 | `src/lib/tool-branches.ts` | 416 | 45,4% |
-| `src/lib/tool-router-agentic.ts` | 396 | 16,3% |
+| `src/lib/tool-router-agentic.ts` | 399 | 16,2% |
 | `src/lib/cognee-knowledge-graph.ts` | 331 | 3,5% |
 | `src/lib/real-connectors.ts` | 327 | 64,8% |
 | `src/lib/admin-tools.ts` | 301 | 55,0% |
 | `src/lib/intent-pipeline.ts` | 277 | 39,3% |
 
 **Untuk mencapai 95%** kira-kira perlu menutup ~6.400 baris lagi. Yang paling
-murah lebih dulu: `planner.ts`, `tool-router-agentic.ts`, dan `cognee-core.ts`
-ketiganya di bawah 17% dengan total ~1.230 baris belum tertutup.
+murah lebih dulu: `tool-router-agentic.ts`, `cognee-knowledge-graph.ts`, dan
+`cognee-core.ts` ketiganya di bawah 17% dengan total ~860 baris belum tertutup.
 
 ### Catatan semantik angka
 
@@ -124,11 +124,19 @@ Pengukuran ini menemukan tiga cacat di alat ukur sendiri. Yang penting: **alat
 ukur yang salah lebih berbahaya daripada tidak ada alat ukur**, karena angkanya
 dipakai untuk mengambil keputusan.
 
-1. **`scripts/coverage.ts` melaporkan 3,8% untuk modul yang sebenarnya 61,3%.**
-   File lcov dipakai bersama antar worker paralel; mutex tidak bisa menyelamatkan
-   path yang dipakai bersama. Diperbaiki dengan `renameSync` per-run.
+1. **`scripts/coverage.ts` melaporkan angka yang salah DUA KALI berturut-turut.**
+   Versi pertama: 3,8% untuk modul yang sebenarnya 61,3%. Versi kedua: masih
+   mencampur laporan antar-run — `planner.ts` dilaporkan 69/673 sementara suite-nya
+   sendiri 379/578. **Petunjuknya:** 673 baris "found" melebihi angka yang bisa
+   dihasilkan satu run mana pun (578), jadi penyebut itu pasti campuran dua
+   laporan. Akarnya: lcov ditulis oleh proses ANAK, jadi mutex pada baca+rename
+   tidak menolong — worker berikutnya menimpa file sebelum lock dilepas.
+   Perbaikan akhir: spawn dijalankan **di dalam** critical section.
    (Percobaan cwd terisolasi ditolak: 139/139 file tes gagal karena resolver
    mencari `.env` dan alias `@/*` relatif ke root repo.)
+   **Pelajaran:** dua perbaikan berturut-turut pada alat ukur adalah sinyalnya
+   sendiri — angka yang salah lebih berbahaya daripada tidak ada angka, karena
+   ia dipakai untuk mengambil keputusan.
 2. **`bun run test` melaporkan "8 fail" di suite yang hijau seluruhnya.**
    `out.match(/(\d+)\s+fail/)` mengambil kecocokan pertama di mana pun, sehingga
    tes yang **lulus** dengan nama "exactly 10 runs with 8 failures trips the
