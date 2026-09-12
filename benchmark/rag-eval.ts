@@ -19,6 +19,7 @@
 import { getRoleLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce } from '@/lib/llm-client'
 import { retrieveRelevantChunks } from '@/lib/rag'
+import { retrieveWithReflection } from '@/lib/intent-pipeline'
 import { generateAnswer } from '@/lib/ai'
 import { postLangfuseScore } from '@/lib/observability'
 import { enterWithOrg } from '@/lib/prisma-tenant'
@@ -267,8 +268,21 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
   for (const q of questions) {
     const t0 = Date.now()
 
-    // Retrieve + generate
-    const retrieval = await retrieveRelevantChunks({ query: q.question, topK: 4 })
+    // Retrieve + generate.
+    //
+    // ponytail: use the SAME orchestrator the product runs, not the raw
+    // single-pass retrieval. `runStreamingChatCompletion`/`runNonStreamingChatCompletion`
+    // go through `retrieveWithReflection`, which applies bilingual query
+    // expansion (expandQuery) before searching — the raw call does not. Scoring
+    // the raw path under-reported quality badly and, worse, hid the fact that
+    // Indonesian queries retrieved nothing at all: this harness reported
+    // P=0.00/C=0.00 for Indonesian questions while English scored P=0.70/C=1.00,
+    // and the cause was the harness measuring a code path users never hit.
+    // `--raw` keeps the old behaviour for A/B comparison.
+    const useRaw = process.argv.includes('--raw')
+    const retrieval = useRaw
+      ? await retrieveRelevantChunks({ query: q.question, topK: 4 })
+      : await retrieveWithReflection({ query: q.question, topK: 4 })
     const context = retrieval.chunks.map((c) => c.content).join('\n\n')
     const answer = await generateAnswer({
       question: q.question,

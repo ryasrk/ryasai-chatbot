@@ -12,6 +12,11 @@
  * above the assertion — it explains the production incident the guard encodes.
  */
 import { describe, expect, test } from 'bun:test'
+// Imported for the cross-lingual guard, which must assert BEHAVIOUR: a
+// source-level check for the identifier `SYNONYM_REVERSE` did not fail when the
+// lookup was replaced with `undefined`, so it could not catch the regression it
+// was written for. Only compare the resulting expansions.
+import { expandQuery } from './intent-pipeline'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -505,6 +510,48 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     expect(placeholderIdx).toBeGreaterThan(-1)
     expect(llmGateIdx).toBeGreaterThan(-1)
     expect(placeholderIdx).toBeLessThan(llmGateIdx)
+  })
+
+  test('query expansion bridges Indonesian -> English (cross-lingual retrieval)', () => {
+    // Asserting BEHAVIOUR, not identifiers: an earlier version of this guard only
+    // asserted that the string `SYNONYM_REVERSE` appeared in the source, and it
+    // did NOT fail when the lookup was neutered to `undefined`. A guard that
+    // cannot fail on the regression it targets is worse than none.
+    const id = expandQuery('Berapa tarif lembur pada hari kerja?')
+    expect(id.length).toBeGreaterThan(1)
+    expect(id.some((e) => e.includes('overtime'))).toBe(true)
+    // The translated variant must not leave Indonesian content words behind for
+    // these known concepts, or it matches nothing in an English corpus.
+    const translated = id.find((e) => e.includes('overtime') && e.includes('rate'))
+    expect(translated).toBeDefined()
+    expect(translated).not.toMatch(/tarif|lembur/)
+
+    // Ambiguity: "hari" is `day`'s exact synonym but also sits inside "hari
+    // libur" (holiday). It must resolve to `day`.
+    const amb = expandQuery('Berapa hari proses refund?')
+    const ambT = amb.find((e) => e.includes('processing'))
+    expect(ambT).toBeDefined()
+    expect(ambT).toContain('day')
+    expect(ambT).not.toContain('holiday')
+
+    // No duplicates, and the original query appears exactly once.
+    expect(new Set(id).size).toBe(id.length)
+    expect(id.filter((x) => x === 'Berapa tarif lembur pada hari kerja?').length).toBe(1)
+  })
+
+  test('query expansion reverse index is DERIVED from the forward map', () => {
+    // INCIDENT (2026-09 cross-lingual trial): `expandQuery` only looked up
+    // QUERY_SYNONYMS[token] — an ENGLISH-keyed map — so an Indonesian query was
+    // returned unchanged. With no embedding provider configured, lexical matching
+    // is the only path, so Indonesian questions against English documents
+    // retrieved NOTHING. Measured: 5 of 11 Indonesian questions returned 0 chunks
+    // with the answer present in the corpus (58% overall, 100% for English).
+    // The reverse index must exist and must be DERIVED from the same map so the
+    // two directions cannot drift.
+    // Both directions must come from ONE table, so they cannot drift.
+    const src = codeOnly('src/lib/intent-pipeline.ts')
+    expect(src).toMatch(/SYNONYM_REVERSE[\s\S]{0,500}Object\.entries\(QUERY_SYNONYMS\)/)
+    expect(src).toContain('PRIMARY_SYNONYM')
   })
 
   test('the placeholder marker has exactly one definition and one detector', () => {

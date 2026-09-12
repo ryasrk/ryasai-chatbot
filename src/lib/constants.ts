@@ -29,7 +29,16 @@ export const RATE_LIMIT_AGENT = 20
 export const RATE_LIMIT_UPLOAD = 20
 
 // LLM
-export const LLM_TIMEOUT_MS = 30_000
+// ponytail: LLM_TIMEOUT_MS is env-overridable because reasoning models changed
+// the arithmetic. Measured against the 2026-09 eval gateway: "reply OK" took
+// 2.1s standalone but 6.5s through the real transport, and a RAGAS judge prompt
+// took 6.4s — so four concurrent judge calls blew the fixed 30s ceiling and
+// every eval run died as `DOMException TimeoutError` with an empty stack, which
+// reads as a harness bug rather than a too-tight timeout. A model that thinks
+// for tens of seconds is now normal, so the ceiling must be tunable per
+// deployment. The DEFAULT stays 30s: most providers are fast, and a long default
+// would let one hung request hold a slot.
+export const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 30_000)
 export const LLM_STREAM_TIMEOUT_MS = 120_000
 export const LLM_MAX_RETRIES = 3
 export const LLM_RETRY_BACKOFF_BASE_MS = 500

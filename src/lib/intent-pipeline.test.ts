@@ -158,9 +158,59 @@ describe('expandQuery', () => {
     expect(result.length).toBe(1)
   })
 
-  test('handles Indonesian terms (cuti is a synonym value, not a key — not expanded)', () => {
+  // REGRESSION (2026-09 cross-lingual trial): this test previously certified the
+  // BUG as correct —
+  //   expandQuery('cuti') -> ['cuti']   "not a key — not expanded"
+  // Documents are routinely English while users ask Indonesian, and `tokenize`
+  // is exact-match, so an Indonesian query could never reach an English corpus.
+  // Measured impact: 5 of 11 Indonesian questions retrieved ZERO chunks with the
+  // answer sitting in the corpus (58% overall vs 100% for English phrasing).
+  // A query already in the target language must NOT be "expanded" (that would
+  // just add noise), but the reverse direction must work.
+  test('leaves an English token out of the REVERSE map (forward expansion still applies)', () => {
+    // 'leave' IS an English key, so forward expansion to its Indonesian synonyms
+    // is the original intended behaviour and must be preserved. What must NOT
+    // happen is the reverse index treating an English key as an Indonesian term
+    // and translating it into itself/other concept keys.
+    const r = expandQuery('leave')
+    expect(r).toContain('annual leave')
+    expect(r).toContain('cuti')
+  })
+
+  test('expands an Indonesian term to the English concept the corpus contains', () => {
     const result = expandQuery('cuti')
-    expect(result).toEqual(['cuti'])
+    expect(result).toContain('leave')
+    expect(result[0]).toBe('cuti')
+  })
+
+  test('translates a whole Indonesian query so English content words dominate', () => {
+    // Single-token substitution alone produces mixed-language strings
+    // ("berapa tarif lembur pada day kerja?") that still match nothing, so the
+    // translator emits one FULLY translated variant.
+    const result = expandQuery('Berapa tarif lembur pada hari kerja?')
+    const translated = result.find((r) => r.includes('overtime') && r.includes('rate'))
+    expect(translated).toBeDefined()
+    expect(translated).not.toMatch(/lembur|tarif/)
+  })
+
+  test('resolves an ambiguous word to its primary concept, not a phrase member', () => {
+    // "hari" is the exact synonym of `day`, but also occurs inside "hari libur"
+    // (= holiday). Sub-splitting the phrase once made "Berapa hari proses
+    // refund…" translate to "…holiday processing refund…", which retrieved
+    // nothing — a measured regression (refund-processing hit -> miss).
+    const translated = expandQuery('Berapa hari proses refund setelah retur disetujui?')
+      .find((r) => r.includes('processing'))
+    expect(translated).toBeDefined()
+    expect(translated).toContain('day')
+    expect(translated).not.toContain('holiday')
+  })
+
+  test('never returns duplicates or the original query twice', () => {
+    for (const q of ['Berapa tarif lembur pada hari kerja?', 'cuti tahunan', 'leave policy']) {
+      const r = expandQuery(q)
+      expect(new Set(r).size).toBe(r.length)
+      expect(r.filter((x) => x === q).length).toBe(1)
+    }
   })
 })
 
