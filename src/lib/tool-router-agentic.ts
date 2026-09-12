@@ -11,7 +11,22 @@ import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('tool-router')
 
 const MAX_AGENTIC_ITERATIONS = 3
-const AGENTIC_DEADLINE_MS = Number(process.env.AGENTIC_DEADLINE_MS ?? 90_000)
+
+/**
+ * Per-round deadline budget, read LAZILY.
+ *
+ * It used to be a module-level const, which made the deadline untestable: the
+ * value is captured at import time, and bun hoists imports above a test file's
+ * top-level statements, so a test could not set the env before the read. Read at
+ * call time, the deadline is also honest about what the operator set — with the
+ * constant, changing AGENTIC_DEADLINE_MS had no effect until the process restarted.
+ * A non-positive value is honoured (deadline already past), which is what the
+ * termination tests use.
+ */
+function agenticDeadlineMs(): number {
+  const raw = Number(process.env.AGENTIC_DEADLINE_MS ?? 90_000)
+  return Number.isFinite(raw) ? raw : 90_000
+}
 
 // ponytail: deadline is enforced per round (see withAgenticDeadline) so a hung
 // tool (plugin up to 120s, dead MCP 30s, REST timeout) can't push a single
@@ -209,7 +224,7 @@ export async function runAgenticLoop(
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
   const budget = args.budget ?? createTokenBudget()
-  const deadline = Date.now() + AGENTIC_DEADLINE_MS
+  const deadline = Date.now() + agenticDeadlineMs()
 
   for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
     if (Date.now() > deadline) {
@@ -360,7 +375,7 @@ export async function runStreamingAgenticLoop(
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
   const budget = args.budget ?? createTokenBudget()
-  const deadline = Date.now() + AGENTIC_DEADLINE_MS
+  const deadline = Date.now() + agenticDeadlineMs()
 
   async function* combinedStream(): AsyncGenerator<string, void, unknown> {
     for (let iteration = 0; iteration < MAX_AGENTIC_ITERATIONS; iteration++) {
