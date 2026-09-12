@@ -23,8 +23,8 @@
     "prepare": "if [ -d .git/hooks ]; then cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit; fi",
     "test:coverage": "bun test --coverage",
     "coverage": "bun scripts/coverage.ts",
-    "coverage:check": "c8 --check-coverage --lines 50 --functions 50 bun run test",
-    "e2e:prod": "playwright test -c playwright.prod.config.ts"
+    "e2e:prod": "playwright test -c playwright.prod.config.ts",
+    "coverage:gate": "bun scripts/coverage-gate.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",

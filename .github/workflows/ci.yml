@@ -48,6 +48,16 @@ jobs:
       - name: Unit tests
         run: bun run test
 
+      # Coverage gate. Measures per-file (never the merged total — see
+      # scripts/coverage-gate.ts) and fails when a module that is already well
+      # covered regresses. Added because coverage climbed from 51% to 75% here
+      # and nothing stopped it from being lost again.
+      - name: Coverage
+        run: bun run coverage
+
+      - name: Coverage gate
+        run: bun run coverage:gate
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
