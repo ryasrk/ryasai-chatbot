@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d4d51e7`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d73519`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d4d51e7`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **79,74%** (15.689/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.214 lulus · 0 gagal** | terukur |
+| Test coverage | **79,99%** (15.739/19.676 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 158 file · **3.224 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -71,7 +71,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
 | Modul ter-gate | 62 modul | **67 modul** | +5 |
-| **Total repo** | **62,44%** | **79,74%** | — |
+| `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
+| **Total repo** | **62,44%** | **79,99%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -205,8 +206,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Dedup indeks rerank dihapus (chunk ganda mengisi dua slot) | `rag-retrieval.ts:196` | 1 |
 | Backfill rerank dihapus (jawaban lebih pendek dari topK) | `rag-retrieval.ts:201` | 2 |
 | Rerank LLM tetap jalan tanpa config | `rag-retrieval.ts:175` | 1 |
+| `allSettled` → `all` (satu chunk gagal membatalkan seluruh ingestion) | `embeddings.ts` | 1 |
+| Gerbang dimensi selalu mengizinkan kolom vektor | `embeddings.ts:280` | 3 |
+| `documentId` diabaikan (re-embed seluruh korpus) | `embeddings.ts:451` | 1 |
+| Dokumen non-`ready` ikut di-embed | `embeddings.ts:449` | 2 |
 
-**112 kontrol + 3 kontrol gate, semuanya sah.**
+**116 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -916,6 +921,47 @@ percobaan membaca error TypeScript yang pesannya menunjuk baris yang tampak sala
 `"number is not assignable to string"` ternyata di `txnDeepCalls.push(1)`, sebuah
 `string[]` yang saya deklarasikan untuk array angka. **Mencetak baris persisnya dengan
 `awk` menyelesaikannya setelah menebak gagal berulang kali.**
+
+### 1.7s `embeddings.ts`: 79,52% → 96,92% — gerbang dimensi, dan satu kontrol yang menipu saya sendiri
+
+`embedCompanyDocuments` **belum pernah dijalankan test mana pun**: `document.findMany`
+default-nya `[]`, jadi seluruh badan loop-nya unreachable. Kini diuji: memfilter
+`status:'ready'` (dokumen setengah-ter-ingest **tidak boleh** di-embed), `orderBy`
+`createdAt desc`, `documentId` mempersempit ke **satu** dokumen (re-embed satu dokumen
+tidak boleh me-re-embed korpus), nol dokumen siap melaporkan nol alih-alih melempar,
+dokumen tanpa chunk tetap terhitung sebagai dokumen (`documents` = yang **dipindai**,
+`embedded` = yang **ditulis**; mencampurnya menyembunyikan dokumen yang chunk-nya tidak
+pernah dibuat), dan `provider`/`model` dibaca dari field **khusus**
+`embeddingProvider`/`embeddingModel`, **bukan** `provider`/`model` generik di baris yang
+sama — karena satu deployment bisa meng-embed lewat endpoint berbeda dari yang dipakai
+chat, dan melaporkan pasangan generik akan **salah mengatribusi** asal vektor.
+
+**Satu chunk gagal menulis tidak boleh membatalkan chunk sisanya.** Sebelum
+`Promise.allSettled`, satu baris yang ditolak membunuh seluruh ingestion dan
+meninggalkan **setiap chunk berikutnya** dokumen itu tanpa embedding.
+
+**Gerbang `canWriteVectorColumn`** adalah gerbang yang memutuskan kolom pgvector vs
+hanya `embeddingJson`. Kini diuji: lebar kolom cocok menulis kolom, lebar tidak cocok
+dan kolom tidak dikenal **menolaknya** sambil tetap menyimpan JSON (retrieval jatuh ke
+jalur kosinus), dan error DB saat probe **tidak** menonaktifkan embedding.
+
+**Empat bug test saya sendiri, dan satu di antaranya penting.** Test gerbang pertama
+saya meng-assert bahwa SQL mengandung `embeddingJson` — padahal **kedua cabang**
+menyetel `embeddingJson`, sehingga assertion itu **tidak membedakan apa pun**, dan
+kontrol yang **mematikan gerbangnya sepenuhnya tetap HIJAU**. Satu-satunya pembeda
+nyata adalah cabang vektor menyetel `"embedding" = <literal>::vector`. Selain itu:
+`vectorWritesSince` memindai `mockExecuteRaw.mock.calls` yang **dibagi seluruh file dan
+tidak pernah di-clear**, jadi memindai seluruhnya menangkap test batch sebelumnya dan
+`toBe(false)` mustahil benar — kini hanya menghitung sejak baseline per-test (**assert
+DELTA, bukan jumlah absolut**); menimpa `db.$queryRaw` pada namespace terimpor **tidak
+berpengaruh** karena modul yang diuji menangkap binding-nya saat import, yang bekerja
+adalah `mockQueryRaw` yang sudah ter-wire; dan satu `str.replace` saya **diam-diam
+menghapus badan `beforeEach`** dan meninggalkan syntax error yang harus saya susun ulang.
+
+**Satu kontrol TIDAK menggigit dan tidak saya klaim:** mematikan penjaga sekali-saja
+pada peringatan mismatch dimensi membiarkan suite hijau, jadi perilaku itu **tidak
+teruji**. Itu soal volume log, bukan kebenaran — lebih baik saya katakan daripada
+mendaftarkannya sebagai tercakup.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

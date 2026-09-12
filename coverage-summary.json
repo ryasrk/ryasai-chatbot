@@ -1,7 +1,7 @@
 {
-  "linePct": 79.74,
-  "linesHit": 15688,
-  "linesFound": 19674,
+  "linePct": 79.99,
+  "linesHit": 15739,
+  "linesFound": 19676,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -106,12 +106,6 @@
       "hit": 105,
       "found": 154,
       "pct": 68.18181818181817
-    },
-    {
-      "file": "src/lib/embeddings.ts",
-      "hit": 266,
-      "found": 390,
-      "pct": 68.2051282051282
     },
     {
       "file": "src/lib/sso.ts",
@@ -286,6 +280,12 @@
       "hit": 63,
       "found": 78,
       "pct": 80.76923076923077
+    },
+    {
+      "file": "src/lib/embeddings.ts",
+      "hit": 317,
+      "found": 392,
+      "pct": 80.86734693877551
     },
     {
       "file": "src/lib/crypto.ts",
