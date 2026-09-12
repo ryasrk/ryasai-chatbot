@@ -21,9 +21,16 @@ bawah, bukan dibulatkan ke atas.
 
 ### 1.1 Progres coverage per modul (ronde ini)
 
-Diukur ulang tiap kali dengan `bun scripts/coverage.ts` (laporan digabung dari
-semua file test, dijalankan satu proses per file). Angka "sebelum" adalah
-pengukuran nyata sebelum ronde ini, bukan perkiraan.
+**Cara membaca tabel ini (penting).** Setiap baris diukur dengan
+`bun test ./<file test> --coverage` — **per-file**, bukan dari total merge.
+Alasannya ada di §1.9: angka merge selalu lebih rendah, sehingga pergerakan
+total tidak dapat dipakai untuk menilai satu modul. Kolom **"Sesudah"** adalah
+persentase **baris** kecuali bila ditandai `(fungsi)`.
+
+Bun mencetak dua kolom berdampingan — `% Funcs | % Lines` — dan pada ronde
+sebelumnya beberapa angka tertukar label. Modul yang angka "sebelum"-nya
+berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
+"naik dari X%" yang membandingkan apel dengan jeruk.
 
 | Modul | Sebelum | Sesudah | Test baru |
 |---|---|---|---|
@@ -32,7 +39,7 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/cognee-core.ts` | 10,20% | **91,12%** | 25 |
 | `src/lib/cognee-knowledge-graph.ts` | 19,20% | **94,76%** | 30 |
 | `src/lib/admin-tools.ts` | 55,00% | **68,20%** | 31 |
-| `src/lib/tool-router-agentic.ts` | 8,05% | **68,43%** | 19 |
+| `src/lib/tool-router-agentic.ts` | 8,05% (fungsi) | **68,43%** (fungsi) | 19 |
 | `src/lib/smart-router.ts` | 8,11% | **77,50%** | — |
 | `src/lib/planner.ts` | 65,57% | **76,14%** | 8 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 8,64% | **69,29%** | 10 |
@@ -41,14 +48,14 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/llm-config.ts` | 20,94% | **93,78%** | 35 |
 | `src/app/api/mcp/servers/[id]/route.ts` | **0%** (tanpa test) | **98,56%** | 35 |
 | `src/app/api/mcp/servers/route.ts` | 19,86% | **99,30%** | 30 |
-| `src/lib/planner.ts` | 76,14% | **83,24%** | 16 |
-| `src/lib/stream-preparers.ts` | 74,77% | **99,31%** | 10 |
+| `src/lib/planner.ts` | 76,14% | **83,24%** / 95,74% (fungsi) | 16 |
+| `src/lib/stream-preparers.ts` | 74,77% | **99,31%** / 92,86% (fungsi) | 10 |
 | `src/lib/rag-retrieval.ts` | 68,26% | **86,01%** | 24 |
-| `src/lib/mcp-client.ts` | 68,97% | **96,77%** | 28 |
+| `src/lib/mcp-client.ts` | 68,97% (fungsi) | **96,77%** (fungsi) / 90,12% (baris) | 28 |
 | `src/lib/cognee-memory.ts` | 12,50% | **100,00%** | 26 |
 | `src/lib/web-fetch.ts` | 36,70% | **100,00%** | 20 |
-| `src/lib/tool-router.ts` | 50,20% | **65,79%** | 18 |
-| `src/lib/tool-router-agentic.ts` (fungsi) | 68,43% | **80,73%** | 14 |
+| `src/lib/tool-router.ts` | 50,20% | **65,79%** / 94,76% (fungsi) | 18 |
+| `src/lib/tool-router-agentic.ts` — gabungan kedua file | 68,43% (fungsi) | **89,29%** (fungsi, file lama) + 14 test baru khusus `runMultiStepDag` | 14 |
 | **Total repo** | **62,44%** | **75,07%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
