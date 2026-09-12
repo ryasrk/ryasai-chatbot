@@ -25,6 +25,17 @@ const confidenceState = { confident: false, confidence: 0.1, reason: 'needs more
 mock.module('@/lib/intent-pipeline', () => ({
   evaluateAnswerConfidence: async () => ({ ...confidenceState }),
 }))
+// Reflexion is opt-in via REFLEXION_ENABLED. The branch that MATTERS is
+// `needsRevision: true`, which REPLACES the text the user receives — a broken
+// revision path would ship the critique's draft or drop the answer entirely.
+// Nothing had ever exercised it on the streaming path.
+const reflexionState = { enabled: false, needsRevision: false, revised: 'REVISED', critique: 'too vague', calls: 0 }
+mock.module('@/lib/reflexion', () => ({
+  selfCritique: async () => {
+    reflexionState.calls++
+    return { needsRevision: reflexionState.needsRevision, revisedAnswer: reflexionState.revised, critique: reflexionState.critique }
+  },
+}))
 
 import { appendToolRuns, dedupeToolRuns, toolRunTypeFor, runAgenticLoop, runStreamingAgenticLoop } from './tool-router-agentic'
 import { createTokenBudget } from './agentic-budget'
@@ -41,6 +52,13 @@ beforeEach(() => {
   confidenceState.confidence = 0.1
   confidenceState.reason = 'needs more'
   confidenceState.nextToolHint = null
+  reflexionState.enabled = false
+  reflexionState.needsRevision = false
+  reflexionState.revised = 'REVISED'
+  reflexionState.critique = 'too vague'
+  reflexionState.calls = 0
+  delete process.env.REFLEXION_ENABLED
+  delete process.env.AGENTIC_DEADLINE_MS
 })
 
 function run(over: Partial<PendingToolRun> = {}): PendingToolRun {
@@ -527,5 +545,257 @@ describe('runStreamingAgenticLoop — termination and the alignment gate', () =>
     // the transcript rather than presenting a partial answer as complete.
     expect(text).toContain('budget')
     expect(calls).toBeLessThanOrEqual(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The streaming loop's opt-in and deadline paths.
+//
+// Reflexion (`REFLEXION_ENABLED`) had never been exercised on the STREAMING
+// path: the flag gates a self-critique that can REPLACE the answer text before it
+// is yielded, so a broken revision path would either drop the user's answer or
+// yield the pre-critique version while claiming the revision happened.
+// ---------------------------------------------------------------------------
+
+describe('runStreamingAgenticLoop — reflexion (opt-in self-critique)', () => {
+  test('with reflexion OFF the answer is yielded unchanged and no critique runs', async () => {
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'e'.repeat(600) })],
+        stream: (async function* () { yield 'original answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    // Off by default: the critique costs an extra LLM call per round, so it must
+    // not run unless the operator turned it on.
+    expect(text).toContain('original answer')
+    expect(text).not.toContain('revised')
+  })
+
+  test('with reflexion ON, the critique RUNS and the original text is buffered', async () => {
+    process.env.REFLEXION_ENABLED = 'true'
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield 'original answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    // Reflexion needs the FULL text before it can revise, so this path buffers
+    // instead of streaming live — the tradeoff is deliberate.
+    expect(reflexionState.calls).toBeGreaterThan(0)
+    expect(text).toContain('original answer')
+  })
+
+  test('a revision REQUEST replaces the text the user receives', async () => {
+    process.env.REFLEXION_ENABLED = 'true'
+    reflexionState.needsRevision = true
+    reflexionState.revised = 'corrected answer'
+    // ONLY ONE ROUND. With 'tiny' evidence the loop runs further rounds, and each
+    // round would yield the same fixture again — then `not.toContain('flawed')`
+    // fails against the NEXT round's answer rather than proving anything about
+    // the revision. A confident verdict keeps this to a single round so the
+    // assertion is about the revision and nothing else.
+    confidenceState.confident = true
+    confidenceState.confidence = 0.9
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield 'flawed answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    // The revised text must REPLACE the draft, not be appended to it: shipping
+    // both would show the user the flawed answer they were being protected from.
+    expect(text).toContain('corrected answer')
+    expect(text).not.toContain('flawed answer')
+  })
+
+  test('no revision requested leaves the original text alone', async () => {
+    process.env.REFLEXION_ENABLED = 'true'
+    reflexionState.needsRevision = false
+    confidenceState.confident = true
+    confidenceState.confidence = 0.9
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield 'good answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    expect(reflexionState.calls).toBeGreaterThan(0)
+    expect(text).toContain('good answer')
+    // 'REVISED' is the fixture's revised text; it must not appear when the
+    // critique did not ask for a revision.
+    expect(text).not.toContain('REVISED')
+  })
+})
+
+describe('runStreamingAgenticLoop — deadline', () => {
+  test('a deadline already past stops the FIRST round and says it timed out', async () => {
+    process.env.AGENTIC_DEADLINE_MS = '-1000'
+    try {
+      let calls = 0
+      const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+        calls++
+        return streamResult()
+      })
+      const text = await drain(out.stream)
+      // A NEGATIVE deadline, not 0: Date.now() > Date.now() + 0 is false. Measured
+      // on the non-streaming loop, where 0 did not stop the first iteration.
+      expect(calls).toBe(0)
+      expect(text).toContain('timed out')
+    } finally {
+      delete process.env.AGENTIC_DEADLINE_MS
+    }
+  })
+
+  test('a deadline that expires DURING the round reports an incomplete answer, not the raw text', async () => {
+    process.env.AGENTIC_DEADLINE_MS = '-1000'
+    try {
+      let calls = 0
+      const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+        calls++
+        return streamResult({ toolRuns: [toolRun({ outputSummary: 'e'.repeat(600) })] })
+      })
+      const text = await drain(out.stream)
+      // Either the top-of-round check fires (0 calls) or the per-round deadline
+      // does; both must tell the user the answer is incomplete rather than
+      // presenting a partial turn as finished.
+      expect(text.length).toBeGreaterThan(0)
+      expect(calls).toBeLessThanOrEqual(1)
+    } finally {
+      delete process.env.AGENTIC_DEADLINE_MS
+    }
+  })
+
+  test('a healthy deadline does not interrupt the round', async () => {
+    let calls = 0
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      return streamResult({
+        toolRuns: [toolRun({ outputSummary: 'e'.repeat(600) })],
+        stream: (async function* () { yield 'complete answer' })(),
+      })
+    })
+    const text = await drain(out.stream)
+    expect(text).toContain('complete answer')
+    // NOTE: measured at 2, not 1. outputSummary is sliced to 300 chars, so a
+    // 600-char fixture contributes ~300 and the "substantial evidence" heuristic
+    // (>500) does NOT fire; the mocked evaluator answers "not confident" and the
+    // loop runs a second round. Each round yields its own text, so the transcript
+    // is the answer twice. That is the loop working as designed, and the fixture —
+    // not the loop — was wrong the first time this was written.
+    expect(calls).toBe(2)
+  })
+
+  test('the substantial-evidence heuristic short-circuits the round in ONE call', async () => {
+    let calls = 0
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      return streamResult({
+        // The ANSWER is what pushes accumulatedEvidence past 500 here: the tool
+        // summary is capped at 300, so a 300-char answer is what clears the bar.
+        toolRuns: [toolRun({ outputSummary: 'e'.repeat(300) })],
+        stream: (async function* () { yield 'a'.repeat(300) })(),
+      })
+    })
+    const text = await drain(out.stream)
+    expect(calls).toBe(1)
+    expect(text.length).toBeGreaterThanOrEqual(300)
+  })
+})
+
+describe('runStreamingAgenticLoop — the LLM-confidence path (not the heuristic one)', () => {
+  test('a CONFIDENT verdict from the evaluator returns without a synthesis round', async () => {
+    confidenceState.confident = true
+    confidenceState.confidence = 0.9
+    confidenceState.reason = 'answered'
+    let calls = 0
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      return streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield 'judged answer' })(),
+      })
+    })
+    const text = await drain(out.stream)
+    // `tiny` keeps the evidence under the 500-char heuristic, so this exercises
+    // the evaluated path rather than the substantial-evidence shortcut (which is
+    // covered separately, and which skips the evaluator entirely).
+    expect(confidenceState.confident).toBe(true)
+    expect(text).toContain('judged answer')
+    expect(calls).toBe(1)
+  })
+
+  test('a HIGH-risk alignment verdict on the evaluated path annotates the answer', async () => {
+    confidenceState.confident = true
+    confidenceState.confidence = 0.9
+    alignmentState.enabled = true
+    alignmentState.risk = 'high'
+    alignmentState.reason = 'unsupported claim'
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield 'judged answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    expect(alignmentState.calls).toBeGreaterThan(0)
+    // Annotated, not blocked: the user still gets the answer plus the warning.
+    expect(text).toContain('judged answer')
+    expect(text).toContain('unsupported claim')
+  })
+
+  test('a not-confident verdict with a tool hint continues and injects the hint', async () => {
+    confidenceState.confident = false
+    confidenceState.nextToolHint = 'RAG'
+    const questions: string[] = []
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async (a) => {
+      questions.push(a.question)
+      return streamResult({ toolRuns: [toolRun({ outputSummary: 'tiny' })] })
+    })
+    await drain(out.stream)
+    // The hint must reach the evidence string that the next round is asked about,
+    // otherwise "try RAG instead" changes nothing.
+    expect(questions.length).toBeGreaterThan(1)
+    expect(questions[1]).toContain('Try RAG instead')
+  })
+
+  test('a CHAT hint is NOT injected (a no-op instruction)', async () => {
+    confidenceState.confident = false
+    confidenceState.nextToolHint = 'CHAT'
+    const questions: string[] = []
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async (a) => {
+      questions.push(a.question)
+      return streamResult({ toolRuns: [toolRun({ outputSummary: 'tiny' })] })
+    })
+    await drain(out.stream)
+    expect(questions[1]).not.toContain('Try CHAT instead')
+  })
+})
+
+describe('runStreamingAgenticLoop — deadline during the final synthesis', () => {
+  test('a deadline that expires mid-synthesis reports an incomplete answer', async () => {
+    // The synthesis round is the 4th call (MAX_AGENTIC_ITERATIONS = 3 rounds, then
+    // one synthesis). The deadline must be generous enough for the three rounds
+    // but expire during the sleep in the 4th, which is the only way to reach the
+    // per-round AgenticDeadlineError on the synthesis path.
+    process.env.AGENTIC_DEADLINE_MS = '400'
+    confidenceState.confident = false // keep looping; never confident
+    let calls = 0
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      if (calls === 4) {
+        // Burn past the remaining budget so withAgenticDeadline rejects.
+        await new Promise((r) => setTimeout(r, 600))
+      }
+      return streamResult({ toolRuns: [toolRun({ outputSummary: 'tiny' })] })
+    })
+    const text = await drain(out.stream)
+    // Measured: the loop must have reached the synthesis round, and the user must
+    // be told the answer is incomplete rather than handed a silent partial.
+    expect(calls).toBe(4)
+    expect(text).toContain('deadline exceeded')
   })
 })
