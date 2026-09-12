@@ -1,7 +1,7 @@
 {
-  "linePct": 74.44,
-  "linesHit": 14659,
-  "linesFound": 19692,
+  "linePct": 74.81,
+  "linesHit": 14732,
+  "linesFound": 19693,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -52,12 +52,6 @@
       "hit": 75,
       "found": 205,
       "pct": 36.58536585365854
-    },
-    {
-      "file": "src/lib/web-fetch.ts",
-      "hit": 80,
-      "found": 218,
-      "pct": 36.69724770642202
     },
     {
       "file": "src/app/api/integrations/[id]/schema/route.ts",
@@ -196,6 +190,12 @@
       "hit": 44,
       "found": 63,
       "pct": 69.84126984126983
+    },
+    {
+      "file": "src/lib/web-fetch.ts",
+      "hit": 153,
+      "found": 219,
+      "pct": 69.86301369863014
     },
     {
       "file": "src/lib/otel.ts",

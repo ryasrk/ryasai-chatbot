@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ad1281a`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8633653`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ad1281a`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **74,44%** (14.659/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 151 file · **2.859 lulus · 0 gagal** | terukur |
+| Test coverage | **74,81%** (14.732/19.693 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 151 file · **2.873 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -46,7 +46,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/rag-retrieval.ts` | 68,26% | **86,01%** | 24 |
 | `src/lib/mcp-client.ts` | 68,97% | **96,77%** | 28 |
 | `src/lib/cognee-memory.ts` | 12,50% | **100,00%** | 26 |
-| **Total repo** | **62,44%** | **74,44%** | — |
+| `src/lib/web-fetch.ts` | 36,70% | **100,00%** | 20 |
+| **Total repo** | **62,44%** | **74,81%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -103,8 +104,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Cache sesi dibagi lintas-sesi (bocor memori) | `cognee-memory.ts:49` | 4 |
 | Hasil kosong ikut di-cache | `cognee-memory.ts:99/111` | 1 |
 | Guard dataset-hilang dibuang | `cognee-memory.ts:126` | 1 |
+| Filter link DDG internal/sponsored dibuang | `web-fetch.ts:280` | 1 |
+| Hasil parse kosong dianggap sukses | `web-fetch.ts:251` | 1 |
+| Fallback SearXNG → DuckDuckGo dihapus | `web-fetch.ts:228` | 3 |
 
-**37 kontrol, semuanya sah.**
+**40 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -183,7 +187,29 @@ hasil **kosong sengaja TIDAK di-cache** (kalau tidak, sesi pra-cognify akan
 terpaku pada "tanpa memori" selamanya), dan `recallContext` mencoba pencarian
 tanpa filter dataset sebagai upaya terakhir.
 
-### 1.6 Insiden gate yang dicatat apa adanya
+### 1.6 web-fetch: satu-satunya kanal informasi eksternal, tanpa test
+
+`web-fetch.ts` adalah **satu-satunya kanal** yang membuat planner mengetahui hal
+yang tidak ada di dalam model, dan kedua kaki pencariannya tidak tertutup: tidak
+ada test yang mengonfigurasi endpoint SearXNG, dan tidak ada test yang membuat
+`fetch` berhasil. Hanya dua guard query-kosong yang pernah berjalan. Parser HTML
+DuckDuckGo **belum pernah dieksekusi sekali pun**.
+
+Dua keputusan yang sekarang diuji dan terbukti penting:
+- **hasil parse kosong adalah kegagalan, bukan sukses kosong.** Melaporkan `ok`
+  dengan nol hasil memberitahu planner "saya mencari dan tidak menemukan apa pun",
+  padahal sesungguhnya scraping-nya rusak — klaim yang berbeda dan jauh lebih buruk.
+- **SearXNG gagal (HTTP error, hasil kosong, atau throw) harus jatuh ke
+  DuckDuckGo.** Kontrol negatifnya menggagalkan 3 test sekaligus. SearXNG yang
+  self-hosted mati tidak boleh mematikan pencarian sepenuhnya.
+
+Selain itu: link internal/sponsored DuckDuckGo dibuang (planner yang mengutipnya
+mengutip iklan), dan snippet dipotong di 200 karakter.
+
+Asumsi salah yang diperbaiki di test: URL pencarian dibangun dengan
+`encodeURIComponent`, jadi spasi menjadi `%20` dan **bukan** `+`.
+
+### 1.7 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -198,7 +224,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 151 file · 2.859 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 151 file · 2.873 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
