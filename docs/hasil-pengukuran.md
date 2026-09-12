@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4126c40`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `076a7fc`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4126c40`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **76,64%** (15.104/19.707 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 157 file · **3.044 lulus · 0 gagal** | terukur |
+| Test coverage | **76,75%** (15.126/19.707 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 157 file · **3.056 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -63,7 +63,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/planner.ts` | 83,24% (baris) | **94,68%** (baris, per-file) | 21 |
 | `src/lib/admin-tools.ts` | 92,42% (baris, 3 file bersama) | **97,14%** (baris) / 96,49% (fungsi) | 19 |
 | `src/lib/tool-router-agentic.ts` | 93,75% (baris, per-file) | **100,00%** (baris) / 91,45% (fungsi) | 26 |
-| **Total repo** | **62,44%** | **76,64%** | — |
+| `src/lib/intent-pipeline.ts` | 93,47% (fungsi) | **100,00%** (fungsi) / 94,12% (baris) | 17 |
+| **Total repo** | **62,44%** | **76,75%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -161,8 +162,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Revisi reflexion di-APPEND bukan REPLACE | `tool-router-agentic.ts:444` | 1 |
 | Heuristik substantial-evidence dihapus (streaming) | `tool-router-agentic.ts:480` | 3 |
 | Note deadline sintesis dihapus | `tool-router-agentic.ts:544` | 1 |
+| Guard anti-nag `analyzeIntent` dihapus (regresi insiden) | `intent-pipeline.ts:185` | 3 |
+| Fallback confident pada error LLM diubah ke fail-closed | `intent-pipeline.ts:732` | 2 |
+| Cek evidence dipindah ke BAWAH `if (!cfg)` (regresi insiden) | `intent-pipeline.ts:710` | 2 |
 
-**75 kontrol + 3 kontrol gate, semuanya sah.**
+**78 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -609,6 +613,41 @@ pernah dikirim kode nyata.
 Parser TypeScript buatan sendiri bukan alat yang layak dibangun di sini, dan
 hijau-nya pemeriksa yang tidak menangkap bug aslinya lebih buruk daripada tidak ada
 pemeriksa sama sekali.
+
+### 1.7j Jalur verdict LLM dan guard anti-nag: dua wilayah yang belum pernah berjalan
+
+`intent-pipeline.ts` kini **100,00% fungsi** (naik dari 93,47). Dua wilayah yang belum
+pernah dieksekusi, keduanya menanggung beban:
+
+1. **Badan LLM `evaluateAnswerConfidence`.** Semua test yang ada menyetel role config
+   ke `null`, sehingga hanya **short-circuit** yang berjalan — yang justru
+   di-short-circuit (panggilan chat, parse JSON, fallback error) **belum pernah
+   berjalan**. Kini diuji: verdict di-parse; JSON ber-fence markdown tetap di-parse
+   (model sering membungkusnya, dan gagal di situ akan jatuh ke `catch` lalu
+   melaporkan **confident palsu**); verdict not-confident meneruskan tool hint — hint
+   itulah yang membuat loop agentic memanggil tool **berbeda** di putaran berikutnya;
+   jawaban tak-terparse dan provider yang melempar sama-sama **fail-open** ke
+   confident (keputusan sadar: evaluator rusak lebih baik menambah satu putaran
+   daripada menahan jawaban); evidence **dipotong** sebelum masuk prompt (9000 masuk,
+   di bawah 4200 keluar); verdict diminta dengan purpose `'confidence-evaluation'`;
+   dan cek evidence **sebelum** LLM dipanggil.
+2. **Guard anti-nag di `analyzeIntent`.** Ini perbaikan bug "chatbot bertanya
+   klarifikasi tanpa henti", dan **hanya kasus negatifnya** yang diuji: test yang ada
+   sengaja memilih pertanyaan tanpa indikator query untuk membuktikan guard **tidak**
+   menyala. Kini diuji: indikator Inggris mengalahkan permintaan klarifikasi;
+   indikator **Indonesia** juga (`berapa`, `jumlah`, `daftar` — daftar Latin-saja akan
+   melewatkan bahasa utama pengguna); istilah schema mengalahkannya meski tanpa kata
+   indikator; dan **tanpa** sumber data klarifikasi **dihormati**, karena "database
+   mana?" bukan nag saat memang tidak ada yang bisa di-query.
+
+**Kontrol ketiga butuh dua percobaan, dan yang pertama adalah kesalahan SAYA, bukan
+test yang lemah.** Saya memindahkan cek evidence ke bawah `getRoleLlmConfig` tetapi
+masih di **atas** `if (!cfg)` — dan tidak ada yang gagal. Penelusuran menunjukkan
+sebabnya: dengan config ada, cek evidence tetap menangkap string kosong terlepas dari
+apakah config diambil lebih dulu, jadi **tidak ada regresi untuk ditangkap**.
+Insidennya dulu adalah cek yang berada di bawah gerbang `!cfg`, dan di situlah kontrol
+kini mendarat (2 test gagal). **Kontrol yang gagal-menggagalkan layak ditelusuri
+sampai sebab sebenarnya, bukan diterima setelah run pertama yang lulus.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

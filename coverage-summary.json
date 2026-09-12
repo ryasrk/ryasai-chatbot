@@ -1,6 +1,6 @@
 {
-  "linePct": 76.64,
-  "linesHit": 15104,
+  "linePct": 76.75,
+  "linesHit": 15126,
   "linesFound": 19707,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -144,12 +144,6 @@
       "pct": 68.2051282051282
     },
     {
-      "file": "src/lib/intent-pipeline.ts",
-      "hit": 315,
-      "found": 457,
-      "pct": 68.9277899343545
-    },
-    {
       "file": "src/lib/sso.ts",
       "hit": 200,
       "found": 290,
@@ -196,6 +190,12 @@
       "hit": 253,
       "found": 344,
       "pct": 73.54651162790698
+    },
+    {
+      "file": "src/lib/intent-pipeline.ts",
+      "hit": 337,
+      "found": 457,
+      "pct": 73.7417943107221
     },
     {
       "file": "src/lib/cognee.ts",
