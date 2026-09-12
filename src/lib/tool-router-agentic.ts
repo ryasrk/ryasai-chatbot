@@ -1,5 +1,6 @@
 import type { Citation, ChartData } from '@/lib/types'
 import type { PendingToolRun, CompletionResult, ChatHistoryEntry, StreamingCompletionResult } from '@/lib/tool-utils'
+import { isAlignmentCheckEnabled } from '@/lib/alignment-check'
 import { evaluateAnswerConfidence } from '@/lib/intent-pipeline'
 import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
@@ -160,6 +161,36 @@ export async function runMultiStepDag(args: {
   }
 }
 
+
+/**
+ * Alignment gate shared by the substantial-evidence path of BOTH loops.
+ *
+ * INCIDENT (2026-09 audit): the streaming loop checked alignment *inside* its
+ * substantial-evidence branch, but the non-streaming loop `return`ed from that
+ * same branch ~10 lines BEFORE reaching its own check. The identical query
+ * therefore passed the guardrail over SSE and bypassed it over HTTP, and
+ * docs/threat-model.md claimed both paths were covered.
+ *
+ * Keeping one function and calling it from both return sites is the fix; a
+ * second inline copy is how the two paths diverged to begin with.
+ * Returns the note to append when the answer is flagged, or null when clear.
+ */
+async function alignmentNoteFor(answer: string, question: string): Promise<string | null> {
+  if (!isAlignmentCheckEnabled()) return null
+  try {
+    const { checkAlignment } = await import('@/lib/alignment-check')
+    const alignment = await checkAlignment(answer, question)
+    if (alignment.risk !== 'high') return null
+    return `[Note: answer flagged by alignment check — ${alignment.reason}]`
+  } catch (e) {
+    // Fail OPEN but loudly: a judging outage must not block every answer. The
+    // gate is advisory (it annotates rather than blocks), so this matches the
+    // existing behaviour; it is logged so it cannot vanish silently.
+    log.warn('alignment check failed', { error: e instanceof Error ? e.message : String(e) })
+    return null
+  }
+}
+
 export async function runAgenticLoop(
   args: {
     question: string
@@ -253,6 +284,14 @@ export async function runAgenticLoop(
     if (hasSubstantialData && !hasError) {
       confidenceHistory.push({ confident: true, confidence: 0.85, reason: 'substantial evidence gathered (heuristic)' })
       log.info('Agentic loop confident (heuristic: substantial evidence)', { iteration: iteration + 1, evidenceLength: totalEvidenceLength })
+      // Must run BEFORE returning: this path short-circuits, so the older
+      // alignment check further down never executed for confident answers.
+      const note = await alignmentNoteFor(answer, args.question)
+      if (note) {
+        log.info('Agentic loop flagged by alignment check (heuristic path)', { iteration: iteration + 1 })
+        confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${note}` })
+        return { answer: `${answer}\n\n${note}`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      }
       return { answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
     }
 
@@ -260,7 +299,7 @@ export async function runAgenticLoop(
     confidenceHistory.push({ confident: confidence.confident, confidence: confidence.confidence, reason: confidence.reason })
 
     if (confidence.confident) {
-      if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
+      if (isAlignmentCheckEnabled()) {
         const { checkAlignment } = await import('@/lib/alignment-check')
         const alignment = await checkAlignment(answer, args.question)
         if (alignment.risk === 'high') {
@@ -430,14 +469,13 @@ export async function runStreamingAgenticLoop(
         output.chartData = result.chartData
         output.citationTrail = result.citationTrail
 
-        if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
-          const { checkAlignment } = await import('@/lib/alignment-check')
-          const alignment = await checkAlignment(answerText, args.question)
-          if (alignment.risk === 'high') {
-            log.info('Streaming agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
-            confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
-            yield `\n\n[Note: answer flagged by alignment check — ${alignment.reason}]`
-          }
+        // Same helper as the non-streaming path — one implementation, so the two
+        // loops cannot disagree about when the gate runs or what it returns.
+        const note = await alignmentNoteFor(answerText, args.question)
+        if (note) {
+          log.info('Streaming agentic loop flagged by alignment check', { iteration: iteration + 1 })
+          confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${note}` })
+          yield `\n\n${note}`
         }
         return
       }
@@ -450,7 +488,7 @@ export async function runStreamingAgenticLoop(
         output.chartData = result.chartData
         output.citationTrail = result.citationTrail
 
-        if (process.env.ALIGNMENT_CHECK === 'true' || process.env.ALIGNMENT_CHECK_URL) {
+        if (isAlignmentCheckEnabled()) {
           const { checkAlignment } = await import('@/lib/alignment-check')
           const alignment = await checkAlignment(answerText, args.question)
           if (alignment.risk === 'high') {

@@ -321,6 +321,13 @@ export async function runSqlBranch(args: {
       memoryContext: args.memoryContext,
       systemPromptPrefix: effectiveSystemPromptPrefix,
       repairFeedback: feedback,
+      // ponytail: admin-authored business context (integration settings) must
+      // reach BOTH SQL calls. `ai.ts` renders it into the prompt, and the
+      // streaming path has always passed it (stream-preparers.ts) — but nothing
+      // on the non-streaming path did, so the exact same question produced a
+      // different SQL/answer depending on transport (scheduled runs, the agentic
+      // loop and /api/v1 all take this branch). Keep the two in sync.
+      businessContext: integration.businessContext,
     })
     const guard = validateAndSanitizeLlmSql(candidate.sql)
     if (!guard.ok) {

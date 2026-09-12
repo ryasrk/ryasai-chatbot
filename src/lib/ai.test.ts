@@ -87,8 +87,11 @@ function sseResponse(lines: string[]): Response {
   return { ok: true, status: 200, body: stream } as Response
 }
 
+export let lastRequestBody: string | null = null
+
 function makeFetchMock(): typeof fetch {
   return mock(async (_url: string, init: RequestInit) => {
+    lastRequestBody = init.body as string
     const body = JSON.parse(init.body as string) as { messages?: Array<{ role: string; content: string }>; stream?: boolean }
 
     if (body.stream) {
@@ -147,6 +150,7 @@ beforeEach(() => {
   mockDocumentFindMany.mockImplementation(async () => [])
   mockRestApiEndpointFindMany.mockImplementation(async () => [])
 
+  lastRequestBody = null
   global.fetch = makeFetchMock()
 })
 
@@ -270,6 +274,41 @@ describe('generateSql', () => {
     const result = await generateSql({ question: 'test', schemaDescription: 'schema', provider: 'MYSQL' })
     expect(result.sql).toBe('SELECT 2')
     expect(result.explanation).toBe('fenced')
+  })
+
+  // REGRESSION GUARD (2026-09 audit): businessContext shapes SQL generation, and
+  // while stream-preparers.ts always passed it, tool-branches.ts (non-streaming:
+  // scheduled runs, agentic loop, /api/v1) and api/integrations/[id]/query did
+  // not — the admin-authored business context was silently dropped on every
+  // non-streaming path, so the same question produced different SQL per
+  // transport. There was no test that it reached the prompt at all.
+  test('renders businessContext into the prompt', async () => {
+    fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
+    await generateSql({
+      question: 'show sales',
+      schemaDescription: 'TABLE sales(id, amount)',
+      provider: 'POSTGRESQL',
+      businessContext: 'Amounts are stored in IDR minor units; sales means status = paid.',
+    })
+    expect(lastRequestBody).toContain('## BUSINESS CONTEXT')
+    expect(lastRequestBody).toContain('IDR minor units')
+  })
+
+  test('omits the business-context block entirely when not provided', async () => {
+    fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
+    await generateSql({
+      question: 'show sales',
+      schemaDescription: 'TABLE sales(id, amount)',
+      provider: 'POSTGRESQL',
+    })
+    expect(lastRequestBody).not.toBeNull()
+    // NOTE: the bare phrase "BUSINESS CONTEXT" also occurs in the system prompt
+    // (rule 12 instructs the model to consult it), so it CANNOT be used as the
+    // absence signal — an earlier version of this test asserted exactly that and
+    // failed for the wrong reason. The rendered section is the `## BUSINESS
+    // CONTEXT` heading with a newline, which only ai.ts's args.businessContext
+    // branch emits.
+    expect(lastRequestBody).not.toContain('## BUSINESS CONTEXT')
   })
 
   test('falls back to raw text when JSON is invalid', async () => {

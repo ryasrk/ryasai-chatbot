@@ -17,7 +17,7 @@ import { describe, expect, test } from 'bun:test'
 // lookup was replaced with `undefined`, so it could not catch the regression it
 // was written for. Only compare the resulting expansions.
 import { expandQuery } from './intent-pipeline'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, globSync } from 'node:fs'
 import { join } from 'node:path'
 
 const REPO_ROOT = join(import.meta.dir, '../..')
@@ -600,6 +600,108 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     expect(src).toMatch(/const rankings = \[[^\]]*\bvectorRanking\b[^\]]*\]/)
     expect(src).toMatch(/fuseRankings\(rankings\)/)
     expect(src).toMatch(/const vectorScore = vectorScores\.get\(id\)/)
+  })
+
+  test('the alignment gate runs on BOTH agentic loops before returning an answer', () => {
+    // INCIDENT (2026-09 audit): the streaming agentic loop checked alignment
+    // INSIDE its substantial-evidence branch, but the non-streaming loop RETURNED
+    // from that same branch before reaching its own check. The identical question
+    // was guarded over SSE and UNGUARDED over HTTP, and docs/threat-model.md
+    // claimed both paths were covered. No test noticed — the existing suite only
+    // covered `checkAlignment` itself, never its call sites.
+    const src = codeOnly('src/lib/tool-router-agentic.ts')
+    // The shared helper must exist and be the ONLY thing that calls checkAlignment
+    // from this module (a second inline copy is how the paths diverged).
+    expect(src).toContain('alignmentNoteFor')
+    expect(src).toMatch(/async function alignmentNoteFor/)
+    // Both loops must invoke the helper.
+    const helperCalls = src.match(/await alignmentNoteFor\(/g) ?? []
+    expect(helperCalls.length).toBeGreaterThanOrEqual(2)
+    // The non-streaming heuristic return must be gated BEFORE it returns: assert
+    // the helper call appears between the heuristic log line and that `return`.
+    const heuristicIdx = src.indexOf('Agentic loop confident (heuristic: substantial evidence)')
+    expect(heuristicIdx).toBeGreaterThan(-1)
+    const afterHeuristic = src.slice(heuristicIdx, heuristicIdx + 900)
+    expect(afterHeuristic).toMatch(/await alignmentNoteFor\(/)
+  })
+
+  test('ALIGNMENT_CHECK is read through one predicate, never a string comparison', () => {
+    // The schema declares the enum ['http','llm','disabled']; the old call sites
+    // compared against 'true', so the SCHEMA-VALID value `llm` silently disabled
+    // the guardrail. Scanning for the raw comparison is the only way to catch a
+    // reintroduced divergence, because the enum itself looks correct.
+    for (const rel of ['src/lib/tool-router-agentic.ts', 'src/lib/alignment-check.ts']) {
+      const src = codeOnly(rel)
+      expect(src).not.toMatch(/process\.env\.ALIGNMENT_CHECK\s*===\s*'true'/)
+    }
+  })
+
+  test('client-supplied ids are never loaded with findUnique outside the allowlist', () => {
+    // INCIDENT (2026-09 audit): `findUnique` is NOT org-scoped (see the long
+    // comment in prisma-tenant.ts), so loading a row by a CLIENT-SUPPLIED id with
+    // it is a cross-tenant IDOR. Verified exploitable in two routes:
+    //   - api/mcp/servers/[id]   GET/PATCH/DELETE  (list route returns `id: true`,
+    //     so ids are NOT secret and the "cuid is random" defence is void)
+    //   - chat/sessions/[id]/send  body.promptId injected another org's prompt
+    // Both already called getActiveUser()+enterWithOrg(), so tenant-route-guard's
+    // ritual check passed — the org context was established and then ignored.
+    //
+    // These files are allowed because the id is NOT client-supplied, or is
+    // validated by an org-scoped query first:
+    const ALLOWED = new Set([
+      // pre-auth: no org context exists yet (login/signup/invite/setup).
+      'src/app/api/auth/login/route.ts',
+      'src/app/api/auth/register/route.ts',
+      'src/app/api/auth/signup/route.ts',
+      'src/app/api/auth/accept-invite/route.ts',
+      'src/app/api/auth/invite/route.ts',
+      'src/app/api/auth/change-password/route.ts',
+      'src/app/api/auth/activate-license/route.ts',
+      'src/app/api/setup/status/route.ts',
+      // re-reads a row the SAME handler just created, not a client id.
+      'src/app/api/documents/route.ts',
+      // validates via an org-scoped findFirst BEFORE the unscoped read.
+      'src/app/api/integrations/[id]/init-context/route.ts',
+      // id comes from the session/order, and the handlers re-scope by org.
+      'src/app/api/agent/dashboard/route.ts',
+      'src/app/api/billing/orders/route.ts',
+      'src/app/api/billing/webhook/route.ts',
+      'src/app/api/license/retry/route.ts',
+      'src/app/api/org/license/route.ts',
+      'src/app/api/org/route.ts',
+    ])
+    const files = globSync('src/app/api/**/route.ts').filter((rel) =>
+      readFileSync(join(REPO_ROOT, rel), 'utf8').includes('findUnique'),
+    )
+    const offenders = files.filter((rel) => !ALLOWED.has(rel))
+    expect(offenders).toEqual([])
+  })
+
+  test('every generateSql caller passes the admin business context', () => {
+    // INCIDENT (2026-09 audit): `ai.ts` renders args.businessContext into the
+    // SQL-generation prompt, and stream-preparers.ts has always passed it — but
+    // tool-branches.ts (the NON-STREAMING branch: scheduled runs, the agentic
+    // loop, /api/v1) and api/integrations/[id]/query (the SQL Playground) did
+    // not. The identical question therefore produced different SQL depending on
+    // the transport, and the admin-authored business context was silently
+    // dropped on every non-streaming path. This is the same transport-drift
+    // class as the alignment bypass above, so it gets the same kind of guard:
+    // assert the ARGUMENT is present at each call site, not that the string
+    // "businessContext" exists somewhere.
+    const callers = [
+      'src/lib/stream-preparers.ts',
+      'src/lib/tool-branches.ts',
+      'src/app/api/integrations/[id]/query/route.ts',
+    ]
+    for (const rel of callers) {
+      const src = readFileSync(join(REPO_ROOT, rel), 'utf8')
+      // Find each generateSql({ ... }) block and require businessContext inside it.
+      const blocks = src.match(/generateSql\(\{[\s\S]*?\}\)/g) ?? []
+      expect(blocks.length).toBeGreaterThan(0)
+      for (const block of blocks) {
+        expect(block).toMatch(/businessContext\s*:/)
+      }
+    }
   })
 
   test('the placeholder marker has exactly one definition and one detector', () => {

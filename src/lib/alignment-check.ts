@@ -7,10 +7,35 @@ export interface AlignmentResult {
   reason: string
 }
 
+/**
+ * Single source of truth for "is the alignment gate on".
+ *
+ * INCIDENT (2026-09 audit): `env-schema.ts` declares
+ * `ALIGNMENT_CHECK: z.enum(['http', 'llm', 'disabled'])` but every call site
+ * tested `=== 'true'`. An operator who set the schema-valid value `ALIGNMENT_CHECK=llm`
+ * — the documented way to enable the LLM judge — got a silently DISABLED
+ * guardrail: the enum accepted the value, and nothing ever matched it. A
+ * fail-open in a security control, reachable by following the schema.
+ *
+ * `true` is still honoured so an older deployment config keeps working.
+ * `disabled`/unset/anything else is off. Do NOT re-inline this as a string
+ * comparison at a call site — `invariants.test.ts` fails on `=== 'true'` against
+ * ALIGNMENT_CHECK precisely because that divergence is how this broke.
+ */
+export function isAlignmentCheckEnabled(): boolean {
+  const mode = (process.env.ALIGNMENT_CHECK ?? '').trim().toLowerCase()
+  if (mode === 'disabled' || mode === 'false' || mode === '') {
+    // A URL alone is still enough to enable the HTTP judge — that path has its
+    // own dedicated variable and predates the enum.
+    return Boolean(process.env.ALIGNMENT_CHECK_URL)
+  }
+  return mode === 'llm' || mode === 'http' || mode === 'true'
+}
+
 export async function checkAlignment(agentReasoning: string, userGoal: string): Promise<AlignmentResult> {
   const url = process.env.ALIGNMENT_CHECK_URL
   if (url) return checkAlignmentHttp(url, agentReasoning, userGoal)
-  if (process.env.ALIGNMENT_CHECK === 'true') return checkAlignmentLlm(agentReasoning, userGoal)
+  if (isAlignmentCheckEnabled()) return checkAlignmentLlm(agentReasoning, userGoal)
   return { aligned: true, risk: 'low', reason: 'alignment check disabled' }
 }
 
@@ -60,6 +85,12 @@ Respond ONLY with JSON: {"aligned": true|false, "risk": "low"|"medium"|"high", "
     }
   } catch (e) {
     log.warn('alignment LLM check failed', { error: e instanceof Error ? e.message : String(e) })
-    return { aligned: true, risk: 'low', reason: 'alignment check failed' }
+    // FAIL OPEN, explicitly labelled as such. The gate is advisory (callers
+    // annotate the answer, they do not block it), so a judge outage must not
+    // stop every reply. The reason says "skipped" rather than "failed" because
+    // `aligned: true` alongside "failed" reads as "we checked and it was fine",
+    // which is the opposite of what happened — an operator debugging a missing
+    // note needs to see that the check never ran.
+    return { aligned: true, risk: 'low', reason: 'alignment check skipped (judge unavailable)' }
   }
 }

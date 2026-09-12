@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     enterWithOrg((await getActiveUser()).organizationId)
     const { id } = await ctx.params
-    const server = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
+    const server = await db.mcpServer.findFirst({ where: { id } })
     if (!server) {
       return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
-    const existing = await db.mcpServer.findUnique({ where: { id } }) // nosemgrep
+    const existing = await db.mcpServer.findFirst({ where: { id } })
     if (!existing) {
       return NextResponse.json({ ok: false, error: 'MCP server not found.' }, { status: 404 })
     }
@@ -171,7 +171,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
     enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
     const { id } = await ctx.params
-    const existing = await db.mcpServer.findUnique({ // nosemgrep
+    const existing = await db.mcpServer.findFirst({
       where: { id },
       select: { id: true, name: true },
     })

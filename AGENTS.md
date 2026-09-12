@@ -230,10 +230,59 @@ blocked; a string-literal decoy correctly allowed), DB-layer read-only rejecting
 `DELETE`, schema reflection (31 tables with FK relations feeding `describeSchema`).
 `trial/` is ad-hoc and not part of CI.
 
+## Cross-tenant IDOR: `findUnique` on a client-supplied id (2026-09 audit)
+
+`findUnique` is NOT org-scoped (the tenant extension cannot add `organizationId`
+to a unique `where`). The long-standing rationale in `prisma-tenant.ts` was
+*"IDs are cuid() random — cross-tenant access by ID is infeasible"*. **That
+rationale is false and has been removed**: `api/mcp/servers/route.ts` returns
+`id: true` to the browser, so a legitimate org-A user holds their own server ids
+in plain sight and those same ids resolve in org B's context.
+
+Two routes were exploitable, and BOTH called `getActiveUser()` + `enterWithOrg()`
+— so `tenant-route-guard.test.ts` passed them. The goroutine was correct; the
+query simply ignored the context it established.
+
+| route | hole |
+|---|---|
+| `api/mcp/servers/[id]` GET/PATCH/DELETE | read/modify/delete another org's MCP server by id |
+| `chat/sessions/[id]/send` | `body.promptId` read another org's `SavedPrompt` and injected its text into this org's system prompt |
+
+**Rule**: loading a row by a CLIENT-SUPPLIED identifier must use `findFirst` (or
+`findFirstOrThrow`), never `findUnique`. Use `findUnique` only for (a) pre-auth
+lookups where no org exists yet (login/signup/invite/setup) and (b) re-reading a
+row the same handler just created. `invariants.test.ts` carries an explicit
+allowlist of files permitted to contain `findUnique` and fails on any new one —
+if your route legitimately needs it, add it there **with the reason**.
+
+## Alignment gate: two fail-opens (2026-09 audit)
+
+`checkAlignment` is an advisory guardrail (it annotates an answer, it does not
+block the request). Two defects made it weaker than it read:
+
+1. **`ALIGNMENT_CHECK` enum mismatch.** `env-schema.ts` declares
+   `z.enum(['http','llm','disabled'])`, but all four call sites tested
+   `=== 'true'`. Setting the SCHEMA-VALID value `ALIGNMENT_CHECK=llm` — the
+   documented way to enable the LLM judge — silently DISABLED the guardrail.
+   Now read through the single predicate `isAlignmentCheckEnabled()`
+   (`alignment-check.ts`); `invariants.test.ts` fails on any reintroduced
+   `process.env.ALIGNMENT_CHECK === 'true'`.
+2. **Non-streaming bypass.** `runStreamingAgenticLoop` checked alignment *inside*
+   its substantial-evidence branch, but `runAgenticLoop` `return`ed from that same
+   branch ~10 lines BEFORE its own check. The identical question was guarded over
+   SSE and unguarded over HTTP, while `docs/threat-model.md` claimed both were
+   covered. Both loops now call one shared `alignmentNoteFor()` helper — a second
+   inline copy is exactly how they diverged.
+
+The judge fails **open** on error (a judging outage must not silence every reply)
+but logs a warning and reports `reason: 'alignment check skipped (judge
+unavailable)'` — deliberately not "failed", because `aligned: true` next to
+"failed" reads as "checked and fine", the opposite of what happened.
+
 ## Multi-Tenancy
 
 - **Tenant root**: `Organization` model. `User.organizationId` links 1 user → 1 org. Every data model carries `organizationId`.
-- **Auto-scoping**: `src/lib/prisma-tenant.ts` Prisma extension auto-injects `organizationId` via `AsyncLocalStorage` on `findFirst`/`findMany`/`count`/`aggregate`/`groupBy`/`update*`/`delete*`/`create*`. `findUnique` is NOT scoped (cuid IDs make cross-tenant access by ID infeasible).
+- **Auto-scoping**: `src/lib/prisma-tenant.ts` Prisma extension auto-injects `organizationId` via `AsyncLocalStorage` on `findFirst`/`findMany`/`count`/`aggregate`/`groupBy`/`update*`/`delete*`/`create*`. **`findUnique` is NOT scoped** — see "Cross-tenant IDOR" above: an earlier note here claimed cuid ids made cross-tenant access infeasible, which was wrong (ids are returned to clients) and two routes were exploitable. Use `findFirst` for any client-supplied id.
 - **Escape hatch**: `bypassOrg(fn)` for setup/SSO/signup/seed where no org context exists yet.
 - **Context setup**: `getActiveUser()` (in `session.ts`) calls `enterWithOrg(orgId)` — but **`AsyncLocalStorage.enterWith()` does NOT propagate back to the caller's frame**. Every route handler MUST call `enterWithOrg(user.organizationId)` itself right after `getActiveUser()`, or all its DB queries run unscoped (cross-tenant leak). `src/lib/tenant-route-guard.test.ts` enforces this statically — keep it green when adding routes.
 - **RBAC**: `admin > analyst > viewer`. `requireRole(user, 'admin')` guards admin routes.

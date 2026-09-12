@@ -123,7 +123,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
 
     let systemPromptPrefix: string | undefined
     if (typeof body.promptId === 'string' && body.promptId.trim()) {
-      const prompt = await db.savedPrompt.findUnique({ where: { id: body.promptId } })
+      const prompt = await db.savedPrompt.findFirst({ where: { id: body.promptId } })
       if (prompt) systemPromptPrefix = prompt.content
     }
     // ponytail: inject the rolling session summary so turns older than the

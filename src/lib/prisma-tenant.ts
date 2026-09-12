@@ -11,10 +11,26 @@
  * exists yet or explicit org control is needed.
  *
  * ponytail: findUnique is NOT scoped (can't add non-unique fields to unique
- * where). IDs are cuid() random — cross-tenant access by ID is infeasible.
- * Ceiling: if a leaked ID from org A is used in org B's context, findUnique
- * would return it. Upgrade: convert findUnique to findFirst in the extension
- * (requires Prisma extension API support for operation substitution).
+ * where). The original rationale here was "IDs are cuid() random — cross-tenant
+ * access by ID is infeasible", which is security-through-obscurity and was
+ * measurably FALSE: `api/mcp/servers/route.ts` returns `id: true` to the browser,
+ * so a legitimate org-A user holds their own server IDs in plain sight and those
+ * IDs resolve in org B's context. Two routes were exploitable this way
+ * (`mcp/servers/[id]` GET/PATCH/DELETE, and `chat/sessions/[id]/send` reading
+ * `body.promptId`), both of which DO call getActiveUser()+enterWithOrg() — so
+ * their ritual was correct and the org context was simply ignored by the query.
+ *
+ * Fix direction: use `findFirst` (or `findFirstOrThrow`) with the ID in the
+ * where clause when you are loading a row by a client-supplied identifier. The
+ * extension then injects organizationId automatically and a cross-tenant ID
+ * yields null instead of another tenant's row. `findUnique` remains legitimate
+ * for (a) pre-auth lookups where no org exists yet (login, signup, invitation
+ * tokens) and (b) re-reading a row this same handler just created.
+ *
+ * Ceiling: this is a convention, not a guarantee — the extension cannot rewrite
+ * findUnique because Prisma's unique `where` rejects extra fields. So a new
+ * `findUnique({where:{id}})` on a client-supplied ID is a silent regression.
+ * `src/lib/tenant-route-guard.test.ts` now fails on that pattern; keep it green.
  */
 import { Prisma } from '@prisma/client'
 import { AsyncLocalStorage } from 'async_hooks'

@@ -106,6 +106,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
         question: naturalQuery,
         schemaDescription,
         provider: integration.provider,
+        // Same omission as tool-branches.ts: this route never passed the
+        // admin-authored business context, so the SQL Playground generated
+        // weaker SQL than the chat path for an identical question.
+        businessContext: integration.businessContext,
       })
       generatedSql = llm.sql
       llmExplanation = llm.explanation

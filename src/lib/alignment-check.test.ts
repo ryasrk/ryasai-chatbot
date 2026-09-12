@@ -12,7 +12,7 @@ mock.module('@/lib/llm-config', () => ({
   getLlmRuntimeConfig: mockGetRoleLlmConfig,
 }))
 
-import { checkAlignment } from './alignment-check'
+import { checkAlignment, isAlignmentCheckEnabled } from './alignment-check'
 
 const originalFetch = global.fetch
 const MOCK_CFG = { id: 'c', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm' }
@@ -102,5 +102,54 @@ describe('checkAlignment', () => {
     expect(result.aligned).toBe(false)
     expect(result.risk).toBe('high')
     expect(result.reason).toBe('agent is exfiltrating data')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REGRESSION (2026-09 audit): the env contract was never tested, and it was
+// broken. `env-schema.ts` declares ALIGNMENT_CHECK as
+// z.enum(['http','llm','disabled']) — so `ALIGNMENT_CHECK=llm` is a
+// SCHEMA-VALID value an operator can reasonably set to turn the judge on — but
+// every call site tested `=== 'true'`. Setting the documented value therefore
+// DISABLED the guardrail silently: fail-open in a security control, reachable
+// by following the schema. These tests pin the whole enum, not just the one
+// spelling that happened to work.
+// ---------------------------------------------------------------------------
+describe('isAlignmentCheckEnabled (env contract)', () => {
+  const saved = { ...process.env }
+  afterEach(() => {
+    process.env = { ...saved }
+  })
+
+  const cases: Array<[string | undefined, boolean, string]> = [
+    ['llm', true, 'llm is the documented way to enable the LLM judge'],
+    ['http', true, 'http is a valid enable value'],
+    ['true', true, 'legacy truthy spelling must keep working'],
+    ['disabled', false, 'explicit off'],
+    [undefined, false, 'unset must not enable'],
+    ['', false, 'empty must not enable'],
+  ]
+
+  for (const [value, expected, why] of cases) {
+    test(`ALIGNMENT_CHECK=${JSON.stringify(value)} -> ${expected} (${why})`, () => {
+      delete process.env.ALIGNMENT_CHECK
+      delete process.env.ALIGNMENT_CHECK_URL
+      if (value !== undefined) process.env.ALIGNMENT_CHECK = value
+      expect(isAlignmentCheckEnabled()).toBe(expected)
+    })
+  }
+
+  test('ALIGNMENT_CHECK_URL alone enables the HTTP judge', () => {
+    delete process.env.ALIGNMENT_CHECK
+    process.env.ALIGNMENT_CHECK_URL = 'http://localhost:9999/check'
+    expect(isAlignmentCheckEnabled()).toBe(true)
+  })
+
+  test('case and whitespace do not defeat the gate', () => {
+    delete process.env.ALIGNMENT_CHECK_URL
+    for (const v of ['LLM', ' llm ', 'Http', 'TRUE']) {
+      process.env.ALIGNMENT_CHECK = v
+      expect(isAlignmentCheckEnabled()).toBe(true)
+    }
   })
 })
