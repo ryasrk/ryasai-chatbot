@@ -434,4 +434,90 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
       expect(src, `${f} must not gate the first user on maxUsers`).not.toMatch(/checkQuota\([^)]*'maxUsers'/)
     }
   })
+  // -------------------------------------------------------------------------
+  // INCIDENT (2026-09 trial): the bot disclaimed answers it had retrieved.
+  //
+  // User report: "the LLM sometimes says it doesn't know even though the answer
+  // IS in the knowledge base, and it answers once you name the source."
+  //
+  // Measured cause (reproduced against live Postgres, see trial/06-verify-fix.ts):
+  // a document whose text extraction produced nothing is stored as
+  // "[Empty document: x.pdf]" so retrieval can still match the filename. That
+  // 46-char placeholder was then fed to the answer prompt AS EVIDENCE. A
+  // length-based sufficiency shortcut ("< 50 chars => insufficient", with no LLM
+  // call) judged it insufficient, which advanced retrieval to a second pass,
+  // which set retrievalPasses >= 2, which made tool-branches.ts inject
+  // "...If the evidence doesn't contain the answer, say so." The model then
+  // correctly obeyed an instruction to disclaim. Naming the source changed the
+  // ranking, so the note disappeared - exactly the reported asymmetry.
+  //
+  // TWO defects, both pinned below: placeholders treated as evidence, and
+  // length used as a proxy for sufficiency.
+  // -------------------------------------------------------------------------
+  /** Source with comments stripped — guards must read CODE, never prose. */
+  function codeOnly(rel: string): string {
+    return readRepo(rel)
+      .split('\n')
+      // Not a JS parser: drop whole-line comments and anything after `//`.
+      // Enough for these guards, and it prevents the trap below.
+      .filter((l) => {
+        const t = l.trim()
+        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*')
+      })
+      .map((l) => l.replace(/\/\/.*$/, ''))
+      .join('\n')
+  }
+
+  test('placeholder chunks are excluded from answer evidence', () => {
+    // Assert the MECHANISM (the filter is applied), not a reason string, so a
+    // future refactor that keeps the string but drops the filter still fails.
+    const src = codeOnly('src/lib/intent-pipeline.ts')
+    // `[^)]*` cannot bridge the `)` in `.slice(0, args.topK)`, so anchor on the
+    // statement and require the filter wherever it sits on that line.
+    expect(src).toMatch(/^\s*const evidenceChunks = .*filter\(.*isPlaceholderChunk/m)
+  })
+
+  test('sufficiency is NOT decided by evidence length alone', () => {
+    // A short chunk is not a bad chunk: "Tarif lembur hari kerja 1,5x upah per
+    // jam." is 41 chars and a complete answer. Any `evidence.length < N`
+    // short-circuit makes the pipeline disclaim answers it holds.
+    //
+    // Scanned over CODE ONLY: the inline comment above the fix quotes the old
+    // expression verbatim (that is what makes the incident legible), and a
+    // regex over raw source would match that prose and fail a correct file.
+    const src = codeOnly('src/lib/intent-pipeline.ts')
+    expect(src).not.toMatch(/evidence\.trim\(\)\.length\s*<\s*\d+/)
+    expect(src).not.toMatch(/evidence\.length\s*<\s*\d+/)
+  })
+
+  test('evidence-emptiness checks precede the LLM-availability gate', () => {
+    // A deployment with no LLM configured must still refuse to call empty or
+    // placeholder-only evidence "confident". When the guards sat below the
+    // `if (!cfg) return { confident: true }` early-return they were unreachable
+    // without an LLM — a bug in the first version of this very fix, caught only
+    // because tests were written for a previously untested function.
+    const src = codeOnly('src/lib/intent-pipeline.ts')
+    const fnStart = src.indexOf('export async function evaluateAnswerConfidence')
+    expect(fnStart).toBeGreaterThan(-1)
+    const body = src.slice(fnStart, fnStart + 1400)
+    const placeholderIdx = body.indexOf('isPlaceholderChunk(args.evidence)')
+    const llmGateIdx = body.indexOf('if (!cfg)')
+    expect(placeholderIdx).toBeGreaterThan(-1)
+    expect(llmGateIdx).toBeGreaterThan(-1)
+    expect(placeholderIdx).toBeLessThan(llmGateIdx)
+  })
+
+  test('the placeholder marker has exactly one definition and one detector', () => {
+    // The marker string was inline in the upload route with no shared
+    // predicate, so the producer and the consumer could drift - the same
+    // duplicated-logic pattern behind every other incident in this file.
+    const chunking = readRepo('src/lib/rag-chunking.ts')
+    expect(chunking).toContain('EMPTY_DOCUMENT_MARKER')
+    expect(chunking).toContain('export function isPlaceholderChunk')
+    expect(chunking).toContain('export function emptyDocumentContent')
+
+    const upload = readRepo('src/app/api/documents/route.ts')
+    expect(upload).toContain('emptyDocumentContent(')
+    expect(upload).not.toMatch(/`\[Empty document: /)
+  })
 })

@@ -17,6 +17,47 @@ const DEFAULT_OVERLAP_CHARS = RAG_CHUNK_OVERLAP
 // can't balloon into millions of in-memory chunk strings.
 export const MAX_EXTRACTED_TEXT_CHARS = 2_000_000
 
+/**
+ * Marker for a document whose text extraction produced nothing (image-only
+ * PDF, scanned page, unparseable file). The upload route stores this instead of
+ * real content so retrieval still has the filename to match against.
+ */
+export const EMPTY_DOCUMENT_MARKER = '[Empty document:'
+
+/** Build the placeholder content for a document with no extractable text. */
+export function emptyDocumentContent(fileName: string): string {
+  return `${EMPTY_DOCUMENT_MARKER} ${fileName}]`
+}
+
+/**
+ * Is this chunk a placeholder rather than real document text?
+ *
+ * WHY THIS EXISTS (2026-09 trial, reproduced against live Postgres):
+ * a placeholder chunk was being fed to the answer prompt as if it were
+ * evidence. Because the placeholder is short (46 chars for a typical filename),
+ * `evaluateEvidenceSufficiency` hit its "< 50 chars => insufficient" shortcut
+ * WITHOUT calling the LLM, which advanced retrieval to a second pass, which set
+ * `retrievalPasses >= 2`, which made `tool-branches.ts` inject
+ *
+ *   "[Note: the retrieved evidence may not fully address the question. ...
+ *    If the evidence doesn't contain the answer, say so.]"
+ *
+ * The user-visible result: the bot answers "I don't know" for a document that
+ * IS in the knowledge base — and answers correctly once the query names the
+ * source, because a filename-matching query ranks the placeholder differently
+ * and the note is no longer injected. That symptom was reported by the user and
+ * this predicate is the fix for the evidence half of it.
+ *
+ * Matching on the marker (not on chunk LENGTH) is deliberate: a short chunk is
+ * not evidence of a bad chunk. A real one-line answer such as
+ * "Tarif lembur hari kerja 1,5x upah per jam." is 41 chars and completely
+ * valid — the length heuristic was the other half of the bug.
+ */
+export function isPlaceholderChunk(content: string | null | undefined): boolean {
+  if (!content) return false
+  return content.trimStart().startsWith(EMPTY_DOCUMENT_MARKER)
+}
+
 export interface ParentDocChunk {
   content: string
   contextPrefix: string

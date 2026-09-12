@@ -9,7 +9,13 @@ mock.module('@/lib/document-parsers', () => ({
   extractXlsxTextFromBuffer: () => '',
 }))
 
-import { chunkText, chunkTextParentDoc, splitStructuralBlocks } from './rag-chunking'
+import {
+  chunkText,
+  chunkTextParentDoc,
+  splitStructuralBlocks,
+  isPlaceholderChunk,
+  emptyDocumentContent,
+} from './rag-chunking'
 
 describe('chunkText', () => {
   test('splits on double newlines', () => {
@@ -117,5 +123,46 @@ describe('chunkTextParentDoc', () => {
     const long = Array.from({ length: 2000 }, (_, i) => `word${i}`).join(' ')
     const chunks = chunkTextParentDoc(long, { childSize: 20, parentWindow: 80, maxChunks: 50 })
     expect(chunks.length).toBe(50)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Placeholder detection — fixes the user-reported "it says it doesn't know even
+// though the answer is in the knowledge base" symptom. A document whose text
+// extraction produced nothing is stored as "[Empty document: x.pdf]" so
+// retrieval can still match on the filename, but that marker must never be
+// treated as answer EVIDENCE. Measured on live Postgres: a filename query
+// returned ONLY the 46-char placeholder, which the old length check judged
+// "too short" -> insufficient -> second retrieval pass -> tool-branches.ts
+// injected "if the evidence doesn't contain the answer, say so", so the model
+// disclaimed an answer it had never been given.
+describe('isPlaceholderChunk / emptyDocumentContent', () => {
+  test('builder and detector agree (no marker drift)', () => {
+    const built = emptyDocumentContent('Scan Kontrak.pdf')
+    expect(isPlaceholderChunk(built)).toBe(true)
+    expect(built).toBe('[Empty document: Scan Kontrak.pdf]')
+  })
+
+  test('detects placeholders, including leading whitespace', () => {
+    expect(isPlaceholderChunk('[Empty document: a.pdf]')).toBe(true)
+    expect(isPlaceholderChunk('  \n[Empty document: a.pdf]')).toBe(true)
+  })
+
+  test('does NOT flag real content, however short', () => {
+    // The crux: a short chunk is not a bad chunk. This 41-char sentence is a
+    // complete, correct answer and must survive.
+    expect(isPlaceholderChunk('Tarif lembur hari kerja 1,5x upah per jam.')).toBe(false)
+    expect(isPlaceholderChunk('Cuti tahunan 12 hari.')).toBe(false)
+  })
+
+  test('handles null/undefined/empty without throwing', () => {
+    expect(isPlaceholderChunk(null)).toBe(false)
+    expect(isPlaceholderChunk(undefined)).toBe(false)
+    expect(isPlaceholderChunk('')).toBe(false)
+  })
+
+  test('does not match a document that merely mentions the phrase mid-content', () => {
+    const content = 'Ringkasan: dokumen ini berisi catatan. [Empty document: x] disebut di lampiran.'
+    expect(isPlaceholderChunk(content)).toBe(false)
   })
 })

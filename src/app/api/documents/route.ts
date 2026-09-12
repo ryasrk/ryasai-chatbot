@@ -9,7 +9,7 @@ import {
   invalidateRagCache,
 } from '@/lib/rag'
 import { upsertChunkFts } from '@/lib/rag-fts'
-import { MAX_EXTRACTED_TEXT_CHARS } from '@/lib/rag-chunking'
+import { MAX_EXTRACTED_TEXT_CHARS, emptyDocumentContent } from '@/lib/rag-chunking'
 import { enqueueOrSync } from '@/lib/job-processor'
 import { mapWithConcurrency } from '@/lib/bounded-concurrency'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
@@ -176,11 +176,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Build the content text. For placeholders we still keep a single "chunk"
-    // so retrieval has something to match against the filename/category.
+    // so retrieval has something to match against the filename/category —
+    // but see `isPlaceholderChunk`: that marker is deliberately excluded from
+    // answer EVIDENCE, because passing it as evidence made the bot disclaim
+    // answers it actually had.
     const contentText =
       extracted && extracted.length > 0
         ? extracted
-        : `[Empty document: ${file.name}]`
+        : emptyDocumentContent(file.name)
 
     // Create the document with status='ready'.
     const doc = await db.document.create({

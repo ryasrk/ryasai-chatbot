@@ -34,6 +34,7 @@ import {
   analyzeIntent,
   rewriteQuery,
   evaluateEvidenceSufficiency,
+  evaluateAnswerConfidence,
   expandQuery,
   mergeRetrievalResults,
   retrieveWithReflection,
@@ -466,15 +467,48 @@ describe('evaluateEvidenceSufficiency', () => {
     expect(result.confidence).toBe(1.0)
   })
 
-  test('returns insufficient when evidence is very short (<50 chars)', async () => {
+  // REGRESSION (2026-09 trial): this block used to assert
+  //   evidence: 'A'.repeat(49) -> insufficient, reason 'Evidence too short'
+  // i.e. it certified a length-based verdict as correct. Measured against a real
+  // knowledge base that heuristic produced FALSE NEGATIVES — "Tarif lembur hari
+  // kerja 1,5x upah per jam." (41 chars) is a complete answer, yet was judged
+  // insufficient, which advanced retrieval to a second pass and made
+  // tool-branches.ts inject "if the evidence doesn't contain the answer, say
+  // so". The bot then disclaimed an answer it had actually retrieved. Length is
+  // not a proxy for sufficiency; the model decides, and only a content-free
+  // string is short-circuited.
+  test('does NOT reject short-but-substantive evidence (the false negative)', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+
     const result = await evaluateEvidenceSufficiency({
-      question: 'what is the leave policy?',
-      evidence: 'A'.repeat(49),
+      question: 'berapa tarif lembur?',
+      evidence: 'Tarif lembur hari kerja 1,5x upah per jam.',
+    })
+
+    // With no LLM the gate assumes sufficient — the point is that it did NOT
+    // short-circuit to insufficient on length alone.
+    expect(result.sufficient).toBe(true)
+    expect(result.reason).not.toBe('Evidence too short')
+  })
+
+  test('returns insufficient when evidence is a placeholder (no document text)', async () => {
+    const result = await evaluateEvidenceSufficiency({
+      question: 'isi kontrak vendor',
+      evidence: '[Empty document: Scan Kontrak Vendor 2024.pdf]',
     })
 
     expect(result.sufficient).toBe(false)
-    expect(result.reason).toBe('Evidence too short')
-    expect(result.confidence).toBe(0.8)
+    expect(result.reason).toBe('Only placeholder content retrieved')
+  })
+
+  test('returns insufficient when evidence has no substantive content at all', async () => {
+    const result = await evaluateEvidenceSufficiency({
+      question: 'what is the leave policy?',
+      evidence: '... --- ...',
+    })
+
+    expect(result.sufficient).toBe(false)
+    expect(result.reason).toBe('Evidence has no substantive content')
   })
 
   test('returns sufficient when no LLM configured (assumes sufficient)', async () => {
@@ -648,5 +682,47 @@ describe('retrieveWithReflection', () => {
 
     // 'leave' produces 6 expansions, sliced to MAX_EXPANSIONS=3
     expect(mockRetrieveRelevantChunks.mock.calls.length).toBe(3)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// evaluateAnswerConfidence had NO tests before this block, which is why a
+// second copy of the length heuristic survived in it while the same bug was
+// fixed in evaluateEvidenceSufficiency. It matters MORE here: this verdict drives
+// the agentic loop's "call another tool" decision.
+// ---------------------------------------------------------------------------
+describe('evaluateAnswerConfidence', () => {
+  beforeEach(() => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+  })
+
+  test('does NOT reject a short-but-complete answer on length', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'berapa tarif lembur?',
+      evidence: 'Tarif lembur hari kerja 1,5x upah per jam.',
+    })
+
+    expect(r.reason).not.toBe('insufficient evidence')
+  })
+
+  test('returns unconfident for a placeholder', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'isi kontrak',
+      evidence: '[Empty document: Scan Kontrak.pdf]',
+    })
+
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('only placeholder content')
+  })
+
+  test('returns unconfident for empty evidence', async () => {
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: '' })
+    expect(r.confident).toBe(false)
+  })
+
+  test('returns unconfident for content-free evidence', async () => {
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: '... --- ...' })
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('insufficient evidence')
   })
 })

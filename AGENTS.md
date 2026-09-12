@@ -179,6 +179,57 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - The streaming SQL path skips `withToolSandbox` and the SQL rate limit (both are non-streaming-only).
 - Integration selection fallback differs by path: non-streaming takes the oldest active integration; streaming uses keyword scoring over table/column names (`stream-preparers.ts`).
 
+### Answer confidence & evidence sufficiency (2026-09 trial)
+
+INCIDENT (user-reported): *"the LLM sometimes says it doesn't know even though the
+answer IS in the knowledge base, and it answers once you name the source."*
+
+Traced with `trial/06-verify-fix.ts` against a seeded live Postgres. Two defects
+compounded, and neither was in the model:
+
+1. **Placeholder chunks were fed to the answer prompt as evidence.** A document
+   whose extraction produced nothing is stored as `[Empty document: x.pdf]` so
+   retrieval can still match the filename (`emptyDocumentContent`). That marker is
+   not evidence, but it reached `retrieveWithReflection`'s evidence string.
+2. **Sufficiency was decided by evidence LENGTH.** `evidence.trim().length < 50`
+   returned `insufficient` with no LLM call. A 46-char placeholder tripped it
+   (false "no evidence"), and so did a genuinely complete short answer —
+   *"Tarif lembur hari kerja 1,5x upah per jam."* (41 chars) is a full answer and
+   was declared insufficient.
+
+The chain that produced the symptom: placeholder-as-evidence → length shortcut →
+`sufficient: false` → retrieval advanced to a **second pass** → `retrievalPasses >= 2`
+→ `tool-branches.ts` injected *"If the evidence doesn't contain the answer, say
+so"* → the model correctly obeyed an instruction to disclaim. Naming the source
+changed the ranking, so the note vanished — exactly the reported asymmetry.
+
+Fixes: `isPlaceholderChunk()` / `emptyDocumentContent()` in `rag-chunking.ts` as the
+single source for the marker (it was an inline literal in the upload route with no
+shared detector); placeholders filtered out of the evidence string; the length
+short-circuit replaced by a content-only floor (`< 8 alphanumeric chars`).
+`evaluateAnswerConfidence` had the **same length bug plus an ordering bug** — its
+guards sat below the `if (!cfg) return { confident: true }` early-return, so on a
+deployment with no LLM they were unreachable and empty/placeholder evidence was
+reported confident. Not reproduced by accident: that function had **no tests at
+all**, which is why both defects survived.
+
+**Do not reintroduce length as a proxy for sufficiency or confidence.** A short
+chunk is not a bad chunk. `invariants.test.ts` covers the filter, forbids any
+`evidence.length < N` short-circuit (scanning code with comments stripped —
+the fix's own comment quotes the old expression), and asserts the placeholder
+check precedes the LLM gate.
+
+**Honest scope of the trial.** Retrieval recall was measured and is NOT the
+problem: across 5 queries (3 vague, 2 source-named) the needle chunk surfaced
+every time, at rank 2–3. The environment has only a **mock LLM**, so answer
+quality, faithfulness and RAGAS numbers are NOT measurable here — `trial/README.md`
+records that and the harness emits no quality scores. What was verified live:
+tenant isolation (cross-org retrieval leak: none), on-topic > off-topic scoring,
+guardrail 6/6 (DROP, `pg_read_file`, `pg_sleep`, comment-hidden mutation all
+blocked; a string-literal decoy correctly allowed), DB-layer read-only rejecting
+`DELETE`, schema reflection (31 tables with FK relations feeding `describeSchema`).
+`trial/` is ad-hoc and not part of CI.
+
 ## Multi-Tenancy
 
 - **Tenant root**: `Organization` model. `User.organizationId` links 1 user → 1 org. Every data model carries `organizationId`.

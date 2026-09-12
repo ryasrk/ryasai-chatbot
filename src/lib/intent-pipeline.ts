@@ -41,6 +41,7 @@
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 import { retrieveRelevantChunks, selectTopRetrievedChunks, type RetrievedChunk } from '@/lib/rag'
+import { isPlaceholderChunk } from '@/lib/rag-chunking'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
 export interface IntentAnalysis {
@@ -315,8 +316,25 @@ export async function evaluateEvidenceSufficiency(args: {
   }
 
   // ponytail: skip reflection if evidence is very short (< 50 chars) — likely insufficient
-  if (args.evidence.trim().length < 50) {
-    return { sufficient: false, reason: 'Evidence too short', confidence: 0.8 }
+  // ponytail: a placeholder is genuinely insufficient, and we know it WITHOUT
+  // asking the model — it contains no document text at all.
+  if (isPlaceholderChunk(args.evidence)) {
+    return { sufficient: false, reason: 'Only placeholder content retrieved', confidence: 0.9 }
+  }
+
+  // ponytail: this used to be `evidence.length < 50 => insufficient`, a
+  // length-based verdict with no LLM call. Measured against a real knowledge
+  // base it produced FALSE NEGATIVES: "Tarif lembur hari kerja 1,5x upah per
+  // jam." is 41 chars and a complete, correct answer, yet was declared
+  // insufficient — which advanced retrieval to a second pass and made
+  // tool-branches.ts inject "if the evidence doesn't contain the answer, say
+  // so", i.e. it instructed the model to disclaim an answer it had. Length is
+  // not a proxy for sufficiency; a short chunk is not a bad chunk. Real
+  // judgement is delegated to the model below. The floor is kept only as a
+  // guard against a degenerate string (whitespace/punctuation) that cannot
+  // carry meaning, not as a quality signal.
+  if (args.evidence.replace(/[^\p{L}\p{N}]/gu, '').length < 8) {
+    return { sufficient: false, reason: 'Evidence has no substantive content', confidence: 0.8 }
   }
 
   const cfg = await getRoleLlmConfig('query')
@@ -465,10 +483,16 @@ export async function retrieveWithReflection(args: {
   const merged = mergeRetrievalResults(allResults)
 
   // 3. Reflect — is the evidence sufficient to answer?
-  const evidence = merged.chunks
-    .slice(0, args.topK)
-    .map((c) => c.content)
-    .join('\n\n')
+  //
+  // ponytail: placeholders are EXCLUDED from the evidence string. A document
+  // whose extraction produced nothing is stored as "[Empty document: x.pdf]" so
+  // retrieval can match on the filename, but that marker is not evidence: it
+  // cannot answer anything, and passing it here made the sufficiency check
+  // judge a 46-char string and inject "if the evidence doesn't contain the
+  // answer, say so" — so the bot disclaimed knowledge it never received. See
+  // `isPlaceholderChunk` for the full trace.
+  const evidenceChunks = merged.chunks.slice(0, args.topK).filter((c) => !isPlaceholderChunk(c.content))
+  const evidence = evidenceChunks.map((c) => c.content).join('\n\n')
   const reflection = await evaluateEvidenceSufficiency({
     question: args.query,
     evidence,
@@ -533,14 +557,32 @@ export async function evaluateAnswerConfidence(args: {
   question: string
   evidence: string
 }): Promise<ConfidenceResult> {
+  // ponytail: evidence-emptiness checks come FIRST, ahead of the LLM-availability
+  // gate. Ordering matters: when these sat below `if (!cfg)` they were
+  // unreachable on a deployment with no LLM configured, so empty or
+  // placeholder-only evidence was reported as "confident" — the one case where
+  // the verdict is least trustworthy. Found by writing the tests.
+  //
+  // A placeholder is not evidence — say so without an LLM call.
+  if (isPlaceholderChunk(args.evidence)) {
+    return { confident: false, reason: 'only placeholder content', nextToolHint: null, confidence: 0 }
+  }
+
+  // ponytail: this used to be `!evidence || evidence.trim().length < 50`. Same
+  // defect as the sufficiency gate above, and it matters MORE here: this drives
+  // the agentic loop's "call another tool" decision, so a short-but-complete
+  // answer (a one-line policy figure) was declared unconfident, the loop burned
+  // another iteration, and the eventual answer was produced from a worse context
+  // than the one that already held the answer. Length is not a proxy for
+  // confidence; only an empty or content-free string short-circuits.
+  if (!args.evidence || args.evidence.replace(/[^\p{L}\p{N}]/gu, '').length < 8) {
+    return { confident: false, reason: 'insufficient evidence', nextToolHint: null, confidence: 0 }
+  }
+
   const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     // ponytail: no LLM — assume confident, don't block the answer
     return { confident: true, reason: 'no LLM configured', confidence: 1.0 }
-  }
-
-  if (!args.evidence || args.evidence.trim().length < 50) {
-    return { confident: false, reason: 'insufficient evidence', nextToolHint: null, confidence: 0 }
   }
 
   try {
