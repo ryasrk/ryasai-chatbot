@@ -1,16 +1,10 @@
 {
-  "linePct": 62.44,
-  "linesHit": 12168,
-  "linesFound": 19489,
+  "linePct": 69.06,
+  "linesHit": 13382,
+  "linesFound": 19378,
   "filesMeasured": 126,
   "failedTestFiles": [],
   "files": [
-    {
-      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
-      "hit": 45,
-      "found": 521,
-      "pct": 8.637236084452974
-    },
     {
       "file": "src/lib/license-issue.ts",
       "hit": 15,
@@ -36,28 +30,10 @@
       "pct": 13.513513513513514
     },
     {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 77,
-      "found": 476,
-      "pct": 16.176470588235293
-    },
-    {
       "file": "src/app/api/auth/login/route.ts",
       "hit": 13,
       "found": 72,
       "pct": 18.055555555555554
-    },
-    {
-      "file": "src/lib/cognee-knowledge-graph.ts",
-      "hit": 66,
-      "found": 344,
-      "pct": 19.186046511627907
-    },
-    {
-      "file": "src/app/api/v1/chat/completions/route.ts",
-      "hit": 76,
-      "found": 395,
-      "pct": 19.240506329113924
     },
     {
       "file": "src/lib/sso-saml.ts",
@@ -120,22 +96,16 @@
       "pct": 40
     },
     {
-      "file": "src/lib/cognee-core.ts",
-      "hit": 103,
-      "found": 256,
-      "pct": 40.234375
+      "file": "src/lib/redis.ts",
+      "hit": 32,
+      "found": 78,
+      "pct": 41.02564102564102
     },
     {
       "file": "src/lib/evidence-boundary.ts",
       "hit": 14,
       "found": 30,
       "pct": 46.666666666666664
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 360,
-      "found": 762,
-      "pct": 47.24409448818898
     },
     {
       "file": "src/lib/scheduler-queue.ts",
@@ -166,12 +136,6 @@
       "hit": 109,
       "found": 198,
       "pct": 55.05050505050505
-    },
-    {
-      "file": "src/lib/redis.ts",
-      "hit": 43,
-      "found": 78,
-      "pct": 55.12820512820513
     },
     {
       "file": "src/lib/themes.ts",
@@ -228,6 +192,12 @@
       "pct": 64.83870967741936
     },
     {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 310,
+      "found": 477,
+      "pct": 64.98951781970649
+    },
+    {
       "file": "src/app/api/fetch-url/route.ts",
       "hit": 20,
       "found": 30,
@@ -264,6 +234,12 @@
       "pct": 68.96551724137932
     },
     {
+      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
+      "hit": 291,
+      "found": 420,
+      "pct": 69.28571428571428
+    },
+    {
       "file": "src/lib/citation-trail.ts",
       "hit": 44,
       "found": 63,
@@ -274,6 +250,12 @@
       "hit": 35,
       "found": 49,
       "pct": 71.42857142857143
+    },
+    {
+      "file": "src/lib/cognee-knowledge-graph.ts",
+      "hit": 253,
+      "found": 344,
+      "pct": 73.54651162790698
     },
     {
       "file": "src/lib/cognee.ts",
@@ -294,10 +276,22 @@
       "pct": 75.52447552447552
     },
     {
+      "file": "src/lib/cognee-core.ts",
+      "hit": 195,
+      "found": 258,
+      "pct": 75.5813953488372
+    },
+    {
       "file": "src/lib/agentic-budget.ts",
       "hit": 13,
       "found": 17,
       "pct": 76.47058823529412
+    },
+    {
+      "file": "src/app/api/v1/chat/completions/route.ts",
+      "hit": 293,
+      "found": 382,
+      "pct": 76.70157068062828
     },
     {
       "file": "src/app/api/integrations/[id]/query/route.ts",
@@ -334,6 +328,12 @@
       "hit": 143,
       "found": 179,
       "pct": 79.88826815642457
+    },
+    {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 610,
+      "found": 763,
+      "pct": 79.94757536041939
     },
     {
       "file": "src/lib/plugin-registry.ts",
@@ -618,12 +618,6 @@
       "pct": 98.07692307692307
     },
     {
-      "file": "src/lib/llm-budget.ts",
-      "hit": 57,
-      "found": 58,
-      "pct": 98.27586206896551
-    },
-    {
       "file": "src/lib/cron.ts",
       "hit": 109,
       "found": 110,
@@ -654,15 +648,15 @@
       "pct": 100
     },
     {
-      "file": "src/lib/db-provider.ts",
-      "hit": 3,
-      "found": 3,
-      "pct": 100
-    },
-    {
       "file": "src/app/api/documents/[id]/reprocess/route.ts",
       "hit": 55,
       "found": 55,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/db-provider.ts",
+      "hit": 3,
+      "found": 3,
       "pct": 100
     },
     {
@@ -723,6 +717,12 @@
       "file": "src/lib/incoming-webhook.ts",
       "hit": 40,
       "found": 40,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/llm-budget.ts",
+      "hit": 57,
+      "found": 57,
       "pct": 100
     },
     {
