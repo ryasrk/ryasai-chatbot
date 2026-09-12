@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { enterWithOrg } from '@/lib/prisma-tenant'
 import { db } from '@/lib/db'
 import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError } from '@/lib/session'
@@ -52,6 +53,16 @@ export async function POST(req: NextRequest) {
   try {
     const identity = await requireExternalApiKey(req)
     apiKeyId = identity.apiKeyId
+
+    // ponytail: enter the API key's org context. This route authenticates with a
+    // Bearer key, not a session, so nothing had established an org — every
+    // downstream query therefore ran UNSCOPED, and config resolution read
+    // whichever tenant's row came first. It only surfaced once getLlmRuntimeConfig
+    // began REFUSING to resolve a config without an org context (trial/55):
+    // external chat completions started failing with LlmNotConfiguredError, a
+    // 500 for a correctly configured install. Entering the org is the correct fix
+    // — it scopes the queries instead of relaxing the guard.
+    enterWithOrg(identity.organizationId)
 
     // ponytail: Redis burst-protection rate limit — falls back to DB-based limiting
     // in requireExternalApiKey when Redis is down (rateLimit returns null).

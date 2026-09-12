@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { type RouteDecision } from '@/lib/ai'
 import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity, type EmbeddingRuntimeConfig } from '@/lib/embeddings'
 
@@ -126,8 +127,31 @@ let sourceEmbeddingCache: {
 
 const SOURCE_EMBEDDING_CACHE_TTL = 5 * 60 * 1000
 
-let questionEmbeddingCache: { question: string; embedding: number[]; timestamp: number } | null = null
+// ponytail: keyed on the ORG + the embedding config identity, not the question
+// string alone. A module-scope cache is process-wide, so in a multi-tenant
+// install two orgs asking the SAME question would share one entry — and the
+// second org's vectors would silently be the FIRST org's vectors, computed by a
+// different provider/model. Proven at runtime (trial/50): org A (real local
+// model) and org B (different configured model) asking the identical string got
+// byte-identical embeddings. Retrieval ranking for org B was therefore derived
+// from another tenant's vector space. Vectors are not raw document text, so this
+// was not a content leak, but it is cross-tenant state and must not be shared.
+let questionEmbeddingCache: {
+  question: string
+  scope: string
+  embedding: number[]
+  timestamp: number
+} | null = null
 const QUESTION_EMBEDDING_TTL = 10 * 1000
+
+/**
+ * Identity of the cache scope: owning org plus the embedding endpoint/model, so
+ * a config change (or a different tenant) can never reuse another's vectors.
+ */
+function embeddingCacheScope(config: EmbeddingRuntimeConfig): string {
+  const org = getOrgContext() ?? 'no-org'
+  return `${org}|${config.provider}|${config.baseUrl}|${config.model}`
+}
 
 export function invalidateSourceEmbeddingCache() {
   sourceEmbeddingCache = null
@@ -206,13 +230,19 @@ export async function getSourceEmbeddings(): Promise<{
 
 export async function getQuestionEmbedding(question: string, config: EmbeddingRuntimeConfig): Promise<number[]> {
   const now = Date.now()
-  if (questionEmbeddingCache && questionEmbeddingCache.question === question && now - questionEmbeddingCache.timestamp < QUESTION_EMBEDDING_TTL) {
+  const scope = embeddingCacheScope(config)
+  if (
+    questionEmbeddingCache &&
+    questionEmbeddingCache.question === question &&
+    questionEmbeddingCache.scope === scope &&
+    now - questionEmbeddingCache.timestamp < QUESTION_EMBEDDING_TTL
+  ) {
     return questionEmbeddingCache.embedding
   }
   try {
     const emb = await embedTexts(config, [question])
     const embedding = emb[0] ?? []
-    questionEmbeddingCache = { question, embedding, timestamp: now }
+    questionEmbeddingCache = { question, scope, embedding, timestamp: now }
     return embedding
   } catch {
     return []

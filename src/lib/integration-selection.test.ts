@@ -79,3 +79,21 @@ describe('resolveIntegrationForQuestion', () => {
     expect(await resolveIntegrationForQuestion(['orders'], 'orders?', 'refuse')).toBeNull()
   })
 })
+
+// A cosine score is never meaningfully zero, so the refusal condition used to be
+// `scored[0].score === 0` — effectively never true. Measured on a live install
+// (trial/60): 200/200 off-topic questions were attributed to SOME database. A
+// refusal path that cannot fire is worse than none: it reads as protection.
+// Selection now needs positive evidence (keyword overlap, or a semantic score
+// above a floor AND clear of the runner-up).
+describe('off-topic questions are refused, not attributed', () => {
+  test('a question naming nothing in any schema is refused', async () => {
+    const choice = await resolveIntegrationForQuestion(['zzzz', 'qqqq'], 'tolong ringkas semuanya', 'refuse')
+    expect(choice).toBeNull()
+  })
+
+  test('but a real keyword match still selects that source', async () => {
+    const choice = await resolveIntegrationForQuestion(['orders'], 'total orders', 'refuse')
+    expect(choice?.integrationId).toBe('sales-1')
+  })
+})

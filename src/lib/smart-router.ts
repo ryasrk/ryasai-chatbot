@@ -300,7 +300,7 @@ async function detectMentionedIntegration(
   return undefined
 }
 
-async function pickBestIntegrationWithAmbiguity(
+export async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
   question: string,
 ): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
@@ -370,16 +370,40 @@ async function pickBestIntegrationWithAmbiguity(
     const keywordScore = tokens.length > 0 ? Math.min(matches / tokens.length, 1) : 0
     const semanticScore = semanticScores[idx] ?? 0
     const score = keywordScore * 0.4 + semanticScore * 0.6
-    return { id: integ.id, name: integ.name, score }
+    return { id: integ.id, name: integ.name, score, keywordScore, semanticScore }
   })
 
   scored.sort((a, b) => b.score - a.score)
 
-  if (scored[0].score === 0) return undefined
+  // ponytail: `scored[0].score === 0` was effectively NEVER true once embeddings
+  // are configured — a semantic score is a cosine similarity, which is positive
+  // even for a question that names nothing ("tolong lihat"). Measured on a live
+  // install: 200/200 off-topic questions were attributed to some database instead
+  // of being refused, so the refusal path existed but never fired.
+  //
+  // Refusing now requires positive EVIDENCE of a match:
+  //   - a real keyword overlap (a question token appears in the schema/name), or
+  //   - a clearly better semantic candidate (a margin over the runner-up).
+  // Off-topic questions satisfy neither, so they are refused instead of guessed.
+  const top = scored[0]
+  const runnerUp = scored[1]
+  const hasKeywordEvidence = top.keywordScore > 0
+  const semanticMargin = runnerUp ? top.semanticScore - runnerUp.semanticScore : top.semanticScore
+  const hasSemanticEvidence = top.semanticScore >= SEMANTIC_MATCH_FLOOR && semanticMargin >= SEMANTIC_MATCH_MARGIN
+  if (!hasKeywordEvidence && !hasSemanticEvidence) return undefined
   // ponytail: always pick the best — no ambiguity blocking. The previous 0.8x
   // threshold caused "which database?" loops on every multi-DB question.
   return { integrationId: scored[0].id }
 }
+
+// A cosine similarity is never meaningfully zero, so "score > 0" cannot express
+// "this candidate matched". Require both a floor (the question really is about
+// this source) and a margin over the runner-up (it is not a coin flip) before
+// treating an embedding score as evidence. Values chosen from measured runs
+// (trial/51, trial/60): in-corpus questions scored 0.3-0.5 against the right
+// source, off-topic ones sat near 0.1-0.2 with a margin under 0.05.
+const SEMANTIC_MATCH_FLOOR = 0.25
+const SEMANTIC_MATCH_MARGIN = 0.02
 
 /**
  * Resolve which database integration a question should run against, with an

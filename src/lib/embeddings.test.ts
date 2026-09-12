@@ -5,6 +5,17 @@ const mockLlmConfigFindFirst = mock<(...args: unknown[]) => Promise<Record<strin
 const mockDocumentChunkFindMany = mock<(...args: unknown[]) => Promise<Array<Record<string, unknown>>>>(async () => [])
 const mockExecuteRaw = mock<(...args: unknown[]) => Promise<number>>(async () => 1)
 
+// getEmbeddingRuntimeConfig now REFUSES to resolve a config without an org
+// context (a context-free `findFirst` returned another tenant's baseUrl/model/
+// key — proven at runtime, trial/55). Production always has one: HTTP routes
+// call enterWithOrg, and job-processor.ts enters the org before embedding. So
+// the test supplies the context production has.
+mock.module('@/lib/prisma-tenant', () => ({
+  getOrgContext: () => 'test-org',
+  enterWithOrg: () => undefined,
+  bypassOrg: async (fn: () => unknown) => fn(),
+}))
+
 mock.module('@/lib/db', () => ({
   db: {
     llmConfig: { findFirst: mockLlmConfigFindFirst },

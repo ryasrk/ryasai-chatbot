@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
 
 export interface LlmRuntimeConfig {
@@ -164,6 +165,15 @@ function decryptApiKey(encryptedApiKey: string): string {
 }
 
 export async function getLlmRuntimeConfig(): Promise<LlmRuntimeConfig | null> {
+  // Same fail-closed rule as getEmbeddingRuntimeConfig: with no org context,
+  // `findFirst()` scans the WHOLE table and returns whichever tenant's config
+  // happens to be first — a different org's baseUrl, model and API key
+  // (proven at runtime, trial/55). Routes call enterWithOrg first; background
+  // work that does not would otherwise spend a stranger's credentials.
+  if (!getOrgContext()) {
+    console.warn('[llm-config] getLlmRuntimeConfig called without an org context — refusing to read another tenant\'s config')
+    return null
+  }
   const row = await db.llmConfig.findFirst({
     where: { purpose: 'chat' },
   }) ?? await db.llmConfig.findFirst()
@@ -178,6 +188,10 @@ export async function getLlmRuntimeConfig(): Promise<LlmRuntimeConfig | null> {
 }
 
 export async function getAgentLlmConfig(): Promise<LlmRuntimeConfig | null> {
+  if (!getOrgContext()) {
+    console.warn('[llm-config] getAgentLlmConfig called without an org context — refusing to read another tenant\'s config')
+    return null
+  }
   const row = await db.llmConfig.findFirst({
     where: { purpose: 'agent' },
   })

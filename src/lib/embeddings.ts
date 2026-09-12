@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
 import { normalizeBaseUrl } from '@/lib/llm-config'
 import {
@@ -85,6 +86,21 @@ export function parseEmbeddingResponse(
 
 export async function getEmbeddingRuntimeConfig(
 ): Promise<EmbeddingRuntimeConfig | null> {
+  // ponytail: this must NEVER resolve a config while outside an org context.
+  // `findFirst()` with no org scoping returns the first row IN THE WHOLE TABLE —
+  // whichever tenant that belongs to. Proven at runtime (trial/55): with two orgs
+  // configured differently, a context-free call returned ANOTHER org's embedding
+  // model AND baseUrl, i.e. it would have spent that org's credentials and quota
+  // and computed vectors in their embedding space. HTTP routes are safe because
+  // they call enterWithOrg first, but background work (re-index, scheduler,
+  // warm-up) does not necessarily — exactly the kind of caller that would have
+  // silently used a stranger's key. Fail closed instead: no org context means no
+  // config, and callers already treat null as "cannot embed".
+  const org = getOrgContext()
+  if (!org) {
+    console.warn('[embeddings] getEmbeddingRuntimeConfig called without an org context — refusing to read another tenant\'s config')
+    return null
+  }
   const row = await db.llmConfig.findFirst({
     where: { purpose: 'chat' },
   }) ?? await db.llmConfig.findFirst()
