@@ -1,6 +1,6 @@
 {
-  "linePct": 72.62,
-  "linesHit": 14290,
+  "linePct": 73.17,
+  "linesHit": 14398,
   "linesFound": 19678,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -130,12 +130,6 @@
       "hit": 51,
       "found": 86,
       "pct": 59.30232558139535
-    },
-    {
-      "file": "src/lib/stream-preparers.ts",
-      "hit": 326,
-      "found": 532,
-      "pct": 61.278195488721806
     },
     {
       "file": "src/lib/rag-retrieval.ts",
@@ -352,6 +346,12 @@
       "hit": 48,
       "found": 59,
       "pct": 81.35593220338984
+    },
+    {
+      "file": "src/lib/stream-preparers.ts",
+      "hit": 434,
+      "found": 532,
+      "pct": 81.57894736842105
     },
     {
       "file": "src/app/api/billing/pricing/route.ts",

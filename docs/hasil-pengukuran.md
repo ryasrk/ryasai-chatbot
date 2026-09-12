@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7bc8013`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d0a719f`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7bc8013`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **72,62%** (14.290/19.678 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 148 file · **2.771 lulus · 0 gagal** | terukur |
+| Test coverage | **73,17%** (14.398/19.678 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 148 file · **2.781 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -42,7 +42,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/app/api/mcp/servers/[id]/route.ts` | **0%** (tanpa test) | **98,56%** | 35 |
 | `src/app/api/mcp/servers/route.ts` | 19,86% | **99,30%** | 30 |
 | `src/lib/planner.ts` | 76,14% | **83,24%** | 16 |
-| **Total repo** | **62,44%** | **72,62%** | — |
+| `src/lib/stream-preparers.ts` | 74,77% | **99,31%** | 10 |
+| **Total repo** | **62,44%** | **73,17%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -88,8 +89,17 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Validasi URL wajib `web_fetch` dihapus | `planner.ts:622` | 1 |
 | Filter `isEnabled` plugin dihapus | `planner.ts:673` | 1 |
 | Validasi query wajib `web_search` dihapus | `planner.ts` (guard query) | 1 |
+| `try/catch` di sekitar `generateRestCall` dihapus (bug historis) | `stream-preparers.ts:439` | 2 |
+| Gerbang `matchEndpoint` dilewati | `stream-preparers.ts:461` | 1 |
 
-**26 kontrol, semuanya sah.**
+**28 kontrol, semuanya sah.**
+
+Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
+mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
+"0 pass / 1 fail". Kegagalan saat import itu akan mensertifikasi suite karena
+alasan yang salah, jadi kontrol diulang sebagai penghapusan `try/catch` yang
+sesungguhnya — dan baru itu menggagalkan tepat 2 tes yang dimaksud. Kontrol
+negatif harus diverifikasi hasilnya masuk akal, bukan sekadar "ada yang merah".
 
 ### 1.3 Insiden gate yang dicatat apa adanya
 
@@ -106,8 +116,9 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 148 file · 2.771 lulus ·
-0 gagal. Baris 297 adalah yang paling penting: kontrol itu
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 148 file · 2.781 lulus ·
+0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
+hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
 violation, sehingga login SSO pertama kali gagal total) dan tes menangkapnya.
 
