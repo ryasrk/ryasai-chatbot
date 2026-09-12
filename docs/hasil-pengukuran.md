@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2224a57`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **62,24%** (12.129/19.489 baris, 126 file) | terukur, **belum 95%** |
-| Test suite | 139 file · **2.417 lulus · 0 gagal** | terukur |
+| Test coverage | **62,44%** (12.168/19.489 baris, 126 file) | terukur, **belum 95%** |
+| Test suite | 139 file · **2.425 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -78,10 +78,10 @@ lingkungan ini. Ini angka lantai untuk perencanaan, bukan angka penagihan.
 
 ---
 
-## 5. Coverage — 62,24% (dari 51,35%)
+## 5. Coverage — 62,44% (dari 51,35%)
 
 Diukur `bun run coverage` (→ `scripts/coverage.ts`, merge lcov per-file).
-Total: **12.129 / 19.489 baris** di 126 file. Naik **+10,89 poin persen**.
+Total: **12.168 / 19.489 baris** di 126 file. Naik **+11,09 poin persen**.
 
 Peningkatan per modul sesi ini:
 
@@ -96,17 +96,19 @@ Sisa celah terbesar (baris belum tertutup):
 
 | File | Belum tertutup | Coverage |
 |---|---|---|
-| `src/lib/planner.ts` | 302 | 55,7% |
+| `src/lib/planner.ts` | 263 | 61,4% |
 | `src/lib/tool-branches.ts` | 416 | 45,4% |
 | `src/lib/tool-router-agentic.ts` | 399 | 16,2% |
+| `src/app/api/chat/sessions/[id]/send/route.ts` | 476 | 8,6% |
 | `src/lib/cognee-knowledge-graph.ts` | 331 | 3,5% |
 | `src/lib/real-connectors.ts` | 327 | 64,8% |
 | `src/lib/admin-tools.ts` | 301 | 55,0% |
 | `src/lib/intent-pipeline.ts` | 277 | 39,3% |
 
-**Untuk mencapai 95%** kira-kira perlu menutup ~6.400 baris lagi. Yang paling
-murah lebih dulu: `tool-router-agentic.ts`, `cognee-knowledge-graph.ts`, dan
-`cognee-core.ts` ketiganya di bawah 17% dengan total ~860 baris belum tertutup.
+**Untuk mencapai 95%** kira-kira perlu menutup ~6.300 baris lagi. Yang paling
+murah lebih dulu: `tool-router-agentic.ts` (399 baris, 16,2%),
+`cognee-knowledge-graph.ts` (278, 19,2%), dan
+`api/chat/sessions/[id]/send/route.ts` (476, 8,6%).
 
 ### Catatan semantik angka
 
