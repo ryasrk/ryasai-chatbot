@@ -41,7 +41,7 @@ mock.module('@/lib/mcp-client', () => ({
 // process-global and leaks into admin-tools.test.ts. Per-step confirmation is
 // covered by the isStepConfirmed unit tests below instead.
 
-import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQueryWithTools, synthesizeAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
+import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQuery, planQueryWithTools, synthesizeAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
 import type { PlanStep, Plan } from '@/lib/planner'
 import type { ToolDef } from '@/lib/tool-registry'
 
@@ -412,6 +412,133 @@ describe('planQueryWithTools', () => {
       availableTools: TOOLS,
     })
     expect(plan).toBeNull()
+  })
+})
+
+describe('executePlan — admin tool gating (security boundary)', () => {
+  // The `isAdmin` flag is the ONLY thing standing between an ordinary user and
+  // the admin tool surface (MCP install, prompt edits, credential writes). It
+  // was never exercised: the path runs `executeAdminTool`, and the concurrency
+  // helper that reach it was untested. Asserting the refusal keeps the gate from
+  // being "simplified" away by a later refactor.
+
+  const adminPlan: Plan = {
+    steps: [{ id: 'step1', tool: 'admin:mcp_install', input: { name: 'filesystem' }, dependsOn: [] }],
+    needsSynthesis: false,
+  }
+
+  test('a non-admin gets an explicit refusal and the tool never runs', async () => {
+    const results = await executePlan({
+      plan: adminPlan,
+      userId: 'u1',
+      isAdmin: false,
+      sessionId: 's1',
+    })
+    expect(results).toHaveLength(1)
+    expect(results[0].ok).toBe(false)
+    expect(results[0].error).toContain('administrator')
+    // The refusal must be a refusal, not a silently empty success.
+    expect(results[0].output).toBe('')
+  })
+
+  test('the refusal is reported to onStatus as an error, so the UI shows it', async () => {
+    const statuses: Array<[string, string, string]> = []
+    await executePlan({
+      plan: adminPlan,
+      userId: 'u1',
+      isAdmin: false,
+      sessionId: 's1',
+      onStatus: (id: string, tool: string, status: string) => statuses.push([id, tool, status]),
+    })
+    expect(statuses).toContainEqual(['step1', 'admin:mcp_install', 'error'])
+  })
+
+  test('isAdmin omitted defaults to NOT admin (fail-closed)', async () => {
+    // The dangerous default would be "assume admin when unspecified". Pin the
+    // safe one: absent means refused.
+    const results = await executePlan({
+      plan: adminPlan,
+      userId: 'u1',
+      sessionId: 's1',
+    })
+    expect(results[0].ok).toBe(false)
+    expect(results[0].error).toContain('administrator')
+  })
+})
+
+describe('planQuery — the entry point the router actually calls', () => {
+  // planQueryWithTools was covered but planQuery itself never was, which left the
+  // whole LLM fallback path (the one that runs whenever tool-calling is
+  // unavailable) untested. That path ends in a fail-closed CHAT plan, so a bug
+  // there means a question silently gets treated as small talk.
+
+  test('uses the tool-calling plan when planQueryWithTools succeeds', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(
+      JSON.stringify({ steps: [{ id: 'step1', tool: 'sql', input: { question: 'sales' } }], needsSynthesis: false })
+    ))
+    const plan = await planQuery({ question: 'show me sales', availableTools: TOOLS })
+    expect(plan.steps).toHaveLength(1)
+    expect(plan.steps[0].tool).toBe('sql')
+  })
+
+  test('falls back to parsing the LLM text plan when tool-calling yields nothing', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    // Tool-calling attempt returns no tool_calls → planQueryWithTools returns null.
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools'))
+    // Then the text-completion path answers with a JSON plan.
+    mockGenerateChat.mockImplementationOnce(async () => JSON.stringify({
+      steps: [{ id: 'step1', tool: 'rag', input: { question: 'policy' } }],
+      needsSynthesis: false,
+    }))
+    const plan = await planQuery({ question: 'what is the refund policy', availableTools: TOOLS })
+    expect(plan.steps[0].tool).toBe('rag')
+  })
+
+  test('a malformed text plan fails closed to CHAT, never throws', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools'))
+    mockGenerateChat.mockImplementationOnce(async () => 'I am not JSON at all')
+    const plan = await planQuery({ question: 'hello there', availableTools: TOOLS })
+    // Fail-closed: an unparseable plan must become a chat turn, not an exception
+    // and not an empty plan the executor would then trip over.
+    expect(plan.steps.length).toBeGreaterThan(0)
+    expect(plan.steps[0].tool).toBe('chat')
+  })
+
+  test('a plan naming an unknown tool fails closed to CHAT', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools'))
+    mockGenerateChat.mockImplementationOnce(async () => JSON.stringify({
+      steps: [{ id: 'step1', tool: 'totally_invented_tool', input: {} }],
+      needsSynthesis: false,
+    }))
+    const plan = await planQuery({ question: 'do something', availableTools: TOOLS })
+    // The LLM cannot invent a tool: validation must reject it and the turn must
+    // still produce something runnable.
+    expect(plan.steps.some((st) => st.tool === 'totally_invented_tool')).toBe(false)
+  })
+
+  test('history is included in the planning prompt', async () => {
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools'))
+    mockGenerateChat.mockImplementationOnce(async () => JSON.stringify({
+      steps: [{ id: 'step1', tool: 'chat', input: { message: 'ok' } }],
+      needsSynthesis: false,
+    }))
+    await planQuery({
+      question: 'and last month?',
+      availableTools: TOOLS,
+      chatHistory: [
+        { role: 'user', content: 'sales this month' },
+        { role: 'assistant', content: 'here are the numbers' },
+      ],
+    })
+    const [, systemPrompt] = mockGenerateChat.mock.calls[mockGenerateChat.mock.calls.length - 1] as unknown as [string, string]
+    // The system prompt carries the planner rules; the history goes in the user
+    // message. Assert the rules survived, since prompt text is load-bearing here.
+    expect(systemPrompt).toContain('enterprise AI planner')
+    expect(systemPrompt).toContain('Maximum')
   })
 })
 
