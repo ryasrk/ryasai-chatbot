@@ -284,15 +284,30 @@ export async function prepareSqlStream(args: {
     const feedback = attempt > 0
       ? `The previous SQL was:\n${attemptedSql[attemptedSql.length - 1]}\nIt failed with error:\n${lastSqlError}`
       : undefined
-    const candidate = await generateSql({
-      question: args.question,
-      schemaDescription,
-      provider: integration.provider,
-      memoryContext: args.memoryContext,
-      systemPromptPrefix: args.systemPromptPrefix,
-      businessContext: integration.businessContext,
-      repairFeedback: feedback,
-    })
+    // ponytail: generateSql MUST be inside a try. It was not, and only the SQL
+    // EXECUTION was guarded, so an LLM failure (provider down, dead BYOK key,
+    // timeout — all of which throw) escaped prepareSqlStream entirely. The
+    // caller has already promised the client an SSE stream by that point, so the
+    // turn died with the connection open and ZERO frames sent: the UI showed
+    // nothing at all, not even an error. Found by stream-preparers.test.ts,
+    // which is the first test ever to exercise this path.
+    let candidate: Awaited<ReturnType<typeof generateSql>>
+    try {
+      candidate = await generateSql({
+        question: args.question,
+        schemaDescription,
+        provider: integration.provider,
+        memoryContext: args.memoryContext,
+        systemPromptPrefix: args.systemPromptPrefix,
+        businessContext: integration.businessContext,
+        repairFeedback: feedback,
+      })
+    } catch (e) {
+      // A transient provider blip must not end the turn; the repair loop retries.
+      lastSqlError = e instanceof Error ? e.message : String(e)
+      attemptedSql.push(`<generation failed: ${lastSqlError}>`)
+      continue
+    }
     const guard = validateAndSanitizeLlmSql(candidate.sql)
     if (!guard.ok) {
       lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
@@ -415,11 +430,21 @@ export async function prepareRestStream(args: {
 
   if (endpointOptions.length === 0) return prepareChatStream(args)
 
-  const plan = await generateRestCall({
-    question: args.question,
-    endpoints: endpointOptions,
-    memoryContext: args.memoryContext,
-  })
+  // ponytail: same leak prepareSqlStream had. `generateRestCall` is an LLM call
+  // that throws on a dead provider/key/timeout, and it sat outside any try — so
+  // a BYOK failure killed the turn after the SSE stream was already promised,
+  // leaving the client with an open connection and no frames. The caller can
+  // recover from this, so answer as CHAT instead.
+  let plan: Awaited<ReturnType<typeof generateRestCall>>
+  try {
+    plan = await generateRestCall({
+      question: args.question,
+      endpoints: endpointOptions,
+      memoryContext: args.memoryContext,
+    })
+  } catch {
+    return prepareChatStream(args)
+  }
   const selected = endpointOptions.find((e) => e.id === plan.endpointId)
   if (!selected) return prepareChatStream(args)
 

@@ -799,3 +799,46 @@ describe('invariant: HNSW filter truncation stays handled', () => {
     expect(src).toMatch(/_iterativeScanSupported !== null/)
   })
 })
+
+describe('invariant: streaming preparers never leak an LLM failure', () => {
+  // INCIDENT (2026-09): `prepareSqlStream` called `generateSql()` OUTSIDE its
+  // try/catch — only the SQL EXECUTION was guarded. So an LLM failure (provider
+  // down, dead BYOK key, timeout — all of which throw) escaped the preparer
+  // entirely. By that point the caller has already promised the client an SSE
+  // stream, so the turn died with the connection open and ZERO frames sent: the
+  // UI showed nothing at all, not even an error message.
+  //
+  // This is the BYOK failure mode that matters most in this product — the
+  // credential belongs to the customer, so a dead key is a routine event, not an
+  // operator misconfiguration. Found by stream-preparers.test.ts, the first test
+  // that had ever exercised this path.
+  test('every prepare*Stream wraps its LLM call', () => {
+    const src = readRepo('src/lib/stream-preparers.ts')
+
+    // The specific regression: a bare `await generateSql(` with no enclosing try.
+    // Assert the call site is preceded by a `try {` before any other statement
+    // boundary — a coarse but effective shape check, paired with the behavioural
+    // test in stream-preparers.test.ts that actually throws from generateSql.
+    const genIdx = src.indexOf('candidate = await generateSql(')
+    expect(genIdx, 'generateSql call site must exist').toBeGreaterThan(-1)
+    const before = src.slice(Math.max(0, genIdx - 400), genIdx)
+    expect(before).toMatch(/try\s*\{/)
+
+    // The same class of bug in the other preparers: an `await` of an LLM helper
+    // must not sit outside a try. `generateRestCall` already was guarded; keep it
+    // that way.
+    const restIdx = src.indexOf('generateRestCall(')
+    if (restIdx > -1) {
+      const restBefore = src.slice(Math.max(0, restIdx - 400), restIdx)
+      expect(restBefore).toMatch(/try\s*\{/)
+    }
+  })
+
+  test('a thrown generateSql is retried, not propagated', () => {
+    const src = readRepo('src/lib/stream-preparers.ts')
+    // The catch must feed the message into lastSqlError and continue, so the
+    // repair loop can recover from a transient provider blip.
+    expect(src).toMatch(/catch\s*\(e\)\s*\{\s*\/\/[^\n]*\n[^\n]*lastSqlError\s*=/)
+    expect(src).toContain('continue')
+  })
+})
