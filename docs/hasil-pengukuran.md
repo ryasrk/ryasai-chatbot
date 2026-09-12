@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0f7c11`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `29f6a4e`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0f7c11`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **72,06%** (13.972/19.389 baris, 126 file) | terukur, **belum 95%** |
-| Test suite | 146 file · **2.690 lulus · 0 gagal** | terukur |
+| Test coverage | **72,42%** (14.251/19.678 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 148 file · **2.755 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -39,7 +39,9 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/sso-saml.ts` | 27,52% | **88,46%** | 26 |
 | `src/app/api/integrations/route.ts` | 12,90% | **99,46%** | 24 |
 | `src/lib/llm-config.ts` | 20,94% | **93,78%** | 35 |
-| **Total repo** | **62,44%** | **72,06%** | — |
+| `src/app/api/mcp/servers/[id]/route.ts` | **0%** (tanpa test) | **98,56%** | 35 |
+| `src/app/api/mcp/servers/route.ts` | 19,86% | **99,30%** | 30 |
+| **Total repo** | **62,44%** | **72,42%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -76,8 +78,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Guard org-context kredensial BYOK dihapus | `llm-config.ts:167` | 1 |
 | Kunci API mentah dikirim di payload publik | `llm-config.ts:282` | 1 |
 | Fallback endpoint embedding dihapus | `llm-config.ts:307` | 1 |
+| Bug IDOR: `findFirst` → `findUnique` di route MCP | `mcp/servers/[id]/route.ts:34,50` | 3 |
+| Cek SSRF MCP `[id]` dihapus | `mcp/servers/[id]/route.ts:101` | 1 |
+| `envJson` MCP disimpan tanpa enkripsi | `mcp/servers/[id]/route.ts:121` | 2 |
+| Gate plan Pro di POST MCP dihapus | `mcp/servers/route.ts:134` | 1 |
+| Cek SSRF di `validateTransportConfig` dihapus | `mcp/servers/route.ts:48` | 1 |
+| `encodeEnv` menyimpan kredensial tanpa enkripsi | `mcp/servers/route.ts:68` | 2 |
 
-**17 kontrol, semuanya sah.** Baris 297 adalah yang paling penting: kontrol itu
+**23 kontrol, semuanya sah.** Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
 violation, sehingga login SSO pertama kali gagal total) dan tes menangkapnya.
 

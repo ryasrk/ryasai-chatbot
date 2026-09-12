@@ -1,8 +1,8 @@
 {
-  "linePct": 72.06,
-  "linesHit": 13972,
-  "linesFound": 19389,
-  "filesMeasured": 126,
+  "linePct": 72.42,
+  "linesHit": 14251,
+  "linesFound": 19678,
+  "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
     {
@@ -570,6 +570,12 @@
       "pct": 94.5945945945946
     },
     {
+      "file": "src/app/api/mcp/servers/route.ts",
+      "hit": 142,
+      "found": 150,
+      "pct": 94.66666666666667
+    },
+    {
       "file": "src/lib/plan-gating.ts",
       "hit": 37,
       "found": 39,
@@ -616,6 +622,12 @@
       "hit": 51,
       "found": 52,
       "pct": 98.07692307692307
+    },
+    {
+      "file": "src/app/api/mcp/servers/[id]/route.ts",
+      "hit": 137,
+      "found": 139,
+      "pct": 98.56115107913669
     },
     {
       "file": "src/lib/cron.ts",
