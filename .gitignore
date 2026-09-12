@@ -60,6 +60,9 @@ prisma/*.db-shm
 *.tsbuildinfo
 next-env.d.ts
 local-*
+# ...but our committed self-hosted tooling must not be caught by the rule above.
+!tools/local-embeddings/
+!tools/local-embeddings/**
 .claude
 .z-ai-config
 *.log

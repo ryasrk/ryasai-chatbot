@@ -554,6 +554,54 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     expect(src).toContain('PRIMARY_SYNONYM')
   })
 
+  test('embedding dimension is not hardcoded to one provider', () => {
+    // FINDING (2026-09 local-embedding trial): `DocumentChunk.embedding` is
+    // declared `vector(1536)` and `prisma/schema.prisma` pins it there, but
+    // `pgvectorSimilaritySearch` casts the query vector to `::vector` and matches
+    // it against that column. Any embedding model whose dimension is not 1536
+    // therefore cannot be stored in the column the vector leg actually queries,
+    // and the app degrades to `embeddingJson` + a cosine fallback — silently, with
+    // only a console warning.
+    //
+    // Measured with a local 384-dim multilingual model (no OpenAI key available):
+    //   - embedDocumentChunks reported embedded=28 for every document, yet
+    //     DocumentChunk.embedding stayed NULL for all 28 rows.
+    //   - `semanticSimilarity` WAS populated (0.27-0.67) from the JSON fallback,
+    //     but ranking was unchanged, because the vector leg returned an EMPTY
+    //     candidate set and RRF then fused BM25 with nothing.
+    //   - On 5 paraphrase/no-shared-token questions the result was 0/5 hits with
+    //     embeddings ON and 0/5 with them OFF — i.e. a configured, "working"
+    //     embedding pipeline contributed nothing to ranking.
+    // This guard fails if the dimension is ever hardcoded in a way that only
+    // serves one provider, or if the warning that documents the degradation is
+    // removed while the mismatch remains possible.
+    const schema = codeOnly('prisma/schema.prisma')
+    const declaresFixedDim = /embedding\s+Unsupported\("vector\(\d+"\)\)|vector\(\d+\)/.test(schema)
+    if (declaresFixedDim) {
+      // If a fixed dimension is declared, the code MUST at least keep telling the
+      // operator, with the exact remediation, or this breaks invisibly on any
+      // other model.
+      const emb = codeOnly('src/lib/embeddings.ts')
+      expect(emb).toContain('pgvector search is disabled until the column matches')
+      expect(emb).toMatch(/ALTER TABLE "DocumentChunk" DROP COLUMN embedding/)
+    }
+  })
+
+  test('semantic similarity is not silently discarded from ranking', () => {
+    // The retrieval engine must fold the vector leg into the fused ranking. The
+    // dead `applyVectorStoreScore`/`scoreChunkWithEmbedding` helpers in rag.ts
+    // have NO production callers (only a test mock), so grepping for them proves
+    // nothing — assert on the module that actually orders results.
+    const src = codeOnly('src/lib/rag-retrieval.ts')
+    // ASSIGNMENT, not mere mention. Asserting that the identifier `vectorRanking`
+    // appears somewhere passed even after it was deleted from the fusion array —
+    // a guard that cannot fail on its own regression. Require it to be an element
+    // of the array handed to fuseRankings.
+    expect(src).toMatch(/const rankings = \[[^\]]*\bvectorRanking\b[^\]]*\]/)
+    expect(src).toMatch(/fuseRankings\(rankings\)/)
+    expect(src).toMatch(/const vectorScore = vectorScores\.get\(id\)/)
+  })
+
   test('the placeholder marker has exactly one definition and one detector', () => {
     // The marker string was inline in the upload route with no shared
     // predicate, so the producer and the consumer could drift - the same

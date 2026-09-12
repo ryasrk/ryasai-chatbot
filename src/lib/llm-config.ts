@@ -39,8 +39,35 @@ export function normalizeBaseUrl(raw: string): string {
   return url.toString().replace(/\/+$/, '')
 }
 
+/**
+ * Operator-declared hosts that are allowed even though they resolve to a private
+ * address — for SELF-HOSTED inference (Ollama, vLLM, LM Studio, a local
+ * sentence-transformers server, an on-prem gateway).
+ *
+ * WHY: the SSRF blocklist above is correct for a SaaS deployment talking to a
+ * public API, but it makes the supported self-hosted topology impossible — the
+ * only escape was `LLM_ALLOW_BLOCKED_HOSTS`, a TEST marker that production
+ * refuses to boot with (env-schema). So a customer running their own embedding
+ * model could not configure it at all.
+ *
+ * Format: comma-separated hostnames or IPs, e.g. `ollama,10.0.0.7,embed.internal`.
+ * Matching is EXACT after lowercasing (and port is ignored) — never a suffix or
+ * wildcard, so `evil-ollama.com` does not match `ollama` and a typo cannot open
+ * a whole /8. An operator who opts a host in has taken responsibility for it;
+ * the default remains closed.
+ */
+export function allowedHosts(): string[] {
+  return (process.env.LLM_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+}
+
 export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  // Explicit operator allowlist wins over the blocklist. Checked BEFORE the
+  // test hatch so self-hosted deployments behave identically in dev and prod.
+  if (allowedHosts().includes(h)) return false
   if (blockedHostAllowlistEnabled()) {
     // E2E/test only: the mock LLM + license validator run on localhost. This
     // flag is refused in production via env-schema validation.
