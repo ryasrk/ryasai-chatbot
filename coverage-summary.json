@@ -1,7 +1,7 @@
 {
-  "linePct": 69.06,
-  "linesHit": 13382,
-  "linesFound": 19378,
+  "linePct": 69.99,
+  "linesHit": 13566,
+  "linesFound": 19382,
   "filesMeasured": 126,
   "failedTestFiles": [],
   "files": [
@@ -126,12 +126,6 @@
       "pct": 53.92156862745098
     },
     {
-      "file": "src/lib/admin-tools.ts",
-      "hit": 368,
-      "found": 669,
-      "pct": 55.00747384155456
-    },
-    {
       "file": "src/lib/mcp-installer.ts",
       "hit": 109,
       "found": 198,
@@ -142,12 +136,6 @@
       "hit": 57,
       "found": 103,
       "pct": 55.33980582524271
-    },
-    {
-      "file": "src/lib/ai.ts",
-      "hit": 321,
-      "found": 559,
-      "pct": 57.42397137745975
     },
     {
       "file": "src/lib/connectors.ts",
@@ -216,6 +204,12 @@
       "pct": 68.18181818181817
     },
     {
+      "file": "src/lib/admin-tools.ts",
+      "hit": 459,
+      "found": 673,
+      "pct": 68.20208023774146
+    },
+    {
       "file": "src/lib/embeddings.ts",
       "hit": 266,
       "found": 390,
@@ -268,6 +262,12 @@
       "hit": 145,
       "found": 196,
       "pct": 73.9795918367347
+    },
+    {
+      "file": "src/lib/ai.ts",
+      "hit": 414,
+      "found": 559,
+      "pct": 74.0608228980322
     },
     {
       "file": "src/lib/cron-describe.ts",

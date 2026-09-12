@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2224a57`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2cea543`.
 
 ---
 
@@ -12,12 +12,36 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2224a57`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **62,44%** (12.168/19.489 baris, 126 file) | terukur, **belum 95%** |
-| Test suite | 139 file · **2.425 lulus · 0 gagal** | terukur |
+| Test coverage | **69,99%** (13.566/19.382 baris, 126 file) | terukur, **belum 95%** |
+| Test suite | 143 file · **2.584 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
 bawah, bukan dibulatkan ke atas.
+
+### 1.1 Progres coverage per modul (ronde ini)
+
+Diukur ulang tiap kali dengan `bun scripts/coverage.ts` (laporan digabung dari
+semua file test, dijalankan satu proses per file). Angka "sebelum" adalah
+pengukuran nyata sebelum ronde ini, bukan perkiraan.
+
+| Modul | Sebelum | Sesudah | Test baru |
+|---|---|---|---|
+| `src/lib/tool-branches.ts` | 37,50% | **85,80%** | 30 |
+| `src/lib/ai.ts` | 57,40% | **99,52%** | 21 |
+| `src/lib/cognee-core.ts` | 10,20% | **91,12%** | 25 |
+| `src/lib/cognee-knowledge-graph.ts` | 19,20% | **94,76%** | 30 |
+| `src/lib/admin-tools.ts` | 55,00% | **68,20%** | 31 |
+| `src/lib/tool-router-agentic.ts` | 8,05% | **68,43%** | 19 |
+| `src/lib/smart-router.ts` | 8,11% | **77,50%** | — |
+| `src/lib/planner.ts` | 65,57% | **76,14%** | 8 |
+| `src/app/api/chat/sessions/[id]/send/route.ts` | 8,64% | **69,29%** | 10 |
+| **Total repo** | **62,44%** | **69,99%** | — |
+
+Lima modul dengan garis belum tertutup terbanyak (target berikutnya):
+`real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse),
+`planner.ts` (263), `admin-tools.ts` (214), `stream-preparers.ts` (206),
+`sso-saml.ts` (187).
 
 ---
 
