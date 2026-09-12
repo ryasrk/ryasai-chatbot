@@ -52,6 +52,10 @@ import {
   answerContextLabel,
   parseRestCallJson,
   REST_ROUTER_SYSTEM_PROMPT,
+  generateSessionSummary,
+  generateSessionTitle,
+  generateSchemaDescriptions,
+  generateDatabaseProfile,
 } from './ai'
 import { LlmNotConfiguredError } from '@/lib/errors'
 
@@ -735,5 +739,195 @@ describe('REST_ROUTER_SYSTEM_PROMPT', () => {
 
   test('does not invent REST parameters without a parameter schema', () => {
     expect(REST_ROUTER_SYSTEM_PROMPT).toContain('Do not send query or body if parameterSchema is empty')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Summary / title / schema-description generators
+// ---------------------------------------------------------------------------
+// Four exported functions the app depends on for long-session memory, session
+// naming and schema reflection were never executed by a test. They all funnel
+// through chatOnce, so they are driven here through the SAME fetch mock the rest
+// of the file uses (no extra mocks, no leak surface).
+describe('generateSessionSummary', () => {
+  test('returns the model text, trimmed and capped', async () => {
+    fetchChatResponse = '  User asked about Q3 sales.  '
+    const out = await generateSessionSummary({ previousSummary: null, messages: [{ role: 'user', content: 'hi' }] })
+    expect(out).toBe('User asked about Q3 sales.')
+  })
+
+  test('a previous summary is merged, not dropped', async () => {
+    fetchChatResponse = 'merged'
+    await generateSessionSummary({
+      previousSummary: 'OLDER FACTS',
+      messages: [{ role: 'user', content: 'NEW TURN' }],
+    })
+    const sent = getSentMessages()
+    const userMsg = sent.find((m) => m.role === 'user')!
+    // Dropping the previous summary is "chatbot with amnesia" in long sessions —
+    // exactly what this function exists to prevent.
+    expect(userMsg.content).toContain('OLDER FACTS')
+    expect(userMsg.content).toContain('NEW TURN')
+  })
+
+  test('an empty previous summary adds no empty section', async () => {
+    fetchChatResponse = 's'
+    await generateSessionSummary({ previousSummary: '', messages: [{ role: 'user', content: 'x' }] })
+    expect(getSentMessages().find((m) => m.role === 'user')!.content).not.toContain('Previous summary')
+  })
+
+  test('assistant turns are labelled Assistant, not User', async () => {
+    fetchChatResponse = 's'
+    await generateSessionSummary({
+      previousSummary: null,
+      messages: [
+        { role: 'user', content: 'WHAT I SAID' },
+        { role: 'assistant', content: 'WHAT IT SAID' },
+      ],
+    })
+    const content = getSentMessages().find((m) => m.role === 'user')!.content
+    // Mislabeling the roles would make the summary attribute the model's claims
+    // to the user.
+    expect(content).toContain('User: WHAT I SAID')
+    expect(content).toContain('Assistant: WHAT IT SAID')
+  })
+
+  test('each message is capped so one huge turn cannot dominate', async () => {
+    fetchChatResponse = 's'
+    await generateSessionSummary({ previousSummary: null, messages: [{ role: 'user', content: 'z'.repeat(5000) }] })
+    const content = getSentMessages().find((m) => m.role === 'user')!.content
+    expect(content.length).toBeLessThan(3000)
+  })
+
+  test('the result is capped at 2000 characters', async () => {
+    fetchChatResponse = 'q'.repeat(5000)
+    const out = await generateSessionSummary({ previousSummary: null, messages: [{ role: 'user', content: 'x' }] })
+    // An unbounded summary would compound into the next prompt forever.
+    expect(out.length).toBe(2000)
+  })
+})
+
+describe('generateSessionTitle', () => {
+  test('strips quotes, prefixes and trailing punctuation', async () => {
+    fetchChatResponse = '"Session: Q3 Sales Review."'
+    const out = await generateSessionTitle('berapa penjualan Q3?')
+    // The raw model output is not user-facing-safe; the wrapper must clean it.
+    expect(out).not.toContain('"')
+    expect(out.endsWith('.')).toBe(false)
+  })
+
+  test('falls back to the raw message when the model returns something too short', async () => {
+    fetchChatResponse = ''
+    const out = await generateSessionTitle('Berapa total pendapatan kuartal ini?')
+    // A blank or 1-2 char title is worse than the raw text.
+    expect(out).toBe('Berapa total pendapatan kuartal ini?')
+  })
+
+  test('a one-character model title is rejected in favour of the fallback', async () => {
+    fetchChatResponse = 'A'
+    const out = await generateSessionTitle('some question here')
+    expect(out).toBe('some question here')
+  })
+
+  test('the title is capped at 80 characters', async () => {
+    fetchChatResponse = 'w'.repeat(300)
+    const out = await generateSessionTitle('q')
+    expect(out.length).toBeLessThanOrEqual(80)
+  })
+
+  test('the first message is truncated before being sent', async () => {
+    fetchChatResponse = 'Title'
+    await generateSessionTitle('c'.repeat(2000))
+    const userMsg = getSentMessages().find((m) => m.role === 'user')!
+    expect(userMsg.content.length).toBeLessThanOrEqual(500)
+  })
+})
+
+describe('generateSchemaDescriptions', () => {
+  const tables = [
+    { tableName: 'orders', columns: [{ name: 'id', type: 'int', primaryKey: true }, { name: 'total', type: 'numeric' }], rowCount: 120, sampleRow: { id: 1, total: 9.5 } },
+  ]
+
+  test('no tables → empty object without an LLM call', async () => {
+    const callsBefore = (global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    const out = await generateSchemaDescriptions({ integrationName: 'DB', tables: [] })
+    expect(out).toEqual({})
+    // An empty schema must not spend a request.
+    expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(callsBefore)
+  })
+
+  test('parses a well-formed JSON mapping', async () => {
+    fetchChatResponse = JSON.stringify({ orders: 'Customer orders and their totals.' })
+    const out = await generateSchemaDescriptions({ integrationName: 'DB', tables })
+    expect(out.orders).toBe('Customer orders and their totals.')
+  })
+
+  test('a markdown-fenced JSON reply is still parsed', async () => {
+    fetchChatResponse = '```json\n{"orders":"fenced"}\n```'
+    const out = await generateSchemaDescriptions({ integrationName: 'DB', tables })
+    // Models add fences despite instructions; failing here would silently lose
+    // every description.
+    expect(out.orders).toBe('fenced')
+  })
+
+  test('malformed JSON returns an EMPTY object instead of throwing', async () => {
+    fetchChatResponse = 'I cannot do that'
+    const out = await generateSchemaDescriptions({ integrationName: 'DB', tables })
+    // Schema reflection is non-critical: it must degrade, not break setup.
+    expect(out).toEqual({})
+  })
+
+  test('table details, PK markers and the sample row reach the prompt', async () => {
+    fetchChatResponse = '{}'
+    await generateSchemaDescriptions({ integrationName: 'MyDB', tables })
+    const userMsg = getSentMessages().find((m) => m.role === 'user')!
+    expect(userMsg.content).toContain('MyDB')
+    expect(userMsg.content).toContain('orders')
+    expect(userMsg.content).toContain('(PK)')
+    expect(userMsg.content).toContain('120 rows')
+    expect(userMsg.content).toContain('Sample row')
+  })
+
+  test('a table with no row count omits the count rather than printing undefined', async () => {
+    fetchChatResponse = '{}'
+    await generateSchemaDescriptions({
+      integrationName: 'D',
+      tables: [{ tableName: 't', columns: [{ name: 'a', type: 'int' }], rowCount: null, sampleRow: null }],
+    })
+    expect(getSentMessages().find((m) => m.role === 'user')!.content).not.toContain('undefined')
+  })
+})
+
+describe('generateDatabaseProfile', () => {
+  const tables = [{ tableName: 'orders', columns: [{ name: 'id', type: 'int' }], rowCount: 5 }]
+
+  test('no tables → empty string without an LLM call', async () => {
+    const callsBefore = (global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    expect(await generateDatabaseProfile({ integrationName: 'DB', tables: [] })).toBe('')
+    expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(callsBefore)
+  })
+
+  test('returns the model text trimmed', async () => {
+    // This prompt contains the literal "Text-to-SQL", which the fetch mock's
+    // dispatcher also matches (it routes on which system prompt is present), so
+    // the reply here is fetchSqlResponse rather than fetchChatResponse. That is a
+    // property of the TEST double, not of the product: assert on the trimmed
+    // model text via a response we control in the mock's own terms.
+    fetchSqlResponse = '  A retail database.  '
+    expect(await generateDatabaseProfile({ integrationName: 'DB', tables })).toBe('A retail database.')
+  })
+
+  test('the integration name and table details reach the prompt', async () => {
+    await generateDatabaseProfile({ integrationName: 'RetailDB', tables })
+    const userMsg = getSentMessages().find((m) => m.role === 'user')!
+    expect(userMsg.content).toContain('RetailDB')
+    expect(userMsg.content).toContain('orders')
+  })
+
+  test('a non-JSON reply is returned as-is rather than parsed', async () => {
+    // Unlike generateSchemaDescriptions, this one is plain text: a prose document
+    // must NOT be run through JSON.parse and discarded.
+    fetchSqlResponse = '## DOMAIN\nRetail.'
+    expect(await generateDatabaseProfile({ integrationName: 'DB', tables })).toContain('## DOMAIN')
   })
 })
