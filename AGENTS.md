@@ -291,6 +291,45 @@ unavailable)'` — deliberately not "failed", because `aligned: true` next to
 - **License enforcement covers background work too**: `getLockdownReason` (`license-client.ts`) is the single predicate for "is this org locked down"; the HTTP path reaches it via `getActiveUser()`, and the **scheduler worker calls it directly in `processJob`** before doing any work. INCIDENT (2026-09): the worker had no gate, so a locked-down org's scheduled runs kept calling the LLM and touching the DB unattended. A locked org's job is **skipped** (not retried — a bad license is permanent, and retrying burns all 3 attempts per tick), recorded as `ScheduledRunLog.status='skipped'` + a `warning` audit row, and rendered as a "Skipped" badge in the schedules view. `unreachable`-within-grace still runs. **Any new process that executes work for an org must consult `getLockdownReason`** — never re-implement the status→lockdown mapping (`invariants.test.ts` enforces both).
 - **Key files**: `src/lib/prisma-tenant.ts`, `src/lib/session.ts`, `src/lib/license-client.ts`, `src/lib/plan-gating.ts`, `src/lib/api-keys.ts`.
 
+## Deployment model: on-prem, single install, licensed via OUR validator
+
+**ryasai is deployed ON-PREM per customer.** One install = one deployment, and the
+customer runs it on their own hardware. There is no multi-tenant SaaS control
+plane: the `Organization` row is that install's own tenant root, and the app
+reaches OUT to **OUR** License Validator (`~/ryasai/ryasai-LicenseValidator`,
+a separate repo/service we operate) to validate its license key + machine id.
+
+The direction matters and is easy to invert: the app is the CLIENT. It POSTs to
+`/api/v1/license/validate` with `{license_key, machine_id, product}` and gets back
+an Ed25519-signed verdict. Our validator is the authority; a self-hosted install
+cannot mint its own license.
+
+**Consequences — several earlier notes in this file were written as if this were a
+multi-tenant SaaS and are WRONG for this business:**
+
+- **There is no usage metering, no token budget, and no cost tracking to sell.**
+  Billing is the signed LICENSE (a flat per-install entitlement). We do not charge
+  per token, per seat, or per query, and we could not if we wanted to: the install
+  is on the customer's premises with the customer's LLM key. Repeatedly, agents —
+  and I — have "found" a missing cost/quota/budget feature here. **It is not
+  missing; it is deliberately absent.** Verify the business model before proposing
+  metering work.
+- The token budget (`llm-budget.ts`, `assertWithinBudget` in the chat send route)
+  is **dormant**: it exists as an optional operator safety valve against a runaway
+  agent loop, is OFF unless `LLM_DAILY_TOKEN_BUDGET` is set, and is not a billing
+  mechanism. Do not build on it.
+- **Plan tiers / quotas (`starter|pro|enterprise`, `checkQuota`) are dormant
+  licensing-era leftovers**, not a revenue path. The shipped commercial model is
+  `licensePlan = 'flat'` — one entitlement, all features. Per-org quota checks
+  still exist and are enforced where wired; they are simply never the thing that
+  separates a paying customer from a non-paying one (the LICENSE is).
+- **Multi-tenancy IS still load-bearing even here** — do not "simplify" it away.
+  A single install can host several `Organization` rows (signup creates one), and
+  more importantly the org scoping is what keeps data separated within the
+  install and what every security guard in this file depends on. The past
+  "single-tenant refactor" that removed `organizationId` was REVERTED for good
+  reason; re-read the Cross-tenant IDOR section before touching it.
+
 ## Bring-your-own-key: the customer pays their provider, not us
 
 **ryasai ships no LLM and no embedding model.** Every org supplies its own chat
@@ -312,11 +351,11 @@ their OWN model + key with no cross-org bleed, and an unconfigured org gets
   runaway-loop protection — NOT for our margin. Do not build billing on it, and
   do not assume a cost column is missing-but-needed; our costs are hosting,
   Postgres, Redis and bandwidth, which are roughly flat per tenant.
-- **The token budget protects the CUSTOMER from their own agent loop**, not us.
-  `LLM_DAILY_TOKEN_BUDGET` is env-configured, so it is ONE process-wide number
-  for every org — a 5-person startup and a 500-seat enterprise get the same cap.
-  The per-org ceiling the BYOK model wants (each customer sets their own limit)
-  does not exist yet. That is the real gap here, not "cost tracking".
+- **The token budget is a dormant operator safety valve, not a product feature.**
+  `LLM_DAILY_TOKEN_BUDGET` is env-configured (one process-wide number, OFF by
+  default) and exists only to stop a runaway agent loop. It is not a billing
+  mechanism and there is no per-org budget UI to build — see "Deployment model"
+  above: the entitlement is the signed license, not a usage meter.
 - The schema line calling `LlmUsageLog` "cost tracking" was **removed** — it
   described a billing model we are not in and would mislead the next reader into
   building usage-based charging on top of the customer's own key.
@@ -334,7 +373,12 @@ provider body is NEVER sent to a client (it can echo the key prefix) — it stay
 in server-side logs; only the category + hint cross the wire.
 `toTypedError` maps it to 502 (upstream), not 500 (our fault).
 
-## Sell-readiness gaps (target: ~100k IDR/month per-org subscriptions)
+## Billing: the signed license IS the revenue model (not subscriptions or metering)
+
+> Keep this section for the QRIS purchase-flow mechanics, but do not read it as a
+> metering roadmap — see "Deployment model" above. The entitlement is a signed,
+> machine-bound license issued by OUR validator; there is no per-token or per-seat
+> charge to reconcile, and the customer's install runs with the customer's own LLM key.
 
 Billing via QRIS is IMPLEMENTED (spec: `docs/superpowers/specs/2026-08-26-qris-billing-design.md`):
 Midtrans Snap checkout, flat `'flat'` plan (all features), packs 1/3/6/12 months
@@ -377,7 +421,7 @@ Still open before charging real customers:
   strictly worse than the FK error (cross-tenant attribution), hence fail-closed.
 - **License-Validator deployment story** is undocumented (issue/revoke/machine-slot ops live in that other repo).
 - No trial path — deliberate choice (locked until paid); revisit if conversion suffers.
-- `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off). Under BYOK it protects the CUSTOMER's provider credit from a runaway agent loop, not our margin — but it is ONE env-wide number for every org, so it cannot serve as a per-customer ceiling. Giving each org its own limit in the UI is the missing piece (see "Bring-your-own-key" above).
+- `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off) and dormant. It is a runaway-loop safety valve, NOT the revenue mechanism and NOT a per-org ceiling anyone asked for (see "Deployment model" above).
 - Quality evals (`rag-eval`/`sql-eval`) run only via the manual/scheduled `eval.yml` workflow — no hard CI gate on answer quality.
 
 ## Editable context prompts (spec: `docs/superpowers/specs/2026-08-26-editable-context-prompts-design.md`)
