@@ -258,7 +258,23 @@ model DocumentChunk {
   keywords        String?
   contextPrefix   String?
   embeddingJson   String?
-  embedding       Unsupported("vector(1536)")?
+  /// Cosine-search column. The dimension MUST equal the configured embedding
+  /// model's output dimension, and Prisma cannot check this because
+  /// `Unsupported` is passed through verbatim to Postgres.
+  ///
+  /// 384 = paraphrase-multilingual-MiniLM-L12-v2 (the default local model).
+  /// 1536 = OpenAI text-embedding-3-small and most hosted alternatives.
+  ///
+  /// CHANGING THIS IS DESTRUCTIVE: the vector type is part of the column type, so
+  /// a different dimension requires dropping and re-adding the column, which
+  /// discards every stored vector for every organisation — they must all be
+  /// re-embedded. See tools/local-embeddings/README.md for the exact SQL.
+  ///
+  /// A mismatch does NOT error. `embedDocumentChunks` detects it, skips the
+  /// column, and stores `embeddingJson` instead; retrieval then silently degrades
+  /// to lexical-only ranking while still reporting a `semanticSimilarity`, so the
+  /// vector leg looks healthy in the UI while contributing nothing to order.
+  embedding       Unsupported("vector(384)")?
   embeddingProvider String?
   embeddingModel  String?
   embeddedAt      DateTime?
