@@ -1,7 +1,7 @@
 {
-  "linePct": 75.47,
-  "linesHit": 14870,
-  "linesFound": 19703,
+  "linePct": 75.75,
+  "linesHit": 14925,
+  "linesFound": 19704,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -300,18 +300,6 @@
       "pct": 79.3103448275862
     },
     {
-      "file": "src/lib/tool-utils.ts",
-      "hit": 143,
-      "found": 179,
-      "pct": 79.88826815642457
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 610,
-      "found": 763,
-      "pct": 79.94757536041939
-    },
-    {
       "file": "src/lib/plugin-registry.ts",
       "hit": 128,
       "found": 160,
@@ -388,6 +376,12 @@
       "hit": 222,
       "found": 267,
       "pct": 83.14606741573034
+    },
+    {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 640,
+      "found": 763,
+      "pct": 83.8794233289646
     },
     {
       "file": "src/lib/constrained-output.ts",
@@ -526,6 +520,12 @@
       "hit": 26,
       "found": 28,
       "pct": 92.85714285714286
+    },
+    {
+      "file": "src/lib/tool-utils.ts",
+      "hit": 168,
+      "found": 180,
+      "pct": 93.33333333333333
     },
     {
       "file": "src/lib/cognee-types.ts",
