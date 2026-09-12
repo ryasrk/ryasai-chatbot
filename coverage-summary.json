@@ -1,21 +1,39 @@
 {
-  "linePct": 59.7,
-  "linesHit": 10659,
-  "linesFound": 17854,
+  "linePct": 59.32,
+  "linesHit": 10629,
+  "linesFound": 17917,
   "filesMeasured": 116,
   "failedTestFiles": [],
   "files": [
     {
-      "file": "src/lib/rag-fts.ts",
-      "hit": 10,
-      "found": 153,
-      "pct": 6.535947712418301
+      "file": "src/lib/cognee-knowledge-graph.ts",
+      "hit": 12,
+      "found": 343,
+      "pct": 3.498542274052478
     },
     {
-      "file": "src/lib/mcp-client.ts",
-      "hit": 23,
-      "found": 255,
-      "pct": 9.019607843137255
+      "file": "src/lib/cognee-memory.ts",
+      "hit": 8,
+      "found": 151,
+      "pct": 5.298013245033113
+    },
+    {
+      "file": "src/lib/knowledge-graph.ts",
+      "hit": 12,
+      "found": 193,
+      "pct": 6.217616580310881
+    },
+    {
+      "file": "src/lib/evidence-boundary.ts",
+      "hit": 2,
+      "found": 30,
+      "pct": 6.666666666666667
+    },
+    {
+      "file": "src/lib/cognee-core.ts",
+      "hit": 26,
+      "found": 254,
+      "pct": 10.236220472440944
     },
     {
       "file": "src/lib/planner.ts",
@@ -24,46 +42,40 @@
       "pct": 10.25260029717682
     },
     {
+      "file": "src/lib/source-guidance.ts",
+      "hit": 9,
+      "found": 86,
+      "pct": 10.465116279069768
+    },
+    {
       "file": "src/lib/license-issue.ts",
       "hit": 15,
       "found": 142,
       "pct": 10.56338028169014
     },
     {
-      "file": "src/lib/cognee-memory.ts",
-      "hit": 19,
-      "found": 152,
-      "pct": 12.5
+      "file": "src/lib/source-init.ts",
+      "hit": 15,
+      "found": 111,
+      "pct": 13.513513513513514
     },
     {
-      "file": "src/app/api/integrations/route.ts",
-      "hit": 27,
-      "found": 209,
-      "pct": 12.918660287081341
+      "file": "src/lib/cognee.ts",
+      "hit": 7,
+      "found": 45,
+      "pct": 15.555555555555555
     },
     {
       "file": "src/lib/tool-router-agentic.ts",
-      "hit": 65,
-      "found": 476,
-      "pct": 13.655462184873949
-    },
-    {
-      "file": "src/lib/cognee-knowledge-graph.ts",
-      "hit": 66,
-      "found": 344,
-      "pct": 19.186046511627907
+      "hit": 77,
+      "found": 473,
+      "pct": 16.27906976744186
     },
     {
       "file": "src/lib/sso-saml.ts",
       "hit": 71,
       "found": 258,
       "pct": 27.51937984496124
-    },
-    {
-      "file": "src/app/api/audit/route.ts",
-      "hit": 13,
-      "found": 47,
-      "pct": 27.659574468085108
     },
     {
       "file": "src/lib/license-reminder.ts",
@@ -78,16 +90,10 @@
       "pct": 33.80281690140845
     },
     {
-      "file": "src/lib/admin-tools.ts",
-      "hit": 230,
-      "found": 666,
-      "pct": 34.53453453453454
-    },
-    {
-      "file": "src/lib/connectors.ts",
-      "hit": 54,
-      "found": 148,
-      "pct": 36.486486486486484
+      "file": "src/app/api/documents/[id]/route.ts",
+      "hit": 70,
+      "found": 201,
+      "pct": 34.82587064676617
     },
     {
       "file": "src/app/api/integrations/[id]/route.ts",
@@ -120,10 +126,10 @@
       "pct": 39.25438596491228
     },
     {
-      "file": "src/lib/cognee-core.ts",
-      "hit": 103,
-      "found": 256,
-      "pct": 40.234375
+      "file": "src/lib/mcp-client.ts",
+      "hit": 104,
+      "found": 260,
+      "pct": 40
     },
     {
       "file": "src/lib/redis.ts",
@@ -132,28 +138,22 @@
       "pct": 41.02564102564102
     },
     {
-      "file": "src/lib/mcp-installer.ts",
-      "hit": 89,
-      "found": 197,
-      "pct": 45.17766497461929
-    },
-    {
-      "file": "src/lib/evidence-boundary.ts",
-      "hit": 14,
-      "found": 30,
-      "pct": 46.666666666666664
-    },
-    {
       "file": "src/lib/tool-branches.ts",
-      "hit": 360,
+      "hit": 346,
       "found": 762,
-      "pct": 47.24409448818898
+      "pct": 45.40682414698163
     },
     {
       "file": "src/lib/scheduler-queue.ts",
       "hit": 61,
       "found": 127,
       "pct": 48.031496062992126
+    },
+    {
+      "file": "src/lib/rag-fts.ts",
+      "hit": 75,
+      "found": 154,
+      "pct": 48.701298701298704
     },
     {
       "file": "src/lib/tool-router.ts",
@@ -168,10 +168,28 @@
       "pct": 53.92156862745098
     },
     {
+      "file": "src/lib/admin-tools.ts",
+      "hit": 368,
+      "found": 669,
+      "pct": 55.00747384155456
+    },
+    {
+      "file": "src/lib/mcp-installer.ts",
+      "hit": 109,
+      "found": 198,
+      "pct": 55.05050505050505
+    },
+    {
       "file": "src/lib/themes.ts",
       "hit": 57,
       "found": 103,
       "pct": 55.33980582524271
+    },
+    {
+      "file": "src/lib/tool-utils.ts",
+      "hit": 101,
+      "found": 179,
+      "pct": 56.424581005586596
     },
     {
       "file": "src/lib/ai.ts",
@@ -186,10 +204,16 @@
       "pct": 58.69074492099323
     },
     {
-      "file": "src/lib/source-guidance.ts",
-      "hit": 51,
-      "found": 86,
-      "pct": 59.30232558139535
+      "file": "src/lib/connectors.ts",
+      "hit": 87,
+      "found": 148,
+      "pct": 58.78378378378378
+    },
+    {
+      "file": "src/lib/vector-stores.ts",
+      "hit": 221,
+      "found": 366,
+      "pct": 60.38251366120219
     },
     {
       "file": "src/lib/stream-preparers.ts",
@@ -216,12 +240,6 @@
       "pct": 66.66666666666666
     },
     {
-      "file": "src/lib/schema-enrichment.ts",
-      "hit": 36,
-      "found": 54,
-      "pct": 66.66666666666666
-    },
-    {
       "file": "src/lib/embeddings.ts",
       "hit": 266,
       "found": 390,
@@ -232,12 +250,6 @@
       "hit": 200,
       "found": 290,
       "pct": 68.96551724137932
-    },
-    {
-      "file": "src/lib/tool-registry.ts",
-      "hit": 183,
-      "found": 264,
-      "pct": 69.31818181818183
     },
     {
       "file": "src/lib/citation-trail.ts",
@@ -252,22 +264,10 @@
       "pct": 71.42857142857143
     },
     {
-      "file": "src/lib/cognee.ts",
-      "hit": 34,
-      "found": 46,
-      "pct": 73.91304347826086
-    },
-    {
-      "file": "src/lib/knowledge-graph.ts",
-      "hit": 145,
-      "found": 196,
-      "pct": 73.9795918367347
-    },
-    {
-      "file": "src/lib/cron.ts",
-      "hit": 83,
-      "found": 110,
-      "pct": 75.45454545454545
+      "file": "src/lib/cognee-types.ts",
+      "hit": 10,
+      "found": 14,
+      "pct": 71.42857142857143
     },
     {
       "file": "src/lib/cron-describe.ts",
@@ -280,6 +280,12 @@
       "hit": 13,
       "found": 17,
       "pct": 76.47058823529412
+    },
+    {
+      "file": "src/lib/schema-enrichment.ts",
+      "hit": 36,
+      "found": 47,
+      "pct": 76.59574468085107
     },
     {
       "file": "src/app/api/integrations/[id]/query/route.ts",
@@ -301,9 +307,9 @@
     },
     {
       "file": "src/lib/smart-router.ts",
-      "hit": 376,
-      "found": 485,
-      "pct": 77.5257731958763
+      "hit": 384,
+      "found": 492,
+      "pct": 78.04878048780488
     },
     {
       "file": "src/lib/rag-chunking.ts",
@@ -312,10 +318,10 @@
       "pct": 78.82882882882883
     },
     {
-      "file": "src/lib/tool-utils.ts",
-      "hit": 143,
-      "found": 179,
-      "pct": 79.88826815642457
+      "file": "src/lib/guardrails.ts",
+      "hit": 175,
+      "found": 219,
+      "pct": 79.90867579908677
     },
     {
       "file": "src/lib/plugin-registry.ts",
@@ -342,12 +348,6 @@
       "pct": 81.35593220338984
     },
     {
-      "file": "src/app/api/billing/pricing/route.ts",
-      "hit": 9,
-      "found": 11,
-      "pct": 81.81818181818183
-    },
-    {
       "file": "src/lib/document-parsers.ts",
       "hit": 144,
       "found": 176,
@@ -370,12 +370,6 @@
       "hit": 54,
       "found": 65,
       "pct": 83.07692307692308
-    },
-    {
-      "file": "src/lib/guardrails.ts",
-      "hit": 182,
-      "found": 219,
-      "pct": 83.10502283105022
     },
     {
       "file": "src/lib/constrained-output.ts",
@@ -415,9 +409,9 @@
     },
     {
       "file": "src/lib/smart-router-helpers.ts",
-      "hit": 321,
-      "found": 370,
-      "pct": 86.75675675675676
+      "hit": 332,
+      "found": 377,
+      "pct": 88.06366047745358
     },
     {
       "file": "src/app/api/notifications/route.ts",
@@ -450,12 +444,6 @@
       "pct": 89.56043956043956
     },
     {
-      "file": "src/app/api/v1/agent/run/route.ts",
-      "hit": 118,
-      "found": 131,
-      "pct": 90.07633587786259
-    },
-    {
       "file": "src/lib/llm-client-utils.ts",
       "hit": 167,
       "found": 185,
@@ -486,6 +474,12 @@
       "pct": 91.66666666666666
     },
     {
+      "file": "src/lib/tool-registry.ts",
+      "hit": 247,
+      "found": 269,
+      "pct": 91.82156133828995
+    },
+    {
       "file": "src/lib/graceful-shutdown.ts",
       "hit": 35,
       "found": 38,
@@ -502,24 +496,6 @@
       "hit": 26,
       "found": 28,
       "pct": 92.85714285714286
-    },
-    {
-      "file": "src/lib/cognee-types.ts",
-      "hit": 14,
-      "found": 15,
-      "pct": 93.33333333333333
-    },
-    {
-      "file": "src/lib/vector-stores.ts",
-      "hit": 343,
-      "found": 367,
-      "pct": 93.46049046321527
-    },
-    {
-      "file": "src/app/api/chat/sessions/route.ts",
-      "hit": 44,
-      "found": 47,
-      "pct": 93.61702127659575
     },
     {
       "file": "src/lib/tool-sandbox.ts",
@@ -570,6 +546,12 @@
       "pct": 96.12903225806451
     },
     {
+      "file": "src/app/api/auth/signup/route.ts",
+      "hit": 103,
+      "found": 107,
+      "pct": 96.26168224299066
+    },
+    {
       "file": "src/lib/async-worker.ts",
       "hit": 57,
       "found": 59,
@@ -588,6 +570,12 @@
       "pct": 98.07692307692307
     },
     {
+      "file": "src/lib/cron.ts",
+      "hit": 109,
+      "found": 110,
+      "pct": 99.0909090909091
+    },
+    {
       "file": "src/lib/billing-verify.ts",
       "hit": 18,
       "found": 18,
@@ -603,12 +591,6 @@
       "file": "src/lib/pricing.ts",
       "hit": 39,
       "found": 39,
-      "pct": 100
-    },
-    {
-      "file": "src/app/api/documents/[id]/reprocess/route.ts",
-      "hit": 55,
-      "found": 55,
       "pct": 100
     },
     {
@@ -633,6 +615,18 @@
       "file": "src/lib/chat-layout.ts",
       "hit": 8,
       "found": 8,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/bounded-concurrency.ts",
+      "hit": 22,
+      "found": 22,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/conversation-export.ts",
+      "hit": 79,
+      "found": 79,
       "pct": 100
     },
     {
@@ -669,6 +663,12 @@
       "file": "src/lib/llm-budget.ts",
       "hit": 57,
       "found": 57,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/prompt-library.ts",
+      "hit": 34,
+      "found": 34,
       "pct": 100
     },
     {
