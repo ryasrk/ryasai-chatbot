@@ -1,7 +1,7 @@
 {
-  "linePct": 73.17,
-  "linesHit": 14398,
-  "linesFound": 19678,
+  "linePct": 73.38,
+  "linesHit": 14441,
+  "linesFound": 19679,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -132,12 +132,6 @@
       "pct": 59.30232558139535
     },
     {
-      "file": "src/lib/rag-retrieval.ts",
-      "hit": 275,
-      "found": 444,
-      "pct": 61.93693693693694
-    },
-    {
       "file": "src/lib/config.ts",
       "hit": 41,
       "found": 64,
@@ -220,6 +214,12 @@
       "hit": 35,
       "found": 49,
       "pct": 71.42857142857143
+    },
+    {
+      "file": "src/lib/rag-retrieval.ts",
+      "hit": 318,
+      "found": 445,
+      "pct": 71.46067415730337
     },
     {
       "file": "src/lib/cognee-knowledge-graph.ts",

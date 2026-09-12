@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d0a719f`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `515b1bd`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d0a719f`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **73,17%** (14.398/19.678 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 148 file · **2.781 lulus · 0 gagal** | terukur |
+| Test coverage | **73,38%** (14.441/19.679 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 149 file · **2.805 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -43,7 +43,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/app/api/mcp/servers/route.ts` | 19,86% | **99,30%** | 30 |
 | `src/lib/planner.ts` | 76,14% | **83,24%** | 16 |
 | `src/lib/stream-preparers.ts` | 74,77% | **99,31%** | 10 |
-| **Total repo** | **62,44%** | **73,17%** | — |
+| `src/lib/rag-retrieval.ts` | 68,26% | **86,01%** | 24 |
+| **Total repo** | **62,44%** | **73,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -91,8 +92,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Validasi query wajib `web_search` dihapus | `planner.ts` (guard query) | 1 |
 | `try/catch` di sekitar `generateRestCall` dihapus (bug historis) | `stream-preparers.ts:439` | 2 |
 | Gerbang `matchEndpoint` dilewati | `stream-preparers.ts:461` | 1 |
+| Floor skor `>= 3` di reranker dihapus | `rag-retrieval.ts:147` | 1 |
+| Batas atas indeks reranker dihapus | `rag-retrieval.ts:147` | 1 |
+| Reranker mengembalikan urutan asli (tanpa reorder) | `rag-retrieval.ts:188` | 2 |
 
-**28 kontrol, semuanya sah.**
+**31 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -101,7 +105,38 @@ alasan yang salah, jadi kontrol diulang sebagai penghapusan `try/catch` yang
 sesungguhnya — dan baru itu menggagalkan tepat 2 tes yang dimaksud. Kontrol
 negatif harus diverifikasi hasilnya masuk akal, bukan sekadar "ada yang merah".
 
-### 1.3 Insiden gate yang dicatat apa adanya
+### 1.3 Reranker: fitur unggulan tanpa satu pun test
+
+`rerankWithLlm` (`rag-retrieval.ts:164-208`) **tidak pernah dieksekusi test mana
+pun** sebelum ronde ini, padahal rerank aktif secara default dan dokumentasi
+menyebutnya fitur presisi unggulan. Sebabnya bukan bug sumber: dua file test
+`rag-retrieval` yang ada memock `db`/`embeddings`/`rag-fts`/`vector-stores`, tapi
+**tidak** `llm-config` maupun `llm-client` — jadi jalur itu mustahil dijangkau.
+Regresi di sini menurunkan kualitas jawaban secara senyap.
+
+Ditemukan juga lewat mock yang cacat, dan semuanya diperbaiki di sisi test:
+
+- mock `./rag` mengekspor `selectTopWithDiversity` (nama yang modul itu **tidak**
+  impor) dan **tidak** mengekspor `scoreChunk`/`selectTopRetrievedChunks` (yang
+  modul itu impor) — keduanya jadi `undefined`, sehingga 9 kandidat menghasilkan
+  0 chunk. Mock harus mengikuti permukaan yang dipakai pengimpor.
+- versi pertama juga menaruh `retrieveRelevantChunks` di mock `./rag` — itu modul
+  yang **sedang diuji**, sehingga panggilan impor resolve ke fake dan mengembalikan
+  objek kosong tanpa kunci `chunks`.
+- `dualLevelRetrieval` difake `{ chunks: [] }`; bentuk aslinya
+  `{ localChunks, globalChunks, allChunkIds, matchedEntities, graphContext }` dan
+  pemanggil membaca `allChunkIds.length`, sehingga fake-nya melempar `TypeError`
+  yang terbaca seperti bug sumber.
+- `bm25Rank` hanya mengembalikan entri dengan `score > 0`, jadi kolam kandidat yang
+  teksnya tidak berbagi token dengan query kosong sebelum reranker dipanggil.
+
+Temuan perilaku yang layak diketahui (terukur, di-assert): `parseRerankerScores`
+mengembalikan `[]` — **bukan `null`** — ketika semua entri tidak valid, karena
+pemeriksaannya adalah filter per-entri. `[]` bersifat truthy di JS, sehingga
+`if (!scored)` di pemanggil **tidak** menangkapnya; backfill-lah yang memulihkan
+urutan asli. Ini kini edge yang diuji, bukan kejutan laten.
+
+### 1.4 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -116,7 +151,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 148 file · 2.781 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 149 file · 2.805 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
