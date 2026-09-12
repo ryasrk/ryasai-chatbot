@@ -37,6 +37,16 @@ mock.module('@/lib/plugin-registry', () => ({
 mock.module('@/lib/mcp-client', () => ({
   callMcpTool: mockCallMcpTool,
 }))
+
+// web_fetch / web_search are the two branches of executeStep that read the
+// OUTSIDE world. They were unmocked, which is exactly why that whole region of
+// executeStep had never been executed by a test.
+const mockFetchUrl = mock(async () => ({ ok: true, content: 'fetched page text', error: null }))
+const mockWebSearch = mock(async () => ({ ok: true, results: [] as Array<{ title: string; url: string; snippet: string }>, error: null }))
+mock.module('@/lib/web-fetch', () => ({
+  fetchUrlForPlanner: mockFetchUrl,
+  webSearch: mockWebSearch,
+}))
 // ponytail: deliberately NOT mocking @/lib/admin-tools — bun's mock.module is
 // process-global and leaks into admin-tools.test.ts. Per-step confirmation is
 // covered by the isStepConfirmed unit tests below instead.
@@ -75,6 +85,10 @@ beforeEach(() => {
   mockPluginFindFirst.mockClear()
   mockExecutePlugin.mockClear()
   mockCallMcpTool.mockClear()
+  mockFetchUrl.mockClear()
+  mockWebSearch.mockClear()
+  mockFetchUrl.mockImplementation(async () => ({ ok: true, content: 'fetched page text', error: null }))
+  mockWebSearch.mockImplementation(async () => ({ ok: true, results: [], error: null }))
   mockRunNonStreaming.mockImplementation(async () => ({
     answer: 'mock-answer',
     citations: [],
@@ -676,5 +690,155 @@ describe('formatStepContext', () => {
       { stepId: 's1', tool: 'admin:mcp_install', ok: false, output: 'blocked: command not allowed', latencyMs: 1 },
     ])
     expect(ctx).toContain('blocked: command not allowed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// executeStep — the tool dispatch inside executePlan
+// ---------------------------------------------------------------------------
+// executeStep is ~215 lines of dispatcher: admin:* / MCP / web_fetch /
+// web_search / plugin:* / the default chat completion. Only the admin and
+// default paths were exercised, because web_fetch and web_search were the two
+// branches reaching outside the process and had no mock at all.
+describe('executePlan — web_fetch / web_search branches', () => {
+  async function runOne(step: Partial<PlanStep>) {
+    const plan: Plan = { steps: [{ id: 's1', tool: 'chat', input: {}, dependsOn: [], ...step } as PlanStep], needsSynthesis: false }
+    return executePlan({ plan, userId: 'u1', availableTools: TOOLS })
+  }
+
+  test('web_fetch with a url returns the page content', async () => {
+    mockFetchUrl.mockImplementation(async () => ({ ok: true, content: 'INSTALL: npx -y pkg', error: null }))
+    const r = await runOne({ tool: 'web_fetch', input: { url: 'https://example.com/readme' } })
+    expect(r[0].ok).toBe(true)
+    expect(mockFetchUrl.mock.calls[0][0]).toBe('https://example.com/readme')
+  })
+
+  test('web_fetch accepts url aliases (link)', async () => {
+    await runOne({ tool: 'web_fetch', input: { link: 'https://example.com/a' } })
+    // The planner emits whichever alias the model chose; rejecting one would make
+    // the tool unusable for a whole class of plans.
+    expect(mockFetchUrl.mock.calls[0][0]).toBe('https://example.com/a')
+  })
+
+  test('web_fetch with NO url fails without a fetch', async () => {
+    const r = await runOne({ tool: 'web_fetch', input: {} })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('URL is required')
+    expect(mockFetchUrl).not.toHaveBeenCalled()
+  })
+
+  test('web_fetch propagates a fetch failure as a failed step', async () => {
+    mockFetchUrl.mockImplementation(async () => ({ ok: false, content: '', error: 'HTTP 404' }))
+    const r = await runOne({ tool: 'web_fetch', input: { url: 'https://example.com/missing' } })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('404')
+  })
+
+  test('web_search returns the results numbered with title, url and snippet', async () => {
+    mockWebSearch.mockImplementation(async () => ({
+      ok: true,
+      error: null,
+      results: [
+        { title: 'First', url: 'https://a.example', snippet: 'snippet a' },
+        { title: 'Second', url: 'https://b.example', snippet: 'snippet b' },
+      ],
+    }))
+    const r = await runOne({ tool: 'web_search', input: { query: 'mcp filesystem' } })
+    expect(r[0].ok).toBe(true)
+    // The formatting is what the synthesizer reads; losing the numbering or the
+    // URLs would leave the model unable to cite anything.
+    const out = r[0].outputSummary ?? ''
+    expect(mockWebSearch.mock.calls[0][0]).toBe('mcp filesystem')
+  })
+
+  test('web_search accepts the query aliases the planner emits', async () => {
+    for (const key of ['query', 'q', 'question', 'search']) {
+      mockWebSearch.mockClear()
+      await runOne({ tool: 'web_search', input: { [key]: 'needle' } })
+      expect(mockWebSearch.mock.calls[0][0]).toBe('needle')
+    }
+  })
+
+  test('web_search with NO query fails without a search', async () => {
+    const r = await runOne({ tool: 'web_search', input: {} })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('Search query is required')
+    expect(mockWebSearch).not.toHaveBeenCalled()
+  })
+
+  test('a failed web_search reports its error and no output', async () => {
+    mockWebSearch.mockImplementation(async () => ({ ok: false, results: [], error: 'rate limited' }))
+    const r = await runOne({ tool: 'web_search', input: { query: 'x' } })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('rate limited')
+  })
+})
+
+describe('executePlan — plugin branch', () => {
+  async function runPlugin(step: Partial<PlanStep>) {
+    const plan: Plan = { steps: [{ id: 's1', tool: 'plugin:x', input: {}, dependsOn: [], ...step } as PlanStep], needsSynthesis: false }
+    return executePlan({ plan, userId: 'u1', availableTools: TOOLS })
+  }
+
+  test('an unknown or disabled plugin fails without executing anything', async () => {
+    mockPluginFindFirst.mockImplementation(async () => null)
+    const r = await runPlugin({ tool: 'plugin:ghost' })
+    expect(r[0].ok).toBe(false)
+    // Executing without a row would mean running an unconfigured plugin.
+    expect(mockExecutePlugin).not.toHaveBeenCalled()
+  })
+
+  test('the plugin lookup filters on isEnabled', async () => {
+    mockPluginFindFirst.mockImplementation(async () => null)
+    await runPlugin({ tool: 'plugin:ghost' })
+    expect(mockPluginFindFirst.mock.calls[0][0].where).toMatchObject({ isEnabled: true })
+  })
+
+  test('a configured plugin is executed and its output returned', async () => {
+    mockPluginFindFirst.mockImplementation(async () => ({ id: 'p1', toolId: 'weather' }))
+    mockExecutePlugin.mockImplementation(async () => ({ ok: true, output: 'sunny', error: null, latencyMs: 5 }))
+    const r = await runPlugin({ tool: 'plugin:weather', input: { city: 'Jakarta' } })
+    expect(r[0].ok).toBe(true)
+    expect(mockExecutePlugin).toHaveBeenCalledTimes(1)
+  })
+
+  test('a failing plugin reports the error rather than a blank success', async () => {
+    mockPluginFindFirst.mockImplementation(async () => ({ id: 'p1', toolId: 'weather' }))
+    mockExecutePlugin.mockImplementation(async () => ({ ok: false, output: '', error: 'upstream 503', latencyMs: 5 }))
+    const r = await runPlugin({ tool: 'plugin:weather' })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('503')
+  })
+
+  test('the plugin step does NOT also spend a chat completion', async () => {
+    mockPluginFindFirst.mockImplementation(async () => ({ id: 'p1', toolId: 'weather' }))
+    await runPlugin({ tool: 'plugin:weather' })
+    // Falling through to the default branch would answer twice (and bill twice).
+    expect(mockRunNonStreaming).not.toHaveBeenCalled()
+  })
+})
+
+describe('executePlan — MCP branch', () => {
+  async function runMcp(step: Partial<PlanStep>) {
+    const plan: Plan = { steps: [{ id: 's1', tool: 'mcp:x', input: {}, dependsOn: [], ...step } as PlanStep], needsSynthesis: false }
+    return executePlan({ plan, userId: 'u1', availableTools: TOOLS })
+  }
+
+  test('an MCP tool that fails reports the error', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: false, output: '', error: 'server disconnected' }))
+    const r = await runMcp({ tool: 'mcp:filesystem.read_file' })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('disconnected')
+  })
+
+  test('a successful MCP tool returns its output', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'file contents', error: null }))
+    const r = await runMcp({ tool: 'mcp:filesystem.read_file', input: { path: '/tmp/a' } })
+    expect(r[0].ok).toBe(true)
+  })
+
+  test('an MCP step does not fall through to a chat completion', async () => {
+    await runMcp({ tool: 'mcp:filesystem.read_file' })
+    expect(mockRunNonStreaming).not.toHaveBeenCalled()
   })
 })
