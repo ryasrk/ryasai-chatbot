@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2cea543`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0b1b9a2`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2cea543`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **69,99%** (13.566/19.382 baris, 126 file) | terukur, **belum 95%** |
-| Test suite | 143 file · **2.584 lulus · 0 gagal** | terukur |
+| Test coverage | **71,49%** (13.860/19.386 baris, 126 file) | terukur, **belum 95%** |
+| Test suite | 145 file · **2.655 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -36,12 +36,53 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/smart-router.ts` | 8,11% | **77,50%** | — |
 | `src/lib/planner.ts` | 65,57% | **76,14%** | 8 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 8,64% | **69,29%** | 10 |
-| **Total repo** | **62,44%** | **69,99%** | — |
+| `src/lib/sso-saml.ts` | 27,52% | **88,46%** | 26 |
+| `src/app/api/integrations/route.ts` | 12,90% | **99,46%** | 24 |
+| **Total repo** | **62,44%** | **71,49%** | — |
 
-Lima modul dengan garis belum tertutup terbanyak (target berikutnya):
-`real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse),
-`planner.ts` (263), `admin-tools.ts` (214), `stream-preparers.ts` (206),
-`sso-saml.ts` (187).
+Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
+`real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
+— jalur Postgres sudah tertutup), `planner.ts` (263), `admin-tools.ts` (214),
+`stream-preparers.ts` (206), `rag-retrieval.ts` (169), `tool-router-agentic.ts` (167),
+`tool-router.ts` (162), `llm-config.ts` (158).
+### 1.2 Kontrol negatif — bukti tes benar-benar menangkap regresi
+
+Menaikkan angka coverage tidak membuktikan apa pun. Untuk SETIAP kenaikan di atas,
+saya menyuntikkan bug ke kode produksi, membuktikan lewat `grep -n` bahwa edit itu
+BENAR-BENAR mendarat di baris yang dimaksud, mencatat berapa tes yang gagal, lalu
+memulihkan file byte-identik (`git diff --stat` kosong).
+
+Ini bukan formalitas: kontrol negatif pertama saya di sesi ini **gagal secara
+diam-diam** karena string-replace tidak cocok, dan suite-nya tampak hijau karena
+alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
+
+| Bug yang disuntikkan | Baris | Tes yang gagal |
+|---|---|---|
+| Gerbang whitelist endpoint dilemahkan | `tool-branches.ts:554` | 2 |
+| Filter `endpoints.where: { isEnabled: true }` dihapus | `tool-branches.ts:529` | 1 |
+| Cek SSRF jadi `if (false)` | `tool-branches.ts:767` | 1 |
+| Gerbang allow-list runner MCP jadi `if (false)` | `admin-tools.ts:488` | 3 |
+| Cek paket npm tidak ada dihapus | `admin-tools.ts:511` | 2 |
+| Fallback judul sesi pendek dihapus | `ai.ts:391` | 2 |
+| Pembersihan JSON fence dihapus | `ai.ts:440` | 1 |
+| Cap 2000 char ringkasan dihapus | `ai.ts:366` | 1 |
+| Bug historis `orgId = 'org-default'` dikembalikan | `sso-saml.ts:297` | 3 |
+| Proteksi replay SAML dihapus | `sso-saml.ts:172` | 1 |
+| Cek kuota maxUsers dihapus | `sso-saml.ts:303` | 2 |
+| Config integrasi disimpan tanpa enkripsi | `api/integrations/route.ts:169` | 1 |
+| Cek kuota maxIntegrations dihapus | `api/integrations/route.ts:122` | 2 |
+| Baris integrasi ditulis sebelum uji koneksi | `api/integrations/route.ts:144` | 1 |
+
+**14 kontrol, semuanya sah.** Baris 297 adalah yang paling penting: kontrol itu
+mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
+violation, sehingga login SSO pertama kali gagal total) dan tes menangkapnya.
+
+
+**Cara membaca tabel ini.** Semua angka "sesudah" adalah `line %` dari laporan
+gabungan, dan setiap modul dijalankan bersama file tes aslinya sendiri. Angka ini
+BUKAN target yang dicapai lewat longgar — tiap kenaikan disertai kontrol negatif
+(lihat §1.2) agar terbukti tesnya benar-benar menangkap regresi, bukan sekadar
+mengeksekusi baris.
 
 ---
 

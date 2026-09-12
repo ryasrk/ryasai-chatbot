@@ -1,7 +1,7 @@
 {
-  "linePct": 69.99,
-  "linesHit": 13566,
-  "linesFound": 19382,
+  "linePct": 71.49,
+  "linesHit": 13860,
+  "linesFound": 19386,
   "filesMeasured": 126,
   "failedTestFiles": [],
   "files": [
@@ -18,12 +18,6 @@
       "pct": 12.5
     },
     {
-      "file": "src/app/api/integrations/route.ts",
-      "hit": 27,
-      "found": 209,
-      "pct": 12.918660287081341
-    },
-    {
       "file": "src/lib/source-init.ts",
       "hit": 15,
       "found": 111,
@@ -34,12 +28,6 @@
       "hit": 13,
       "found": 72,
       "pct": 18.055555555555554
-    },
-    {
-      "file": "src/lib/sso-saml.ts",
-      "hit": 71,
-      "found": 258,
-      "pct": 27.51937984496124
     },
     {
       "file": "src/app/api/audit/route.ts",
@@ -324,6 +312,12 @@
       "pct": 78.82882882882883
     },
     {
+      "file": "src/lib/sso-saml.ts",
+      "hit": 207,
+      "found": 261,
+      "pct": 79.3103448275862
+    },
+    {
       "file": "src/lib/tool-utils.ts",
       "hit": 143,
       "found": 179,
@@ -436,6 +430,12 @@
       "hit": 332,
       "found": 377,
       "pct": 88.06366047745358
+    },
+    {
+      "file": "src/app/api/integrations/route.ts",
+      "hit": 185,
+      "found": 210,
+      "pct": 88.09523809523809
     },
     {
       "file": "src/app/api/notifications/route.ts",
