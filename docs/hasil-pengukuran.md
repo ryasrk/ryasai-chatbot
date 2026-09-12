@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d9ed632`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c4938cd`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d9ed632`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **79,21%** (15.590/19.681 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.146 lulus · 0 gagal** | terukur |
+| Test coverage | **79,69%** (15.679/19.674 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 158 file · **3.172 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -68,8 +68,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/integrations/[id]/route.ts` | 36,60% | **98,48%** (baris) / 91,67% (fungsi) | 29 |
 | `src/app/api/integrations/[id]/schema/route.ts` | 37,25% | **97,38%** (baris) / 100,00% (fungsi) | 27 |
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
-| Modul ter-gate | 62 modul | **66 modul** | +4 |
-| **Total repo** | **62,44%** | **79,21%** | — |
+| `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
+| Modul ter-gate | 62 modul | **67 modul** | +5 |
+| **Total repo** | **62,44%** | **79,69%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -189,8 +190,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `deleteMany` di atas `fetchSchema` (schema hilang saat refresh gagal) | `schema/route.ts` | 2 |
 | `refresh` dipicu nilai truthy apa pun | `schema/route.ts` | 1 |
 | `organizationId` tidak di-stamp saat `createMany` | `schema/route.ts` | 1 |
+| Error LLM tidak diswallow (menggagalkan ingestion) | `source-init.ts` | 2 |
+| `cfg` null tetap memanggil LLM | `source-init.ts` | 2 |
+| Integrasi tanpa schema tetap memanggil LLM | `source-init.ts` | 1 |
+| Truncation dokumen dihapus | `source-init.ts` | 1 |
 
-**98 kontrol + 3 kontrol gate, semuanya sah.**
+**102 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -770,6 +775,57 @@ yang menulisnya. Perhatikan bedanya: `integrations/[id]/schema` merged-nya 97,38
 (186/191) sedangkan per-file 97,38% (223/229) — **persentasenya kebetulan sama, jumlah
 barisnya tidak**, jadi membandingkan angka saja tidak cukup; yang benar adalah selalu
 membaca `coverage-summary.json`.
+
+### 1.7o `source-init.ts`: 13,51% baris, 0,00% FUNGSI — dan file test-nya tidak mengimpor modulnya
+
+**13,51% → 100,00% baris dan fungsi.** Yang paling mencolok: **file test ini tidak
+pernah mengimpor modul yang diklaimnya.** Ia mengimpor `describeSchema` dari
+`./connectors` dan hanya menegaskan bahwa ketiga fungsi `init*` **diekspor**. Jadi
+seluruh "first scan" sumber yang baru terhubung — dokumen, endpoint REST, integrasi
+database — **belum pernah dieksekusi satu kali pun**.
+
+Karena semuanya best-effort, **jalur no-op adalah kontraknya**, bukan jalur bahagia:
+tidak ada LLM → no-op dan sumbernya **bahkan tidak dibaca** (biaya terkendali: teks
+besar tidak boleh ditarik dari database tanpa alasan); LLM melempar → ditelan supaya
+ingestion tidak pernah terblokir oleh ringkasan yang gagal; gagal tulis DB → ditelan
+karena pemanggilnya fire-and-forget; sumber tidak ada → no-op diam (pemanggil berlomba
+dengan delete). Jalur positifnya juga: kutip di sekeliling hasil **dibuang** (model
+membungkus string pendek dengan kutip, dan `'"..."'` yang tersimpan tampil sebagai
+kutip literal di prompt retrieval); hasil dibatasi 400 karakter; konten dipotong ke
+`MAX_DOC_CHARS` dan sampel REST ke `MAX_SAMPLE_CHARS`; `category` null tampil sebagai
+`'-'`, **bukan string `'null'`**. Untuk integrasi: integrasi **tanpa schema tidak
+memanggil LLM**, dan profil null **tidak menimpa** `businessContext` yang ada.
+
+**Satu kontrol negatif saya GAGAL menggagalkan, dan penelusurannya justru memberi
+hasil paling berguna.** Saya membalik guard jawaban kosong di `llmSummarize` dari
+`null` menjadi `text.slice(0,400)` — dan test "jawaban kosong tidak menulis apa pun"
+**tetap hijau**. Mengukur tiga varian menunjukkan sebabnya: perilaku itu ditahan oleh
+`if (!description) return` **di pemanggil**, bukan oleh guard `text.length > 0` di
+`llmSummarize`. Menghapus salah satu **saja** tetap hijau; menghapus guard pemanggil
+menggagalkannya; menghapus **keduanya** juga menggagalkannya. Jadi **dua guard menutupi
+satu kondisi** — belt-and-braces yang disengaja, karena `llmSummarize` juga dicapai
+dari `initRestEndpointContext`. Testnya kini mencatat **hasil pengukuran** itu alih-alih
+mengklaim guard tertentu yang sebenarnya bukan penahannya.
+
+**Dua kesalahan saya sendiri, dicatat karena keduanya kelas yang sama.** Pertama, saya
+mencoba mengamati prompt dengan mengganti `chatOnce` pada modul **setelah** import;
+`source-init` mencapainya lewat `await import()` dinamis, jadi penggantian itu **tidak
+berpengaruh sama sekali**. Prompt kini ditangkap **di dalam mock**, satu-satunya tempat
+yang melihat argumen sebenarnya. Kedua, saat membersihkan test dengan regex, saya
+**diam-diam menghapus baris `await initDocumentContext(...)`** dari enam test, sehingga
+mereka menegaskan terhadap array kosong dan "gagal" karena alasan yang tidak ada
+hubungannya dengan kode. **Test yang tidak pernah memanggil fungsi yang diuji bukan
+test yang gagal.**
+
+### 1.7p Catatan: `ai.ts` 74,1% itu artefak merge, bukan cakupan rendah
+
+Saya sempat menargetkan `ai.ts` karena terbaca 74,1% di laporan merged. Diukur per-file,
+ia **99,52% baris / 97,73% fungsi** dengan **satu** baris belum tercakup (629). Ini
+persis kaveat di `scripts/coverage.ts:160-167` yang membuat `planner.ts` sengaja
+**tidak** di-gate: Bun hanya melaporkan baris yang dieksekusi prosesnya sendiri, jadi
+laporan merged **selalu lebih rendah** untuk modul dengan banyak jalur masuk. Memilih
+target dari kolom merged tanpa mengukur per-file akan menghabiskan satu ronde penuh
+untuk modul yang sudah selesai.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

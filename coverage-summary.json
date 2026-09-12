@@ -1,16 +1,10 @@
 {
-  "linePct": 79.21,
-  "linesHit": 15590,
-  "linesFound": 19681,
+  "linePct": 79.69,
+  "linesHit": 15679,
+  "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
-    {
-      "file": "src/lib/source-init.ts",
-      "hit": 15,
-      "found": 111,
-      "pct": 13.513513513513514
-    },
     {
       "file": "src/app/api/auth/login/route.ts",
       "hit": 13,
@@ -765,6 +759,12 @@
       "file": "src/lib/setup.ts",
       "hit": 28,
       "found": 28,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/source-init.ts",
+      "hit": 104,
+      "found": 104,
       "pct": 100
     },
     {
