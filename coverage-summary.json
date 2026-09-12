@@ -1,7 +1,7 @@
 {
-  "linePct": 75.75,
-  "linesHit": 14925,
-  "linesFound": 19704,
+  "linePct": 75.83,
+  "linesHit": 14943,
+  "linesFound": 19706,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -114,12 +114,6 @@
       "pct": 64.0625
     },
     {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 310,
-      "found": 477,
-      "pct": 64.98951781970649
-    },
-    {
       "file": "src/lib/tool-router.ts",
       "hit": 217,
       "found": 327,
@@ -154,6 +148,12 @@
       "hit": 266,
       "found": 390,
       "pct": 68.2051282051282
+    },
+    {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 328,
+      "found": 479,
+      "pct": 68.4759916492693
     },
     {
       "file": "src/lib/intent-pipeline.ts",

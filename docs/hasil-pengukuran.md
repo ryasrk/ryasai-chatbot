@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `136c814`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `563dc55`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `136c814`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **75,75%** (14.925/19.704 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 155 file · **2.974 lulus · 0 gagal** | terukur |
+| Test coverage | **75,83%** (14.943/19.706 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 156 file · **2.995 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -59,7 +59,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/real-connectors.ts` | 64,80% | **89,72%** | 21 |
 | `src/lib/admin-tools.ts` | 53,41% (fungsi) | **68,89%** (fungsi) | 32 |
 | `src/lib/tool-branches.ts` | 37,50% (baris) | **50,58%** (baris) / **75,00%** (fungsi) | 21 |
-| **Total repo** | **62,44%** | **75,75%** | — |
+| `src/lib/tool-router-agentic.ts` | 68,43% (baris) | **72,61%** (baris) / **89,66%** (fungsi) | 21 |
+| **Total repo** | **62,44%** | **75,83%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -139,8 +140,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Rate limit SQL dicek setelah generateSql | `tool-branches.ts:324` | 1 |
 | Severity `GUARDRAIL_BLOCK` diturunkan ke warning | `tool-branches.ts:386` | 1 |
 | SQL yang ditolak guardrail tetap dieksekusi | `tool-branches.ts:392-394` | 2 |
+| Guard deadline `runAgenticLoop` dilumpuhkan | `tool-router-agentic.ts:230` | 1 |
+| Heuristik "all tools failed" dihapus | `tool-router-agentic.ts:288` | 1 |
+| Alignment dilepas dari jalur heuristik (regresi insiden) | `tool-router-agentic.ts:296` | 1 |
+| Disclosure token budget dihapus | `tool-router-agentic.ts:252` | 1 |
 
-**60 kontrol, semuanya sah.**
+**64 kontrol, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -375,6 +380,56 @@ Tiga hal yang sebelumnya tidak pernah dieksekusi:
   buruk dari model adalah kegagalan operasional, bukan peristiwa keamanan.
 - **Penolakan guardrail tidak boleh mencapai driver.** Dibuktikan dengan kontrol
   negatif yang meloloskan statement tertolak ke `executeQuery`.
+
+### 1.7c Perbaikan sumber: deadline agentic yang tidak bisa dikonfigurasi
+
+`AGENTIC_DEADLINE_MS` dulu adalah **konstanta tingkat modul**:
+
+```ts
+const AGENTIC_DEADLINE_MS = Number(process.env.AGENTIC_DEADLINE_MS ?? 90_000)
+```
+
+Dua konsekuensi, keduanya nyata dan bukan sekadar soal testabilitas:
+
+1. **Bagi operator**, mengubah `AGENTIC_DEADLINE_MS` **tidak berpengaruh sampai
+   proses di-restart** — nilai ditangkap saat import. Env yang tampak dapat
+   dikonfigurasi padahal tidak.
+2. **Bagi test**, jalur deadline **tidak bisa diuji sama sekali**: bun mengangkat
+   (`hoist`) import di atas kode tingkat-atas file test, sehingga `process.env`
+   yang di-set di file test terbaca **terlalu lambat**. Diukur: test deadline
+   melihat **3** panggilan model alih-alih 0.
+
+Kini dibaca **per panggilan** lewat `agenticDeadlineMs()`, dengan nilai non-finite
+jatuh ke 90 detik.
+
+**Temuan tambahan saat menulis test (aritmetika yang harus dipahami, bukan ditebak):**
+
+- Fixture deadline harus **negatif**, bukan `0`. `Date.now() > Date.now() + 0`
+  bernilai `false`, jadi `0` **tidak** menaruh putaran pertama di luar deadline.
+- `accumulatedEvidence` dibentuk sebagai
+  `"\n[<tipe>] <outputSummary dipotong 300>\n[Answer so far: <answer dipotong 1000>]"`.
+  Ringkasan 400 karakter hanya menghasilkan **331** karakter — di bawah ambang 500 —
+  sehingga heuristik "substantial evidence" **tidak menyala**. Fixture pertama saya
+  tanpa sadar menguji ambangnya, bukan perilakunya; satu test tambahan kini
+  mengunci batas itu dari sisi lain.
+- **3 putaran loop + 1 putaran sintesis = 4 panggilan**, bukan 3. Empat kegagalan
+  lain berasal dari aritmetika yang sama.
+
+### 1.7d Kontrol negatif yang salah sasaran, lagi — pada file dengan guard kembar
+
+Percobaan pertama kontrol negatif deadline **gagal**: saya melumpuhkan
+`if (Date.now() > deadline) {` di **baris 382** — yaitu loop **streaming** —
+padahal `runAgenticLoop` ada di **baris 230**. File ini memuat **dua guard identik**,
+persis pola yang sudah tercatat di §1.8.
+
+Perbaikannya: pilih guard yang nomor barisnya jatuh **di dalam** rentang fungsi
+yang diuji (antara `runAgenticLoop` dan `runStreamingAgenticLoop`), bukan
+kemunculan pertama atau kedua. Setelah sasaran benar, kontrol menggagalkan tepat
+1 test.
+
+Ini kemunculan **kedua** pola yang sama di repo ini (`tool-router.ts` adalah yang
+pertama). Aturannya kini eksplisit: **pada file dengan guard kembar, kontrol
+negatif wajib menargetkan nomor baris di dalam rentang fungsi yang diuji.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
