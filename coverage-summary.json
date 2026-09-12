@@ -1,7 +1,7 @@
 {
-  "linePct": 73.96,
-  "linesHit": 14559,
-  "linesFound": 19686,
+  "linePct": 74.44,
+  "linesHit": 14659,
+  "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -10,12 +10,6 @@
       "hit": 15,
       "found": 142,
       "pct": 10.56338028169014
-    },
-    {
-      "file": "src/lib/cognee-memory.ts",
-      "hit": 19,
-      "found": 152,
-      "pct": 12.5
     },
     {
       "file": "src/lib/source-init.ts",
@@ -238,6 +232,12 @@
       "hit": 414,
       "found": 559,
       "pct": 74.0608228980322
+    },
+    {
+      "file": "src/lib/cognee-memory.ts",
+      "hit": 119,
+      "found": 158,
+      "pct": 75.31645569620254
     },
     {
       "file": "src/lib/cron-describe.ts",

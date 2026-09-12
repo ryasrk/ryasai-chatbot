@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `901c52d`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ad1281a`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `901c52d`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **73,96%** (14.559/19.686 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 150 file · **2.833 lulus · 0 gagal** | terukur |
+| Test coverage | **74,44%** (14.659/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 151 file · **2.859 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -45,7 +45,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/stream-preparers.ts` | 74,77% | **99,31%** | 10 |
 | `src/lib/rag-retrieval.ts` | 68,26% | **86,01%** | 24 |
 | `src/lib/mcp-client.ts` | 68,97% | **96,77%** | 28 |
-| **Total repo** | **62,44%** | **73,96%** | — |
+| `src/lib/cognee-memory.ts` | 12,50% | **100,00%** | 26 |
+| **Total repo** | **62,44%** | **74,44%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -99,8 +100,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Prefix `serverName` tool MCP dibuang | `mcp-client.ts:104` | 1 |
 | Serialisasi blok non-teks MCP dibuang | `mcp-client.ts:382` | 1 |
 | TTL cache daftar tool MCP dimatikan | `mcp-client.ts:81` | 1 |
+| Cache sesi dibagi lintas-sesi (bocor memori) | `cognee-memory.ts:49` | 4 |
+| Hasil kosong ikut di-cache | `cognee-memory.ts:99/111` | 1 |
+| Guard dataset-hilang dibuang | `cognee-memory.ts:126` | 1 |
 
-**34 kontrol, semuanya sah.**
+**37 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -165,7 +169,21 @@ tiga di antaranya jebakan yang membuat test lulus-tapi-menyesatkan:
 Satu test placeholder milik saya yang assertion-nya hampa (tidak mungkin gagal)
 diganti dengan assertion yang bermakna.
 
-### 1.5 Insiden gate yang dicatat apa adanya
+### 1.5 cognee-memory: modul tanpa file test sama sekali
+
+`cognee-memory.ts` memutuskan **apa yang diingat asisten antar-pergantian** dan
+apakah pertanyaan berulang dijawab dari cache sesi — dan modul ini tidak punya
+file test. Angka dasar 12,50% hanya berasal dari suite lain yang mengimpornya.
+
+Kontrol negatif yang paling berharga di sini: **membagi cache lintas sesi**
+menggagalkan 4 test, termasuk isolasi lintas-sesi. Artinya kebocoran memori antar
+sesi — satu pengguna melihat jawaban yang diingat untuk pengguna lain — benar-benar
+tertangkap suite, bukan sekadar teori. Dua sifat load-bearing lain yang kini diuji:
+hasil **kosong sengaja TIDAK di-cache** (kalau tidak, sesi pra-cognify akan
+terpaku pada "tanpa memori" selamanya), dan `recallContext` mencoba pencarian
+tanpa filter dataset sebagai upaya terakhir.
+
+### 1.6 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -180,7 +198,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 150 file · 2.833 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 151 file · 2.859 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
