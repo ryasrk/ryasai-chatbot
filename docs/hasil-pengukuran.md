@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a84c179`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d4d51e7`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a84c179`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **79,74%** (15.689/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.193 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.214 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -69,7 +69,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/integrations/[id]/schema/route.ts` | 37,25% | **97,38%** (baris) / 100,00% (fungsi) | 27 |
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
-| `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **61,54%** (baris) / 73,17% (fungsi) | 30 |
+| `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
 | Modul ter-gate | 62 modul | **67 modul** | +5 |
 | **Total repo** | **62,44%** | **79,74%** | — |
 
@@ -200,8 +200,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Rerank default diubah jadi opt-in (regresi fitur presisi) | `rag-retrieval.ts:92` | 2 |
 | `citationTrail` kosong dikembalikan `[]` bukan `undefined` | `rag-retrieval.ts:125` | 1 |
 | Query tanpa token tidak early-exit | `rag-retrieval.ts:53` | 1 |
+| Probe `iterative_scan` dianggap selalu didukung (pgvector 0.6 salah jalur) | `rag-retrieval.ts:406` | 2 |
+| Clamp `ef_search` 1000 dihapus (server menolak 22023) | `rag-retrieval.ts:430` | 2 |
+| Dedup indeks rerank dihapus (chunk ganda mengisi dua slot) | `rag-retrieval.ts:196` | 1 |
+| Backfill rerank dihapus (jawaban lebih pendek dari topK) | `rag-retrieval.ts:201` | 2 |
+| Rerank LLM tetap jalan tanpa config | `rag-retrieval.ts:175` | 1 |
 
-**107 kontrol + 3 kontrol gate, semuanya sah.**
+**112 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -873,6 +878,44 @@ milidetik mentah tetap hijau, karena test TTL saya hanya melihat tulisan **jalur
 dekomposisi**. Ada **dua tempat tulis cache** dan keduanya mengonversi sendiri-sendiri.
 Testnya kini memeriksa **keduanya**, dan kontrol yang sama sekarang menggagalkannya
 seperti seharusnya.
+
+### 1.7r `rag-retrieval.ts` lanjutan: 90,43% per-file — dan celah merge 17 poin
+
+**61,54% → 90,43% per-file, fungsi 87,76%.** Dua wilayah yang menanggung beban:
+
+1. **`pgvectorSimilaritySearch` dan probe kapabilitasnya.** Ini kode yang berperilaku
+   **BERBEDA di pgvector 0.6 vs 0.8**, dan upgrade ke 0.8.6 adalah tugas operator yang
+   masih terbuka di `docs/pgvector-upgrade.md`. Jadi **kedua cabangnya dipin sekarang**,
+   dan upgrade itu tidak bisa diam-diam mengubah cabang mana yang berjalan. Diuji:
+   server **tanpa** `hnsw.iterative_scan` hanya menyetel `hnsw.ef_search` (menyetel
+   `iterative_scan` di 0.6 memicu 42704); server **dengan**-nya memakai `relaxed_order`,
+   perbaikan nyata untuk truncation filter HNSW; probe berjalan **sekali per proses**,
+   bukan sekali per query pengguna; `ef_search` di-clamp ke plafon server **1000** (nilai
+   lebih besar ditolak 22023) dan **tidak pernah di bawah 100**, karena HNSW memfilter
+   SETELAH pemindaian aproksimatif sehingga `ef_search` kecil membuat baris org hilang
+   dari kaki vektor. Juga: `SET LOCAL` dan `SELECT` berbagi **satu transaksi** — di luar
+   transaksi `SET LOCAL` tidak berefek dan `ef_search` tetap 40 — dan `SET LOCAL` yang
+   ditolak jatuh ke query polos alih-alih kehilangan query.
+2. **`rerankWithLlm`.** Pembukuan indeksnya adalah tempat kesalahan **diam-diam
+   menghilangkan chunk**: indeks **duplikat tidak boleh** mengisi dua slot; saat model
+   menilai **terlalu sedikit** chunk, sisanya **di-backfill** alih-alih mengembalikan
+   jawaban pendek; chunk backfill **tidak pernah** mengulang yang sudah dinilai; skor di
+   bawah ambang relevansi **dibuang**, bukan diurutkan terakhir.
+
+**Celah merge, terukur.** `rag-retrieval.ts` **90,43% per-file tapi 73,48% merged** —
+selisih **17 poin**, atau **75 baris** yang test saya eksekusi tapi **tidak dihitung**
+laporan merged (327 vs ~402 hit dari 445). Ini persis kaveat `scripts/coverage.ts:160-167`.
+Konsekuensinya: modul ini **tidak boleh** di-gate sekarang, dan **total repo tetap
+79,74%** meski per-file-nya melompat hampir 30 poin dari ronde lalu. Melaporkan
+"coveragenya naik" dari angka per-file di sini akan **melebih-lebihkan**; yang jujur
+adalah menyajikan **keduanya** dan menyebut selisihnya.
+
+**Kesalahan saya sendiri, semuanya self-inflicted:** saya menambahkan mock `db` kedua
+dengan kunci `$queryRaw`/`$executeRawUnsafe` **duplikat**, lalu menghabiskan **empat**
+percobaan membaca error TypeScript yang pesannya menunjuk baris yang tampak salah —
+`"number is not assignable to string"` ternyata di `txnDeepCalls.push(1)`, sebuah
+`string[]` yang saya deklarasikan untuk array angka. **Mencetak baris persisnya dengan
+`awk` menyelesaikannya setelah menebak gagal berulang kali.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
