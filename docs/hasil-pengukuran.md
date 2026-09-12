@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `693cd12`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `136c814`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `693cd12`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **75,47%** (14.870/19.703 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 155 file · **2.958 lulus · 0 gagal** | terukur |
+| Test coverage | **75,75%** (14.925/19.704 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 155 file · **2.974 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -58,7 +58,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router-agentic.ts` — gabungan kedua file | 68,43% (fungsi) | **89,29%** (fungsi, file lama) + 14 test baru khusus `runMultiStepDag` | 14 |
 | `src/lib/real-connectors.ts` | 64,80% | **89,72%** | 21 |
 | `src/lib/admin-tools.ts` | 53,41% (fungsi) | **68,89%** (fungsi) | 32 |
-| **Total repo** | **62,44%** | **75,47%** | — |
+| `src/lib/tool-branches.ts` | 37,50% (baris) | **50,58%** (baris) / **75,00%** (fungsi) | 21 |
+| **Total repo** | **62,44%** | **75,75%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -134,8 +135,25 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `isConfirmed` diabaikan pada `set_prompt` | `admin-tools.ts:193` | 1 |
 | Validasi nama tool di `toggle_tool` dilepas | `admin-tools.ts:218` | 1 |
 | `isConfirmed` diabaikan pada `toggle_document` | `admin-tools.ts:263` | 1 |
+| SQL menebak integrasi tertua saat ambigu (regresi insiden nyata) | `tool-branches.ts:274-277` | 2 |
+| Rate limit SQL dicek setelah generateSql | `tool-branches.ts:324` | 1 |
+| Severity `GUARDRAIL_BLOCK` diturunkan ke warning | `tool-branches.ts:386` | 1 |
+| SQL yang ditolak guardrail tetap dieksekusi | `tool-branches.ts:392-394` | 2 |
 
-**56 kontrol, semuanya sah.**
+**60 kontrol, semuanya sah.**
+
+### 1.2a Ringkasan kontrol negatif per kategori
+
+| Kategori | Jumlah | Contoh yang menangkap sudah |
+|---|---|---|
+| Keamanan (injeksi, guardrail, IDOR, SSRF) | 21 | injeksi ClickHouse; SQL ditolak tetap dieksekusi |
+| Isolasi tenant / org | 7 | `enterWithOrg` hilang; cache lintas-sesi |
+| Gate konfirmasi & audit | 9 | `isConfirmed` diabaikan; severity diturunkan |
+| Kebenaran routing & pemilihan sumber | 12 | SQL menebak integrasi tertua (insiden nyata) |
+| Isolasi test & harness | 6 | mock bocor; `.calls` absolut |
+| Infrastruktur gate coverage | 5 | floor dilanggar; modul ter-gate hilang |
+
+Angka di tabel ini adalah **hitungan entri tabel di §1.2**, bukan klaim baru.
 
 ### 1.6b Gate coverage: dari manual menjadi otomatis (`D6-4`, P0 — SELESAI)
 
@@ -312,6 +330,51 @@ bentuk yang sama dan belum menyimpang — probabilitasnya bukan nol.
 adalah perubahan **sumber**, dan menumpangkannya pada commit test akan
 menyembunyikannya dari review. Kedua salinan kini punya test terpisah, jadi
 penyimpangan berikutnya akan gagal di CI.
+
+### 1.7a Jebakan harness: `.calls` absolut tidak andal pada mock lintas-describe
+
+Dua test baru untuk `runSqlBranch` gagal **di dalam file** tetapi lulus saat
+dijalankan sendiri. Satu penyebabnya **nyata dan milik saya**: dengan
+`integrationId` eksplisit tetapi `findFirst` mengembalikan `null`, cabang itu
+**benar** jatuh ke disambiguasi — jadi fixture-nya harus mengembalikan integrasi.
+
+Penyebab kedua adalah **harness**, dan **diukur, bukan diasumsikan**:
+`findMany.mock.calls` terbaca **5 sebelum** test dan **5 sesudah**, padahal call
+site-nya tidak pernah berjalan. Penyelidikan berlapis:
+
+1. Dugaan pertama: `mockReset()` tidak membersihkan `.calls`. **SALAH** — probe
+   mandiri (mock lewat `mock.module` factory + `beforeEach` reset) membuktikan
+   `mockReset()` memang membersihkan `.calls`.
+2. Probe di dalam `beforeEach` file ini: `.calls` = **0** tepat setelah reset.
+3. Kesimpulan: mock itu **dipakai bersama lintas `describe`** lewat factory, dan
+   jumlah absolutnya tidak dapat diandalkan.
+
+Perbaikan: assertion memakai **delta** (`calls.length - before`). Komentar yang
+awalnya menyalahkan `mockReset()` ditulis ulang agar menyebut apa yang
+**benar-benar** teramati — komentar yang salah lebih buruk daripada tanpa komentar.
+
+Pengerasan tambahan: `beforeEach` bersama diubah dari `mockClear` ke `mockReset`,
+dan setiap implementasi yang sebelumnya hanya dibersihkan kini **dipulihkan
+eksplisit**, sehingga override di satu `describe` tidak bocor ke berikutnya.
+
+### 1.7b Cabang SQL: menolak menebak, dan membuktikannya
+
+Insiden yang dijaga (didokumentasikan di `tool-branches.ts`): cabang SQL dulu
+mengambil integrasi aktif **tertua**, sehingga pertanyaan Sales bisa dijawab dari
+database HR — **tanpa error dan tanpa log**, karena SQL-nya valid
+(`trial/25-wrong-db-proof.ts`). 21 test baru mengunci perilaku benar, dan
+**kontrol negatifnya mengembalikan insiden itu** dan langsung menggagalkan 2 test.
+
+Tiga hal yang sebelumnya tidak pernah dieksekusi:
+
+- **Urutan rate limit.** Dicek **sebelum** panggilan LLM apa pun, karena loop
+  perbaikan bisa membuat 3 panggilan generate per turn — memeriksa setelahnya
+  berarti sudah membelanjakan anggaran yang justru dilindungi limit itu.
+- **`GUARDRAIL_BLOCK` = `critical`.** Diturunkan ke `warning`, percobaan serangan
+  terkubur di antara kegagalan biasa. `SQL_EXECUTE_ERROR` tetap `warning`: query
+  buruk dari model adalah kegagalan operasional, bukan peristiwa keamanan.
+- **Penolakan guardrail tidak boleh mencapai driver.** Dibuktikan dengan kontrol
+  negatif yang meloloskan statement tertolak ke `executeQuery`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
