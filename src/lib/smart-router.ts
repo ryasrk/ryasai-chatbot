@@ -47,6 +47,40 @@ const GENERIC_SCHEMA_TOKENS = new Set([
   'kgrelation', 'mcpserver', 'appconfig', 'agentrun',
 ])
 
+/**
+ * Extract the domain glossary terms from a businessContext, lowercased.
+ *
+ * Exported so the Unicode behaviour can be tested against the REAL scan rather
+ * than a regex re-typed inside the test. An earlier version of that test
+ * duplicated the pattern, which meant it passed even with the production bug
+ * restored — a guard verifying the ritual instead of the bug, which is exactly
+ * the failure mode this repository has hit before.
+ *
+ * ponytail: Unicode-aware, NOT `[a-z0-9]`. This scan kept the Latin-only
+ * character class that was removed from `tokenize` for the same reason: a
+ * non-Latin businessContext (a Chinese or Arabic install's own glossary)
+ * produced ZERO terms, so the DOMAIN path could never fire and a non-Latin user
+ * got no source attribution from domain context — the feature silently did
+ * nothing for them while working normally in English.
+ */
+export function extractDomainGlossaryTerms(ctxLower: string): Set<string> {
+  const glossaryTerms = new Set<string>()
+  // Match "TERM = definition" patterns in DOMAIN GLOSSARY
+  for (const m of ctxLower.matchAll(/(?:^|\n)[-*]\s+\*{0,2}([\p{L}][\p{L}\p{N}_/ -]{2,30})\*{0,2}\s*=/gu)) {
+    glossaryTerms.add(m[1].trim())
+  }
+  // Match "## DOMAIN" section first paragraph for domain keywords
+  const domainMatch = ctxLower.match(/## domain\n([\s\S]+?)(\n##|\n\n)/)
+  if (domainMatch) {
+    for (const word of domainMatch[1].split(/[^\p{L}\p{N}]+/u)) {
+      if (word.length >= 2 && !STOPWORDS.has(word) && !GENERIC_SCHEMA_TOKENS.has(word)) {
+        glossaryTerms.add(word)
+      }
+    }
+  }
+  return glossaryTerms
+}
+
 export async function smartRoute(args: {
   question: string
   hasIntegrations: boolean
@@ -222,23 +256,14 @@ async function detectMentionedIntegration(
   for (const integ of integrations) {
     if (!integ.businessContext) continue
     const ctxLower = integ.businessContext.toLowerCase()
-    const glossaryTerms = new Set<string>()
-    // Match "TERM = definition" patterns in DOMAIN GLOSSARY
-    for (const m of ctxLower.matchAll(/(?:^|\n)[-*]\s+\*{0,2}([a-z][a-z0-9_/ -]{2,30})\*{0,2}\s*=/g)) {
-      glossaryTerms.add(m[1].trim())
-    }
-    // Match "## DOMAIN" section first paragraph for domain keywords
-    const domainMatch = ctxLower.match(/## domain\n([\s\S]+?)(\n##|\n\n)/)
-    if (domainMatch) {
-      for (const word of domainMatch[1].split(/[^a-z0-9]+/)) {
-        if (word.length >= 4 && !STOPWORDS.has(word) && !GENERIC_SCHEMA_TOKENS.has(word)) {
-          glossaryTerms.add(word)
-        }
-      }
-    }
+    const glossaryTerms = extractDomainGlossaryTerms(ctxLower)
     let ctxMatches = 0
     for (const term of glossaryTerms) {
-      if (term.length >= 4 && lower.includes(term)) ctxMatches++
+      // 2 chars, not 4: the old floor dropped every CJK glossary term, because a
+      // two-character Chinese word is a complete concept. `tokenize` already
+      // uses 2 via `isMeaningfulToken`, so this now matches the rest of the
+      // pipeline instead of being the one place with a higher bar.
+      if (term.length >= 2 && lower.includes(term)) ctxMatches++
     }
     if (ctxMatches >= 2) {
       return { integrationId: integ.id }

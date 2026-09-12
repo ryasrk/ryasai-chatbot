@@ -5,6 +5,19 @@ import { type RouteDecision } from '@/lib/ai'
 import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity, type EmbeddingRuntimeConfig } from '@/lib/embeddings'
 
 
+/**
+ * Minimum keyword length for a metadata index entry.
+ *
+ * Latin scripts need 3: at 2 the index fills with "of"/"in"/"to" and matching
+ * becomes noise. Scripts that do NOT segment on spaces need 2, because a
+ * two-character CJK word is a complete concept — the same reasoning `tokenize`
+ * applies via `isMeaningfulToken`. Using one floor for both is what made these
+ * loaders silently ignore every non-Latin source.
+ */
+function keywordMinLength(word: string): number {
+  return /[\u3000-\u9fff\uac00-\ud7af\u3040-\u30ff]/.test(word) ? 2 : 3
+}
+
 const SYNONYMS: Record<string, string[]> = {
   negara: ['country'], negara2: ['country'], kota: ['city'],
   populasi: ['population'], penduduk: ['population'], bahasa: ['language'],
@@ -361,14 +374,17 @@ export async function loadEndpointMetadata(): Promise<string[]> {
   })
   const keywords: string[] = []
   for (const e of endpoints) {
+    // ponytail: Unicode-aware. `[^a-z0-9]` erased an entire non-Latin REST path
+    // or description, so those endpoints contributed no routing keywords at all
+    // — the same Latin-only class that was removed from `tokenize`.
     for (const segment of e.path.split('/')) {
-      const seg = segment.toLowerCase().replace(/[^a-z0-9]/g, '')
-      if (seg.length >= 3) keywords.push(seg)
+      const seg = segment.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+      if (seg.length >= keywordMinLength(seg)) keywords.push(seg)
     }
     if (e.description) {
       for (const word of e.description.toLowerCase().split(/\s+/)) {
-        const w = word.replace(/[^a-z0-9]/g, '')
-        if (w.length >= 3 && !STOPWORDS.has(w)) keywords.push(w)
+        const w = word.replace(/[^\p{L}\p{N}]/gu, '')
+        if (w.length >= keywordMinLength(w) && !STOPWORDS.has(w)) keywords.push(w)
       }
     }
   }
@@ -382,14 +398,16 @@ export async function loadDocumentMetadata(): Promise<string[]> {
   })
   const keywords: string[] = []
   for (const d of docs) {
-    for (const word of d.name.toLowerCase().split(/[^a-z0-9]+/)) {
-      if (word.length >= 3) keywords.push(word)
+    // ponytail: Unicode-aware — a document named in Chinese or Arabic produced
+    // no keywords and was therefore invisible to document-based routing.
+    for (const word of d.name.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+      if (word.length >= keywordMinLength(word)) keywords.push(word)
     }
     if (d.category) keywords.push(d.category.toLowerCase())
     if (d.description) {
       for (const word of d.description.toLowerCase().split(/\s+/)) {
-        const w = word.replace(/[^a-z0-9]/g, '')
-        if (w.length >= 3 && !STOPWORDS.has(w)) keywords.push(w)
+        const w = word.replace(/[^\p{L}\p{N}]/gu, '')
+        if (w.length >= keywordMinLength(w) && !STOPWORDS.has(w)) keywords.push(w)
       }
     }
   }

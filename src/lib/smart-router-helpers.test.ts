@@ -515,3 +515,42 @@ describe('metadata loaders', () => {
     expect(await loadDocumentMetadata()).toEqual([])
   })
 })
+
+describe('non-Latin sources must contribute routing keywords (Unicode regression)', () => {
+  // REGRESSION: these loaders used the Latin-only `[^a-z0-9]` class that was
+  // already removed from `tokenize` for producing zero tokens on non-Latin
+  // scripts. The tokenizer got fixed; these three scans were missed. Effect: a
+  // Chinese/Arabic document name, REST path, or integration name contributed NO
+  // keywords, so that source could never be selected by keyword routing — the
+  // feature silently did nothing outside Latin scripts.
+
+  test('a Chinese document name yields keywords', async () => {
+    documents = [{ name: '退款政策2024.pdf', category: null, description: null }]
+    const kws = await loadDocumentMetadata()
+    expect(kws.length).toBeGreaterThan(0)
+    expect(kws.some((k) => k.includes('退款'))).toBe(true)
+  })
+
+  test('a Chinese REST path and description yield keywords', async () => {
+    endpoints = [{ path: '/api/客户/查询', description: '客户列表查询' }]
+    const kws = await loadEndpointMetadata()
+    expect(kws.some((k) => k.includes('客户'))).toBe(true)
+  })
+
+  test('an Arabic document description yields keywords', async () => {
+    documents = [{ name: 'policy.pdf', category: null, description: 'سياسة الاسترداد' }]
+    const kws = await loadDocumentMetadata()
+    expect(kws.some((k) => k.includes('الاسترداد'))).toBe(true)
+  })
+
+  test('Latin noise is STILL filtered — the floor is script-aware, not lowered', async () => {
+    // The fix must not flood the index with two-letter Latin noise. A blanket
+    // floor of 2 would do exactly that, which is why keywordMinLength branches.
+    documents = [{ name: 'report of in to.pdf', category: null, description: null }]
+    const kws = await loadDocumentMetadata()
+    expect(kws).not.toContain('of')
+    expect(kws).not.toContain('in')
+    expect(kws).not.toContain('to')
+    expect(kws).toContain('report')
+  })
+})

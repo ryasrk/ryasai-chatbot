@@ -44,9 +44,18 @@ async function worker() {
       new Response(proc.stderr).text(),
     ])
     const out = stdout + stderr
-    totalPass += +(out.match(/(\d+)\s+pass/)?.[1] ?? 0)
-    totalFail += +(out.match(/(\d+)\s+fail/)?.[1] ?? 0)
-    totalSkip += +(out.match(/(\d+)\s+skip/)?.[1] ?? 0)
+    // Read the counts from the SUMMARY LINE only, never from the whole output.
+    // `out.match(/(\d+)\s+fail/)` takes the FIRST match anywhere, so a PASSING
+    // test whose name contains the pattern poisons the total: the test
+    // "exactly 10 runs with 8 failures trips the breaker" prints
+    // "(pass) … 8 failures …", which was counted as 8 failing tests while the
+    // exit code stayed 0. The runner thus reported "2369 pass · 8 fail" on a
+    // fully green suite. A wrong failure count is worse than no count — it
+    // trains everyone to ignore the number.
+    const summary = out.split('\n').find((l) => /^\s*\d+\s+pass\b/.test(l)) ?? ''
+    totalPass += +(summary.match(/(\d+)\s+pass/)?.[1] ?? 0)
+    totalFail += +(summary.match(/(\d+)\s+fail/)?.[1] ?? 0)
+    totalSkip += +(summary.match(/(\d+)\s+skip/)?.[1] ?? 0)
     done++
     if (code !== 0) {
       failed.push(path)

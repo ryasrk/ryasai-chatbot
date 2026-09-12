@@ -1674,6 +1674,45 @@ describe('smartRoute integration selection', () => {
     expect(result.integrationId).toBeUndefined()
   })
 
+  test('a NON-LATIN businessContext glossary contributes terms (Unicode regression)', async () => {
+    // REGRESSION: the glossary scan used `[a-z]` / `[^a-z0-9]`, the Latin-only
+    // class removed from `tokenize` for producing zero tokens on other scripts.
+    // The tokenizer was fixed and THIS site was missed, so a Chinese install's
+    // own domain glossary produced no terms and the DOMAIN path could never
+    // fire — the feature silently did nothing for a non-Latin user.
+    //
+    // This calls the PRODUCTION scan, not a copy of the regex. An earlier draft
+    // re-typed the pattern here and therefore passed with the bug restored.
+    const { extractDomainGlossaryTerms } = await import('@/lib/smart-router')
+    // The trailing blank line terminates the section; that is a separate
+    // requirement from Unicode and is asserted so the fixtures stay honest.
+    const glossary = '## DOMAIN\n安全巡检 矿山运输\n\n- **隐患排查 = hazard inspection**'
+    const terms = extractDomainGlossaryTerms(glossary.toLowerCase())
+
+    // Latin-only scanning yielded an EMPTY set here.
+    expect(terms.size).toBeGreaterThan(0)
+    expect(terms.has('安全巡检')).toBe(true)
+    expect(terms.has('矿山运输')).toBe(true)
+    // The "TERM = definition" branch required a leading [a-z], so this never matched.
+    expect([...terms].some((t) => t.includes('隐患排查'))).toBe(true)
+
+    // A CJK question matches by substring, which is how the picker tests a hit.
+    const question = '什么是安全巡检'.toLowerCase()
+    expect([...terms].some((t) => question.includes(t))).toBe(true)
+  })
+
+  test('Latin glossary terms still resolve (the Unicode fix did not break them)', async () => {
+    // False-positive net: the same production scan must keep working on the
+    // original English input, since that is the common case.
+    const { extractDomainGlossaryTerms } = await import('@/lib/smart-router')
+    const terms = extractDomainGlossaryTerms(
+      '## domain\nhaulage safety inspection\n\n- **blast = controlled explosion**',
+    )
+    expect(terms.has('haulage')).toBe(true)
+    expect(terms.has('inspection')).toBe(true)
+    expect([...terms].some((t) => t.includes('blast'))).toBe(true)
+  })
+
   test('businessContext glossary terms (2+ domain words) resolve the source', async () => {
     // ponytail: the DOMAIN section scans words of length >= 4, so `pit` (3) is
     // dropped — domain text phrased with sub-4-char jargon cannot contribute.
