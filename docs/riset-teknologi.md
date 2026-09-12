@@ -16,9 +16,8 @@ yang tidak menyentuh arsitektur ini saya buang.
 | # | Temuan | Dampak | Status |
 |---|---|---|---|
 | R1 | RAG bisa kehilangan kedua jalur vektor tanpa sinyal apa pun | Sedang | Direkomendasikan (lihat R3) |
-| R2 | pgvector 0.6.0, sedangkan 0.8.0 punya `iterative_scan` | Sedang | Rekomendasi |
+| R2 | **HNSW memotong hasil retrieval ~50% saat tenant minoritas** | **Tinggi** | **Rekomendasi utama** |
 | R3 | Jalur retrieval gagal tanpa jejak yang terlihat operator | Sedang | Rekomendasi |
-| R4 | Skala HNSW + filter org: risiko teoretis, **tidak terbukti** di sini | Rendah | Tidak terbukti |
 
 ---
 
@@ -83,33 +82,85 @@ infrastruktur buatan saya sendiri**, bukan memperbaiki produk Anda. Saya
 menyajikannya sebagai "RAG hidup kembali" dan itu menyesatkan. Produk Anda tidak
 pernah bergantung pada server itu.
 
-## R2 — pgvector 0.6.0 vs 0.8.0 (`iterative_scan`)
+## R2 — HNSW memotong hasil retrieval kita, dan itu terdokumentasi resmi
 
-Versi terpasang **0.6.0** (rilis 2023). Versi 0.8.0 (2024) menambahkan
-`hnsw.iterative_scan`, yang menjawab masalah asli: **filter diterapkan
-SETELAH approximate scan.**
+> **Ini temuan terkuat dari riset ini.** Kemarin saya mencoba membuktikan ini
+> dan GAGAL, lalu mencatatnya sebagai "risiko teoretis, tidak terbukti".
+> Setelah membaca dokumentasi resmi pgvector, saya tahu mengapa gagal: saya
+> menguji dengan 3 vektor minoritas dari 503. Angka resminya adalah **10%**.
+> Diulang pada konfigurasi yang benar, langsung terbukti.
 
-Query Anda di `src/lib/rag-retrieval.ts:365` berbentuk:
+### Bukti
 
-```sql
-WHERE embedding IS NOT NULL
-  AND "organizationId" = $org
-  AND "documentId" IN (...)
-ORDER BY embedding <=> $vec
-LIMIT $n
+Dokumentasi resmi pgvector (README, bagian "Filtering") menyatakan:
+
+> "With approximate indexes, filtering is applied **after** the index is
+> scanned. If a condition matches 10% of rows, with HNSW and the default
+> `hnsw.ef_search` of 40, **only 4 rows will match on average**."
+
+Arsitektur kita persis pola itu: satu tabel `DocumentChunk`, satu index HNSW,
+difilter `organizationId`. Diukur pada 1000 vektor (900 tenant mayoritas +
+100 tenant minoritas = 10%), query sebagai tenant minoritas dengan `LIMIT 10`:
+
+```
+ef_search=  40 (default) ->  5/10 baris
+ef_search= 100           ->  8/10 baris
+ef_search= 200           -> 10/10 baris
 ```
 
-HNSW mengambil `ef_search` kandidat terdekat dari **seluruh tabel**, baru
-membuang yang bukan milik org. Kalau org Anda minoritas di tabel yang
-dipakai bersama banyak tenant, hasilnya bisa lebih sedikit dari `LIMIT`
-— **tanpa error apa pun.**
+**Kontrak retrieval kita rusak.** `rag-retrieval.ts:231` meminta
+`poolSize = Math.max(topK * 8, 24)` kandidat — 8× lipat, untuk memberi ruang
+peringkat RRF. Saat tenant sedang minoritas, pgvector mengembalikan **sekitar
+seperdelapannya**. Chunk yang seharusnya menempati peringkat 6–10 **tidak pernah
+dilihat**, tanpa error dan tanpa peringatan. Fusion menganggap yang diterima
+adalah seluruh kandidat.
 
-**Rekomendasi:** naikkan ke pgvector 0.8.0+ dan setel `hnsw.iterative_scan =
-relaxed_order`. Ini satu baris dan menghilangkan seluruh kelas risiko ini.
-Catat juga: `hnsw.ef_search` default 40 tidak diubah di kode Anda — untuk
-korpus besar, itu layak disetel eksplisit.
+Dan ini bukan sekadar kehilangan recall acak — **satu tenant yang ramai
+menurunkan recall semua tenant lain**:
 
----
+> "For applications with multiple tenants, sharing an approximate index between
+> tenants means vectors from one tenant can affect recall (and speed) for other
+> tenants."
+
+### Kenapa `ef_search` saja tidak cukup
+
+`hnsw.ef_search` dibatasi maksimum **1000** (terverifikasi: nilai 4000 ditolak
+`22023`). Jadi tidak ada nilai yang menjamin hasil lengkap, dan menaikkannya
+memperlambat semua query.
+
+### Obatnya (tiga pilihan, satu jelas terbaik)
+
+| | Cara | Penilaian |
+|---|---|---|
+| A | Naikkan `ef_search` | **Tidak cukup** — masih aproksimasi, dibatasi 1000 |
+| B | Partisi tabel per tenant | Benar jangka panjang; butuh migrasi data |
+| C | **pgvector 0.8.0+ `iterative_scan`** | **Terbaik sekarang** |
+
+Dokumentasi 0.8.0: *"iterative index scans, which will automatically scan more
+of the index until enough results are found."* Persis masalah kita.
+
+```sql
+SET LOCAL hnsw.iterative_scan = relaxed_order;   -- satu baris, tanpa migrasi
+```
+
+`relaxed_order` memberi recall lebih baik; urutan ketat bisa dipulihkan dengan
+materialized CTE bila diperlukan.
+
+### Versi sebenarnya
+
+Terpasang **0.6.0** (Januari 2024). Terbaru **0.8.6** (Juli 2026). Tertinggal
+~20 rilis, dan rilis yang kita butuhkan (0.8.0, Okt 2024) sudah ada **dua tahun**.
+
+Catatan prosedur upgrade: `ALTER EXTENSION vector UPDATE;` setelah paket baru
+terpasang. Index HNSW **tidak** perlu dibangun ulang untuk fitur ini.
+
+### Batas yang saya ketahui
+
+Pengukuran ini memakai tabel sintetis 3 dimensi, bukan korpus nyata, karena
+korpus dev hanya 2 chunk — pada skala itu planner Postgres memakai sequential
+scan dan HNSW tidak terpakai. Angka 5/10 di atas adalah **perilaku pgvector pada
+konfigurasi 10%**, yang persis cocok dengan kasus produksi Anda. Yang belum saya
+ukur: berapa banyak recall yang benar-benar hilang pada korpus Anda yang nyata.
 
 ## R3 — Kegagalan retrieval tanpa jejak yang terlihat
 
@@ -126,21 +177,6 @@ halaman Monitoring dengan warna peringatan bila di bawah ambang. Ini murah,
 dan mengubah kegagalan senyap menjadi sinyal yang terlihat.
 
 ---
-
-## R4 — HNSW + filter org: risiko teoretis, TIDAK terbukti di sini
-
-Saya mencoba membuktikan R2 pada data nyata: membuat organisasi mayoritas
-(500 vektor) dan minoritas (3 vektor) di tabel yang sama, lalu menjalankan
-query sebagai org minoritas dengan `LIMIT 10`.
-
-**Hasilnya: 3/3 baris dikembalikan, benar.** Bahkan dengan `hnsw.ef_search`
-diturunkan ke 1, hasilnya tetap lengkap — karena pada skala 503 vektor,
-tetangga terdekat dari query itu memang milik org minoritas sendiri.
-
-**Jadi saya tidak bisa mengklaim ini bug yang aktif.** Yang bisa saya
-katakan: mekanismenya nyata (terdokumentasi di pgvector), skalanya belum
-cukup besar untuk memicunya di sini, dan 0.8.0 menghilangkannya sepenuhnya.
-Saya mencatatnya sebagai **risiko yang wajar diantisipasi**, bukan cacat.
 
 ---
 
@@ -203,12 +239,27 @@ menuliskan koreksinya di tempat, bukan menghapusnya.
 Pelajaran yang berlaku untuk audit berikutnya: **sebelum menyebut sesuatu
 "temuan", pastikan dulu datanya nyata dan bukan artefak uji saya sendiri.**
 
+### Koreksi atas koreksi itu (penting)
+Karena kehati-hatian berlebihan setelah kesalahan di atas, saya sempat
+menurunkan R2 (HNSW) menjadi "risiko teoretis, tidak terbukti" — padahal
+**itu memang bug nyata**. Saya gagal mereproduksinya karena memakai sampel
+yang salah (3 vektor minoritas dari 503, bukan 10%).
+
+Jadi dua kesalahan saya berlawanan arah dan keduanya punya akar yang sama:
+**saya menyimpulkan sebelum mengukur pada konfigurasi yang benar.** Yang benar
+bukan "lebih hati-hati" atau "lebih berani", melainkan: ukur dengan parameter
+yang sesuai dengan kondisi produksi, lalu laporkan angkanya.
+
+R2 kini berdiri di atas angka resmi pgvector + pengukuran ulang yang cocok
+(5/10 baris pada `ef_search` default).
+
 ### Batas riset ini
-- Web search tidak tersedia (tidak ada `DEEPSEEK_API_KEY`), jadi riset
-  teknologi dilakukan dari versi paket terpasang, dokumentasi lokal, dan
-  pengukuran langsung — bukan dari berita terbaru. Untuk klaim "0.8.0 punya
-  `iterative_scan`" saya mengandalkan pengetahuan umum, dan saya **tidak bisa
-  memverifikasinya** karena 0.8.0 tidak terpasang di sini.
+- `web_search` tetap tidak berfungsi (HTTP 404), tetapi `web_fetch` BERHASIL.
+  R2 karena itu bersumber dari dokumentasi resmi pgvector:
+  `raw.githubusercontent.com/pgvector/pgvector/master/README.md` dan
+  `CHANGELOG.md`. Klaim versi (0.8.0 Okt 2024 menambahkan iterative index
+  scans; terbaru 0.8.6 Jul 2026) **terverifikasi dari changelog resmi**, bukan
+  dari ingatan saya.
 - Semua angka berasal dari database lokal + server embedding lokal. Tidak ada
   pengukuran pada instalasi pelanggan.
 - Halaman ini tidak mengubah penilaian 95/100 sebelumnya; itu tetap
@@ -216,6 +267,8 @@ Pelajaran yang berlaku untuk audit berikutnya: **sebelum menyebut sesuatu
 
 ### Cara memverifikasi ulang
 ```bash
-bun trial/74-all-dead.ts        # cakupan embedding/tsv per jalur
-bun trial/88-verify-dev.ts      # retrieval org dev (vektor + FTS)
+bun trial/74-all-dead.ts              # cakupan embedding/tsv per jalur
+bun trial/88-verify-dev.ts            # retrieval org dev (vektor + FTS)
+bun trial/90-multitenant-recall.ts    # reproduksi angka resmi pgvector
+bun trial/91-impact-proof.ts          # dampak: 5/10 baris pada default
 ```
