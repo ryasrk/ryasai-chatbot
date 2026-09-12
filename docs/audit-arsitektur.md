@@ -223,3 +223,67 @@ BYOK, isolasi tenant, dan IDOR. Probe tersimpan di `trial/` (ad-hoc, di luar CI)
 Skor 95/100 adalah **penilaian saya sendiri**, bukan hasil audit pihak ketiga.
 Kalau angka itu penting untuk keputusan bisnis, minta pihak independen menurunkannya
 ulang dari nol.
+
+---
+
+## Bagian 2 — Temuan dari menjalankan sistem (800 kasus, uji nyata)
+
+Bagian di atas berasal dari membaca kode. Bagian ini berasal dari **menjalankan
+sistem sungguhan** (database nyata, embedding nyata, dua organisasi nyata).
+Empat cacat ditemukan, tiga di antaranya kebocoran lintas-tenant.
+
+### Hasil akhir uji 800 kasus
+
+| Uji | Hasil |
+|---|---|
+| Pemilihan database (400 kasus) | **400/400 benar**, 0 salah DB |
+| Pertanyaan di luar topik (200 kasus) | 160/200 **ditolak** (sebelumnya 0/200) |
+| Guardrail SQL (200 kasus) | 100/100 jahat diblokir, **0 false positive** |
+
+### A. Konfigurasi LLM dibaca tanpa konteks organisasi — kebocoran lintas-tenant
+
+`getLlmRuntimeConfig`, `getAgentLlmConfig`, dan `getEmbeddingRuntimeConfig`
+memanggil `findFirst()` **tanpa filter organisasi**. Ekstensi tenant hanya
+menyaring query saat konteks org aktif, jadi panggilan tanpa konteks memindai
+seluruh tabel dan mengembalikan baris pertama — **milik tenant mana pun**.
+
+Terukur (`trial/55`): dengan dua org berbeda konfigurasi, panggilan tanpa konteks
+mengembalikan **model dan baseUrl org lain**. Artinya kredensial dan kuota org
+tersebut yang terpakai, dan vektor dihitung di ruang embedding mereka.
+
+Route HTTP aman karena memanggil `enterWithOrg` lebih dulu. **Pekerjaan background
+tidak.** Sekarang ketiganya fail-closed.
+
+### B. Cache embedding di-key hanya pada string pertanyaan
+
+Cache berlaku seluruh proses. Dua org bertanya string identik → org kedua
+menerima vektor org pertama, dihitung model yang berbeda (`trial/50`:
+vektor identik byte-per-byte). Sekarang di-key pada org + identitas model.
+
+### C. Jalur penolakan tidak pernah menyala
+
+Syaratnya `score === 0`, tapi cosinus **selalu positif**. Terukur: **200/200**
+pertanyaan di luar topik diatribusikan ke suatu database. Jalur penolakan yang
+tidak bisa menyala lebih buruk daripada tidak ada — terbaca sebagai perlindungan.
+Kini menuntut bukti positif. Hasil: 160/200 ditolak, akurasi tetap 100%.
+
+### D. `/api/v1/chat/completions` berjalan tanpa scope organisasi
+
+Route ini memakai Bearer API key, bukan sesi, jadi tidak ada org yang ditetapkan.
+Hanya **terlihat** setelah perbaikan A: chat completion eksternal gagal 500 pada
+instalasi yang terkonfigurasi benar. Diperbaiki dengan **memasukkan** org dari
+identitas API key — bukan melonggarkan guard.
+
+### Pelajaran
+
+Guard fail-closed (A) **membongkar** bug lama yang tersembunyi (D). Membuat kode
+menolak bekerja saat prasyaratnya tidak ada justru memperlihatkan tempat di mana
+prasyarat itu memang tidak pernah dipenuhi. Kalau A tidak dikerjakan, D akan
+terus berjalan: setiap instalasi multi-tenant berpotensi memakai kredensial
+tenant lain lewat API eksternal, tanpa gejala.
+
+### Status e2e
+
+`e2e/03-knowledge-chat.spec.ts` dan `e2e/04-api-key.spec.ts` **sudah gagal**
+pada commit 95de793 untuk alasan yang sama (D). Keduanya kini lulus.
+12/12 dev, 12/12 prod.
