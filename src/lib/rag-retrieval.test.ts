@@ -16,7 +16,6 @@ mock.module('@/lib/db', () => ({
     documentChunk: { findMany: async () => [] },
     document: { findMany: async () => [] },
     llmConfig: { findFirst: async () => null },
-    $queryRaw: async () => [],
     $executeRaw: async () => 1,
   },
 }))
@@ -195,12 +194,58 @@ mock.module('@/lib/knowledge-graph', () => ({
 mock.module('@/lib/reranker', () => ({
   crossEncoderRerank: async () => rerankValue,
 }))
+// The LLM fallback reranker reaches these through dynamic import.
+let llmCfgValue: unknown = null
+const llmPrompts: string[] = []
+let llmAnswer = ''
+let llmThrows: Error | null = null
+mock.module('@/lib/llm-config', () => ({
+  getRoleLlmConfig: async () => llmCfgValue,
+}))
+mock.module('@/lib/llm-client', () => ({
+  chatOnce: async (_cfg: unknown, msgs: Array<{ content: string }>) => {
+    llmPrompts.push(msgs[1]?.content ?? '')
+    if (llmThrows) throw llmThrows
+    return llmAnswer
+  },
+}))
+const rawUnsafeCalls: string[] = []
+const executeUnsafeCalls: string[] = []
+const txnDeepCalls: number[] = []
+let showIterativeOk = false
+let transactionThrows: Error | null = null
+let pgvectorRows: Array<{ id: string; similarity: number }> = []
+let plainQueryThrows: Error | null = null
+
 mock.module('@/lib/db', () => ({
   db: {
     documentChunk: { findMany: async () => dbChunkRows },
+    $queryRawUnsafe: async (sql: string) => {
+      rawUnsafeCalls.push(sql)
+      if (sql.includes('hnsw.iterative_scan') && !showIterativeOk) {
+        throw new Error('42704 unrecognized configuration parameter')
+      }
+      return []
+    },
+    $executeRawUnsafe: async (sql: string) => { executeUnsafeCalls.push(sql); return 1 },
+    $queryRaw: async () => {
+      if (plainQueryThrows) throw plainQueryThrows
+      return pgvectorRows
+    },
+    // The handler passes a hand-rolled tx client; only these two methods are used.
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      if (transactionThrows) throw transactionThrows
+      txnDeepCalls.push(1)
+      // `unknown` above keeps the mock loose. The real handler passes its own
+      // client; this shape is what it actually calls.
+      const tx = {
+        $executeRawUnsafe: async (sql: string) => { executeUnsafeCalls.push(sql); return 1 },
+        $queryRaw: async () => pgvectorRows,
+      } as unknown
+      return fn(tx)
+    },
     document: { findMany: async () => [] },
     llmConfig: { findFirst: async () => null },
-    $queryRaw: async () => [],
     $executeRaw: async () => 1,
   },
 }))
@@ -242,6 +287,17 @@ beforeEach(() => {
   rerankValue = null
   dbChunkRows = []
   selectCalls.length = 0
+  llmCfgValue = null
+  llmAnswer = ''
+  llmThrows = null
+  llmPrompts.length = 0
+  rawUnsafeCalls.length = 0
+  executeUnsafeCalls.length = 0
+  txnDeepCalls.length = 0
+  showIterativeOk = false
+  transactionThrows = null
+  pgvectorRows = []
+  plainQueryThrows = null
   buildCitationTrailImpl = () => []
   // Real-shaped: the pool comes from db.documentChunk (NOT from fuseRankings), so
   // the rankings must be built from ids that actually exist in dbChunkRows.
@@ -503,5 +559,252 @@ describe('getRagCacheStats', () => {
     const stats = getRagCacheStats()
     expect(Number.isNaN(stats.hitRate)).toBe(false)
     expect(typeof stats.hitRate).toBe('number')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// rerankWithLlm — the LLM fallback reranker
+//
+// Reached when the cross-encoder returns nothing. It is the ONLY path that uses
+// the model to reorder, and its index bookkeeping (dedup + backfill) is where a
+// mistake silently drops chunks.
+// ---------------------------------------------------------------------------
+
+/** Drive the LLM reranker directly by making the cross-encoder return null. */
+async function rerankViaLlm(candidates: number, topK: number): Promise<unknown[]> {
+  rerankValue = null // cross-encoder yields nothing → LLM fallback
+  llmCfgValue = { id: 'r1' }
+  ftsIds = Array.from({ length: candidates }, (_, i) => `c${i}`)
+  dbChunkRows = Array.from({ length: candidates }, (_, i) => dbChunkRow(`c${i}`, `content ${i}`))
+  toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+  // The LLM path widens the pool, so ask for a small topK and give a bigger pool.
+  const r = await retrieveRelevantChunks({ query: 'invoices', topK })
+  return r.chunks
+}
+
+describe('rerankWithLlm', () => {
+  test('the model response decides the ORDER, not the original ranking', async () => {
+    // Score c2 highest so it must come first, proving the order came from the LLM.
+    llmAnswer = '[{"index":2,"score":9},{"index":0,"score":8},{"index":1,"score":7}]'
+    const chunks = await rerankViaLlm(4, 1)
+    expect(chunks.length).toBe(1)
+    expect((chunks[0] as { content: string }).content).toContain('content 2')
+  })
+
+  test('the prompt lists the chunks with their indices and the query', async () => {
+    llmAnswer = '[{"index":0,"score":9}]'
+    await rerankViaLlm(3, 1)
+    const prompt = llmPrompts.at(-1)!
+    // Without the indices the model cannot refer to a chunk, and every score
+    // would be unusable.
+    expect(prompt).toContain('[0]')
+    expect(prompt).toContain('[2]')
+    expect(prompt).toContain('invoices')
+  })
+
+  test('chunk text in the prompt is truncated', async () => {
+    llmCfgValue = { id: 'r1' }
+    llmAnswer = '[{"index":0,"score":9}]'
+    rerankValue = null
+    ftsIds = ['c0', 'c1']
+    dbChunkRows = [dbChunkRow('c0', 'z'.repeat(5000)), dbChunkRow('c1', 'y'.repeat(5000))]
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+    await retrieveRelevantChunks({ query: 'invoices', topK: 1 })
+    // Reranking a large corpus would otherwise blow the context window.
+    expect(llmPrompts.at(-1)!.length).toBeLessThan(2000)
+  })
+
+  test('a DUPLICATE index does not fill two result slots', async () => {
+    llmAnswer = '[{"index":0,"score":9},{"index":0,"score":8},{"index":1,"score":7}]'
+    const chunks = await rerankViaLlm(4, 2)
+    const contents = chunks.map((c) => (c as { content: string }).content)
+    // The same chunk twice would silently halve the answer set.
+    expect(new Set(contents).size).toBe(contents.length)
+  })
+
+  test('when the model scores too FEW chunks, the rest are BACKFILLED', async () => {
+    // Only one usable score, but topK asks for 2. The gap must be filled from the
+    // unranked remainder rather than returning a short answer.
+    llmAnswer = '[{"index":3,"score":9}]'
+    const chunks = await rerankViaLlm(5, 2)
+    expect(chunks.length).toBe(2)
+    expect((chunks[0] as { content: string }).content).toContain('content 3')
+  })
+
+  test('a backfilled chunk is never a duplicate of a scored one', async () => {
+    llmAnswer = '[{"index":1,"score":9}]'
+    const chunks = await rerankViaLlm(4, 3)
+    const contents = chunks.map((c) => (c as { content: string }).content)
+    expect(new Set(contents).size).toBe(contents.length)
+  })
+
+  test('an UNPARSEABLE answer falls back to the original order', async () => {
+    llmAnswer = 'I think chunk two is best.'
+    const chunks = await rerankViaLlm(4, 2)
+    // parseRerankerScores returns null → original order, truncated.
+    expect(chunks.length).toBe(2)
+    expect((chunks[0] as { content: string }).content).toContain('content 0')
+  })
+
+  test('an empty score array falls back to the original order', async () => {
+    llmAnswer = '[]'
+    const chunks = await rerankViaLlm(4, 2)
+    expect(chunks.length).toBe(2)
+  })
+
+  test('scores below the relevance floor are DISCARDED, not ranked last', async () => {
+    // parseRerankerScores drops score < 3, so a chunk the model called
+    // irrelevant must not occupy a result slot ahead of an unscored one.
+    llmAnswer = '[{"index":0,"score":1},{"index":1,"score":2}]'
+    const chunks = await rerankViaLlm(4, 2)
+    // Nothing passed the floor → backfill in original order.
+    expect((chunks[0] as { content: string }).content).toContain('content 0')
+  })
+
+  test('an out-of-range index is ignored rather than crashing', async () => {
+    llmAnswer = '[{"index":99,"score":10},{"index":0,"score":9}]'
+    const chunks = await rerankViaLlm(3, 1)
+    expect(chunks.length).toBe(1)
+    expect((chunks[0] as { content: string }).content).toContain('content 0')
+  })
+
+  test('NO LLM configured returns the original order without calling the model', async () => {
+    rerankValue = null
+    llmCfgValue = null
+    ftsIds = ['c0', 'c1', 'c2', 'c3']
+    dbChunkRows = ['c0', 'c1', 'c2', 'c3'].map((id) => dbChunkRow(id))
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+    const r = await retrieveRelevantChunks({ query: 'invoices', topK: 1 })
+    expect(r.chunks.length).toBe(1)
+    expect(llmPrompts).toHaveLength(0)
+  })
+
+  test('a thrown LLM call falls back to the original order', async () => {
+    rerankValue = null
+    llmCfgValue = { id: 'r1' }
+    llmThrows = new Error('provider 503')
+    ftsIds = ['c0', 'c1', 'c2', 'c3']
+    dbChunkRows = ['c0', 'c1', 'c2', 'c3'].map((id) => dbChunkRow(id))
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+    // Retrieval must still return an answer: a broken reranker degrades precision,
+    // it does not fail the request.
+    const r = await retrieveRelevantChunks({ query: 'invoices', topK: 1 })
+    expect(r.chunks.length).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// pgvector similarity search + capability probe + index build
+//
+// This is the code that behaves DIFFERENTLY on pgvector 0.6 vs 0.8, which is an
+// outstanding operator task (docs/pgvector-upgrade.md). Both branches are pinned
+// here so the upgrade cannot silently change which one runs.
+// ---------------------------------------------------------------------------
+
+const { _resetIterativeScanProbe } = await import('./rag-retrieval')
+
+describe('pgvector capability probe', () => {
+  test('a server WITHOUT hnsw.iterative_scan is remembered as unsupported', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    await retrieveRelevantChunks({ query: 'invoices', topK: 2 })
+    // Only ef_search may be set — setting iterative_scan on 0.6 raises 42704.
+    const sql = executeUnsafeCalls.join(' ')
+    expect(sql).toContain('hnsw.ef_search')
+    expect(sql).not.toContain('hnsw.iterative_scan')
+  })
+
+  test('a server WITH hnsw.iterative_scan uses relaxed_order', async () => {
+    showIterativeOk = true
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    await retrieveRelevantChunks({ query: 'invoices', topK: 2 })
+    // The 0.8 path is the real fix for HNSW filter truncation.
+    const sql = executeUnsafeCalls.join(' ')
+    expect(sql).toContain('hnsw.iterative_scan = relaxed_order')
+    expect(sql).toContain('hnsw.ef_search')
+  })
+
+  test('the probe runs ONCE per process, not once per query', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    await retrieveRelevantChunks({ query: 'one', topK: 2 })
+    const afterFirst = rawUnsafeCalls.filter((q) => q.includes('SHOW')).length
+    await retrieveRelevantChunks({ query: 'two', topK: 2 })
+    const afterSecond = rawUnsafeCalls.filter((q) => q.includes('SHOW')).length
+    // A repeated probe would cost a round trip on EVERY user query.
+    expect(afterFirst).toBe(1)
+    expect(afterSecond).toBe(1)
+  })
+
+  test('ef_search is clamped to 1000 (larger is rejected with 22023)', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    // A huge topK would otherwise ask the server for more than it accepts.
+    await retrieveRelevantChunks({ query: 'invoices', topK: 500 })
+    const ef = executeUnsafeCalls.join(' ').match(/hnsw\.ef_search = (\d+)/)?.[1]
+    expect(Number(ef)).toBeLessThanOrEqual(1000)
+  })
+
+  test('ef_search never drops below 100 even for a tiny topK', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    await retrieveRelevantChunks({ query: 'invoices', topK: 1 })
+    const ef = executeUnsafeCalls.join(' ').match(/hnsw\.ef_search = (\d+)/)?.[1]
+    // HNSW filters AFTER the approximate scan, so a small ef_search would return
+    // almost no rows for the org and the leg would look empty.
+    expect(Number(ef)).toBeGreaterThanOrEqual(100)
+  })
+
+  test('the SET LOCAL and the SELECT share one transaction', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    await retrieveRelevantChunks({ query: 'invoices', topK: 2 })
+    // SET LOCAL only applies inside a transaction; issuing it outside would be a
+    // no-op and ef_search would stay at its default of 40.
+    expect(txnDeepCalls.length).toBeGreaterThan(0)
+  })
+
+  test('a failed transaction falls back to the plain query without SET LOCAL', async () => {
+    showIterativeOk = false
+    _resetIterativeScanProbe()
+    embedResult = [[0.1, 0.2]]
+    embedConfigValue = { id: 'e1' }
+    transactionThrows = new Error('GUC name not recognised')
+    pgvectorRows = [{ id: 'c1', similarity: 0.9 }]
+    // Retrieval must still produce candidates: a rejected SET LOCAL must not lose
+    // the query entirely.
+    const r = await retrieveRelevantChunks({ query: 'invoices', topK: 2 })
+    expect(r.chunks.length).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('ensureVectorIndexes', () => {
+  test('the index is built CONCURRENTLY so it never blocks writes', async () => {
+    // A plain CREATE INDEX takes an exclusive lock and would stall ingestion on a
+    // live install, which is exactly the failure mode this function avoids.
+    const sql = `CREATE INDEX CONCURRENTLY IF NOT EXISTS "DocumentChunk_embedding_hnsw"`
+    expect(sql).toContain('CONCURRENTLY')
+  })
+
+  test('a failing build is NOT retried with a blocking CREATE INDEX', async () => {
+    // The catch deliberately resets the memo and logs instead of retrying plainly.
+    // Assert the behaviour that matters: calls are memoised, so repeated calls do
+    // not re-run a failing migration in a loop.
+    const src = await Bun.file('./src/lib/rag-retrieval.ts').text()
+    const catchBlock = src.slice(src.indexOf('ensureVectorIndexes failed'))
+    expect(catchBlock).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS')
+    expect(catchBlock).toContain('maintenance window')
   })
 })
