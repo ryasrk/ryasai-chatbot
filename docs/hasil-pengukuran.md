@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a023fd6`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d9ed632`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a023fd6`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **78,05%** (15.369/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 157 file · **3.097 lulus · 0 gagal** | terukur |
+| Test coverage | **79,21%** (15.590/19.681 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 158 file · **3.146 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -66,8 +66,10 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/intent-pipeline.ts` | 93,47% (fungsi) | **100,00%** (fungsi) / 94,12% (baris) | 17 |
 | `src/app/api/documents/[id]/route.ts` | 34,83% | **100,00%** (baris) / 77,78% (fungsi) | 24 |
 | `src/app/api/integrations/[id]/route.ts` | 36,60% | **98,48%** (baris) / 91,67% (fungsi) | 29 |
-| Modul ter-gate | 62 modul | **64 modul** | +2 |
-| **Total repo** | **62,44%** | **78,05%** | — |
+| `src/app/api/integrations/[id]/schema/route.ts` | 37,25% | **97,38%** (baris) / 100,00% (fungsi) | 27 |
+| `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
+| Modul ter-gate | 62 modul | **66 modul** | +4 |
+| **Total repo** | **62,44%** | **79,21%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -177,8 +179,18 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Terjemahan P2025 dihapus (race jadi 500) | `integrations/[id]/route.ts` | 1 |
 | `toLowerCase` status dihapus | `integrations/[id]/route.ts` | 1 |
 | Urutan `drop` connector dibalik (pool dilepas setelah baris hilang) | `integrations/[id]/route.ts` | 1 |
+| Cek secret diubah fail-open (lisensi tanpa tanda tangan) | `license-issue.ts` | 1 |
+| Persist-sebelum-validate dihapus (kunci bisa hilang) | `license-issue.ts` | 3 |
+| Idempotensi kunci dihapus (lisensi kedua) | `license-issue.ts` | 1 |
+| Cap backoff 15 menit dihapus | `license-issue.ts` | 1 |
+| Status `unreachable` saat validasi gagal dihapus | `license-issue.ts` | 1 |
+| Deskripsi terkunci TIDAK dibawa saat refresh (insiden asli) | `schema/route.ts` | 1 |
+| Deskripsi otomatis ikut dibawa (teks basi membeku) | `schema/route.ts` | 1 |
+| `deleteMany` di atas `fetchSchema` (schema hilang saat refresh gagal) | `schema/route.ts` | 2 |
+| `refresh` dipicu nilai truthy apa pun | `schema/route.ts` | 1 |
+| `organizationId` tidak di-stamp saat `createMany` | `schema/route.ts` | 1 |
 
-**87 kontrol + 3 kontrol gate, semuanya sah.**
+**98 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -700,6 +712,64 @@ handler: test gagal seperti yang diharapkan.
 test GET yang tidak menyetel fixture sendiri melempar `undefined is not an object` dan
 muncul sebagai **500 yang terlihat seperti bug server**. Keduanya kini membawa field
 yang dibutuhkan GET.
+
+### 1.7l `license-issue.ts`: modul revenue yang tidak punya test sama sekali
+
+**10,63% → 100,00% fungsi / 87,50% baris (merged).** File ini **tidak punya file test
+sama sekali**, padahal ia menerbitkan lisensi yang menjadi sumber revenue on-prem. Yang
+membuatnya berbahaya: **order sudah ditandai settlement oleh webhook SEBELUM fungsi ini
+jalan**, jadi return value yang salah di sini entah menghilangkan lisensi yang sudah
+dibayar atau menerbitkan lisensi kedua.
+
+Yang diuji, semuanya uang-state:
+- **Idempotensi** — order belum settled → `ok:true` dan tidak melakukan apa pun (kalau
+  tidak, retry akan berputar selamanya pada order yang belum dibayar); order yang sudah
+  punya kunci **tidak** menerbitkan kunci kedua (kunci kedua membuat pelanggan memegang
+  lisensi yang validator juga terbitkan, dan membakar slot mesin kedua); kunci ada tapi
+  slug `null` **tetap** jatuh ke jalur error — penjaganya butuh KEDUANYA.
+- **Fail-closed** — `LICENSE_INTERNAL_SECRET` hilang → retryable, **bukan** skip diam-diam.
+  Menerbitkan lisensi tanpa tanda tangan lebih buruk daripada mengulang.
+- **Urutan persist** — kunci disimpan **SEBELUM** validasi (dibuktikan dengan tape
+  kejadian bersama), sehingga kegagalan validasi tidak pernah menghilangkan lisensi yang
+  sudah dibayar. Respons generate tanpa `expiresAt` membiarkan expiry **tidak tersentuh**
+  (`undefined`, bukan `null` yang akan menghapus expiry buatan admin).
+- **Status akhir dari helper BERSAMA** `licenseUpdateFromResult` dengan
+  `planFallback: 'flat'` — salinan inline dulu memberi default plan berbeda dari tiga
+  call site lain, itulah sebabnya helper ini jadi satu-satunya sumber.
+- **Kegagalan validasi pasca-issue** menandai org `unreachable` **tetapi tetap `ok:true`** —
+  kuncinya sudah tersimpan, mengulang akan menerbitkan kunci kedua, dan grace period
+  adalah keadaan yang benar untuk ditunggu.
+- **Backoff** eksponensial dari 30 dtk, **di-cap 15 menit** (tanpa cap, percobaan ke-10
+  sekitar 4 jam dan melewati sweep per jam yang seharusnya menyelamatkannya).
+
+### 1.7m `integrations/[id]/schema` — insiden yang baru sekarang punya penjaga
+
+**37,25% → 97,38% baris, fungsi 100,00%.** Ini route ketiga dengan cacat cakupan yang
+sama: hanya `PATCH` diuji. Yang paling penting adalah jalur `?refresh=1`, karena ia
+membaca ulang schema dari **database produksi pelanggan** lalu menghapus dan membangun
+ulang setiap baris.
+
+**Deskripsi tabel yang di-lock admin HARUS bertahan** — dulu alurnya `deleteMany` lalu
+`createMany` dari nol, menghapus setiap deskripsi terkunci sehingga fitur "edit + lock"
+jadi tidak berguna begitu admin menekan refresh. Deskripsi **otomatis tidak** dibawa
+(kalau tidak, teks basi membeku selamanya alih-alih diperbaiki enrichment), dan tabel
+yang berganti nama tidak mewarisi deskripsi lama karena pencocokan berdasarkan
+`tableName`. **`deleteMany` hanya berjalan SETELAH `fetchSchema` berhasil** — kalau
+tidak, refresh yang gagal meninggalkan integrasi **tanpa schema sama sekali** (dua
+kontrol membuktikan ini). Kegagalan connector → **502**, bukan 500: yang gagal adalah
+database pelanggan, bukan kita.
+
+### 1.7n Gate menangkap penulisnya untuk KEDUA kalinya
+
+Saat menambahkan floor untuk `license-issue.ts` saya menulis `95` dari angka **per-file**
+(100%, `91/91`). Gate menolaknya dengan `suspicious`: *"floor 95% exceeds the merged
+measurement 87.50%"*. Angka merged-nya `126/144`. Floor dikoreksi ke **85**.
+
+Ini persis jebakan yang membuat `suspicious` ditulis, dan sekarang ia menangkap orang
+yang menulisnya. Perhatikan bedanya: `integrations/[id]/schema` merged-nya 97,38%
+(186/191) sedangkan per-file 97,38% (223/229) — **persentasenya kebetulan sama, jumlah
+barisnya tidak**, jadi membandingkan angka saja tidak cukup; yang benar adalah selalu
+membaca `coverage-summary.json`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

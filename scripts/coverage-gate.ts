@@ -50,6 +50,7 @@ const FLOORS: Record<string, number> = {
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)
   'src/app/api/integrations/[id]/route.ts': 95, // measured 98.48% (195/198)
+  'src/app/api/integrations/[id]/schema/route.ts': 95, // measured 97.38% (186/191)
   'src/app/api/integrations/route.ts': 80, // measured 88.10% (185/210)
   'src/app/api/mcp/servers/[id]/route.ts': 90, // measured 98.56% (137/139)
   'src/app/api/mcp/servers/route.ts': 85, // measured 94.67% (142/150)
@@ -77,6 +78,10 @@ const FLOORS: Record<string, number> = {
   'src/lib/health-status.ts': 95, // measured 100.00% (14/14)
   'src/lib/hyde.ts': 95, // measured 100.00% (61/61)
   'src/lib/incoming-webhook.ts': 95, // measured 100.00% (40/40)
+  // floor from MERGED coverage-summary.json: 87.50% (126/144). The per-file run
+  // reports 100% (91/91); a floor of 95 pasted from that run is rejected by the
+  // `suspicious` check below — which is exactly the trap it was written to catch.
+  'src/lib/license-issue.ts': 85,
   'src/lib/llm-budget.ts': 95, // measured 100.00% (57/57)
   'src/lib/llm-client-openai.ts': 80, // measured 85.57% (172/201)
   'src/lib/llm-client-utils.ts': 85, // measured 90.27% (167/185)

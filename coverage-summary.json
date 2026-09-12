@@ -1,16 +1,10 @@
 {
-  "linePct": 78.05,
-  "linesHit": 15369,
-  "linesFound": 19692,
+  "linePct": 79.21,
+  "linesHit": 15590,
+  "linesFound": 19681,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
-    {
-      "file": "src/lib/license-issue.ts",
-      "hit": 15,
-      "found": 142,
-      "pct": 10.56338028169014
-    },
     {
       "file": "src/lib/source-init.ts",
       "hit": 15,
@@ -40,12 +34,6 @@
       "hit": 48,
       "found": 142,
       "pct": 33.80281690140845
-    },
-    {
-      "file": "src/app/api/integrations/[id]/schema/route.ts",
-      "hit": 76,
-      "found": 204,
-      "pct": 37.254901960784316
     },
     {
       "file": "src/lib/redis.ts",
@@ -408,6 +396,12 @@
       "pct": 85.57213930348259
     },
     {
+      "file": "src/lib/license-issue.ts",
+      "hit": 126,
+      "found": 144,
+      "pct": 87.5
+    },
+    {
       "file": "src/lib/smart-router-helpers.ts",
       "hit": 332,
       "found": 377,
@@ -598,6 +592,12 @@
       "hit": 57,
       "found": 59,
       "pct": 96.61016949152543
+    },
+    {
+      "file": "src/app/api/integrations/[id]/schema/route.ts",
+      "hit": 186,
+      "found": 191,
+      "pct": 97.38219895287958
     },
     {
       "file": "src/lib/doc-versioning.ts",
