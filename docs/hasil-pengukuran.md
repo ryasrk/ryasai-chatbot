@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `076a7fc`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a023fd6`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `076a7fc`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **76,75%** (15.126/19.707 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 157 file · **3.056 lulus · 0 gagal** | terukur |
+| Test coverage | **78,05%** (15.369/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 157 file · **3.097 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -64,7 +64,10 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/admin-tools.ts` | 92,42% (baris, 3 file bersama) | **97,14%** (baris) / 96,49% (fungsi) | 19 |
 | `src/lib/tool-router-agentic.ts` | 93,75% (baris, per-file) | **100,00%** (baris) / 91,45% (fungsi) | 26 |
 | `src/lib/intent-pipeline.ts` | 93,47% (fungsi) | **100,00%** (fungsi) / 94,12% (baris) | 17 |
-| **Total repo** | **62,44%** | **76,75%** | — |
+| `src/app/api/documents/[id]/route.ts` | 34,83% | **100,00%** (baris) / 77,78% (fungsi) | 24 |
+| `src/app/api/integrations/[id]/route.ts` | 36,60% | **98,48%** (baris) / 91,67% (fungsi) | 29 |
+| Modul ter-gate | 62 modul | **64 modul** | +2 |
+| **Total repo** | **62,44%** | **78,05%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -165,8 +168,17 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Guard anti-nag `analyzeIntent` dihapus (regresi insiden) | `intent-pipeline.ts:185` | 3 |
 | Fallback confident pada error LLM diubah ke fail-closed | `intent-pipeline.ts:732` | 2 |
 | Cek evidence dipindah ke BAWAH `if (!cfg)` (regresi insiden) | `intent-pipeline.ts:710` | 2 |
+| `requireRole` dihapus dari DELETE dokumen (viewer bisa hapus) | `documents/[id]/route.ts` | 2 |
+| `invalidateRagCache` dihapus dari DELETE dokumen (cache basi) | `documents/[id]/route.ts` | 1 |
+| Re-cognify dijalankan pada SETIAP PATCH | `documents/[id]/route.ts` | 3 |
+| Audit `DOC_DELETE` dihapus | `documents/[id]/route.ts` | 1 |
+| `maskConfig` dihapus dari GET integrasi (kebocoran kredensial) | `integrations/[id]/route.ts` | 1 |
+| `safeParseColumns` tanpa `catch` (satu baris rusak menjatuhkan response) | `integrations/[id]/route.ts` | 1 |
+| Terjemahan P2025 dihapus (race jadi 500) | `integrations/[id]/route.ts` | 1 |
+| `toLowerCase` status dihapus | `integrations/[id]/route.ts` | 1 |
+| Urutan `drop` connector dibalik (pool dilepas setelah baris hilang) | `integrations/[id]/route.ts` | 1 |
 
-**78 kontrol + 3 kontrol gate, semuanya sah.**
+**87 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -648,6 +660,46 @@ apakah config diambil lebih dulu, jadi **tidak ada regresi untuk ditangkap**.
 Insidennya dulu adalah cek yang berada di bawah gerbang `!cfg`, dan di situlah kontrol
 kini mendarat (2 test gagal). **Kontrol yang gagal-menggagalkan layak ditelusuri
 sampai sebab sebenarnya, bukan diterima setelah run pertama yang lulus.**
+
+### 1.7k Dua route `[id]`: 34,8% → 100% dan 36,6% → 98,5%
+
+Lonjakan terbesar sesi ini. Kedua route punya cacat cakupan yang **sama**: hanya
+`PATCH` yang diuji, sehingga GET (yang justru menangani kredensial) dan DELETE tidak
+pernah berjalan sama sekali.
+
+**`documents/[id]/route.ts` → 100,00% baris.** GET mengembalikan `chunkCount` (TOTAL)
+dan `chunkPreview` (halaman pertama) sebagai **dua field terpisah** — menggabungkannya
+akan membuat UI melaporkan "1 chunk" untuk dokumen 7 chunk; hanya mengambil 3 chunk
+pertama (mengambil seluruh chunk dokumen 10.000 chunk itu transfer besar tanpa guna);
+id tak dikenal → 404, bukan 200 dengan `document: null` yang merender kerangka kosong
+seperti gagal muat. DELETE membatalkan **kedua** cache dan menulis audit berisi jumlah
+chunk; gerbang role berjalan **sebelum** lookup dokumen sehingga non-admin tidak bisa
+memakai beda 404-vs-403 sebagai oracle keberadaan id. PATCH re-enable memicu
+**re-cognify** dengan chunk terurut — cognee membangun ulang dokumen dari chunk itu,
+dan urutan acak menghasilkan graf kacau; re-cognify pada dokumen yang **sudah** aktif,
+pada disable, atau pada edit `contextPrompt` saja **tidak** boleh terjadi.
+
+**`integrations/[id]/route.ts` → 98,48% baris.** Konfigurasi yang dikirim adalah versi
+**ter-mask**, dan blob terenkripsi tidak boleh muncul di body. Satu baris schema yang
+rusak **degradasi ke kolom kosong**, bukan menjatuhkan seluruh response. DELETE
+melepas **pool connector SEBELUM** baris dihapus (spec §3.2). PATCH: status
+di-lowercase lalu divalidasi (menyimpan `'ACTIVE'` akan terlewat oleh query
+`'active'`); `businessContext` disimpan **apa adanya** karena spasi awal bisa bermakna;
+P2025 pada update → 404 seperti jalur lookup; tapi error koneksi tetap 500 — melaporkan
+gangguan koneksi sebagai 404 akan **menyembunyikan outage**.
+
+**Satu test saya tulis lemah, lalu diperbaiki.** Test urutan pool awalnya hanya
+memastikan `drop` dan `delete` **masing-masing terjadi**, dan itu tetap lulus meski
+urutannya dibalik — persis kegagalan "kontrol yang lulus karena salah sasaran" yang
+dokumen ini peringatkan. Sekarang keduanya menulis ke satu tape `effects` bersama dan
+menguji urutannya, dan **saya buktikan gigitannya** dengan membalik dua pernyataan di
+handler: test gagal seperti yang diharapkan.
+
+**Catatan fixture (kelas yang sama dua kali):** fixture default `docExisting` dan
+`integrationExisting` ditulis untuk PATCH dan tidak punya `_count` / `schemas`, jadi
+test GET yang tidak menyetel fixture sendiri melempar `undefined is not an object` dan
+muncul sebagai **500 yang terlihat seperti bug server**. Keduanya kini membawa field
+yang dibutuhkan GET.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

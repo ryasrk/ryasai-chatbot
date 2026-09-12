@@ -1,7 +1,7 @@
 {
-  "linePct": 76.75,
-  "linesHit": 15126,
-  "linesFound": 19707,
+  "linePct": 78.05,
+  "linesHit": 15369,
+  "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -40,18 +40,6 @@
       "hit": 48,
       "found": 142,
       "pct": 33.80281690140845
-    },
-    {
-      "file": "src/app/api/documents/[id]/route.ts",
-      "hit": 70,
-      "found": 201,
-      "pct": 34.82587064676617
-    },
-    {
-      "file": "src/app/api/integrations/[id]/route.ts",
-      "hit": 75,
-      "found": 205,
-      "pct": 36.58536585365854
     },
     {
       "file": "src/app/api/integrations/[id]/schema/route.ts",
@@ -624,6 +612,12 @@
       "pct": 98.07692307692307
     },
     {
+      "file": "src/app/api/integrations/[id]/route.ts",
+      "hit": 195,
+      "found": 198,
+      "pct": 98.48484848484848
+    },
+    {
       "file": "src/app/api/mcp/servers/[id]/route.ts",
       "hit": 137,
       "found": 139,
@@ -663,6 +657,12 @@
       "file": "src/app/api/documents/[id]/reprocess/route.ts",
       "hit": 55,
       "found": 55,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/documents/[id]/route.ts",
+      "hit": 193,
+      "found": 193,
       "pct": 100
     },
     {
