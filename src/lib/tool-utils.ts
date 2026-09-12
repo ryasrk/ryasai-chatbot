@@ -242,6 +242,42 @@ export function unavailableDataSourceResult(
   }
 }
 
+/**
+ * Refuse to guess which database the user meant, and name the candidates.
+ *
+ * Used when several integrations are active and none of them matched the
+ * question. Answering from an arbitrary source produces a confident, wrong
+ * answer with no error (see resolveIntegrationForQuestion in smart-router.ts),
+ * so asking is the safer failure. The candidate names are passed in so the user
+ * can pick one immediately rather than being told "be more specific".
+ */
+export function ambiguousDataSourceResult(
+  type: PendingToolRun['type'],
+  question: string,
+  candidateNames: string[],
+  started: number,
+): CompletionResult {
+  const list = candidateNames.slice(0, 10)
+  const more = candidateNames.length > list.length ? ` (and ${candidateNames.length - list.length} more)` : ''
+  return {
+    answer:
+      `I could not tell which data source this question refers to, and I do not want to guess ` +
+      `and answer from the wrong database. Available sources${more}: ${list.join(', ')}. ` +
+      `Please name the source you mean — for example "in ${list[0] ?? 'the sales database'}, ...".`,
+    citations: [],
+    chartData: null,
+    toolRuns: [
+      {
+        type,
+        status: 'blocked',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(question),
+        errorMessage: 'Ambiguous data source — refusing to guess.',
+      },
+    ],
+  }
+}
+
 function isNumeric(value: unknown): boolean {
   if (typeof value === 'number') return true
   if (typeof value === 'bigint') return true

@@ -53,7 +53,13 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\binto\s+outfile/i, label: 'MySQL file write (into outfile)' },
   // System / catalog tables (defence-in-depth; the demo connector also enforces
   // a demo_* allowlist). Covers sqlite_master, sqlite_*, information_schema, etc.
-  { re: /\b(?:from|join)\s+["`]?(sqlite_master|sqlite_\w*|information_schema|mysql\.|pg_\w+|sys\.)["`]?/i, label: 'system/catalog table access' },
+  { re: /\b(?:from|join)\s+["`]?(sqlite_master|sqlite_\w*|information_schema|mysql\.|pg_\w+|sys\.|system\.)["`]?/i, label: 'system/catalog table access' },
+  // ClickHouse `system.*` was NOT covered and slipped through: `SELECT * FROM
+  // system.processes` exposes every running query on the server (including other
+  // tenants' SQL and, in some tables, credentials). Found by probing each
+  // supported dialect (trial/32) rather than by reading the rule list.
+  // NOTE: the guard is still lexical — the real containment is DB-level
+  // read-only plus the customer granting a least-privilege login.
   { re: /\bunion\s+select\b.*\bfrom\s+(information_schema|mysql|pg_|sys\.|sqlite_)/i, label: 'system-table union scan' },
   { re: /\battach\s+database\b/i, label: 'SQLite attach database' },
 ]

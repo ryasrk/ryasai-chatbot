@@ -381,6 +381,63 @@ async function pickBestIntegrationWithAmbiguity(
   return { integrationId: scored[0].id }
 }
 
+/**
+ * Resolve which database integration a question should run against, with an
+ * explicit decision about what to do when NOTHING matches.
+ *
+ * INCIDENT (2026-09): three divergent implementations existed —
+ *   A. tool-branches.ts        `orderBy: { createdAt: 'asc' }` — always returned
+ *                              the OLDEST integration, never looked at the
+ *                              question at all, never refused.
+ *   B. stream-preparers.ts     an inline ~45-line keyword scorer, ending in
+ *                              `bestMatch ?? allIntegrations[0]` — also fell
+ *                              back to the oldest when every score was 0.
+ *   C. this file's ambiguity picker — the only one that refused on a zero score.
+ * The same question could therefore be answered from a DIFFERENT database
+ * depending on transport, and A/B would silently query the wrong one: no error,
+ * no log, just a confident answer built from the wrong schema. Proven at runtime
+ * (trial/25-wrong-db-proof.ts): with an HR database created before a Sales
+ * database, "berapa total penjualan?" ran against HR.
+ *
+ * This is now the single implementation. Callers decide `onNoMatch`:
+ *   - 'refuse'  (default) — return null and let the caller ask which source the
+ *                user means. Correct for chat: a wrong-but-plausible answer is
+ *                worse than a clarifying question.
+ *   - 'oldest'  — legacy behaviour, for scheduled/automated runs where there is
+ *                nobody to ask and failing the run is worse than guessing.
+ * Never widen 'oldest' to an interactive path.
+ */
+export type IntegrationChoice = {
+  integrationId: string
+  /** true when the pick came from the legacy 'oldest' fallback, not a match. */
+  unverified: boolean
+}
+
+async function resolveIntegrationForQuestion(
+  tokens: string[],
+  question: string,
+  onNoMatch: 'refuse' | 'oldest' = 'refuse',
+): Promise<IntegrationChoice | null> {
+  const picked = await pickBestIntegrationWithAmbiguity(tokens, question)
+  if (picked?.integrationId) {
+    return { integrationId: picked.integrationId, unverified: false }
+  }
+
+  // No integration scored above zero. Options: refuse (interactive) or take the
+  // oldest (unattended), and if we take the oldest we MARK it — callers can then
+  // tell the user, or log it, rather than presenting a guess as a match.
+  const all = await db.integration.findMany({
+    where: { status: 'active' },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  })
+  if (all.length === 0) return null
+  if (onNoMatch === 'refuse') return null
+  return { integrationId: all[0].id, unverified: true }
+}
+
+export { resolveIntegrationForQuestion }
+
 export async function pickBestIntegration(
   tokens: string[],
   question?: string,

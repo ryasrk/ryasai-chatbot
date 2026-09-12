@@ -1,0 +1,32 @@
+/** Bukti: TIGA implementasi pemilihan integrasi, perilaku berbeda. */
+import { appendFileSync } from 'node:fs'
+const emit = (m: string) => appendFileSync('/tmp/div.txt', m + '\n')
+
+function main() {
+  emit('=== TIGA JALUR PEMILIHAN INTEGRASI ===')
+  emit('')
+  emit('A. tool-branches.ts:240  (NON-STREAMING, chat HTTP biasa)')
+  emit('   findFirst({ where:{status:active}, orderBy:{createdAt:asc} })')
+  emit('   -> integrasi TERTUA. Tidak melihat pertanyaan SAMA SEKALI.')
+  emit('   -> tidak pernah gagal jelas. Selalu mengembalikan sesuatu.')
+  emit('')
+  emit('B. stream-preparers.ts:187  (STREAMING/SSE)')
+  emit('   salinan heuristik keyword sendiri, inline ~45 baris')
+  emit('   -> kalau semua skor 0: `bestMatch ?? allIntegrations[0]`')
+  emit('   -> TETAP menebak yang tertua kalau tidak ada yang cocok')
+  emit('')
+  emit('C. smart-router.ts:303 pickBestIntegrationWithAmbiguity')
+  emit('   keyword 40% + embedding semantik 60%')
+  emit('   -> `if (scored[0].score === 0) return undefined`')
+  emit('   -> GAGAL JELAS. Ini satu-satunya yang benar.')
+  emit('')
+  emit('MASALAH: tergantung transport, pertanyaan yang sama bisa dijawab')
+  emit('dari database yang BERBEDA. Dan A/B tidak pernah menolak.')
+  emit('')
+  emit('BUKTI dari kode (bukan opini):')
+  emit('  A: orderBy createdAt asc      -> selalu ada hasil')
+  emit('  B: bestMatch ?? allIntegrations[0] -> selalu ada hasil')
+  emit('  C: return undefined saat skor 0    -> bisa menolak')
+  process.exit(0)
+}
+main()

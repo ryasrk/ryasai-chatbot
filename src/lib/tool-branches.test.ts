@@ -21,6 +21,9 @@ const mockGetPromptSettings = mock(async (): Promise<unknown> => ({
 }))
 const mockDocumentFindMany = mock(async (): Promise<unknown> => [])
 const mockIntegrationFindFirst = mock(async (): Promise<unknown> => null)
+// Single active integration keeps the disambiguation path out of these tests;
+// the ambiguity behaviour has its own tests in integration-selection.test.ts.
+const mockIntegrationFindMany = mock(async (): Promise<unknown> => [{ name: 'Only Source' }])
 const mockConnectorExecuteQuery = mock(async (): Promise<unknown> => ({ rows: [{ id: 1 }], rowCount: 1, executionMs: 1 }))
 const mockValidateSql = mock((): unknown => ({ ok: true, sanitized: 'SELECT 1 LIMIT 100' }))
 const mockAuditLogCreate = mock(async () => ({}))
@@ -29,7 +32,7 @@ const mockQueryHistoryCreate = mock(async () => ({}))
 mock.module('@/lib/db', () => ({
   db: {
     document: { findMany: mockDocumentFindMany },
-    integration: { findFirst: mockIntegrationFindFirst },
+    integration: { findFirst: mockIntegrationFindFirst, findMany: mockIntegrationFindMany },
     auditLog: { create: mockAuditLogCreate },
     queryHistory: { create: mockQueryHistoryCreate },
   },

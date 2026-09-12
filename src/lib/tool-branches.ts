@@ -18,6 +18,8 @@ import {
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
 import { getPromptSettings } from '@/lib/prompt-settings'
 import { buildSourceGuidance } from '@/lib/source-guidance'
+import { wrapUntrusted } from '@/lib/evidence-boundary'
+import { resolveIntegrationForQuestion, tokenize } from '@/lib/smart-router'
 import {
   buildAuthHeaders,
   buildEndpointUrl,
@@ -37,6 +39,7 @@ import {
   sanitizeSqlError,
   summarize,
   unavailableDataSourceResult,
+  ambiguousDataSourceResult,
   safeParseColumns,
   safeParseSampleRow,
   extractTableName,
@@ -135,9 +138,12 @@ export async function runRagBranch(args: {
         `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`,
     )
     .join('\n\n---\n\n')
+  // ponytail: document text is UNTRUSTED — a customer can upload anything. Frame
+  // it as data so a document cannot pose as an instruction (see evidence-boundary.ts
+  // for scope: the SQL path was already defended; this closes the TEXT path).
   const context = retrieval.graphContext
-    ? `${chunkContext}\n\n--- Knowledge Graph Context ---\n${retrieval.graphContext}`
-    : chunkContext
+    ? `${wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)}\n\n${wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):', retrieval.graphContext)}`
+    : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
   // ponytail: if reflection says evidence is insufficient after multi-turn retrieval,
   // note it in the context so the LLM doesn't hallucinate beyond the evidence.
   const reflectionNote = !retrieval.reflection.sufficient && retrieval.retrievalPasses >= 2
@@ -232,20 +238,58 @@ export async function runSqlBranch(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const integration = args.integrationId
+  // ponytail: when the router did not resolve a specific integration, ASK
+  // WHICH ONE — do not take the oldest. `findFirst({ orderBy: { createdAt: 'asc' } })`
+  // used to pick the oldest active integration without looking at the question,
+  // so a Sales question could be answered from the HR database. That failed
+  // SILENTLY: if both schemas happen to share a table name the generated SQL is
+  // valid and the answer is simply wrong, with no error and no log
+  // (proven at runtime, trial/25-wrong-db-proof.ts). A clarifying question is
+  // strictly better than a confident answer from the wrong database.
+  // The streaming path had a second, different heuristic — both now go through
+  // resolveIntegrationForQuestion so they cannot drift again.
+  let integration = args.integrationId
     ? await db.integration.findFirst({
         where: { id: args.integrationId, status: 'active' },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
-    : await db.integration.findFirst({
+    : null
+
+  let integrationUnverified = false
+  if (!integration) {
+    const active = await db.integration.findMany({
+      where: { status: 'active' },
+      orderBy: { name: 'asc' },
+      select: { name: true },
+    })
+    if (active.length === 1) {
+      // Exactly one source configured — nothing to disambiguate.
+      integration = await db.integration.findFirst({
         where: { status: 'active' },
-        orderBy: { createdAt: 'asc' },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
+    } else if (active.length > 1) {
+      const choice = await resolveIntegrationForQuestion(
+        tokenize(args.question),
+        args.question,
+        'refuse',
+      )
+      if (!choice) {
+        // Refuse rather than guess, and name the candidates so the user can pick.
+        return ambiguousDataSourceResult('SQL', args.question, active.map((n) => n.name), started)
+      }
+      integration = await db.integration.findFirst({
+        where: { id: choice.integrationId, status: 'active' },
+        include: { schemas: { orderBy: { tableName: 'asc' } } },
+      })
+      integrationUnverified = choice.unverified
+    }
+  }
 
   if (!integration || integration.schemas.length === 0) {
     return unavailableDataSourceResult('SQL', args.question, started)
   }
+  void integrationUnverified
 
   // ponytail: integration.contextPrompt is admin-edited business guidance for
   // SQL answer synthesis (spec §Injection → SQL). It's appended to BOTH the
@@ -437,7 +481,7 @@ export async function runSqlBranch(args: {
   const truncated = result.rowCount >= SQL_MAX_LIMIT
   const answer = await generateAnswer({
     question: args.question,
-    context: JSON.stringify(result.rows, null, 2),
+    context: wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2)),
     source: 'SQL',
     systemPromptPrefix: effectiveSystemPromptPrefix,
     memoryContext: args.memoryContext,
@@ -587,7 +631,7 @@ export async function runRestBranch(args: {
 
   const answer = await generateAnswer({
     question: args.question,
-    context: result.bodyText,
+    context: wrapUntrusted('CONTEXT (REST API RESPONSE):', result.bodyText),
     source: 'REST_API',
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,

@@ -15,6 +15,8 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
+import { resolveIntegrationForQuestion, tokenize } from '@/lib/smart-router'
+import { wrapUntrusted } from '@/lib/evidence-boundary'
 import { matchEndpoint } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
@@ -112,9 +114,12 @@ export async function prepareRagStream(args: {
     .map((item) => `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`)
     .join('\n\n---\n\n')
 
+  // Same framing as the non-streaming RAG branch — untrusted document text must
+  // be marked as data on BOTH transports, or the two drift (this class of
+  // transport drift has now bitten three times in this codebase).
   const context = retrieval.graphContext
-    ? `${chunkContext}\n\n--- Knowledge Graph Context ---\n${retrieval.graphContext}`
-    : chunkContext
+    ? `${wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)}\n\n${wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):', retrieval.graphContext)}`
+    : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
 
   const stream = streamAnswer({
     question: args.question,
@@ -165,6 +170,42 @@ export async function prepareRagStream(args: {
   }
 }
 
+/**
+ * Message shown when we refuse to guess the data source in a streaming turn.
+ * Kept next to the non-streaming twin (ambiguousDataSourceResult in tool-utils)
+ * so the two wordings stay recognisably the same behaviour to the user.
+ */
+function ambiguousStreamNote(names: string[]): string {
+  const list = names.slice(0, 10)
+  const more = names.length > list.length ? ` (and ${names.length - list.length} more)` : ''
+  return (
+    `I could not tell which data source this question refers to, and I do not want to guess ` +
+    `and answer from the wrong database. Available sources${more}: ${list.join(', ')}. ` +
+    `Please name the source you mean — for example "in ${list[0] ?? 'the sales database'}, ...".`
+  )
+}
+
+/** Stream a plain note (no SQL) as the assistant's answer. */
+function prepareChatStreamWithNote(
+  args: { question: string; systemPromptPrefix?: string; memoryContext?: string; chatHistory?: ChatHistoryEntry[] },
+  note: string,
+  started: number,
+): StreamingCompletionResult {
+  const stream = (async function* () { yield note })()
+  return {
+    toolRuns: [{
+      type: 'SQL',
+      status: 'blocked',
+      latencyMs: Date.now() - started,
+      inputSummary: summarize(args.question),
+      errorMessage: 'Ambiguous data source — refusing to guess.',
+    }],
+    citations: [],
+    chartData: null,
+    stream,
+  }
+}
+
 export async function prepareSqlStream(args: {
   question: string
   userId: string
@@ -181,44 +222,35 @@ export async function prepareSqlStream(args: {
       })
     : null
 
-  // ponytail: when no specific integration was resolved by the router (e.g.
-  // embedding API timed out during pickBestIntegration), fall back to picking
-  // the integration whose schema keywords best match the question — NOT just
-  // the oldest one. The old `findFirst({ orderBy: { createdAt: 'asc' } })`
-  // always picked "Local Postgres Test" (the app's own DB) over PRINASA.
+  // ponytail: this used to be an inline ~45-line keyword scorer ending in
+  // `bestMatch ?? allIntegrations[0]` — a SECOND implementation that drifted from
+  // the non-streaming path's `orderBy: { createdAt: 'asc' }` and from the
+  // router's ambiguity-aware picker. The same question could therefore resolve to
+  // a different database depending on transport, and when nothing matched both
+  // fallbacks silently took the OLDEST source instead of refusing. Now delegated
+  // to resolveIntegrationForQuestion so there is exactly one implementation.
   if (!integration) {
-    const allIntegrations = await db.integration.findMany({
-      where: { status: 'active' },
-      include: { schemas: { orderBy: { tableName: 'asc' } } },
-    })
-    if (allIntegrations.length === 1) {
-      integration = allIntegrations[0]
-    } else if (allIntegrations.length > 1) {
-      const qLower = args.question.toLowerCase()
-      const qTokens = qLower.split(/[^a-z0-9]+/).filter((t) => t.length >= 3)
-      let bestMatch: typeof allIntegrations[0] | null = null
-      let bestScore = 0
-      for (const integ of allIntegrations) {
-        let score = 0
-        for (const s of integ.schemas) {
-          if (qLower.includes(s.tableName.toLowerCase())) score += 2
-          try {
-            const cols = JSON.parse(s.columns) as Array<{ name?: string }>
-            for (const c of cols) {
-              if (c.name && qLower.includes(c.name.toLowerCase())) score += 1
-            }
-          } catch { /* skip */ }
-        }
-        // Also check integration name keywords
-        for (const word of integ.name.toLowerCase().split(/\s+/)) {
-          if (word.length >= 4 && qLower.includes(word)) score += 3
-        }
-        if (score > bestScore) {
-          bestScore = score
-          bestMatch = integ
-        }
+    const available = await db.integration.count({ where: { status: 'active' } })
+    if (available > 1) {
+      const choice = await resolveIntegrationForQuestion(tokenize(args.question), args.question, 'refuse')
+      if (!choice) {
+        // Refuse to guess in a streaming turn too, and name the candidates.
+        const names = await db.integration.findMany({
+          where: { status: 'active' },
+          orderBy: { name: 'asc' },
+          select: { name: true },
+        })
+        return prepareChatStreamWithNote(args, ambiguousStreamNote(names.map((n) => n.name)), started)
       }
-      integration = bestMatch ?? allIntegrations[0]
+      integration = await db.integration.findFirst({
+        where: { id: choice.integrationId, status: 'active' },
+        include: { schemas: { orderBy: { tableName: 'asc' } } },
+      })
+    } else {
+      integration = await db.integration.findFirst({
+        where: { status: 'active' },
+        include: { schemas: { orderBy: { tableName: 'asc' } } },
+      })
     }
   }
 
@@ -316,7 +348,7 @@ export async function prepareSqlStream(args: {
   }
 
   const result = executed
-  const context = JSON.stringify(result.rows, null, 2)
+  const context = wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
   const chartData = buildChartDataFromRows(result.rows)
   const stream = streamAnswer({
     question: args.question,
@@ -499,7 +531,8 @@ export async function preparePluginStream(args: {
     }
   }
 
-  const context = `Plugin ${plugin.name} returned:\n${result.output}\n\nUser question: ${args.question}`
+  // Plugin output is third-party and therefore untrusted too.
+  const context = `${wrapUntrusted(`CONTEXT (PLUGIN ${plugin.name}):`, result.output)}\n\nUser question: ${args.question}`
   const stream = streamAnswer({
     question: args.question,
     context,
