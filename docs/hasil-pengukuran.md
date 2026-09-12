@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9fb3de4`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4126c40`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9fb3de4`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **76,47%** (15.070/19.707 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 157 file · **3.031 lulus · 0 gagal** | terukur |
+| Test coverage | **76,64%** (15.104/19.707 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 157 file · **3.044 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -62,7 +62,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router-agentic.ts` | 68,43% (baris) | **72,61%** (baris) / **89,66%** (fungsi) | 21 |
 | `src/lib/planner.ts` | 83,24% (baris) | **94,68%** (baris, per-file) | 21 |
 | `src/lib/admin-tools.ts` | 92,42% (baris, 3 file bersama) | **97,14%** (baris) / 96,49% (fungsi) | 19 |
-| **Total repo** | **62,44%** | **76,47%** | — |
+| `src/lib/tool-router-agentic.ts` | 93,75% (baris, per-file) | **100,00%** (baris) / 91,45% (fungsi) | 26 |
+| **Total repo** | **62,44%** | **76,64%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -157,8 +158,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Lantai gate dari angka PER-FILE (kesalahan nyata) | `coverage-gate.ts` guard | 1 (exit 1) |
 | Lantai di atas angka merged | `coverage-gate.ts` guard | 1 (exit 1) |
 | Modul ter-gate hilang dari laporan | `coverage-gate.ts` | 1 (exit 1) |
+| Revisi reflexion di-APPEND bukan REPLACE | `tool-router-agentic.ts:444` | 1 |
+| Heuristik substantial-evidence dihapus (streaming) | `tool-router-agentic.ts:480` | 3 |
+| Note deadline sintesis dihapus | `tool-router-agentic.ts:544` | 1 |
 
-**72 kontrol + 3 kontrol gate, semuanya sah.**
+**75 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -544,6 +548,67 @@ benar (70) ditulis di komentar agar orang berikutnya tidak menurunkannya ulang.
 
 Kontrol A adalah yang paling bernilai: ia **mengembalikan kesalahan yang persis saya
 lakukan** dan memastikan gate gagal dengan diagnostik yang menyebut penyebabnya.
+
+### 1.7h Jalur streaming agentic: reflexion dan deadline sintesis
+
+`tool-router-agentic.ts` kini **100,00% baris** / 93,78% fungsi. Tiga wilayah yang
+belum pernah berjalan:
+
+- **REFLEXION (opt-in) belum pernah dieksekusi di jalur streaming.** Cabang yang
+  penting adalah `needsRevision: true`, yang **MENGGANTI** teks yang diterima user.
+  Kini diuji dua arah: dengan reflexion mati teks lewat apa adanya dan tidak ada
+  kritik yang jalan; dengan reflexion hidup, kritik berjalan dan **membuffer**
+  (reflexion butuh teks penuh sebelum bisa merevisi, jadi tidak bisa streaming
+  langsung); revisi yang diminta **mengganti** draft, bukan ditambahkan — mengirim
+  keduanya akan menampilkan jawaban yang justru sedang dilindungi dari user.
+- **Deadline saat sintesis final.** Mencapainya butuh tiga putaran loop selesai di
+  dalam anggaran dan panggilan ke-4 (sintesis) melewatinya. Anggaran 400 ms dengan
+  jeda 600 ms di panggilan ke-4 melakukan tepat itu. **Diukur:** 4 panggilan, dan
+  transkrip berakhir dengan catatan jawaban tidak lengkap.
+- **Jalur confidence dari LLM** (bukan heuristik substantial-evidence): confident
+  kembali tanpa putaran sintesis; verdict alignment berisiko tinggi **menganotasi**,
+  bukan memblokir; verdict tidak-yakin dengan tool hint meneruskan hint ke putaran
+  berikutnya; hint `CHAT` yang tidak berguna **tidak** disuntikkan.
+
+**Dua fixture saya salah, kodenya benar** (keduanya dicatat di file):
+`AGENTIC_DEADLINE_MS = 0` **tidak** menghentikan putaran pertama
+(`Date.now() > Date.now() + 0` bernilai false — harus negatif); dan `outputSummary`
+dipotong 300 karakter sehingga ringkasan 600 karakter hanya menyumbang ~300 dan
+**tidak** melewati ambang 500 — evaluator mock menjawab "tidak yakin" dan putaran
+**kedua** berjalan, masing-masing meng-yield teksnya sendiri. Saya menuntut satu
+panggilan dan mendapat dua. Test satu-putaran kini memakainya secara terpisah,
+dengan **jawaban** (bukan ringkasan tool) sebagai penyumbang panjang.
+
+### 1.7i Audit statis yang saya hentikan — dan mengapa itu keputusan yang benar
+
+Sebagian besar ronde ini saya habiskan untuk mencoba **audit statis arity parameter
+mock** di seluruh 160 file test, dengan harapan menemukan kelas cacat `bypassOrg`
+secara otomatis. Hasilnya:
+
+| Percobaan | Temuan | Status |
+|---|---|---|
+| Versi 1 (arity ekspor sederhana) | 301 | semua positif palsu |
+| Versi 2 (hanya parameter wajib) | 266 | semua positif palsu |
+| Versi 3 (hanya kelebihan parameter) | 5 | semua positif palsu |
+| Versi 4 (berbasis call-site produksi) | 1 | positif palsu |
+
+Penyebabnya konsisten: parser regex ad-hoc saya **tidak memahami TypeScript** —
+daftar parameter multi-baris, default `{}`, tipe arrow yang mengandung koma, dan
+`bypassOrg(() => getSetupState(db, organizationId))` yang dibaca sebagai dua
+argumen. **Dan kontrol negatifnya GAGAL**: saat saya kembalikan bug `bypassOrg` asli,
+pemeriksa itu **tidak menangkapnya**.
+
+Satu temuan nyata muncul dari penyelidikan ini, tetapi bukan dari alatnya: mock
+`enterWithOrg: () => {}` (0 parameter untuk fungsi 1-parameter) **tidak berbahaya** —
+diuji langsung dengan dua test sekali-pakai. Mock dengan parameter **lebih sedikit**
+mengabaikan argumen dan itu idiom no-op yang sah. Yang berbahaya hanyalah mock
+dengan parameter **lebih banyak**, karena ia membaca argumen dari posisi yang tidak
+pernah dikirim kode nyata.
+
+**Keputusan: tidak ada satu baris pun dari keempat versi itu yang saya commit.**
+Parser TypeScript buatan sendiri bukan alat yang layak dibangun di sini, dan
+hijau-nya pemeriksa yang tidak menangkap bug aslinya lebih buruk daripada tidak ada
+pemeriksa sama sekali.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
