@@ -98,6 +98,18 @@ const FLOORS: Record<string, number> = {
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
   'src/lib/tool-rate-limit.ts': 85, // measured 92.86% (26/28)
+  // Added after the gate started REPORTING eligible-but-ungated modules: this one
+  // already cleared 85% and nothing was asking it to keep it. That silence is the
+  // failure mode the report exists to remove.
+  'src/lib/tool-utils.ts': 85, // measured 93.33% (140/150)
+  // NOT gated yet, and the reason is worth keeping: planner.ts measures 94.68%
+  // in a per-file run but only 75.77% (516/681) in the MERGED report this script
+  // reads. The 19-point gap is the documented merge caveat in coverage.ts — Bun
+  // reports only the lines its own process executed, and Math.max cannot invent
+  // hits. Pasting the per-file number here failed the gate immediately, which is
+  // exactly what the gate is for, and the `suspicious` check below now names the
+  // cause instead of leaving a bare red build.
+  // Re-add this module only with a floor at or below 75: 'src/lib/planner.ts': 70,
   'src/lib/tool-registry.ts': 85, // measured 91.82% (247/269)
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
   'src/lib/vector-stores.ts': 85, // measured 93.46% (343/367)
@@ -160,6 +172,30 @@ if (update) {
 
 const byFile = new Map(summary.files.map((f) => [f.file, f]))
 
+/**
+ * A floor ABOVE the module's merged measurement is almost always a floor pasted
+ * from a per-file run.
+ *
+ * This is not hypothetical: planner.ts measures 94.68% alone and 75.77% merged, so
+ * a floor of 85 sourced from the per-file number failed the gate the moment it was
+ * added. The two numbers look equally authoritative and are not. Catching it here
+ * turns a confusing red build into a sentence that names the cause.
+ */
+const suspicious: string[] = []
+for (const [file, floor] of Object.entries(FLOORS)) {
+  const row = byFile.get(file)
+  if (row && floor > row.pct) {
+    suspicious.push(`${file}: floor ${floor}% exceeds the merged measurement ${row.pct.toFixed(2)}%`)
+  }
+}
+if (suspicious.length && !update) {
+  console.error('\n[coverage-gate] floor(s) above the measured value — was this pasted from a per-file run?')
+  for (const m of suspicious) console.error(`  - ${m}`)
+  console.error('  Floors must come from coverage-summary.json (merged), never from a single-file --coverage run.')
+  console.error('  The merged figure is lower by design; see the caveat in scripts/coverage.ts.')
+  process.exit(1)
+}
+
 const problems: string[] = []
 const missing: string[] = []
 
@@ -198,7 +234,29 @@ if (problems.length) {
 
 if (missing.length) process.exit(1)
 
+// Ungated-but-eligible modules are REPORTED, never fatal.
+//
+// A gate that only protects existing floors stops improving the moment it is
+// installed: nothing ever asks the next module to join. Listing the modules that
+// already clear MIN_GATED_PCT but have no floor makes the next floor a one-line
+// paste, and naming the count keeps the gap visible instead of invisible. It is
+// deliberately NOT an error — the floors are a ratchet, and a ratchet that
+// fails the build over its own backlog gets removed.
+const ungated = summary.files
+  .filter((f) => f.pct >= MIN_GATED_PCT && !(f.file in FLOORS))
+  .sort((a, b) => b.pct - a.pct)
+
 console.log(
   `[coverage-gate] OK — ${gated} gated module(s) at or above their floors ` +
     `(repo total ${summary.linePct}%, ${summary.files.length} files measured).`,
 )
+if (ungated.length) {
+  console.log(
+    `[coverage-gate] ${ungated.length} module(s) already clear ${MIN_GATED_PCT}% but are not gated yet:`,
+  )
+  for (const f of ungated.slice(0, 10)) {
+    console.log(`  ${f.pct.toFixed(2)}%  ${f.file}`)
+  }
+  if (ungated.length > 10) console.log(`  … and ${ungated.length - 10} more`)
+  console.log('  Add floors with: bun scripts/coverage-gate.ts --update')
+}
