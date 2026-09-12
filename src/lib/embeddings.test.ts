@@ -4,6 +4,7 @@ import { describe, expect, test, mock, afterEach, beforeEach } from 'bun:test'
 const mockLlmConfigFindFirst = mock<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(async () => null)
 const mockDocumentChunkFindMany = mock<(...args: unknown[]) => Promise<Array<Record<string, unknown>>>>(async () => [])
 const mockExecuteRaw = mock<(...args: unknown[]) => Promise<number>>(async () => 1)
+const mockQueryRaw = mock<(...args: unknown[]) => Promise<Array<Record<string, unknown>>>>(async () => [])
 
 // getEmbeddingRuntimeConfig now REFUSES to resolve a config without an org
 // context (a context-free `findFirst` returned another tenant's baseUrl/model/
@@ -21,6 +22,7 @@ mock.module('@/lib/db', () => ({
     llmConfig: { findFirst: mockLlmConfigFindFirst },
     documentChunk: { findMany: mockDocumentChunkFindMany },
     document: { findMany: async () => [] },
+    $queryRaw: mockQueryRaw,
     $executeRaw: mockExecuteRaw,
   },
 }))
@@ -54,10 +56,12 @@ mock.module('@/lib/vector-stores', () => ({
 import {
   combineHybridScore,
   cosineSimilarity,
+  embedCompanyDocuments,
   embedDocumentChunks,
   embedTexts,
   getEmbeddingRuntimeConfig,
   parseEmbeddingJson,
+  resetEmbeddingColumnDimension,
   parseEmbeddingResponse,
 } from './embeddings'
 
@@ -66,6 +70,7 @@ beforeEach(() => {
   mockLlmConfigFindFirst.mockImplementation(async () => null)
   mockDocumentChunkFindMany.mockImplementation(async () => [])
   mockExecuteRaw.mockImplementation(async () => 1)
+  mockQueryRaw.mockImplementation(async () => [])
   mockGetRoleLlmConfig.mockImplementation(async () => null)
   mockChatOnce.mockImplementation(async () => 'A summary of the document.')
 })
@@ -482,5 +487,214 @@ describe('embedDocumentChunks — Contextual Retrieval', () => {
     expect(body.input[0]).toContain('From Doc A:')
     expect(body.input[0]).not.toContain('[null]')
     expect(body.input[0]).toContain('chunk one')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// embedCompanyDocuments — the batch entry point used by the re-index job
+//
+// Never executed by any test before this: document.findMany defaulted to [] so
+// the loop body, the aggregation of per-document counts, and the provider/model
+// "last non-null wins" rule were all unreachable.
+// ---------------------------------------------------------------------------
+
+describe('embedCompanyDocuments', () => {
+  test('embeds every ready document when no documentId is given', async () => {
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    const dbMod = await import('@/lib/db')
+    const seen: Array<Record<string, unknown>> = []
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async (args: Record<string, unknown>) => {
+      seen.push(args)
+      return [{ id: 'd1' }, { id: 'd2' }]
+    }
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: null } },
+    ])
+    mockFetchEmbeddings()
+
+    const result = await embedCompanyDocuments({})
+    // Two documents, one chunk each → 2 embedded.
+    expect(result.documents).toBe(2)
+    expect(result.embedded).toBe(2)
+    expect(result.skipped).toBe(0)
+    // The query must be limited to ready documents: embedding a half-ingested
+    // document would index a partial text.
+    expect(seen[0].where).toEqual({ status: 'ready' })
+    expect(seen[0].orderBy).toEqual({ createdAt: 'desc' })
+  })
+
+  test('a documentId narrows the query to that ONE document', async () => {
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    const dbMod = await import('@/lib/db')
+    const seen: Array<Record<string, unknown>> = []
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async (args: Record<string, unknown>) => {
+      seen.push(args)
+      return [{ id: 'd9' }]
+    }
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd9', name: 'Doc Z', category: null } },
+    ])
+    mockFetchEmbeddings()
+
+    const result = await embedCompanyDocuments({ documentId: 'd9' })
+    expect(result.documents).toBe(1)
+    // Scoping matters: re-embedding one document must not re-embed the corpus.
+    expect(seen[0].where).toEqual({ status: 'ready', id: 'd9' })
+  })
+
+  test('no ready documents reports zeros rather than throwing', async () => {
+    const dbMod = await import('@/lib/db')
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async () => []
+    const result = await embedCompanyDocuments({})
+    expect(result).toEqual({ documents: 0, embedded: 0, skipped: 0, provider: null, model: null })
+  })
+
+  test('provider and model come back from the embedded documents', async () => {
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    const dbMod = await import('@/lib/db')
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async () => [{ id: 'd1' }]
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: null } },
+    ])
+    mockFetchEmbeddings()
+
+    const result = await embedCompanyDocuments({})
+    // The job reports which provider/model actually ran, so an operator can tell
+    // which endpoint produced the vectors.
+    //
+    // MEASURED: these come from the DEDICATED embedding fields
+    // (embeddingProvider / embeddingModel), NOT the generic provider/model on the
+    // same config row. A deployment can embed through a different endpoint than
+    // the one used for chat, so reporting the generic pair would misattribute
+    // where the vectors came from.
+    expect(result.provider).toBe(fakeEmbeddingConfig.embeddingProvider)
+    expect(result.model).toBe(fakeEmbeddingConfig.embeddingModel)
+
+  })
+
+  test('a document with NO chunks counts as a document but embeds nothing', async () => {
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    const dbMod = await import('@/lib/db')
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async () => [{ id: 'd1' }]
+    mockDocumentChunkFindMany.mockImplementation(async () => [])
+    const result = await embedCompanyDocuments({})
+    // documents reflects what was SCANNED, embedded what was written; conflating
+    // them would hide a document whose chunks were never created.
+    expect(result.documents).toBe(1)
+    expect(result.embedded).toBe(0)
+  })
+
+  test('ONE failing chunk write does not abort the remaining chunks', async () => {
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    const dbMod = await import('@/lib/db')
+    ;(dbMod.db.document as unknown as { findMany: unknown }).findMany = async () => [{ id: 'd1' }]
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: null } },
+      { id: 'c2', content: 'chunk two', chunkIndex: 1, document: { id: 'd1', name: 'Doc A', category: null } },
+      { id: 'c3', content: 'chunk three', chunkIndex: 2, document: { id: 'd1', name: 'Doc A', category: null } },
+    ])
+    mockFetchEmbeddings()
+    let call = 0
+    mockExecuteRaw.mockImplementation(async () => {
+      call += 1
+      // Second chunk fails to persist. Before allSettled this rejected the whole
+      // ingestion and left every LATER chunk unembedded.
+      if (call === 2) throw new Error('deadlock detected')
+      return 1
+    })
+
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// canWriteVectorColumn / getEmbeddingColumnDimension — the dimension gate
+//
+// Reached through the public embedDocumentChunks path with a mocked pg_attribute
+// probe. This gate decides whether a vector is written to the pgvector column or
+// only to embeddingJson; getting it wrong either loses pgvector search silently
+// or writes a vector of the wrong width into the column.
+// ---------------------------------------------------------------------------
+
+describe('the embedding column dimension gate', () => {
+  // A single "current column" value rather than a stack the tests push onto: the
+  // cached dimension is module-level state, so a test that pushed onto a shared
+  // array leaked its answer into the next test and the gate tests failed only when
+  // run after the matching-width one. Setting it here makes each test independent.
+  let coltype: string | null = null
+  let probeThrows = false
+
+  beforeEach(() => {
+    // mockQueryRaw is the mock the mock.module('@/lib/db') factory actually wires
+    // in. Overwriting db.$queryRaw on the imported namespace did nothing here —
+    // the module under test captured its own binding at import time.
+    coltype = null
+    probeThrows = false
+    mockQueryRaw.mockImplementation(async () => {
+      if (probeThrows) throw new Error('relation does not exist')
+      return coltype === null ? [] : [{ coltype }]
+    })
+    resetEmbeddingColumnDimension()
+    mockLlmConfigFindFirst.mockImplementation(async () => fakeEmbeddingConfig)
+    mockDocumentChunkFindMany.mockImplementation(async () => [
+      { id: 'c1', content: 'chunk one', chunkIndex: 0, document: { id: 'd1', name: 'Doc A', category: null } },
+    ])
+  })
+
+  const oneChunk = () => mockFetchEmbeddings()
+
+  // The ONLY difference between the two branches is that the vector branch also
+  // sets `"embedding" = <literal>::vector`. Both branches set embeddingJson, so
+  // asserting on embeddingJson does not tell them apart — my first version of
+  // this test did exactly that and a control that disabled the gate stayed green.
+  // Counts only the calls made SINCE this point. mockExecuteRaw is shared across
+  // the whole file and is never cleared, so scanning all of .calls picked up the
+  // earlier embedCompanyDocuments tests and this gate could never read false.
+  const vectorWritesSince = (from: number) =>
+    mockExecuteRaw.mock.calls.slice(from).some((c) => c.some((a) => String(a).includes('::vector')))
+  let callBase = 0
+
+  beforeEach(() => { callBase = mockExecuteRaw.mock.calls.length })
+
+  test('a MATCHING column width writes the vector column', async () => {
+    // The mocked embedding vectors are 3-dimensional.
+    coltype = 'vector(3)'
+    oneChunk()
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(1)
+    expect(vectorWritesSince(callBase)).toBe(true)
+  })
+
+  test('a MISMATCHED column width refuses the vector column but still stores JSON', async () => {
+    coltype = 'vector(1536)'
+    oneChunk()
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    // The embedding is still recorded — retrieval falls back to the cosine path —
+    // and the row is counted as embedded rather than skipped.
+    expect(result.embedded).toBe(1)
+    // Crucially the vector column is NOT written: a 3-dim vector into vector(1536)
+    // would be rejected by Postgres on every chunk.
+    expect(vectorWritesSince(callBase)).toBe(false)
+  })
+
+  test('an UNKNOWN column (probe returns no row) refuses the vector column', async () => {
+    // No pg_attribute row means the column does not exist; writing to it would
+    // fail every single chunk write.
+    coltype = null
+    oneChunk()
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(1)
+    expect(vectorWritesSince(callBase)).toBe(false)
+  })
+
+  test('a DB error during the probe does not disable embedding', async () => {
+    probeThrows = true
+    oneChunk()
+    // A transient probe failure must not lose the vectors: they still land in
+    // embeddingJson.
+    const result = await embedDocumentChunks({ documentId: 'd1' })
+    expect(result.embedded).toBe(1)
+    expect(vectorWritesSince(callBase)).toBe(false)
   })
 })
