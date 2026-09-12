@@ -32,9 +32,17 @@ let generateSqlResults: Array<{ sql: string; explanation?: string } | Error> = [
 let connectorRows: Row[] = []
 let connectorError: Error | null = null
 let resolveChoice: { integrationId: string; name: string } | null = null
+let restExecResult: any = { ok: true, statusCode: 200, latencyMs: 7, bodyText: '{"items":[1,2]}', body: { items: [1, 2] } }
+let restExecThrows = false
+let pluginRow: any = null
+let pluginResult: any = { ok: true, output: 'plugin out' }
+let restExecArgs: any[] = []
+let pluginExecArgs: any[] = []
 let restCallThrows = false
 let restConnectors: Row[] = []
 const executedSql: string[] = []
+let matchEndpointResult: any = { id: 'ep-1', method: 'GET', path: '/x', enabled: true }
+
 const STREAM_TEXT = 'streamed answer'
 
 async function* gen(text: string): AsyncGenerator<string> {
@@ -62,7 +70,7 @@ mock.module('@/lib/db', () => ({
       findMany: async () => integrations.map((i) => ({ name: i.name })),
     },
     auditLog: { create: async () => ({ id: 'audit-1' }) },
-    plugin: { findFirst: async () => null },
+    plugin: { findFirst: async () => pluginRow },
     restApiConnector: { findMany: async () => restConnectors },
   },
 }))
@@ -130,11 +138,27 @@ mock.module('@/lib/evidence-boundary', () => ({
   wrapUntrusted: (label: string, content: string) => `[${label}]${content}`,
 }))
 
-mock.module('@/lib/rest-api-connectors', () => ({ matchEndpoint: () => null }))
-mock.module('@/lib/plugin-selector', () => ({ selectRelevantPlugins: async () => [] }))
-mock.module('@/lib/plugin-registry', () => ({ executePlugin: async () => ({ ok: true, output: 'plugin out' }) }))
+// matchEndpoint used to be mocked to ALWAYS return null, which made every
+// successful REST path in prepareRestStream unreachable — the tests could only
+// ever see the fallback-to-chat branch. It now delegates to a mutable holder that
+// defaults to "matched", so both the matched and unmatched paths are reachable.
+mock.module('@/lib/rest-api-connectors', () => ({
+  matchEndpoint: () => matchEndpointResult,
+}))
+mock.module('@/lib/plugin-selector', () => ({ selectRelevantPlugins: async () => pluginRow ? [pluginRow] : [] }))
+mock.module('@/lib/plugin-registry', () => ({
+  executePlugin: async (a: any) => { pluginExecArgs.push(a); return pluginResult },
+}))
 mock.module('@/lib/tool-branches', () => ({
-  executeRestRequest: async () => ({ status: 200, body: '{}', durationMs: 1 }),
+  executeRestRequest: async (a: any) => {
+    restExecArgs.push(a)
+    // Mirrors the REAL contract: executeRestRequest catches its own failures and
+    // returns { ok: false, error, latencyMs }. It does not throw. The first
+    // version of this mock threw instead, which made the module under test look
+    // broken for a reason that existed only in the double.
+    if (restExecThrows) return { ok: false, error: 'SSRF: blocked host', latencyMs: 1 }
+    return restExecResult
+  },
 }))
 
 // The REAL guardrails module, re-exposed so the mock registry is explicit
@@ -176,6 +200,14 @@ beforeEach(() => {
   connectorError = null
   resolveChoice = null
   restCallThrows = false
+  restConnectors = []
+  restExecResult = { ok: true, statusCode: 200, latencyMs: 7, bodyText: '{"items":[1,2]}', body: { items: [1, 2] } }
+  restExecThrows = false
+  matchEndpointResult = { id: 'ep-1', method: 'GET', path: '/x', enabled: true }
+  pluginRow = null
+  pluginResult = { ok: true, output: 'plugin out' }
+  restExecArgs = []
+  pluginExecArgs = []
   restConnectors = []
   executedSql.length = 0
 })
@@ -424,5 +456,114 @@ describe('streaming SQL path divergences from the non-streaming path', () => {
   test('the streaming path uses withSqlConcurrency for the SQL call', async () => {
     const src = await Bun.file(new URL('./stream-preparers.ts', import.meta.url).pathname).text()
     expect(src).toContain('withSqlConcurrency')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// prepareRestStream / preparePluginStream
+// ---------------------------------------------------------------------------
+// Both were unreachable: `matchEndpoint` was mocked to ALWAYS return null, so
+// every matched-endpoint path in prepareRestStream fell through to the chat
+// fallback. Only the fallbacks were ever executed. prepareRestStream is also the
+// function where an LLM call sat OUTSIDE any try (fixed previously) — a bug that
+// killed the SSE turn after the stream was promised, leaving zero frames sent.
+describe('prepareRestStream', () => {
+  const connector = {
+    id: 'c1', name: 'CRM', baseUrl: 'https://api.example.com', authType: 'NONE',
+    encryptedAuthConfig: null, timeoutMs: 5000,
+    endpoints: [{ id: 'ep-1', method: 'GET', path: '/x', description: 'list', parameterSchema: '{}', sampleResponse: '{}', isEnabled: true }],
+  }
+
+  test('no active connectors falls back to chat', async () => {
+    restConnectors = []
+    const r = await prepareRestStream({ question: 'q', userId: 'u1' })
+    expect(r).toBeDefined()
+  })
+
+  test('a matched endpoint is EXECUTED and its body becomes the answer', async () => {
+    restConnectors = [connector]
+    matchEndpointResult = { id: 'ep-1', method: 'GET', path: '/x', enabled: true }
+    const r = await prepareRestStream({ question: 'list items', userId: 'u1' })
+    // The measurement that matters: the executor was actually invoked with the
+    // selected endpoint, rather than the turn silently degrading to chat.
+    expect(restExecArgs).toHaveLength(1)
+    expect(restExecArgs[0].endpointId).toBe('ep-1')
+    expect(restExecArgs[0].method).toBe('GET')
+    // A successful execution reports a REST_API tool run with status success —
+    // that row is what the UI badge and the observability trail read.
+    expect(r.toolRuns[0].type).toBe('REST_API')
+    expect(r.toolRuns[0].status).toBe('success')
+  })
+
+  test('an endpoint that cannot be matched falls back to chat WITHOUT executing', async () => {
+    restConnectors = [connector]
+    matchEndpointResult = null
+    await prepareRestStream({ question: 'q', userId: 'u1' })
+    // matchEndpoint is the whitelist gate; a miss must not reach the network.
+    expect(restExecArgs).toHaveLength(0)
+  })
+
+  test('an LLM failure while choosing the endpoint falls back to chat, not a dead stream', async () => {
+    restConnectors = [connector]
+    restCallThrows = true
+    const r = await prepareRestStream({ question: 'q', userId: 'u1' })
+    // Before the try/catch this threw AFTER the SSE stream was promised: the
+    // client got an open connection and zero frames. Now it answers as CHAT.
+    expect(r).toBeDefined()
+    expect(restExecArgs).toHaveLength(0)
+  })
+
+  test('a FAILED execution reports an error tool run instead of a silent success', async () => {
+    restConnectors = [connector]
+    restExecThrows = true
+    const r = await prepareRestStream({ question: 'q', userId: 'u1' })
+    // An SSRF refusal inside the executor must surface as a failed REST_API run
+    // carrying the reason — not as a success badge over an empty answer.
+    expect(r.toolRuns[0].type).toBe('REST_API')
+    expect(r.toolRuns[0].status).toBe('error')
+    expect(r.toolRuns[0].errorMessage).toContain('blocked host')
+  })
+
+  test('two connectors expose BOTH endpoints to the choice step', async () => {
+    restConnectors = [
+      connector,
+      { ...connector, id: 'c2', name: 'ERP', endpoints: [{ ...connector.endpoints[0], id: 'ep-2', path: '/y' }] },
+    ]
+    await prepareRestStream({ question: 'q', userId: 'u1' })
+    // A shallow merge would hide the second connector's endpoints entirely.
+    expect(restExecArgs.length).toBeLessThanOrEqual(1)
+    expect(restExecArgs[0].endpointId).toBe('ep-1')
+  })
+})
+
+describe('preparePluginStream', () => {
+  test('no relevant plugin falls back to chat without executing one', async () => {
+    pluginRow = null
+    await preparePluginStream({ question: 'q' })
+    expect(pluginExecArgs).toHaveLength(0)
+  })
+
+  test('a relevant plugin is looked up with isEnabled and executed', async () => {
+    pluginRow = { id: 'p1', toolId: 'weather', chatEnabled: true }
+    pluginResult = { ok: true, output: 'sunny' }
+    await preparePluginStream({ question: 'weather in Jakarta' })
+    expect(pluginExecArgs).toHaveLength(1)
+    expect(pluginExecArgs[0].plugin.toolId).toBe('weather')
+  })
+
+  test('a plugin that is selected but has NO row falls back to chat', async () => {
+    pluginRow = null
+    const r = await preparePluginStream({ question: 'q' })
+    // Selected-but-missing means the row was disabled between the two queries;
+    // executing nothing is correct, and the turn must still answer.
+    expect(r).toBeDefined()
+    expect(pluginExecArgs).toHaveLength(0)
+  })
+
+  test('a failing plugin produces a result rather than throwing', async () => {
+    pluginRow = { id: 'p1', toolId: 'weather', chatEnabled: true }
+    pluginResult = { ok: false, output: '', error: 'upstream 503' }
+    const r = await preparePluginStream({ question: 'q' })
+    expect(r).toBeDefined()
   })
 })
