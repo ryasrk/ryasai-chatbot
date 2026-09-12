@@ -11,20 +11,40 @@
  * lcov reports. Merging is textual: Bun emits lcov, and summing per-file
  * DA:/LF:/LH: records across runs is enough for a line-coverage number.
  */
-import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync, renameSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 const CONCURRENCY = Number(process.env.COVERAGE_CONCURRENCY ?? 8)
 const OUT_DIR = '.coverage-merge'
 
 type FileCov = { lines: Map<number, number>; found: number; hit: number }
 
+const REPO_ROOT = process.cwd()
+
+/**
+ * Normalise an lcov `SF:` path to repo-relative form.
+ *
+ * Bun emits paths relative to the directory it ran in. With the repo root as the
+ * cwd that is already `src/lib/x.ts`, but a path can also arrive absolute (a
+ * retried run, or a different Bun version), and the merge keys on the string —
+ * two spellings of one file would be counted twice and hide coverage rather
+ * than combine it.
+ */
+function normalizeSfPath(raw: string): string {
+  const abs = raw.startsWith('/') ? raw : resolve(REPO_ROOT, raw)
+  return abs.startsWith(REPO_ROOT + '/') ? abs.slice(REPO_ROOT.length + 1) : raw
+}
+
 function parseLcov(text: string, into: Map<string, FileCov>) {
   let current: FileCov | null = null
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (line.startsWith('SF:')) {
-      const path = line.slice(3)
+      // Each run executes in its own temp cwd, so Bun emits paths relative to
+      // THAT directory ("../../home/…/src/lib/x.ts"). Normalise every report to
+      // a repo-relative path, or the same file lands under two keys and its
+      // coverage is under-counted instead of merged.
+      const path = normalizeSfPath(line.slice(3))
       current = into.get(path) ?? { lines: new Map(), found: 0, hit: 0 }
       into.set(path, current)
     } else if (line.startsWith('DA:') && current) {
@@ -63,19 +83,23 @@ async function main() {
     return next
   }
   const failed: string[] = []
+  // Monotonic id so each run writes to a file nothing else can touch.
+  let runId = 0
 
   async function worker() {
     while (queue.length) {
       const path = queue.shift()!
-      // Bun writes coverage/lcov.info relative to cwd and renames it into place
-      // atomically. Concurrent workers in the SAME cwd clobber each other (the
-      // rename lands after another worker already read), which is why the first
-      // version of this script measured 0 files. Give each run its own cwd.
-      // Keep cwd at the repo root (test files resolve `src/...` and path
-      // aliases relatively), and instead serialise the lcov read: Bun renames
-      // its report into place atomically, so two workers can still interleave
-      // read→delete. A mutex around read+delete is enough and costs nothing
-      // measurable next to the test run itself.
+      // Every run executes in the REPO ROOT and writes the shared
+      // `coverage/lcov.info`. An isolated per-run cwd was tried and REJECTED:
+      // 139/139 test files failed there, because the runner resolves `.env` and
+      // the `@/*` path alias relative to the repo root. Bun hardcodes the report
+      // to `coverage/lcov.info` under the cwd and ignores COVERAGE_DIR, so the
+      // cwd cannot be moved without breaking resolution. Instead, each run
+      // STAGES the shared file into its own path immediately after exiting. The
+      // rename is the load-bearing part: a plain read-then-delete can drop a
+      // report that another worker published moments later, which is how an
+      // earlier version measured 20/529 lines for a module whose own suite
+      // covers 326/436.
       const proc = Bun.spawn(['bun', 'test', path, '--coverage', '--coverage-reporter=lcov'], {
         stdout: 'pipe', stderr: 'pipe', env,
       })
@@ -85,15 +109,18 @@ async function main() {
       ])
       await proc.exited
       if (proc.exitCode !== 0) failed.push(path)
-      // Bun always writes to coverage/lcov.info, so concurrent workers would
-      // overwrite each other. Read it immediately, then clear it — a subsequent
-      // worker can otherwise publish its report after this read and lose it.
       await lcovMutex(async () => {
-        const p = join(process.cwd(), 'coverage', 'lcov.info')
-        if (existsSync(p)) {
-          try { lcovChunks.push(readFileSync(p, 'utf8')) } catch {}
-          rmSync(p, { force: true })
-        }
+        const shared = join(process.cwd(), 'coverage', 'lcov.info')
+        if (!existsSync(shared)) return
+        const staged = join(OUT_DIR, `lcov-${runId++}.info`)
+        // renameSync moves the file out of the shared path atomically, so no
+        // other worker can be holding a reference to this exact inode.
+        try { renameSync(shared, staged) } catch { return }
+        try {
+          const text = readFileSync(staged, 'utf8')
+          if (text.includes('SF:')) lcovChunks.push(text)
+        } catch {}
+        rmSync(staged, { force: true })
       })
       done++
       if (done % 20 === 0) process.stdout.write(`  ${done}/${files.length}\r`)
@@ -124,6 +151,13 @@ async function main() {
   }
 
   rows.sort((a, b) => a.pct - b.pct)
+  // HONEST NUMBER: this is the UNION across test files, not the coverage of any
+  // single suite. A merged run reports fewer lines covered than a single-file
+  // run does for the same module (measured: smart-router-helpers 86.8% merged vs
+  // 97.3% alone), because Bun reports only the lines it executed in that process
+  // and `Math.max` cannot invent hits for lines no run reached. Trust the merged
+  // figure for "how much of src/ is exercised by the suite as a whole"; trust a
+  // single-file run for "how well this module is tested on its own".
   console.log('\n=== LINE COVERAGE (src/, tests excluded) ===')
   console.log(`${totalHit}/${totalFound} lines = ${((totalHit / totalFound) * 100).toFixed(2)}%`)
   console.log(`files measured: ${rows.length}`)
