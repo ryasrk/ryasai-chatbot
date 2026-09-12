@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `af43833`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e562294`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `af43833`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **75,07%** (14.786/19.695 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 153 file · **2.905 lulus · 0 gagal** | terukur |
+| Test coverage | **75,35%** (14.845/19.702 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 154 file · **2.926 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -56,7 +56,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/web-fetch.ts` | 36,70% | **100,00%** | 20 |
 | `src/lib/tool-router.ts` | 50,20% | **65,79%** / 94,76% (fungsi) | 18 |
 | `src/lib/tool-router-agentic.ts` — gabungan kedua file | 68,43% (fungsi) | **89,29%** (fungsi, file lama) + 14 test baru khusus `runMultiStepDag` | 14 |
-| **Total repo** | **62,44%** | **75,07%** | — |
+| `src/lib/real-connectors.ts` | 64,80% | **89,72%** | 21 |
+| **Total repo** | **62,44%** | **75,35%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -124,8 +125,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `isAdmin: true` pada DAG chat | `tool-router-agentic.ts:135` | 1 |
 | Short-circuit 1 chat step tanpa synthesis dimatikan | `tool-router-agentic.ts:126` | 2 |
 | DAG lanjut walau tak ada tool | `tool-router-agentic.ts:117` | 1 |
+| MySQL `SET TRANSACTION READ ONLY` dibuang | `real-connectors.ts:651-652` | 1 |
+| Guardrail `executeQuery` MySQL dilepas | `real-connectors.ts:646-647` | 2 |
+| `conn.release()` dibuang dari finally | `real-connectors.ts:689` | 2 |
+| Budget enrichment (rowCount 0 / >10000) dilonggarkan | `real-connectors.ts:460` | 1 |
+| Interpolasi nama database ClickHouse dikembalikan | `real-connectors.ts:1114` | 2 |
 
-**48 kontrol, semuanya sah.**
+**53 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -263,7 +269,46 @@ harus menargetkan **nomor baris**, bukan pola string — dan hasilnya wajib
 diperiksa masuk akal ("apakah gagal karena alasan yang saya klaim?"), bukan
 sekadar "ada yang merah". Ini varian dari pelajaran di §1.4, pada dimensi berbeda.
 
-### 1.9 Mengapa angka total LEBIH RENDAH dari cakupan sebenarnya
+### 1.9 Perbaikan celah injeksi SQL di ClickHouse (temuan + perbaikan)
+
+**Temuan.** `ClickHouseConnector.fetchSchema()` menyusun query refleksi dengan
+template literal:
+
+```ts
+WHERE t.database = '${db}'
+```
+
+`db` berasal dari `readDbConfig(config).database` — field yang **diisi admin**
+lewat form integrasi. Nama database yang memuat satu tanda kutip menutup literal
+dan sisanya diparse sebagai SQL. Ini **satu-satunya** connector di
+`real-connectors.ts` yang tidak mengikat nama schema sebagai parameter:
+Postgres, MySQL, dan MSSQL semuanya memakai placeholder.
+
+**Cara ditemukan.** Saat menulis test driver (mock driver, tanpa DB nyata) untuk
+menaikkan coverage `real-connectors.ts` — bukan dari membaca kode. 327 baris yang
+belum tercakup hampir seluruhnya adalah metode class yang tidak pernah dieksekusi
+test mana pun, termasuk `executeQuery` yang merupakan **batas eksekusi** keamanan
+(`assertSelectOnly` + `assertNoDangerousFunctions` + read-only transaksi).
+
+**Perbaikan.** Memakai sintaks parameter milik ClickHouse sendiri —
+`{db:String}` + `query_params` — yang mengirim nilai di luar teks query, bukan
+escaping manual. Ini bentuk idiomatik untuk driver tersebut dan menyamakan
+perilakunya dengan tiga connector lain.
+
+**Dibuktikan, bukan diklaim.** Kontrol negatif: mengembalikan bentuk interpolasi
+menggagalkan tepat **2** test — test nama berbahaya (nilai muncul kembali di teks
+SQL) dan test nama biasa (filter schema harus tetap bekerja lewat placeholder).
+
+**Catatan metodologi.** Test ini awalnya ditulis sebagai "KNOWN GAP" yang
+**mengunci perilaku salah** (`expect(q).toContain("'d' OR 1=1 --'")`). Itu
+artefak yang buruk: ia gagal begitu seseorang memperbaiki bugnya, sehingga
+menghukum perbaikan. Celahnya diperbaiki dan testnya sekarang menegaskan perilaku
+yang benar. Pelajaran: test yang memuat kembali bug yang ia "dokumentasikan"
+adalah utang, bukan dokumentasi.
+
+### 1.10 Pelajaran: test yang mengunci bug lebih buruk daripada tanpa test
+
+
 
 `runMultiStepDag` naik dari 68,43% → **80,73% fungsi** (diukur per-file), tetapi
 **total repo tidak bergerak sama sekali**: tetap 75,07%. Itu bukan kegagalan test
@@ -288,7 +333,7 @@ Jadi angka merge selalu **lebih rendah**, dan `Math.max` tidak dapat menaikkanny
 Ini juga alasan angka 95% tidak boleh diklaim tercapai hanya karena total merge
 menyentuh 95 — verifikasi harus per-file untuk modul yang dimaksud.
 
-### 1.10 Insiden gate yang dicatat apa adanya
+### 1.11 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -303,7 +348,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 153 file · 2.905 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 154 file · 2.926 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK

@@ -1,7 +1,7 @@
 {
-  "linePct": 75.07,
-  "linesHit": 14786,
-  "linesFound": 19695,
+  "linePct": 75.35,
+  "linesHit": 14845,
+  "linesFound": 19702,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -114,12 +114,6 @@
       "pct": 64.0625
     },
     {
-      "file": "src/lib/real-connectors.ts",
-      "hit": 603,
-      "found": 930,
-      "pct": 64.83870967741936
-    },
-    {
       "file": "src/lib/tool-router-agentic.ts",
       "hit": 310,
       "found": 477,
@@ -196,6 +190,12 @@
       "hit": 153,
       "found": 219,
       "pct": 69.86301369863014
+    },
+    {
+      "file": "src/lib/real-connectors.ts",
+      "hit": 662,
+      "found": 937,
+      "pct": 70.65101387406617
     },
     {
       "file": "src/lib/otel.ts",
