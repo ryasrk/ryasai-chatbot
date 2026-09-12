@@ -1,6 +1,6 @@
 {
-  "linePct": 72.42,
-  "linesHit": 14251,
+  "linePct": 72.62,
+  "linesHit": 14290,
   "linesFound": 19678,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -138,12 +138,6 @@
       "pct": 61.278195488721806
     },
     {
-      "file": "src/lib/planner.ts",
-      "hit": 418,
-      "found": 681,
-      "pct": 61.38032305433187
-    },
-    {
       "file": "src/lib/rag-retrieval.ts",
       "hit": 275,
       "found": 444,
@@ -178,6 +172,12 @@
       "hit": 36,
       "found": 54,
       "pct": 66.66666666666666
+    },
+    {
+      "file": "src/lib/planner.ts",
+      "hit": 457,
+      "found": 681,
+      "pct": 67.1071953010279
     },
     {
       "file": "src/lib/rag-fts.ts",
