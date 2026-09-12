@@ -58,7 +58,12 @@ mock.module('@/lib/db', () => ({
 mock.module('@/lib/prisma-tenant', () => ({
   getOrgContext: () => 'org-1',
   enterWithOrg: () => {},
-  bypassOrg: (_o: unknown, fn: () => unknown) => fn(),
+  // bypassOrg is a ONE-argument callback wrapper: bypassOrg(fn). This mock used to
+  // be `(_o, fn) => fn()`, which is a signature the real module does not have — so
+  // `bypassOrg(() => seedPlugins(orgId))` called `fn()` with fn undefined and threw
+  // TypeError. The wrong mock made the body unreachable: seedPluginsAction had never
+  // executed under test. 11 other test files already mocked it correctly.
+  bypassOrg: <T>(fn: () => Promise<T>) => fn(),
 }))
 mock.module('@/lib/api-keys', () => ({
   generateApiKey: async () => ({ raw: 'ryas_x', hash: 'hash', prefix: 'ryas_' }),
