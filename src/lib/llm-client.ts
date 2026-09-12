@@ -12,7 +12,13 @@
 import type { LlmMessage, LlmToolDef, LlmResponseFormat, LlmToolCall, LlmUsage, AgentChatMessage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { getLlmRuntimeConfig, getAgentLlmConfig } from '@/lib/llm-config'
-import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody } from './llm-client-utils'
+import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, LlmProviderError } from './llm-client-utils'
+
+// Single construction point for provider failures so every transport throws the
+// same classified error shape.
+function providerError(status: number, body: string, stream?: 'stream'): LlmProviderError {
+  return new LlmProviderError(status, body, stream === 'stream')
+}
 import { buildAnthropicBody } from './llm-client-anthropic'
 import {
   LLM_TIMEOUT_MS,
@@ -94,7 +100,7 @@ export async function chatOnce(
     })
     if (!res.ok) {
       const errText = await readErrorBody(res)
-      throw new Error(`LLM error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
+      throw providerError(res.status, errText)
     }
     const data = (await res.json()) as {
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>
@@ -155,7 +161,7 @@ export async function chatOnce(
   })
   if (!res.ok) {
     const errText = await readErrorBody(res)
-    throw new Error(`LLM error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
+    throw providerError(res.status, errText)
   }
   const data = (await res.json()) as {
     choices?: Array<{
@@ -220,7 +226,7 @@ export async function* chatStream(
     })
     if (!res.ok || !res.body) {
       const errText = await readErrorBody(res)
-      throw new Error(`LLM stream error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
+      throw providerError(res.status, errText, 'stream')
     }
     let inputTokens = 0
     let outputTokens = 0
@@ -275,7 +281,7 @@ export async function* chatStream(
   })
   if (!res.ok || !res.body) {
     const errText = await readErrorBody(res)
-    throw new Error(`LLM stream error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
+    throw providerError(res.status, errText, 'stream')
   }
   let usage: LlmUsage | null = null
   let streamOutput = ''

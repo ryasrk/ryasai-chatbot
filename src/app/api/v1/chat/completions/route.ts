@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError } from '@/lib/session'
+import { toTypedError } from '@/lib/errors'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 import { runNonStreamingChatCompletion, runStreamingChatCompletion } from '@/lib/tool-router'
 import { rateLimit } from '@/lib/redis'
 import { inc, observe } from '@/lib/metrics'
@@ -275,10 +277,21 @@ export async function POST(req: NextRequest) {
             safeClose()
           } catch (e) {
             if (!closed) {
-              const message = e instanceof Error ? e.message : 'Stream failed.'
-              safeEnqueue(encoder.encode(`data: ${JSON.stringify({ error: { code: 'LLM_ERROR', message } })}\n\n`))
+              const raw = e instanceof Error ? e.message : 'Stream failed.'
+              // BYOK: never stream the provider body to an API consumer — it can
+              // carry key material. Send the classified category + fix instead,
+              // and keep the raw text in the server-side API log.
+              const failure = e instanceof LlmProviderError ? e.failure : null
+              const typed = failure ? toTypedError(e) : null
+              safeEnqueue(encoder.encode(`data: ${JSON.stringify({
+                error: {
+                  code: typed ? typed.code : 'LLM_ERROR',
+                  message: typed ? typed.message : raw,
+                  ...(typed?.hint ? { hint: typed.hint } : {}),
+                },
+              })}\n\n`))
               safeEnqueue(encoder.encode('data: [DONE]\n\n'))
-              await writeApiLog({ apiKeyId, status: 503, latencyMs: Date.now() - started, errorMessage: message })
+              await writeApiLog({ apiKeyId, status: 502, latencyMs: Date.now() - started, errorMessage: raw })
               safeClose()
             }
           }

@@ -291,6 +291,49 @@ unavailable)'` — deliberately not "failed", because `aligned: true` next to
 - **License enforcement covers background work too**: `getLockdownReason` (`license-client.ts`) is the single predicate for "is this org locked down"; the HTTP path reaches it via `getActiveUser()`, and the **scheduler worker calls it directly in `processJob`** before doing any work. INCIDENT (2026-09): the worker had no gate, so a locked-down org's scheduled runs kept calling the LLM and touching the DB unattended. A locked org's job is **skipped** (not retried — a bad license is permanent, and retrying burns all 3 attempts per tick), recorded as `ScheduledRunLog.status='skipped'` + a `warning` audit row, and rendered as a "Skipped" badge in the schedules view. `unreachable`-within-grace still runs. **Any new process that executes work for an org must consult `getLockdownReason`** — never re-implement the status→lockdown mapping (`invariants.test.ts` enforces both).
 - **Key files**: `src/lib/prisma-tenant.ts`, `src/lib/session.ts`, `src/lib/license-client.ts`, `src/lib/plan-gating.ts`, `src/lib/api-keys.ts`.
 
+## Bring-your-own-key: the customer pays their provider, not us
+
+**ryasai ships no LLM and no embedding model.** Every org supplies its own chat
+endpoint, API key, and embedding endpoint in Settings > AI Configuration
+(`LlmConfig`: `baseUrl`/`encryptedApiKey`/`model` + the `embedding*` quartet).
+There is no platform key and no platform fallback anywhere in the transport —
+verified: `llm-client.ts` sends only `cfg.apiKey`, which comes from the org's own
+row via `getLlmRuntimeConfig()` (`findFirst` → org-scoped by the tenant
+extension). An org with no config resolves `null` and the call fails closed.
+
+Verified live (`trial/21-byok-isolation.ts`): two configured orgs each resolve
+their OWN model + key with no cross-org bleed, and an unconfigured org gets
+`null` rather than someone else's credentials.
+
+**What this means for the money model — do not get this backwards:**
+
+- **There is no per-org LLM COGS.** Token spend lands on the customer's provider
+  invoice. `LlmUsageLog` tracks tokens for monitoring and for the customer's own
+  runaway-loop protection — NOT for our margin. Do not build billing on it, and
+  do not assume a cost column is missing-but-needed; our costs are hosting,
+  Postgres, Redis and bandwidth, which are roughly flat per tenant.
+- **The token budget protects the CUSTOMER from their own agent loop**, not us.
+  `LLM_DAILY_TOKEN_BUDGET` is env-configured, so it is ONE process-wide number
+  for every org — a 5-person startup and a 500-seat enterprise get the same cap.
+  The per-org ceiling the BYOK model wants (each customer sets their own limit)
+  does not exist yet. That is the real gap here, not "cost tracking".
+- The schema line calling `LlmUsageLog` "cost tracking" was **removed** — it
+  described a billing model we are not in and would mislead the next reader into
+  building usage-based charging on top of the customer's own key.
+
+**BYOK failure handling is a first-class UX problem.** Because the credential is
+the customer's, a 401/402/404 is never an operator misconfiguration — it is
+their action item. Previously EVERY provider failure collapsed into one status
+and told the user *"AI provider is not configured. Open Settings…"*, which is
+actively misleading when the URL and model are already correct and only the key
+is dead, credit ran out, or the model was renamed. `classifyProviderFailure()`
+(`llm-client-utils.ts`) now separates `auth` / `quota` / `model_missing` /
+`model_unsupported` / `unreachable` / `unknown`, and `LlmProviderError` carries
+that classification on the error so callers can show a precise fix. The raw
+provider body is NEVER sent to a client (it can echo the key prefix) — it stays
+in server-side logs; only the category + hint cross the wire.
+`toTypedError` maps it to 502 (upstream), not 500 (our fault).
+
 ## Sell-readiness gaps (target: ~100k IDR/month per-org subscriptions)
 
 Billing via QRIS is IMPLEMENTED (spec: `docs/superpowers/specs/2026-08-26-qris-billing-design.md`):
@@ -334,7 +377,7 @@ Still open before charging real customers:
   strictly worse than the FK error (cross-tenant attribution), hence fail-closed.
 - **License-Validator deployment story** is undocumented (issue/revoke/machine-slot ops live in that other repo).
 - No trial path — deliberate choice (locked until paid); revisit if conversion suffers.
-- `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off) — set it per deployment or chat spend is uncapped.
+- `LLM_DAILY_TOKEN_BUDGET` is opt-in (default off). Under BYOK it protects the CUSTOMER's provider credit from a runaway agent loop, not our margin — but it is ONE env-wide number for every org, so it cannot serve as a per-customer ceiling. Giving each org its own limit in the UI is the missing piece (see "Bring-your-own-key" above).
 - Quality evals (`rag-eval`/`sql-eval`) run only via the manual/scheduled `eval.yml` workflow — no hard CI gate on answer quality.
 
 ## Editable context prompts (spec: `docs/superpowers/specs/2026-08-26-editable-context-prompts-design.md`)

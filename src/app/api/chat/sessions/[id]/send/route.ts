@@ -7,6 +7,7 @@ import { rememberChatTurn } from '@/lib/cognee'
 import { generateSessionTitle, generateSessionSummary } from '@/lib/ai'
 import { stripSessionWrapper } from '@/lib/tool-utils'
 import { assertChatSendRateLimit, assertWithinBudget } from '@/lib/llm-budget'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 
 // ponytail: hard ceiling for the whole handler (Next.js route segment config) —
 // the agentic loop can otherwise pin a worker for minutes across iterations.
@@ -29,6 +30,7 @@ const OVERALL_DEADLINE_MS = 120_000
 const IDLE_TIMEOUT_MS = 120_000
 const LLM_NOT_CONFIGURED_TEXT =
   'AI provider is not configured. Open Settings > AI Configuration and set the model API endpoint before using Chat.'
+const PROVIDER_ERROR_TEXT = 'Your AI provider refused the request.'
 const GENERIC_ERROR_TEXT =
   'Something went wrong while generating a response. Please try again.'
 const LLM_TIMEOUT_TEXT =
@@ -412,8 +414,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             // Log it server-side for diagnosis instead.
             console.error('[chat-send] stream error:', e)
             const status = statusForInternalChatError(e)
-            const is503 = status === 503
-            const message = is503 ? LLM_NOT_CONFIGURED_TEXT : GENERIC_ERROR_TEXT
+            // BYOK: a dead customer key is NOT "provider not configured". They
+            // already configured it; telling them to go re-check the endpoint
+            // sends them to fix something that is not broken, and hides the
+            // real cause (revoked key / no credit / wrong model). Use the
+            // classified failure from the transport for a precise message.
+            const failure = e instanceof LlmProviderError ? e.failure : null
+            const is503 = status === 503 && !failure
+            const message = failure
+              ? `${PROVIDER_ERROR_TEXT} ${failure.hint}`
+              : is503 ? LLM_NOT_CONFIGURED_TEXT : GENERIC_ERROR_TEXT
             await persistAssistantError({
               sessionId: session.id,
               userId: user.userId,

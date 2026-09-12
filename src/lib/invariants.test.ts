@@ -677,6 +677,43 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     expect(offenders).toEqual([])
   })
 
+  test('BYOK provider failures are classified, and the raw body never reaches a client', () => {
+    // ryasai is bring-your-own-key: the API key belongs to the CUSTOMER, so a
+    // provider rejection can only be fixed by them. Two rules follow, and both
+    // were violated before this guard:
+    //   1. the failure must be CLASSIFIED, because "provider is not configured"
+    //      is wrong and unhelpful when the URL/model are fine and only the key
+    //      is dead (revoked, out of credit, renamed model);
+    //   2. the raw provider body must NOT reach the client — it can echo the
+    //      key prefix.
+    // Guard against a second, weaker copy of the mapping appearing: the
+    // classification must live in llm-client-utils and be consumed through
+    // toTypedError.
+    const utils = readFileSync(join(REPO_ROOT, 'src/lib/llm-client-utils.ts'), 'utf8')
+    expect(utils).toContain('export function classifyProviderFailure')
+    expect(utils).toContain('export class LlmProviderError')
+
+    const errors = codeOnly('src/lib/errors.ts')
+    expect(errors).toContain('e instanceof LlmProviderError')
+    // The raw `e.message` must not be the fallback for a provider error.
+    expect(errors).not.toMatch(/instanceof LlmProviderError[\s\S]{0,200}message:\s*e\.message/)
+
+    // The transport must classify every provider rejection rather than throwing
+    // a bare Error, or the branch above is unreachable.
+    const client = codeOnly('src/lib/llm-client.ts')
+    expect(client).not.toMatch(/throw new Error\(`LLM (stream )?error \(HTTP/)
+    expect(client).toContain('providerError(')
+
+    // Chat streaming must prefer the classified hint over the generic
+    // "not configured" text.
+    const send = codeOnly('src/app/api/chat/sessions/[id]/send/route.ts')
+    expect(send).toContain('instanceof LlmProviderError')
+
+    // The external API's streaming path previously streamed the raw message.
+    const v1 = codeOnly('src/app/api/v1/chat/completions/route.ts')
+    expect(v1).toContain('toTypedError')
+  })
+
   test('every generateSql caller passes the admin business context', () => {
     // INCIDENT (2026-09 audit): `ai.ts` renders args.businessContext into the
     // SQL-generation prompt, and stream-preparers.ts has always passed it — but

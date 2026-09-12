@@ -735,7 +735,9 @@ model AgentRun {
 }
 
 // ------------------------------------------------------------------
-// LlmUsageLog — token usage per LLM call (cost tracking + monitoring)
+// LlmUsageLog — token usage per LLM call (monitoring + per-org runaway-loop budget).
+// NOTE: this is NOT our cost of goods. Users bring their own LLM key (BYOK), so
+// token spend is billed by THEIR provider. No cost/margin column exists by design.
 // ------------------------------------------------------------------
 model LlmUsageLog {
   id              String   @id @default(cuid())

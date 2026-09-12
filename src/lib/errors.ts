@@ -6,6 +6,7 @@
  * codes without changes.
  */
 import { UnauthorizedError } from '@/lib/session'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 
 export type ErrorCode =
   | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'VALIDATION_ERROR'
@@ -74,6 +75,19 @@ export function toTypedError(e: unknown): {
   if (e instanceof AppError) return { code: e.code, message: e.message, hint: e.hint, statusCode: e.statusCode }
   if (e instanceof UnauthorizedError) return { code: 'UNAUTHORIZED', message: e.message, statusCode: 401 }
   if (e instanceof LlmNotConfiguredError) return { code: 'LLM_NOT_CONFIGURED', message: e.message, statusCode: 503 }
+  // BYOK: the credential is the CUSTOMER's, so a provider rejection is their
+  // action item, not an internal fault. Report the category + a fix, and do NOT
+  // echo the provider body — it can contain the key prefix. Without this branch
+  // these errors fell through to INTERNAL_ERROR/500 and returned the raw
+  // "LLM error (HTTP 401): ..." text to the browser.
+  if (e instanceof LlmProviderError) {
+    return {
+      code: 'LLM_ERROR',
+      message: `AI provider error: ${e.failure.kind === 'auth' ? 'authentication failed' : e.failure.kind === 'quota' ? 'quota or credit exhausted' : e.failure.kind === 'model_missing' ? 'configured model unavailable' : e.failure.kind === 'model_unsupported' ? 'model lacks a required capability' : e.failure.kind === 'unreachable' ? 'provider unreachable' : 'unexpected provider response'}`,
+      hint: e.failure.hint,
+      statusCode: 502,
+    }
+  }
   const msg = e instanceof Error ? e.message : String(e)
   return { code: 'INTERNAL_ERROR', message: msg, statusCode: 500 }
 }

@@ -170,3 +170,93 @@ export async function fetchWithRetry(url: string, init: RequestInit): Promise<Re
 export function readErrorBody(res: Response): Promise<string> {
   return res.text().catch(() => '')
 }
+
+/**
+ * Why a BYOK provider call failed, from the CUSTOMER's point of view.
+ *
+ * ryasai is bring-your-own-key: the credential we send belongs to the customer,
+ * so a 401/402/404 is never an operator misconfiguration — it is something the
+ * CUSTOMER must fix in their own provider account. We cannot fix it for them,
+ * so the only useful thing we can do is say precisely what is wrong.
+ *
+ * Classified because the raw body must NOT reach the browser (it can echo the
+ * key prefix and provider internals), yet the CATEGORY is exactly what the user
+ * needs. Previously every one of these collapsed into a single status and the
+ * user was told their provider was "not configured" — actively misleading when
+ * the URL and model are already correct and only the key is dead.
+ */
+/**
+ * An Error that carries the classified provider failure, so callers can show
+ * the user actionable guidance WITHOUT receiving the raw provider body.
+ * `message` is unchanged in shape (`LLM error (HTTP 401): ...`) because existing
+ * code and tests match on that prefix — the classification rides alongside it
+ * rather than replacing it.
+ */
+export class LlmProviderError extends Error {
+  readonly status: number
+  readonly failure: ProviderFailure
+  constructor(status: number, body: string, stream = false) {
+    const { failure } = { failure: classifyProviderFailure(status, body) }
+    super(`LLM ${stream ? 'stream ' : ''}error (HTTP ${status}): ${body.slice(0, 200)}`)
+    this.name = 'LlmProviderError'
+    this.status = status
+    this.failure = failure
+  }
+}
+
+export type ProviderFailureKind =
+  | 'auth'          // key rejected/revoked/typo'd      -> check the key
+  | 'quota'         // out of credit / rate limited     -> top up or wait
+  | 'model_missing' // model id does not exist here     -> pick another model
+  | 'model_unsupported' // model exists but rejects our request shape (tools/vision)
+  | 'unreachable'   // network/DNS/TLS/timeout          -> check the base URL
+  | 'unknown'
+
+export interface ProviderFailure {
+  kind: ProviderFailureKind
+  hint: string
+}
+
+export function classifyProviderFailure(status: number | null, body: string): ProviderFailure {
+  // Provider error strings are not standardised, so match on both the HTTP
+  // status and the well-known machine codes OpenAI-compatible providers emit.
+  const text = body.toLowerCase()
+
+  if (status === 401 || status === 403 || /invalid_api_key|incorrect api key|authentication|unauthorized|api key/.test(text)) {
+    return {
+      kind: 'auth',
+      hint: 'Your AI provider rejected the API key. Re-enter it in Settings > AI Configuration — it may be revoked, expired, or pasted with a trailing space.',
+    }
+  }
+  if (status === 402 || /insufficient_quota|insufficient credits|exceeded your current quota|billing|payment required|out of credit/.test(text)) {
+    return {
+      kind: 'quota',
+      hint: 'Your AI provider account is out of credit or over its quota. Add credit with your provider — this is billed by them, not by us.',
+    }
+  }
+  if (status === 429 || /rate_limit|too many requests/.test(text)) {
+    return {
+      kind: 'quota',
+      hint: 'Your AI provider is rate-limiting this key. Wait a moment, or raise the limit on your provider account.',
+    }
+  }
+  if (/does not exist|not found|unknown model|invalid model|no such model/.test(text) || (status === 404 && /model/.test(text))) {
+    return {
+      kind: 'model_missing',
+      hint: 'Your AI provider does not offer the configured model. Pick a model your provider actually serves in Settings > AI Configuration.',
+    }
+  }
+  if (/does not support|unsupported|not supported/.test(text)) {
+    return {
+      kind: 'model_unsupported',
+      hint: 'The configured model does not support the feature being used (for example tool calling). Choose a more capable model in Settings > AI Configuration.',
+    }
+  }
+  if (status === null || /econnrefused|enotfound|fetch failed|network|timed? ?out|abort/.test(text)) {
+    return {
+      kind: 'unreachable',
+      hint: 'Could not reach your AI provider. Check the base URL in Settings > AI Configuration and that the host is reachable from this server.',
+    }
+  }
+  return { kind: 'unknown', hint: 'Your AI provider returned an unexpected error. Check your provider dashboard for details.' }
+}
