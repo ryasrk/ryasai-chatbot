@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `563dc55`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dd2ad44`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `563dc55`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **75,83%** (14.943/19.706 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 156 file · **2.995 lulus · 0 gagal** | terukur |
+| Test coverage | **76,13%** (15.002/19.706 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 157 file · **3.016 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -60,7 +60,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/admin-tools.ts` | 53,41% (fungsi) | **68,89%** (fungsi) | 32 |
 | `src/lib/tool-branches.ts` | 37,50% (baris) | **50,58%** (baris) / **75,00%** (fungsi) | 21 |
 | `src/lib/tool-router-agentic.ts` | 68,43% (baris) | **72,61%** (baris) / **89,66%** (fungsi) | 21 |
-| **Total repo** | **62,44%** | **75,83%** | — |
+| `src/lib/planner.ts` | 83,24% (baris) | **94,68%** (baris) / **97,92%** (fungsi) | 21 |
+| **Total repo** | **62,44%** | **76,13%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -144,8 +145,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Heuristik "all tools failed" dihapus | `tool-router-agentic.ts:288` | 1 |
 | Alignment dilepas dari jalur heuristik (regresi insiden) | `tool-router-agentic.ts:296` | 1 |
 | Disclosure token budget dihapus | `tool-router-agentic.ts:252` | 1 |
+| Rate limit MCP dihapus | `planner.ts:587` | 1 |
+| Plugin hilang/disabled tetap dieksekusi | `planner.ts:678` | 1 |
+| Guard "reformulasi identik" pada `selfCorrect` dihapus | `planner.ts:757` | 1 |
+| Row ToolRun MCP tidak di-persist | `planner.ts:605` | 2 |
 
-**64 kontrol, semuanya sah.**
+**68 kontrol, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -430,6 +435,37 @@ kemunculan pertama atau kedua. Setelah sasaran benar, kontrol menggagalkan tepat
 Ini kemunculan **kedua** pola yang sama di repo ini (`tool-router.ts` adalah yang
 pertama). Aturannya kini eksplisit: **pada file dengan guard kembar, kontrol
 negatif wajib menargetkan nomor baris di dalam rentang fungsi yang diuji.**
+
+### 1.7e Planner: jalur gagal dan pemulihan yang belum pernah dieksekusi
+
+`planner.test.ts` sudah baik untuk cabang bahagia, tetapi cabang ini **belum pernah
+berjalan sama sekali**:
+
+- **`selfCorrect` (G10) — nol referensi test di seluruh repo.** Jalur pemulihan
+  otomatis yang mengambil error, meminta LLM merumuskan ulang pertanyaan, lalu
+  mencoba sekali lagi. Kalau jalur ini rusak, tidak ada yang mengetahuinya.
+- **Rate limit MCP per-org**, **plugin hilang/disabled**, **persistensi row ToolRun
+  MCP**, dan **jalur chat yang tool di dalamnya gagal**.
+
+Dua hal yang **diukur, bukan diasumsikan**, keduanya tercatat di dalam file test:
+
+1. **Format id tool MCP adalah `mcp:<serverId>:<toolName>` — DUA titik dua**
+   (`tool-registry.ts` membangunnya sebagai `` `mcp:${t.serverId}:${t.toolName}` ``).
+   Saya pertama kali menulis `mcp:fs.read`; `executeStep` memecah pada `:` lalu
+   menyambung `slice(2)`, sehingga **toolName menjadi kosong** dan `inputSummary`
+   yang dipersist adalah string harfiah `"MCP: "`. Bentuk satu-titik-dua **bukan**
+   penulisan singkat dari hal yang sama. Fixture diperbaiki.
+2. **`selfCorrect` mengembalikan `completion.answer`**, dan jawaban kosong bersifat
+   *falsy*, sehingga `if (!corrected)` mengirim step ke cabang gagal. Versi pertama
+   test "retry dijalankan paling banyak sekali" saya menuntut `ok: true` terhadap
+   jawaban `''` dan gagal — **assertion saya yang salah, bukan kodenya.** Kini
+   dipisah menjadi dua test: panggilan terjadi tepat sekali, dan jawaban kosong
+   **tidak** dihitung sebagai pemulihan.
+
+**Bukti terukur:** `planner.ts` 83,24% → **94,68%** baris, 83,24% → **97,92%**
+fungsi. Empat kontrol negatif: rate limit dihapus (1 gagal), plugin hilang lolos
+ke eksekusi (1), guard "reformulasi identik" dihapus (1), persist ToolRun MCP
+dimatikan (2).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
