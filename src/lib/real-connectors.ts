@@ -1104,8 +1104,15 @@ export class ClickHouseConnector implements BaseDatabaseConnector {
     const db = this.dbName()
     // ponytail: batch schema reflection — single query for all tables + columns.
     // The playground has a 100 queries/hour quota, so per-table queries would exhaust it fast.
+    // SECURITY: `database` is admin-settable from the integration form, and this
+    // query used to interpolate it as a literal (`t.database = '${db}'`). A name
+    // containing a single quote closed the literal and changed the query — the
+    // only connector in this file that did not bind its schema name. ClickHouse's
+    // own parameter syntax is used here: {db:String} with query_params, which the
+    // server sends out-of-band rather than concatenated into the SQL text.
     const rs = await cl.query({
-      query: `SELECT t.name AS table_name, t.engine AS engine, c.name AS col_name, c.type AS col_type, c.position AS col_pos, c.is_in_primary_key AS pk FROM system.tables t LEFT JOIN system.columns c ON t.database = c.database AND t.name = c.table WHERE t.database = '${db}' AND t.engine NOT LIKE '%Materialized%' ORDER BY t.name, c.position FORMAT JSONEachRow`,
+      query: `SELECT t.name AS table_name, t.engine AS engine, c.name AS col_name, c.type AS col_type, c.position AS col_pos, c.is_in_primary_key AS pk FROM system.tables t LEFT JOIN system.columns c ON t.database = c.database AND t.name = c.table WHERE t.database = {db:String} AND t.engine NOT LIKE '%Materialized%' ORDER BY t.name, c.position FORMAT JSONEachRow`,
+      query_params: { db },
       format: 'JSONEachRow',
     })
     const text = await rs.text()

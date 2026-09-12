@@ -60,13 +60,15 @@ mock.module('mysql2/promise', () => ({ createPool: () => fakeMysqlPool }))
 
 const ch = {
   queries: [] as string[],
+  params: [] as Record<string, unknown>[],
   responseText: '',
   queryThrows: null as Error | null,
 }
 mock.module('@clickhouse/client', () => ({
   createClient: () => ({
-    query: async (a: { query: string }) => {
+    query: async (a: { query: string; query_params?: Record<string, unknown> }) => {
       ch.queries.push(a.query)
+      ch.params.push(a.query_params ?? {})
       if (ch.queryThrows) throw ch.queryThrows
       return { text: async () => ch.responseText }
     },
@@ -88,6 +90,7 @@ beforeEach(() => {
   my.commitCalls = 0
   my.queryThrows = null
   ch.queries = []
+  ch.params = []
   ch.responseText = ''
   ch.queryThrows = null
 })
@@ -280,24 +283,33 @@ describe('ClickHouseConnector.fetchSchema', () => {
   })
 
   // -------------------------------------------------------------------------
-  // KNOWN GAP — recorded, not silently accepted.
+  // SECURITY (fixed): the database name is admin-settable from the integration
+  // form, and this query used to interpolate it as a SQL literal, unlike every
+  // other connector in this file. ClickHouse parameters keep it out of the SQL
+  // text entirely.
   //
-  // The database name is INTERPOLATED into the SQL string (template literal),
-  // unlike every other connector in this file, which binds it as a parameter.
-  // `database` is admin-settable from the integration form, so a name containing
-  // a single quote changes the query. This test documents today's behaviour so
-  // that whoever fixes it sees the change fail here rather than in production.
-  //
-  // Not fixed in this commit: escaping is a source change at a security boundary
-  // and belongs in its own reviewed commit with its own test.
+  // Verified by negative control: reverting to the interpolated form makes this
+  // test fail (the hostile name reappears inside the query string).
   // -------------------------------------------------------------------------
-  test('KNOWN GAP: the database name reaches SQL unescaped', async () => {
+  test('the database name is passed as a PARAMETER, never interpolated', async () => {
     ch.responseText = ''
-    await new ClickHouseConnector({ host: 'h', database: "d' OR 1=1 --" }, 'CLICKHOUSE').fetchSchema()
+    const hostile = "d' OR 1=1 --"
+    await new ClickHouseConnector({ host: 'h', database: hostile }, 'CLICKHOUSE').fetchSchema()
     const q = ch.queries[0]
-    expect(q).toContain("'d' OR 1=1 --'")
-    // The parameterised form is what the other connectors do:
-    expect(q).not.toContain('t.database = ?')
+    // The hostile value must not appear in the SQL text AT ALL.
+    expect(q).not.toContain("OR 1=1")
+    expect(q).not.toContain(`'${hostile}'`)
+    // And the placeholder + params carry it instead.
+    expect(q).toContain('{db:String}')
+    expect(ch.params[0]).toEqual({ db: hostile })
+  })
+
+  test('an ordinary database name still filters the reflection query', async () => {
+    ch.responseText = ''
+    await new ClickHouseConnector({ host: 'h', database: 'analytics' }, 'CLICKHOUSE').fetchSchema()
+    // The parameterisation must not quietly stop filtering by schema.
+    expect(ch.queries[0]).toContain('t.database = {db:String}')
+    expect(ch.params[0]).toEqual({ db: 'analytics' })
   })
 })
 
