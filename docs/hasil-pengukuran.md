@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dd2ad44`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9fb3de4`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dd2ad44`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **76,13%** (15.002/19.706 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 157 file · **3.016 lulus · 0 gagal** | terukur |
+| Test coverage | **76,47%** (15.070/19.707 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 157 file · **3.031 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -60,8 +60,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/admin-tools.ts` | 53,41% (fungsi) | **68,89%** (fungsi) | 32 |
 | `src/lib/tool-branches.ts` | 37,50% (baris) | **50,58%** (baris) / **75,00%** (fungsi) | 21 |
 | `src/lib/tool-router-agentic.ts` | 68,43% (baris) | **72,61%** (baris) / **89,66%** (fungsi) | 21 |
-| `src/lib/planner.ts` | 83,24% (baris) | **94,68%** (baris) / **97,92%** (fungsi) | 21 |
-| **Total repo** | **62,44%** | **76,13%** | — |
+| `src/lib/planner.ts` | 83,24% (baris) | **94,68%** (baris, per-file) | 21 |
+| `src/lib/admin-tools.ts` | 92,42% (baris, 3 file bersama) | **97,14%** (baris) / 96,49% (fungsi) | 19 |
+| **Total repo** | **62,44%** | **76,47%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -149,8 +150,15 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Plugin hilang/disabled tetap dieksekusi | `planner.ts:678` | 1 |
 | Guard "reformulasi identik" pada `selfCorrect` dihapus | `planner.ts:757` | 1 |
 | Row ToolRun MCP tidak di-persist | `planner.ts:605` | 2 |
+| Gate `MCP_REMOVE` dilumpuhkan | `admin-tools.ts:754` | 1 |
+| Kredensial kosong tetap ditulis | `admin-tools.ts:655` | 1 |
+| Resolusi ambigu memilih kandidat pertama | `admin-tools.ts:632` | 1 |
+| Audit `MCP_SERVER_DELETE` dihapus | `admin-tools.ts:764` | 1 |
+| Lantai gate dari angka PER-FILE (kesalahan nyata) | `coverage-gate.ts` guard | 1 (exit 1) |
+| Lantai di atas angka merged | `coverage-gate.ts` guard | 1 (exit 1) |
+| Modul ter-gate hilang dari laporan | `coverage-gate.ts` | 1 (exit 1) |
 
-**68 kontrol, semuanya sah.**
+**72 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -466,6 +474,76 @@ Dua hal yang **diukur, bukan diasumsikan**, keduanya tercatat di dalam file test
 fungsi. Empat kontrol negatif: rate limit dihapus (1 gagal), plugin hilang lolos
 ke eksekusi (1), guard "reformulasi identik" dihapus (1), persist ToolRun MCP
 dimatikan (2).
+
+### 1.7f TIGA test double yang cacat, masing-masing menyembunyikan jalur produksi
+
+Ronde ini menambah test untuk lima aksi lifecycle MCP (`mcp_list`,
+`mcp_set_credentials`, `mcp_test`, `mcp_remove`, `seed_plugins`) yang **belum pernah
+dieksekusi**. Saat itulah tiga cacat harness muncul — dan **ketiganya ada di file
+yang sudah saya kerjakan**, bukan di modul asing:
+
+1. **`bypassOrg` di-mock dengan signature yang TIDAK ADA.** Dua file memakai
+   `(_o, fn) => fn()`, padahal modul aslinya **satu argumen**: `bypassOrg(fn)`
+   (callback wrapper, lihat `prisma-tenant.ts:48`). Akibatnya
+   `bypassOrg(() => seedPlugins(orgId))` memanggil `fn()` dengan `fn` bernilai
+   `undefined` → `TypeError`. **`seedPluginsAction` tidak mungkin berjalan di bawah
+   test sama sekali.** Sebelas file test lain sudah memakai bentuk benar, dan itulah
+   yang membuat pasangan usang ini menonjol.
+2. **`db.plugin` tidak punya `count`**, padahal `seedPluginsAction` memerlukannya
+   untuk angka before/after. Modul `plugin-seeds` asli lalu berjalan dan gagal pada
+   model db yang tidak ada.
+3. **`mcpServer.findFirst` mengembalikan `servers[0] ?? null` tanpa melihat
+   `where.id`**, sehingga pencarian by-id di `resolveMcpServer` **selalu berhasil**
+   dan cabang "banyak kecocokan" **tidak mungkin dicapai secara konstruksi**. Mock
+   kini menghormati `where.id`, dan `findMany` menghormati `where.name.contains`.
+
+Ini pola yang sama untuk keempat kalinya di repo ini: **test double yang salah
+membuat jalur produksi tidak terjangkau, dan hijau-nya test menyamarkan itu.**
+
+**Dua fixture saya sendiri yang salah — diukur, bukan ditebak:**
+
+- `'github'` terhadap `github` + `github-enterprise` **bukan** ambigu:
+  `resolveMcpServer` memeriksa kecocokan persis (case-insensitive) **lebih dulu**.
+  Diukur: `ok: true`. Query harus berupa substring dari **keduanya** dan **sama
+  dengan tidak satu pun**.
+- `'A=1'` gagal regex kredensial — key butuh **minimal dua karakter**
+  (`/([A-Z][A-Z0-9_]+)/`). Fixture itu **menguji validasi sambil mengklaim menguji
+  resolusi**. Diperbaiki menjadi `GITHUB_TOKEN=abc`.
+- Satu test yang saya tulis menuntut `ok: false` dengan alasan yang **saya karang
+  sendiri**; itu saya ganti dengan test yang benar-benar memeriksa bahwa penulisan
+  mendarat pada server yang cocok persis.
+
+**Bukti terukur:** `admin-tools.ts` 92,42% → **97,14%** baris, 82,84% → **96,49%**
+fungsi (tiga file test dijalankan bersama). Empat kontrol negatif: gate `MCP_REMOVE`
+dimatikan (1 gagal), kredensial kosong ditulis (1), resolusi ambigu memilih kandidat
+pertama (1), audit delete dihapus (1).
+
+### 1.7g Gate yang menangkap kesalahannya sendiri
+
+`scripts/coverage-gate.ts` mendapat dua perubahan, dan yang kedua ada **karena yang
+pertama menangkap saya**:
+
+1. Gate kini **melaporkan** modul yang sudah melewati `MIN_GATED_PCT` tapi belum
+   punya lantai, plus petunjuk `--update`. Gate yang hanya melindungi lantai lama
+   berhenti membaik begitu dipasang: tidak ada yang meminta modul berikutnya ikut.
+   Ini **bukan** error — lantai adalah ratchet, dan ratchet yang menggagalkan build
+   karena tunggakannya sendiri akan dihapus. Pada run pertama ia menemukan
+   `tool-utils.ts` (93,33%) tanpa lantai, sekarang ter-gate.
+2. **Lantai di atas angka MERGED hampir selalu lantai yang di-*paste* dari run
+   per-file, dan gate kini menyebutkannya.** Ini bukan hipotetis: saat menambah
+   lantai di commit ini, `planner.ts` terukur **94,68% per-file** tetapi **75,77%
+   merged** (516/681). Saya *paste* angka 85 dan gate langsung merah. Selisih 19
+   poin itu adalah caveat merge yang sudah didokumentasikan di `coverage.ts`: Bun
+   hanya melaporkan baris yang diprosesnya sendiri, dan `Math.max` tidak bisa
+   mengarang hit. Kedua angka terlihat sama-sama otoritatif dan **tidak**. Tanpa
+   pemeriksaan ini, hasilnya adalah build merah yang tampak seperti regresi coverage
+   padahal masalahnya adalah **dari mana angka lantai itu berasal**.
+
+`planner.ts` karena itu **sengaja TIDAK di-gate**, dengan alasan dan lantai yang
+benar (70) ditulis di komentar agar orang berikutnya tidak menurunkannya ulang.
+
+Kontrol A adalah yang paling bernilai: ia **mengembalikan kesalahan yang persis saya
+lakukan** dan memastikan gate gagal dengan diagnostik yang menyebut penyebabnya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

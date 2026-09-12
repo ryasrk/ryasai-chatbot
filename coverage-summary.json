@@ -1,7 +1,7 @@
 {
-  "linePct": 76.13,
-  "linesHit": 15002,
-  "linesFound": 19706,
+  "linePct": 76.47,
+  "linesHit": 15070,
+  "linesFound": 19707,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -198,12 +198,6 @@
       "pct": 71.46067415730337
     },
     {
-      "file": "src/lib/admin-tools.ts",
-      "hit": 484,
-      "found": 674,
-      "pct": 71.81008902077151
-    },
-    {
       "file": "src/lib/cognee-knowledge-graph.ts",
       "hit": 253,
       "found": 344,
@@ -334,6 +328,12 @@
       "hit": 434,
       "found": 532,
       "pct": 81.57894736842105
+    },
+    {
+      "file": "src/lib/admin-tools.ts",
+      "hit": 552,
+      "found": 675,
+      "pct": 81.77777777777779
     },
     {
       "file": "src/app/api/billing/pricing/route.ts",
