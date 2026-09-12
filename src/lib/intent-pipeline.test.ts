@@ -363,6 +363,75 @@ describe('analyzeIntent', () => {
     expect(result.confidence).toBe(0.9)
   })
 
+  // --- the anti-nag guard ------------------------------------------------
+  // This is the fix for the "chatbot asks endless clarification" bug, and only
+  // its NEGATIVE case was covered: the test above uses a question with no query
+  // indicator to prove the guard does NOT fire. The branch where it DOES fire —
+  // the actual fix — had never executed.
+  test('a QUERY INDICATOR overrides a clarification request when data sources exist', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () =>
+      JSON.stringify({
+        needsRetrieval: true,
+        needsClarification: true,
+        clarificationQuestion: 'Which database?',
+        confidence: 0.9,
+      }),
+    )
+    const result = await analyzeIntent({
+      question: 'how many invoices are there?',
+      hasDocuments: false,
+      hasIntegrations: true,
+    })
+    // The model wanted to ask "which database?" even though the system
+    // auto-selects an integration. Asking anyway is the nag; the guard drops it.
+    expect(result.needsClarification).toBe(false)
+    expect(result.clarificationQuestion).toBeUndefined()
+  })
+
+  test('an Indonesian query indicator overrides it too', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () =>
+      JSON.stringify({ needsRetrieval: true, needsClarification: true, clarificationQuestion: 'DB mana?', confidence: 0.9 }),
+    )
+    // The indicator list carries Indonesian words ('berapa', 'jumlah', 'daftar').
+    // A Latin-only check would have missed the primary user language.
+    const result = await analyzeIntent({ question: 'berapa jumlah invoice?', hasDocuments: false, hasIntegrations: true })
+    expect(result.needsClarification).toBe(false)
+  })
+
+  test('a SCHEMA TERM overrides it even with no query indicator word', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () =>
+      JSON.stringify({ needsRetrieval: true, needsClarification: true, clarificationQuestion: 'which table?', confidence: 0.9 }),
+    )
+    const result = await analyzeIntent({
+      question: 'give me the outstanding_balance',
+      hasDocuments: false,
+      hasIntegrations: true,
+      schemaSummaries: ['invoices(id, outstanding_balance)'],
+    })
+    // Naming a real column is a data query even without 'show'/'count' in it.
+    expect(result.needsClarification).toBe(false)
+  })
+
+  test('with NO data sources the clarification is RESPECTED', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () =>
+      JSON.stringify({ needsRetrieval: true, needsClarification: true, clarificationQuestion: 'Which database?', confidence: 0.9 }),
+    )
+    const result = await analyzeIntent({
+      question: 'how many invoices are there?',
+      hasDocuments: false,
+      hasIntegrations: false,
+    })
+    // The guard must not swallow a genuine question when there is nothing to
+    // query: with no data source, "which database?" is not a nag, it is the only
+    // sensible thing to say.
+    expect(result.needsClarification).toBe(true)
+    expect(result.clarificationQuestion).toBe('Which database?')
+  })
+
   test('handles markdown code-fenced JSON from LLM', async () => {
     mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
     mockChatOnce.mockImplementation(async () =>
@@ -774,5 +843,109 @@ describe('evaluateAnswerConfidence', () => {
     const r = await evaluateAnswerConfidence({ question: 'q', evidence: '... --- ...' })
     expect(r.confident).toBe(false)
     expect(r.reason).toBe('insufficient evidence')
+  })
+
+  // --- the LLM path -------------------------------------------------------
+  // Every test above sets the role config to null, so this function's REAL body
+  // (the LLM call, the JSON parse, the error fallback) had never executed. The
+  // short-circuits were tested; the thing they short-circuit PAST was not.
+  const VERDICT = '{"confident":true,"reason":"answers it","nextToolHint":null,"confidence":0.9}'
+
+  test('an LLM verdict is parsed into a ConfidenceResult', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => VERDICT)
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toBe('answers it')
+    expect(r.confidence).toBe(0.9)
+  })
+
+  test('a JSON fenced in markdown is still parsed', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    // Models routinely wrap JSON in a fence despite being told not to; failing on
+    // that would fall into the catch and report a bogus confident verdict.
+    mockChatOnce.mockImplementation(async () => '```json\n' + VERDICT + '\n```')
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toBe('answers it')
+  })
+
+  test('a not-confident verdict carries its tool hint through', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () =>
+      '{"confident":false,"reason":"needs data","nextToolHint":"SQL","confidence":0.3}')
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    // The hint is what makes the agentic loop call a DIFFERENT tool next round.
+    expect(r.confident).toBe(false)
+    expect(r.nextToolHint).toBe('SQL')
+  })
+
+  test('an unparseable answer falls back to CONFIDENT rather than blocking', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => 'I think this is probably good enough?')
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    // Deliberate: failing open means a broken evaluator costs an extra loop, not a
+    // withheld answer. Failing closed would strand the user with nothing.
+    expect(r.confident).toBe(true)
+    expect(r.reason).toContain('evaluation failed')
+  })
+
+  test('an LLM that throws falls back to CONFIDENT too', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => { throw new Error('provider 503') })
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toContain('evaluation failed')
+  })
+
+  test('the evidence is TRUNCATED before it reaches the prompt', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => VERDICT)
+    await evaluateAnswerConfidence({ question: 'q', evidence: 'z'.repeat(9000) })
+    const messages = (mockChatOnce.mock.calls.at(-1) as unknown as [unknown, Array<{ content: string }>])[1]
+    const userContent = messages[1].content
+    // Unbounded evidence would blow the context window on a large document set.
+    // 4000 characters of evidence plus the question line.
+    expect(userContent.length).toBeLessThan(4200)
+    expect(userContent).toContain('Question: q')
+  })
+
+  test('the verdict is requested for the CONFIDENCE purpose, not a generic one', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => VERDICT)
+    await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    const lastCall = mockChatOnce.mock.calls.at(-1) as unknown as [unknown, unknown, number, string]
+    // A stub or BYOK config that routes by purpose would otherwise send this to
+    // the wrong model — the fourth argument must stay the role name.
+    expect(lastCall[3]).toBe('confidence-evaluation')
+  })
+
+  test('evidence-emptiness is checked BEFORE the LLM is consulted', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({
+      id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm',
+    }))
+    mockChatOnce.mockImplementation(async () => VERDICT)
+    // Measure the DELTA. An absolute not.toHaveBeenCalled() couples this test to
+    // the harness's call bookkeeping; a delta measures only what this test did.
+    const before = mockChatOnce.mock.calls.length
+    await evaluateAnswerConfidence({ question: 'q', evidence: '' })
+    // INCIDENT: these checks used to sit BELOW the config gate, so on a deployment
+    // with no LLM configured, empty evidence was reported as confident — the one
+    // verdict that is least trustworthy. Pinned by asserting no LLM call happened.
+    expect(mockChatOnce.mock.calls.length - before).toBe(0)
   })
 })
