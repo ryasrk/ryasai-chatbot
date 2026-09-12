@@ -1,7 +1,7 @@
 {
-  "linePct": 71.49,
-  "linesHit": 13860,
-  "linesFound": 19386,
+  "linePct": 72.06,
+  "linesHit": 13972,
+  "linesFound": 19389,
   "filesMeasured": 126,
   "failedTestFiles": [],
   "files": [
@@ -64,12 +64,6 @@
       "hit": 80,
       "found": 218,
       "pct": 36.69724770642202
-    },
-    {
-      "file": "src/lib/llm-config.ts",
-      "hit": 93,
-      "found": 251,
-      "pct": 37.05179282868526
     },
     {
       "file": "src/app/api/integrations/[id]/schema/route.ts",
@@ -340,6 +334,12 @@
       "hit": 58,
       "found": 72,
       "pct": 80.55555555555556
+    },
+    {
+      "file": "src/lib/llm-config.ts",
+      "hit": 205,
+      "found": 254,
+      "pct": 80.70866141732283
     },
     {
       "file": "src/lib/llm-client-anthropic.ts",

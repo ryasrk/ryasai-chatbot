@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0b1b9a2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0f7c11`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0b1b9a2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **71,49%** (13.860/19.386 baris, 126 file) | terukur, **belum 95%** |
-| Test suite | 145 file · **2.655 lulus · 0 gagal** | terukur |
+| Test coverage | **72,06%** (13.972/19.389 baris, 126 file) | terukur, **belum 95%** |
+| Test suite | 146 file · **2.690 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -38,13 +38,14 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 8,64% | **69,29%** | 10 |
 | `src/lib/sso-saml.ts` | 27,52% | **88,46%** | 26 |
 | `src/app/api/integrations/route.ts` | 12,90% | **99,46%** | 24 |
-| **Total repo** | **62,44%** | **71,49%** | — |
+| `src/lib/llm-config.ts` | 20,94% | **93,78%** | 35 |
+| **Total repo** | **62,44%** | **72,06%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
 — jalur Postgres sudah tertutup), `planner.ts` (263), `admin-tools.ts` (214),
 `stream-preparers.ts` (206), `rag-retrieval.ts` (169), `tool-router-agentic.ts` (167),
-`tool-router.ts` (162), `llm-config.ts` (158).
+`tool-router.ts` (162).
 ### 1.2 Kontrol negatif — bukti tes benar-benar menangkap regresi
 
 Menaikkan angka coverage tidak membuktikan apa pun. Untuk SETIAP kenaikan di atas,
@@ -72,8 +73,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Config integrasi disimpan tanpa enkripsi | `api/integrations/route.ts:169` | 1 |
 | Cek kuota maxIntegrations dihapus | `api/integrations/route.ts:122` | 2 |
 | Baris integrasi ditulis sebelum uji koneksi | `api/integrations/route.ts:144` | 1 |
+| Guard org-context kredensial BYOK dihapus | `llm-config.ts:167` | 1 |
+| Kunci API mentah dikirim di payload publik | `llm-config.ts:282` | 1 |
+| Fallback endpoint embedding dihapus | `llm-config.ts:307` | 1 |
 
-**14 kontrol, semuanya sah.** Baris 297 adalah yang paling penting: kontrol itu
+**17 kontrol, semuanya sah.** Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
 violation, sehingga login SSO pertama kali gagal total) dan tes menangkapnya.
 
