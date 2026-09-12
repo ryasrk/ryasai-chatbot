@@ -1,7 +1,7 @@
 {
-  "linePct": 73.38,
-  "linesHit": 14441,
-  "linesFound": 19679,
+  "linePct": 73.96,
+  "linesHit": 14559,
+  "linesFound": 19686,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -70,12 +70,6 @@
       "hit": 76,
       "found": 204,
       "pct": 37.254901960784316
-    },
-    {
-      "file": "src/lib/mcp-client.ts",
-      "hit": 104,
-      "found": 260,
-      "pct": 40
     },
     {
       "file": "src/lib/redis.ts",
@@ -388,6 +382,12 @@
       "hit": 182,
       "found": 219,
       "pct": 83.10502283105022
+    },
+    {
+      "file": "src/lib/mcp-client.ts",
+      "hit": 222,
+      "found": 267,
+      "pct": 83.14606741573034
     },
     {
       "file": "src/lib/constrained-output.ts",

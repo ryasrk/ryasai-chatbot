@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `515b1bd`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `901c52d`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `515b1bd`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **73,38%** (14.441/19.679 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 149 file · **2.805 lulus · 0 gagal** | terukur |
+| Test coverage | **73,96%** (14.559/19.686 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 150 file · **2.833 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -44,7 +44,8 @@ pengukuran nyata sebelum ronde ini, bukan perkiraan.
 | `src/lib/planner.ts` | 76,14% | **83,24%** | 16 |
 | `src/lib/stream-preparers.ts` | 74,77% | **99,31%** | 10 |
 | `src/lib/rag-retrieval.ts` | 68,26% | **86,01%** | 24 |
-| **Total repo** | **62,44%** | **73,38%** | — |
+| `src/lib/mcp-client.ts` | 68,97% | **96,77%** | 28 |
+| **Total repo** | **62,44%** | **73,96%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -95,8 +96,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Floor skor `>= 3` di reranker dihapus | `rag-retrieval.ts:147` | 1 |
 | Batas atas indeks reranker dihapus | `rag-retrieval.ts:147` | 1 |
 | Reranker mengembalikan urutan asli (tanpa reorder) | `rag-retrieval.ts:188` | 2 |
+| Prefix `serverName` tool MCP dibuang | `mcp-client.ts:104` | 1 |
+| Serialisasi blok non-teks MCP dibuang | `mcp-client.ts:382` | 1 |
+| TTL cache daftar tool MCP dimatikan | `mcp-client.ts:81` | 1 |
 
-**31 kontrol, semuanya sah.**
+**34 kontrol, semuanya sah.**
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
@@ -136,7 +140,32 @@ pemeriksaannya adalah filter per-entri. `[]` bersifat truthy di JS, sehingga
 `if (!scored)` di pemanggil **tidak** menangkapnya; backfill-lah yang memulihkan
 urutan asli. Ini kini edge yang diuji, bukan kejutan laten.
 
-### 1.4 Insiden gate yang dicatat apa adanya
+### 1.4 mcp-client: separuh modul yang tersambung tidak bisa diuji
+
+`mcp-client.test.ts` yang ada hanya dapat menguji jalur "server tidak ada" dan
+"server dinonaktifkan", karena **tidak punya cara membuat koneksi berhasil**.
+Seluruh jalur `getConnection` → `buildTransport` → `client.connect` →
+`listTools`/`callTool` tidak terjangkau — 57% fungsi modul ini tidak pernah
+dieksekusi, padahal itulah bagian yang dipakai planner. Server MCP yang mati,
+argv yang salah, atau env var yang hilang semuanya bisa lolos tanpa terdeteksi.
+
+Ditutup dengan SDK palsu di file terpisah (memindahkan mock SDK akan mengubah graf
+modul file lama). Empat asumsi salah diperbaiki di **double**, bukan sumber, dan
+tiga di antaranya jebakan yang membuat test lulus-tapi-menyesatkan:
+
+- kunci tool adalah `toolName` (bukan `name`), skemanya `inputSchema`;
+- signature `Client.callTool` adalah `(args, resultSchema, options)` — assertion
+  saya membaca parameter **kedua**, melempar dari dalam double, dan muncul sebagai
+  "tool call failed";
+- cache koneksi bersifat module-level dan bertahan antar-test, sehingga server yang
+  tersambung di satu test **dipakai ulang** di test berikutnya dan `buildTransport`
+  tidak pernah berjalan lagi: enam test lulus sendirian tapi gagal di dalam file.
+  `beforeEach` sekarang memanggil `disconnectAllMcp()`.
+
+Satu test placeholder milik saya yang assertion-nya hampa (tidak mungkin gagal)
+diganti dengan assertion yang bermakna.
+
+### 1.5 Insiden gate yang dicatat apa adanya
 
 Satu commit di ronde ini (`287e84c`) **lolos dengan `bunx tsc --noEmit` gagal**
 (13 error). Penyebabnya: saya memakai `--no-verify` — yang seharusnya hanya
@@ -151,7 +180,7 @@ mengembalikan `PlanStepResult[]` langsung (tanpa `outputSummary`), dan mock
 `error?: string`.
 
 **Perubahan kebiasaan sejak itu:** `tsc` dijalankan SEBELUM commit, bukan sesudah.
-Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 149 file · 2.805 lulus ·
+Verifikasi akhir ronde ini: `tsc` 0 error · `lint` 0 · 150 file · 2.833 lulus ·
 0 gagal. Sejak insiden itu `tsc` dijalankan SEBELUM setiap commit, dan gate itu
 hijau di keempat commit berikutnya. Baris 297 adalah yang paling penting: kontrol itu
 mengembalikan bug produksi yang nyata (organisasi hardcoded menyebabkan FK
