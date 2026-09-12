@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c4938cd`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a84c179`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c4938cd`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **79,69%** (15.679/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.172 lulus · 0 gagal** | terukur |
+| Test coverage | **79,74%** (15.689/19.674 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 158 file · **3.193 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -69,8 +69,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/integrations/[id]/schema/route.ts` | 37,25% | **97,38%** (baris) / 100,00% (fungsi) | 27 |
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
+| `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **61,54%** (baris) / 73,17% (fungsi) | 30 |
 | Modul ter-gate | 62 modul | **67 modul** | +5 |
-| **Total repo** | **62,44%** | **79,69%** | — |
+| **Total repo** | **62,44%** | **79,74%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -194,8 +195,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `cfg` null tetap memanggil LLM | `source-init.ts` | 2 |
 | Integrasi tanpa schema tetap memanggil LLM | `source-init.ts` | 1 |
 | Truncation dokumen dihapus | `source-init.ts` | 1 |
+| Cache key rag TIDAK lagi org-scoped (kebocoran lintas tenant) | `rag-retrieval.ts:38` | 3 |
+| TTL cache jalur utama pakai milidetik (~17 jam) | `rag-retrieval.ts` | 1 |
+| Rerank default diubah jadi opt-in (regresi fitur presisi) | `rag-retrieval.ts:92` | 2 |
+| `citationTrail` kosong dikembalikan `[]` bukan `undefined` | `rag-retrieval.ts:125` | 1 |
+| Query tanpa token tidak early-exit | `rag-retrieval.ts:53` | 1 |
 
-**102 kontrol + 3 kontrol gate, semuanya sah.**
+**107 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -826,6 +832,47 @@ persis kaveat di `scripts/coverage.ts:160-167` yang membuat `planner.ts` sengaja
 laporan merged **selalu lebih rendah** untuk modul dengan banyak jalur masuk. Memilih
 target dari kolom merged tanpa mengukur per-file akan menghabiskan satu ronde penuh
 untuk modul yang sudah selesai.
+
+### 1.7q `rag-retrieval.ts`: 9,86% — pipa retrieval belum pernah berjalan
+
+**9,86% → 61,54% baris, fungsi 15,79% → 73,17%.** File testnya **hanya menguji
+`parseRerankerScores`** (fungsi murni), sehingga `retrieveRelevantChunks` — cache,
+dekomposisi sub-query, HyDE, fusion knowledge graph, rerank, citation trail — belum
+pernah dieksekusi sepanjang 571 baris. Tiga impor juga **tidak di-mock sama sekali**
+(`citation-trail`, `rag-ranking`, `prisma-tenant`), jadi sebagian berjalan sungguhan
+karena kebetulan.
+
+Yang diuji, semuanya keputusan yang bermakna: **cache key bertingkat org** (query sama,
+org beda **tidak boleh** berbagi hit — tanpa ini org B dilayani chunk milik org A);
+key dinormalisasi dan dibatasi panjangnya; **cache hit melewati seluruh retriever**;
+query tanpa token keluar tanpa menyentuh apa pun; **dekomposisi** memecah dan
+menggabungkan, sementara pertanyaan satu-bagian tidak mengambil jalur itu dan
+`_skipDecompose` menekannya (tanpa itu rekursinya tidak berhenti); KG dikonsultasi
+**paralel**; **HyDE** menyematkan jawaban hipotetis sementara kaki leksikal tetap
+memakai pertanyaan **asli**; **rerank ON secara default**; pool FTS lebih lebar dari
+`topK`; **citation trail kosong dihilangkan**, bukan dikembalikan `[]` yang akan
+merender bagian "Sources" kosong; dan `getRagCacheStats` tidak membagi nol.
+
+**Lima test double saya sendiri yang salah, dan polanya berulang:** saya menegaskan
+terhadap *nilai balik mock* sambil mengira sedang menguji *jalur kode*, dan setiap kali
+mock-nya yang salah.
+1. Pool kandidat datang dari `db.documentChunk`, **bukan** dari `fuseRankings` — fixture
+   saya ada di tempat yang salah, hasilnya 0 chunk.
+2. `rankings` berbentuk `[vectorRanking, lexicalRanking]` dan **kaki vektor kosong** saat
+   vector store tidak dikonfigurasi. Membaca `rankings[0]` menghasilkan himpunan kosong
+   dan **setiap assertion hilir tidak menguji apa pun**.
+3. `selectTopRetrievedChunks` dipanggil **dua kali** (di dalam `retrieveAndFuse`, lalu
+   oleh pemanggil atas hasil yang sudah terpotong).
+4. Dengan rerank ON, `topK` **dilebarkan ke `topK*3`**, jadi panggilan seleksi membawa
+   `k=3`, bukan `k=1`.
+5. Satu test saya **tidak punya assertion atas fixture-nya sendiri** (array `seen` yang
+   tidak pernah diisi) dan akan lulus terhadap implementasi apa pun.
+
+**Dan satu kontrol negatif GAGAL menggagalkan:** membalik TTL **jalur utama** ke
+milidetik mentah tetap hijau, karena test TTL saya hanya melihat tulisan **jalur
+dekomposisi**. Ada **dua tempat tulis cache** dan keduanya mengonversi sendiri-sendiri.
+Testnya kini memeriksa **keduanya**, dan kontrol yang sama sekarang menggagalkannya
+seperti seharusnya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
