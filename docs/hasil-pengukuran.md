@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e562294`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `693cd12`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e562294`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **75,35%** (14.845/19.702 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 154 file · **2.926 lulus · 0 gagal** | terukur |
+| Test coverage | **75,47%** (14.870/19.703 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 155 file · **2.958 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -57,7 +57,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router.ts` | 50,20% | **65,79%** / 94,76% (fungsi) | 18 |
 | `src/lib/tool-router-agentic.ts` — gabungan kedua file | 68,43% (fungsi) | **89,29%** (fungsi, file lama) + 14 test baru khusus `runMultiStepDag` | 14 |
 | `src/lib/real-connectors.ts` | 64,80% | **89,72%** | 21 |
-| **Total repo** | **62,44%** | **75,35%** | — |
+| `src/lib/admin-tools.ts` | 53,41% (fungsi) | **68,89%** (fungsi) | 32 |
+| **Total repo** | **62,44%** | **75,47%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -130,8 +131,69 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `conn.release()` dibuang dari finally | `real-connectors.ts:689` | 2 |
 | Budget enrichment (rowCount 0 / >10000) dilonggarkan | `real-connectors.ts:460` | 1 |
 | Interpolasi nama database ClickHouse dikembalikan | `real-connectors.ts:1114` | 2 |
+| `isConfirmed` diabaikan pada `set_prompt` | `admin-tools.ts:193` | 1 |
+| Validasi nama tool di `toggle_tool` dilepas | `admin-tools.ts:218` | 1 |
+| `isConfirmed` diabaikan pada `toggle_document` | `admin-tools.ts:263` | 1 |
 
-**53 kontrol, semuanya sah.**
+**56 kontrol, semuanya sah.**
+
+### 1.6b Gate coverage: dari manual menjadi otomatis (`D6-4`, P0 — SELESAI)
+
+Sebelum ronde ini, CI menjalankan unit test tetapi **tidak pernah mengukur
+coverage**. Coverage naik dari 51% ke 75% selama pengerjaan ini dan **tidak ada
+apa pun yang mencegahnya hilang lagi** — sebuah commit boleh menghapus berapa pun
+test dan tetap hijau. Itu ditutup oleh `scripts/coverage-gate.ts`.
+
+Tiga pilihan desain yang disengaja:
+
+- **Per-file, bukan total repo.** Gate keras pada 75% akan merah di hari
+  pemasangannya dan melatih orang mengabaikannya — dan total merge adalah **batas
+  bawah** (§1.9), sehingga regresi nyata bisa bersembunyi di kelonggarannya.
+- **Floor dibulatkan ke bawah** (kelipatan 5, minus toleransi 5 poin), sengaja di
+  bawah nilai terukur. Diukur saat membangunnya: dengan toleransi 2 poin, modul
+  100% gagal setelah perubahan 2 baris (96,72%). Gate yang menangis serigala akan
+  dihapus orang. Toleransi 5 bertahan pada kasus itu dan tetap menangkap keruntuhan.
+- **Modul ter-gate yang HILANG dari laporan = error**, bukan dilewati. Itu cara
+  sebuah rename diam-diam menghentikan proteksi.
+
+Tiga kontrol negatif pada gate itu sendiri, karena gate yang belum pernah terlihat
+gagal belum terbukti bekerja: modul turun di bawah floor → exit 1 dan menyebut
+modulnya; modul ter-gate dihapus dari laporan → exit 1 (kasus rename); churn 2 baris
+pada modul 100% → exit 0, jadi gate tidak menghukum edit biasa.
+
+Juga **dihapus**: `coverage:check`, yang lebih buruk daripada tidak ada gate. Ia
+menjalankan `c8 --check-coverage --lines 50 bun run test`, dan karena
+`scripts/test.ts` men-spawn satu subprocess per file test, c8 tidak
+menginstrumentasi apa pun: ia mencetak `All files | 0 | 0 | 0 | 0` **dan LULUS**
+ambang 50% sambil tidak memeriksa apa pun. Diverifikasi dengan menjalankannya,
+bukan diasumsikan. Centang hijau yang tidak memverifikasi apa pun lebih berbahaya
+daripada tidak ada centang.
+
+Terpasang di `ci.yml` (pengukuran segar, lalu gate) dan di `scripts/pre-commit.sh`
+(membaca laporan yang ada, bukan mengukur ulang — hook 20 menit akan langsung
+dimatikan orang). Hook melewati dengan pemberitahuan bila file test berubah
+sejak laporan.
+
+### 1.6c Gate konfirmasi aksi admin: 18 dari 19 tool belum pernah dieksekusi
+
+`admin-tools.ts` adalah permukaan tool yang dipanggil **planner LLM**. Delapan
+belas dari sembilan belas tool id belum pernah dijalankan test mana pun:
+`admin-tools-mcp.test.ts` menutup `admin:mcp_install` dengan baik, tetapi mock
+`db`-nya hanya mengekspos `mcpServer`/`auditLog`, sehingga tidak ada yang lain
+bisa berjalan.
+
+Yang paling penting adalah **gate konfirmasi**. `set_prompt`, `toggle_tool`,
+`toggle_integration`, dan `toggle_document` mengubah bagaimana **setiap jawaban
+berikutnya** diproduksi, dan pemanggilnya adalah model. Jika `isConfirmed`
+diabaikan, satu panggilan tool bisa menulis ulang system prompt atau mematikan
+himpunan tool SQL/RAG/REST **tanpa manusia di loop**. Keempatnya diuji **dua arah**.
+
+**Temuan UX yang dicatat, bukan ditutup dengan test:** pesan konfirmasi
+`set_prompt` melaporkan **panjang** prompt baru, bukan teksnya —
+`"change the System Prompt (10 characters)?"`. Untuk field yang bisa mencapai
+ribuan karakter itu pilihan yang dapat dibela, tetapi artinya model meminta
+manusia menyetujui perubahan yang **tidak ditampilkan** oleh konfirmasinya.
+Belum diperbaiki (butuh keputusan desain: preview N karakter pertama? dialog UI?).
 
 Satu catatan metodologi dari kontrol `stream-preparers.ts:439`: percobaan pertama
 mengganti `try {` dengan `if (true) {`, yang **gagal parse** dan menghasilkan
