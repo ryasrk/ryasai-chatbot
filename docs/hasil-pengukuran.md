@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1f3d7db`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `65d9957`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1f3d7db`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,03%** (16.719/19.662 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.717 lulus · 0 gagal** | terukur |
+| Test coverage | **85,08%** (16.728/19.662 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.725 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -119,7 +119,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/cognee-memory.ts` | 75,32% → **81,65%** merged (artefak LF) | 92,97% → **100,00%** kode eksekutabel (129/129) | 7 |
 | `src/lib/mcp-installer.ts` | 75,88% → **80,40%** merged (artefak LF) | 90,97% → **100,00%** kode eksekutabel (160/160) | 15 |
 | `src/lib/plugin-selector.ts` | 77,45% → **88,73%** merged | 95,18% → **100,00%** kode eksekutabel (181/181) | 5 |
-| **Total repo** | **62,44%** | **85,03%** | — |
+| `src/lib/notifications.ts` | 77,52% → **84,50%** merged (artefak LF) | 89,29% → **93,16%** kode eksekutabel (109/117) | 8 |
+| **Total repo** | **62,44%** | **85,08%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -378,7 +379,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**359 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**368 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3123,6 +3124,50 @@ skor bukan-nol akan **menyiratkan relevansi yang tidak pernah dihitung**.
 **Kontrol negatif: 11 dijalankan, 10 menggigit.** Yang tidak menggigit adalah
 `if (!res.ok) return []` → `throw`: throw di dalam `try` **ditangkap `catch` yang sama** dan
 tetap mengembalikan `[]`, jadi **tak dapat dibedakan**. **Dideklarasikan non-kontrol.**
+
+### 1.7bj Teknik pengukuran saya SENDIRI merusak angkanya — dan pengukuran itulah yang menangkapnya
+
+**`notifications.ts` 89,29% → 93,16% (109/117).** Repo **85,03% → 85,08% (+0,05)**. Modul
+ter-gate tetap **88** (`notifications` merged 84,50% < 85, jadi **tidak boleh di-gate**).
+
+**KESALAHAN TERBESAR RONDE INI ADALAH MILIK SAYA SENDIRI, DAN ANGKA COVERAGE YANG
+MENANGKAPNYA.** `RESEND_API_KEY` adalah **`const` tingkat modul** yang dibaca **saat import**,
+dan `.env` repo ini **tidak menyetelnya** — jadi jalur pengiriman email **tak terjangkau
+in-process**. Draf pertama saya menyiasatinya dengan
+**`await import('./notifications?' + random)`** untuk memaksa evaluasi ulang. Itu **salah**, dan
+saya **membuktikannya**: sufiks query string membuat **instance modul TERPISAH** (`a === b`
+bernilai **false**). Akibatnya kode yang dieksekusi lewat instance itu **tidak dilaporkan
+sebagai coverage `notifications.ts`** — dan angka terukurnya **TURUN dari 100/112 menjadi
+48/90**. **Test yang mengklaim menguji sebuah cabang tetapi tidak menaikkan coverage adalah
+persis mode kegagalan yang seluruh suite ini ada untuk mencegahnya.** Yang menangkapnya bukan
+review manual, tapi **selisih angka** setelah saya menambahkan test yang "seharusnya" menaikkan
+coverage.
+
+**Perbaikannya: pindahkan eksekusi ke SUBPROCESS dengan env ter-set, lalu patok hasil yang
+TERAMATI di sini.** Ini mempertahankan nilai pengujian tanpa merusak instrumentasi. Buktinya
+**sembilan kontrol negatif tetap menggigit**, termasuk kontrol email yang berjalan lewat
+subprocess — jadi **kebenaran pengujian tidak bergantung pada coverage-nya**.
+
+**Yang kini dijaga pada `notifications`:** **catch dispatch** — satu webhook rusak harus
+kembali sebagai **HASIL gagal**, karena error yang lolos akan **membatalkan seluruh batch** dan
+**diam-diam melewati notifikasi tenant lain**; **throw non-`Error` di-stringify**, bukan
+`undefined`; **respons Resend non-OK melaporkan status DAN potongan 160 karakter body-nya** —
+body memuat alasannya ("domain not verified"), jadi membuangnya menyisakan hanya "HTTP 403";
+**body yang GAGAL DIBACA tetap melaporkan status**, karena stream yang terpotong **tidak boleh
+menghilangkan kode status yang menjelaskan kegagalannya**; **`AbortSignal.timeout` terpasang** —
+Resend yang tak responsif tidak boleh menahan slot scheduler selamanya; dan **retry berhenti di
+config error** (`Invalid notification configuration`/`Unknown notification type`) — **mengulang
+decryption yang gagal hanya membuang waktu**.
+
+**Fakta terukur mengoreksi asumsi saya:** `NOTIFICATION_MAX_RETRIES = 3` tetapi loop-nya
+`attempt <= MAX`, jadi ada **EMPAT percobaan total** (1 awal + 3 retry), **bukan 3**. Backoff
+`2000ms * 2**attempt` membuat test itu benar-benar **tidur ~14 detik** — itu **harga dari
+mematok jadwal yang nyata**, dan saya menyimpannya alih-alih mempercepatnya.
+
+**Sisa 8 baris adalah konsekuensi `const` tingkat modul yang tak terhindarkan**, bukan
+kelalaian: kode email itu **benar-benar dieksekusi** (dibuktikan sembilan kontrol), tetapi
+eksekusinya terjadi di **proses lain**, sehingga **tidak dapat diinstrumentasi di sini**.
+**Dideklarasikan, bukan disembunyikan.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

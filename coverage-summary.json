@@ -1,9 +1,11 @@
 {
-  "linePct": 85.03,
-  "linesHit": 16719,
+  "linePct": 85.08,
+  "linesHit": 16728,
   "linesFound": 19662,
   "filesMeasured": 128,
-  "failedTestFiles": [],
+  "failedTestFiles": [
+    "src/app/api/v1/chat/completions/route.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -82,12 +84,6 @@
       "hit": 162,
       "found": 210,
       "pct": 77.14285714285715
-    },
-    {
-      "file": "src/lib/notifications.ts",
-      "hit": 100,
-      "found": 129,
-      "pct": 77.51937984496125
     },
     {
       "file": "src/lib/cognee-knowledge-graph.ts",
@@ -256,6 +252,12 @@
       "hit": 43,
       "found": 51,
       "pct": 84.31372549019608
+    },
+    {
+      "file": "src/lib/notifications.ts",
+      "hit": 109,
+      "found": 129,
+      "pct": 84.49612403100775
     },
     {
       "file": "src/lib/observability.ts",
