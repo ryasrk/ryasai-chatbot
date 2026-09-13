@@ -1,11 +1,11 @@
 {
-  "linePct": 87.31,
-  "linesHit": 18473,
-  "linesFound": 21158,
-  "fnPct": 93.96,
-  "fnsHit": 1727,
-  "fnsFound": 1838,
-  "filesMeasured": 144,
+  "linePct": 87.39,
+  "linesHit": 18610,
+  "linesFound": 21295,
+  "fnPct": 93.99,
+  "fnsHit": 1736,
+  "fnsFound": 1847,
+  "filesMeasured": 145,
   "failedTestFiles": [],
   "files": [
     {
@@ -951,6 +951,15 @@
       "pct": 100,
       "fHit": 3,
       "fFound": 3,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/notifications/[id]/route.ts",
+      "hit": 137,
+      "found": 137,
+      "pct": 100,
+      "fHit": 9,
+      "fFound": 9,
       "fPct": 100
     },
     {

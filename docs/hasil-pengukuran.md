@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9710e7f`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a0de01d`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9710e7f`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,31%** (18.473/21.158 baris, 144 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,96%** (1727/1838 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 186 file · **4.416 lulus · 0 gagal** | terukur |
+| Test coverage | **87,39%** (18.610/21.295 baris, 145 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,99%** (1736/1847 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 187 file · **4.449 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**822 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**840 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5363,6 +5363,40 @@ K15 race `P2025` jadi 500, K16 404 jadi 200, K17 audit UPDATE, K18 kategori whit
 
 **Progres backlog: 12 dari 66 route orphan ditutup.** Repo **87,24% → 87,31%**; file terinstrumen
 **143 → 144**; suite **4.381 → 4.416** (185 → **186 file**); gate **143 → 144 modul**.
+
+### 1.7dg `/api/notifications/[id]` — tipe DIKEMAS ke dalam blob terenkripsi: 100,00% (137/137)
+
+Rute ini menyimpan **kredensial hidup** (token bot Telegram, rahasia penandatangan webhook, auth SMTP), dan
+punya **satu properti halus yang mudah salah tanpa test:**
+
+**`type` DIKEMAS KE DALAM BLOB TERENKRIPSI.** Jadi mengubah tipe saja **harus mengenkripsi ulang blob dengan
+tipe baru sambil MEMPERTAHANKAN kredensial lama**, dan menyuplai config baru harus mengenkripsi
+`{ type, ...config }`. Kalau tipe disimpan di luar blob, `sendNotification` akan **dispatch pada tipe yang
+bertentangan dengan kredensial yang tersimpan.** K3 menguji ini secara langsung: **mematikan re-pack membuat
+3 test merah** — termasuk bahwa memindahkan webhook → telegram **tanpa mengetik ulang token** tidak boleh
+menjatuhkan token itu.
+
+**DAN BLOB RUSAK TIDAK BOLEH MEM-BRICK FORMULIR.** Jalur re-pack **menangkap kegagalan dekripsinya sendiri**
+dan membiarkan blob apa adanya, sehingga operator masih bisa PATCH nama atau toggle `isActive`; jalur mask
+berbentuk sama — baris yang tak bisa didekripsi mengembalikan `configured: false`, **bukan 500.** K6
+membuktikan: menghapus catch itu membuat **3 test merah** — dan alasannya praktis, karena baris yang ditulis
+dengan `ENCRYPTION_SECRET_KEY` yang sudah dirotasi **harus tetap bisa didaftar dan dihapus**, kalau tidak
+halaman daftar 500 selamanya dan operator tidak punya cara membersihkannya.
+
+**Audit mencatat KUNCI yang berubah, bukan nilainya** — `changes: Object.keys(data)`, karena `data` bisa
+memuat blob kredensial. K11 mengubahnya menjadi `changes: data` dan **2 test merah**, yang merupakan
+asersi yang menjaga refactor "log saja payload-nya" di masa depan agar tidak membocorkannya.
+
+**18 kontrol, dan KEDELAPAN BELAS MENGGIGIT — dua rute berturut-turut dengan 18/18.** Termasuk
+K1 `findFirst` → `findUnique` (**2 merah**, kelas IDOR, di sini `findFirst` di-assert sebagai OPERASI),
+K2 tipe tak lagi dikemas (**2 merah**), K4 sumber tipe saat config baru salah, K5 `maskRow` diganti row
+mentah (**3 merah, bocor blob**), K7 whitelist tipe, K8 trim tipe, **K9 `config: {}` dianggap ada (menimpa
+kredensial)**, K10 cek body kosong (**3 merah**), K12 severity audit DELETE, K13 cek `count === 0`,
+K14 race `P2025` jadi 500, K15 nama whitespace, K16 cek tipe boolean, K17 audit DELETE dihapus,
+K18 404 → 200.
+
+**Progres backlog: 13 dari 66 route orphan ditutup.** Repo **87,31% → 87,39%**; file terinstrumen
+**144 → 145**; suite **4.416 → 4.449** (186 → **187 file**); gate **144 → 145 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
