@@ -88,10 +88,34 @@ def is_noise(i):
 
 
 def _field_decl(i):
-    """A declaration line inside an interface: `name: Type` (TS-erased)."""
+    """A declaration line inside a type block: `name?: Type`.
+
+    Handles both the primitive form (`sessionId?: string`) and a richly-typed one
+    (`chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>`). The
+    earlier regex used a character class that excluded `{}` and `:` inside the
+    type, so a nested object type -- the SAME construct -- leaked through and was
+    reported as uncovered executable code.
+
+    Proven on planner.ts, one inline parameter-type literal:
+
+        question: string                                  excluded
+        availableTools: ToolDef[]                         excluded
+        sessionId?: string                                excluded
+        chatHistory?: Array<{ role: 'user' | ... }>       MISSED (hit=0, both copies)
+
+    Shape test instead of a character class: `identifier?:` then ANY type text,
+    where the line ends without opening a statement. Verified by the callers below
+    (only reached when the line produced no hit), and regression-checked against
+    modules whose numbers were already verified.
+    """
     import re as _re
     t = src[i - 1].strip()
-    return bool(_re.match(r"^[A-Za-z_$][\w$]*\??\s*:\s*[\w<>\[\]|,'\"\s?]+;?$", t))
+    if not t or t.startswith('//'): return False
+    # A declaration, not an assignment or a call: `name?: Type` / `name: Type`.
+    if not _re.match(r"^[A-Za-z_$][\w$]*\??\s*:", t): return False
+    # Exclude values: an object-property write or a labelled statement assigns.
+    if '=' in t.split(':', 1)[1]: return False
+    return True
 
 excl = {'continuation': [], 'type-decl': [], 'noise': []}
 real_unc = []

@@ -843,3 +843,182 @@ describe('executePlan — MCP branch', () => {
     expect(mockRunNonStreaming).not.toHaveBeenCalled()
   })
 })
+
+// A delegating wrapper, installed with mock.module BEFORE the module under test is
+// imported. Mutating the imported NAMESPACE does not work: ESM module namespaces are
+// read-only bindings and the assignment throws "Attempted to assign to readonly
+// property" even though Object.isFrozen(namespace) reports false.
+//
+// `{ ...realSandbox }` keeps every other export real; only withToolSandbox is
+// intercepted. Replacing the whole module broke three existing tests once (the
+// planner drives the real sandbox on its happy path), so the spread is deliberate.
+// The REAL module is imported FIRST, outside the mock factory. Importing it inside
+// the factory deadlocks the test process (the factory awaits the module it is
+// defining) -- the run printed nothing and never exited.
+const realSandbox = await import('@/lib/tool-sandbox')
+// The FUNCTION ITSELF is captured now, by value. Delegating to
+// `realSandbox.withToolSandbox` at call time recursed forever ("Maximum call stack
+// size exceeded") and failed three pre-existing tests: the module namespace is
+// LIVE, so after mock.module installs the wrapper that property IS the wrapper.
+const realWithToolSandbox = realSandbox.withToolSandbox
+const sandboxState: { reject: Error | null; rejectOnce: boolean; calls: number } = { reject: null, rejectOnce: false, calls: 0 }
+mock.module('@/lib/tool-sandbox', () => ({
+  ...realSandbox,
+  withToolSandbox: async <T>(tool: string, fn: () => Promise<T>): Promise<T> => {
+    sandboxState.calls++
+    if (sandboxState.reject) {
+      // `rejectOnce` narrows the refusal to a SINGLE invocation, so a sibling step
+      // in the same level can be observed succeeding.
+      if (sandboxState.rejectOnce) {
+        const err = sandboxState.reject
+        sandboxState.reject = null
+        throw err
+      }
+      throw sandboxState.reject
+    }
+    return realWithToolSandbox(tool, fn)
+  },
+}))
+
+describe('validatePlan — the two guards that never ran', () => {
+  // The existing tests covered "unknown tool" and "empty steps". Two other guards
+  // existed at hit=0: the step-count ceiling and the cycle re-throw. Both protect
+  // against a hostile or confused LLM, so neither can be left unverified.
+
+  test('a plan EXCEEDING the step ceiling is rejected', () => {
+    // MAX_STEPS bounds the blast radius: every step is a tool call (SQL query, REST
+    // request, admin action) on a customer's systems. Without the ceiling a single
+    // generated plan could fan out without limit, and the operator has no override.
+    const steps = Array.from({ length: 7 }, (_, i) => ({
+      id: `s${i}`, tool: 'chat', input: { message: `q${i}` },
+    }))
+    expect(() => validatePlan({ steps, needsSynthesis: false }, TOOLS)).toThrow(PlanValidationError)
+    // The message must say the ACTUAL ceiling, or an operator debugging a rejected
+    // plan cannot tell how far over it went.
+    expect(() => validatePlan({ steps, needsSynthesis: false }, TOOLS)).toThrow(/max is 6/)
+  })
+
+  test('a plan AT the ceiling is accepted (the guard is not off-by-one)', () => {
+    // The inverse: a ceiling that rejects 6 would silently forbid legitimate
+    // multi-tool questions, since the prompt itself advertises 6.
+    const steps = Array.from({ length: 6 }, (_, i) => ({
+      id: `s${i}`, tool: 'chat', input: { message: `q${i}` },
+    }))
+    const out = validatePlan({ steps, needsSynthesis: false }, TOOLS)
+    expect(out.steps).toHaveLength(6)
+  })
+
+  test('a CYCLIC dependency graph becomes a PlanValidationError, not a raw throw', () => {
+    // topoSort throws on a cycle. Re-throwing it unwrapped would surface an internal
+    // error type to the API layer, which classifies by error kind; the planner must
+    // translate it so the caller can fail closed cleanly.
+    const plan = {
+      steps: [
+        { id: 'a', tool: 'chat', input: { message: 'x' }, dependsOn: ['b'] },
+        { id: 'b', tool: 'chat', input: { message: 'y' }, dependsOn: ['a'] },
+      ],
+      needsSynthesis: false,
+    } as unknown as Plan
+    expect(() => validatePlan(plan, TOOLS)).toThrow(PlanValidationError)
+  })
+
+  test('a DANGLING dependsOn becomes a PlanValidationError too', () => {
+    // Same translation path, different cause: a step depending on an id that does
+    // not exist. Without this the plan would execute the dependency-less prefix and
+    // silently drop the dependent step.
+    const plan = {
+      steps: [{ id: 'a', tool: 'chat', input: { message: 'x' }, dependsOn: ['ghost'] }],
+      needsSynthesis: false,
+    } as unknown as Plan
+    expect(() => validatePlan(plan, TOOLS)).toThrow(PlanValidationError)
+  })
+})
+
+
+describe('executePlan — a step rejected by the tool sandbox', () => {
+  // withToolSandbox is the last gate before a tool runs. Its rejection must become a
+  // FAILED STEP, not a rejected promise: throwing out of the level's Promise.all
+  // would discard the results of the siblings that already succeeded alongside it.
+  test('a sandbox rejection fails that step and leaves the sibling intact', async () => {
+    sandboxState.reject = new Error('sandbox refused: tool "sql" is not permitted')
+    sandboxState.rejectOnce = true
+    try {
+      const results = await executePlan({
+        plan: {
+          steps: [
+            { id: 's1', tool: 'sql', input: { question: 'q' } },
+            { id: 's2', tool: 'chat', input: { message: 'ok' } },
+          ],
+          needsSynthesis: false,
+        },
+        userId: 'u1',
+      })
+      // SAME level, so both ran; the refusal is reported, not thrown.
+      expect(results).toHaveLength(2)
+      const refused = results.find((r) => r.stepId === 's1')
+      expect(refused?.ok).toBe(false)
+      expect(refused?.error).toContain('sandbox refused')
+      // A refused step reports zero latency rather than a fabricated number.
+      expect(refused?.latencyMs).toBe(0)
+      expect(results.find((r) => r.stepId === 's2')?.ok).toBe(true)
+    } finally {
+      sandboxState.reject = null
+    }
+  })
+
+  test('the status callback is told about the refusal', async () => {
+    // The UI renders per-step status from this callback. A refused step that never
+    // reports "error" leaves a spinner running forever on the agentic dashboard.
+    sandboxState.reject = new Error('sandbox refused')
+    const statuses: Array<[string, string, string]> = []
+    try {
+      await executePlan({
+        plan: {
+          steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } }],
+          needsSynthesis: false,
+        },
+        userId: 'u1',
+        onStatus: (id, tool, status) => statuses.push([id, tool, status]),
+      })
+      expect(statuses).toContainEqual(['s1', 'sql', 'error'])
+    } finally {
+      sandboxState.reject = null
+    }
+  })
+
+  test('NON-Error rejections are stringified, not reported as "undefined"', async () => {
+    // A sandbox that rejects with a plain string (or an object) must still produce a
+    // readable reason; `e.message` on a string is undefined and the operator would
+    // see a failed step with no explanation at all.
+    sandboxState.reject = 'policy violation' as unknown as Error
+    try {
+      const results = await executePlan({
+        plan: {
+          steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } }],
+          needsSynthesis: false,
+        },
+        userId: 'u1',
+      })
+      expect(results[0].ok).toBe(false)
+      expect(results[0].error).toContain('policy violation')
+      expect(results[0].error).not.toContain('undefined')
+    } finally {
+      sandboxState.reject = null
+    }
+  })
+
+  test('a healthy sandbox still lets the step through (the wrapper is not a blanket deny)', async () => {
+    // The inverse, so the tests above cannot pass merely because every step fails.
+    sandboxState.reject = null
+    sandboxState.calls = 0
+    const results = await executePlan({
+      plan: {
+        steps: [{ id: 's1', tool: 'chat', input: { message: 'ok' } }],
+        needsSynthesis: false,
+      },
+      userId: 'u1',
+    })
+    expect(sandboxState.calls).toBeGreaterThan(0)
+    expect(results[0].ok).toBe(true)
+  })
+})

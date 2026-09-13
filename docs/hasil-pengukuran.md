@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `033937c`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b7f0bed`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `033937c`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,64%** (16.273/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.471 lulus · 0 gagal** | terukur |
+| Test coverage | **82,69%** (16.283/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.479 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **74 modul** | +12 |
+| Modul ter-gate | 62 modul | **75 modul** | +13 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -93,7 +93,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/web-fetch.ts` | 69,86% → **73,52%** merged | 94,44% → **99,38%** kode eksekutabel (161/162) | 46 |
 | `src/lib/scheduler-queue.ts` | 48,03% → **100,00%** merged | 59,80% → **100,00%** kode eksekutabel (119/119) | 16 |
 | `src/lib/rag-retrieval.ts` | 88,64% → **76,29%** merged (**turun**, §1.7z) | 93,84% → **100,00%** kode eksekutabel (341/341) | 66 |
-| **Total repo** | **62,44%** | **82,64%** | — |
+| `src/lib/planner.ts` | 77,53% → **79,00%** merged | 96,70% → **99,45%** kode eksekutabel (538/541) | 70 |
+| **Total repo** | **62,44%** | **82,69%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -336,8 +337,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fallback `CREATE INDEX` blocking diizinkan | `rag-retrieval.ts:519` | 1 |
 | Graph recall melempar diteruskan | `rag-retrieval.ts:319` | 1 |
 | pgvector gagal total diteruskan | `rag-retrieval.ts:377` | 1 |
+| Batas `MAX_STEPS` dihapus | `planner.ts:344` | 1 |
+| Cycle diteruskan mentah (bukan `PlanValidationError`) | `planner.ts:352` | 2 |
+| Sandbox menolak → tidak jadi *failed step* | `planner.ts:459` | 1 |
+| `onStatus('error')` tidak dipanggil saat sandbox menolak | `planner.ts:459` | 1 |
+| Error non-`Error` diganti konstanta | `planner.ts:462` | 2 |
 
-**233 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**238 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2172,6 +2178,70 @@ regresi**: `ai` 416/416, `stream-preparers` 437/437, `cognee-knowledge-graph` 26
 dengan pengukuran sebelum perluasan.
 
 **Kontrol negatif: 5, semuanya menggigit.**
+
+### 1.7ar `planner.ts`: 96,70% → 99,45% eksekutabel, dan heuristik deklarasi tipe diperluas
+
+**Merged 77,53% → 79,00%, eksekutabel 96,70% → 99,45% (538/541). Kini di-gate.**
+
+**Dua baris pertama yang dilaporkan "tak tercakup" ternyata DEKLARASI TIPE.** Baris 116 dan
+193 adalah `chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>` di dalam
+customizablecustomizable **tipe parameter inline** (`args: { ... }`). Yang membuat ini bukti kuat:
+dalam **objek literal yang sama**, tiga baris bersaudara — `question: string`,
+`availableTools: ToolDef[]`, `sessionId?: string` — **sudah** dikecualikan, dan hanya yang
+bertipe kaya ini yang lolos. Bentuknya identik; yang berbeda hanya apakah tipe-nya
+mengandung `{`, `}`, `;`, dan `:` (nesting objek), yang **tidak ada di character class**
+`_field_decl`. Ini kelas yang sama dengan koreksi `interface` bersarang (§1.7ao), hanya
+wujudnya tipe inline.
+
+**Diverifikasi tidak ada regresi** pada sembilan modul yang angkanya sudah terverifikasi:
+`ai` 416/416, `tool-router` 238/239, `smart-router` 384/385, `stream-preparers` 437/437,
+`web-fetch` 161/162, `cognee-knowledge-graph` 267/267, `rag-retrieval` 341/341,
+`scheduler-queue` 119/119, `real-connectors` 685/685 — **semuanya identik** dengan sebelum
+perluasan.
+
+**Melengkapi file test itu sendiri menangkap kesalahan saya.** Saat memeriksa satu modul
+pembanding, saya menjalankan alat dengan **satu** file test saja dan mendapat 84,44% — angka
+yang salah, dan mengulang persis kesalahan §1.7ao. Dengan seluruh file test: 99,58%. Saya
+**tidak** melaporkan angka yang salah itu.
+
+**Yang kini dijaga (semuanya penjaga keamanan/biaya):**
+**Batas `MAX_STEPS` (=6)** — dikonfirmasi **tidak pernah diuji** meski penjaga ini membatasi
+ledakan: setiap langkah adalah panggilan alat (kueri SQL, permintaan REST, aksi admin) pada
+sistem pelanggan, dan tanpa batas satu rencana yang dihasilkan bisa melebar tanpa henti.
+Diuji **dua arah**: rencana 7 langkah ditolak **dan pesannya menyebutkan batas sebenarnya**
+(`max is 6`) — tanpa itu operator yang men-debug rencana tertolak tidak tahu seberapa jauh
+melewatinya; rencana **tepat 6 langkah diterima** (penjaga tidak off-by-one, karena prompt
+sendiri mengiklankan 6).
+**Graf dependensi siklik dan `dependsOn` menggantung** harus menjadi `PlanValidationError`,
+bukan error internal mentah dari `topoSort` — API mengklasifikasi berdasarkan jenis error.
+**Penolakan sandbox** (`withToolSandbox`, gerbang terakhir sebelum alat berjalan) harus
+menjadi **langkah yang gagal, bukan promise yang ditolak**: melempar keluar dari
+`Promise.all` satu level akan **membuang hasil saudara-saudara yang sudah berhasil**.
+Diperiksa juga bahwa penolakan itu tetap memanggil `onStatus(..., 'error')` — tanpa itu
+dashboard agentic meninggalkan spinner berputar selamanya — dan bahwa penolakan non-`Error`
+di-stringify sehingga operator tidak membaca `"undefined"`.
+
+**Tiga kesalahan saya sendiri, semua terukur:**
+1. Versi pertama me-mutasi **namespace modul** yang di-import: `TypeError: Attempted to
+   assign to readonly property`, **meski `Object.isFrozen(namespace)` melaporkan `false`**.
+   Namespace ESM adalah binding read-only.
+2. Versi kedua memakai `mock.module(..., async () => { const real = await import(<modul yang
+   sedang di-mock>) })` → **deadlock**: proses test mencetak **tidak ada apa pun** dan tidak
+   pernah keluar. Modul asli harus di-import **di luar** factory.
+3. Versi ketiga mendelegasikan ke `realSandbox.withToolSandbox` **saat panggilan** →
+   rekursi tak terbatas (`Maximum call stack size exceeded`) dan **3 test lama jadi merah**,
+   karena namespace-nya **live**: setelah `mock.module` dipasang, properti itu **adalah**
+   wrapper-nya. Fungsi aslinya harus ditangkap **berdasarkan nilai** sebelum penimpaan.
+
+**Tiga baris sisa, dan mengapa saya TIDAK memperluas heuristik untuknya.** Ketiganya adalah
+`return {` yang berdiri sendiri di barisnya sendiri di dalam blok yang jelas dieksekusi;
+**bidang-bidang di baris berikutnya (`stepId:`, `error:`) semuanya punya hit>0**, jadi ini
+artefak lcov pada satu ekspresi objek. **Saya tidak menggeneralisasi** karena
+`stream-preparers.ts` punya **10** `return {` dan tetap 100% — jadi polanya bukan kelas yang
+bersih, dan menambah aturan longgar berisiko menelan kode nyata. Dilaporkan sebagai
+**3 baris artefak terdokumentasi**, bukan diklaim sebagai cakupan.
+
+**Kontrol negatif: 4, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

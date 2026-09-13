@@ -114,6 +114,9 @@ const FLOORS: Record<string, number> = {
   // and a wrong prune silently drops a live job.
   // 93.84% -> 100.00% executable (341/341). Merged is 76.29% because other test
   // files instrument this module without covering it (LF jump, see the caveat).
+  // 96.70% -> 99.45% executable (538/541). The 3 remaining are  openers
+  // inside executed object literals (lcov artifact, documented in the docs).
+  'src/lib/planner.ts': 78, // measured 99.45% executable; merged 79.00%
   'src/lib/rag-retrieval.ts': 75, // measured 100.00% executable; merged 76.29%
   'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
   'src/lib/session.ts': 80, // measured 89.56% (163/182)

@@ -1,6 +1,6 @@
 {
-  "linePct": 82.64,
-  "linesHit": 16273,
+  "linePct": 82.69,
+  "linesHit": 16283,
   "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -198,12 +198,6 @@
       "pct": 77.51937984496125
     },
     {
-      "file": "src/lib/planner.ts",
-      "hit": 528,
-      "found": 681,
-      "pct": 77.5330396475771
-    },
-    {
       "file": "src/lib/cognee-knowledge-graph.ts",
       "hit": 267,
       "found": 344,
@@ -214,6 +208,12 @@
       "hit": 175,
       "found": 222,
       "pct": 78.82882882882883
+    },
+    {
+      "file": "src/lib/planner.ts",
+      "hit": 538,
+      "found": 681,
+      "pct": 79.00146842878121
     },
     {
       "file": "src/lib/sso-saml.ts",
