@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3d3f6bf`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1d616d5`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3d3f6bf`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,96%** (17.898/20.583 baris, 138 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,83%** (1687/1798 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 180 file · **4.248 lulus · 0 gagal** | terukur |
+| Test coverage | **87,04%** (18.036/20.721 baris, 139 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,85%** (1694/1805 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 181 file · **4.277 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**733 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**745 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5113,6 +5113,49 @@ ke `expired` (1), license key tak dikenal jadi 404 (**retry-storm**, 1), `bypass
 
 **Progres backlog: 6 dari 66 route orphan ditutup.** Repo **86,91% → 86,96%**; file terinstrumen
 **137 → 138**; suite **4.231 → 4.248** (179 → **180 file**); gate **137 → 138 modul**.
+
+### 1.7da `/api/analytics` — 14 query lintas 7 model: NOL → 100,00% (138/138)
+
+**Permukaan query terlebar dari seluruh rute baca di aplikasi**, dan **setiap satu dari 14 query-nya
+bergantung pada tenant extension menyuntikkan `organizationId`.** Satu model yang tidak ada di
+`ORG_SCOPED_MODELS`, atau satu panggilan yang berjalan di luar konteks org, **mengubah dashboard menjadi
+KEBOCORAN LINTAS-ORG:** total, baris query terbaru **(beserta nama pengguna)**, hitungan guardrail, dan
+distribusi severity audit dari organisasi lain. Karena itu test di sini terutama soal **BENTUK dan
+KONTEKS panggilan**, bukan aritmetikanya.
+
+**Temuan 1 — pemborosan terukur, dipatok bukan disembunyikan.** Saya menginstrumentasi model dan
+menemukan `db.queryHistory.count` dipanggil **TIGA kali** per request, dengan urutan terverifikasi:
+`#1 {}` (batch totals), `#2 {success:true}`, **`#3 {}` — IDENTIK dengan #1**. Jadi `queriesExecuted` sudah
+memegang jawabannya dan **setiap muat dashboard menjalankan satu COUNT berlebih atas seluruh tabel
+QueryHistory org itu.** Lingkup saya jaga jujur: **satu COUNT ekstra per request, bukan per baris**, jadi
+pada tabel sedang biayanya beberapa milidetik — tetapi tabel itu tumbuh setiap query yang dijalankan dan
+ini rute baca paling sering dipanggil. Perbaikannya satu baris (pakai ulang `queriesExecuted`), tetapi
+mengubah jumlah panggilan yang di-assert file ini, jadi dicatat supaya perubahannya **terlihat**.
+**Bukan bug korektnes.**
+
+**Temuan 2 — kontrol menemukan test saya sendiri yang LEMAH.** Putaran pertama: dari 11 kontrol,
+**5 lolos.** Saya lacak dan menemukan **blok asersi `findMany arguments` terhapus** saat saya membersihkan
+duplikat — jadi K8–K11 **tidak punya asersi sama sekali.** Setelah blok itu dipasang ulang dan diperluas,
+**12 dari 13 kontrol menggigit** (K8 include bocor, K9 jendela 6→1 hari, K10 `lastRunAt {not:null}`,
+K11 include di jalur tren, plus K12 `take 5→50` dan K13 `orderBy` dihapus — semuanya kini **1 merah**).
+
+**Satu NON-KONTROL yang saya deklarasikan, bukan saya samarkan.** Mengganti anchor `setUTCHours(0,0,0,0)`
+menjadi `setHours(0,0,0,0)` **tidak** membuat test merah di host ini. Awalnya saya menyimpulkan host
+ber-UTC; **saya periksa dan hipotesis itu SALAH** (`TZ=Asia/Jakarta`, offset **-420 menit**). Alasan
+sebenarnya **aritmetik**: pada UTC+7, anchor tengah-malam-lokal adalah **17:00Z hari SEBELUMNYA**, lalu loop
+memanggil `d.setUTCDate(d.getUTCDate() - i)` dengan `i = 0` untuk bucket terakhir, sehingga `getUTCDate()`
+masih mengembalikan tanggal UTC yang sama dan bucket-nya **identik**. Kedua anchor hanya berbeda bila
+waktu lokal pada anchor **≥ 07:00 UTC**, yaitu host di **UTC-7 atau lebih barat** — divergensi yang
+**bergantung platform**, bukan sesuatu yang bisa dipaksa suite ini.
+
+**12 kontrol menggigit, semuanya: K1 `enterWithOrg` dihapus (2 merah), K2 guard 0/0 dihapus (NaN; 1),
+K3 filter `success:true` dihapus (rate jadi 100%; 2), K4 `?? 'Uncategorized'` dihapus (1), K5 severity tak
+dikenal ditulis (1), K6 hitungan guardrail jadi seluruh audit (2), K8 include diperluas (1), K9 jendela
+tren (1), K10 filter `lastRunAt` (1), K11 include di jalur tren (1), K12 `take` 5→50 (1), K13 `orderBy`
+dihapus (1).**
+
+**Progres backlog: 7 dari 66 route orphan ditutup.** Repo **86,96% → 87,04%**; file terinstrumen
+**138 → 139**; suite **4.248 → 4.277** (180 → **181 file**); gate **138 → 139 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

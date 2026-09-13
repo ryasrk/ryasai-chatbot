@@ -1,11 +1,11 @@
 {
-  "linePct": 86.96,
-  "linesHit": 17898,
-  "linesFound": 20583,
-  "fnPct": 93.83,
-  "fnsHit": 1687,
-  "fnsFound": 1798,
-  "filesMeasured": 138,
+  "linePct": 87.04,
+  "linesHit": 18036,
+  "linesFound": 20721,
+  "fnPct": 93.85,
+  "fnsHit": 1694,
+  "fnsFound": 1805,
+  "filesMeasured": 139,
   "failedTestFiles": [],
   "files": [
     {
@@ -747,12 +747,12 @@
       "fPct": 100
     },
     {
-      "file": "src/app/api/audit/route.ts",
-      "hit": 43,
-      "found": 43,
+      "file": "src/app/api/analytics/route.ts",
+      "hit": 138,
+      "found": 138,
       "pct": 100,
-      "fHit": 3,
-      "fFound": 3,
+      "fHit": 7,
+      "fFound": 7,
       "fPct": 100
     },
     {
@@ -771,6 +771,15 @@
       "pct": 100,
       "fHit": 1,
       "fFound": 1,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/audit/route.ts",
+      "hit": 43,
+      "found": 43,
+      "pct": 100,
+      "fHit": 3,
+      "fFound": 3,
       "fPct": 100
     },
     {
