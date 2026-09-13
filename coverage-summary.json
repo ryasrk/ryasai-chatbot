@@ -1,6 +1,6 @@
 {
-  "linePct": 80.55,
-  "linesHit": 15847,
+  "linePct": 80.56,
+  "linesHit": 15849,
   "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -169,9 +169,9 @@
     },
     {
       "file": "src/lib/ai.ts",
-      "hit": 414,
+      "hit": 416,
       "found": 559,
-      "pct": 74.0608228980322
+      "pct": 74.4186046511628
     },
     {
       "file": "src/lib/cognee-memory.ts",

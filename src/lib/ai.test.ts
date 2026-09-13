@@ -437,6 +437,52 @@ describe('generateAnswer', () => {
     expect(histMsg!.content).toContain('sales are $42k')
   })
 
+  test('a systemPromptPrefix is sent as the FIRST system message', async () => {
+    streamTokens = ['ok']
+    for await (const _ of streamAnswer({ question: 'q', context: 'c', source: 'SQL', systemPromptPrefix: 'You are terse.' })) {
+      // drain
+    }
+    const messages = getSentMessages()
+    const prefix = messages.find((m) => m.content === 'You are terse.')
+    expect(prefix).toBeDefined()
+    expect(prefix!.role).toBe('system')
+    // ORDER matters: the prefix is the operator's framing and must not end up
+    // after the retrieved context, which would make it read as part of the data.
+    expect(messages.indexOf(prefix!)).toBeLessThan(messages.findIndex((m) => m.content.includes('CONTEXT')))
+  })
+
+  test('chat history is expanded into prior turns, in order, before the question', async () => {
+    streamTokens = ['ok']
+    for await (const _ of streamAnswer({
+      question: 'and the total?',
+      context: 'c',
+      source: 'SQL',
+      chatHistory: [
+        { role: 'user', content: 'how many orders' },
+        { role: 'assistant', content: '42' },
+      ],
+    })) {
+      // drain
+    }
+    const messages = getSentMessages()
+    const asked = messages.findIndex((m) => m.content === 'how many orders')
+    const answered = messages.findIndex((m) => m.content === '42')
+    // The follow-up only makes sense if BOTH prior turns survive and stay ordered.
+    expect(asked).toBeGreaterThanOrEqual(0)
+    expect(answered).toBeGreaterThan(asked)
+  })
+
+  test('an empty chat history adds no messages (not an empty system turn)', async () => {
+    streamTokens = ['ok']
+    for await (const _ of streamAnswer({ question: 'q', context: 'c', source: 'SQL', chatHistory: [] })) {
+      // drain
+    }
+    const messages = getSentMessages()
+    // A zero-length history must be a no-op; emitting a stray empty message would
+    // shift every subsequent turn and confuse the model about who said what.
+    expect(messages.every((m) => m.content !== '' && m.content !== undefined)).toBe(true)
+  })
+
   test('uses REST API label for REST_API source', async () => {
     fetchChatResponse = 'ok'
     await generateAnswer({ question: 'q', context: 'c', source: 'REST_API' })

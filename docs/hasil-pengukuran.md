@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f6487f7`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5e8ee6f`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f6487f7`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.302 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.305 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -77,7 +77,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/admin-tools.ts` | 81,78% merged | **96,49%** (3 file, satu proses) / **97,01%** (5 file) — lihat §1.7w | 39 |
 | `src/lib/planner.ts` | 75,77% → **77,53%** merged | 77,53% (union 5 file) | 28 |
 | `src/lib/real-connectors.ts` | 70,65% → **73,11%** merged | 73,89% (union 4 file) | 99 |
-| **Total repo** | **62,44%** | **80,55%** | — |
+| `src/lib/ai.ts` | 74,4% merged | **100,00% kode eksekutabel** (416/416) — lihat §1.7z | 79 |
+| **Total repo** | **62,44%** | **80,56%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -243,8 +244,10 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `readOnlyIntent` dihapus dari pool MSSQL | `real-connectors.ts:878` | 2 |
 | Normalisasi row dilewati (`Date` bocor ke prompt) | `real-connectors.ts:1003` | 1 |
 | `rowCount` di-nolkan | `real-connectors.ts:1004` | 1 |
+| `systemPromptPrefix` diabaikan di streamAnswer | `ai.ts:629` | 1 |
+| `chatHistory` diabaikan di streamAnswer | `ai.ts:635` | 2 |
 
-**144 kontrol + 3 kontrol gate, semuanya sah.**
+**147 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1296,6 +1299,65 @@ sebelum menyimpulkan: `executeQuery` **selalu** dipanggil setelah
 yang tidak dimilikinya**. Test mem-*pin* perilaku nyata dan mencatat **lapisan mana yang
 menanggung beban** untuk tiap pola, sehingga bila lapisan atas di-bypass atau diubah
 urutannya, ada test yang mendokumentasikannya.
+
+### 1.7z CARA UKUR `merged` SALAH UNTUK MEMILIH TARGET — `ai.ts` 74% merged tapi 100% nyata
+
+**Temuan metodologi terbesar sesi ini, dan ia membatalkan prioritas yang saya susun dari
+tabel merged selama beberapa ronde.**
+
+`ai.ts` dilaporkan **74,4% merged** dan duduk di peringkat **3 terburuk** repo (143 baris
+"belum tercakup"). Diukur dengan `DA:` aktual, **ia 100,00% kode eksekutabel (416/416),
+NOL baris nyata yang belum tercakup.** Selisih **25,6 poin**.
+
+**Buktinya, bukan dugaan.** Baris 191 punya `hit=1455` sementara **baris 192-209
+`hit=0`** — padahal keduanya **satu ekspresi konkatenasi string**:
+
+```
+191:           `You are an expert ${args.provider} Text-to-SQL specialist. ` +
+192:           'Your task: convert a natural language question into ONE valid & efficient …
+193:           'RULES:\n' +
+```
+
+Bun meng-*instrument* **setiap baris** rangkaian string sebagai titik terpisah dan
+**hanya menghitung baris pertama tiap ekspresi**. Baris 192-209 **secara fisik tidak
+dapat** memiliki hit. Baris 210 (`hit=96`) adalah `+` yang **memulai ekspresi
+berikutnya**.
+
+**Rincian 145 baris "belum tercakup" `ai.ts`:**
+
+| Kelas | Jumlah | Dapat dieksekusi? |
+|---|---|---|
+| Lanjutan ekspresi string | 83 | **Tidak** — terbukti: 191 hit=1455, 192-209 hit=0 |
+| Deklarasi field interface (`question: string`) | 36 | **Tidak** — dihapus TypeScript saat transpile |
+| Komentar / brace penutup | 24 | **Tidak** |
+| **Kode nyata** | **2** | Ya — baris 629 & 635, sudah ditutup ronde ini |
+
+**Konsekuensi:** memilih target dari tabel merged membuat saya **mengejar modul yang
+sudah selesai**. `ai.ts` bahkan bukan pekerjaan. Sebaliknya, `LF` merged **bergantung
+pada proses mana yang meng-*load* modul**: `ai.test.ts` sendirian melaporkan `LF=416`,
+`tool-router-stream.test.ts` melaporkan `LF=554` untuk file yang sama — **138 baris
+berbeda**, dan merged mengambil gabungannya sehingga penyebut membengkak tanpa satu pun
+test bisa menutupnya.
+
+**Dua hipotesis saya yang SALAH di ronde ini, dan cara saya membuangnya:**
+1. "Penyebut merged membengkak melebihi panjang file" — **salah**, 0 dari 128 file
+   punya `LF` > panjang file. Diuji, dibuang.
+2. "Perbedaan `LF` disebabkan jalur impor (`./ai` vs `@/lib/ai`)" — **salah**, probe
+   minimal dengan kedua jalur sama-sama menghasilkan `LF=554`. Diuji, dibuang.
+
+Yang **benar** adalah hipotesis ketiga, dan ia dibuktikan dari **data lcov langsung**
+(hit=1455 vs hit=0 pada satu ekspresi), bukan dari model.
+
+**Alat ukur baru: `scripts/coverage-honest.py`.** Menghitung cakupan **kode
+eksekutabel** dengan membuang tiga kelas di atas (lanjutan string, deklarasi field,
+komentar/brace) dari penyebut. Untuk `ai.ts` ia menghasilkan **414/416** pada pengukuran
+pertama dan **416/416** setelah dua baris ditutup — dan **416 itu cocok persis dengan
+`LF=416` dari `ai.test.ts` sendirian**, konfirmasi silang independen bahwa file itulah
+satu-satunya yang mengukur `ai.ts` dengan benar.
+
+**Ini TIDAK dipakai untuk mengubah gate.** Gate tetap memakai merged (kontraknya, dan
+`suspicious` check menjaganya). Yang berubah: **pemilihan target** memakai angka
+eksekutabel, dan laporan menyebut keduanya beserta artinya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
