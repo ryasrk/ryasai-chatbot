@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `66ba842`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7545fdb`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `66ba842`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **81,18%** (15.975/19.678 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 160 file · **3.342 lulus · 0 gagal** | terukur |
+| Test coverage | **81,46%** (16.031/19.679 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 160 file · **3.361 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -81,7 +81,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router-agentic.ts` | 75,57% → **77,45%** merged | 93,78% → **95,87%** kode eksekutabel (371/387) | 52 |
 | `src/lib/mcp-installer.ts` | 55,1% → **75,88%** merged | 85,06% kode eksekutabel (131/154) | 22 |
 | `src/lib/license-client.ts` | 35,56% → **84,83%** merged | 44,04% → **96,09%** kode eksekutabel (123/128) | 54 |
-| **Total repo** | **62,44%** | **81,18%** | — |
+| `src/lib/sso.ts` | 77,52% → **87,97%** merged | 80,65% → **99,22%** kode eksekutabel (256/258) | 58 |
+| **Total repo** | **62,44%** | **81,46%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -257,8 +258,17 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Verifikasi tanda tangan dilewati | `license-client.ts:104` | 4 |
 | Cek nonce dilewati | `license-client.ts:66` | 2 |
 | Kunci hilang TIDAK fail-closed | `license-client.ts:57` | 3 |
+| Cek `alg` RS256 dilewati (alg confusion) | `sso.ts:193` | 1 |
+| Cek issuer dilewati | `sso.ts:196` | 1 |
+| Cek audience dilewati | `sso.ts:198` | 1 |
+| Cek kadaluarsa dilewati | `sso.ts:199` | 1 |
+| Cek nonce dilewati | `sso.ts:200` | 1 |
+| Verifikasi tanda tangan RS256 dianggap true | `sso.ts:209` | 2 |
+| JWKS tanpa `jwks_uri` tidak fail-closed | `sso.ts:202` | 1 |
+| `kid` tak dikenal jatuh ke `keys[0]` | `sso.ts:222` | 1 |
+| Floor gate `sso.ts` diturunkan di laporan | `coverage-gate.ts` | 1 |
 
-**158 kontrol + 3 kontrol gate, semuanya sah.**
+**167 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1484,6 +1494,51 @@ LICENSE_SIGNING_PUBLIC_KEY"` muncul 1×, `"is not set"` 2×. Sebabnya `await
 import('./license-client?cachebust')` menghasilkan **instance modul baru** (diverifikasi
 `: same=false`) yang hit-nya **tidak masuk ke SF tanpa query**. Sama keluarganya dengan
 §1.7z, dan alasan lain untuk **tidak** mengejar angka merged sebagai target.
+
+### 1.7ad `sso.ts`: 77,52% → 87,97% merged (256/291); 80,65% → 99,22% kode eksekutabel
+
+**Verifikasi tanda tangan RS256 dan OIDC discovery belum pernah dieksekusi.** Yang
+teruji hanya HS256 dan fungsi murni — padahal **RS256 adalah alur yang dipakai IdP
+sungguhan** (Okta, Entra, Auth0). Kini **256 dari 258 baris eksekutabel**.
+
+**Rancangan test:** setiap JWT **ditandatangani dengan kunci RSA ASLI** (2048-bit,
+dibangkitkan in-process) dan verifier asli dijalankan — **bukan `verifyIdTokenRs256`
+yang di-stub**, karena stub akan menerima apa pun yang dilakukan kode. Delapan kontrol
+negatif semuanya menggigit, dan itu intinya:
+
+| Kontrol yang dihapus | Test yang gagal |
+|---|---|
+| Cek `alg !== 'RS256'` | 1 |
+| Cek `iss` | 1 |
+| Cek `aud` | 1 |
+| Cek `exp` | 1 |
+| Cek `nonce` | 1 |
+| `if (!ok)` (verifikasi tanda tangan) | 2 |
+| `if (!config.jwks_uri)` fail-closed | 1 |
+| `kid` tak dikenal → jatuh ke `keys[0]` | 1 |
+
+Yang dijaga: discovery mengambil `<issuer>/.well-known/openid-configuration` dan
+**garis miring akhir tidak menghasilkan garis miring ganda** (404 di banyak IdP);
+tanda tangan **kunci lain** ditolak; **payload yang diubah** membatalkan tanda tangan;
+**token HS256 yang disodorkan ke verifier RS256 ditolak** (serangan *alg confusion* —
+HMAC dengan kunci publik sebagai secret); `iss`/`aud`/`exp`/`nonce` yang meleset
+ditolak (**tanpa cek `aud`, token yang dicetak untuk aplikasi lain di IdP yang sama
+adalah sebuah login**); konfigurasi tanpa `jwks_uri` **fail-closed** alih-alih
+**melewati verifikasi** (melewatinya berarti menerima token APA PUN); `kid` tak dikenal
+ditolak alih-alih jatuh ke `keys[0]` (**itu akan memvalidasi token dari kunci yang sudah
+dipensiunkan**); JWKS di-cache dan **tidak di-fetch ulang per login**.
+
+**Satu test saya yang SALAH rancang, dan cara saya menemukannya:** test rotasi kunci
+versi pertama mengembalikan **kedua** kunci sejak awal, jadi `key-2` **sudah ada di
+cache** dan tidak ada fetch ulang — `calls.length` adalah 1, bukan 2. **Cache-nya benar,
+ekspektasi saya yang salah.** Responder kini menerbitkan `key-1` saja sampai panggilan
+kedua, yang memang bentuk rotasi sungguhan; test itu kini membuktikan `kid` yang tidak
+ada di cache **memaksa fetch baru** (atau setiap login setelah rotasi gagal sampai TTL
+habis).
+
+**Gate:** `sso.ts` kini **87,97%**, di atas `MIN_GATED_PCT` 85, jadi ia **masuk daftar
+floor** — 68 → **69 modul ter-gate**. Kontrolnya: menurunkan `sso.ts` di laporan menjadi
+70% membuat gate **menolak** ("floor 85% exceeds the merged measurement 70.00%").
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

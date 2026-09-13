@@ -104,6 +104,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
+  'src/lib/sso.ts': 85, // measured 87.97% (256/291) — RS256/JWKS path added this round
   'src/lib/source-init.ts': 95, // measured 100.00% (104/104), merged
   'src/lib/tool-rate-limit.ts': 85, // measured 92.86% (26/28)
   // Added after the gate started REPORTING eligible-but-ungated modules: this one

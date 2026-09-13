@@ -1,7 +1,7 @@
 {
-  "linePct": 81.18,
-  "linesHit": 15975,
-  "linesFound": 19678,
+  "linePct": 81.46,
+  "linesHit": 16031,
+  "linesFound": 19679,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -94,12 +94,6 @@
       "hit": 105,
       "found": 154,
       "pct": 68.18181818181817
-    },
-    {
-      "file": "src/lib/sso.ts",
-      "hit": 200,
-      "found": 290,
-      "pct": 68.96551724137932
     },
     {
       "file": "src/lib/citation-trail.ts",
@@ -394,6 +388,12 @@
       "hit": 126,
       "found": 144,
       "pct": 87.5
+    },
+    {
+      "file": "src/lib/sso.ts",
+      "hit": 256,
+      "found": 291,
+      "pct": 87.97250859106529
     },
     {
       "file": "src/lib/smart-router-helpers.ts",

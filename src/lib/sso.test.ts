@@ -50,6 +50,10 @@ import {
   generateStateNonce,
   generateCodeVerifier,
   computeCodeChallenge,
+  getOidcConfig,
+  verifyIdTokenRs256,
+  fetchUserInfo,
+  resetJwksCache,
   type OidcConfig,
 } from './sso'
 
@@ -458,5 +462,239 @@ describe('generateStateNonce + generateCodeVerifier', () => {
 
   test('code challenge differs for different verifiers', () => {
     expect(computeCodeChallenge('a')).not.toBe(computeCodeChallenge('b'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getOidcConfig, fetchJwk and verifyIdTokenRs256 — the RS256 path
+//
+// Only HS256 verification and the pure helpers were exercised. The discovery call
+// and the asymmetric verifier had NEVER run, so nothing pinned: the requests made,
+// the refusal of a token signed by another key, the audience/issuer/nonce checks,
+// or the JWKS cache. RS256 is the flow a real IdP (Okta, Entra, Auth0) uses.
+//
+// A stubbed verifier would accept whatever the code did, so every case here signs a
+// REAL JWT with a REAL RSA key and drives the actual crypto.verify path.
+// ---------------------------------------------------------------------------
+
+const realFetch = global.fetch
+
+/** base64url without padding, as JWTs require. */
+function b64url(input: Buffer | string): string {
+  return Buffer.from(input).toString('base64url')
+}
+
+const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+const rsaJwk = { ...(rsa.publicKey.export({ format: 'jwk' }) as Record<string, unknown>), kid: 'key-1', alg: 'RS256', use: 'sig' }
+
+/** Sign a JWT the way a conforming IdP does: header.payload with RS256. */
+function makeJwt(payload: Record<string, unknown>, opts: { kid?: string; key?: crypto.KeyObject } = {}): string {
+  const header = { alg: 'RS256', typ: 'JWT', kid: opts.kid ?? 'key-1' }
+  const signed = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`
+  const sig = crypto.sign('sha256', Buffer.from(signed), opts.key ?? rsa.privateKey)
+  return `${signed}.${sig.toString('base64url')}`
+}
+
+function baseClaims(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    iss: 'https://idp.test',
+    aud: 'test-client-id',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    sub: 'user-1',
+    email: 'a@b.test',
+    ...over,
+  }
+}
+
+let calls: string[] = []
+let responder: (url: string) => Response
+
+function installFetch() {
+  calls = []
+  global.fetch = (async (input: unknown) => {
+    const url = String(input)
+    calls.push(url)
+    return responder(url)
+  }) as unknown as typeof fetch
+}
+
+describe('getOidcConfig — discovery', () => {
+  beforeEach(() => {
+    responder = () => new Response('{}', { status: 200 })
+    installFetch()
+  })
+  afterAll(() => { global.fetch = realFetch })
+
+  test('fetches <issuer>/.well-known/openid-configuration and returns the config', async () => {
+    const cfg = { issuer: 'https://idp.test', authorization_endpoint: 'https://idp.test/auth', token_endpoint: 'https://idp.test/token' }
+    responder = () => new Response(JSON.stringify(cfg), { status: 200 })
+    const out = await getOidcConfig('https://idp.test')
+    expect(calls[0]).toBe('https://idp.test/.well-known/openid-configuration')
+    expect(out.token_endpoint).toBe('https://idp.test/token')
+  })
+
+  test('a trailing slash on the issuer does not produce a doubled slash', async () => {
+    const cfg = { issuer: 'https://idp.test', authorization_endpoint: 'a', token_endpoint: 't' }
+    responder = () => new Response(JSON.stringify(cfg), { status: 200 })
+    // A doubled slash 404s on many IdPs, which would look like a broken SSO setup.
+    await getOidcConfig('https://idp.test/')
+    expect(calls[0]).toBe('https://idp.test/.well-known/openid-configuration')
+  })
+
+  test('an HTTP error is thrown with its status, not silently accepted', async () => {
+    responder = () => new Response('nope', { status: 404 })
+    await expect(getOidcConfig('https://idp.test')).rejects.toThrow('404')
+  })
+
+  test('a config WITHOUT the endpoints is rejected', async () => {
+    responder = () => new Response(JSON.stringify({ issuer: 'https://idp.test' }), { status: 200 })
+    // Proceeding here would build an auth URL against undefined and send the user
+    // to a malformed redirect.
+    await expect(getOidcConfig('https://idp.test')).rejects.toThrow('missing required endpoints')
+  })
+})
+
+describe('verifyIdTokenRs256 — the asymmetric verifier', () => {
+  const config: OidcConfig = {
+    issuer: 'https://idp.test',
+    authorization_endpoint: 'https://idp.test/auth',
+    token_endpoint: 'https://idp.test/token',
+    jwks_uri: 'https://idp.test/jwks',
+  }
+
+  beforeEach(() => {
+    resetJwksCache()
+    responder = () => new Response(JSON.stringify({ keys: [rsaJwk] }), { status: 200 })
+    installFetch()
+  })
+  afterAll(() => { global.fetch = realFetch; resetJwksCache() })
+
+  test('a token signed by the IdP key is accepted, and the JWKS is fetched once', async () => {
+    const token = makeJwt(baseClaims())
+    const payload = await verifyIdTokenRs256(token, config)
+    expect(payload.sub).toBe('user-1')
+    expect(calls).toEqual(['https://idp.test/jwks'])
+    // Second call must come from the cache: fetching JWKS per login is a needless
+    // round trip and can rate-limit a busy tenant.
+    await verifyIdTokenRs256(makeJwt(baseClaims()), config)
+    expect(calls).toHaveLength(1)
+  })
+
+  test('a token signed by ANOTHER key is rejected', async () => {
+    const attacker = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const token = makeJwt(baseClaims(), { key: attacker.privateKey })
+    // The whole point of RS256: knowing the header is not enough to mint a login.
+    await expect(verifyIdTokenRs256(token, config)).rejects.toThrow('signature verification failed')
+  })
+
+  test('a TAMPERED payload invalidates the signature', async () => {
+    const token = makeJwt(baseClaims())
+    const [h, , s] = token.split('.')
+    const forged = `${h}.${b64url(JSON.stringify(baseClaims({ sub: 'admin' })))}.${s}`
+    await expect(verifyIdTokenRs256(forged, config)).rejects.toThrow('signature verification failed')
+  })
+
+  test('an HS256-token offered to the RS256 verifier is refused (alg confusion)', async () => {
+    // Classic JWT attack: sign with HMAC using the public key as the secret. The verifier
+    // must reject on `alg` before it ever touches the signature.
+    const header = { alg: 'HS256', typ: 'JWT' }
+    const signed = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(baseClaims()))}`
+    const sig = crypto.createHmac('sha256', 'secret').update(signed).digest('base64url')
+    await expect(verifyIdTokenRs256(`${signed}.${sig}`, config)).rejects.toThrow('Expected RS256')
+  })
+
+  test('an issuer mismatch is refused', async () => {
+    const token = makeJwt(baseClaims({ iss: 'https://evil.test' }))
+    await expect(verifyIdTokenRs256(token, config)).rejects.toThrow('iss mismatch')
+  })
+
+  test('an audience mismatch is refused', async () => {
+    const token = makeJwt(baseClaims({ aud: 'someone-else' }))
+    // Without this check a token minted for a different app at the same IdP is a login.
+    await expect(verifyIdTokenRs256(token, config)).rejects.toThrow('aud mismatch')
+  })
+
+  test('an EXPIRED token is refused', async () => {
+    const token = makeJwt(baseClaims({ exp: Math.floor(Date.now() / 1000) - 60 }))
+    await expect(verifyIdTokenRs256(token, config)).rejects.toThrow('expired')
+  })
+
+  test('a nonce mismatch is refused, and a matching nonce passes', async () => {
+    const token = makeJwt(baseClaims({ nonce: 'n-1' }))
+    await expect(verifyIdTokenRs256(token, config, 'n-OTHER')).rejects.toThrow('nonce mismatch')
+    await expect(verifyIdTokenRs256(token, config, 'n-1')).resolves.toBeTruthy()
+  })
+
+  test('a config without jwks_uri fails closed instead of skipping verification', async () => {
+    const { jwks_uri: _drop, ...noJwks } = config
+    // Skipping the signature when no keys are available would accept ANY token.
+    await expect(verifyIdTokenRs256(makeJwt(baseClaims()), noJwks as OidcConfig)).rejects.toThrow('missing jwks_uri')
+  })
+
+  test('a JWKS HTTP error is surfaced', async () => {
+    responder = () => new Response('nope', { status: 500 })
+    await expect(verifyIdTokenRs256(makeJwt(baseClaims()), config)).rejects.toThrow('JWKS fetch failed: 500')
+  })
+
+  test('an empty JWKS key set is refused', async () => {
+    responder = () => new Response(JSON.stringify({ keys: [] }), { status: 200 })
+    await expect(verifyIdTokenRs256(makeJwt(baseClaims()), config)).rejects.toThrow('no keys')
+  })
+
+  test('an unknown kid is refused rather than falling back to another key', async () => {
+    responder = () => new Response(JSON.stringify({ keys: [rsaJwk] }), { status: 200 })
+    const token = makeJwt(baseClaims(), { kid: 'rotated-away' })
+    // Falling back to keys[0] here would validate a token from a RETIRED key.
+    await expect(verifyIdTokenRs256(token, config)).rejects.toThrow('no key for kid=rotated-away')
+  })
+
+  test('a kid absent from the CACHED JWKS forces a fresh fetch (key rotation)', async () => {
+    const next = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+    const nextJwk = { ...(next.publicKey.export({ format: 'jwk' }) as Record<string, unknown>), kid: 'key-2', alg: 'RS256' }
+    // MEASURED, and it corrected this test: the first version returned BOTH keys
+    // from the outset, so key-2 was already in the cache and no refetch happened —
+    // the cache was right and the expectation was wrong. The responder now publishes
+    // key-1 only until the second call, which is what an actual rotation looks like.
+    let generation = 1
+    responder = () => new Response(
+      JSON.stringify({ keys: generation === 1 ? [rsaJwk] : [rsaJwk, nextJwk] }),
+      { status: 200 },
+    )
+    await verifyIdTokenRs256(makeJwt(baseClaims()), config)
+    expect(calls).toHaveLength(1)
+    generation = 2
+    const rotated = makeJwt(baseClaims(), { kid: 'key-2', key: next.privateKey })
+    const payload = await verifyIdTokenRs256(rotated, config)
+    expect(payload.sub).toBe('user-1')
+    // The cache must not be trusted for a kid it does not hold, or every login
+    // after a rotation fails until the TTL expires.
+    expect(calls).toHaveLength(2)
+  })
+})
+
+describe('fetchUserInfo', () => {
+  beforeEach(() => {
+    responder = () => new Response('{}', { status: 200 })
+    installFetch()
+  })
+  afterAll(() => { global.fetch = realFetch })
+
+  test('without a userinfo endpoint it falls back to the id_token claims', async () => {
+    const { userinfo_endpoint: _drop, ...cfg } = {
+      issuer: 'https://idp.test', authorization_endpoint: 'a', token_endpoint: 't', jwks_uri: 'j', userinfo_endpoint: 'https://idp.test/u',
+    } as OidcConfig
+    const info = await fetchUserInfo(makeJwt(baseClaims({ preferred_username: 'alice' })), cfg as OidcConfig)
+    // No network call is made in the fallback, so a provider without userinfo works.
+    expect(calls).toEqual([])
+    expect(info.sub).toBe('user-1')
+    expect(info.preferred_username).toBe('alice')
+  })
+
+  test('with a userinfo endpoint it fetches and returns the profile', async () => {
+    responder = () => new Response(JSON.stringify({ sub: 'user-1', email: 'x@y.test', name: 'X' }), { status: 200 })
+    const cfg = { issuer: 'https://idp.test', authorization_endpoint: 'a', token_endpoint: 't', userinfo_endpoint: 'https://idp.test/u' } as OidcConfig
+    const info = await fetchUserInfo('access-token', cfg)
+    expect(calls[0]).toBe('https://idp.test/u')
+    expect(info.email).toBe('x@y.test')
   })
 })
