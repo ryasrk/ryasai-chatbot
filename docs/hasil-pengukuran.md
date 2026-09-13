@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5e8ee6f`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c6437fd`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5e8ee6f`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.305 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.310 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -78,7 +78,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/planner.ts` | 75,77% → **77,53%** merged | 77,53% (union 5 file) | 28 |
 | `src/lib/real-connectors.ts` | 70,65% → **73,11%** merged | 73,89% (union 4 file) | 99 |
 | `src/lib/ai.ts` | 74,4% merged | **100,00% kode eksekutabel** (416/416) — lihat §1.7z | 79 |
-| **Total repo** | **62,44%** | **80,56%** | — |
+| `src/lib/tool-router-agentic.ts` | 75,57% → **77,45%** merged | 93,78% → **95,87%** kode eksekutabel (371/387) | 52 |
+| **Total repo** | **62,44%** | **80,60%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -246,8 +247,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `rowCount` di-nolkan | `real-connectors.ts:1004` | 1 |
 | `systemPromptPrefix` diabaikan di streamAnswer | `ai.ts:629` | 1 |
 | `chatHistory` diabaikan di streamAnswer | `ai.ts:635` | 2 |
+| Reflexion tidak mengganti jawaban | `tool-router-agentic.ts:279` | 1 |
+| Deadline mid-round: state tidak dicatat | `tool-router-agentic.ts:253` | 1 |
+| Deadline: bukti terkumpul dibuang | `tool-router-agentic.ts:254` | 1 |
 
-**147 kontrol + 3 kontrol gate, semuanya sah.**
+**150 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1358,6 +1362,34 @@ satu-satunya yang mengukur `ai.ts` dengan benar.
 **Ini TIDAK dipakai untuk mengubah gate.** Gate tetap memakai merged (kontraknya, dan
 `suspicious` check menjaganya). Yang berubah: **pemilihan target** memakai angka
 eksekutabel, dan laporan menyebut keduanya beserta artinya.
+
+### 1.7aa `tool-router-agentic.ts`: implementasi PARALEL, satu sisi teruji
+
+**75,57% → 77,45% merged; 93,78% → 95,87% kode eksekutabel (362 → 371 dari 387).**
+
+`runAgenticLoop` (non-stream) dan `runStreamingAgenticLoop` adalah **dua implementasi
+paralel**. **Reflexion** dan **deadline** sudah teruji di jalur **streaming** — tapi
+**tidak satu pun** di jalur **non-streaming**: 24 baris `runAgenticLoop` belum pernah
+dieksekusi. Terukur dengan `coverage-honest.py`, modul ini **93,78% kode eksekutabel**
+saat merged melaporkan **75,57%** — selisih 18 poin, pola §1.7z.
+
+Diuji (semuanya sebelumnya nol): **reflexion** (`REFLEXION_ENABLED=true` membuat
+kritik **MENGGANTI** jawaban — mengembalikan teks pra-kritik sambil log berkata
+"revised" adalah kebohongan diam-diam; `needsRevision=false` membiarkan jawaban asli;
+dan kritik **tidak dipanggil** saat flag mati, karena itu **panggilan LLM ekstra** di
+kunci BYOK). Dan **deadline**: deadline di tengah ronde **mengembalikan bukti yang
+sudah terkumpul**, bukan jawaban kosong — membuang bukti ronde-1 karena ronde-2 habis
+waktu berarti **membuang kerja yang sudah dibayar pengguna**; bila **belum ada** bukti,
+pesan timeout eksplisit (string kosong akan terlihat seperti jawaban kosong yang
+berhasil).
+
+**Temuan struktural yang layak dicatat:** pola "teruji di satu implementasi paralel"
+adalah **kelas masalah**, bukan insiden tunggal — sama seperti duplikasi routing
+`tool-router.ts:139-144`/`218-223` yang masih tertunda. Setiap kali satu cabang
+diperbaiki, **kembarannya tidak ikut teruji**.
+
+Kontrol negatif: **3**, masing-masing menggagalkan test yang dituju (reflexion tidak
+mengganti jawaban; state deadline tidak dicatat; bukti terkumpul dibuang).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

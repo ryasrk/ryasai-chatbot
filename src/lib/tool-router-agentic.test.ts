@@ -240,6 +240,84 @@ describe('toolRunTypeFor — only valid ToolRun.type literals', () => {
 // which branch produced the answer, and whether the alignment gate ran. Where
 // two paths are supposed to agree (the 2026-09 incident: SSE passed the
 // guardrail that HTTP bypassed), the test asserts they agree by running both.
+// ---------------------------------------------------------------------------
+// runAgenticLoop (NON-streaming) — reflexion and deadline
+//
+// Both were covered on the STREAMING path only. runStreamingAgenticLoop and
+// runAgenticLoop are parallel implementations, so "covered on one" says nothing
+// about the other: 24 lines of runAgenticLoop had never executed.
+// ---------------------------------------------------------------------------
+
+describe('runAgenticLoop — reflexion (opt-in self-critique)', () => {
+  test('REFLEXION_ENABLED=true lets the critique REPLACE the answer', async () => {
+    process.env.REFLEXION_ENABLED = 'true'
+    reflexionState.needsRevision = true
+    reflexionState.revised = 'THE REVISED ANSWER'
+    confidenceState.confident = true
+
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      completion({ answer: 'ORIGINAL', toolRuns: [toolRun({ outputSummary: 'x'.repeat(600) })] }),
+    )
+    // The revision must actually reach the caller — returning the pre-critique
+    // text while the log says "revised" would be a silent lie.
+    expect(res.answer).toContain('THE REVISED ANSWER')
+    expect(reflexionState.calls).toBeGreaterThan(0)
+  })
+
+  test('needsRevision=false keeps the original answer untouched', async () => {
+    process.env.REFLEXION_ENABLED = 'true'
+    reflexionState.needsRevision = false
+    confidenceState.confident = true
+
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      completion({ answer: 'ORIGINAL', toolRuns: [toolRun({ outputSummary: 'x'.repeat(600) })] }),
+    )
+    expect(res.answer).toContain('ORIGINAL')
+    expect(res.answer).not.toContain('REVISED')
+  })
+
+  test('reflexion is NOT consulted when the flag is off (no wasted LLM call)', async () => {
+    reflexionState.needsRevision = true
+    confidenceState.confident = true
+    await runAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      completion({ answer: 'ORIGINAL', toolRuns: [toolRun({ outputSummary: 'x'.repeat(600) })] }),
+    )
+    // The critique is a full extra LLM call on a BYOK key, so it must stay opt-in.
+    expect(reflexionState.calls).toBe(0)
+  })
+})
+
+describe('runAgenticLoop — the deadline', () => {
+  test('a deadline mid-round returns the evidence gathered so far, not an empty answer', async () => {
+    process.env.AGENTIC_DEADLINE_MS = '250'
+    confidenceState.confident = false // never confident, so the loop keeps going
+    let calls = 0
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      if (calls >= 2) await new Promise((r) => setTimeout(r, 400))
+      return completion({ answer: 'round answer', toolRuns: [toolRun({ outputSummary: 'EVIDENCE'.repeat(20) })] })
+    })
+    // MEASURED: the partial answer carries what was already collected. Throwing
+    // away round-1 evidence because round 2 timed out wastes work the user paid for.
+    expect(res.answer).toContain('EVIDENCE')
+    const last = res.confidenceHistory[res.confidenceHistory.length - 1]
+    expect(last.reason).toContain('deadline exceeded')
+    expect(last.confident).toBe(false)
+  })
+
+  test('with NO evidence yet, a deadline returns an explicit timeout message', async () => {
+    process.env.AGENTIC_DEADLINE_MS = '200'
+    confidenceState.confident = false
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      // The FIRST round is already too slow, so nothing has accumulated.
+      await new Promise((r) => setTimeout(r, 400))
+      return completion({ answer: 'never seen', toolRuns: [] })
+    })
+    // An empty string here would look like a successful empty answer.
+    expect(res.answer).toContain('timed out')
+  })
+})
+
 describe('runAgenticLoop — termination', () => {
   test('no tool runs → returns immediately after ONE iteration', async () => {
     const calls: string[] = []

@@ -1,6 +1,6 @@
 {
-  "linePct": 80.56,
-  "linesHit": 15849,
+  "linePct": 80.6,
+  "linesHit": 15858,
   "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -186,12 +186,6 @@
       "pct": 75.52447552447552
     },
     {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 362,
-      "found": 479,
-      "pct": 75.5741127348643
-    },
-    {
       "file": "src/lib/cognee-core.ts",
       "hit": 195,
       "found": 258,
@@ -220,6 +214,12 @@
       "hit": 158,
       "found": 204,
       "pct": 77.45098039215686
+    },
+    {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 371,
+      "found": 479,
+      "pct": 77.45302713987473
     },
     {
       "file": "src/lib/notifications.ts",
