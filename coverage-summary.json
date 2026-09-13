@@ -1,6 +1,6 @@
 {
-  "linePct": 85.57,
-  "linesHit": 16821,
+  "linePct": 85.69,
+  "linesHit": 16844,
   "linesFound": 19657,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -156,12 +156,6 @@
       "pct": 81.64556962025317
     },
     {
-      "file": "src/app/api/billing/pricing/route.ts",
-      "hit": 9,
-      "found": 11,
-      "pct": 81.81818181818183
-    },
-    {
       "file": "src/lib/document-parsers.ts",
       "hit": 144,
       "found": 176,
@@ -202,12 +196,6 @@
       "hit": 182,
       "found": 219,
       "pct": 83.10502283105022
-    },
-    {
-      "file": "src/lib/mcp-client.ts",
-      "hit": 222,
-      "found": 267,
-      "pct": 83.14606741573034
     },
     {
       "file": "src/lib/cognee-core.ts",
@@ -388,6 +376,12 @@
       "hit": 126,
       "found": 139,
       "pct": 90.64748201438849
+    },
+    {
+      "file": "src/lib/mcp-client.ts",
+      "hit": 243,
+      "found": 267,
+      "pct": 91.01123595505618
     },
     {
       "file": "src/lib/order-reconcile.ts",
@@ -591,6 +585,12 @@
       "file": "src/lib/pricing.ts",
       "hit": 39,
       "found": 39,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/billing/pricing/route.ts",
+      "hit": 11,
+      "found": 11,
       "pct": 100
     },
     {

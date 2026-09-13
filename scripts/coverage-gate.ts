@@ -49,6 +49,11 @@ const FLOORS: Record<string, number> = {
   // guard, gross_amount mismatch, the atomic settlement claim and the retry on a
   // THROWN issuance are all pinned.
   'src/app/api/billing/webhook/route.ts': 100, // measured 100.00% (106/106)
+  // The Buy License pack list; the error path is handled through handleApiError.
+  'src/app/api/billing/pricing/route.ts': 100, // measured 100.00% (11/11)
+  // The MCP connection pool: LRU eviction, transport-close eviction, SSRF guards,
+  // env/header decryption and the tool-result error shapes.
+  'src/lib/mcp-client.ts': 91, // measured 91.01% (243/267); 243/243 executable
   'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)

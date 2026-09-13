@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `07ca8d2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b76f6fb`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `07ca8d2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,57%** (16.821/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.800 lulus · 0 gagal** | terukur |
+| Test coverage | **85,69%** (16.844/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 164 file · **3.825 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **91 modul** | +29 |
+| Modul ter-gate | 62 modul | **93 modul** | +31 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -127,6 +127,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/observability.ts` | 84,51% → **87,32%** merged | 98,36% → **100,00%** kode eksekutabel (124/124) | 10 |
 | `src/lib/sso.ts` | 87,97% → **88,66%** merged | 99,22% → **100,00%** kode eksekutabel (258/258) | 14 |
 | `src/app/api/billing/webhook/route.ts` | 95,28% → **100,00%** merged | 96,19% → **100,00%** kode eksekutabel (106/106) | 8 |
+| `src/app/api/billing/pricing/route.ts` | 81,82% → **100,00%** merged | 81,82% → **100,00%** kode eksekutabel (11/11) | 2 |
+| `src/lib/mcp-client.ts` | 88,80% → **91,01%** merged | 91,36% → **100,00%** kode eksekutabel (243/243) | 15 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -386,7 +388,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**444 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**469 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3572,6 +3574,74 @@ tanpa SERVER_KEY**; **`gross_amount` yang tidak cocok TIDAK menyelesaikan** dan 
 trail** sambil tetap membalas 200 agar Midtrans berhenti mengulang; **claim atomik** —
 `count === 0` berarti kalah lomba atau replay idempoten, **tidak pernah menerbitkan ulang**; dan
 **retry terbatas** saat penerbitan mengembalikan `ok: false` **maupun saat ia MELEMPAR**.
+
+### 1.7bs POOL KONEKSI MCP: eviksi LRU, `onclose`, dan deadline `AbortSignal` — semuanya tanpa test
+
+**`mcp-client.ts` 91,36% → 100,00% (243/243)**, 21 baris nyata. Repo **85,57% → 85,69% (+0,12)**.
+Modul ter-gate 91 → **93**. **15 kontrol dijalankan, 12 menggigit, 1 anchor salah (diulang,
+menggigit), 2 dideklarasikan setara.**
+
+**Koreksi penting tentang daftar kerja saya.** Daftar "modul belum ter-gate terbesar" yang saya
+bawa dari ronde-ronde sebelumnya **menyesatkan sebagai daftar kerja**: `real-connectors.ts`
+(73,11% merged) sudah **100,00% (685/685)**, `ai.ts` (74,42%) sudah **100% (416/416)**,
+`cognee-knowledge-graph.ts` (77,62%) sudah **100% (267/267)**. Merged % rendah karena **artefak
+union LF**, bukan karena kurang test. Yang **benar-benar** punya celah: **`mcp-client.ts` 91,36%
+dengan 21 baris nyata** — dan setelah saya ukur dengan **ketiga** file test-nya, angka itulah yang
+bertahan.
+
+**Yang kini dijaga pada `mcp-client`:** **eviksi LRU** — pada `MCP_MAX_CONNECTIONS=2`, server
+DISTINCT ketiga menutup yang **terlama**, dan **peta tidak menumbuhkan entri mati** (menutup dan
+melupakan adalah **dua syarat berbeda**; kontrol yang hanya menghapus `connections.delete(oldest)`
+tidak menghasilkan test merah sampai saya menambahkan assertion itu); **koneksi sehat DIPAKAI
+ULANG** (dua panggilan, satu connect — itulah gunanya cache); **koneksi yang GAGAL connect ditutup
+dan TIDAK di-cache**, sehingga percobaan berikutnya benar-benar menyambung lagi alih-alih
+memberi tahu "not found" dari entri racun; **`transport.onclose` menandai entri gagal secara
+proaktif** — SSE putus atau stdio keluar langsung ditandai, alih-alih aplikasi baru tahu saat
+tool call berikutnya dan membayar timeout; **`disconnectMcpServer` menutup DAN membuang entri**,
+`disconnectAllMcp` menutup **setiap** client; **manifest `isError`** mengembalikan pesan tool itu
+sendiri dengan `output` **dikosongkan** (agar teks error tidak disalahartikan sebagai hasil), dan
+**jatuh ke pesan generik** bila tool tidak mengirim teks — tanpa itu setiap kegagalan tak bisa
+dibedakan dari tool yang memang mengembalikan kosong; **`callTool` yang MELEMPAR menandai koneksi
+gagal**; **`testMcpServer` TIDAK meng-cache** ("hindari membocorkan stdio child / socket SSE dari
+klik berulang") dan **menyebut TARGET yang dicoba** — command untuk stdio, URL untuk http;
+**`file://`, `ftp://`, `gopher://` DITOLAK** oleh pemeriksaan protokol; dan **`envJson`/`headersJson`
+yang rusak ganda** (tidak bisa di-decrypt DAN bukan JSON sah) **degradasi ke tanpa env/header
+alih-alih membatalkan koneksi**.
+
+**KESALAHAN SAYA YANG HAMPIR MENJADI "BUG PRODUK" PALSU.** Test eviksi saya melaporkan
+**`closeCalls === 0`** dan saya hampir melaporkannya sebagai kebocoran pool. Probe menunjukkan
+eviksi **bekerja**: `OPEN a,b,c → CLOSE a → OPEN d → CLOSE b`, `LIVE=2` sesuai cap. Akarnya:
+**`import { callMcpTool } from '@/lib/mcp-client'` adalah static import yang DI-HOIST**, jadi modul
+dievaluasi **sebelum** `process.env.MCP_MAX_CONNECTIONS = '2'` dijalankan → cap menjadi **default
+20** → eviksi tak pernah jalan. **Impor dinamis** memperbaikinya. Aturan urutan muat-modul yang
+**sama** sudah menggigit sesi ini pada license client; saya mencatatnya di komentar file agar tidak
+terjadi ketiga kali.
+
+**Assertion saya yang terlalu lemah, ditemukan oleh kontrol.** Empat kontrol tidak menggigit
+karena test saya hanya menegaskan `ok === false` — padahal **"MCP server not found."** juga
+`ok:false`. Setelah saya menegaskan **PESANNYA**, kontrol langsung menggigit. Dan dari sana saya
+menemukan pembedaan yang nyata: **`callMcpTool`** melewati `getConnection` yang **melipat semua
+penolakan `buildTransport`** menjadi satu pesan `"MCP server unavailable or inactive."`, sedangkan
+**`testMcpServer`** memanggil `buildTransport` **langsung** dan **menyebut field yang kosong**
+(`command: empty` / `url: empty`). Keduanya kini dipatok.
+
+**DUA KONTROL YANG BENAR-BENAR SETARA (saya buktikan, bukan menduga).** `isBlockedHost` (sinkron,
+fast path) dan `isBlockedHostAsync` (DNS-rebinding) **redundan secara sengaja**: menghapus
+**salah satu** menghasilkan **nol** test merah, menghapus **keduanya** menghasilkan **satu**
+merah. Begitu pula **`if (!row.url) return null`**: menghapusnya **invisible**, karena
+`new URL('')` **melempar** dan catch-nya mengembalikan **null yang sama**; guard itu ada untuk
+**melewati exception** dan menamai field, bukan untuk mengubah hasil.
+
+**Temuan metode: menjalankan ketiga file `mcp-client` BERSAMAAN merusak 3 test** karena
+`mock.module` bocor antar-file — padahal **ketiganya lolos sendirian** (21/48/3 pass). Runner resmi
+repo ini (**per-file subprocess**) melaporkan **164 file · 3.825 lulus · 0 gagal**. Bukti bahwa
+kegagalan itu **artefak penggabungan**, bukan masalah produk.
+
+**Kesalahan kecil lain:** saya menambahkan `mock.module('@/lib/db', ...)` **kedua** di file transport
+untuk mengisi `findUnique`, dan itu **mematikan mock pertama** — **enam test tak terkait langsung
+merah**. Dua `mock.module` untuk path yang SAMA dalam satu file → **yang TERAKHIR menang dan yang
+pertama inert**; pelajaran yang sudah tercatat, dan saya ulangi. Diperbaiki dengan menggabung ke
+mock yang sudah ada.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
