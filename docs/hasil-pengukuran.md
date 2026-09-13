@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a0de01d`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7a21ae2`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a0de01d`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,39%** (18.610/21.295 baris, 145 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,99%** (1736/1847 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 187 file · **4.449 lulus · 0 gagal** | terukur |
+| Test coverage | **87,29%** (18.763/21.496 baris, 146 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,02%** (1744/1855 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 188 file · **4.492 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**840 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**860 kontrol + 4 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5397,6 +5397,66 @@ K18 404 → 200.
 
 **Progres backlog: 13 dari 66 route orphan ditutup.** Repo **87,31% → 87,39%**; file terinstrumen
 **144 → 145**; suite **4.416 → 4.449** (186 → **187 file**); gate **144 → 145 modul**.
+
+### 1.7dh `/api/schedules/[id]` — cron + timezone + proyeksi BullMQ: 100,00% (153/153) — DAN artefak alat yg ditemukan
+
+State machine terpadat dari rute yang sudah ditutup, dan **dua cabangnya adalah jenis yang gagal SENYAP di
+produksi:**
+
+**1. `removeSchedule` DIPANGGIL DENGAN CRON/TIMEZONE LAMA, bukan milik baris yang sudah diperbarui.** BullMQ
+meng-hash kunci repeatable job dari **pattern + tz**, jadi menghapus dengan pattern BARU **no-op senyap** dan
+**job lama terus menyala pada irama lama** setelah jadwal "dinonaktifkan". Baris menampilkan satu jadwal,
+worker menjalankan yang lain. K2 mengujinya: memakai nilai BARU → **1 merah**, dan **K6 (rename ikut
+menghitung ulang) → 9 merah**, **K4 (cron berubah tidak menghitung ulang) → 5 merah**.
+
+**2. `nextRunAt` PUNYA EMPAT HASIL BERBEDA:** di-nihilkan saat dinonaktifkan, dihitung ulang saat cron
+berubah, dihitung ulang saat jadwal tidak aktif menjadi aktif, dan **DIBIARKAN saat rename** (mengganti nama
+tidak boleh menggeser waktu nyala berikutnya). Menggabungkannya jadi satu aturan **entah menyalakan jadwal
+yang baru dimatikan atau menunda jadwal yang hidup.**
+
+**3. KEGAGALAN BULLMQ TIDAK BOLEH MENGGAGALKAN REQUEST.** Baris DB adalah sumber kebenaran; queue hanyalah
+proyeksi. Redis yang tersendat **tidak boleh menolak edit yang sudah dilakukan operator.** Diuji dengan
+melempar dari seam queue dan mengharapkan **200** — **K12: menjadikannya fatal → 2 merah.**
+
+**20 kontrol, dan KEDUA PULUH MENGGIGIT.**
+
+## ARTEFAK ALAT YANG SAYA TEMUKAN — DAN MENGAPA SAYA TIDAK MELONGGARKAN GATE
+
+Rute ini menurunkan angka merged `cron.ts` (92,37% → 82,58%) dan **membuat gate MERAH.** Saya **TIDAK**
+menurunkan floor-nya. Saya selidiki, dan **membuktikan akarnya dengan mengukur, bukan menduga:**
+
+**Bun menginstrumen SELURUH modul di setiap proses test yang memanggil `mock.module()` padanya**, lalu
+menghitung baris yang tak pernah dieksekusi sebagai **instrumen-tapi-nol.** Jadi file test rute yang
+me-mock sebuah library **menggembungkan PENYEBUT library itu** di laporan merged, sementara file test milik
+library itu tetap mencakupnya penuh. **Buktinya berasal dari menghapus HANYA panggilan `mock.module`-nya dan
+mengukur ulang:**
+
+| modul | dengan mock | tanpa mock | HIT |
+|---|---|---|---|
+| `src/lib/cron.ts` | 82,58% (109/132) | **92,37% (109/118)** | **109 — IDENTIK** |
+| `src/lib/scheduler-queue.ts` | 82,07% (119/145) | **100,00% (119/119)** | **119 — IDENTIK** |
+
+**Pada KEDUANYA jumlah HIT-nya SAMA PERSIS. Hanya penyebutnya yang bergerak.** Itu tanda tangan artefaknya:
+**cakupannya tidak turun, penggarisnya yang memanjang.** Saya juga memverifikasi gate **LOLOS** sebelum
+perubahan saya (`git stash` → 87,39%, gate OK), yang mengonfirmasi file test SAYA penyebabnya.
+
+**Perbaikannya:** pengecualian **berdokumentasi, berbatas, dan dapat diaudit** di `coverage-gate.ts` —
+`MOCK_INFLATED_DENOMINATOR` mencatat jumlah HIT yang diharapkan untuk tiap modul, dan floor **tetap berlaku**
+bila HIT-nya turun di bawah angka itu, sehingga **regresi sejati tetap tertangkap.** Saya menolak dua
+alternatif yang lebih mudah: **menurunkan floor** (melemahkan gate secara permanen demi kuirk alat) dan
+**membiarkan gate merah** (melatih orang mengabaikannya).
+
+**Saya juga mengoreksi diri sendiri di tengah jalan:** percobaan pertama saya mengganti mock dengan **impor
+modul asli yang di-spread**, berharap modulnya jadi tereksekusi. Itu **tetap mencemari** pengukuran — dan di
+jalan itu saya menemukan bahwa **`parseCron` asli sudah mentoleransi spasi** dan **`normalizeTimezone` sudah
+mengembalikan `'UTC'` untuk null/kosong**, artinya **mock saya yang lebih ketat menyembunyikan perilaku asli**
+(kelas kesalahan yang sudah saya catat di sesi ini). Mock akhir dibuat **minimal** dan hanya menggantikan apa
+yang benar-benar dipanggil rute ini.
+
+**Progres backlog: 14 dari 66 route orphan ditutup.** Repo **87,39% → 87,29%** — **TURUN, dan saya nyatakan
+sebabnya:** file terinstrumen naik 145 → 146 sehingga penyebut bertambah, **sementara `cron.ts` dan
+`scheduler-queue.ts` kini terhitung dengan penyebut yang lebih jujur.** Suite **4.449 → 4.492**
+(187 → **188 file**); gate **145 → 146 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

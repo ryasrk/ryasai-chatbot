@@ -1,12 +1,14 @@
 {
-  "linePct": 87.39,
-  "linesHit": 18610,
-  "linesFound": 21295,
-  "fnPct": 93.99,
-  "fnsHit": 1736,
-  "fnsFound": 1847,
-  "filesMeasured": 145,
-  "failedTestFiles": [],
+  "linePct": 87.29,
+  "linesHit": 18763,
+  "linesFound": 21496,
+  "fnPct": 94.02,
+  "fnsHit": 1744,
+  "fnsFound": 1855,
+  "filesMeasured": 146,
+  "failedTestFiles": [
+    "src/lib/mcp-installer.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -216,6 +218,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/scheduler-queue.ts",
+      "hit": 119,
+      "found": 145,
+      "pct": 82.06896551724138,
+      "fHit": 17,
+      "fFound": 17,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/stream-preparers.ts",
       "hit": 437,
       "found": 532,
@@ -232,6 +243,15 @@
       "fHit": 5,
       "fFound": 5,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/cron.ts",
+      "hit": 109,
+      "found": 132,
+      "pct": 82.57575757575758,
+      "fHit": 9,
+      "fFound": 10,
+      "fPct": 90
     },
     {
       "file": "src/lib/embeddings.ts",
@@ -729,15 +749,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/cron.ts",
-      "hit": 109,
-      "found": 110,
-      "pct": 99.0909090909091,
-      "fHit": 9,
-      "fFound": 10,
-      "fPct": 90
-    },
-    {
       "file": "src/lib/cron-describe.ts",
       "hit": 140,
       "found": 141,
@@ -970,6 +981,15 @@
       "fHit": 4,
       "fFound": 5,
       "fPct": 80
+    },
+    {
+      "file": "src/app/api/schedules/[id]/route.ts",
+      "hit": 153,
+      "found": 153,
+      "pct": 100,
+      "fHit": 8,
+      "fFound": 8,
+      "fPct": 100
     },
     {
       "file": "src/app/api/settings/api-keys/[id]/route.ts",
@@ -1275,15 +1295,6 @@
       "pct": 100,
       "fHit": 6,
       "fFound": 6,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/scheduler-queue.ts",
-      "hit": 119,
-      "found": 119,
-      "pct": 100,
-      "fHit": 17,
-      "fFound": 17,
       "fPct": 100
     },
     {
