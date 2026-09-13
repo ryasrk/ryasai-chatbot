@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8174b2e`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `464c55f`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8174b2e`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,32%** (17.420/20.180 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.048 lulus · 0 gagal** | terukur |
+| Test coverage | **86,34%** (17.423/20.180 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.059 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**608 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**613 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4402,6 +4402,44 @@ dua baris. `tsc` menangkapnya sebelum commit.
 **5 kontrol: 4 menggigit** — guard `isFinite` dihapus (1 merah), `try/catch` handler dihapus (**6
 merah**), `String(e)` fallback dihapus (1), `completedAt` tidak di-set saat gagal (**7 merah**); K2
 dijelaskan di atas.
+
+### 1.7ci Sebuah fungsi dengan 7 konsumen produksi yang tak pernah dijalankan, dan jalur shutdown yang tidak bersih
+
+**`getPromptSettings` — SELURUH fungsinya tak pernah dieksekusi.** Ia punya **tujuh** konsumen
+produksi: `api/prompt-tools/route.ts` (dua kali), `tool-branches.ts:174` (prompt RAG per-org),
+`tool-router.ts:283`, dan `admin-tools.ts` (tiga kali). Tapi **keenam** test file yang menyentuhnya
+**meng-mock-nya**, dan `prompt-settings.test.ts` hanya menguji **dua pure helper** — jadi fungsi asli
+yang membaca baris `AppConfig` **tidak pernah berjalan sekali pun**.
+
+Ini jalur yang menyuntikkan prompt kustom organisasi ke LLM. Yang saya patok: **tanpa baris
+`appConfig`** → DEFAULTS (bukan `undefined` yang akan menjadi string `"undefined"` di prompt);
+`promptSettings` **NULL** → DEFAULTS (berbeda dari "tak ada baris"); JSON **rusak** → DEFAULTS, bukan
+throw (satu penulisan buruk tidak boleh menjatuhkan setiap turn chat); **satu query** tanpa filter;
+dan DB **yang diberikan sebagai parameter** — jadi test meneruskan stub langsung, **tanpa module
+mock**, dan mock itu tak bisa melenceng dari client `$extends` yang sungguhan.
+
+**`graceful-shutdown.ts` — dua jalur yang hanya penting justru saat shutdown TIDAK bersih.**
+Test lamanya mengakui sendiri: *"can't easily test the timer value, but verify no crash"*. Yang tak
+pernah dijalankan: **`catch` di sekitar `server.close`**, **`catch` di sekitar cleanup**, dan
+**force-exit timer** — padahal timer itu **satu-satunya** yang menghentikan proses yang menggantung.
+Di on-prem ini bukan kosmetik: proses menahan pool DB dan socket; container runtime akan SIGKILL
+setelah grace period-nya sendiri, dan operator **kehilangan baris log yang menjelaskan kenapa**.
+
+**Gate menolak commit saya, dan itu benar.** Saya menaikkan floor `prompt-settings.ts` ke **100**
+dari angka **eksekutabel** (41/41). Gate **gagal dengan exit 1**: *"floor 100% exceeds the merged
+measurement 91.11% — floors must come from coverage-summary.json (merged), never from a single-file
+--coverage run."* Saya turunkan ke **91** dan gate lulus. Pelajaran itu sudah ada di dokumen ini dan
+saya **melanggarnya**; guard-nya yang menyelamatkan.
+
+**Ini juga mengoreksi catatan lama:** `prompt-settings.ts` dilaporkan **81,82%** merged sebelum
+perubahan ini (bukan 91,11%) — lompatan itu murni karena fungsi yang sebelumnya tak tersentuh kini
+terinstrumen, bukan karena test baru "menaikkan" persentase lama.
+
+**5 kontrol untuk shutdown, semuanya menggigit:** `catch server.close` dihapus (2 merah),
+`catch` cleanup dihapus (2), force-exit timer dihapus (1), `process.exit(1)` → `0` di timer (1),
+guard idempotensi `shuttingDown` dihapus (1). **`graceful-shutdown.ts` 92,11% → 100,00% (38/38)
+eksekutabel; `prompt-settings.ts` 41/41 eksekutabel.** Repo **86,32% → 86,34%**; suite
+**4.048 → 4.059 lulus**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

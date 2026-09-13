@@ -1,6 +1,6 @@
 {
-  "linePct": 86.32,
-  "linesHit": 17420,
+  "linePct": 86.34,
+  "linesHit": 17423,
   "linesFound": 20180,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -390,12 +390,6 @@
       "pct": 91.66666666666666
     },
     {
-      "file": "src/lib/graceful-shutdown.ts",
-      "hit": 35,
-      "found": 38,
-      "pct": 92.10526315789474
-    },
-    {
       "file": "src/app/api/billing/orders/[id]/route.ts",
       "hit": 25,
       "found": 27,
@@ -693,6 +687,12 @@
       "file": "src/lib/extract-error.ts",
       "hit": 6,
       "found": 6,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/graceful-shutdown.ts",
+      "hit": 38,
+      "found": 38,
       "pct": 100
     },
     {
