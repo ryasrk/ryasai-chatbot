@@ -178,6 +178,9 @@ const FLOORS: Record<string, number> = {
   // User-facing schedule wording: a wrong description makes an operator believe a job
   // runs at a different time than it does. 80.60% -> 100.00% executable (140/140).
   'src/lib/cron-describe.ts': 99,
+  // The plugin picker's category tree: an empty-string or undefined category key
+  // renders as a nameless group. 95.18% -> 100.00% executable (181/181).
+  'src/lib/plugin-selector.ts': 88,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

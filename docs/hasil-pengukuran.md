@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4225ae7`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1f3d7db`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4225ae7`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,87%** (16.687/19.662 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.693 lulus · 0 gagal** | terukur |
+| Test coverage | **85,03%** (16.719/19.662 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.717 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **87 modul** | +25 |
+| Modul ter-gate | 62 modul | **88 modul** | +26 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -117,7 +117,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/otel.ts` | 71,43% → **100,00%** merged | 77,78% → **100,00%** kode eksekutabel (49/49) | 6 |
 | `src/lib/cron-describe.ts` | 75,52% → **99,29%** merged | 80,60% → **100,00%** kode eksekutabel (140/140) | 13 |
 | `src/lib/cognee-memory.ts` | 75,32% → **81,65%** merged (artefak LF) | 92,97% → **100,00%** kode eksekutabel (129/129) | 7 |
-| **Total repo** | **62,44%** | **84,87%** | — |
+| `src/lib/mcp-installer.ts` | 75,88% → **80,40%** merged (artefak LF) | 90,97% → **100,00%** kode eksekutabel (160/160) | 15 |
+| `src/lib/plugin-selector.ts` | 77,45% → **88,73%** merged | 95,18% → **100,00%** kode eksekutabel (181/181) | 5 |
+| **Total repo** | **62,44%** | **85,03%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -376,7 +378,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**348 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**359 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3079,6 +3081,48 @@ resolve pada tick berikutnya, dan menjalankannya **di bawah 10 proses paralel**:
 **117-121ms, `ok:true`, tanpa kegagalan**. Jadi **hipotesis race deadline TIDAK terbukti** dan
 saya **tidak** melaporkannya sebagai penyebab. Yang terbukti hanyalah **lokasi**, dan bahwa
 kegagalannya **bergantung pada eksekusi paralel**, bukan pada file itu sendiri.
+
+### 1.7bi Repo MELEWATI 85%, dan DUA BUG NYATA ditemukan pada pengenalan perintah instalasi MCP
+
+**`mcp-installer.ts` 90,97% → 100,00% (160/160).** **`plugin-selector.ts` 95,18% → 100,00%
+(181/181).** Repo **84,87% → 85,03% (+0,16)** — **menembus 85%** untuk pertama kalinya.
+`plugin-selector.ts` **DI-GATE floor 88**; modul ter-gate **87 → 88**. `mcp-installer.ts`
+merged 80,40% **tidak boleh di-gate** (artefak `LF`), walau eksekutabel 100%.
+
+**BUG NYATA #1: pattern Python runner TIDAK PERNAH COCOK.** Regex Pattern 5 adalah
+`/(?:^|\n|\s)\`?(node|python)\s+([\w.-]+\.js[\w.@/-]*)/m` — grup pertama **menerima
+`python`**, tetapi grup nama file **mewajibkan `.js`**. Jadi `python my_server.py` **tidak bisa
+cocok**, dan README yang mendokumentasikan MCP server Python jatuh ke pola generik (biasanya
+berakhir `null`). Label `source` bahkan menulis **"node/python command"**, yang menyesatkan.
+Dipatok sebagai **perilaku terukur**; **tidak ditambal** karena memperluas daftar ekstensi
+mengubah baris README mana yang dianggap instruksi instalasi — **keputusan produk**.
+
+**BUG NYATA #2: path dengan SUBDIREKTORI juga tidak cocok.** `dist/server.js` **gagal**,
+karena `.js` harus langsung setelah nama file — `/` tidak ada di kelas `[\w.-]+`. Kelas
+`[\w.@/-]*` di **belakang** hanya berlaku **setelah** ekstensi (mis. `server.js/more`), jadi
+tampilannya menyesatkan. Asumsi saya di draf pertama justru **kebalikannya** (saya meng-assert
+`dist/server.js` berhasil); test merah mengoreksi saya, dan tata letak build `node
+dist/server.js` sangat lazim.
+
+**Yang kini dijaga pada `mcp-installer`:** **`npmPackageMissing` GAGAL TERBUKA** — hanya **404
+definitif** yang dianggap "missing"; **kegagalan jaringan dan HTTP 500/403 bukan verdict**,
+karena registry yang sedang down **tidak boleh memblokir instalasi yang seharusnya berhasil**;
+**versi/tag di-strip** dari nama paket (`@scope/pkg@1.2.3` → `/@scope/pkg`) — mengirim versinya
+membuat registry 404 untuk paket yang **ada**, sehingga installer **menolak instalasi yang
+baik**; **`@` di awal TIDAK dianggap pemisah versi** (guard `at > 0`); query pencarian
+**URL-encoded**; nama paket kosong **dibuang, bukan dimasukkan sebagai `undefined`**; dan
+**fallback README tanpa ekstensi**, termasuk saat fetch terakhir itu **melempar**.
+
+**Yang kini dijaga pada `plugin-selector`:** kategori/subkategori yang **hilang atau kosong
+menjadi `"general"`** — kunci string kosong akan dirender sebagai **grup tanpa nama**, dan
+`undefined` membuat kunci literal `"undefined"`; **urutan `category, subcategory, name`** —
+tanpa `orderBy`, picker **mengacak antar reload**; dan **`score: 0`** pada tampilan
+pengelompokan, karena tampilan itu **browser apa yang ada**, bukan hasil penilaian relevansi —
+skor bukan-nol akan **menyiratkan relevansi yang tidak pernah dihitung**.
+
+**Kontrol negatif: 11 dijalankan, 10 menggigit.** Yang tidak menggigit adalah
+`if (!res.ok) return []` → `throw`: throw di dalam `try` **ditangkap `catch` yang sama** dan
+tetap mengembalikan `[]`, jadi **tak dapat dibedakan**. **Dideklarasikan non-kontrol.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

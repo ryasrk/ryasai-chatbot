@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test'
 import { parseMcpInstallInstructions } from './mcp-installer'
+import { npmPackageMissing, searchNpmPackages, fetchMcpInstallFromUrl } from './mcp-installer'
 
 describe('parseMcpInstallInstructions', () => {
   it('parses JSON mcpServers config block', () => {
@@ -315,5 +316,225 @@ describe('fetchMcpInstallFromUrl', () => {
     const { fetchMcpInstallFromUrl } = await import('./mcp-installer')
     // Returning a guess here would install a package nobody asked for.
     expect(await fetchMcpInstallFromUrl('https://example.com/x')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// npm registry lookups — FAIL-OPEN by design
+// ---------------------------------------------------------------------------
+
+describe('npmPackageMissing', () => {
+  const realFetch = global.fetch
+  let calls: string[] = []
+  let impl: (url: string) => Promise<Response>
+
+  beforeEach(() => {
+    calls = []
+    impl = async () => new Response('', { status: 200 })
+    global.fetch = (async (input: unknown) => {
+      calls.push(String(input))
+      return impl(String(input))
+    }) as typeof fetch
+  })
+  afterEach(() => { global.fetch = realFetch })
+
+  it('a 404 means the package is MISSING', async () => {
+    impl = async () => new Response('', { status: 404 })
+    expect(await npmPackageMissing('@scope/pkg')).toBe(true)
+  })
+
+  it('a 200 means it EXISTS', async () => {
+    impl = async () => new Response('{}', { status: 200 })
+    expect(await npmPackageMissing('@scope/pkg')).toBe(false)
+  })
+
+  it('a NETWORK failure fails OPEN — not missing', async () => {
+    // The documented decision: a registry outage must never block an install that
+    // would otherwise work, so only a DEFINITIVE 404 counts. Returning true here
+    // would refuse every install during an npm outage.
+    impl = async () => { throw new Error('registry unreachable') }
+    await expect(npmPackageMissing('pkg')).resolves.toBe(false)
+  })
+
+  it('a 500 from the registry is NOT treated as missing', async () => {
+    // Only 404 is a verdict; any other status is "unknown" and must fail open.
+    impl = async () => new Response('', { status: 500 })
+    expect(await npmPackageMissing('pkg')).toBe(false)
+    impl = async () => new Response('', { status: 403 })
+    expect(await npmPackageMissing('pkg')).toBe(false)
+  })
+
+  it('a scoped name with a VERSION is stripped to the package name', async () => {
+    // `@scope/pkg@1.2.3` -> the registry URL must be /@scope/pkg. Sending the
+    // version makes the registry 404 a package that exists, so the installer would
+    // refuse a perfectly good install.
+    await npmPackageMissing('@scope/pkg@1.2.3')
+    expect(calls).toEqual(['https://registry.npmjs.org/@scope/pkg'])
+  })
+
+  it('an UNSCOPED name with a tag is stripped, and a bare name is untouched', async () => {
+    await npmPackageMissing('pkg@latest')
+    expect(calls).toEqual(['https://registry.npmjs.org/pkg'])
+    await npmPackageMissing('pkg')
+    expect(calls).toEqual(['https://registry.npmjs.org/pkg', 'https://registry.npmjs.org/pkg'])
+  })
+
+  it('a LEADING @ is not treated as a version separator', async () => {
+    // The `at > 0` guard: `@scope/pkg` has its only '@' at index 0, so the name must
+    // be returned whole rather than sliced to an empty string.
+    await npmPackageMissing('@scope/pkg')
+    expect(calls).toEqual(['https://registry.npmjs.org/@scope/pkg'])
+  })
+})
+
+describe('searchNpmPackages — suggestions only', () => {
+  const realFetch = global.fetch
+  let calls: string[] = []
+  let impl: (url: string) => Promise<Response>
+
+  beforeEach(() => {
+    calls = []
+    impl = async () => new Response('{"objects":[]}', { status: 200 })
+    global.fetch = (async (input: unknown) => {
+      calls.push(String(input))
+      return impl(String(input))
+    }) as typeof fetch
+  })
+  afterEach(() => { global.fetch = realFetch })
+
+  it('maps the registry response to package names', async () => {
+    impl = async () => new Response(JSON.stringify({
+      objects: [
+        { package: { name: 'mcp-server-fetch' } },
+        { package: { name: 'mcp-server-filesystem' } },
+      ],
+    }), { status: 200 })
+    expect(await searchNpmPackages('server')).toEqual(['mcp-server-fetch', 'mcp-server-filesystem'])
+  })
+
+  it('the query is URL-ENCODED and the limit is honoured', async () => {
+    // An unencoded query with a space or & would produce a different search (or an
+    // error), so the encoding is part of the contract.
+    await searchNpmPackages('filesystem server', 3)
+    expect(calls[0]).toBe('https://registry.npmjs.org/-/v1/search?text=filesystem%20server&size=3')
+  })
+
+  it('entries with NO package name are dropped, not inserted as undefined', async () => {
+    // `filter((n): n is string => !!n)` -- an undefined would render as the literal
+    // text "undefined" in the suggestion list.
+    impl = async () => new Response(JSON.stringify({
+      objects: [{ package: { name: 'ok' } }, { package: {} }, {}, { package: { name: 'also-ok' } }],
+    }), { status: 200 })
+    expect(await searchNpmPackages('x')).toEqual(['ok', 'also-ok'])
+  })
+
+  it('a response with NO objects array yields [] rather than throwing', async () => {
+    impl = async () => new Response('{}', { status: 200 })
+    expect(await searchNpmPackages('x')).toEqual([])
+  })
+
+  it('a NON-OK status yields [] (suggestions are optional)', async () => {
+    impl = async () => new Response('rate limited', { status: 429 })
+    expect(await searchNpmPackages('x')).toEqual([])
+  })
+
+  it('a thrown fetch yields [] — a dead registry must not break the install UI', async () => {
+    impl = async () => { throw new Error('ECONNREFUSED') }
+    expect(await searchNpmPackages('x')).toEqual([])
+  })
+})
+
+describe('parseMcpInstallInstructions — the node runner pattern', () => {
+  it('parses a bare node runner command', () => {
+    // Pattern 5. A repo that ships `node server.js` with no npx wrapper is common for
+    // self-hosted servers, and without this pattern the install is "not found".
+    const readme = 'Start the server with:\n\n    node server.js --port 8080\n'
+    const r = parseMcpInstallInstructions(readme)
+    expect(r).not.toBeNull()
+    expect(r!.command).toBe('node')
+    expect(r!.args).toEqual(['server.js'])
+    expect(r!.source).toBe('node/python command in README')
+  })
+
+  it('REAL GAP 2: a path WITH A SUBDIRECTORY is not matched either', () => {
+    // MEASURED, and my first version of this test asserted the opposite: the filename
+    // group is `[\w.-]+\.js[\w.@/-]*`, so the `.js` must come IMMEDIATELY after the
+    // name. `dist/server.js` has a `/` before the `.js`, so it can never match, even
+    // though the trailing `[\w.@/-]*` suggests subpaths are supported (that class
+    // only applies AFTER the extension, e.g. `server.js/more`).
+    //
+    // So a repo documenting `node dist/server.js` -- a very ordinary build layout --
+    // falls through to the generic patterns. Pinned as measured, reported not fixed.
+    expect(parseMcpInstallInstructions('Run node dist/server.js now')).toBeNull()
+    // The form the regex DOES accept, for contrast:
+    expect(parseMcpInstallInstructions('Run node server.js now')!.args).toEqual(['server.js'])
+  })
+
+  it('REAL GAP: a PYTHON runner is NOT matched, despite the pattern naming it', () => {
+    // MEASURED BUG, pinned rather than fixed. The regex is
+    //   /(?:^|\n|\s)`?(node|python)\s+([\w.-]+\.js[\w.@/-]*)/m
+    // -- the capture group accepts `python`, but the FILENAME group requires `.js`.
+    // So `python my_server.py` can never match, and a README documenting a Python MCP
+    // server falls through to the generic patterns (usually ending in null). The
+    // `source` label even says "node/python command", which is misleading.
+    //
+    // Reported, not silently patched: widening the extension list changes which
+    // README lines count as an install instruction, which is a product decision.
+    expect(parseMcpInstallInstructions('Run:\n  python my_server.py\n')).toBeNull()
+    expect(parseMcpInstallInstructions('Run:\n  python server.py\n')).toBeNull()
+  })
+
+  it('a JSON config STILL wins over the node runner pattern', () => {
+    // Ordering matters: the specific wrapper must not be pre-empted by the generic
+    // pattern, or the env block from the JSON is lost.
+    const readme = `{
+      "mcpServers": { "s": { "command": "npx", "args": ["-y", "pkg"], "env": { "TOKEN": "x" } } }
+    }
+    Also: node server.js
+    `
+    const r = parseMcpInstallInstructions(readme)
+    expect(r!.command).toBe('npx')
+    expect(r!.envVars).toEqual(['TOKEN'])
+  })
+})
+
+describe('fetchMcpInstallFromUrl — the extension-less README fallback', () => {
+  const realFetch = global.fetch
+  let calls: string[] = []
+  let impl: (url: string) => Promise<Response>
+
+  beforeEach(() => {
+    calls = []
+    impl = async () => new Response('', { status: 404 })
+    global.fetch = (async (input: unknown) => {
+      calls.push(String(input))
+      return impl(String(input))
+    }) as typeof fetch
+  })
+  afterEach(() => { global.fetch = realFetch })
+
+  it('tries README with NO extension after main and master both 404', async () => {
+    // Line 65. Some repos have a plain `README`. Without this fallback the install
+    // reports "no install instructions" for a repo that documents them plainly.
+    impl = async (url: string) =>
+      url.endsWith('/README') ? new Response('npx -y some-pkg', { status: 200 })
+        : new Response('', { status: 404 })
+    const r = await fetchMcpInstallFromUrl('https://github.com/o/r')
+    expect(r).not.toBeNull()
+    expect(r!.args).toEqual(['-y', 'some-pkg'])
+    // All three candidates were tried, in order.
+    expect(calls.some((u) => u.endsWith('/main/README.md'))).toBe(true)
+    expect(calls.some((u) => u.endsWith('/master/README.md'))).toBe(true)
+    expect(calls.some((u) => u.endsWith('/main/README'))).toBe(true)
+  })
+
+  it('a THROWING extension-less fetch is swallowed (no crash on a dead host)', async () => {
+    // The bare `catch {}` -- a network error on the last resort must still end in a
+    // null result rather than propagating out of the installer.
+    impl = async (url: string) => {
+      if (url.endsWith('/README')) throw new Error('connection reset')
+      return new Response('', { status: 404 })
+    }
+    await expect(fetchMcpInstallFromUrl('https://github.com/o/r')).resolves.toBeNull()
   })
 })
