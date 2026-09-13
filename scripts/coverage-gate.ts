@@ -122,6 +122,12 @@ const FLOORS: Record<string, number> = {
   'src/lib/planner.ts': 78, // measured 99.45% executable; merged 79.00%
   'src/lib/rag-retrieval.ts': 75, // measured 100.00% executable; merged 76.29%
   'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
+  // A REVENUE feature: a paying on-prem customer is warned before their license
+  // expires, and a silent failure here is a lost renewal rather than a bug report.
+  // The orchestration (scan window, per-org channel lookup, skip-vs-fail split,
+  // lastUsedAt refresh) was entirely uncovered until it was driven through real
+  // mocks; measured 100.00% (66/66) merged.
+  'src/lib/license-reminder.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

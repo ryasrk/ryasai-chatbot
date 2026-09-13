@@ -1,7 +1,7 @@
 {
-  "linePct": 82.89,
-  "linesHit": 16322,
-  "linesFound": 19692,
+  "linePct": 83.13,
+  "linesHit": 16367,
+  "linesFound": 19688,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -16,12 +16,6 @@
       "hit": 13,
       "found": 47,
       "pct": 27.659574468085108
-    },
-    {
-      "file": "src/lib/license-reminder.ts",
-      "hit": 21,
-      "found": 70,
-      "pct": 30
     },
     {
       "file": "src/lib/redis.ts",
@@ -717,6 +711,12 @@
       "file": "src/lib/incoming-webhook.ts",
       "hit": 40,
       "found": 40,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/license-reminder.ts",
+      "hit": 66,
+      "found": 66,
       "pct": 100
     },
     {

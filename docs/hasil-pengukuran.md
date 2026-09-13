@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cfffcf3`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72977be`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cfffcf3`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,89%** (16.322/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.524 lulus · 0 gagal** | terukur |
+| Test coverage | **83,13%** (16.367/19.688 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.533 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -100,7 +100,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-branches.ts` | 99,84% → **84,01%** merged (**turun**, §1.7z) | 99,84% → **100,00%** kode eksekutabel (641/641) | 49 |
 | `src/lib/tool-router.ts` | 99,58% → **70,71%** merged (**turun**, §1.7z) | 99,58% → **100,00%** kode eksekutabel (239/239) | 60 |
 | `src/lib/smart-router.ts` | 98,85% → **77,62%** merged (**turun**, §1.7z) | 99,74% → **100,00%** kode eksekutabel (385/385) | 159 |
-| **Total repo** | **62,44%** | **82,89%** | — |
+| `src/lib/license-reminder.ts` | 30,00% → **100,00%** merged | 47,73% → **100,00%** kode eksekutabel (66/66) | 15 |
+| **Total repo** | **62,44%** | **83,13%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -359,7 +360,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**267 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**273 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2477,6 +2478,53 @@ persis `'SQL: schema match strong (40%), skipping LLM tiebreaker'`.
 antara "test gagal lebih awal" dan "test tidak pernah jalan".
 
 **Kontrol negatif: 3, semuanya menggigit** (satu sebagai timeout, yang justru temuan).
+
+### 1.7aw `license-reminder.ts`: fitur PENDAPATAN yang orkestrasinya 0% diuji — 47,73% → 100,00%
+
+**Merged 30,00% → 100,00% (66/66). Repo 82,89% → 83,13% (+0,24), lompatan terbesar sesi
+ini.** Modul ini kini **DI-GATE pada floor 100** — jumlah modul ter-gate **76 → 77**.
+
+**Mengapa ini yang saya dahulukan.** Daftar sisa terbesar didominasi modul besar
+(`real-connectors` 252, `ai.ts` 143) yang angka merged-nya terutama artefak `LF` union.
+Menelusuri daftar itu memunculkan `license-reminder.ts` di **30,00%** — dan modul ini
+mengirim **peringatan kedaluwarsa lisensi ke pelanggan on-prem yang BERBAYAR**. Kegagalan
+senyap di sini bukan laporan bug, melainkan **perpanjangan yang hilang**.
+
+**Apa yang sebenarnya terjadi.** Komentar test-nya **jujur menyatakan** cakupannya: "this
+test only exercises the pure eligibility logic + message building". Dan memang —
+`shouldNotifyDaysLeft`, `filterReminderOrgs`, `buildReminderMessage` diuji rapi, sementara
+**seluruh `runLicenseExpiryReminders` (jam kerja fitur ini) 0%**: jendela scan, lookup
+channel per-org, pembagian skip-vs-gagal, refresh `lastUsedAt`, dan cabang kegagalan.
+Mock-nya `{ db: {} }` — jadi titik masuk itu **tidak bisa diuji sama sekali**. Semua diganti
+mock yang bisa dikendalikan, dan 9 test orkestrasi ditambahkan.
+
+**Yang kini dijaga.** (a) **Jendela scan**: `licenseStatus: 'valid'` DAN
+`licenseExpiresAt` antara `now` dan **now+7 hari** — lisensi yang sudah lewat tidak
+diperingatkan (terlambat), yang masih jauh juga tidak (spam). (b) **`skippedNoChannel`
+dipisah dari `failed`**: yang pertama berarti "pelanggan belum memasang alert" (wajar),
+yang kedua "kami mencoba dan channel-nya rusak" (butuh operator); **menggabungkannya akan
+menyembunyikan outage nyata**. (c) **Kegagalan kirim TIDAK me-refresh `lastUsedAt`** —
+kalau tidak, urutan channel "paling akhir dipakai" akan miring oleh percobaan yang tidak
+pernah sampai ke siapa pun. (d) **Penulisan `lastUsedAt` yang gagal tidak menggagalkan
+run**: notifikasi yang **sudah terkirim** tetap dihitung terkirim — kalau tidak, gangguan DB
+sesaat akan membuat seluruh peringatan hari itu dikirim ulang. (e) **Dua panggilan
+`bypassOrg`** (scan + lookup channel) dipatok jumlahnya: job ini jalan di worker **tanpa
+org context**, jadi `bypassOrg` yang membuatnya bisa membaca lintas tenant sama sekali.
+
+**Temuan metodologi — satu test saya tidak menguji klaimnya, lagi.** Versi pertama test
+payload hanya memastikan `findFirst` **dipanggil**; itu tidak membuktikan apa pun tentang
+yang **terkirim** — config yang salah berarti notifikasi ke channel yang salah. Saya ganti
+dengan menangkap argumen pengirim dan memastikan `configEncrypted`, `title`, dan `message`
+(bandingkan langsung dengan `buildReminderMessage`, bukan duplikat string).
+
+**Flake runner, dicatat jujur.** Satu `bun run test` keluar dengan kode 1 dan **hanya**
+mencetak nama file (`route.test.ts`) tanpa detail kegagalan; empat eksekusi berikutnya
+(termasuk dua kali berurutan) lulus **3.533 / 0 gagal** tanpa bisa saya reproduksi. Ini
+kejadian **kedua** di sesi ini. Saya catat sebagai **flake intermiten pada runner yang
+belum terdiagnosis** — bukan sesuatu yang disembunyikan, dan bukan pula bukti kegagalan
+kode, karena tidak dapat diproduksi ulang dalam 5 percobaan.
+
+**Kontrol negatif: 6, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
