@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a9a0708`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dbeb7fc`.
 
 ---
 
@@ -4897,9 +4897,9 @@ per-baris. Hasilnya terukur:
 | `route.ts` di `src/app/api/` | **99** |
 | Terinstrumen di laporan cakupan | **24** |
 | Punya `*.test.ts` di direktorinya | **16** |
-| **Tidak punya test DAN tidak direferensikan test mana pun** | **42** |
+| **Tidak punya test DAN tidak direferensikan test mana pun** | **42** (KELIRU — lihat §1.7cw: angka benarnya **66**) |
 
-Jadi **42% dari permukaan HTTP aplikasi tidak pernah dijalankan oleh satu test pun**, dan karena mereka
+Jadi **~66% dari permukaan HTTP aplikasi tidak punya test** (angka awal saya 42% KELIRU — lihat §1.7cw), dan karena mereka
 tidak terinstrumen, **mereka juga tidak muncul di angka 86,76%** — coverage itu mengukur apa yang
 *kebetulan* tersentuh, bukan seluruh permukaan. Ini adalah pernyataan paling penting di ronde ini:
 **angka coverage tidak boleh dibaca sebagai "sisa 13% belum teruji"; ia mengukur subset yang terinstrumen.**
@@ -4969,6 +4969,49 @@ Ditutup dengan menyuntikkan error P2025 (baris hilang antara baca dan tulis) dan
 **Progres backlog: 3 dari 42 route orphan ditutup.** Repo **86,76% → 86,85%**; file terinstrumen
 **133 → 135**; suite **4.174 → 4.203** (175 → **177 file**); gate **133 → 135 modul**. **13 kontrol,
 semuanya menggigit.**
+
+### 1.7cw KOREKSI: audit "42 route tanpa test" SALAH. Angka benarnya 66.
+
+**Saya harus mengoreksi diri sendiri, karena angka ini masuk ke dokumen dan ke laporan ronde.**
+
+Di §1.7cu saya melaporkan **"42 dari 99 route API tidak punya test"**. Saat memilih target berikutnya, saya
+membaca `src/app/api/documents/[id]/route.ts` dan menemukan **file `route.test.ts` sudah ada di sebelahnya,
+dengan 24 test dan cakupan 100% (193/193)**. Route itu **tidak pernah** orphan.
+
+**CARA SAYA SALAH — dan ini persis pola "kontrol yang lulus karena salah sasaran" yang repo ini
+dokumentasikan.** Skrip pertama saya membangun URL route dari direktorinya (`/api/users/[id]`) lalu
+meng-`grep` korpus test untuk **string itu**. Tetapi **test route tidak pernah menyebut URL-nya sendiri** —
+ia `import` handler-nya (`import { PATCH } from './route'`) dan memanggilnya dengan `Request` buatan. Jadi
+string itu **tidak pernah cocok**, dan **setiap route yang testnya berada di sebelahnya dilaporkan sebagai
+tidak teruji.** Saya menegaskan kesimpulan tanpa kontrol negatif — padahal saya yang menulis aturan itu
+berulang kali di dokumen ini.
+
+**Perbaikannya.** `scripts/audit-route-tests.py` memeriksa dua hal yang **benar-benar** dilakukan test route:
+1. **import relatif handler-nya sendiri** (`from './route'` / `from '../route'`), atau
+2. **path route dipakai sebagai URL** di korpus test (gaya integrasi).
+
+**Hasil terukur setelah perbaikan, dan tool-nya sudah dikontrol negatif:**
+
+| Ukuran | Jumlah |
+|---|---|
+| Route | **99** |
+| Punya `*.test.ts` di sebelahnya | **27** |
+| Direferensikan sebagai URL di test | **6** |
+| **ORPHAN SEJATI (tanpa test)** | **66** |
+
+Kontrol: tool **tidak** menandai `users/[id]/role`, `users/[id]`, `settings/api-keys/[id]` (yang saya tutup
+di ronde 91-92) maupun `documents/[id]`, `mcp/servers/[id]`, `billing/orders/[id]` (yang memang sudah punya
+test). **Enam dari enam benar.**
+
+**Arah koreksinya memburuk, bukan membaik: 42 → 66 route tanpa test.** Jadi **dua pertiga permukaan HTTP
+aplikasi tidak punya test**, dan karena mereka tidak terinstrumen, **mereka juga tidak muncul di angka
+coverage 86,85%** — coverage itu mengukur subset yang terinstrumen, bukan seluruh permukaan. **Tiga route
+yang saya tutup di ronde 91-92 tetap sah dan tetap bernilai** (mereka memang orphan); yang salah hanya
+**jumlah totalnya**, bukan pekerjaannya.
+
+**Pelajaran yang saya catat untuk diri sendiri:** sebuah angka yang berasal dari skrip yang **belum
+dikontrol negatif** adalah **hipotesis**, bukan temuan — **terutama ketika angka itu enak dipakai untuk
+membenarkan rencana.** Saya menulisnya sebagai fakta di dokumen sebelum mengontrolnya. Itu kesalahan saya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
