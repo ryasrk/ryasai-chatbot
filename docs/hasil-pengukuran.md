@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `16997b1`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d46f29`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `16997b1`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,62%** (17.483/20.183 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 173 file · **4.136 lulus · 0 gagal** | terukur |
+| Test coverage | **86,70%** (17.498/20.183 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 173 file · **4.143 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**652 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**658 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4651,6 +4651,41 @@ dengan alasan ini, bukan mengklaimnya tertutup.
 gate **107 → 108 modul**. **8 kontrol: 6 menggigit** (401 dihapus, 429→next, key global 3 merah,
 `Infinity` default 5 merah, method POST-only, GET ikut dibatasi, `clear()` genap bucket hidup),
 **2 non-kontrol terverifikasi** (sweep; dan guard `!signature` ronde sebelumnya).
+
+### 1.7co Alur OAuth2 yang tak pernah jalan, dan 16 modul yang tak punya floor sama sekali
+
+**Alur OAuth2 di `rest-api-connectors.ts` belum pernah dieksekusi.** Yang diuji hanya **guard konfigurasi
+kosong** (baris 73) yang `return` **sebelum** fetch mana pun. Jadi permintaan token — **alasan seluruh
+cabang itu ada** — tak pernah berjalan, di jalur yang dipakai setiap integrasi REST pelanggan untuk
+autentikasi. Sekarang dipatok lengkap: body `application/x-www-form-urlencoded` dengan
+`grant_type=client_credentials`, `scope` **dihilangkan** bila tidak dikonfigurasi (banyak provider
+menolak `scope=` kosong), non-2xx → **THROW dengan status** (bukan `{}`, yang akan membuat panggilan API
+sesungguhnya tak terautentikasi dan melaporkan 401 dari pihak ketiga tanpa penjelasan lokal), 200 tanpa
+`access_token` → **tanpa header** (jangan pernah kirim `Bearer undefined`), `access_token` non-string
+**diabaikan bukan dipaksa** (`String(12345)` = `"12345"` akan jadi token palsu), dan **arah kredensial
+dipatok**: `client_secret` hanya ke token URL, header yang dikembalikan berisi **access token**, bukan
+secret. **88,64% → 100,00% (93/93).**
+
+**Temuan kedua: 16 modul terverifikasi 100% eksekutabel tapi TIDAK PUNYA FLOOR.** Angka merged-nya
+rendah karena artefak union (mis. `tool-router.ts` merged **70,71%** padahal **239/239 eksekutabel**;
+`evidence-boundary.ts` merged **46,67%** padahal **14/14**). Modul tanpa floor **tidak menangkap regresi
+apa pun**. Kini **108 → 124 modul ter-gate**.
+
+**Gate menolak commit saya — untuk KEDUA kalinya, dan benar.** Saya memasang floor **100** untuk 15 modul
+dari angka **eksekutabel**. Gate gagal `exit 1` untuk keenam modul pertama dengan pesan yang persis:
+*"floor 100% exceeds the merged measurement 46.67% — floors must come from coverage-summary.json
+(merged), never from a single-file --coverage run."* Saya set ulang semuanya ke **floor merged yang
+terukur** (46, 80, 84, 83, 73, 70, 81, 80, 79, 83, 84, 81, 77, 76, 97) dan gate lulus. **Pelajaran ronde 80
+saya langgar lagi** — dan guard yang sama menyelamatkan lagi. Itu argumen terkuat bahwa gate-nya layak
+dipertahankan.
+
+**Non-kontrol yang saya deklarasikan:** `tool-router.ts` dan `smart-router.ts` masing-masing punya **1
+baris** yang tak terinstrumen sebagai deklarasi tipe (`smart-router.ts:556`, sebuah generic `}>`);
+`rest-api-connectors.ts` punya 2 baris deklarasi tipe di merged (93/95).
+
+**6 kontrol OAuth2, semuanya menggigit:** token tidak dikirim (1 merah), `!tokenRes.ok` dihapus (1),
+`scope` selalu dikirim (1), `grant_type` salah (1), `tokenUrl` diabaikan/dipakai nilai tetap (**2**),
+`access_token` non-string diterima (1). Repo **86,62% → 86,70%**; suite **4.136 → 4.143**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

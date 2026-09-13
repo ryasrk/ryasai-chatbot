@@ -1,9 +1,11 @@
 {
-  "linePct": 86.62,
-  "linesHit": 17483,
+  "linePct": 86.7,
+  "linesHit": 17498,
   "linesFound": 20183,
   "filesMeasured": 132,
-  "failedTestFiles": [],
+  "failedTestFiles": [
+    "src/lib/tool-branches.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -142,12 +144,6 @@
       "hit": 129,
       "found": 158,
       "pct": 81.64556962025317
-    },
-    {
-      "file": "src/lib/rest-api-connectors.ts",
-      "hit": 78,
-      "found": 95,
-      "pct": 82.10526315789474
     },
     {
       "file": "src/lib/stream-preparers.ts",
@@ -466,6 +462,12 @@
       "hit": 44,
       "found": 45,
       "pct": 97.77777777777777
+    },
+    {
+      "file": "src/lib/rest-api-connectors.ts",
+      "hit": 93,
+      "found": 95,
+      "pct": 97.89473684210527
     },
     {
       "file": "src/lib/rag-search-tester.ts",

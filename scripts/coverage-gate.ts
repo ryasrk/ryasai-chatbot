@@ -95,6 +95,22 @@ const FLOORS: Record<string, number> = {
   'src/lib/cognee-types.ts': 100, // measured 100.00% (15/15); was mocked by every test that used it
   'src/lib/notifications.ts': 100, // measured 100.00% (132/132); the Resend send path was never run
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
+  'src/lib/evidence-boundary.ts': 46, // merged 46.67%; merged 46.67% but 14/14 executable (100.00%)
+  'src/lib/rag-ranking.ts': 80, // merged 80.56%; merged 80.56% but 58/58 executable (100.00%)
+  'src/lib/constrained-output.ts': 84, // merged 84.31%; measured 100.00% (43/43)
+  'src/lib/api-keys.ts': 84, // merged 84.78%; merged 84.78% but 78/78 executable (100.00%)
+  'src/lib/alignment-check.ts': 83, // merged 83.08%; merged 83.08% but 54/54 executable (100.00%)
+  'src/lib/cognee.ts': 73, // merged 73.91%; merged 73.91% but 34/34 executable (100.00%)
+  'src/lib/tool-router.ts': 70, // merged 70.71%; merged 70.71% but 239/239 executable (100.00%)
+  'src/lib/llm-config.ts': 81, // merged 81.50%; merged 81.50% but 207/207 executable (100.00%)
+  'src/lib/mcp-installer.ts': 80, // merged 80.40%; merged 80.40% but 160/160 executable (100.00%)
+  'src/lib/connectors.ts': 79, // merged 79.73%; merged 79.73% but 118/118 executable (100.00%)
+  'src/lib/cognee-core.ts': 83, // merged 83.33%; merged 83.33% but 215/215 executable (100.00%)
+  'src/lib/rag-chunking.ts': 84, // merged 84.30%; measured 100.00% (188/188)
+  'src/lib/cognee-memory.ts': 81, // merged 81.65%; measured 100.00% (129/129)
+  'src/lib/cognee-knowledge-graph.ts': 77, // merged 77.62%; merged 99.63% but 267/267 executable (100.00%)
+  'src/lib/agentic-budget.ts': 76, // merged 76.47%; measured 100.00% (13/13)
+  'src/lib/rest-api-connectors.ts': 97, // merged 97.89%; 93/93 executable (100.00%) after adding the OAuth2 flow
   'src/lib/license-client.ts': 86, // merged 86.90%; 126/128 executable (98.44%); 2 declared non-controls
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
