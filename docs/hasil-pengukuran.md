@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2e909d8`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `edeba09`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2e909d8`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,23%** (17.401/20.179 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.022 lulus · 0 gagal** | terukur |
+| Test coverage | **86,29%** (17.412/20.179 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.029 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**587 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**595 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4286,6 +4286,45 @@ pengguna masih menunggu.
 **Seam `CHAT_IDLE_TIMEOUT_MS` / `CHAT_OVERALL_DEADLINE_MS` ditambahkan**, dibaca saat muat modul, jadi
 test menyetelnya **sebelum** `await import('./route')`. Tanpa itu, 120 detik tidak bisa ditunggu, dan
 meng-assert pada timer yang di-mock **tidak akan membuktikan** stream benar-benar diputus.
+
+### 1.7cf ASIMETRI: gate konteks MCP tidak pernah diuji, padahal sisi plugin punya lima test
+
+**Ditemukan dengan mengukur celah eksekutabel, bukan merged.** `tool-registry.ts` dilaporkan
+**91,82%** merged; `coverage-honest.py` menunjukkan **8 baris eksekutabel** benar-benar tak tercakup —
+dan semuanya di satu tempat: filter konteks MCP.
+
+**Asimetrinya mencolok dan itu sendiri merupakan sinyal.** Sisi plugin punya **lima** test yang bagus
+(`chatEnabled=false` disaring di chat, `agenticEnabled=false` disaring di agentic, tanpa konteks tidak
+disaring). Sisi MCP punya **nol**. `mockMcpServerFindMany` sudah ada di harness sejak awal tapi
+**tidak pernah sekali pun** diberi baris dengan flag — jadi cabang yang memutuskan **apakah sebuah tool
+MCP ditawarkan di chat atau di agentic** tidak pernah dieksekusi.
+
+**Mengapa ini lebih berbahaya daripada kasus plugin:** server MCP adalah **endpoint remote sembarang**,
+dan tool-nya di-*namespace* `mcp:<serverId>:<toolName>`. Gate yang *fail-open* akan mengekspos
+eksekusi tool remote **di permukaan yang salah**.
+
+**Yang saya patok, termasuk keputusan yang bisa terlihat seperti bug:**
+- Tool dari server yang **TIDAK ada di flag map** **TETAP DIPERTAHANKAN** — *fail-open* yang
+  **disengaja**: `listMcpTools` punya cache 60 detik dan lookup flag adalah query terpisah, jadi tool
+  bisa tiba untuk baris yang belum ada di map (server baru dibuat, atau di-disable di antara dua
+  pembacaan). Membuangnya akan **menyembunyikan tool yang berfungsi**. Test ini justru yang mencegah
+  perubahan "perketat" di masa depan membalikkannya tanpa sadar.
+- **Tanpa konteks**, semua tool MCP ditawarkan — konsisten dengan perilaku plugin yang sudah dipatok.
+- **`isEnabled: true`** dipatok lewat **bentuk query**, karena ia tidak teramati dari sisi DB yang
+  di-mock. Tanpa test itu, kontrol yang menghapus filternya **tetap hijau**.
+- **`select` hanya tiga kolom** yang dibutuhkan map — query ini jalan di **setiap** tool listing.
+
+**8 kontrol, semuanya menggigit:** filter MCP dihapus / *fail-open* (2 merah), flags hilang dibuang /
+*fail-closed* (3), `passesContext` dibalik (4), id MCP tanpa `serverId` (6), label deskripsi kosong
+tidak diisi (1), `isEnabled` dihapus dari query (1 setelah test bentuk-query ditambahkan — sebelumnya
+**0**, dan itu yang memaksa saya menulis test itu), `select` diperluas (1).
+
+**Kontrol yang hijau saya kejar, bukan saya abaikan.** K6 (hapus `isEnabled`) lulus pada percobaan
+pertama. Alasan saya pikirkan: mock DB mengembalikan baris apa pun yang saya berikan, jadi filter
+`where` **tidak punya cara untuk teramati**. Solusinya bukan menghapus kontrol — melainkan menambah
+test yang meng-assert **query yang direkam**.
+
+**`tool-registry.ts`: 91,82% → 95,91% merged / 100,00% (258/258) eksekutabel.** Repo **86,23% → 86,29%**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -31,6 +31,17 @@ const mockPluginFindMany = mock(async () => [
 
 const mockMcpServerFindMany = mock(async () => [] as unknown[])
 
+/** MCP tools as listMcpTools would return them, across two servers. */
+const mockListMcpTools = mock(async () => [] as unknown[])
+
+mock.module('@/lib/mcp-client', () => ({
+  // Only listMcpTools is reached by tool-registry. `mock.module` MERGES with the real module, so
+  // the remaining exports stay real and a transitive importer cannot throw
+  // "Export named ... not found". No `await import()` here: a factory that awaits the module it
+  // defines deadlocks.
+  listMcpTools: mockListMcpTools,
+}))
+
 mock.module('@/lib/db', () => ({
   db: {
     plugin: { findMany: mockPluginFindMany },
@@ -43,6 +54,8 @@ import { getAvailableTools, getTool, BUILT_IN_TOOLS, ADMIN_TOOLS } from './tool-
 beforeEach(() => {
   mockPluginFindMany.mockClear()
   mockMcpServerFindMany.mockClear()
+  mockListMcpTools.mockClear()
+  mockListMcpTools.mockImplementation(async () => [])
 })
 
 describe('getTool', () => {
@@ -239,6 +252,117 @@ describe('getAvailableTools — context filtering', () => {
     const tools = await getAvailableTools()
     const ids = tools.map((t) => t.id)
     expect(ids).toContain('plugin:weather')
+  })
+})
+
+/**
+ * MCP tools are gated per context exactly like plugins, but the plugin side had five tests and the
+ * MCP side had NONE — no test ever supplied an MCP tool whose server had chatEnabled/agenticEnabled
+ * set, so the branch that decides whether an MCP tool is offered in chat vs agentic never ran.
+ *
+ * This matters more than the plugin case: an MCP server is an arbitrary remote endpoint, and its
+ * tools are namespaced `mcp:<serverId>:<toolName>`. A gate that failed open would expose remote
+ * tool execution in the wrong surface.
+ */
+describe('getAvailableTools — MCP per-server context gating', () => {
+  const mcpTool = (serverId: string, toolName: string) => ({
+    serverId,
+    serverName: `Srv ${serverId}`,
+    toolName,
+    description: `does ${toolName}`,
+    inputSchema: { type: 'object' },
+  })
+
+  /** Two MCP servers with opposite context flags. */
+  function twoServers() {
+    mockListMcpTools.mockImplementation(async () => [
+      mcpTool('srv-chat', 'chat_only'),
+      mcpTool('srv-agentic', 'agentic_only'),
+      mcpTool('srv-unknown', 'from_an_unlisted_server'),
+    ])
+    mockMcpServerFindMany.mockImplementation(async () => [
+      { id: 'srv-chat', chatEnabled: true, agenticEnabled: false },
+      { id: 'srv-agentic', chatEnabled: false, agenticEnabled: true },
+    ])
+  }
+
+  test('chat context offers ONLY the chatEnabled server tools', async () => {
+    twoServers()
+    const ids = (await getAvailableTools(undefined, 'chat')).map((t) => t.id)
+
+    expect(ids).toContain('mcp:srv-chat:chat_only')
+    expect(ids).not.toContain('mcp:srv-agentic:agentic_only')
+  })
+
+  test('agentic context offers ONLY the agenticEnabled server tools', async () => {
+    twoServers()
+    const ids = (await getAvailableTools(undefined, 'agentic')).map((t) => t.id)
+
+    expect(ids).toContain('mcp:srv-agentic:agentic_only')
+    expect(ids).not.toContain('mcp:srv-chat:chat_only')
+  })
+
+  test('a tool from a server MISSING from the flag map is KEPT (fail-open by design)', async () => {
+    // Deliberate: `listMcpTools` has a 60s cache and the flag lookup is a separate query, so a tool
+    // can arrive for a row that is not in the map — most often a server just created, or one
+    // disabled between the two reads. Dropping it would silently hide a working tool; keeping it is
+    // the documented behaviour, and this test is what stops a future "tighten it up" change from
+    // inverting it without noticing.
+    twoServers()
+    const ids = (await getAvailableTools(undefined, 'chat')).map((t) => t.id)
+    expect(ids).toContain('mcp:srv-unknown:from_an_unlisted_server')
+  })
+
+  test('NO context offers every MCP tool regardless of flags', async () => {
+    // The planner-less listing path must not filter — matching the plugin behaviour already pinned.
+    twoServers()
+    const ids = (await getAvailableTools()).map((t) => t.id)
+
+    expect(ids).toContain('mcp:srv-chat:chat_only')
+    expect(ids).toContain('mcp:srv-agentic:agentic_only')
+  })
+
+  test('an MCP tool with no description still gets a usable server · tool label', async () => {
+    mockListMcpTools.mockImplementation(async () => [
+      { serverId: 's1', serverName: 'GitHub', toolName: 'list_repos', description: '', inputSchema: { type: 'object' } },
+    ])
+    mockMcpServerFindMany.mockImplementation(async () => [])
+    const tools = await getAvailableTools()
+    const tool = tools.find((t) => t.id === 'mcp:s1:list_repos')
+    expect(tool?.description).toBe('GitHub · list_repos')
+  })
+
+  test('the flag lookup only asks for ENABLED servers', async () => {
+    // Pins the query shape. A disabled server must not contribute flags at all, so its tools fall
+    // through the `!flags` fail-open branch only if listMcpTools still lists them — i.e. the two
+    // sources of truth stay independent. Asserting on the query is what makes the `isEnabled`
+    // filter observable; a control that dropped it stayed green until this test existed.
+    mockListMcpTools.mockImplementation(async () => [])
+    mockMcpServerFindMany.mockImplementation(async () => [])
+    await getAvailableTools(undefined, 'chat')
+
+    expect(mockMcpServerFindMany).toHaveBeenCalled()
+    // The mock's inferred signature is `() => never[]`, so read the recorded call through a cast
+    // that goes via `unknown` rather than asserting on a tuple the type system calls empty.
+    const recorded = (mockMcpServerFindMany.mock.calls as unknown as Array<[{ where?: { isEnabled?: boolean }; select?: unknown }]>)[0]!
+    const arg = recorded[0]
+    expect(arg.where?.isEnabled).toBe(true)
+    // Only the three fields the map needs — this runs on every tool listing.
+    expect(arg.select).toEqual({ id: true, chatEnabled: true, agenticEnabled: true })
+  })
+
+  test('the MCP id is namespaced with the serverId, so two servers cannot collide', async () => {
+    // Without the serverId in the id, two servers exposing a tool of the same name would produce
+    // the same tool id and the second would shadow the first in any id-keyed lookup.
+    mockListMcpTools.mockImplementation(async () => [
+      mcpTool('alpha', 'search'),
+      mcpTool('beta', 'search'),
+    ])
+    mockMcpServerFindMany.mockImplementation(async () => [])
+    const ids = (await getAvailableTools()).map((t) => t.id)
+    expect(ids).toContain('mcp:alpha:search')
+    expect(ids).toContain('mcp:beta:search')
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
 

@@ -1,6 +1,6 @@
 {
-  "linePct": 86.23,
-  "linesHit": 17401,
+  "linePct": 86.29,
+  "linesHit": 17412,
   "linesFound": 20179,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -396,12 +396,6 @@
       "pct": 91.66666666666666
     },
     {
-      "file": "src/lib/tool-registry.ts",
-      "hit": 247,
-      "found": 269,
-      "pct": 91.82156133828995
-    },
-    {
       "file": "src/lib/graceful-shutdown.ts",
       "hit": 35,
       "found": 38,
@@ -490,6 +484,12 @@
       "hit": 37,
       "found": 39,
       "pct": 94.87179487179486
+    },
+    {
+      "file": "src/lib/tool-registry.ts",
+      "hit": 258,
+      "found": 269,
+      "pct": 95.91078066914498
     },
     {
       "file": "src/lib/mcp-sandbox.ts",

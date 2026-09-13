@@ -279,7 +279,10 @@ const FLOORS: Record<string, number> = {
   // timeout, the overall deadline, the client-disconnect branch (which must persist
   // NOTHING) and the per-token timer reset. 405/410 executable (98.78%).
   'src/app/api/chat/sessions/[id]/send/route.ts': 93, // measured 93.75% merged
-  'src/lib/tool-registry.ts': 85, // measured 91.82% (247/269)
+  // MCP per-server context gating was untested while the plugin side had five tests: no test ever
+  // supplied an MCP tool whose server had chatEnabled/agenticEnabled set, so the branch deciding
+  // whether an MCP tool is offered in chat vs agentic never ran. 258/271 executable.
+  'src/lib/tool-registry.ts': 95, // measured 95.91% merged
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
   'src/lib/vector-stores.ts': 85, // measured 93.46% (343/367)
   'src/lib/view-routing.ts': 95, // measured 100.00% (19/19)
