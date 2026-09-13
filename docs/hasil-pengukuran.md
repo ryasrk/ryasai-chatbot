@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7a21ae2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a730e4a`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7a21ae2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,29%** (18.763/21.496 baris, 146 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,02%** (1744/1855 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 188 file · **4.492 lulus · 0 gagal** | terukur |
+| Test coverage | **87,38%** (18.920/21.653 baris, 147 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,04%** (1752/1863 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 189 file · **4.544 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**860 kontrol + 4 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**879 kontrol + 5 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5457,6 +5457,58 @@ yang benar-benar dipanggil rute ini.
 sebabnya:** file terinstrumen naik 145 → 146 sehingga penyebut bertambah, **sementara `cron.ts` dan
 `scheduler-queue.ts` kini terhitung dengan penyebut yang lebih jujur.** Suite **4.449 → 4.492**
 (187 → **188 file**); gate **145 → 146 modul**.
+
+### 1.7di `/api/data-sources/rest-connectors/[id]` — gerbang SSRF pada jalur EDIT: 100,00% (157/157)
+
+**Gerbang SSRF ada di jalur edit, bukan hanya di jalur baca.** `parseBaseUrl` menolak skema non-http(s) dan
+**melempar** saat `isBlockedHost` cocok, sehingga konektor **tidak bisa diarahkan ulang ke `169.254.169.254`**
+(metadata awan yang menyajikan kredensial instance) atau ke localhost. Konektor inilah yang dipanggil tool REST
+**atas nama LLM**, jadi ini batas yang menjaga panggilan tool agar tidak mencapai jaringan platform sendiri.
+**K2 (gerbang dihapus) → 4 merah**, termasuk asersi bahwa pesannya adalah **"blocked internal host"** yang
+spesifik, bukan "invalid" yang generik — pembedaan itu penting bagi operator: yang satu keputusan kebijakan,
+yang lain salah ketik.
+
+**`authType: 'NONE'` benar-benar MENGHAPUS kredensial tersimpan** (`? null : ...`). Beralih ke tanpa-auth harus
+membuang token; membiarkannya berarti **kredensial hidup tetap tersimpan di baris yang tidak lagi mengaku
+memakainya.** **K5 → 2 merah.**
+
+**`timeoutMs` DI-CLAMP, bukan dipercaya:** rentang **[1000, 120000]**. Nilai 0 akan menggagalkan setiap
+panggilan seketika dan terbaca sebagai "API-nya mati"; nilai tak terbatas membiarkan satu endpoint lambat
+menahan slot worker selamanya. **K7 → 3 merah.**
+
+**19 kontrol; 17 menggigit, 1 menggigit setelah diperkuat, dan SATU saya deklarasikan jujur tidak dapat
+menggigit.**
+
+## DUA KOREKSI DIRI — KEDUANYA LEBIH PENTING DARIPADA TEST-NYA
+
+**1. Mock enkripsi saya menyamarkan kebocoran nyata.** Versi pertama `encryptConfig` saya mengembalikan
+`enc:${JSON.stringify(o)}` — yakni **plaintext-nya ada di dalam ciphertext.** Itu membuat **kebocoran rahasia
+yang nyata terlihat identik dengan enkripsi yang benar.** Saya menguji **enkripsi sungguhan** untuk memisahkan
+artefak dari fakta: `blob.includes(SECRET) === false`, round-trip OK. Mock diperbaiki jadi **opaque**
+(`enc:v1:<id>` dengan tabel terpisah), dan **satu asersi baru ditambahkan: ciphertext TIDAK boleh memuat
+plaintext.**
+
+**2. Kontrol K8 TIDAK DAPAT MENGGIGIT, dan sekarang saya tahu sebabnya secara pasti.** Saya dua kali menulis
+komentar yang **salah** tentang K8 sebelum mengukurnya. `JSON.stringify(Infinity)` dan `JSON.stringify(NaN)`
+**sama-sama menghasilkan `null`** (dibuktikan probe terpisah). Jadi nilainya **tidak pernah tiba sebagai angka**;
+`typeof null === 'object'` gagal pada separuh `typeof === 'number'` **lebih dulu**, dan `Number.isFinite`
+**tidak pernah dievaluasi.** Tidak ada request HTTP yang bisa membedakan kedua versi kode. Alih-alih menyembunyikan
+ini, test-nya **mendeklarasikan** dirinya sebagai **non-control yang jujur** dan mengasersi perilaku yang
+**benar-benar sampai ke produksi** (timeout `null` diabaikan, tidak menjadi 1000/120000), ditambah test jalur
+`null` eksplisit.
+
+Saya juga memperkuat **K14** (DELETE memakai id hasil muat, bukan param path) yang awalnya **tidak menggigit
+karena fixture saya memakai string yang sama untuk keduanya** — sehingga dua ekspresi itu tak terbedakan.
+
+**TEMUAN YANG DICATAT, TIDAK DIPERBAIKI:** audit `REST_CONNECTOR_UPDATE` menyertakan **CIPHERTEXT** kredensial
+lewat `after: data`. **Bukan kebocoran plaintext** — sudah diverifikasi terhadap enkripsi sungguhan — dan saya
+menolak menyebutnya setara. Tetap saya angkat karena tabel audit **terbaca luas dan diekspor untuk review**, dan
+kompromi kunci di masa depan akan **mendekripsi surut setiap blob yang terkumpul di sana.** Jejak audit
+seharusnya mencatat **BAHWA** kredensial berotasi, bukan bentuk terenkripsinya.
+
+**Progres backlog: 15 dari 66 route orphan ditutup.** Repo **87,29% → 87,38%**; suite **4.492 → 4.544**
+(188 → **189 file**); gate **146 → 147 modul**. Mock **tidak lagi mencemari** `cron.ts`/`scheduler-queue.ts`
+(lihat §1.7dh): keduanya tetap tercatat dengan HIT utuh **109** dan **119**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
