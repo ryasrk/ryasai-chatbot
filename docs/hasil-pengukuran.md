@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f4377c2`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **85,73%** (16.852/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.845 lulus · 0 gagal** | terukur |
+| Test suite | 164 file · **3.845 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
