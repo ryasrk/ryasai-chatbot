@@ -1,6 +1,6 @@
 {
-  "linePct": 85.69,
-  "linesHit": 16844,
+  "linePct": 85.73,
+  "linesHit": 16852,
   "linesFound": 19657,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -132,12 +132,6 @@
       "pct": 80.55555555555556
     },
     {
-      "file": "src/lib/llm-config.ts",
-      "hit": 205,
-      "found": 254,
-      "pct": 80.70866141732283
-    },
-    {
       "file": "src/lib/llm-client-anthropic.ts",
       "hit": 63,
       "found": 78,
@@ -148,6 +142,12 @@
       "hit": 48,
       "found": 59,
       "pct": 81.35593220338984
+    },
+    {
+      "file": "src/lib/llm-config.ts",
+      "hit": 207,
+      "found": 254,
+      "pct": 81.49606299212599
     },
     {
       "file": "src/lib/cognee-memory.ts",
@@ -190,12 +190,6 @@
       "hit": 54,
       "found": 65,
       "pct": 83.07692307692308
-    },
-    {
-      "file": "src/lib/guardrails.ts",
-      "hit": 182,
-      "found": 219,
-      "pct": 83.10502283105022
     },
     {
       "file": "src/lib/cognee-core.ts",
@@ -262,6 +256,12 @@
       "hit": 172,
       "found": 201,
       "pct": 85.57213930348259
+    },
+    {
+      "file": "src/lib/guardrails.ts",
+      "hit": 188,
+      "found": 219,
+      "pct": 85.84474885844749
     },
     {
       "file": "src/lib/schema-enrichment.ts",

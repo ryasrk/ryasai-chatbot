@@ -54,6 +54,9 @@ const FLOORS: Record<string, number> = {
   // The MCP connection pool: LRU eviction, transport-close eviction, SSRF guards,
   // env/header decryption and the tool-result error shapes.
   'src/lib/mcp-client.ts': 91, // measured 91.01% (243/267); 243/243 executable
+  // SQL-injection guardrail: dangerous-function masking, the string-literal walker
+  // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
+  'src/lib/guardrails.ts': 85, // measured 85.84% merged; 188/189 executable
   'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)

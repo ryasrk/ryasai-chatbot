@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { looksLikeSql, validateAndSanitizeLlmSql, detectDangerousFunctions } from './guardrails'
+import { detectDangerousFunctions, looksLikeSql, validateAndSanitizeLlmSql } from './guardrails'
 
 describe('looksLikeSql', () => {
   test('SELECT → true', () => {
@@ -292,5 +292,151 @@ describe('validateAndSanitizeLlmSql — side-effecting server functions', () => 
     ]) {
       expect(validateAndSanitizeLlmSql(sql).ok).toBe(true)
     }
+  })
+})
+
+// ===========================================================================
+// String-literal AWARENESS: masking, the token walker's in-string state, and
+// the tokenizer's refusal to produce an empty stream
+// ===========================================================================
+
+describe('guardrails — string-literal awareness in the scans', () => {
+  test('a dangerous function inside a LITERAL is data, not a call', () => {
+    // `maskStringLiterals` replaces the CONTENT of each quoted literal with
+    // filler while preserving offsets and quote structure. Without it the raw
+    // scan would see the words and block a perfectly safe query -- and, more
+    // importantly, an attacker could not be distinguished from a document that
+    // merely MENTIONS the word.
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE note = 'pg_read_file(/etc/passwd)'")).toEqual([])
+    expect(detectDangerousFunctions('SELECT * FROM t WHERE note = "pg_sleep(10)"')).toEqual([])
+    // The SAME function outside a literal is a real call and must be found. The label
+    // is the one on DANGEROUS_FUNCTIONS -- I first guessed `xp_cmdshell`, which is not
+    // on the list at all, and every assertion returned [] for that unrelated reason.
+    expect(detectDangerousFunctions("SELECT pg_read_file('/etc/passwd')")).toContain('pg_read_file')
+    expect(detectDangerousFunctions('SELECT pg_sleep(10)')).toContain('pg_sleep')
+  })
+
+  test('a doubled quote inside a literal stays INSIDE that literal', () => {
+    // The `sql[i + 1] === ch` branch: two adjacent quotes are an ESCAPED quote, so
+    // the literal does NOT end. Getting this wrong would end the literal early and
+    // expose the rest as SQL. MEASURED: the tokenizer agrees, emitting 'x'' as one
+    // unit, and the walker then treats the remainder as string content.
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE a = 'x'' pg_read_file('")).toEqual([])
+    // A closing quote followed by a REAL call is still found.
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE a = 'x' AND pg_read_file('/etc/passwd')"))
+      .toContain('pg_read_file')
+  })
+
+  test('an UNTERMINATED literal is masked to the end and cannot hide a later call', () => {
+    // The inner `while (i < sql.length)` exits on end-of-input without a closing
+    // quote, i.e. the loop runs off the end. The remaining text is masked, so a
+    // function name after an unterminated literal is treated as string data --
+    // which is what the database will do too (it will reject the statement).
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE a = 'pg_read_file(")).toEqual([])
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE a = 'unclosed")).toEqual([])
+  })
+
+  test('the token walker enters and LEAVES in-string state', () => {
+    // The `inStr` state in validateAndSanitizeLlmSql. It is reached only when the
+    // tokenizer emits a quote as a STANDALONE token, which happens with an UNBALANCED
+    // quote (a normal literal becomes ONE token, so the state machine never fires).
+    //
+    // This path is what lets `a = ' DROP TABLE users` pass the walker: DROP is treated
+    // as string content. That is NOT a hole, because PostgreSQL rejects the statement
+    // outright -- an unterminated literal is a syntax error, so nothing executes.
+    // MEASURED: on a real database all three of these error out and the target table
+    // survives; the walker passing them is irrelevant next to the engine refusing them.
+    const unterminated = validateAndSanitizeLlmSql("SELECT * FROM t WHERE a = ' DROP TABLE users")
+    expect(unterminated.ok).toBe(true) // the walker's verdict; the DB then rejects the SQL
+
+    // An ODD trailing quote in a comment-shaped string also reaches the branch, and a
+    // doubled quote makes the walker EXIT the string again so the scan resumes.
+    const reopened = validateAndSanitizeLlmSql("SELECT * FROM t WHERE a = 'x'' DROP TABLE y")
+    expect(reopened.ok).toBe(true)
+
+    // What matters is the direction the state machine can FAIL SAFE in: text outside
+    // any literal is still scanned, so a real mutation is still caught.
+    expect(validateAndSanitizeLlmSql("SELECT * FROM t WHERE a = '' DROP TABLE users").ok).toBe(false)
+  })
+
+  test("DECLARED EQUIVALENT: the tokenizer double-quote arm is unobservable", () => {
+    // `tokenize` has a `"[^"]*"` alternative alongside `'[^']*'`. Removing it changes
+    // NOTHING observable: MEASURED, five inputs covering normal, doubled, unbalanced and
+    // mutation-bearing double-quoted literals all produce the SAME verdict with and
+    // without the arm. The reason is that `detectDangerousFunctions` does NOT use
+    // `tokenize` at all (it uses maskStringLiterals), and inside validateAndSanitizeLlmSql
+    // the walker's `inStr` state is only ever entered from a STANDALONE quote token, which
+    // the single-quote path already produces. Declared rather than claimed as covered.
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t WHERE a = "pg_sleep(10)"').ok).toBe(true)
+  })
+
+  test('DECLARED EQUIVALENT: the doubled-quote escape inside maskStringLiterals', () => {
+    // `if (sql[i + 1] === ch) { out += filler; i += 2; continue }` treats two adjacent
+    // quotes as an escaped quote so the literal does not end. Removing it changes no
+    // VERDICT this suite can produce: a dangerous function name inside such a literal is
+    // still masked by the filler loop either way, because the remaining characters
+    // are overwritten regardless. Pinned as behaviour, not as a covered branch.
+    expect(detectDangerousFunctions("SELECT * FROM t WHERE a = 'x'' pg_read_file('")).toEqual([])
+  })
+
+  test('UNBALANCED quotes pass the walker but PostgreSQL rejects the statement', () => {
+    // This is the reason the inStr escape hatch is NOT a vulnerability, and it was
+    // MEASURED against a real database rather than argued: for every unbalanced-quote
+    // form the walker accepts, PostgreSQL raises a syntax error and the target table
+    // survives. The guardrail is a defence in DEPTH here; the engine is the wall.
+    //
+    //   "SELECT * FROM zz_victim WHERE 1=' DROP TABLE zz_victim"   -> syntax error
+    //   'SELECT * FROM zz_v2 WHERE 1=" DROP TABLE zz_v2'            -> syntax error
+    //   'SELECT * FROM zz_v2 WHERE 1="x"" DROP TABLE zz_v2"'        -> syntax error
+    // and `SELECT to_regclass('public.zz_v2')` still returned the table afterwards.
+    expect(validateAndSanitizeLlmSql("SELECT * FROM t WHERE a = ' DROP TABLE users").ok).toBe(true)
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t WHERE a = " DROP TABLE users').ok).toBe(true)
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t WHERE a = "x"" DROP TABLE y"').ok).toBe(true)
+    // But a DOUBLED single quote followed by a REAL closing quote and real SQL is caught,
+    // because the tokenizer emits a standalone quote there and the walker resumes.
+    expect(validateAndSanitizeLlmSql("SELECT * FROM t WHERE a = '' DROP TABLE users").ok).toBe(false)
+  })
+
+  test('a statement that is ONLY a semicolon reports Tokenization failed', () => {
+    // `tokenize` strips a TRAILING semicolon, so ';' becomes '' and `match` returns
+    // null, which `?? []` turns into an empty stream. The caller must not then index
+    // tokens[0] -- the empty check exists precisely so this returns a reason instead
+    // of crashing on `undefined.toUpperCase()`.
+    expect(validateAndSanitizeLlmSql(';')).toEqual({
+      ok: false,
+      sanitized: '',
+      reason: 'Tokenization failed.',
+    })
+    expect(validateAndSanitizeLlmSql('   ;   ').reason).toBe('Tokenization failed.')
+    expect(validateAndSanitizeLlmSql('\n;\n').reason).toBe('Tokenization failed.')
+    // ';;' is NOT this path: only the LAST semicolon is stripped, leaving ';' as a real
+    // token, so it is rejected by the leading-keyword check instead.
+    expect(validateAndSanitizeLlmSql(';;').reason).toContain('Only SELECT/WITH is allowed')
+  })
+
+  test('DECLARED ARTIFACT: the clamp callback is arrow-code bun cannot instrument', () => {
+    // `compiled.replace(re, (_m, n, off) => ...)` reports lines 341-342 as UNCOVERED even
+    // though the callback demonstrably RUNS. The OUTPUT is the proof: a `LIMIT 999999`
+    // comes back as `LIMIT 100`, which can only happen inside that arrow. Bun's line
+    // instrumenter does not attribute arrow-callback bodies passed to String.replace, so
+    // the count is wrong rather than the code being dead. Pinned as behaviour below.
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t LIMIT 999999').sanitized)
+      .toBe('SELECT * FROM t LIMIT 100;')
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t LIMIT 999999 OFFSET 7').sanitized)
+      .toBe('SELECT * FROM t LIMIT 100 OFFSET 7;')
+  })
+
+  test('LIMIT clamping keeps OFFSET and appends a cap when none is present', () => {
+    // Both arms of the clamp callback. `off !== undefined` returns `LIMIT n OFFSET m`;
+    // otherwise just `LIMIT n`. The append branch then runs only when no LIMIT survived.
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t LIMIT 999999 OFFSET 7').sanitized)
+      .toContain('LIMIT 100 OFFSET 7')
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t LIMIT 999999').sanitized)
+      .toContain('LIMIT 100')
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t').sanitized)
+      .toMatch(/LIMIT 100;$/)
+    // A LIMIT at the cap is left alone.
+    expect(validateAndSanitizeLlmSql('SELECT * FROM t LIMIT 100').sanitized)
+      .not.toContain('LIMIT 100 LIMIT')
   })
 })

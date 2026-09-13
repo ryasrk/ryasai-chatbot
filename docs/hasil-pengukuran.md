@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b76f6fb`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f4377c2`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b76f6fb`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,69%** (16.844/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 164 file · **3.825 lulus · 0 gagal** | terukur |
+| Test coverage | **85,73%** (16.852/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.845 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **93 modul** | +31 |
+| Modul ter-gate | 62 modul | **94 modul** | +32 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -129,6 +129,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/billing/webhook/route.ts` | 95,28% → **100,00%** merged | 96,19% → **100,00%** kode eksekutabel (106/106) | 8 |
 | `src/app/api/billing/pricing/route.ts` | 81,82% → **100,00%** merged | 81,82% → **100,00%** kode eksekutabel (11/11) | 2 |
 | `src/lib/mcp-client.ts` | 88,80% → **91,01%** merged | 91,36% → **100,00%** kode eksekutabel (243/243) | 15 |
+| `src/lib/llm-config.ts` | 77,56% → **81,50%** merged | 95,17% → **100,00%** kode eksekutabel (207/207) | 15 |
+| `src/lib/guardrails.ts` | 83,11% → **85,84%** merged | 96,30% → **99,47%** kode eksekutabel (188/189) | 9 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -388,7 +390,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**469 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**493 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3642,6 +3644,77 @@ untuk mengisi `findUnique`, dan itu **mematikan mock pertama** — **enam test t
 merah**. Dua `mock.module` untuk path yang SAMA dalam satu file → **yang TERAKHIR menang dan yang
 pertama inert**; pelajaran yang sudah tercatat, dan saya ulangi. Diperbaiki dengan menggabung ke
 mock yang sudah ada.
+
+### 1.7bt DUA GUARD SSRF PEMILIK-ALAMAT DAN TIGA PERMUKAAN `guardrails` — keduanya berbagi satu jebakan
+
+**`llm-config.ts` 95,17% → 100,00% (207/207). `guardrails.ts` 96,30% → 99,47% (188/189).**
+Repo **85,69% → 85,73% (+0,04)**. Modul ter-gate 93 → **94**. **24 kontrol dijalankan, 19
+menggigit, 2 anchor salah (diulang, menggigit), 3 dideklarasikan setara.**
+
+**§1.7bl menyelamatkan saya dua kali dalam satu ronde.** `llm-config.ts` dilaporkan **95,17% dengan
+10 baris nyata**, dan baris-baris itu adalah **`isBlockedHostAsync` — pemeriksaan DNS-rebinding
+UNTOK SSRF**. Hampir saya kerjakan sebagai celah keamanan. Ternyata **sudah tercakup** — oleh
+`mcp-installer.test.ts` dan `web-fetch.test.ts`, dua file yang **sama sekali tidak bernama
+`llm-config`**. Dengan **SEMUA 26 file** yg menyentuh modul itu, angkanya **99,03%**, dan setelah
+tiga test baru **100,00%**. Pelajaran yang sama berulang: **grep nama file MENYESATKAN**.
+
+**Yang kini dijaga pada `llm-config`:** **allowlist operator MENANG atas blocklist** — kasus nyata
+self-hosted di mana LLM berjalan di `10.x`; **presedensi itu sendiri** (allowlist dicek SEBELUM
+hatch test, jadi allowlist tidak bergantung pada hatch); **hatch test hanya berlaku di build
+NON-produksi**, dan **`NODE_ENV=production` SENDIRIAN menolak hatch** — butuh penanda
+`E2E_TEST_MODE` terpisah; **`toLowerCase()` pada daftar allowlist**; dan seluruh daftar blokir:
+RFC1918, CGNAT `100.64/10`, link-local, metadata cloud, ULA IPv6 `fd`, link-local IPv6 `fe80`,
+`::1`/`::`, dan **pengupasan tanda kurung** `[::1]`.
+
+**LUBANG ASSERTION YANG DITEMUKAN KONTROL, LAGI.** Test case-insensitivity pertama saya memakai
+**hostname publik** (`LLM.CORP`) — sehingga `false` datang dari host itu **publik**, bukan dari
+allowlist, dan kontrol yang menghapus `toLowerCase()` **tidak menggigit**. Setelah saya ganti ke
+host **privat berhuruf** — `metadata.aws.internal`, yang **memang ada di blocklist** — kontrol itu
+langsung menggigit. Ini pola yang sama dengan empat kontrol `mcp-client` ronde lalu: **assertion
+yang bisa dipuaskan oleh jalur yang salah.**
+
+**`guardrails.ts`: tiga permukaan yang tak teruji, satu di antaranya membuat saya salah baca dua
+kali.** Yang tak tercakup: **`maskStringLiterals`** (fungsi keamanan: mengganti **isi** literal
+dengan filler agar regex tidak cocok dengan teks di dalam string), **state `inStr`** di walker
+token, dan **"Tokenization failed"**.
+
+**Saya salah dua kali membaca `inStr`, dan itu justru menghasilkan analisis keamanan.** Pertama saya
+menyangka `inStr` **kode mati** karena tokenizer menggabungkan literal jadi SATU token (`'DROP'`).
+Salah: ia hidup persis saat **kutip TIDAK seimbang**, di mana `'` menjadi token tersendiri. Kedua
+saya menyangka `'x'' DROP TABLE y'` adalah **injection yang lolos** — salah lagi: dalam SQL, `''`
+adalah **escape**, jadi `DROP` di situ **memang di dalam literal** dan `ok=true` adalah **benar**.
+Yang **benar-benar** perlu dijawab adalah: bisakah `inStr` **MENYEMBUNYIKAN** mutasi nyata? Ya —
+`SELECT ... WHERE a = ' DROP TABLE users` lolos walker. **Saya ujikan ke PostgreSQL SUNGGUHAN:**
+ketiga bentuk kutip tak seimbang **DITOLAK sebagai syntax error** dan tabel korban **SELAMAT**
+(`to_regclass` masih mengembalikan tabelnya). Jadi ini **fail-safe**: guardrail adalah lapisan
+kedua, **mesin database adalah temboknya** — dan itu **hasil pengukuran, bukan argumen**.
+
+**Yang kini dijaga pada `guardrails`:** **fungsi berbahaya di DALAM literal adalah DATA, di luar
+literal adalah pemanggilan** (`'pg_read_file(...)'` → `[]`, `pg_read_file(...)` → terdeteksi);
+**kutip ganda `''` tetap DI DALAM literal** sehingga literal tidak berakhir lebih awal; **literal
+yang TIDAK ditutup di-mask sampai akhir input**; **walker masuk DAN keluar state string**; **`;`
+sendirian melaporkan "Tokenization failed"** (karena tokenizer men-strip `;` TRAILING sehingga
+`match` mengembalikan `null` → `?? []`) sedangkan **`;;` BUKAN jalur itu** (hanya `;` TERAKHIR yang
+distrip, sisanya token nyata → ditolak oleh cek kata kunci awal); dan **klamp LIMIT dengan OFFSET
+dipertahankan**.
+
+**TIGA KESETARAAN YANG SAYA BUKTIKAN, BUKAN DUGA.** (1) **Arm kutip-ganda di `tokenize`**: menghapus
+`"[^"]*"` memberi **hasil IDENTIK** untuk lima input (normal, ganda, tak seimbang, ber-mutasi) —
+karena `detectDangerousFunctions` **tidak memakai `tokenize` sama sekali** (ia memakai
+`maskStringLiterals`). (2) **Arm escape kutip-ganda di `maskStringLiterals`**: tidak mengubah
+verdict apa pun; karakter sisanya tetap ditimpa filler. (3) **`inStr` exit** (`t === strCh`).
+
+**ARTEFAK INSTRUMEN YANG SAYA BUKTIKAN, BUKAN DIABAIKAN.** Baris **341-342** (`compiled.replace(...)`
+callback arrow) dilaporkan **UNCOVERED** meski callback-nya **JELAS JALAN** — outputnya
+`LIMIT 999999` → `LIMIT 100` dan `OFFSET 7` bertahan, yang **mustahil** tanpa arrow itu. Instrumen
+baris bun tidak mengatribusikan body callback arrow yang dilewatkan ke `String.replace`.
+Sisa 1 baris `guardrails.ts` adalah artefak ini, dideklarasikan sebagai test perilaku.
+
+**Kesalahan saya sendiri:** tiga kali saya menebak label/API dan harus memperbaiki setelah test
+merah — `xp_cmdshell` **bukan** label di `DANGEROUS_FUNCTIONS` (semuanya mengembalikan `[]` karena
+alasan yang tak berhubungan), `10.0.0.6` **memang diblokir** padahal komentar saya sendiri menulis
+"still blocked", dan `other.host` **tidak** di blocklist (nama publik lolos by design). Juga satu
+apostrof tak ter-escape di judul test → `TS1005`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
