@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d73519`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8c148ff`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d73519`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **79,99%** (15.739/19.676 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.224 lulus · 0 gagal** | terukur |
+| Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 158 file · **3.235 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,9 +70,10 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **67 modul** | +5 |
+| Modul ter-gate | 62 modul | **68 modul** | +6 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
-| **Total repo** | **62,44%** | **79,99%** | — |
+| `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
+| **Total repo** | **62,44%** | **80,37%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -210,8 +211,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Gerbang dimensi selalu mengizinkan kolom vektor | `embeddings.ts:280` | 3 |
 | `documentId` diabaikan (re-embed seluruh korpus) | `embeddings.ts:451` | 1 |
 | Dokumen non-`ready` ikut di-embed | `embeddings.ts:449` | 2 |
+| Perbandingan `>=` high-water dikembalikan ke `>` (pesan diringkas dua kali) | `send/route.ts:509` | 1 |
+| `status:'error'` pada pesan gagal dihapus | `send/route.ts:545` | 1 |
+| `inputSummary` tidak dipotong 240 | `send/route.ts:557` | 1 |
+| Peran `ai` tidak dipetakan ke `assistant` | `send/route.ts:516` | 1 |
+| Penjaga window + overflow kosong dihapus | `send/route.ts:504,511` | 1 |
+| Rerank LLM tetap jalan tanpa config | `rag-retrieval.ts:175` | 1 |
 
-**116 kontrol + 3 kontrol gate, semuanya sah.**
+**121 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -962,6 +969,47 @@ menghapus badan `beforeEach`** dan meninggalkan syntax error yang harus saya sus
 pada peringatan mismatch dimensi membiarkan suite hijau, jadi perilaku itu **tidak
 teruji**. Itu soal volume log, bukan kebenaran — lebih baik saya katakan daripada
 mendaftarkannya sebagai tercakup.
+
+### 1.7t BUG PRODUKSI: pesan high-water diringkas dua kali
+
+**69,29% → 87,08% baris, fungsi 40,00% → 65,38%**, dan **satu bug produksi nyata
+diperbaiki** — yang pertama ditemukan lewat test di beberapa ronde terakhir.
+
+`summaryUpTo` disimpan sebagai `createdAt` pesan **terakhir** yang dilipat
+(`lastOverflowAt`), tetapi filter putaran berikutnya membandingkan dengan **`>` ketat**.
+Akibatnya pesan itu **diterima ulang setiap putaran**: teksnya muncul di **dua summary
+berurutan**, dan summary sesi panjang melenceng sebesar satu pesan tiap putaran. Kini
+`>=` dengan `getTime()`, dengan test **dua-putaran** yang membaca nilainya kembali
+seperti produksi. **Satu putaran saja tidak bisa menangkap ini** — itulah sebabnya
+versi pertama test saya lulus terhadap bug tersebut, dan baru gagal setelah saya
+memodelkan putaran kedua.
+
+Test untuk dua helper privat, dicapai lewat `POST` karena keduanya berjalan di dalam
+badan SSE:
+- **`persistAssistantError`**: satu giliran gagal menulis baris `ai` ber-`status:'error'`
+  (bukan `'complete'`), ber-stempel `organizationId` (tanpa itu barisnya **tak terlihat
+  oleh query ber-scope tenant** dan errornya **hilang dari sesi**), plus `ToolRun`
+  dengan `latencyMs` **NULL bukan 0** (tidak ada pekerjaan yang selesai, dan 0 akan
+  melaporkan durasi palsu), `inputSummary` dipotong ke budget kolom 240, dan
+  `updatedAt` sesi disentuh supaya giliran gagal tetap mengubah urutan daftar.
+- **`maybeUpdateSessionSummary`**: hanya overflow **tertua** yang diringkas,
+  `summaryUpTo` = `lastOverflowAt` bukan pesan terbaru, summary sebelumnya diteruskan
+  untuk kesinambungan, dan `'ai'` dipetakan ke `'assistant'` karena itu satu-satunya
+  peran yang diterima API LLM.
+
+**Dua test double saya salah, dan keduanya diam-diam melemahkan test:**
+1. Mock `chatMessage.findMany` mengembalikan fixture **tanpa diurutkan**, padahal
+   handler meminta `orderBy createdAt ASC`. Slice "tertua" saya **diam-diam adalah
+   pesan TERBARU**. Sekarang mock-nya mengurutkan.
+2. Test window hanya meng-assert "tidak ada update sesi", yang **tetap lulus meski
+   KEDUA penjaganya dihapus**, karena slice dengan panjang negatif menghasilkan array
+   kosong — **terukur, dan memang lulus**. Sekarang ia meng-assert summarizer **tidak
+   dipanggil sama sekali**, dan menghapus penjaganya menggagalkannya.
+
+**Floor baru `85` untuk `send/route.ts`, dibaca dari angka MERGED (87,08%, 364/418),
+bukan per-file.** Gate sendiri yang melaporkan modul ini "sudah melewati 85% tapi belum
+di-gate" — dan kesunyian itu memang kegagalan yang laporan itu ada untuk menghilangkan.
+Modul ter-gate: **68**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

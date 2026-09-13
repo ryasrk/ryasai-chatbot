@@ -1,7 +1,7 @@
 {
-  "linePct": 79.99,
-  "linesHit": 15739,
-  "linesFound": 19676,
+  "linePct": 80.37,
+  "linesHit": 15812,
+  "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -112,12 +112,6 @@
       "hit": 200,
       "found": 290,
       "pct": 68.96551724137932
-    },
-    {
-      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
-      "hit": 291,
-      "found": 420,
-      "pct": 69.28571428571428
     },
     {
       "file": "src/lib/citation-trail.ts",
@@ -388,6 +382,12 @@
       "hit": 172,
       "found": 201,
       "pct": 85.57213930348259
+    },
+    {
+      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
+      "hit": 364,
+      "found": 418,
+      "pct": 87.08133971291866
     },
     {
       "file": "src/lib/license-issue.ts",

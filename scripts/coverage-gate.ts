@@ -118,6 +118,11 @@ const FLOORS: Record<string, number> = {
   // exactly what the gate is for, and the `suspicious` check below now names the
   // cause instead of leaving a bare red build.
   // Re-add this module only with a floor at or below 75: 'src/lib/planner.ts': 70,
+  // The chat send route: the pre-stream guards AND the two helpers inside the SSE
+  // body (persistAssistantError, maybeUpdateSessionSummary). Floor is 85, not 95:
+  // the MERGED figure is 87.08% (364/418) even though a per-file run reads higher,
+  // and pasting a per-file number here is what the suspicious check exists to catch.
+  'src/app/api/chat/sessions/[id]/send/route.ts': 85, // measured 87.08% (364/418), merged
   'src/lib/tool-registry.ts': 85, // measured 91.82% (247/269)
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
   'src/lib/vector-stores.ts': 85, // measured 93.46% (343/367)
