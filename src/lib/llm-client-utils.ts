@@ -11,6 +11,7 @@ import { logSwallowed } from '@/lib/logger'
 import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BACKOFF_BASE_MS,
+  LLM_TIMEOUT_MS,
 } from '@/lib/constants'
 
 function previewMessages(messages: LlmMessage[]): string {
@@ -149,7 +150,11 @@ export async function fetchWithRetry(url: string, init: RequestInit): Promise<Re
   let lastError: Error | null = null
   for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, init)
+      // A hung provider socket would otherwise block the whole retry ladder: without a
+      // signal the request can sit open indefinitely and the backoff never runs. The
+      // timeout is per ATTEMPT, so the total worst case is
+      // (LLM_MAX_RETRIES + 1) * LLM_TIMEOUT_MS plus the backoff delays.
+      const res = await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(LLM_TIMEOUT_MS) })
       if (res.status >= 500 && attempt < LLM_MAX_RETRIES) {
         lastError = new Error(`LLM error (HTTP ${res.status}).`)
         await new Promise((r) => setTimeout(r, LLM_RETRY_BACKOFF_BASE_MS * 2 ** attempt))

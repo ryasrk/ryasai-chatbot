@@ -15,6 +15,15 @@ import { signSession } from '@/lib/crypto'
 import { bypassOrg } from '@/lib/prisma-tenant'
 import { redisCmd } from '@/lib/redis'
 import { scopedLogger } from '@/lib/logger'
+
+/**
+ * SAML metadata discovery and the IdP round trip are both on the login path; a hung IdP must
+ * not hang sign-in. 10s matches the convention used by the other outbound calls here.
+ */
+function samlTimeoutMs(): number {
+  const raw = Number(process.env.SAML_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : 10_000
+}
 import { resolveSsoOrganizationId } from '@/lib/sso'
 import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 
@@ -121,8 +130,16 @@ interface DiscoveredMetadata {
   cert?: string
 }
 
-async function discoverFromMetadata(metadataUrl: string): Promise<DiscoveredMetadata> {
-  const res = await fetch(metadataUrl, { headers: { Accept: 'application/xml' } })
+/** Test-only accessor; see the note on `oidcTimeoutMs` in sso.ts. */
+export const __samlTimeoutMsForTest = samlTimeoutMs
+
+export async function discoverFromMetadata(metadataUrl: string): Promise<DiscoveredMetadata> {
+  // Metadata discovery is part of SAML login: a hung IdP metadata endpoint would hang
+// sign-in. 10s, overridable for slow on-prem deployments.
+const res = await fetch(metadataUrl, {
+    headers: { Accept: 'application/xml' },
+    signal: AbortSignal.timeout(samlTimeoutMs()),
+  })
   if (!res.ok) throw new Error(`SAML metadata fetch failed: ${res.status} for ${metadataUrl}`)
   const xml = await res.text()
   // ponytail: simple regex extraction — the IdP metadata XML has predictable structure:

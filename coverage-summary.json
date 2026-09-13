@@ -1,7 +1,7 @@
 {
-  "linePct": 85.86,
-  "linesHit": 16880,
-  "linesFound": 19659,
+  "linePct": 85.82,
+  "linesHit": 16900,
+  "linesFound": 19693,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -258,6 +258,12 @@
       "pct": 85.84474885844749
     },
     {
+      "file": "src/lib/sso-saml.ts",
+      "hit": 235,
+      "found": 272,
+      "pct": 86.39705882352942
+    },
+    {
       "file": "src/lib/schema-enrichment.ts",
       "hit": 47,
       "found": 54,
@@ -268,12 +274,6 @@
       "hit": 364,
       "found": 418,
       "pct": 87.08133971291866
-    },
-    {
-      "file": "src/lib/observability.ts",
-      "hit": 124,
-      "found": 142,
-      "pct": 87.32394366197182
     },
     {
       "file": "src/lib/prisma-tenant.ts",
@@ -288,6 +288,12 @@
       "pct": 87.5
     },
     {
+      "file": "src/lib/observability.ts",
+      "hit": 131,
+      "found": 149,
+      "pct": 87.91946308724832
+    },
+    {
       "file": "src/lib/smart-router-helpers.ts",
       "hit": 332,
       "found": 377,
@@ -300,16 +306,16 @@
       "pct": 88.09523809523809
     },
     {
+      "file": "src/lib/llm-client-utils.ts",
+      "hit": 167,
+      "found": 189,
+      "pct": 88.35978835978835
+    },
+    {
       "file": "src/app/api/notifications/route.ts",
       "hit": 62,
       "found": 70,
       "pct": 88.57142857142857
-    },
-    {
-      "file": "src/lib/sso.ts",
-      "hit": 258,
-      "found": 291,
-      "pct": 88.65979381443299
     },
     {
       "file": "src/lib/plugin-selector.ts",
@@ -324,16 +330,16 @@
       "pct": 88.88888888888889
     },
     {
+      "file": "src/lib/sso.ts",
+      "hit": 264,
+      "found": 297,
+      "pct": 88.88888888888889
+    },
+    {
       "file": "src/lib/public-config.ts",
       "hit": 8,
       "found": 9,
       "pct": 88.88888888888889
-    },
-    {
-      "file": "src/lib/sso-saml.ts",
-      "hit": 228,
-      "found": 255,
-      "pct": 89.41176470588236
     },
     {
       "file": "src/lib/llm-client.ts",
@@ -352,12 +358,6 @@
       "hit": 118,
       "found": 131,
       "pct": 90.07633587786259
-    },
-    {
-      "file": "src/lib/llm-client-utils.ts",
-      "hit": 167,
-      "found": 185,
-      "pct": 90.27027027027027
     },
     {
       "file": "src/lib/citation-trail.ts",

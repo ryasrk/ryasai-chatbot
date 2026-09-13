@@ -66,6 +66,21 @@ export function getTraceStats(): {
 
 // ponytail: fire-and-forget forwarding — never blocks the LLM call.
 // Failures are warned to console and swallowed; the in-memory buffer is the source of truth.
+/**
+ * Log forwarding must never slow down the thing it observes, so the deadline is SHORTER than
+ * the login and LLM paths: 5s. Every one of these calls already sits in a try/catch that only
+ * warns, so a timeout degrades to "this trace was not forwarded" rather than a failure. A hung
+ * collector socket would otherwise keep the request open and, on a slow network, let
+ * observability turn into an outage amplifier.
+ */
+function observabilityTimeoutMs(): number {
+  const raw = Number(process.env.OBSERVABILITY_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : 5_000
+}
+
+/** Test-only accessor; see the note on `oidcTimeoutMs` in sso.ts. */
+export const __observabilityTimeoutMsForTest = observabilityTimeoutMs
+
 async function forwardTrace(t: LlmTrace): Promise<void> {
   const langfuseKey = process.env.LANGFUSE_PUBLIC_KEY
   const langfuseSecret = process.env.LANGFUSE_SECRET_KEY
@@ -78,6 +93,7 @@ async function forwardTrace(t: LlmTrace): Promise<void> {
       const end = new Date(t.timestamp.getTime() + t.latencyMs)
       await fetch(`${langfuseBase}/api/public/ingestion`, {
         method: 'POST',
+        signal: AbortSignal.timeout(observabilityTimeoutMs()),
         headers: {
           'Content-Type': 'application/json',
           Authorization:
@@ -118,6 +134,7 @@ async function forwardTrace(t: LlmTrace): Promise<void> {
     try {
       await fetch('https://api.hconeai.com/v1/log', {
         method: 'POST',
+        signal: AbortSignal.timeout(observabilityTimeoutMs()),
         headers: {
           'Content-Type': 'application/json',
           'Helicone-Auth': `Bearer ${heliconeKey}`,
@@ -159,6 +176,7 @@ export async function postLangfuseScore(args: {
   try {
     await fetch(`${langfuseBase}/api/public/scores`, {
       method: 'POST',
+      signal: AbortSignal.timeout(observabilityTimeoutMs()),
       headers: {
         'Content-Type': 'application/json',
         Authorization:

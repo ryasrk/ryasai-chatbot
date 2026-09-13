@@ -49,13 +49,28 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined
 }
 
+/**
+ * Discovery, token exchange, JWKS and userinfo all sit on the LOGIN path, so a hung
+ * identity provider must not hang the sign-in request. 10s matches the convention already
+ * used for other outbound calls in this repo (alignment-check, license-client,
+ * license-issue). Override with OIDC_TIMEOUT_MS when an on-prem IdP is unusually slow.
+ */
+function oidcTimeoutMs(): number {
+  const raw = Number(process.env.OIDC_TIMEOUT_MS)
+  return Number.isFinite(raw) && raw > 0 ? raw : 10_000
+}
+
+/** Test-only accessor for the deadline helper. Exported so the override behaviour can be
+ *  pinned without duplicating the parsing logic in the test. */
+export const __oidcTimeoutMsForTest = oidcTimeoutMs
+
 export function isOidcConfigured(): boolean {
   return !!(env('OIDC_ISSUER') && env('OIDC_CLIENT_ID') && env('OIDC_REDIRECT_URI'))
 }
 
 export async function getOidcConfig(issuerUrl: string): Promise<OidcConfig> {
   const url = `${issuerUrl.replace(/\/$/, '')}/.well-known/openid-configuration`
-  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(oidcTimeoutMs()) })
   if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status} for ${url}`)
   const cfg = (await res.json()) as OidcConfig
   if (!cfg.authorization_endpoint || !cfg.token_endpoint) {
@@ -109,6 +124,7 @@ export async function exchangeCode(
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body,
+    signal: AbortSignal.timeout(oidcTimeoutMs()),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -216,7 +232,7 @@ async function fetchJwk(jwksUri: string, kid?: string): Promise<Jwk> {
     const key = kid ? _jwksCache.keys.find((k) => k.kid === kid) : _jwksCache.keys[0]
     if (key) return key
   }
-  const res = await fetch(jwksUri, { headers: { Accept: 'application/json' } })
+  const res = await fetch(jwksUri, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(oidcTimeoutMs()) })
   if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`)
   const body = (await res.json()) as { keys: Jwk[] }
   if (!body.keys?.length) throw new Error('JWKS response has no keys')
@@ -240,6 +256,7 @@ export async function fetchUserInfo(accessToken: string, config: OidcConfig): Pr
   }
   const res = await fetch(config.userinfo_endpoint, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(oidcTimeoutMs()),
   })
   if (!res.ok) throw new Error(`UserInfo fetch failed: ${res.status}`)
   return (await res.json()) as OidcUserInfo
