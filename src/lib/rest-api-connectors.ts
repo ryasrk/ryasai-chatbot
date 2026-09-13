@@ -30,12 +30,44 @@ export function matchEndpoint(
   )
 }
 
+/**
+ * Thrown when a caller-supplied path would resolve OUTSIDE the connector's configured base URL. Typed so the
+ * route can answer 400 while an unreachable host stays a different failure.
+ */
+export class EndpointPathEscapeError extends Error {
+  readonly code = 'ENDPOINT_PATH_ESCAPE'
+  constructor(readonly path: string) {
+    super(
+      `Endpoint path escapes the connector base URL: ${path}. Paths must be relative to the configured base URL.`,
+    )
+    this.name = 'EndpointPathEscapeError'
+  }
+}
+
+/**
+ * Build the full request URL, REFUSING to leave the connector's base origin.
+ *
+ * THIS USED TO BE AN ESCAPE HATCH. `new URL(path.slice(1), base)` resolves a RELATIVE path against the base, but a
+ * path that is an ABSOLUTE url (`https://attacker.example.net/collect`) or backslash-leading
+ * (`\attacker.example.net/collect`, which the WHATWG parser normalises to a protocol-relative reference) WINS
+ * over the base outright. So the admin-configured `baseUrl` was not a host restriction at all: the caller chose
+ * the host. The route is admin-only, but it attaches the connector's DECRYPTED credential to the request -- so a
+ * tenant bearer/basic/api-key could be delivered to a third party, with the response rendered back.
+ *
+ * The origin is now compared after resolution, and a mismatch is a typed error rather than a request.
+ * `normalizeEndpointPath` is applied FIRST so the check sees the same string the request will use.
+ */
 export function buildEndpointUrl(
   baseUrl: string,
   path: string,
   query: Record<string, QueryValue> = {},
 ): string {
-  const url = new URL(normalizeEndpointPath(path).slice(1), withTrailingSlash(baseUrl))
+  const base = new URL(withTrailingSlash(baseUrl))
+  const normalised = normalizeEndpointPath(path)
+  const url = new URL(normalised.slice(1), withTrailingSlash(baseUrl))
+  // Compare ORIGIN (scheme + host + port), not the whole url: a path that merely differs in case or adds a query
+  // is legitimate, whereas a different host is not.
+  if (url.origin !== base.origin) throw new EndpointPathEscapeError(path)
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue
     url.searchParams.set(key, String(value))

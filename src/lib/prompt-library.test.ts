@@ -20,12 +20,19 @@ const mockFindUnique = mock<(...args: unknown[]) => Promise<SavedPrompt | null>>
 const mockFindMany = mock<(...args: unknown[]) => Promise<SavedPrompt[]>>(async () => [makePrompt()])
 const mockUpdate = mock<(...args: unknown[]) => Promise<SavedPrompt>>(async () => makePrompt())
 const mockDelete = mock(async () => ({}))
+// Typed as nullable: this mock is the seam for the "not in this org" case, and the scoped read's real signature is
+// `Promise<SavedPrompt | null>`. Narrowing it to a non-null return would make that case a TYPE error rather than a
+// test.
+const mockFindFirst = mock<() => Promise<SavedPrompt | null>>(async () => makePrompt())
 
 mock.module('@/lib/db', () => ({
   db: {
     savedPrompt: {
       create: mockCreate,
+      // Kept in the mock so a regression BACK to `findUnique` fails loudly instead of throwing
+      // "undefined is not a function" -- the two failures look identical in a CI log otherwise.
       findUnique: mockFindUnique,
+      findFirst: mockFindFirst,
       findMany: mockFindMany,
       update: mockUpdate,
       delete: mockDelete,
@@ -42,11 +49,13 @@ function firstCallArg<T>(m: { mock: { calls: unknown[] } }): T {
 beforeEach(() => {
   mockCreate.mockClear()
   mockFindUnique.mockClear()
+  mockFindFirst.mockClear()
   mockFindMany.mockClear()
   mockUpdate.mockClear()
   mockDelete.mockClear()
   mockCreate.mockImplementation(async () => makePrompt())
   mockFindUnique.mockImplementation(async () => makePrompt())
+  mockFindFirst.mockImplementation(async () => makePrompt())
   mockFindMany.mockImplementation(async () => [makePrompt(), makePrompt({ id: 'p2', category: 'sql' })])
   mockUpdate.mockImplementation(async () => makePrompt({ title: 'Updated' }))
   mockDelete.mockImplementation(async () => ({}))
@@ -70,16 +79,23 @@ describe('createPrompt', () => {
 })
 
 describe('getPrompt', () => {
-  test('returns prompt by id', async () => {
+  // FIXED. This used to read through `findUnique`, which is the ONE operation the tenant extension cannot rewrite
+  // (`FILTER_OPS` covers findFirst/findMany/count/aggregate/groupBy), so the where-clause reached Prisma verbatim
+  // and a prompt id from ANY organization resolved. `GET /api/prompts` hands out every id, so it was a live
+  // cross-tenant read/rewrite/delete. The read is now a FILTER op and the extension appends the caller's org.
+  test('returns prompt by id, through the SCOPED read', async () => {
     const p = await getPrompt('p1')
     expect(p).not.toBeNull()
     expect(p!.id).toBe('p1')
-    const arg = firstCallArg<{ where: Record<string, string> }>(mockFindUnique)
+    const arg = firstCallArg<{ where: Record<string, string> }>(mockFindFirst)
     expect(arg.where.id).toBe('p1')
+    // The unscoped operation is not used at all any more -- asserted, because a hybrid ("try findFirst, fall back to
+    // findUnique") would pass the two assertions above while leaving the leak wide open.
+    expect(mockFindUnique).not.toHaveBeenCalled()
   })
 
   test('returns null when not found', async () => {
-    mockFindUnique.mockImplementation(async () => null)
+    mockFindFirst.mockImplementation(async () => null)
     expect(await getPrompt('missing')).toBeNull()
   })
 })

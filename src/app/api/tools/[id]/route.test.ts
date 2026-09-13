@@ -203,26 +203,29 @@ describe('the cross-tenant IDOR fix: findFirst, never findUnique', () => {
 })
 
 describe('GET returns the MASKED manifest', () => {
-  test('DEFECT (pinned): the raw manifestJson IS sent to the client alongside the mask', async () => {
-    // FOUND WHILE WRITING THIS FILE, NOT FIXED -- pinned so the fix is deliberate.
-    //
-    // GET spreads the whole row (`...plugin`) and only then attaches a MASKED `manifest` sibling. The row's
-    // `manifestJson` column therefore ships verbatim, so the response carries the manifest TWICE: once
-    // masked, once raw. Live ciphertext confirmed in the body:
-    //   {"ok":true,"plugin":{"id":"p1",...,"manifestJson":"{\"authCredentials\":\"enc:SECRET\"}",
-    //    "manifest":{"authCredentials":"••••"}}}
-    //
-    // IMPACT, stated honestly: this exposes the AES-256-GCM CIPHERTEXT, not the plaintext, so it is NOT
-    // equivalent to leaking the key. It is still a disclosure the masking exists to prevent -- ciphertext
-    // plus a future key compromise retro-decrypts it, and the response has to be re-read to understand why
-    // the secret it shows is not the secret it also ships. `manifest` (masked) is the intended surface.
-    //
-    // This test asserts the CURRENT behaviour, so when the leak is fixed IT TURNS RED and must be inverted.
-    // The mask test below covers the intended behaviour and stays green either way.
+  test('FIXED: the raw manifestJson is NOT sent to the client at all', async () => {
+    // THIS TEST USED TO PIN THE LEAK. GET spread the whole row (`...plugin`) and only then attached a MASKED
+    // `manifest` sibling, so the response carried the manifest TWICE -- masked and raw -- and the raw copy included
+    // the AES-256-GCM ciphertext of the plugin credentials. Ciphertext is not plaintext, but `maskPluginManifest`
+    // exists so that material never reaches a browser; ciphertext plus a future key compromise retro-decrypts it.
+    // The column is now destructured away before the response is built, and `manifest` (masked) is the only surface.
     const res = await GET(new Request('http://localhost/api/tools/p1') as never, ctx('p1'))
+    expect(res.status).toBe(200)
     const raw = await res.text()
-    expect(raw).toContain('manifestJson')
-    expect(raw).toContain('STORED-CIPHERTEXT')
+    expect(raw).not.toContain('manifestJson')
+    expect(raw).not.toContain('STORED-CIPHERTEXT')
+    // The masked view IS still present, so the fix removed the leak rather than the feature.
+    expect(raw).toContain('"manifest"')
+  })
+
+  test('FIXED: every OTHER plugin column still ships, so the fix is a surgical removal', async () => {
+    // Pinned because over-removal would be a silent regression: the route's other consumers read these fields.
+    const res = await GET(new Request('http://localhost/api/tools/p1') as never, ctx('p1'))
+    const payload = (await res.json()) as { plugin: Record<string, unknown> }
+    expect(payload.plugin.id).toBe('p1')
+    expect(payload.plugin).toHaveProperty('name')
+    expect(Object.keys(payload.plugin)).not.toContain('manifestJson')
+    expect(Object.keys(payload.plugin)).toContain('manifest')
   })
 
   test('the MASKED manifest never contains the stored credential', async () => {

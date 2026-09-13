@@ -38,6 +38,11 @@ const state = {
   orgExists: true,
   orgs: [] as any[],
   redisSet: 'OK' as string | null,
+  /** `SET NX` result for the replay guard: 'OK' = first sighting, null = already present (a replay). */
+  redisSetReplay: 'OK' as string | null,
+  /** Keys the replay guard wrote, so the assertion id and the TTL can be asserted. */
+  replaySetCalls: [] as string[],
+  redisGetValue: null as string | null,
   redisThrows: false,
   quota: { allowed: true, limit: 10, current: 0 } as any,
   profile: null as any,
@@ -74,10 +79,16 @@ mock.module('@/lib/prisma-tenant', () => ({
 }))
 mock.module('@/lib/redis', () => ({
   redisCmd: {
-    set: async () => {
+    // The replay guard is a SET NX: a THROW is the outage, and a `null` return means the key ALREADY existed, i.e.
+    // this assertion id has been seen inside its TTL. Both shapes are modelled, because a mock that only ever threw
+    // or only ever returned 'OK' could not tell the two failure modes apart.
+    set: async (key: string) => {
       if (state.redisThrows) throw new Error('redis down')
-      return state.redisSet
+      state.replaySetCalls.push(key)
+      return state.redisSetReplay
     },
+    get: async () => state.redisGetValue,
+    del: async () => 1,
   },
 }))
 mock.module('@/lib/crypto', () => ({
@@ -108,7 +119,7 @@ mock.module('@node-saml/node-saml', () => ({
   ValidateInResponseTo: { never: 'never', always: 'always', ifPresent: 'ifPresent' },
 }))
 
-import { getOrCreateSsoUser, validateSamlResponse } from './sso-saml'
+import { getOrCreateSsoUser, validateSamlResponse, SamlReplayCheckUnavailableError } from './sso-saml'
 
 beforeEach(() => {
   state.userBySubject = null
@@ -121,6 +132,9 @@ beforeEach(() => {
   state.orgs = [{ id: 'org-1' }]
   state.redisSet = 'OK'
   state.redisThrows = false
+  state.redisSetReplay = 'OK'
+  state.replaySetCalls = []
+  state.redisGetValue = null
   state.quota = { allowed: true, limit: 10, current: 0 }
   state.profile = null
   state.validateThrows = false
@@ -258,24 +272,48 @@ describe('validateSamlResponse — assertion validation', () => {
 
   test('REPLAY: a reused assertion is rejected', async () => {
     state.profile = { nameID: 'u', ID: 'assert-1' }
-    state.redisSet = null // NX set failed → already present
+    state.redisSetReplay = null // NX set failed → already present
     await expect(validateSamlResponse('x')).rejects.toThrow('replay detected')
   })
 
   test('a fresh assertion is accepted and the key carries a TTL', async () => {
     state.profile = { nameID: 'u', ID: 'assert-2' }
-    state.redisSet = 'OK'
+    state.redisSetReplay = 'OK'
     const r = await validateSamlResponse('x')
     expect(r.sub).toBe('u')
   })
 
-  test('REPLAY fails OPEN when Redis is down, and the reason is logged', async () => {
+  test('FIXED: a REPLAY-CHECK OUTAGE fails CLOSED instead of admitting the assertion', async () => {
+    // INVERTED. This used to pin the opposite: a Redis outage degraded to "allow", on the argument that signature
+    // validation is the primary barrier. That argument is wrong for THIS check specifically -- the signature proves
+    // the assertion came from the IdP, and the replay check is the only thing that proves it has not been SEEN
+    // already. Failing open means a captured assertion stays a bearer credential for exactly as long as the
+    // outage lasts, which is the window an attacker would wait for. It now throws a typed error so the caller
+    // answers 5xx rather than creating a session.
     state.profile = { nameID: 'u', ID: 'assert-3' }
     state.redisThrows = true
-    // Degrading to "allow" is deliberate: signature validation is the primary
-    // barrier, and a Redis outage must not lock every SSO user out.
-    const r = await validateSamlResponse('x')
-    expect(r.sub).toBe('u')
+    await expect(validateSamlResponse('x')).rejects.toThrow(SamlReplayCheckUnavailableError)
+    // The class carries a code so a route can map it without matching on a message.
+    const err = (await validateSamlResponse('x').catch((e: unknown) => e)) as { code?: string }
+    expect(err.code).toBe('SAML_REPLAY_CHECK_UNAVAILABLE')
+    // The refusal happens at the GUARD, before any user is provisioned -- an outage must not leave a half-made user.
+    expect(state.created).toEqual([])
+  })
+
+  test('a REPLAY is refused when the id IS in the cache — the check still bites', async () => {
+    // The other half: failing closed must not have replaced the detection itself. A non-throwing outage test would
+    // pass even if the guard only ever threw.
+    state.profile = { nameID: 'u', ID: 'assert-seen' }
+    state.redisThrows = false
+    state.redisSetReplay = null
+    await expect(validateSamlResponse('x')).rejects.toThrow(/replay/i)
+    // The key names the assertion, so two different assertions cannot collide on one slot.
+    expect(state.replaySetCalls.some((k) => k.includes('assert-seen'))).toBe(true)
+    // And with a FRESH set result the same assertion is admitted, so the guard is not a blanket refusal.
+    state.redisSetReplay = 'OK'
+    state.profile = { nameID: 'u', ID: 'assert-fresh' }
+    const ok = await validateSamlResponse('x')
+    expect(ok.sub).toBe('u')
   })
 
   test('email is read from the OID attribute when present', async () => {

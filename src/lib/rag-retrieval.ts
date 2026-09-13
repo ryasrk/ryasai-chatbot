@@ -7,7 +7,7 @@ import {
   getEmbeddingRuntimeConfig,
   parseEmbeddingJson,
 } from '@/lib/embeddings'
-import { getVectorStoreRuntimeConfig, searchVectorStore } from '@/lib/vector-stores'
+import { getVectorStoreRuntimeConfig, searchVectorStore, UnsupportedVectorProviderError } from '@/lib/vector-stores'
 import { searchFtsChunkIds } from '@/lib/rag-fts'
 import { dualLevelRetrieval } from '@/lib/knowledge-graph'
 import { buildCitationTrail, type CitationTrail } from '@/lib/citation-trail'
@@ -385,6 +385,12 @@ async function resolveVectorScores(args: { vector: number[] | null; topK: number
     if (hits.length === 0) return pgScores
     return new Map(hits.map((hit) => [hit.chunkId, hit.score]))
   } catch (e) {
+    // A MISCONFIGURED PROVIDER MUST NOT DEGRADE INTO "NO RESULTS". Every other failure here is legitimately
+    // absorbed: an unreachable store should fall back to pgvector rather than fail the whole search, because
+    // pgvector results are still real. An UNSUPPORTED provider is different in kind -- it is a configuration
+    // error that no retry will fix, and swallowing it made the two look identical: zero hits, HTTP 200, and a
+    // model that answers as if the corpus were empty. Propagated so the caller can name the provider.
+    if (e instanceof UnsupportedVectorProviderError) throw e
     log.warn('resolveVectorScores failed', { error: e instanceof Error ? e.message : String(e) })
     return pgScores
   }

@@ -1,5 +1,13 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
+/**
+ * The SCOPED document read. Kept as a separate mock from `mockDocFindUnique` on purpose: the whole fix is that the
+ * document load uses a FILTER operation so the tenant extension can append the caller's org, and a test harness that
+ * routed both names to one function could not tell them apart.
+ */
+const mockDocFindFirst = mock<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
+  async () => ({ id: 'doc-1', version: 1 }),
+)
 const mockDocFindUnique = mock<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
   async () => ({ id: 'doc-1', version: 1 }),
 )
@@ -36,7 +44,9 @@ const mockChunkText = mock((s: string) => s.split(/\n\n+/).filter(Boolean))
 mock.module('@/lib/db', () => ({
   db: {
     document: {
+      // Retained so a regression to the unscoped operation fails an ASSERTION rather than crashing the file.
       findUnique: mockDocFindUnique,
+      findFirst: mockDocFindFirst,
       update: mockDocUpdate,
     },
     documentChunk: { findMany: mockChunkFindMany, deleteMany: mockChunkDeleteMany, createMany: mockChunkCreateMany },
@@ -62,6 +72,7 @@ beforeEach(() => {
   // across tests in this file, so a positional assertion (`mock.calls[0]`) reads a call from an
   // earlier test, and a content assertion can be satisfied by a different test's call.
   mockDocFindUnique.mockClear()
+  mockDocFindFirst.mockClear()
   mockDocUpdate.mockClear()
   mockChunkFindMany.mockClear()
   mockVersionCreate.mockClear()
@@ -74,6 +85,7 @@ beforeEach(() => {
   mockChunkText.mockClear()
   mockEmbedDocumentChunks.mockClear()
   mockDocFindUnique.mockImplementation(async () => ({ id: 'doc-1', version: 1 }))
+  mockDocFindFirst.mockImplementation(async () => ({ id: 'doc-1', version: 1 }))
   mockChunkFindMany.mockImplementation(async () => [
     { id: 'c1', content: 'hello' },
     { id: 'c2', content: 'world' },
@@ -118,9 +130,13 @@ describe('createDocVersion', () => {
     expect(updateArg.data.version).toBe(2)
   })
 
-  test('throws when document not found', async () => {
-    mockDocFindUnique.mockImplementation(async () => null)
+  test('throws when the document is not resolvable IN THIS ORG', async () => {
+    // "Not found" now means "not in the caller's org", because the load goes through the org-scoped read: a
+    // cross-tenant id is indistinguishable from a missing one, which is the point. The unscoped operation must not
+    // be consulted as a fallback.
+    mockDocFindFirst.mockImplementation(async () => null)
     expect(createDocVersion('missing')).rejects.toThrow(/Document not found/)
+    expect(mockDocFindUnique).not.toHaveBeenCalled()
   })
 })
 
@@ -165,7 +181,7 @@ describe('restoreDocVersion', () => {
       chunkCount: 2,
       createdAt: new Date('2026-01-01'),
     }))
-    mockDocFindUnique.mockImplementation(async () => ({
+    mockDocFindFirst.mockImplementation(async () => ({
       id: 'doc-1',
       uploadPath: '/tmp/doc.txt',
       name: 'doc.txt',
@@ -198,7 +214,7 @@ describe('restoreDocVersion', () => {
       chunkCount: 2,
       createdAt: new Date('2026-01-01'),
     }))
-    mockDocFindUnique.mockImplementation(async () => ({
+    mockDocFindFirst.mockImplementation(async () => ({
       id: 'doc-1',
       uploadPath: '/tmp/gone.txt',
       name: 'gone.txt',
@@ -242,7 +258,7 @@ describe('restoreDocVersion', () => {
       chunkCount: 2,
       createdAt: new Date('2026-01-01'),
     }))
-    mockDocFindUnique.mockImplementation(async () => ({
+    mockDocFindFirst.mockImplementation(async () => ({
       id: 'doc-1',
       uploadPath: '/tmp/doc.txt',
       name: 'doc.txt',

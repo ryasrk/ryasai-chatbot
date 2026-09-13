@@ -1,4 +1,6 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 process.env.SAML_SP_ENTITY_ID = 'https://chatbot.test'
 process.env.SAML_SP_CALLBACK_URL = 'https://chatbot.test/api/auth/saml/callback'
@@ -289,10 +291,17 @@ describe('createSamlInstance', () => {
     // The audience must be OUR entity id, or a token minted for another SP verifies.
     expect(captured!.audience).toBe('https://chatbot.test')
     expect(captured!.issuer).toBe('https://chatbot.test')
-    // No cached request ids: the in-memory cache provider here is a no-op, so
-    // validateInResponseTo MUST stay 'never' -- setting it otherwise would reject
-    // every login because the saved id was never stored.
-    expect(captured!.validateInResponseTo).toBe('never')
+    // INVERTED. This used to pin 'never', justified by the cache provider being a no-op: with no store for the
+    // request id, ANY binding check would reject every login. The justification was the bug -- 'never' means the
+    // assertion id is not checked AT ALL, so a captured SAMLResponse was a bearer credential replayable from
+    // anywhere until NotOnOrAfter. The cache is now Redis-backed and the option is 'ifPresent', which binds the
+    // assertion to this browser's request whenever the id was saved and still accepts IdP-initiated POSTs (this
+    // route accepts them by design) where no id exists to compare against.
+    expect(captured!.validateInResponseTo).toBe('ifPresent')
+    // `never` anywhere in this file would mean the binding is off again.
+    const src = readFileSync(join(import.meta.dir, 'sso-saml.ts'), 'utf8')
+    expect(src).not.toContain('ValidateInResponseTo.never')
+    expect(src).toContain('ValidateInResponseTo.ifPresent')
   })
 
   test('an unresolvable entry point (metadata yields nothing usable) throws', async () => {

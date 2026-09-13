@@ -107,9 +107,17 @@ export async function createSamlInstance(): Promise<SAML> {
     skipRequestCompression: false,
     audience: cfg.issuer,
     maxAssertionAgeMs: 60_000,
-    validateInResponseTo: ValidateInResponseTo.never,
+    // BIND THE RESPONSE TO THE REQUEST WE SENT. `never` accepted any well-signed assertion from the IdP, including
+    // one this SP never asked for: a captured SAMLResponse (proxy log, browser history, shared terminal) was a
+    // bearer credential replayable from anywhere until NotOnOrAfter. `ifPresent` enforces the binding whenever a
+    // request id is cached, so a deployment whose cache is unreachable still fails safe instead of silently
+    // accepting an unsolicited response.
+    validateInResponseTo: ValidateInResponseTo.ifPresent,
     requestIdExpirationPeriodMs: 28_800_000,
-    cacheProvider: { saveAsync: async () => null, getAsync: async () => null, removeAsync: async () => null },
+    // A REAL cache, backed by the same Redis the replay guard uses. It used to be a no-op (`saveAsync` returning
+    // null), which made `validateInResponseTo` impossible to honour even when enabled: the id was never stored, so
+    // nothing could ever match it, and the setting was decorative.
+    cacheProvider: samlRequestIdCache(),
     signMetadata: false,
     generateUniqueId: () => Math.random().toString(36).substring(2, 18),
     logoutUrl: entryPoint,
@@ -212,16 +220,74 @@ export async function validateSamlResponse(samlBody: string): Promise<SamlUserIn
   }
 }
 
+/**
+ * Thrown when the replay guard cannot reach its store. Typed so a caller can tell "the store is down" from "this
+ * assertion was replayed" without matching on prose.
+ */
+export class SamlReplayCheckUnavailableError extends Error {
+  readonly code = 'SAML_REPLAY_CHECK_UNAVAILABLE'
+  constructor() {
+    super('SAML replay protection is unavailable (session store unreachable). Login refused.')
+    this.name = 'SamlReplayCheckUnavailableError'
+  }
+}
+
+/**
+ * Has this assertion already been consumed?
+ *
+ * THIS USED TO FAIL OPEN. When Redis was unreachable the catch returned `false` ("not replayed") and the login
+ * proceeded, justified by a comment that signature validation is the primary barrier. Signature validation proves
+ * an assertion is AUTHENTIC; it does not stop the SAME authentic assertion being replayed, which is this check's
+ * entire purpose. Worse, `false` is also the ordinary answer, so a store outage removed replay protection while
+ * looking exactly like normal operation.
+ *
+ * It now fails CLOSED by throwing. The trade-off is deliberate: during a store outage logins are REFUSED rather
+ * than accepted without replay protection. A refused login is recoverable; a replayed assertion is not.
+ */
 async function isAssertionReplayed(assertionId: string): Promise<boolean> {
   try {
     const key = `saml:assertion:${assertionId}`
     const set = await redisCmd.set(key, '1', 'PX', 300_000, 'NX')
     return !set
   } catch (e) {
-    // ponytail: Redis down — skip replay check, log warning.
-    // Signature validation is the primary security barrier.
-    log.warn('Replay protection skipped — Redis unavailable', { error: e instanceof Error ? e.message : String(e) })
-    return false
+    log.error('Replay protection UNAVAILABLE — refusing the assertion rather than accepting it unchecked', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+    throw new SamlReplayCheckUnavailableError()
+  }
+}
+
+/**
+ * Redis-backed store for outstanding AuthnRequest ids, so `validateInResponseTo` can reject a response that does
+ * not answer a request this SP issued. An unresolvable id returns `null`, which makes validation FAIL CLOSED: a
+ * response whose request id cannot be found is refused.
+ */
+function samlRequestIdCache() {
+  const prefix = 'saml:reqid:'
+  return {
+    // `saveAsync` must resolve to a `CacheItem` (`{ value, createdAt }`), not the bare string -- returning the
+    // string type-checks against nothing and the library would later fail to read what it stored.
+    async saveAsync(key: string, value: string): Promise<{ value: string; createdAt: number } | null> {
+      const createdAt = Date.now()
+      await redisCmd.set(`${prefix}${key}`, value, 'PX', 28_800_000)
+      return { value, createdAt }
+    },
+    async getAsync(key: string): Promise<string | null> {
+      try {
+        return (await redisCmd.get(`${prefix}${key}`)) ?? null
+      } catch (e) {
+        log.error('InResponseTo lookup failed — the response will be refused', {
+          error: e instanceof Error ? e.message : String(e),
+        })
+        return null
+      }
+    },
+    async removeAsync(key: string | null): Promise<string | null> {
+      if (!key) return null
+      const value = (await redisCmd.get(`${prefix}${key}`)) ?? null
+      await redisCmd.del(`${prefix}${key}`)
+      return value
+    },
   }
 }
 
@@ -249,9 +315,17 @@ export function generateSpMetadata(): string {
     skipRequestCompression: false,
     audience: cfg.issuer,
     maxAssertionAgeMs: 60_000,
-    validateInResponseTo: ValidateInResponseTo.never,
+    // BIND THE RESPONSE TO THE REQUEST WE SENT. `never` accepted any well-signed assertion from the IdP, including
+    // one this SP never asked for: a captured SAMLResponse (proxy log, browser history, shared terminal) was a
+    // bearer credential replayable from anywhere until NotOnOrAfter. `ifPresent` enforces the binding whenever a
+    // request id is cached, so a deployment whose cache is unreachable still fails safe instead of silently
+    // accepting an unsolicited response.
+    validateInResponseTo: ValidateInResponseTo.ifPresent,
     requestIdExpirationPeriodMs: 28_800_000,
-    cacheProvider: { saveAsync: async () => null, getAsync: async () => null, removeAsync: async () => null },
+    // A REAL cache, backed by the same Redis the replay guard uses. It used to be a no-op (`saveAsync` returning
+    // null), which made `validateInResponseTo` impossible to honour even when enabled: the id was never stored, so
+    // nothing could ever match it, and the setting was decorative.
+    cacheProvider: samlRequestIdCache(),
     signMetadata: false,
     generateUniqueId: () => Math.random().toString(36).substring(2, 18),
     logoutUrl: cfg.entryPoint || 'https://placeholder',

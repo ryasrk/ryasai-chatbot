@@ -175,7 +175,11 @@ export async function getVectorStoreRuntimeConfig(
     baseUrl: normalizeBaseUrl(row.baseUrl),
     apiKey,
     collectionName: row.collectionName,
-    vectorSize: row.vectorSize,
+    // A non-positive dimension is not a dimension. `vectorSize: -10` was passed straight through to the provider
+    // (Qdrant `size: -10`, Milvus `dimension: -10`), and a store that ACCEPTS it leaves a collection whose
+    // dimension can never match a real embedding vector -- every search then returns nothing for a reason no log
+    // would show. Only values that are finite and >= 1 are honoured; anything else falls back to the default.
+    vectorSize: normalizeVectorSize(row.vectorSize),
     distance: row.distance,
   }
 }
@@ -369,7 +373,26 @@ export async function searchVectorStore(args: {
     )
     return parseChromaSearchResponse(response)
   }
-  return []
+  // UNKNOWN PROVIDER USED TO RETURN `[]` IN SILENCE -- a 200 with a plausible empty result set, no network call
+  // and no log. `normalizeVectorStoreProvider` maps anything unrecognised (including a typo like 'QDRANTT') to
+  // 'INTERNAL', and NONE of the four branches above handles 'INTERNAL' -- so document search reported "no results
+  // found" for an install whose vector store was merely misspelled, and the operator had nothing to go on.
+  // Throwing makes it an ERROR the caller can surface; `documents/search` converts it to a 502 with the provider
+  // name, so a typo is diagnosable instead of looking like an empty corpus.
+  throw new UnsupportedVectorProviderError(args.config.provider)
+}
+
+/** Default embedding dimension. Matches the OpenAI-compatible 1536 used elsewhere in the RAG path. */
+const DEFAULT_VECTOR_SIZE = 1536
+
+/**
+ * Coerce a stored dimension to a usable one. `Number.isFinite` rejects `NaN`/`Infinity` (a malformed row), and
+ * the `>= 1` check rejects 0 and negatives. Floored because a fractional dimension is nonsense to a provider.
+ */
+function normalizeVectorSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_VECTOR_SIZE
+  const floored = Math.floor(size)
+  return floored >= 1 ? floored : DEFAULT_VECTOR_SIZE
 }
 
 function normalizeVectorStoreProvider(provider: string): VectorStoreProvider {
@@ -379,6 +402,18 @@ function normalizeVectorStoreProvider(provider: string): VectorStoreProvider {
   if (upper === 'PINECONE') return 'PINECONE'
   if (upper === 'CHROMA' || upper === 'CHROMADB') return 'CHROMA'
   return 'INTERNAL'
+}
+
+/**
+ * Thrown when a vector store provider has no search/upsert implementation. Typed so callers can distinguish
+ * "this install is misconfigured" from "the store is unreachable" -- the two need different operator action.
+ */
+export class UnsupportedVectorProviderError extends Error {
+  readonly code = 'UNSUPPORTED_VECTOR_PROVIDER'
+  constructor(readonly provider: string) {
+    super(`Unsupported vector store provider: ${provider}. Supported: QDRANT, MILVUS, PINECONE, CHROMA.`)
+    this.name = 'UnsupportedVectorProviderError'
+  }
 }
 
 async function vectorFetch(

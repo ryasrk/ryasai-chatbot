@@ -22,7 +22,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     enterWithOrg(user.organizationId)
     const { id } = await ctx.params
     const body = (await req.json().catch(() => ({}))) as { input?: string }
-    const input = (body.input ?? '').trim()
+    // `??` only guards null/undefined, so a JSON NUMBER or OBJECT input reached `.trim()` and threw INSIDE the
+    // handler: the caller got a 500 "Failed to test plugin.", indistinguishable from a plugin that is actually
+    // broken. Coerced the same way the route already treats its other string fields, so a malformed test request is
+    // a 400 at worst and the plugin's own health is never confused with the request's shape.
+    const input = typeof body.input === 'string' ? body.input.trim() : String(body.input ?? '').trim()
 
     const plugin = await db.plugin.findFirst({
       where: { id },

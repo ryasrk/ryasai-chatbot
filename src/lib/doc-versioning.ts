@@ -12,7 +12,11 @@ export interface DocVersionSnapshot {
 }
 
 export async function createDocVersion(documentId: string): Promise<DocVersionSnapshot> {
-  const doc = await db.document.findUnique({
+  // `findFirst`, for the same reason as `restoreDocVersion` below: the tenant extension scopes only FILTER
+  // operations, so a `findUnique` here read the row by id alone. Everything after this line is keyed by
+  // `documentId` -- `documentChunk.findMany` is scoped, but the snapshot is WRITTEN with the version number taken
+  // from the foreign row, so a caller could snapshot another tenant's document into its own version history.
+  const doc = await db.document.findFirst({
     where: { id: documentId },
     select: { id: true, version: true },
   })
@@ -65,7 +69,13 @@ export async function restoreDocVersion(
   })
   if (!version) throw new Error(`Version not found: ${versionId}`)
 
-  const doc = await db.document.findUnique({
+  // MUST be `findFirst`, not `findUnique`: the tenant extension scopes only the FILTER operations, so a
+  // `findUnique` where-clause is used verbatim and the row id alone decides the result. A caller passing a
+  // document id from another organization moved that tenant's version pointer and, when it had an `uploadPath`,
+  // had its chunks deleted and re-embedded -- a cross-tenant DESTRUCTIVE write. The `documentVersion` lookup above
+  // is already org-scoped because that model carries `organizationId` and the extension filters `findFirst`,
+  // which is why the hole was in this second read and not in the first.
+  const doc = await db.document.findFirst({
     where: { id: documentId },
     select: { id: true, uploadPath: true, name: true, type: true, mimeType: true, organizationId: true },
   })

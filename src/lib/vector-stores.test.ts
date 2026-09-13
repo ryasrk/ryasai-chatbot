@@ -17,6 +17,7 @@ import {
   parseMilvusSearchResponse,
   parseQdrantSearchResponse,
   searchVectorStore,
+  UnsupportedVectorProviderError,
   upsertVectorPoints,
   vectorPointId,
   type VectorPoint,
@@ -285,22 +286,12 @@ describe('getVectorStoreRuntimeConfig', () => {
     expect(cfg!.provider).toBe('QDRANT')
   })
 
-  test('KNOWN GAP: an UNRECOGNISED provider yields a config labelled INTERNAL, not null', async () => {
-    // *** THIS TEST PINS A DEFECT, NOT A DESIRE. ***
-    //
-    // The INTERNAL guard at line 160 tests the RAW DB string (`row.provider === 'INTERNAL'`), NOT the
-    // NORMALISED value returned on line 174. So a provider the normaliser does not know -- 'WEAVIATE'
-    // here, and any future backend an operator configures by hand -- SKIPS the guard, and the returned
-    // config carries `provider: 'INTERNAL'` alongside a non-empty baseUrl and collectionName.
-    //
-    // The consequence is silent: searchVectorStore switches on `config.provider`, has no INTERNAL
-    // branch, and so returns [] (line 372). The operator has configured and paid for Weaviate, the
-    // search returns ZERO HITS with no error and no log, and the model answers as if the knowledge
-    // base were empty. A config with a baseUrl that no branch can serve would be better refused here.
-    //
-    // I did NOT fix it: the right answer depends on product intent (should an unknown provider be an
-    // error, or should the normaliser be extended?), and that is the operator's call, not a coverage
-    // commit's. Pinned so the fix is a deliberate change that breaks this test.
+  test('FIXED: an UNRECOGNISED provider still normalises to INTERNAL, and SEARCH now refuses it', async () => {
+    // STILL TRUE AND DELIBERATE: the resolver returns a config labelled INTERNAL rather than null, and that is
+    // kept. What changed is that the LABEL can no longer be used to produce a silent zero -- `searchVectorStore`
+    // throws on it, which the test above pins. Rejecting at config load instead would move the failure earlier,
+    // but it would also break the INTERNAL path that `getVectorStoreRuntimeConfig` exists to support, so the
+    // refusal stays where the wrong answer was being produced.
     mockFindFirst.mockImplementationOnce(async () => ({
       provider: 'WEAVIATE',
       baseUrl: 'https://w.example.com',
@@ -499,17 +490,34 @@ describe('searchVectorStore', () => {
     expect(hits).toEqual([{ chunkId: 'hit-2', score: 0.8 }])
   })
 
-  test('unknown provider → returns empty array', async () => {
+  test('FIXED: an unknown provider THROWS instead of returning an empty result set', async () => {
+    // THIS TEST USED TO PIN THE SILENT ZERO. It asserted `[]` with zero network calls -- a 200 carrying a
+    // plausible empty result set, no error and no log, for a store the operator had configured and paid for. The
+    // model then answered as if the knowledge base were empty. The typed error is what lets the route answer 502
+    // and NAME the provider, so a typo is diagnosable. Honestly declared: the error is only typed, and the CALLER
+    // must not swallow it -- see the documents/search suite, which asserts the 502.
     const fetchMock = mock(() => Promise.resolve({ ok: true } as Response))
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const hits = await searchVectorStore({
-      config: { ...qdrantConfig, provider: 'INTERNAL' },
-      vector: [0.1],
-      limit: 5,
-    })
-    expect(hits).toEqual([])
+    await expect(
+      searchVectorStore({
+        config: { ...qdrantConfig, provider: 'INTERNAL' },
+        vector: [0.1],
+        limit: 5,
+      }),
+    ).rejects.toThrow(UnsupportedVectorProviderError)
+    // Still no network call: refusing must not first try something.
     expect(fetchMock.mock.calls.length).toBe(0)
+  })
+
+  test('the refusal names the provider and the supported set', async () => {
+    // An operator-facing message that does not say WHICH value is wrong sends them to read source. The class
+    // also carries a stable `code` so a caller can branch without matching on prose.
+    const err = new UnsupportedVectorProviderError('QDRANTT')
+    expect(err.message).toContain('QDRANTT')
+    expect(err.message).toContain('QDRANT')
+    expect(err.code).toBe('UNSUPPORTED_VECTOR_PROVIDER')
+    expect(err.name).toBe('UnsupportedVectorProviderError')
   })
 
   test('HTTP error → throws with status code', async () => {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 import { executeRestRequest } from '@/lib/tool-branches'
+import { EndpointPathEscapeError } from '@/lib/rest-api-connectors'
 
 /**
  * POST /api/data-sources/rest-connectors/[id]/test — fire a real request
@@ -87,6 +88,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       latencyMs: result.latencyMs,
     })
   } catch (e) {
+    // An escaping path is the CALLER's error, not a broken connector. Reported as 400 with the refusal named, so
+    // it cannot be confused with an unreachable upstream -- which is what a generic 502 would tell the operator.
+    if (e instanceof EndpointPathEscapeError) {
+      return NextResponse.json({ ok: false, error: e.message, code: e.code }, { status: 400 })
+    }
     return handleApiError(e, 'Failed to test REST connector.')
   }
 }

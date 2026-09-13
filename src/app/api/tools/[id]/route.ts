@@ -25,10 +25,17 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ ok: false, error: 'Plugin not found.' }, { status: 404 })
     }
     const manifest = parsePluginManifest(plugin.manifestJson)
+    // THE SPREAD LEAKED THE CIPHERTEXT THE MASK EXISTS TO HIDE. `...plugin` copied `manifestJson` verbatim while
+    // the masked `manifest` was added as a SIBLING, so the response carried BOTH: the credentials ciphertext (and
+    // the raw manifest, which also names internal endpoints) alongside the redacted view. `maskPluginManifest`
+    // exists precisely so a browser never receives that material -- ciphertext is not plaintext, but it is exactly
+    // what a future key compromise would retro-decrypt, and the raw manifest is not meant to be client-readable.
+    // Only the masked manifest ships now, and the raw column is dropped before the response is built.
+    const { manifestJson: _rawManifestJson, ...pluginFields } = plugin
     return NextResponse.json({
       ok: true,
       plugin: {
-        ...plugin,
+        ...pluginFields,
         manifest: manifest ? maskPluginManifest(manifest) : null,
       },
     })

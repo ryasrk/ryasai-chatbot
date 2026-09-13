@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { UnsupportedVectorProviderError } from '@/lib/vector-stores'
 
 export const runtime = 'nodejs'
 
@@ -77,6 +78,20 @@ export async function POST(req: NextRequest) {
       candidatesScanned: retrieval.candidatesScanned,
     })
   } catch (e) {
+    // An unsupported vector store provider is an operator error, not a server fault, and the old behaviour hid it
+    // completely: search returned an empty result set with HTTP 200 and no log. Answered as 502 with the provider
+    // NAMED so a typo in configuration is diagnosable from the response alone.
+    if (e instanceof UnsupportedVectorProviderError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'UNSUPPORTED_VECTOR_PROVIDER',
+            message: `The configured vector store provider is not supported (${e.provider}). Supported: QDRANT, MILVUS, PINECONE, CHROMA.`,
+          },
+        },
+        { status: 502 },
+      )
+    }
     return handleApiError(e, 'Failed to search documents.')
   }
 }

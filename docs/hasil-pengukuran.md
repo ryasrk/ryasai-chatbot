@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,97%** (20.364/23.150 baris, 170 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,03%** (1858/1976 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 211 file · **5.261 lulus · 0 gagal** | terukur |
+| Test coverage | **88,22%** (21.422/24.282 baris, 194 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,05%** (1945/2068 fungsi, per-file FNF/FNH) | terukur |
+| Test suite | 235 file · **5.935 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -6353,6 +6353,70 @@ dipakai untuk mengambil keputusan.
   suhu cache embedding).
 - **`withToolSandbox` dan rate limit SQL dilewati** di jalur streaming (sudah
   terdokumentasi di AGENTS.md, kini dikunci tes).
+
+### 1.7dw Ronde ini: 10 defek diperbaiki (2 IDOR lintas-tenant), coverage 87,97% → 88,22%
+
+Semua angka dari `coverage-summary.json` (merge), bukan dari run per-file.
+
+| Metrik | Sebelum | Sesudah |
+|---|---|---|
+| Line coverage (merged) | 87,97% (20.364/23.150) | **88,22%** (21.422/24.282) |
+| Cakupan fungsi | 94,03% (1858/1976) | **94,05%** (1945/2068) |
+| Suite | 211 file · 5.261 lulus | **235 file · 5.935 lulus · 0 gagal** |
+| Modul tergate | 170 | **194** |
+
+Penyebut naik (23.150 → 24.282) karena kode baru ikut diinstrumentasi; gate
+menjalankan **194 modul** dengan floor yang semuanya berasal dari angka merge.
+
+#### 10 defek nyata yang diperbaiki (bukan laporan)
+
+| # | Defek | Bukti | Perbaikan |
+|---|---|---|---|
+| 1 | **IDOR lintas-tenant di `getPrompt`** — `findUnique` tidak di-scope org, dan `GET /api/prompts` membagikan SEMUA id ke browser | Body asli dijalankan terhadap tabel dua-org lewat tenant extension asli: org-b menerima baris org-a dengan `where` hanya `{ id }` | `findFirst` (FILTER op) sehingga extension menambahkan org |
+| 2 | **IDOR tulis-destruktif di `doc-versioning`** — `db.document.findUnique` di `createDocVersion` DAN `restoreDocVersion` | Guard statis buta: `findUnique` ada di `src/lib`, sedangkan `invariants.test.ts` hanya mengglob `api/**/route.ts` | Keduanya `findFirst` |
+| 3 | **SSRF lewat kredensial konektor** — `buildEndpointUrl` membiarkan path absolut menang atas `baseUrl` | Diukur: `https://attacker…` menghasilkan origin lain, padahal header auth terdekripsi ikut terpasang | `EndpointPathEscapeError` saat origin hasil resolve berbeda; route menjawab **400** |
+| 4 | **Batas tenant hilang di audit SSO** — `writeAudit` membaca `getOrgContext()!` di route publik tanpa `enterWithOrg` | Baris audit ditolak Postgres dan ditelan catch → jejak audit SSO **kosong senyap**, termasuk pembuatan principal admin | Org dibaca dari baris user yang baru dibuat (lewat `bypassOrg`), lalu `enterWithOrg` sebelum audit |
+| 5 | **Audit yang gagal mematikan login pertama** — `await writeAudit` tanpa guard setelah provisioning | Baris user SUDAH ada saat audit throw; percobaan kedua lewat cabang "user lama" dan event `SSO_USER_CREATED` hilang permanen, dilabeli `SSO_LOGIN` | Audit non-blocking dengan `.catch` yang mencatat keras; cookie handshake tetap dibersihkan |
+| 6 | **Zona waktu hilang senyap** — `normalizeTimezone(' Asia/Jakarta ')` → `'UTC'` (tidak di-trim) | Jadwal 09:00 Jakarta menyala 09:00 UTC (selisih 7 jam) sementara UI menampilkan yang diketik | Di-trim sebelum probe; helper `isTimezoneAccepted` dipakai route untuk **menolak 400**, bukan menelan |
+| 7 | **`toolRunsJson` rusak menjatuhkan SELURUH riwayat** — `JSON.parse` tanpa guard di dalam `.map()` | Satu baris terpotong (scheduler mati mid-write) → 500 untuk semua baris | Parse per-baris; baris rusak jadi `null` + field `damagedRows` |
+| 8 | **`promptId`/`notificationConfigId` tidak diverifikasi** padahal `integrationId` ya | Jadwal bisa diikat ke prompt/notification-config org lain | Keduanya diverifikasi lewat `findFirst` ter-scope, id asing → **400** |
+| 9 | **`isActive` di-hardcode `true`** — toggle OFF di UI tetap menyalakan jadwal | Jadwal yang dibuat "nonaktif" tetap menyala | `body.isActive !== false` (klien lama yang tidak mengirim tetap aktif) |
+| 10 | **Ciphertext kredensial plugin ikut terkirim** — `...plugin` menyebar `manifestJson` di samping `manifest` yang di-mask | Body respons memuat material yang justru ada `maskPluginManifest` untuk menyembunyikannya | Kolom didestruktur keluar sebelum respons dibangun |
+
+Tambahan kecil: `tools/[id]/test` menerima `input` non-string lalu `.trim()` melempar
+di dalam handler → 500 yang tak bisa dibedakan dari plugin rusak; kini dikoersi.
+
+#### Dua hal yang TIDAK bisa diklaim
+
+- **Akurasi, token speed, avg tokens/task tetap tidak terukur di lingkungan ini.**
+  BYOK: tidak ada provider LLM. Yang ada hanya sumber kode (usage diambil dari
+  respons provider) dan tes. Ini batas bukti, bukan "lulus".
+- **95% belum tercapai (88,22%).** Goal tetap aktif.
+
+#### Temuan negatif yang dipaku (sama pentingnya)
+
+Empat tersangka IDOR **dibantah dengan bukti query**, bukan dengan asumsi:
+`schedules/[id]/runs`, `settings/api-keys/logs`, `settings/api-keys/[id]/logs`, dan
+`chat/sessions/[id]/messages` — masing-masing memakai `findMany`/`findFirst`
+(FILTER op) sehingga `injectOrgWhere` menambahkan org pemanggil. Untuk
+`api-keys/[id]/logs` pemeriksaan kepemilikan bahkan membuat id asing jadi 404
+sebelum query log mana pun berjalan.
+
+Verifikasi tanda tangan SAML juga **dibantah sebagai rumor**: `wantAssertionsSigned`
+dan `wantAuthnResponseSigned` menyala, `idpCert` terpasang, dan route memanggil
+`validatePostResponseAsync` yang tidak di-catch. Defek SAML yang nyata adalah
+`ValidateInResponseTo.never` + cache no-op + replay guard yang **fail-open** — ketiganya
+sudah diperbaiki (`.ifPresent`, Redis `saml:reqid:`, dan fail-CLOSED lewat
+`SamlReplayCheckUnavailableError`).
+
+#### Sisa celah yang dicatat apa adanya
+
+- Route SAML masih tidak membaca `RelayState` (token anti-forgery tingkat route).
+- `manifestJson` yang bocor sudah ditutup, tetapi `output` dari `executePlugin`
+  masih bisa memuat isi body upstream (dibatasi cap 8000 karakter di executor).
+- Guard statis `invariants.test.ts` masih **hanya** mengglob `api/**/route.ts`,
+  sehingga `findUnique` di `src/lib` lolos — dua IDOR di ronde ini membuktikannya.
+  Guard-nya belum dilebarkan.
 
 ---
 

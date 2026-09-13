@@ -114,6 +114,17 @@ mock.module('@/lib/embeddings', () => ({
 mock.module('@/lib/vector-stores', () => ({
   getVectorStoreRuntimeConfig: async () => storeConfig,
   searchVectorStore: async () => storeHits,
+  // REQUIRED, not decoration: `rag-retrieval` imports this class and re-throws it before its network-failure
+  // fallback. A factory that omits an export the module imports fails the WHOLE file with
+  // "Export named X not found" -- every test, not just the one that reaches it. Same shape as the real class so an
+  // `instanceof` in the module under test still matches.
+  UnsupportedVectorProviderError: class UnsupportedVectorProviderError extends Error {
+    code = 'UNSUPPORTED_VECTOR_PROVIDER'
+    constructor(provider?: string) {
+      super(`Unsupported vector provider: ${provider ?? 'unknown'}`)
+      this.name = 'UnsupportedVectorProviderError'
+    }
+  },
 }))
 mock.module('@/lib/rag-fts', () => ({ searchFtsChunkIds: async () => [] }))
 mock.module('@/lib/knowledge-graph', () => ({

@@ -303,7 +303,20 @@ const normalizeVectorStoreProvider: (provider: string) => string = new Function(
 )() as (provider: string) => string
 
 mock.module('@/lib/vector-stores', () => {
-  /** The real `searchVectorStore` body: a branch per known provider, else `[]`. */
+  /**
+   * The route now IMPORTS this class, so any mock of the module must export it or the import itself throws
+   * (`Export named 'UnsupportedVectorProviderError' not found`), which fails EVERY test in the file rather than
+   * one. Kept shape-identical to the real class: same name, same stable `code`, same provider field, because the
+   * route branches on `instanceof` and reports `e.provider` to the operator.
+   */
+  class UnsupportedVectorProviderError extends Error {
+    readonly code = 'UNSUPPORTED_VECTOR_PROVIDER'
+    constructor(readonly provider: string) {
+      super(`Unsupported vector store provider: ${provider}.`)
+      this.name = 'UnsupportedVectorProviderError'
+    }
+  }
+  /** The real `searchVectorStore` body: a branch per known provider, else THROW (was `[]`). */
   const searchVectorStore = async (args: {
     config: { provider: string; collectionName: string; baseUrl: string }
     vector: number[]
@@ -319,12 +332,14 @@ mock.module('@/lib/vector-stores', () => {
     if (['QDRANT', 'MILVUS', 'PINECONE', 'CHROMA'].includes(args.config.provider)) {
       return vectorStoreHits
     }
-    // No branch for INTERNAL — the real function falls through and returns [].
-    return []
+    // FIXED: no branch for INTERNAL — the real function THROWS now instead of falling through to `[]`. Mirrored
+    // here because a mock that refuses to reproduce the defect makes every downstream assertion a fiction.
+    throw new UnsupportedVectorProviderError(args.config.provider)
   }
 
   return {
     searchVectorStore,
+    UnsupportedVectorProviderError,
     // The real getVectorStoreRuntimeConfig normalizes the stored provider string.
     getVectorStoreRuntimeConfig: async () => {
       const row = await (globalThis as unknown as {
@@ -955,12 +970,17 @@ describe('POST /api/documents/search — error handling', () => {
 // PINNED (a) — silent zero on an unknown vector provider
 // ---------------------------------------------------------------------------
 
-describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silently', () => {
+describe('FIXED (a): an UNKNOWN vector provider is REFUSED, not silently zero', () => {
+  // The REFUSAL class comes from the REAL module. Inside this describe the real module is reachable (it is the
+  // route-level mock that replaces it elsewhere), so both the real class and the mock class are compared against
+  // nothing -- what matters is `instanceof` against the class the RUNNING module threw, which is why the real one
+  // is used where real modules are driven.
+
   /**
-   * These tests drive the REAL `@/lib/rag-retrieval` module (no mock for it) so the vector
-   * leg actually runs, and drive the REAL provider normalizer. They pin a defect: when fixed,
-   * the expectations here MUST be inverted (an unsupported provider should surface an error,
-   * not an empty semantic leg).
+   * These tests used to PIN a defect: an unrecognised provider made the vector leg return `[]` with no throw, no
+   * log and HTTP 200, so a typo in configuration was indistinguishable from an empty corpus. The expectations are
+   * now INVERTED: the provider is refused with a typed error that the route answers as 502 with the provider NAMED.
+   * They drive the REAL `@/lib/rag-retrieval` module (not mocked at this path) so the vector leg actually runs.
    */
   test('a typo\'d provider normalizes to INTERNAL and searchVectorStore returns [] with no error', async () => {
     // Read the real modules directly — they are NOT mocked at this import path.
@@ -971,14 +991,13 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     // through `searchVectorStore`, which is what this test drives. The INTERNAL fallback is exercised by
     // passing a value that is not a known provider -- if the mapping is ever exported, add the direct
     // assertions back here.
-    const hits = await searchVectorStore({
+    const attempt = searchVectorStore({
       config: { provider: ('WEAVIATE' as never), baseUrl: 'http://x', collectionName: 'c', vectorSize: 3, distance: 'Cosine', apiKey: '' },
       vector: [0.1, 0.2, 0.3],
       limit: 8,
     })
 
-    // No throw, no diagnostic -- just an empty leg. This is the silent-zero.
-    expect(hits).toEqual([])
+    // FIXED: it THROWS instead of yielding an empty leg. The silent zero is gone.
     // CORRECTED ASSERTION (my error, not the route's). I first asserted that ONE call was made with
     // `provider === 'INTERNAL'`. There is no INTERNAL branch in `searchVectorStore` -- its four branches cover
     // QDRANT/MILVUS/PINECONE/CHROMA and everything else falls through to a bare `return []` at the end of the
@@ -988,9 +1007,12 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     // belongs to the MOCK of `@/lib/vector-stores` used by the route-level tests. `searchVectorStore` imported
     // here is the REAL function, so it never touches the mock's recorder and the array is trivially empty. That
     // assertion proved nothing about this call and has been dropped.
-    expect(hits).toEqual([])
+    // A TYPED error, so a caller can tell a misconfiguration from an unreachable store -- the two need
+    // different operator action, and treating them alike is what made a typo look like an empty corpus.
+    const { UnsupportedVectorProviderError } = await import('@/lib/vector-stores')
+    await expect(attempt).rejects.toThrow(UnsupportedVectorProviderError)
 
-    // WHAT THE EMPTY RESULT ACTUALLY COMES FROM. `[]` alone is weak evidence -- it is also what a QDRANT branch
+    // WHAT THE REFUSAL IS BASED ON. `[]` alone is weak evidence -- it is also what a QDRANT branch
     // returning no matches would produce. The claim under test is that an unrecognised provider makes NO network
     // call at all, so the source is read directly and the branch set is asserted: there is no INTERNAL branch, and
     // the function ends in a bare `return []`. This FAILS the moment an INTERNAL/external-store branch is added,
@@ -1000,7 +1022,11 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
       'utf8',
     )
     const searchFn = vectorSrc.slice(vectorSrc.indexOf('export async function searchVectorStore'))
+    // Still no INTERNAL branch: the refusal is an explicit THROW of a typed error, not a fifth provider case.
     expect(searchFn).not.toContain("provider === 'INTERNAL'")
+    // The fall-through is gone -- that bare `return []` WAS the silent zero.
+    expect(searchFn).not.toMatch(/\n  return \[\]\n\}/)
+    expect(searchFn).toContain('UnsupportedVectorProviderError')
     expect(searchFn).toMatch(/provider === 'QDRANT'/)
     expect(searchFn).toMatch(/provider === 'MILVUS'/)
     expect(searchFn).toMatch(/provider === 'PINECONE'/)
@@ -1016,7 +1042,7 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     ])
   })
 
-  test('a configured but UNSUPPORTED vector store still answers 200 with a degraded (lexical-only) result set', async () => {
+  test('FIXED: an unsupported vector store makes retrieval REJECT instead of degrading silently', async () => {
     // An org configured a vector store under a provider name the code does not know.
     ;(globalThis as Record<string, unknown>).__vectorStoreRow = async () => ({
       provider: 'WEAVIATE',
@@ -1036,7 +1062,9 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     const { enterWithOrg } = await import('@/lib/prisma-tenant')
     enterWithOrg('org-1')
     const { retrieveRelevantChunks } = await import('@/lib/rag-retrieval')
-    const out = await retrieveRelevantChunks({ query: 'annual leave', topK: 4 })
+    // First call: the assertion that it REJECTS replaces the old `out` capture.
+    const { UnsupportedVectorProviderError: MockUnsupported } = await import('@/lib/vector-stores')
+    await expect(retrieveRelevantChunks({ query: 'annual leave', topK: 4 })).rejects.toThrow(MockUnsupported)
 
     // The stored provider 'WEAVIATE' survives `getVectorStoreRuntimeConfig` (its guard only
     // rejects the literal string 'INTERNAL') and is then normalized to 'INTERNAL' by
@@ -1046,20 +1074,21 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     expect(config).not.toBeNull()
     expect(config!.provider).toBe('INTERNAL')
 
-    // 'INTERNAL' then reaches `searchVectorStore`, which has NO branch for it: the four branches
-    // cover QDRANT/MILVUS/PINECONE/CHROMA and everything else falls through to `return []`.
-    // The call IS made (the store was configured), it just cannot do anything.
-    expect(searchVectorStoreCalls).toHaveLength(1)
-    expect(searchVectorStoreCalls[0]!.provider).toBe('INTERNAL')
-    // The hit the unknown provider's store "returned" is discarded, because the INTERNAL branch
-    // never returns it. No throw, no warning, no `degraded` marker anywhere in the result.
-    expect(out.chunks).toEqual([])
-    // INVERT WHEN FIXED: an unsupported provider should surface an error (or an explicit
-    // `degraded: true` / warning field) instead of a silent zero-results semantic leg.
-    expect(out.queryTokens).toEqual(['annual', 'leave'])
+    // 'INTERNAL' is what the normalizer produces for anything it does not recognise, and `searchVectorStore`
+    // refuses it rather than falling through to an empty leg. The recorder holds entries from earlier tests in
+    // this file too, so the count is scoped to the INTERNAL ones rather than to the array length.
+    const internalCalls = searchVectorStoreCalls.filter((c) => c.provider === 'INTERNAL')
+    expect(internalCalls.length).toBeGreaterThanOrEqual(1)
+    // FIXED: retrieval propagates the refusal instead of returning a degraded result set. Absorbing it here is
+    // what made the misconfiguration invisible: the caller got `chunks: []`, HTTP 200 and no diagnostic.
+    // A network failure is STILL absorbed (an unreachable store falls back to pgvector, whose results are real);
+    // only the configuration error propagates, and that distinction is asserted in the vector-stores suite.
+    // The REAL class, imported dynamically because this suite drives the real module at this path.
+    const { UnsupportedVectorProviderError: RealUnsupported } = await import('@/lib/vector-stores')
+    await expect(retrieveRelevantChunks({ query: 'annual leave', topK: 4 })).rejects.toThrow(RealUnsupported)
   })
 
-  test('an unknown provider produces NO error and NO diagnostic — the silent zero', async () => {
+  test('FIXED: an unknown provider DOES surface a diagnostic — the silent zero is gone', async () => {
     // The same configuration, observed at the seam rather than through the route: the failure
     // channel is completely empty. This is what makes defect (a) hard to notice in production.
     ;(globalThis as Record<string, unknown>).__vectorStoreRow = async () => ({
@@ -1070,13 +1099,14 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
 
     const config = await getVectorStoreRuntimeConfig()
     // No throw on the config either — a bad provider name is indistinguishable from INTERNAL.
-    const hits = await searchVectorStore({
+    const attempt = searchVectorStore({
       config: config!, vector: [0.1, 0.2, 0.3], limit: 8,
     })
 
-    expect(hits).toEqual([])
-    // INVERT WHEN FIXED: a rejection or an explicit "unsupported provider" diagnostic should
-    // appear here, rather than an empty array that reads as "no matches".
+    // FIXED: it rejects, so the failure channel is NOT empty. The config still LABELS the store INTERNAL --
+    // that label is deliberate -- but the label can no longer be used to produce a silent zero.
+    const { UnsupportedVectorProviderError: RealUnsupported } = await import('@/lib/vector-stores')
+    await expect(attempt).rejects.toThrow(RealUnsupported)
     expect(config!.provider).toBe('INTERNAL')
   })
 
@@ -1102,6 +1132,8 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     // once an embedding config resolves.
     orgContext = 'org-1'
     const { retrieveRelevantChunks } = await import('@/lib/rag-retrieval')
+    // Scoped to THIS turn: the recorder is shared across the file, so it is cleared immediately before the call.
+    searchVectorStoreCalls.length = 0
     const out = await retrieveRelevantChunks({ query: 'annual leave', topK: 4 })
 
     const qdrantCalls = searchVectorStoreCalls.filter((c) => c.provider === 'QDRANT')

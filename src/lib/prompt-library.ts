@@ -22,8 +22,21 @@ export async function createPrompt(userId: string, input: PromptInput): Promise<
   })
 }
 
+/**
+ * Load one saved prompt BY ID, scoped to the active organization.
+ *
+ * MUST be `findFirst`. `findUnique` is the one read the tenant extension cannot rewrite -- its where-clause is
+ * used verbatim -- so `db.savedPrompt.findUnique({ where: { id } })` returned the row for ANY organization id,
+ * and `GET /api/prompts` hands every prompt id to the browser. A member of one tenant could therefore read,
+ * rewrite or delete another tenant saved prompts by pasting an id.
+ *
+ * This also slipped past BOTH static guards, which is worth knowing. `tenant-route-guard.test.ts` passes because
+ * the route does call `enterWithOrg`, and the findUnique check in `invariants.test.ts` globs only files inside
+ * `src/app/api` whose name is `route.ts` -- the offending call sat one level down in `src/lib`. Scoping the read
+ * here is what makes those guards' assumptions true, rather than the route-level guard being the only barrier.
+ */
 export async function getPrompt(id: string): Promise<SavedPrompt | null> {
-  return db.savedPrompt.findUnique({ where: { id } })
+  return db.savedPrompt.findFirst({ where: { id } })
 }
 
 export async function listPrompts(filter: {

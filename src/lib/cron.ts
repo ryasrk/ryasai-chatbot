@@ -174,12 +174,34 @@ export function nextRun(expr: string, from: Date, timezone: string = 'UTC'): Dat
  * or invalid values so the DB always holds something BullMQ's cron-parser can
  * consume.
  */
+/**
+ * Coerce a user-supplied IANA zone to a usable one.
+ *
+ * `Intl.DateTimeFormat` REJECTS PADDED INPUT, which made this a silent data-loss bug: a schedule submitted as
+ * `' Asia/Jakarta '` failed the probe and came back as `'UTC'`, so a 09:00 Jakarta job fired at 09:00 UTC -- seven
+ * hours off -- while the UI kept displaying whatever the user typed. Trimming first is what makes the probe test
+ * the zone the user meant rather than the whitespace around it.
+ *
+ * The fallback stays `'UTC'` (a real zone, never a crash), but it is now reached only for input that is not a zone
+ * at all. Callers that need to TELL the user their zone was rejected should compare the result against the input;
+ * `isTimezoneAccepted()` is exported for exactly that.
+ */
 export function normalizeTimezone(tz?: string | null): string {
-  if (!tz) return 'UTC'
+  const trimmed = typeof tz === 'string' ? tz.trim() : ''
+  if (!trimmed) return 'UTC'
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz })
-    return tz
+    new Intl.DateTimeFormat('en-US', { timeZone: trimmed })
+    return trimmed
   } catch {
     return 'UTC'
   }
+}
+
+/**
+ * Did the zone survive normalisation? Lets a route reject a bogus zone instead of silently scheduling in UTC, so
+ * "09:00 in Jakarta" cannot quietly become "09:00 in UTC".
+ */
+export function isTimezoneAccepted(tz?: string | null): boolean {
+  const trimmed = typeof tz === 'string' ? tz.trim() : ''
+  return trimmed.length > 0 && normalizeTimezone(trimmed) === trimmed
 }
