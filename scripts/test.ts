@@ -60,7 +60,18 @@ async function worker() {
     if (code !== 0) {
       failed.push(path)
       console.log(`\nFAIL ${path}`)
-      for (const l of out.split('\n').filter(Boolean).slice(-25)) console.log('  ' + l)
+      const lines = out.split('\n').filter(Boolean)
+      if (lines.length === 0) {
+        // A subprocess that dies BEFORE printing anything (OOM kill, a module-load
+        // crash) produced no output, so the old report was a bare filename with no
+        // explanation -- which is what made three intermittent failures this session
+        // look like "flakes" that could not be diagnosed. Say explicitly that there
+        // was NO output and report the code, so the two cases are distinguishable:
+        // a real test failure always prints a "(fail)" line and a summary.
+        console.log(`  (no output — process exited ${code} before printing anything)`)
+      } else {
+        for (const l of lines.slice(-25)) console.log('  ' + l)
+      }
     } else {
       process.stdout.write('.')
     }

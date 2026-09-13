@@ -1,16 +1,10 @@
 {
-  "linePct": 83.57,
-  "linesHit": 16449,
-  "linesFound": 19682,
+  "linePct": 83.74,
+  "linesHit": 16479,
+  "linesFound": 19678,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
-    {
-      "file": "src/app/api/audit/route.ts",
-      "hit": 13,
-      "found": 47,
-      "pct": 27.659574468085108
-    },
     {
       "file": "src/lib/redis.ts",
       "hit": 32,
@@ -598,6 +592,12 @@
       "hit": 109,
       "found": 110,
       "pct": 99.0909090909091
+    },
+    {
+      "file": "src/app/api/audit/route.ts",
+      "hit": 43,
+      "found": 43,
+      "pct": 100
     },
     {
       "file": "src/lib/constants.ts",

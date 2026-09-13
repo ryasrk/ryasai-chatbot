@@ -133,6 +133,11 @@ const FLOORS: Record<string, number> = {
   // cookies die. The route sat at 35.14% executable with the entire POST flow
   // unexecuted; measured 100.00% (66/66) merged.
   'src/app/api/auth/login/route.ts': 100,
+  // THE AUDIT LOG READ PATH. Tenant scoping depends entirely on enterWithOrg
+  // running before the query, and the severity filter is an allow-list so an
+  // arbitrary string never reaches the comparison. One pagination-helper test left
+  // the handler at 38.24% executable; measured 100.00% (43/43) merged.
+  'src/app/api/audit/route.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

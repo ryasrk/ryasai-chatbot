@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f98f0cf`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `839e6ee`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f98f0cf`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **83,57%** (16.449/19.682 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.557 lulus · 0 gagal** | terukur |
+| Test coverage | **83,74%** (16.479/19.678 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.567 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **78 modul** | +16 |
+| Modul ter-gate | 62 modul | **79 modul** | +17 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -104,7 +104,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/cognee-core.ts` | 91,12% → **83,33%** merged (**turun**, §1.7z) | 91,98% → **100,00%** kode eksekutabel (215/215) | 27 |
 | `src/lib/knowledge-graph.ts` | 93,55% → **78,57%** merged (**turun**, §1.7z) | 94,16% → **99,35%** kode eksekutabel (154/155) | 18 |
 | `src/app/api/auth/login/route.ts` | 18,06% → **100,00%** merged | 35,14% → **100,00%** kode eksekutabel (66/66) | 16 |
-| **Total repo** | **62,44%** | **83,57%** | — |
+| `src/app/api/audit/route.ts` | 27,66% → **100,00%** merged | 38,24% → **100,00%** kode eksekutabel (43/43) | 11 |
+| **Total repo** | **62,44%** | **83,74%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -363,7 +364,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**284 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**290 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2623,6 +2624,55 @@ baris) supaya celah ini terlihat, bukan tersirat sebagai cakupan yang tidak ada.
 rotasi `sessionVersion` dihapus, `httpOnly` dimatikan, audit `LOGIN_FAILED` dihapus,
 `enterWithOrg` dilewati, dan `req.json().catch()` dihapus. Masing-masing menyalakan test yang
 spesifik.
+
+### 1.7az `api/audit/route.ts` 38,24% → 100,00%, dan FLAKE RUNNER AKHIRNYA TERDIAGNOSIS
+
+**`api/audit/route.ts` merged 27,66% → 100,00% (43/43).** Repo **83,57% → 83,74% (+0,17)**.
+Modul ter-gate **78 → 79**.
+
+**Pola yang saya cari dan temukan dua kali.** Ronde lalu menemukan modul ber-merged terendah
+yang **tidak muncul di daftar sisa mana pun** karena file test-nya **ada dan hijau**, padahal
+test itu hanya menguji fungsi murni. Saya sisir ulang dengan kriteria itu dan menemukan
+**dua** kandidat: `api/audit/route.ts` (27,66%) dan `lib/evidence-boundary.ts` (46,67%).
+Yang kedua ternyata **sudah 100,00% eksekutabel** (14/14) — merged 46,67%-nya murni artefak
+`LF` (§1.7z, 30 → 44 baris di-instrumentasi oleh file test lain). Yang pertama nyata:
+**38,24% (13/34), 21 baris**, karena satu test `parseAuditPagination` meninggalkan **seluruh
+handler `GET` tak dieksekusi**.
+
+**Yang kini dijaga pada audit log.** (a) **`enterWithOrg` sebelum query** — seluruh scoping
+tenant bergantung pada ini; kalau urutannya salah, respons berisi **peristiwa organisasi
+lain**. (b) **Filter severity adalah ALLOW-LIST** (`info|warning|critical`) — string
+sembarang **diabaikan**, bukan diteruskan; nilai tak terduga yang sampai ke perbandingan
+Postgres bisa error alih-alih mengembalikan kosong. (c) **Filter yang SAMA mencapai query
+halaman DAN count** — kalau berbeda, `total` menggambarkan himpunan hasil yang lain dan UI
+memaginasi melewati ujung. (d) **`orderBy: desc`** — log audit yang dibaca dari yang terlama
+tidak berguna untuk meninjau insiden. (e) **`include: user`** — tanpa relasi aktor, log
+mengatakan apa yang terjadi tapi tidak **siapa**, padahal itulah alasan tabelnya ada. (f)
+**`skip = (page-1)*pageSize`**. (g) Permintaan **tak terautentikasi** diarahkan ke
+`handleApiError` dan **tidak melakukan query apa pun**.
+
+**FLAKE RUNNER: TERDIAGNOSIS, dan itu bukan flake.** Tiga kali sesi ini `bun run test` keluar
+1 sambil mencetak **hanya nama file tanpa detail**, dan saya dua kali mencatatnya sebagai
+"flake intermiten yang belum terdiagnosis — tidak dapat direproduksi". Saya akhirnya membaca
+`scripts/test.ts` alih-alih menebak: runner menyimpan `failed.push(path)` dan mencetak
+**hanya bila ada output**, jadi **proses subprocess yang mati sebelum mencetak apa pun**
+menghasilkan **nama file telanjang tanpa penjelasan**. Itu menjelaskan bentuk laporannya
+persis. Perbaikannya: runner kini menyatakan secara eksplisit
+`(no output — process exited N before printing anything)` sehingga **kegagalan test sungguhan**
+(selalu mencetak baris `(fail)` + ringkasan) dan **proses yang mati** **dapat dibedakan**.
+Diverifikasi dengan probe `process.exit(7)`: runner melaporkan `FAIL <path>` dengan penanda
+eksplisit. **Hipotesis OOM saya TIDAK terbukti** — 7 eksekusi berurutan bersih, `dmesg` tidak
+dapat diakses, dan cabang "no output" tidak berhasil saya reproduksi pada jalur nyata; saya
+mencatatnya sebagai **tak terbukti**, bukan sebagai penyebab.
+
+**Pelajaran yang saya terapkan sejak ronde lalu:** begitu sebuah gejala muncul **dua kali**,
+berhenti menyebutnya "flake" dan **baca alatnya**. Tiga ronde saya mencatat gejala ini tanpa
+menyentuh runner-nya; satu kali membaca 80 baris `scripts/test.ts` menghasilkan perbaikan
+yang dapat diverifikasi.
+
+**Kontrol negatif: 6, semuanya menggigit** — `enterWithOrg` dihapus, allow-list severity
+dihapus, `orderBy desc → asc`, `include: user` dihapus, count tanpa `where`, dan
+`skip = page * pageSize`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
