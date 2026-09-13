@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `051c9b9`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6becc98`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `051c9b9`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,72%** (17.503/20.184 baris, 132 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,71%** (1654/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 174 file · **4.160 lulus · 0 gagal** | terukur |
+| Test coverage | **86,76%** (17.557/20.237 baris, 133 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,73%** (1658/1769 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 175 file · **4.174 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**682 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**688 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4886,6 +4886,45 @@ bagian dari beberapa jalur pemanggil) dan **meremehkan helper yang dieksekusi se
 Dua kandidat fungsi-terburuk sebelumnya — `cognee.ts` (44,44%) dan `sso-saml.ts` (59,09%) — sudah terbukti
 artefak dengan cara yang sama. **Rasio fungsi per-file adalah PETUNJUK, bukan bukti.** Ia berguna justru
 karena pernah menemukan `db.ts` (nol fungsi dijalankan); ia menyesatkan bila dibaca sebagai skor.
+
+### 1.7cu 42 dari 99 route API tidak punya test SAMA SEKALI — dan yang pertama ditutup adalah jalur eskalasi hak akses
+
+Setelah cakupan cabang terbukti tidak terukur, saya mengaudit **`src/app/api/`** secara struktural, bukan
+per-baris. Hasilnya terukur:
+
+| Ukuran | Jumlah |
+|---|---|
+| `route.ts` di `src/app/api/` | **99** |
+| Terinstrumen di laporan cakupan | **24** |
+| Punya `*.test.ts` di direktorinya | **16** |
+| **Tidak punya test DAN tidak direferensikan test mana pun** | **42** |
+
+Jadi **42% dari permukaan HTTP aplikasi tidak pernah dijalankan oleh satu test pun**, dan karena mereka
+tidak terinstrumen, **mereka juga tidak muncul di angka 86,76%** — coverage itu mengukur apa yang
+*kebetulan* tersentuh, bukan seluruh permukaan. Ini adalah pernyataan paling penting di ronde ini:
+**angka coverage tidak boleh dibaca sebagai "sisa 13% belum teruji"; ia mengukur subset yang terinstrumen.**
+
+**Prioritas dipilih berdasarkan risiko, bukan kemudahan.** Dari 42 orphan, yang pertama ditutup adalah
+**`src/app/api/users/[id]/role/route.ts` (PATCH)** — **satu-satunya endpoint yang memberikan atau mencabut
+peran `admin`.** Sebuah cacat di sini adalah **bug hak akses**, bukan bug tampilan.
+
+**`users/[id]/role/route.ts`: tidak ada → 100,00% (52/52).** Yang dipatok adalah empat properti yang lebih
+bernilai daripada cakupan baris:
+1. **sesi non-admin DITOLAK** (viewer DAN analyst), dan `updateArgs` dibuktikan kosong — rutenya tidak
+   menulis sebelum memeriksa;
+2. **whitelist peran**: `superuser`, `Admin`, `owner`, `''`, `'admin '`, `root` semuanya 400 **sebelum**
+   lookup atau tulis apa pun;
+3. **target dibaca dengan `findFirst`, bukan `findUnique`** — aturan IDOR lintas-org repo ini: sebuah id
+   dari org lain harus **tidak** resolve, sehingga tidak bisa dibedakan dari "tidak ditemukan";
+4. **audit mencatat oldRole DAN newRole** — tanpa `oldRole`, peninjau tidak bisa membedakan eskalasi dari
+   no-op.
+
+**6 kontrol, semuanya menggigit:** `requireRole` dihapus (**2 merah**), whitelist dihapus (3),
+**`findFirst`→`findUnique` (**7 merah** — kontrol terkuat ronde ini, membuktikan penguncian org-scoping
+itu nyata), `oldRole` dihapus dari audit (1), `enterWithOrg` dihapus (1), pemetaan P2025→404 dihapus (1).
+
+Repo **86,72% → 86,76%**; file terinstrumen **132 → 133**; suite **4.160 → 4.174** (174 → **175 file**);
+gate **132 → 133 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

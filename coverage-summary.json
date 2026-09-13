@@ -1,11 +1,11 @@
 {
-  "linePct": 86.72,
-  "linesHit": 17505,
-  "linesFound": 20185,
-  "fnPct": 93.71,
-  "fnsHit": 1654,
-  "fnsFound": 1765,
-  "filesMeasured": 132,
+  "linePct": 86.76,
+  "linesHit": 17557,
+  "linesFound": 20237,
+  "fnPct": 93.73,
+  "fnsHit": 1658,
+  "fnsFound": 1769,
+  "filesMeasured": 133,
   "failedTestFiles": [],
   "files": [
     {
@@ -907,6 +907,15 @@
       "fHit": 4,
       "fFound": 5,
       "fPct": 80
+    },
+    {
+      "file": "src/app/api/users/[id]/role/route.ts",
+      "hit": 52,
+      "found": 52,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
     },
     {
       "file": "src/lib/cognee-types.ts",

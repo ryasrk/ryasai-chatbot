@@ -94,6 +94,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/chat-layout.ts': 95, // measured 100.00% (8/8)
   'src/lib/cognee-types.ts': 100, // measured 100.00% (15/15); was mocked by every test that used it
   'src/lib/notifications.ts': 100, // measured 100.00% (132/132); the Resend send path was never run
+  'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
   'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)
   'src/lib/embeddings.ts': 82, // merged 82.91%; floor from coverage-summary.json (merged)
