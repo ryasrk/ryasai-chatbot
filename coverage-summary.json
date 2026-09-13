@@ -1,6 +1,6 @@
 {
-  "linePct": 86.55,
-  "linesHit": 17468,
+  "linePct": 86.62,
+  "linesHit": 17483,
   "linesFound": 20183,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -160,12 +160,6 @@
       "hit": 51,
       "found": 62,
       "pct": 82.25806451612904
-    },
-    {
-      "file": "src/middleware.ts",
-      "hit": 70,
-      "found": 85,
-      "pct": 82.35294117647058
     },
     {
       "file": "src/lib/embeddings.ts",
@@ -717,6 +711,12 @@
       "file": "src/lib/mcp-sandbox.ts",
       "hit": 99,
       "found": 99,
+      "pct": 100
+    },
+    {
+      "file": "src/middleware.ts",
+      "hit": 85,
+      "found": 85,
       "pct": 100
     },
     {

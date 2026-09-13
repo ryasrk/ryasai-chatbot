@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fd42b51`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `16997b1`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fd42b51`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,55%** (17.468/20.183 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 172 file · **4.115 lulus · 0 gagal** | terukur |
+| Test coverage | **86,62%** (17.483/20.183 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 173 file · **4.136 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**641 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**652 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4603,6 +4603,54 @@ itu K3 (nonce), K5 (kanonikalisasi JSON) dan K6 (hasil `verify` diabaikan) mengg
 **Kontrol ronde ini: 10, dengan 2 redundan terverifikasi dan 8 menggigit.** `notifications.ts` 6/6
 menggigit (guard kunci, guard penerima, pembalikan `!res.ok` → **9 merah**, truncation 160 char,
 `.catch()` pada `res.text()`, `EMAIL_FROM` diabaikan). Repo **86,43% → 86,55%**; suite **4.098 → 4.115**.
+
+### 1.7cn FAIL-OPEN pada proteksi brute-force login, dan sebuah file yang tak punya test sama sekali
+
+**`src/middleware.ts` tidak punya test file.** Padahal ia gerbang Edge untuk **setiap** route API:
+pemeriksaan sesi, proteksi brute-force login, dan rate limit per-key.
+
+**Defect yang ditemukan dengan menjalankannya, bukan dengan membacanya.**
+
+`PUBLIC_API_PATHS` diperiksa di **baris 77** dan langsung `return NextResponse.next()` — **sebelum**
+blok rate limit di **baris 86**. Dan **`/api/auth/login` ADA di daftar publik itu.** Jadi limiter yang
+komentarnya sendiri nyatakan *`'/api/auth/login', RATE_LIMIT_LOGIN, // brute force protection`*
+**tidak pernah berjalan untuk endpoint itu.**
+
+**Terukur:** 200 POST ke `/api/auth/login` → **200 × HTTP 200**. Kontrol `/api/documents` dengan key yang
+sama → **20 × 200 lalu 180 × 429**. Jadi limiter-nya bekerja; path login-nya yang di-bypass.
+
+**Kenapa `/api/auth/login` berbeda dari bypass publik lain.** `/api/v1/chat/completions` dan
+`/api/v1/agent/run` juga ada di daftar publik, **tapi keduanya punya limiter per-API-key DI DALAM route
+handler** (`rateLimit(\`api:${apiKeyId}\`)`) — jadi masih tertutup di lapisan lain. `/api/auth/login`
+**tidak punya limiter lain**: grep `rateLimit|attempts|lockout` di route itu → **nol kecocokan**.
+`constants.test.ts` bahkan punya test *"login has strictest limit (brute force protection)"* — nilainya
+benar dan ketat, tapi **tidak ada yang menegakkan**.
+
+**Saya TIDAK memperbaiki ini.** Mengubah perilaku auth (menambahkan 429 pada login) adalah keputusan
+produk-keamanan yang bisa memengaruhi laju login pengguna nyata, dan tidak boleh diselipkan ke commit
+coverage. Yang saya lakukan: **memaku perilaku fail-open saat ini dalam sebuah test** yang menyebut
+dirinya *"KNOWN FAIL-OPEN ... THIS TEST PINS A DEFECT, NOT A DESIRE"*, sehingga perbaikannya menjadi
+perubahan yang **sengaja** dan terlihat (test itu akan merah), bukan perubahan tak terlihat.
+
+**Tiga kesalahan test saya sendiri, ditemukan lewat kontrol.**
+1. Test method-limiter saya memakai **key segar** untuk tiap method — dan **key segar SELALU diizinkan
+   apa pun method-nya**, jadi test itu tak membedakan GET yang dikecualikan dari POST yang dibatasi.
+   Diperbaiki: **habiskan bucket dengan POST dulu**, baru coba method lain pada key yang sama.
+2. Saya mengira `/api` telanjang harus 401 — ternyata `/api` **literal entri pertama**
+   `PUBLIC_API_PATHS`. Ekspektasi saya yang salah, bukan kodenya.
+3. Test eviction saya menyatakan sweep "tak merusak request", yang **benar bahkan bila sweep dihapus**.
+
+**Satu kontrol tidak menggigit, dan saya buktikan mengapa:** menghapus **seluruh blok sweep** (baris
+94-96) tetap **21 pass**. Sebabnya: kebenaran rate limit dijaga **jalur baca** di baris 91
+(`if (!bucket || now > bucket.resetAt)`) yang sudah me-reset bucket basi — jadi sweep itu **optimisasi
+memori murni**, bukan penjaga kebenaran. Bukti pendukungnya: kontrol yang membuat sweep menghapus bucket
+**hidup** (`RATE_BUCKETS.clear()`) **menggigit** (1 merah). Saya deklarasikan sweep sebagai non-kontrol
+dengan alasan ini, bukan mengklaimnya tertutup.
+
+**`middleware.ts` 85,37% → 100,00% (85/85).** Repo **86,55% → 86,62%**; suite **4.115 → 4.136**;
+gate **107 → 108 modul**. **8 kontrol: 6 menggigit** (401 dihapus, 429→next, key global 3 merah,
+`Infinity` default 5 merah, method POST-only, GET ikut dibatasi, `clear()` genap bucket hidup),
+**2 non-kontrol terverifikasi** (sweep; dan guard `!signature` ronde sebelumnya).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
