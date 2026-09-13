@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f1bf968`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2ef0453`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f1bf968`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,35%** (17.426/20.180 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 172 file · **4.073 lulus · 0 gagal** | terukur |
+| Test coverage | **86,39%** (17.433/20.180 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 172 file · **4.082 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**622 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**628 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4480,6 +4480,47 @@ tidak melewatinya; saya telusuri sampai akar.
 ditambahkan (1), `catch` restore dihapus (**crash**), update pointer dihapus (2 seteluh `mockClear`),
 version ditulis `version+1` (2). Repo **86,34% → 86,35%**; suite **171 → 172 file**, **4.059 → 4.073
 lulus**.
+
+### 1.7ck Kelas celah yang sistematis: `catch` top-level di route API
+
+**Pola yang akhirnya terlihat jelas.** Mengukur eksekutabel ketiga route ini menunjukkan **setiap**
+celah berada di tempat yang sama: **blok `catch` terluar**.
+
+| route | baris tak tercakup |
+|---|---|
+| `billing/orders/[id]/route.ts` | 34-35 — `catch` |
+| `chat/sessions/route.ts` | 33-34, 64-65 — `catch` GET dan POST |
+| `prompt-tools/route.ts` | 25 — `catch` GET; **42 — cabang `else`** (tulis pertama) |
+
+**Mengapa ini berbahaya dan tidak terlihat.** Test route biasanya memverifikasi **jalur sukses** (200/
+201/404) — itu yang mudah ditulis dan itulah yang ada. Akibatnya `handleApiError` **tidak pernah
+dipanggil** di test mana pun. Kalau catch itu rusak, DB yang mati menghasilkan **penolakan tak
+tertangani**, bukan error terklasifikasi; sidebar sesi **kosong tanpa penjelasan**; dan dialog checkout
+**berputar tanpa pesan** — padahal `/api/billing/orders/[id]` adalah endpoint polling pembayaran.
+
+**`/api/prompt-tools` juga punya celah kedua yang berbeda jenis:** GET **tidak punya test sama sekali**
+(hanya PUT), dan **cabang `else`** — tulis **pertama** saat instalasi baru belum punya baris
+`AppConfig` — belum pernah dijalankan. Kalau itu regresi, **penyimpanan prompt pertama di instalasi
+baru gagal total**.
+
+**Kesalahan saya yang menyingkap sifat modul nyata.** Mock `prompt-settings` yang saya tulis
+mengembalikan `ragContextPrompt: 'rag'`, dan itu **menjatuhkan tiga test lama**. Saya **tidak** mengubah
+test lamanya — saya periksa modul aslinya: `parsePromptSettings` mengembalikan **`''`**, bukan
+`undefined` atau nilai karangan, untuk key yang tidak ada. Mock saya yang salah menggambarkan modul
+nyata (persis kesalahan yang diperingatkan di file itu: *"A partial mock silently breaks production
+call sites it does not cover"*). Mock kini mencerminkan perilaku asli, termasuk bahwa
+`ragContextPrompt` non-string **diabaikan**.
+
+**Ketiga route kini 100,00%:** billing **27/27**, sessions **47/47**, prompt-tools **37/37**.
+Repo **86,35% → 86,39%**; suite **4.073 → 4.082 lulus**.
+
+**6 kontrol, semuanya menggigit:** `catch` billing dihapus (**crash**), pesan billing diganti generik
+(1 merah), `catch` GET prompt-tools dihapus (**crash**), cabang `else`/create dihapus (1), `catch` GET
+sessions dihapus (**crash**), `catch` POST sessions dihapus (**crash**).
+
+**Non-kontrol yang tetap saya deklarasikan:** `passwords.ts` 34-35 butuh nilai tersimpan
+~5,7 miliar karakter; `plan-gating.ts` dan `tool-rate-limit.ts` **sudah 100,00% eksekutabel**
+(merged 94,87% dan 92,86% adalah artefak union).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

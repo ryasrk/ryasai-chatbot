@@ -43,7 +43,7 @@ import { readFileSync, existsSync } from 'node:fs'
 const FLOORS: Record<string, number> = {
   'src/app/api/auth/change-password/route.ts': 95, // measured 100.00% (53/53)
   'src/app/api/auth/signup/route.ts': 90, // measured 96.26% (103/107)
-  'src/app/api/billing/orders/[id]/route.ts': 85, // measured 92.59% (25/27)
+  'src/app/api/billing/orders/[id]/route.ts': 100, // measured 100.00% (27/27); catch was uncovered
   'src/app/api/billing/orders/route.ts': 90, // measured 96.00% (48/50)
   // Payment webhook: signature fail-closed when SERVER_KEY is unset, the order_id
   // guard, gross_amount mismatch, the atomic settlement claim and the retry on a
@@ -75,7 +75,7 @@ const FLOORS: Record<string, number> = {
   // Full-text search: tenant-scoped raw SQL, the BM25 corpus-stat refresh and its
   // degradation path.
   'src/lib/rag-fts.ts': 70, // measured 70.78% merged; 109/109 executable
-  'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
+  'src/app/api/chat/sessions/route.ts': 100, // measured 100.00% (47/47); both catches were uncovered
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)
   'src/app/api/integrations/[id]/route.ts': 95, // measured 98.48% (195/198)
@@ -85,7 +85,7 @@ const FLOORS: Record<string, number> = {
   'src/app/api/mcp/servers/route.ts': 85, // measured 94.67% (142/150)
   'src/app/api/metrics/route.ts': 95, // measured 100.00% (43/43)
   'src/app/api/notifications/route.ts': 80, // measured 88.57% (62/70)
-  'src/app/api/prompt-tools/route.ts': 85, // measured 94.59% (35/37)
+  'src/app/api/prompt-tools/route.ts': 100, // measured 100.00% (37/37); GET and the create branch were uncovered
   'src/app/api/v1/agent/run/route.ts': 85, // measured 90.08% (118/131)
   'src/lib/async-worker.ts': 100, // measured 100.00% (59/59)
   'src/lib/billing-ui.ts': 95, // measured 100.00% (33/33)

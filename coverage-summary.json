@@ -1,6 +1,6 @@
 {
-  "linePct": 86.35,
-  "linesHit": 17426,
+  "linePct": 86.39,
+  "linesHit": 17433,
   "linesFound": 20180,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -390,12 +390,6 @@
       "pct": 91.66666666666666
     },
     {
-      "file": "src/app/api/billing/orders/[id]/route.ts",
-      "hit": 25,
-      "found": 27,
-      "pct": 92.5925925925926
-    },
-    {
       "file": "src/lib/tool-rate-limit.ts",
       "hit": 26,
       "found": 28,
@@ -412,12 +406,6 @@
       "hit": 343,
       "found": 367,
       "pct": 93.46049046321527
-    },
-    {
-      "file": "src/app/api/chat/sessions/route.ts",
-      "hit": 44,
-      "found": 47,
-      "pct": 93.61702127659575
     },
     {
       "file": "src/lib/redis.ts",
@@ -448,12 +436,6 @@
       "hit": 34,
       "found": 36,
       "pct": 94.44444444444444
-    },
-    {
-      "file": "src/app/api/prompt-tools/route.ts",
-      "hit": 35,
-      "found": 37,
-      "pct": 94.5945945945946
     },
     {
       "file": "src/app/api/mcp/servers/route.ts",
@@ -570,6 +552,12 @@
       "pct": 100
     },
     {
+      "file": "src/app/api/billing/orders/[id]/route.ts",
+      "hit": 27,
+      "found": 27,
+      "pct": 100
+    },
+    {
       "file": "src/lib/pricing.ts",
       "hit": 39,
       "found": 39,
@@ -591,6 +579,12 @@
       "file": "src/lib/billing-verify.ts",
       "hit": 18,
       "found": 18,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/chat/sessions/route.ts",
+      "hit": 47,
+      "found": 47,
       "pct": 100
     },
     {
@@ -627,6 +621,12 @@
       "file": "src/app/api/metrics/route.ts",
       "hit": 43,
       "found": 43,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/prompt-tools/route.ts",
+      "hit": 37,
+      "found": 37,
       "pct": 100
     },
     {
