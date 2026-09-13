@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d28e34`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f6487f7`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d28e34`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.296 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.302 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -240,8 +240,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `foreignKey` selalu `undefined` (relasi antar tabel hilang) | `real-connectors.ts:425` | 2 |
 | Default schema MSSQL `dbo` → `public` | `real-connectors.ts:933` | 1 |
 | Filter `index_id IN (0,1)` dilonggarkan | `real-connectors.ts:942` | 1 |
+| `readOnlyIntent` dihapus dari pool MSSQL | `real-connectors.ts:878` | 2 |
+| Normalisasi row dilewati (`Date` bocor ke prompt) | `real-connectors.ts:1003` | 1 |
+| `rowCount` di-nolkan | `real-connectors.ts:1004` | 1 |
 
-**140 kontrol + 3 kontrol gate, semuanya sah.**
+**144 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1249,6 +1252,50 @@ sebenarnya. Assertion kini memakai bentuk yang **terukur**.
 Kontrol negatif: **3** untuk bagian (b), masing-masing menggagalkan test yang dituju
 (kontrol FK menggagalkan **dua** test — Postgres dan MSSQL — jadi FK kini dijaga di
 dua jalur), dan **3** untuk bagian (a) yang **tidak menggigit sebelum** perubahan ini.
+
+### 1.7y MSSQL: `readOnlyIntent` tak terverifikasi, dan `xp_cmdshell` bocor di lapisan bawah
+
+**Total repo TIDAK bergerak (80,55%) dan `real-connectors.ts` tetap 73,11%.** Commit ini
+menambah **NOL baris cakupan**; nilainya **kontrol** dan **temuan**, dan pesan commitnya
+mengatakan keduanya.
+
+**(a) Satu-satunya kontrol MSSQL yang bisa ditegakkan tidak teruji.** Komentar sumber
+mengatakan kontrol read-only MSSQL satu-satunya yang bisa ditegakkan runtime adalah
+`ApplicationIntent=ReadOnly` (`options.readOnlyIntent`), yang meminta *read-only intent*
+ke server agar Availability Group mengarahkan ke replika sekunder. **`grep` tidak
+menemukan test `readOnlyIntent` di mana pun.** Kini diuji: pool dibuka dengan
+`readOnlyIntent: true`, **dan tidak hilang saat SSL dikonfigurasi** — dua setelan itu
+independen, dan cabang `trustServerCertificate` yang menulis ulang `options` bisa
+menjatuhkannya diam-diam. Kontrol negatif: menghapus `readOnlyIntent` menggagalkan
+**kedua** test. Plus jalur sukses `MssqlConnector.executeQuery` (normalisasi row,
+`rowCount`, `executionMs`) yang hit-nya nol.
+
+**(b) Temuan: `assertNoDangerousFunctions` menangkap 3 dari 4 escape hatch SQL Server,
+BUKAN `xp_cmdshell`.** Komentar `real-connectors.ts:996` mendaftar `xp_cmdshell` sebagai
+diblokir oleh `assertNoDangerousFunctions`. **Terukur:**
+
+| Query | Hasil di `executeQuery` |
+|---|---|
+| `OPENROWSET(...)` | ditolak — `not permitted on a read-only data source` |
+| `OPENDATASOURCE(...)` | ditolak — pesan sama |
+| `BULK INSERT ...` | ditolak **lebih awal** oleh `assertSelectOnly` |
+| **`xp_cmdshell('dir')`** | **LOLOS ke pool** |
+
+Sebabnya: `assertNoDangerousFunctions()` menjalankan `detectDangerousFunctions()`, yang
+memindai `DANGEROUS_FUNCTIONS` + `INJECTION_SHAPES` — **BUKAN** `DANGEROUS_PATTERNS`,
+daftar yang justru memuat `/\bxp_\w+/i`. Diverifikasi dua sisi: probe langsung
+`detectDangerousFunctions("SELECT xp_cmdshell('dir')")` → **`[]`**, dan
+`validateAndSanitizeLlmSql(...)` → **`ok:false`, "dangerous pattern detected — SQL Server
+extended proc (xp_)"**.
+
+**Ini celah pertahanan-berlapis, BUKAN lubang terbuka**, dan saya periksa jalurnya
+sebelum menyimpulkan: `executeQuery` **selalu** dipanggil setelah
+`validateAndSanitizeLlmSql` di **kedua** call site produksi
+(`stream-preparers.ts:311`, `tool-branches.ts:376`), dan lapisan atas **menolak**
+`xp_cmdshell`. Jadi produksi aman; yang salah adalah **satu lapisan mengklaim cakupan
+yang tidak dimilikinya**. Test mem-*pin* perilaku nyata dan mencatat **lapisan mana yang
+menanggung beban** untuk tiap pola, sehingga bila lapisan atas di-bypass atau diubah
+urutannya, ada test yang mendokumentasikannya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -32,9 +32,10 @@ let mssqlQueryResult: unknown = { recordset: [{ ok: 1 }] }
 let mssqlConnectError: Error | null = new Error(FAKE_MSSQL_MESSAGE)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+let lastMssqlCfg: Record<string, unknown> | null = null
 const FakeConnectionPool = class {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(public cfg: Record<string, unknown>) {}
+  constructor(public cfg: Record<string, unknown>) { lastMssqlCfg = cfg }
   async connect() {
     mssqlConnectAttempts++
     if (mssqlConnectError) throw mssqlConnectError
@@ -1345,5 +1346,96 @@ describe('MssqlConnector.fetchSchema', () => {
     // index_id IN (0, 1) is heap + clustered index; without it every non-clustered
     // index contributes its own copy of the row count and the estimate multiplies.
     expect(rowCountSql).toMatch(/index_id\s+IN\s*\(0,\s*1\)/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// MssqlConnector.pool() and executeQuery
+//
+// The source comment says the ONE read-only control MSSQL can enforce at runtime
+// is `ApplicationIntent=ReadOnly` on the pool (options.readOnlyIntent), which asks
+// the server for a read-only intent so an Availability Group routes to a secondary
+// replica. grep found NO test for readOnlyIntent anywhere, so the only enforceable
+// control this connector has was unverified.
+//
+// Two more unexecuted lines sat here too: MssqlConnector.executeQuery's success
+// path (row normalisation, rowCount, executionMs) had a coverage count of zero.
+// ---------------------------------------------------------------------------
+
+describe('MssqlConnector — read-only intent and executeQuery', () => {
+  test('the pool is opened with readOnlyIntent so the server can route to a replica', async () => {
+    mssqlConnectError = null
+    const c = new MssqlConnector({ host: 'h', port: 1433, database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    await c.testConnection()
+    expect(lastMssqlCfg?.options).toMatchObject({ readOnlyIntent: true })
+  })
+
+  test('readOnlyIntent is NOT dropped when SSL is configured', async () => {
+    mssqlConnectError = null
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p', ssl: true }, 'MSSQL')
+    await c.testConnection()
+    // The two settings are independent; a trustServerCertificate branch that
+    // rewrote `options` could silently drop the read-only intent.
+    expect(lastMssqlCfg?.options).toMatchObject({ readOnlyIntent: true, encrypt: true })
+    expect(lastMssqlCfg?.options).toMatchObject({ trustServerCertificate: false })
+  })
+
+  test('a permitted SELECT returns normalised rows and a row count', async () => {
+    mssqlConnectError = null
+    const when = new Date('2024-05-06T07:08:09.000Z')
+    mssqlQueryResult = { recordset: [{ created_at: when }] }
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    const r = await c.executeQuery('SELECT created_at FROM t')
+    // A Date does not survive JSON.stringify into an LLM prompt.
+    expect(r.rows[0].created_at).toBe('2024-05-06T07:08:09.000Z')
+    expect(r.rowCount).toBe(1)
+    expect(typeof r.executionMs).toBe('number')
+  })
+
+  test('MSSQL has no read-only TRANSACTION, so the SQL guards are what stop a write', async () => {
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    const poison = { request: () => { throw new Error('pool must not be reached') } }
+    ;(c as unknown as { _pool: unknown })._pool = poison
+    await expect(c.executeQuery('DELETE FROM t')).rejects.toThrow('Only SELECT/WITH queries are permitted.')
+  })
+
+  test('assertNoDangerousFunctions catches the SQL-Server escape hatches it claims to, except xp_', async () => {
+    // MEASURED, and it corrects the comment in real-connectors.ts, which lists
+    // xp_cmdshell among what assertNoDangerousFunctions blocks.
+    //
+    // assertNoDangerousFunctions() runs detectDangerousFunctions(), which scans
+    // DANGEROUS_FUNCTIONS + INJECTION_SHAPES — NOT DANGEROUS_PATTERNS, the list
+    // that actually holds /\bxp_\w+/i. Both rejections below are proven to be
+    // PRE-FLIGHT: the poison pool would throw "pool must not be reached" if any
+    // SQL had been sent.
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error('pool must not be reached') } }
+
+    await expect(c.executeQuery("SELECT * FROM OPENROWSET('SQLNCLI','s','SELECT 1')"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    await expect(c.executeQuery("SELECT * FROM OPENDATASOURCE('SQLNCLI','s').db.dbo.t"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    // BULK INSERT is caught earlier, by assertSelectOnly — it is not a SELECT/WITH
+    // at all, so it never reaches the function scan.
+    await expect(c.executeQuery("BULK INSERT t FROM 'c:\\x'"))
+      .rejects.toThrow('Only SELECT/WITH queries are permitted.')
+
+    // xp_cmdshell is NOT stopped by this layer — it reaches the pool. A
+    // defence-in-depth gap, not an open hole: both production call sites
+    // (stream-preparers.ts:311, tool-branches.ts:376) run
+    // validateAndSanitizeLlmSql() first, which DOES reject it ("dangerous pattern
+    // detected — SQL Server extended proc (xp_)"). Pinned so that if the upper
+    // layer is ever bypassed or reordered, this test records exactly which layer
+    // is load-bearing for each pattern.
+    await expect(c.executeQuery("SELECT xp_cmdshell('dir')")).rejects.toThrow('pool must not be reached')
+  })
+
+  test('a recordset the driver omits yields zero rows, not a crash', async () => {
+    mssqlConnectError = null
+    mssqlQueryResult = {}
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    const r = await c.executeQuery('SELECT 1')
+    expect(r.rows).toEqual([])
+    expect(r.rowCount).toBe(0)
   })
 })
