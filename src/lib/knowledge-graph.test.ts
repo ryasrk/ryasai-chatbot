@@ -7,6 +7,7 @@ let chunkFindManyArgs: any[] = []
 let queryRawCalls: Array<{ strings: string[]; values: unknown[] }> = []
 let kgRelationRows: Array<{ chunkId: string; source: string; target: string; description: string }> = []
 let kgCreateManyThrows: Error | null = null
+let queryRawThrows: Error | null = null
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -27,6 +28,7 @@ mock.module('@/lib/db', () => ({
     },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       queryRawCalls.push({ strings: [...strings], values })
+      if (queryRawThrows) throw queryRawThrows
       return kgRelationRows
     },
   },
@@ -38,7 +40,7 @@ mock.module('@/lib/llm-config', () => ({
   getRoleLlmConfig: async () => ({ provider: 'OPENAI', baseUrl: 'x', apiKey: 'k', model: 'm' }),
 }))
 
-import { dualLevelRetrieval, indexChunkKnowledgeGraph } from './knowledge-graph'
+import { dualLevelRetrieval, extractEntitiesRelations, indexChunkKnowledgeGraph } from './knowledge-graph'
 import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 
 const TEST_ORG = 'org-kg-test'
@@ -49,6 +51,7 @@ beforeEach(async () => {
   chunkFindManyArgs = []
   queryRawCalls = []
   kgRelationRows = []
+  queryRawThrows = null
   kgCreateManyThrows = null
 })
 
@@ -166,5 +169,137 @@ describe('dualLevelRetrieval — global level tenancy', () => {
     expect(result.graphContext).toContain('acme corp')
     expect(result.graphContext).toContain('was billed')
     expect(result.globalChunks).toContain('chunk-9')
+  })
+})
+
+
+describe('dualLevelRetrieval — a broken GLOBAL level degrades to local only', () => {
+  test('a throwing relation query is contained, and the local level still returns', async () => {
+    // The catch at 269-271. Global graph retrieval is an ENHANCEMENT layered on the
+    // local level: if the relation query fails (missing table, timeout), the caller
+    // must still receive its local chunks. Rethrowing would turn a partial outage in
+    // an optional feature into a TOTAL retrieval failure.
+    queryRawThrows = new Error('relation "KgRelation" does not exist')
+    const result = await dualLevelRetrieval({ query: 'invoice disputes', topK: 4 })
+    // THE DECISIVE ASSERTION, and the one my first three versions missed.
+    // `graphContext === ''` is ALSO what a totally failed retrieval returns, and the
+    // OUTER catch (288-290) returns empty everything -- so rethrowing from 269-271
+    // still satisfied every assertion I had. The difference between "degraded to
+    // local only" and "failed entirely" is that the LOCAL level survived: the local
+    // chunk ids must still be present. Without this, the test could not tell the
+    // two apart and stayed green when the degradation was deleted.
+    expect(result.localChunks).toEqual(['chunk-1'])
+    expect(result.allChunkIds).toEqual(['chunk-1'])
+    // The raw query WAS attempted -- proving we reached the catch rather than
+    // skipping the global level for some other reason.
+    expect(queryRawCalls.length).toBeGreaterThan(0)
+    // ...and the graph half contributed NOTHING, which is the degradation.
+    expect(result.globalChunks).toEqual([])
+    // DECISIVE: a healthy query in the same fixture yields a NON-EMPTY graph
+    // context and extra global chunks. Without this comparison the assertions above
+    // were satisfied even when the catch rethrew (measured: deleting the degradation
+    // left this test green), because 'no graph context' is also what a skipped
+    // global level produces. The fixture must be one whose global level WOULD
+    // succeed, so the failure is what removes it.
+    queryRawThrows = null
+    kgRelationRows = [
+      { chunkId: 'chunk-global', source: 'acme corp', target: 'invoice 42', description: 'was billed' },
+    ]
+    const healthy = await dualLevelRetrieval({ query: 'invoice disputes', topK: 4 })
+    expect(healthy.graphContext).not.toBe('')
+    expect(healthy.graphContext).toContain('was billed')
+    expect(healthy.globalChunks).toContain('chunk-global')
+  })
+
+  test('a HEALTHY relation query does produce graph context (the inverse)', async () => {
+    kgRelationRows = [
+      { chunkId: 'chunk-9', source: 'acme corp', target: 'invoice 42', description: 'was billed' },
+    ]
+    const result = await dualLevelRetrieval({ query: 'invoice disputes', topK: 4 })
+    expect(result.graphContext).not.toBe('')
+  })
+})
+
+describe('dualLevelRetrieval — a failure in the LOCAL level is still contained', () => {
+  test('a throwing chunk lookup yields an empty result, not a throw', async () => {
+    // The catch at 288-290, the outermost guard. This is the backstop: whatever
+    // goes wrong inside (including the local Prisma read), the call returns a shape
+    // callers can destructure. A throw here would propagate into the answer path.
+    const { db } = await import('@/lib/db')
+    const original = db.documentChunk.findMany
+    ;(db.documentChunk as { findMany: unknown }).findMany = async () => {
+      throw new Error('documentChunk exploded')
+    }
+    try {
+      const result = await dualLevelRetrieval({ query: 'invoice disputes', topK: 4 })
+      expect(result).toEqual({
+        localChunks: [],
+        globalChunks: [],
+        allChunkIds: [],
+        matchedEntities: [],
+        graphContext: '',
+      })
+    } finally {
+      ;(db.documentChunk as { findMany: unknown }).findMany = original
+    }
+  })
+})
+
+describe('entity extraction — a model that returns junk degrades to no entities', () => {
+  // The catch at 91-93. The extractor asks an LLM for JSON, and an LLM can reply
+  // with prose or a truncated response. An ingest must not abort because one model
+  // reply was malformed: the chunk is still stored, merely without graph edges.
+  // NOTE the guard above the try -- `text.trim().length < 50` returns EARLY, so a
+  // fixture with a short chunk would never reach the parser at all.
+  const LONG = 'This is a sufficiently long chunk of invoice text for extraction. '.repeat(3)
+
+  // MEASURED -- and my first two attempts at this were wrong. Driving
+  // indexChunkKnowledgeGraph with a junk reply left BOTH of these controls green,
+  // because that function wraps the extraction in its own try/catch: a rethrow from
+  // 91-93 is swallowed one level up, and "nothing was written" is equally true when
+  // the call throws. The catch at 91-93 is only observable by calling the EXPORTED
+  // extractor directly, which is what it is for.
+  const CFG = { id: 'cfg-1', provider: 'OPENAI', baseUrl: 'x', apiKey: 'k', model: 'm' } as never
+
+  test('an unparseable model reply returns empty edges instead of throwing', async () => {
+    mockChatOnce.mockImplementation(async () => 'I am afraid I cannot do that.')
+    await expect(extractEntitiesRelations(LONG, CFG)).resolves.toEqual({ entities: [], relations: [] })
+  })
+
+  test('a model that THROWS is likewise contained', async () => {
+    mockChatOnce.mockImplementation(async () => { throw new Error('provider 503') })
+    await expect(extractEntitiesRelations(LONG, CFG)).resolves.toEqual({ entities: [], relations: [] })
+  })
+
+  test('a short chunk never reaches the model at all', async () => {
+    // The guard above the try: under 50 trimmed characters there is nothing worth
+    // extracting, so the LLM is not called -- that is a cost decision, and it must
+    // not also be a silent source of empty graphs for real chunks.
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ entities: [], relations: [] }))
+    mockChatOnce.mockClear()
+    const short = await extractEntitiesRelations('too short', CFG)
+    expect(short).toEqual({ entities: [], relations: [] })
+    expect(mockChatOnce).not.toHaveBeenCalled()
+  })
+
+  test('a well-formed reply is parsed into entities and relations', async () => {
+    // The inverse, so the empty results above are provably the DEGRADED path.
+    mockChatOnce.mockImplementation(async () => JSON.stringify({
+      entities: [{ name: 'acme corp', type: 'ORG' }],
+      relations: [{ source: 'acme corp', target: 'invoice 42', description: 'was billed', type: 'BILLED' }],
+    }))
+    const out = await extractEntitiesRelations(LONG, CFG)
+    expect(out.entities.length).toBe(1)
+    expect(out.entities[0].name).toBe('acme corp')
+    expect(out.relations.length).toBe(1)
+  })
+
+  test('a WELL-FORMED reply does store edges (the inverse)', async () => {
+    mockChatOnce.mockImplementation(async () => JSON.stringify({
+      entities: [{ name: 'acme corp', type: 'ORG' }],
+      relations: [{ source: 'acme corp', target: 'invoice 42', description: 'was billed', type: 'BILLED' }],
+    }))
+    await indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: LONG })
+    expect(kgCreateManyArgs.length).toBe(1)
   })
 })

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72977be`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72622b1`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72977be`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **83,13%** (16.367/19.688 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.533 lulus · 0 gagal** | terukur |
+| Test coverage | **83,28%** (16.396/19.688 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.543 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -101,7 +101,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router.ts` | 99,58% → **70,71%** merged (**turun**, §1.7z) | 99,58% → **100,00%** kode eksekutabel (239/239) | 60 |
 | `src/lib/smart-router.ts` | 98,85% → **77,62%** merged (**turun**, §1.7z) | 99,74% → **100,00%** kode eksekutabel (385/385) | 159 |
 | `src/lib/license-reminder.ts` | 30,00% → **100,00%** merged | 47,73% → **100,00%** kode eksekutabel (66/66) | 15 |
-| **Total repo** | **62,44%** | **83,13%** | — |
+| `src/lib/cognee-core.ts` | 91,12% → **83,33%** merged (**turun**, §1.7z) | 91,98% → **100,00%** kode eksekutabel (215/215) | 27 |
+| `src/lib/knowledge-graph.ts` | 93,55% → **78,57%** merged (**turun**, §1.7z) | 94,16% → **99,35%** kode eksekutabel (154/155) | 18 |
+| **Total repo** | **62,44%** | **83,28%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -360,7 +362,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**273 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**277 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2525,6 +2527,58 @@ belum terdiagnosis** — bukan sesuatu yang disembunyikan, dan bukan pula bukti 
 kode, karena tidak dapat diproduksi ulang dalam 5 percobaan.
 
 **Kontrol negatif: 6, semuanya menggigit.**
+
+### 1.7ax `cognee-core.ts` + `knowledge-graph.ts`: tiga test yang lebih lemah dari klaimnya, dan sebuah kontrol yang butuh EMPAT percobaan
+
+**`cognee-core.ts` 91,98% → 100,00% (215/215) · `knowledge-graph.ts` 94,16% → 99,35%
+(154/155).** Repo **83,13% → 83,28%**. Keduanya **tetap tidak di-gate** (merged 83,33% /
+78,57%).
+
+**Temuan #1 — judul test mengklaim lebih dari isinya.** `cognee-core` punya test bernama
+*"formatSearchResponse handles EVERY documented shape"*. Isinya tidak menyentuh satu pun
+varian item `content` / `payload.text` pada jalur `Items`. Dua fungsi itu
+(`extractSearchItems`, `formatSearchOutput`) adalah **normalisasi bentuk respons SDK**: satu
+cabang yang salah berarti **hasil pencarian hilang diam-diam** — dan `payload.text` paling
+berbahaya karena adapter graph/search membungkus record dengan cara itu; kehilangannya
+mengembalikan konteks knowledge yang kosong tanpa error apa pun. Semua varian kini dipatok
+terpisah.
+
+**Temuan #2 — asimetri yang terukur, bukan diasumsikan.** `extractSearchItems` **memfilter**
+entri falsy, sedangkan `formatSearchResponse` **tidak**: `['a', '', null]` menghasilkan
+`"a\nnull"` — `null` menjadi teks literal `"null"` dan **masuk ke konteks knowledge**.
+Test pertama saya menuntut `"a"` dan gagal; kode tidak salah, asumsi saya yang salah. Saya
+patok perilaku **sebagaimana adanya** dan mendokumentasikan ketidaksimetrisannya, alih-alih
+membuat test yang lulus karena kebetulan.
+
+**Temuan #3 — tiga percobaan gagal sebelum test benar, dan kontrol negatif yang menangkapnya.**
+Untuk `knowledge-graph` saya menulis test degradasi yang **tidak menguji degradasi**:
+(a) Percobaan pertama mengandalkan seam `_setExtractionOverride` yang **tidak ada** —
+test yang berbelit dan tidak bisa jalan. (b) Percobaan kedua: kontrol "hapus degradasi KG
+global" **0 fail**, karena `graphContext === ''` **juga** yang dikembalikan oleh kegagalan
+total — catch terluar (288-290) mengembalikan semuanya kosong, jadi **melempar ulang dari
+269-271 pun memenuhi setiap assertion saya**. (c) Percobaan ketiga: menguji ekstraksi lewat
+`indexChunkKnowledgeGraph` juga **0 fail**, karena fungsi itu membungkus ekstraksi dengan
+try/catch-nya sendiri sehingga rethrow dari 91-93 **ditelan satu lapis di atas**, dan
+"tidak ada yang ditulis" sama benarnya baik saat parsing gagal **maupun** saat panggilan
+melempar. Baru setelah memanggil `extractEntitiesRelations` **langsung** (ia diekspor untuk
+itu) dan menambahkan assertion yang **membedakan** "degradasi ke lokal" dari "gagal total"
+(`localChunks` harus **masih ada**) keempat kontrol menggigit. **Ini kelas kesalahan yang
+sama seperti ronde-ronde sebelumnya: test hijau yang mengukur hal lain** — dan kali ini butuh
+tiga koreksi sebelum tertangkap.
+
+**Temuan #4 — cacat wiring `tf.Dataset`.** Terlepas dari coverage: `sed`/`grep` menemukan
+`if (!Array.isArray(output.data)) return ''` di adapter `tf.Dataset`, sehingga `output` yang
+berbentuk array **tidak pernah** masuk cabangnya. Itu sebabnya assertion pertama saya di
+percobaan kedua gagal. Saya memilih **mendokumentasikan** ketidaksimetrisannya di test,
+bukan mengubah library pihak ketiga di luar lingkup ronde ini.
+
+**Satu baris tersisa, dengan bukti.** `knowledge-graph.ts:177` (`} catch (e) {`) adalah
+**artefak instrumentasi bun**: baris **178** — isi catch yang sama — **punya `hit>0`**, jadi
+blok itu dieksekusi; hanya baris token `catch` sendiri yang tidak dipetakan. Sama kelasnya
+dengan artefak yang sudah dideklarasikan di modul lain.
+
+**Kontrol negatif: 4, semuanya menggigit** (tiga di antaranya **hanya** setelah test
+diperbaiki).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

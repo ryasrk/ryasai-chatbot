@@ -1,6 +1,6 @@
 {
-  "linePct": 83.13,
-  "linesHit": 16367,
+  "linePct": 83.28,
+  "linesHit": 16396,
   "linesFound": 19688,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -114,12 +114,6 @@
       "pct": 73.91304347826086
     },
     {
-      "file": "src/lib/knowledge-graph.ts",
-      "hit": 145,
-      "found": 196,
-      "pct": 73.9795918367347
-    },
-    {
       "file": "src/lib/ai.ts",
       "hit": 416,
       "found": 559,
@@ -136,12 +130,6 @@
       "hit": 108,
       "found": 143,
       "pct": 75.52447552447552
-    },
-    {
-      "file": "src/lib/cognee-core.ts",
-      "hit": 195,
-      "found": 258,
-      "pct": 75.5813953488372
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -190,6 +178,12 @@
       "hit": 385,
       "found": 496,
       "pct": 77.62096774193549
+    },
+    {
+      "file": "src/lib/knowledge-graph.ts",
+      "hit": 154,
+      "found": 196,
+      "pct": 78.57142857142857
     },
     {
       "file": "src/lib/rag-chunking.ts",
@@ -304,6 +298,12 @@
       "hit": 222,
       "found": 267,
       "pct": 83.14606741573034
+    },
+    {
+      "file": "src/lib/cognee-core.ts",
+      "hit": 215,
+      "found": 258,
+      "pct": 83.33333333333334
     },
     {
       "file": "src/lib/tool-branches.ts",

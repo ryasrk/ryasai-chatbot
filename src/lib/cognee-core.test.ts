@@ -328,6 +328,64 @@ describe('cognee-core — pure helpers', () => {
     expect(extractSearchItems({ kind: 'Unknown' })).toEqual([])
   })
 
+  test('extractSearchItems understands EVERY item variant the SDK can return', () => {
+    // The title said "every documented shape", but the body only exercised
+    // `text` on the Items path plus one `content` on the ARRAY path. A branch that
+    // silently drops an item is a silently missing search result, so each variant
+    // is pinned separately. `payload.text` matters most: the graph/search adapter
+    // wraps records that way, and losing it returns an empty knowledge context.
+    // Items kind -- content variant
+    expect(extractSearchItems({ kind: 'Items', data: [{ content: 'kc', score: 0.25 }] }))
+      .toEqual([{ text: 'kc', score: 0.25 }])
+    // Items kind -- payload.text variant
+    expect(extractSearchItems({ kind: 'Items', data: [{ payload: { text: 'kp' }, score: 0.75 }] }))
+      .toEqual([{ text: 'kp', score: 0.75 }])
+    // Items kind -- an item matching NO variant is dropped rather than crashing
+    expect(extractSearchItems({ kind: 'Items', data: [{ other: 1 }] })).toEqual([])
+    // Items kind -- mixed variants in one response, in order
+    expect(extractSearchItems({ kind: 'Items', data: ['a', { text: 't' }, { content: 'c' }, { payload: { text: 'p' } }] }))
+      .toEqual([{ text: 'a' }, { text: 't', score: undefined }, { text: 'c', score: undefined }, { text: 'p', score: undefined }])
+    // Texts kind -- falsy entries are skipped, not stringified to ''
+    expect(extractSearchItems({ kind: 'Texts', data: ['y', '', null] })).toEqual([{ text: 'y' }])
+    // Array format -- payload.text is NOT handled here (only Items is); documenting
+    // the asymmetry rather than assuming it works.
+    expect(extractSearchItems([{ payload: { text: 'p' } }])).toEqual([])
+    // Array format -- the string and `text` variants on this path too; the original
+    // test only reached `content` here, leaving both other branches unexecuted.
+    expect(extractSearchItems(['s', { text: 't', score: 0.1 }, { content: 'c', score: 0.2 }]))
+      .toEqual([{ text: 's' }, { text: 't', score: 0.1 }, { text: 'c', score: 0.2 }])
+    // An array item matching no variant is dropped rather than crashing.
+    expect(extractSearchItems([{ nothing: true }])).toEqual([])
+  })
+
+  test('formatSearchResponse understands EVERY item variant on the Items path', () => {
+    // The sibling of the test above, on the string-formatting path. Each variant
+    // must reach the joined text, and an item matching none must not vanish
+    // silently -- it is JSON-stringified so an unexpected shape is still visible.
+    // The Items shape is only reachable through `result.result` -- the top-level
+    // dispatcher checks result / answer / content / items, so passing the kind
+    // object directly returns ''. My first version did exactly that and failed;
+    // the wrapper is the real calling convention, not a workaround.
+    expect(formatSearchResponse({ result: { kind: 'Items', data: [{ content: 'c' }] } })).toBe('c')
+    expect(formatSearchResponse({ result: { kind: 'Items', data: [{ payload: { text: 'p' } }] } })).toBe('p')
+    expect(formatSearchResponse({ result: { kind: 'Items', data: [{ weird: 1 }] } })).toBe('{"weird":1}')
+    // MEASURED, and it is NOT symmetric with extractSearchItems: a null entry is
+    // NOT dropped here, it stringifies to the literal text "null" and lands in the
+    // knowledge context. `''` disappears only because an empty line is invisible
+    // after the join. Pinned as-is, because a test that asserted 'a' would be
+    // asserting a behaviour the code does not have.
+    expect(formatSearchResponse({ result: { kind: 'Items', data: ['a', '', null] } })).toBe('a\nnull')
+    // An unrecognised KIND on the inner output falls through to '' -- the outer
+    // dispatcher found a result object it could not interpret, so it reports no
+    // context rather than the string "undefined".
+    expect(formatSearchResponse({ result: { kind: 'Unknown', data: ['x'] } })).toBe('')
+    expect(formatSearchResponse({ result: { kind: 'Texts', data: ['x', 'y'] } })).toBe('x\ny')
+    expect(formatSearchResponse({ result: { kind: 'Text', data: 'z' } })).toBe('z')
+    expect(formatSearchResponse({ result: { kind: 'Items', data: [null] } })).toBe('null')
+    // A kind object at the TOP level is not a shape this function understands.
+    expect(formatSearchResponse({ kind: 'Items', data: [{ content: 'c' }] })).toBe('')
+  })
+
   test('updateDocumentCognifyStatus stamps cognifiedAt only when completed', async () => {
     await updateDocumentCognifyStatus('d1', 'completed', undefined)
     expect(cfgState.updateCalls[0].data.cognifiedAt).toBeInstanceOf(Date)
