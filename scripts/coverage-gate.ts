@@ -118,6 +118,13 @@ const FLOORS: Record<string, number> = {
   'src/app/api/agent/dashboard/sessions/route.ts': 100, // merged 100.00%
   'src/app/api/agent/dashboard/tasks/route.ts': 100, // merged 100.00%
   'src/app/api/agent/dashboard/tools/route.ts': 100, // merged 100.00%
+  'src/app/api/llm-config/models/route.ts': 100, // merged 100.00%; was one of the untested routes
+  // BOTH traces floors are 80, NOT 100. The single-file run reports 100% but the MERGED report is 80%,
+  // because these two routes share one test file -- mock.module instruments a module in BOTH test
+  // processes, so the second process counts `getActiveUser`/`enterWithOrg` as instrumented-but-zero.
+  // MERGED HITS ARE STILL 8/10 with identical hit counts, so the floor is real, not a free pass.
+  'src/app/api/traces/route.ts': 80,
+  'src/app/api/traces/stats/route.ts': 80,
   'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
   'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)

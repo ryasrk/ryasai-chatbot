@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fcd85b5`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `900e4ae`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fcd85b5`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,77%** (19.757/22.510 baris, 157 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,93%** (1810/1927 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 199 file · **4.911 lulus · 0 gagal** | terukur |
+| Test coverage | **87,81%** (19.841/22.596 baris, 160 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,95%** (1817/1934 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 201 file · **4.960 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1062 kontrol + 15 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1084 kontrol + 18 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5838,6 +5838,58 @@ mendeklarasikannya alih-alih mengklaimnya tercakup.
 
 **Progres backlog: 25 dari 66 route orphan ditutup.** Repo **87,70% → 87,77%**; suite **4.857 → 4.911**
 (198 → **199 file**); gate **156 → 157 modul**. **Cakupan fungsi turun 93,99% → 93,93%**, dilaporkan apa adanya.
+
+### 1.7dr Tiga rute: penemuan model LLM, dan `traces` — 100,00% (65/65) + 80% (8/10) ×2
+
+**`/api/llm-config/models` — 31 test, 100,00% (65/65).**
+
+**KUNCI YANG DIKIRIM MENANG ATAS KUNCI TERSIMPAN.** Pemanggil yang mengalihkan base URL **harus bisa** memasok
+kunci untuk endpoint ITU; diam-diam memakai kunci tersimpan akan **mengirim kredensial pelanggan ke host yang
+tidak mereka pilih.** Diasersi dengan merekam argumen yang diterima seam fetch. **M1 → 2 merah.**
+
+**TULISAN CACHE ADALAH CREATE-OR-UPDATE, dan stub-nya MENGENKRIPSI.** Kunci plaintext yang ditulis ke
+`encryptedApiKey` **akan tersimpan dalam bentuk terbuka dan setiap pembacaan sesudahnya gagal didekripsi.**
+Diasersi dengan **memindai seluruh argumen create untuk plaintext.** **M7 → 1 merah.**
+
+**UPDATE TIDAK MEROTASI KUNCI** — rotasi adalah tindakan terpisah dan disengaja; penemuan model **tidak boleh
+diam-diam menggantikan kredensial yang berfungsi.** **M11 → 1 merah.**
+
+**GALAT URL ADALAH 400 (salah ketik PEMANGGIL); galat penemuan upstream adalah 502 (pandangan kita tentang
+PROVIDER, bukan permintaan mereka).** **M5 → 1, M14 → 2 merah.**
+
+**MOCK SAYA SENDIRI MEMBUAT TEMUAN PALSU KELIMA.** `encryptConfig` mock saya **melempar bila inputnya memuat
+`'sk-'`** — padahal **itulah bentuk kunci API sungguhan.** Cabang create lalu 502 dan saya **hampir mencatat
+"cabang create rusak" sebagai defek rute.** **Mock tidak boleh menolak input validnya sendiri**; ia merekam, dan
+**TEST-lah yang mengasersikan output-nya buram.** Diperbaiki, plus **asersi dua arah** (input = plaintext,
+output = opaque) supaya enkripsi benar-benar terbukti, bukan sekadar "berbeda".
+
+**DAN SATU LAGI YANG SAYA SALAH BACA:** saya mengira `catch { /* fall through */ }` menutupi kegagalan pemuatan
+konfigurasi. **Ternyata tidak** — `getLlmRuntimeConfig()` dipanggil **di luar** blok itu, jadi lemparannya keluar
+ke handler **502**, yang **memberi tahu admin bahwa PROVIDER-nya tak terjangkau padahal pembacaan konfigurasi
+kita sendiri yang gagal.** Saya catat apa adanya sebagai perilaku sekarang, dengan asersi yang **harus
+dibalik** bila pemuatan itu dipindah ke dalam penjaga.
+
+**`/api/traces` + `/api/traces/stats` — 18 test.** Satu-satunya perilaku berharga adalah **CLAMP LIMIT**, dan
+dua jawaban yang menggoda keduanya salah:
+- **`Number(null)` adalah `0` dan `Math.max(0, 1)` adalah `1`**, jadi limit yang **TIDAK ADA** akan diam-diam
+  menjadi **1**, bukan default 50. Rute menghindarinya dengan **memberi default pada STRING-nya** sebelum
+  koersi. **R1 → 1 merah.**
+- **`Number('abc')` adalah `NaN`, dan `Math.min(Math.max(NaN, 1), 100)` adalah `NaN`** — clamp **tidak
+  menangkap salah ketik.** Direkam sebagai perilaku sekarang.
+
+**NILAI YANG DI-CLAMP ADALAH YANG DITERIMA BUFFER** — diasersi pada **argumen**, karena mengasersi array
+kembalian akan **lolos untuk limit apa pun di atas ukuran fixture dan tidak membuktikan apa-apa.**
+
+**TEMUAN KETIGA RONDE INI — SATU BERKAS TEST UNTUK DUA RUTE MENURUNKAN ANGKA MERGED.** `traces/route.ts`
+melaporkan **100% di run satu-berkas** tetapi **80% (8/10) di laporan merged**, karena `mock.module` di berkas
+yang sama **menginstrumen modul di KEDUA proses test** sehingga proses kedua menghitung
+`getActiveUser`/`enterWithOrg` sebagai *instrumented-but-zero*. **Ini varian dari artefak penyebut yang sudah
+tiga kali tercatat**, kali ini dipicu oleh **berbagi berkas test**, bukan oleh meng-mock modulnya sendiri.
+**HIT-count-nya tetap 8 dan identik, jadi floor 80 itu nyata, bukan izin gratis** — dan gate **menolak** floor
+100 yang pertama saya tulis, persis seperti yang seharusnya.
+
+**Progres backlog: 28 dari 66 route orphan ditutup.** Repo **87,77% → 87,81%**; suite **4.911 → 4.960**
+(199 → **201 file**); gate **157 → 160 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
