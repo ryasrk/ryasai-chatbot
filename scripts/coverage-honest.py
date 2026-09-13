@@ -62,13 +62,22 @@ def is_multiline_template(i):
     t = src[i - 1]
     if t.strip().startswith('//'):
         return False
-    # Hitung backtick ganjil sebelum baris ini, dalam 60 baris terakhir saja.
-    # (Harus relatif: sebuah template yang dibuka jauh di atas file tidak relevan.)
+    # Hitung backtick ganjil sebelum baris ini, dari AWAL FILE.
+    #
+    # Jendela 60-barisyang dipakai sebelumnya salah: di rag-fts.ts template SQL dibuka
+    # dengan backtick pada baris tersendiri (131), dan baris 135-138 berada >60 baris
+    # setelah backtick PEMBUKA terakhir sebelum jendela -- jadi kedalaman terbaca GENAP
+    # dan empat baris teks SQL dilaporkan sebagai kode nyata, padahal baris 132-134 dari
+    # template yang SAMA terbaca benar. Bug jendela, bukan perilaku kode.
+    #
+    # Backtick di dalam STRING biasa atau KOMENTAR bisa menggeser hitungan ini. Itu
+    # diterima secara sadar: penghitung ini hanya dipakai untuk MENGEKSAKLUSI baris dari
+    # pelaporan, dan setiap baris yang dieksklusi tetap dapat dilihat siapa pun yang
+    # membaca laporan mentah -- jadi salah-hit membuat laporan Lebih longgar, bukan
+    # menutupi kode yang benar-benar tak teruji.
     depth = 0
-    j = i - 1
-    while j >= 1 and i - j <= 60:
+    for j in range(1, i):
         depth += src[j - 1].count('`')
-        j -= 1
     return depth % 2 == 1
 
 

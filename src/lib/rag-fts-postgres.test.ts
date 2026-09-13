@@ -54,6 +54,93 @@ describe('rebuildFts (Postgres)', () => {
   })
 })
 
+describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
+  test('ts_stat SUCCESS populates CORPUS_DF and CORPUS_N', async () => {
+    // The happy path of the corpus-level document-frequency refresh. `ts_stat` reads from
+    // the tsv column, one grouped query per rebuild instead of one per search, and the
+    // parsed rows become the BM25 IDF table. Without this, corpus-wide ranking silently
+    // degrades to pool-local IDF, which is a different (worse) relevance model.
+    const { CORPUS_DF, CORPUS_N } = await import('@/lib/rag-ranking')
+    CORPUS_DF.clear()
+    CORPUS_N.total = 0
+    // A STALE entry from a previous corpus. The refresh must REPLACE the table, not merge
+    // into it: a word that has dropped out of the corpus would otherwise keep its old IDF
+    // forever, and `clear()` is the only thing that removes it. A control deleting the
+    // clear() produced no failing test until this entry existed.
+    CORPUS_DF.set('word-from-old-corpus', 500)
+
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [
+      { word: 'invoice', ndoc: '12' },
+      { word: 'payment', ndoc: '7' },
+    ])
+    const result = await rebuildFts()
+
+    expect(result.indexed).toBe(1)
+    expect(CORPUS_DF.get('invoice')).toBe(12)
+    expect(CORPUS_DF.get('payment')).toBe(7)
+    // ndoc arrives as a STRING from the driver, so the Number() coercion is load-bearing:
+    // '12' would otherwise poison every IDF computation.
+    expect(typeof CORPUS_DF.get('invoice')).toBe('number')
+    // CORPUS_N.total is the corpus SIZE, taken from the chunks just indexed.
+    expect(CORPUS_N.total).toBe(1)
+    // The stale word is GONE, proving the refresh replaced rather than merged.
+    expect(CORPUS_DF.has('word-from-old-corpus')).toBe(false)
+    expect(CORPUS_DF.size).toBe(2)
+  })
+
+  test('the ts_stat query is CAPPED and reads the tsv column, not the raw content', async () => {
+    // Two properties of the query itself, invisible from the returned rows:
+    //   * `LIMIT 50000` guards a pathological corpus from building an unbounded map. The
+    //     comment calls it out, and ranking falls back when the table is stale -- so an
+    //     unbounded map is a memory ceiling, not just a slowdown.
+    //   * `ts_stat` must read `tsv` (the GIN-indexed column), NOT `content`, or the
+    //     statistics would be recomputed from scratch on every rebuild and the index would
+    //     be pointless.
+    mockQueryRawUnsafe.mockImplementationOnce(async () => [{ word: 'w', ndoc: '1' }])
+    await rebuildFts()
+    const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
+    expect(sql).toContain('ts_stat')
+    expect(sql).toContain('SELECT tsv FROM "DocumentChunk"')
+    expect(sql).toContain('LIMIT 50000')
+    // Scoped to documents that are actually searchable.
+    expect(sql).toContain(`"status" = 'ready'`)
+    expect(sql).toContain(`"isEnabled" = true`)
+  })
+
+  test('DECLARED EQUIVALENT: the !query guard in the Postgres path', async () => {
+    // `if (!query) return []` short-circuits an all-whitespace token list. WITHOUT it the
+    // query still runs and PostgreSQL's `plainto_tsquery('simple', '')` matches NOTHING,
+    // so the empty array is returned either way -- the guard avoids a round trip, not a
+    // different result. Declared, and pinned so the outcome cannot drift.
+    enterWithOrg('org-empty')
+    mockQueryRawUnsafe.mockImplementation(async () => [])
+    const ids = await searchFtsChunkIds({ queryTokens: [], limit: 10 })
+    expect(ids).toEqual([])
+    const whitespace = await searchFtsChunkIds({ queryTokens: ['   ', '  '], limit: 10 })
+    expect(whitespace).toEqual([])
+  })
+
+  test('ts_stat FAILURE degrades to pool-local IDF and still reports indexed', async () => {
+    // The catch is what keeps a rebuild from failing because the STATISTICS query could
+    // not run -- an older Postgres without ts_stat, a permission problem, a timeout. The
+    // chunks were already written by the bulk UPDATE, so the rebuild must still report
+    // success and let ranking fall back rather than throwing and losing the whole index.
+    const { CORPUS_DF } = await import('@/lib/rag-ranking')
+    CORPUS_DF.clear()
+    CORPUS_DF.set('stale-word', 999)
+
+    mockQueryRawUnsafe.mockImplementationOnce(async () => {
+      throw new Error('ts_stat: permission denied')
+    })
+    const result = await rebuildFts()
+
+    expect(result.indexed).toBe(1)
+    // The stale table was NOT half-replaced: CORPUS_DF.clear() never ran, so the previous
+    // contents are intact rather than a partial merge of an aborted refresh.
+    expect(CORPUS_DF.get('stale-word')).toBe(999)
+  })
+})
+
 describe('searchFtsChunkIds (Postgres)', () => {
   test('no org context → empty result (no cross-org query)', async () => {
     const ids = await bypassOrg(() =>

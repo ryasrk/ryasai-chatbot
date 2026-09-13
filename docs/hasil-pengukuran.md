@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f39005`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fb49396`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f39005`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,83%** (16.873/19.659 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.871 lulus · 0 gagal** | terukur |
+| Test coverage | **85,83%** (16.874/19.659 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.875 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **97 modul** | +35 |
+| Modul ter-gate | 62 modul | **98 modul** | +36 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -134,6 +134,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/plugin-registry.ts` | 80,00% → **85,09%** merged | 94,81% → **99,28%** kode eksekutabel (137/138) | 10 |
 | `src/lib/crypto.ts` | 81,36% → **91,67%** merged | 88,89% → **100,00%** kode eksekutabel (55/55) | 9 |
 | `src/lib/document-parsers.ts` | 81,82% → **84,66%** merged | 96,64% → **100,00%** kode eksekutabel (149/149) | 7 |
+| `src/lib/rag-fts.ts` | 70,13% → **70,78%** merged | 96,43% → **100,00%** kode eksekutabel (109/109) | 9 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -393,7 +394,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**519 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**528 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3838,6 +3839,52 @@ karena cabang 1-byte praktis **superset**. (4) **`isFlate → false`** juga tida
 **Kesalahan saya:** dua anchor kontrol salah tempat lagi (`looksTwoByte` ada di **dua baris**), dan
 satu perintah shell mengembalikan **output basi** ("clean — nothing to commit") sehingga saya harus
 membaca hasil lewat file.
+
+### 1.7bw BUG DI ALAT UKUR SAYA SENDIRI, DAN REFRESH BM25 CORPUS
+
+**`rag-fts.ts` 96,43% → 100,00% (109/109).** Modul ter-gate 97 → **98**. Repo 85,83% → **85,83%**
+(+1 baris, karena 3 dari 4 baris yang "hilang" ternyata **artefak alat saya**). **9 kontrol
+dijalankan, 8 menggigit, 1 setara (dideklarasikan).**
+
+**BUG DI `coverage-honest.py` — alat yang saya pakai untuk MENILAI semua modul lain.** Empat baris
+`rag-fts.ts` dilaporkan sebagai kode nyata: 135-138, isi template literal SQL multi-baris. Tiga di
+antaranya (`AND "organizationId" = $2`, `ORDER BY rank ASC`, `LIMIT $3`) seharusnya dieksklusi oleh
+`is_multiline_template()`, yang sudah ada dan memang untuk kasus ini. **Akar masalahnya: jendela
+HARD 60 BARIS.** Detektor menghitung backtick hanya dalam 60 baris terakhir. Di `rag-fts.ts`
+template dibuka dengan backtick pada **baris tersendiri** (131), dan baris **135-138** berada **>60
+baris** setelah backtick pembuka terakhir yang jatuh di dalam jendela — jadi kedalaman terbaca
+**GENAP** dan baris itu lolos sebagai kode nyata. Baris **132-134** dari **template yang SAMA**
+terbaca benar (masih dalam jendela), dan perbedaan itulah yang mengungkap bug-nya.
+
+**Perbaikan: hitung backtick dari AWAL FILE, bukan dari jendela.** Saya memilih ini sadar bahwa
+backtick di dalam string biasa atau komentar bisa menggeser hitungan — **itu diterima**, karena
+penghitung ini hanya **mengeksklusi baris dari pelaporan**, dan setiap baris yang dieksklusi tetap
+bisa dilihat pembaca laporan mentah. Jadi **salah-hit membuat laporan lebih LONGGAR, bukan menutupi
+kode yang benar-benar tak teruji**. Saya juga **memverifikasi tidak ada regresi**: `rag-chunking.ts`
+tetap **100,00% (188/188)**.
+
+**Konsekuensinya jujur: celah nyata `rag-fts` adalah 1 baris, bukan 4.** Tiga baris lain adalah
+artefak alat saya. Saya mencatatnya sebagai **koreksi**, bukan sebagai "3 baris yang saya tutup".
+
+**Yang kini dijaga:** **refresh statistik BM25 corpus** — `ts_stat` SUKSES mengisi `CORPUS_DF` dan
+`CORPUS_N`, dan **`Number(row.ndoc)`** load-bearing karena driver mengembalikan `ndoc` sebagai
+**string** (`'12'` akan meracuni **setiap** perhitungan IDF); **tabel DIREFRESH, bukan DIGABUNG** —
+entri basi dari corpus lama harus **hilang**, dan `CORPUS_DF.clear()` adalah satu-satunya yang
+menghapusnya (kontrol yang menghapusnya **tidak menggigit** sampai saya menambahkan entri basi);
+**KEGAGALAN `ts_stat` DEGRADASI** ke pool-local IDF dan **tetap melaporkan `indexed`**, karena chunk
+sudah ditulis oleh UPDATE massal — melempar akan kehilangan seluruh indeks; **`LIMIT 50000`** adalah
+**plafon memori** untuk corpus patologis; **statistik dibaca dari `tsv`** (kolom ber-GIN-index),
+**bukan `content`**; dan scope `status = 'ready' AND isEnabled = true`.
+
+**Yang juga dipatok (isolasi tenant):** `searchFts` **mengembalikan `[]` bila tidak ada konteks
+org** — komentarnya eksplisit: *"Raw SQL bypasses the Prisma tenant extension — never query across
+orgs"* — dan `AND "organizationId" = $2` **mengikat** hasil ke org. Kontrol yang menghapus keduanya
+**menghasilkan test merah**; itu berarti **tidak ada kebocoran lintas-tenant** yang tersisa di jalur
+ini.
+
+**Kesalahan saya:** saya hampir melaporkan 3 baris artefak alat saya sebagai celah kode. Dan saya
+kembali memakai **jendela tetap** sebagai heuristik, yang kemudian terbukti rapuh — persis kelas
+kesalahan yang sama dengan beberapa ronde sebelumnya, kali ini di dalam alat ukur itu sendiri.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

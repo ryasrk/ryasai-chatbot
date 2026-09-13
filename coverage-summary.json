@@ -1,6 +1,6 @@
 {
   "linePct": 85.83,
-  "linesHit": 16873,
+  "linesHit": 16874,
   "linesFound": 19659,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -18,12 +18,6 @@
       "pct": 63.95348837209303
     },
     {
-      "file": "src/lib/rag-fts.ts",
-      "hit": 108,
-      "found": 154,
-      "pct": 70.12987012987013
-    },
-    {
       "file": "src/lib/config.ts",
       "hit": 45,
       "found": 64,
@@ -34,6 +28,12 @@
       "hit": 239,
       "found": 338,
       "pct": 70.71005917159763
+    },
+    {
+      "file": "src/lib/rag-fts.ts",
+      "hit": 109,
+      "found": 154,
+      "pct": 70.77922077922078
     },
     {
       "file": "src/lib/real-connectors.ts",
