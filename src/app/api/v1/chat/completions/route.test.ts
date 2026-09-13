@@ -589,20 +589,14 @@ describe('POST /api/v1/chat/completions — the idle watchdog', () => {
     // The ROUTE is untouched: this only compresses the clock it uses.
     const realSetTimeout = globalThis.setTimeout
     dbState.apiLogs = []
-    // FINDING (measured): if the upstream HANGS — yields nothing and never closes —
-    // the watchdog sends the timeout frame to the client but the `for await` loop
-    // keeps waiting, so control never reaches the `if (timedOut)` branch that writes
-    // the 504 audit row. The socket is left open server-side. My first version of
-    // this test used exactly that hung generator and observed `logs: []`.
-    //
-    // This test therefore uses the deadline the watchdog CAN act on: the upstream
-    // stops producing after the timer fires (then closes). That is also the common
-    // real shape — a provider that stalls, then aborts — and it exercises the 504.
+    // The upstream HANGS: it yields nothing and never closes, which is the shape the
+    // watchdog exists for. This used to be impossible to survive — the loop awaited
+    // the next token forever, so the timeout frame went out but the 504 audit row was
+    // never written and the socket leaked. The loop now races each token against the
+    // deadline, so this exact generator must complete the request.
     routerState.streaming = async () => ({
       stream: (async function* () {
-        await new Promise((r) => realSetTimeout(r, 30))
-        // Returning here ends the generator, which is what lets the loop exit and
-        // the timeout branch run.
+        await new Promise(() => {})
       })(),
       citations: [], chartData: null, toolRuns: [], integrationId: null,
     })
@@ -634,10 +628,11 @@ describe('POST /api/v1/chat/completions — the idle watchdog', () => {
   test('a stalled stream produces no assistant message row', async () => {
     const realSetTimeout = globalThis.setTimeout
     dbState.messageCreates = []
+    // A hung upstream must also leave NO assistant row behind: persisting a partial
+    // answer would show an empty or truncated reply in history with no indication
+    // that it timed out.
     routerState.streaming = async () => ({
-      stream: (async function* () {
-        await new Promise((r) => realSetTimeout(r, 30))
-      })(),
+      stream: (async function* () { await new Promise(() => {}) })(),
       citations: [], chartData: null, toolRuns: [], integrationId: null,
     })
     globalThis.setTimeout = ((fn: () => void, ms?: number) => {

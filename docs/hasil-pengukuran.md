@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `257e8b8`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cdb9a40`.
 
 ---
 
@@ -12,7 +12,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `257e8b8`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,20%** (16.178/19.682 baris, 128 file) | terukur, **belum 95%** |
+| Test coverage | **82,21%** (16.194/19.698 baris, 128 file) | terukur, **belum 95%** |
 | Test suite | 161 file · **3.437 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
@@ -89,7 +89,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-router.ts` | 66,4% → **70,41%** merged (selisih **29,6 poin** terbesar) | 94,94% → **100,00%** kode eksekutabel (238/238) | 58 |
 | `src/lib/smart-router.ts` | 98,71% → **77,42%** merged (**turun**, §1.7z) | 98,97% → **99,74%** kode eksekutabel (384/385) | 155 |
 | `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (370/370) | 30 |
-| **Total repo** | **62,44%** | **82,20%** | — |
+| **Total repo** | **62,44%** | **82,21%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -309,8 +309,10 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `[DONE]` setelah error frame dihapus | `route.ts:276` | 1 |
 | 503 provider-tak-terkonfigurasi jadi 500 | `route.ts:412` | 1 |
 | `latencyMs` tidak jatuh ke request latency | `route.ts:436` | 1 |
+| **BUG LAMA DIKEMBALIKAN**: race dengan deadline dihapus | `route.ts:214` | 2 |
+| Sentinel `IDLE` tidak dikenali | `route.ts:221` | 2 |
 
-**210 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**212 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -1886,6 +1888,44 @@ dan tampak seperti baris hilang. Setelah menunggu 200 ms, baris 504 terbukti ada
 
 **Kontrol negatif: 8, semuanya menggigit** (dua di antaranya perlu anchor dan fixture
 diperbaiki lebih dulu). Route ini kini **100% merged** dan **di-gate di 100**.
+
+### 1.7al BUG DIPERBAIKI: watchdog 120 detik tidak dapat menyela upstream yang menggantung
+
+**Temuan ini dari ronde sebelumnya (32), yang saya buktikan dan perbaiki di ronde ini —
+bukan dibiarkan tercatat saja.**
+
+**Bug:** `for await (const token of streaming.stream)` pada generator yang **tidak pernah
+yield dan tidak pernah return** akan menunggu **selamanya**. Timer menyala, frame
+`LLM_TIMEOUT` **sampai ke klien**, tetapi kontrol **tidak pernah mencapai** cabang penulis
+audit 504 → **baris 504 tidak ditulis** dan **socket tertinggal terbuka di sisi server**.
+
+**Bukti reproduksi (ditulis sebagai test sementara, dijalankan, lalu dihapus):**
+```
+{"settled":"hung","timedOut":true,"loopExited":false,"auditWritten":false}
+```
+`timedOut: true` bersamaan dengan `loopExited: false` — watchdog menyala, handler tetap
+menggantung. Perhatikan `if (timedOut) break` di kode lama: ia hanya dievaluasi **setelah
+token berikutnya tiba**, jadi untuk upstream yang benar-benar diam ia **tidak pernah
+dievaluasi sama sekali**.
+
+**Perbaikan:** setiap langkah kini **me-race token berikutnya melawan deadline**, sehingga
+loop dapat keluar tanpa menunggu token. Sentinel `Symbol('idle')` dipakai agar token yang
+sah-sah saja bernilai `undefined`/kosong **tidak** tertukar dengan "tidak ada token sebelum
+deadline". Iterator dibatalkan (`iterator.return()`) agar generator upstream tidak
+tertinggal suspended.
+
+**Test berubah secara bermakna:** test ronde 32 memakai generator yang **berhenti lalu
+menutup** — bentuk yang bisa ditangani watchdog lama. Test sekarang memakai generator yang
+**benar-benar menggantung** (`await new Promise(() => {})`), yaitu bentuk yang dulu
+**mustahil ditangani**. Mengembalikan bug lama kini **menggagalkan 2 test**; sebelumnya
+perilaku itu **tidak bisa diuji sama sekali**.
+
+**Kontrol negatif: 2 menggigit** (mengembalikan bug → 2 gagal; sentinel `IDLE` diabaikan →
+2 gagal). Satu **jujur dinyatakan tidak menggigit**: pembersihan `iterator.return()`
+bersifat best-effort defensif — tidak ada perilaku teramati yang membedakannya, jadi tidak
+ada test yang mengklaim membelanya.
+
+Merged route tetap **100,00%**; 16 baris kode baru **sepenuhnya tercakup** (386/386).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

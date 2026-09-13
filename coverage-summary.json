@@ -1,7 +1,7 @@
 {
-  "linePct": 82.2,
-  "linesHit": 16178,
-  "linesFound": 19682,
+  "linePct": 82.21,
+  "linesHit": 16194,
+  "linesFound": 19698,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -667,8 +667,8 @@
     },
     {
       "file": "src/app/api/v1/chat/completions/route.ts",
-      "hit": 370,
-      "found": 370,
+      "hit": 386,
+      "found": 386,
       "pct": 100
     },
     {

@@ -184,6 +184,17 @@ export async function POST(req: NextRequest) {
           let fullAnswer = ''
           try {
             // 120s idle watchdog — no token in 120s → typed LLM_TIMEOUT + close.
+            //
+            // The watchdog must be able to INTERRUPT a hung upstream, not merely react
+            // to one that eventually recovers. A plain `for await` over a generator
+            // that never yields and never returns blocks forever: the timer fires, the
+            // timeout frame reaches the client, but the loop still awaits the next
+            // token — so control never reaches the 504 audit write below and the socket
+            // leaks server-side. PROVEN before this fix: with a hanging generator,
+            // `timedOut` was true while `loopExited` and `auditWritten` were both false.
+            //
+            // So each step races the next token against the idle deadline. Whichever
+            // loses determines whether we keep streaming or stop and report.
             let timedOut = false
             const IDLE_TIMEOUT_MS = 120_000
             const onIdleTimeout = () => {
@@ -192,25 +203,49 @@ export async function POST(req: NextRequest) {
               safeEnqueue(encoder.encode('data: [DONE]\n\n'))
               safeClose()
             }
-            let idleTimer: ReturnType<typeof setTimeout> | null = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
-            for await (const token of streaming.stream) {
-              if (timedOut) break
-              if (idleTimer) clearTimeout(idleTimer)
-              idleTimer = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
-              fullAnswer += token
-              safeEnqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    id: completionId,
-                    object: 'chat.completion.chunk',
-                    created,
-                    model,
-                    choices: [{ index: 0, delta: { content: token }, finish_reason: null }],
-                  })}\n\n`,
-                ),
-              )
+            const iterator = streaming.stream[Symbol.asyncIterator]()
+            try {
+              while (!timedOut) {
+                // Sentinel value, so a token that is legitimately `undefined`/empty
+                // cannot be confused with "no token before the deadline".
+                const IDLE = Symbol('idle')
+                let idleTimer: ReturnType<typeof setTimeout> | null = null
+                const deadline = new Promise<typeof IDLE>((resolve) => {
+                  idleTimer = setTimeout(() => resolve(IDLE), IDLE_TIMEOUT_MS)
+                })
+                let step: IteratorResult<string> | typeof IDLE
+                try {
+                  step = await Promise.race([iterator.next(), deadline])
+                } finally {
+                  if (idleTimer) clearTimeout(idleTimer)
+                }
+                if (step === IDLE) {
+                  onIdleTimeout()
+                  // Abandon the upstream: it is not producing, and awaiting its return
+                  // would reintroduce the hang. Best effort — a generator that ignores
+                  // return() still cannot block us here.
+                  void iterator.return?.(undefined)?.catch(() => {})
+                  break
+                }
+                if (step.done) break
+                const token = step.value
+                fullAnswer += token
+                safeEnqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      id: completionId,
+                      object: 'chat.completion.chunk',
+                      created,
+                      model,
+                      choices: [{ index: 0, delta: { content: token }, finish_reason: null }],
+                    })}\n\n`,
+                  ),
+                )
+              }
+            } finally {
+              // Never leave the upstream generator suspended on an early exit.
+              if (timedOut) void iterator.return?.(undefined)?.catch(() => {})
             }
-            if (idleTimer) clearTimeout(idleTimer)
             if (timedOut) {
               await writeApiLog({ apiKeyId, status: 504, latencyMs: Date.now() - started, errorMessage: 'Stream idle timeout (120s)' })
               return
