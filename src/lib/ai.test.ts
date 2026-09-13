@@ -1150,7 +1150,7 @@ describe('response parsing — the shapes that are not a normal completion', () 
 describe('credential safety on the error path', () => {
   // BYOK: the API key belongs to the customer. A key that reaches a log line or
   // an Error message is a credential exposure, not a cosmetic problem.
-  test('DEFECT: a provider that echoes the submitted key puts it into the thrown Error message', async () => {
+  test('a provider that echoes the submitted key does NOT put it into the thrown Error message', async () => {
     // WHAT: the OpenAI transport throws `providerError(status, body)` and
     //       LlmProviderError builds its message as
     //       `LLM error (HTTP ${status}): ${body}` from the RAW provider body.
@@ -1183,9 +1183,14 @@ describe('credential safety on the error path', () => {
     const message = error instanceof Error ? error.message : String(error)
     // The status must be reported -- that part is correct and must keep working.
     expect(message).toContain('401')
-    // INVERT WHEN FIXED: flip this to `.not.toContain(LEAKY_KEY)` the moment the
-    // raw body stops reaching the message.
-    expect(message).toContain(LEAKY_KEY)
+    // INVERTED WHEN FIXED (this round): `redactProviderBody()` in llm-client-utils.ts now strips
+    // credential-shaped substrings BEFORE the body enters the message, so the leak asserted here no
+    // longer happens. The assertion is the negated form, which is what the old comment asked for --
+    // and it is the load-bearing half, because the status check above proves the error is still the
+    // real classified one rather than a redactor that swallowed everything.
+    expect(message).not.toContain(LEAKY_KEY)
+    // The redaction marker is present, so this is a redaction and not a dropped body.
+    expect(message).toContain('[REDACTED')
   })
 
   test('the key does not ALSO reach a console log on the 401 path', async () => {
@@ -1515,7 +1520,7 @@ describe('DEFECT: provider body carrying the API key reaches GET /api/traces', (
   // FIX DIRECTION: redact cfg.apiKey from `body` in readErrorBody/LlmProviderError
   //   before it is stored anywhere; the classified category already carries all the
   //   diagnostic value the trace view needs.
-  test('INVERT WHEN FIXED: the key is present in the trace error string the traces API serialises', async () => {
+  test('the key is REDACTED in the trace error string the traces API serialises', async () => {
     const LEAKY_KEY = 'sk-trace-exposed-key'
     mockGetLlmRuntimeConfig.mockImplementation(async () => ({
       id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'https://api.test.com', apiKey: LEAKY_KEY, model: 'm',
@@ -1530,16 +1535,17 @@ describe('DEFECT: provider body carrying the API key reaches GET /api/traces', (
     // The ring buffer is capped at 100 and shared with every other test in this
     // file, so scope the assertion to THIS call's trace rather than to the whole
     // buffer (a positional read is order-dependent and flaky).
-    const mine = getRecentTraces(100).filter((t) => t.error && t.error.includes(LEAKY_KEY))
-    // The trace WAS recorded with the raw diagnostic body -- that much "works".
+    // INVERTED WHEN FIXED (this round): `redactProviderBody()` strips the credential before the message
+    // is stored, so the trace now carries the DIAGNOSTIC VALUE without the secret. Scope the assertion to
+    // the trace for THIS call, found by the redaction marker, because the ring buffer is shared with every
+    // other test in this file.
+    const mine = getRecentTraces(100).filter((t) => t.error && t.error.includes('[REDACTED'))
     expect(mine.length).toBeGreaterThan(0)
+    // The status is still reported, so this is redaction and not a dropped body.
     expect(mine[0].error).toContain('401')
-    // INVERT WHEN FIXED: the raw body (and therefore the key) must NOT be in the
-    // payload. Flip this to `.not.toContain(...)` once redaction lands.
-    expect(JSON.stringify(mine)).toContain(LEAKY_KEY)
-    // And it is genuinely reachable by the traces API, which serialises `.error`
-    // verbatim: NextResponse.json({ ok: true, traces: getRecentTraces(limit) }).
-    expect(JSON.stringify({ ok: true, traces: getRecentTraces(100) })).toContain(LEAKY_KEY)
+    expect(JSON.stringify(mine)).not.toContain(LEAKY_KEY)
+    // And the key is absent from the WHOLE buffer, i.e. no trace anywhere retained it.
+    expect(JSON.stringify({ ok: true, traces: getRecentTraces(100) })).not.toContain(LEAKY_KEY)
   })
 
   test('the classified error the USER sees is sanitised, even though the trace is not', async () => {

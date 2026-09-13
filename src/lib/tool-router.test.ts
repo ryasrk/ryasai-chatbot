@@ -1,4 +1,6 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // --- Mocks (must be before imports of modules under test) ---
 
@@ -40,7 +42,10 @@ mock.module('@/lib/db', () => ({
   },
 }))
 
-const mockRouteQuery = mock(async () => ({ decision: 'CHAT' as RouteDecision, reason: 'test' }))
+const mockRouteQuery = mock(async () => {
+  smartRouteOrder?.push('smartRoute')
+  return { decision: 'CHAT' as RouteDecision, reason: 'test' }
+})
 const mockGenerateSql = mock(async () => ({ sql: 'SELECT 1', explanation: 'test' }))
 const mockGenerateAnswer = mock(async () => 'The answer is 42')
 const mockGenerateChat = mock(async () => 'Hello!')
@@ -79,7 +84,10 @@ mock.module('@/lib/ai', () => ({
   parseRestCallJson: parseRestCallJsonImpl,
 }))
 
-const mockSmartRoute = mock(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined as string | undefined }))
+const mockSmartRoute = mock(async () => {
+  smartRouteOrder?.push('smartRoute')
+  return { decision: 'CHAT' as RouteDecision, integrationId: undefined as string | undefined }
+})
 // The importer destructures FOUR names from this module. Exporting only
 // smartRoute left pickBestIntegration/pickBestIntegrationByKeywords/tokenize
 // undefined, so the last-resort integration path threw and every test that
@@ -104,13 +112,21 @@ mock.module('@/lib/smart-router', () => ({
   resolveIntegrationForQuestion: async () => null,
 }))
 
+// Declared BEFORE the cognee factory below, which closes over it: a module-scope
+// `let` read inside a mock factory whose declaration sits later in the file is a
+// temporal-dead-zone crash at import time, not a test failure.
+let memoryContextValue = 'MEMORY-CONTEXT'
+
 const mockSearchFtsChunkIds = mock(async () => [] as string[])
 mock.module('@/lib/rag-fts', () => ({
   searchFtsChunkIds: mockSearchFtsChunkIds,
 }))
 
 mock.module('@/lib/cognee', () => ({
-  recallContext: mock(async () => null),
+  // `memoryContextValue` is the streaming block's seam. A null recall is what
+  // the existing non-streaming tests were written against, so the default stays
+  // falsy and only the streaming tests move it.
+  recallContext: mock(async () => memoryContextValue),
   rememberChatTurn: mock(async () => undefined),
   recallKnowledgeGraph: async () => '',
 }))
@@ -148,9 +164,43 @@ mock.module('@/lib/prompt-settings', () => ({
 const intentState: { value: Record<string, unknown> } = {
   value: { needsClarification: false, needsRetrieval: true },
 }
+// The streaming dispatcher's seam values: what the rewrite produced, and what
+// recall returned. Held in module scope so a test can move them without a second
+// `mock.module` (which is never restored and poisons later tests).
+let effectiveQuestionValue = 'REWRITTEN-QUESTION'
+// Counted rather than ordered: an ORDER assertion is meaningless when the rewrite is the only step
+// in the list, and the count proves the rewrite actually ran instead of being skipped.
+let rewriteCalls = 0
+// Order log, assigned per test. null means "this seam is not being observed".
+let rewriteOrder: string[] | null = null
+let intentOrder: string[] | null = null
+let smartRouteOrder: string[] | null = null
+let preparerOrder: string[] | null = null
+
+// Capture the WHOLE argument object for the streaming assertions. The existing
+// tests only ever drive `needsClarification`/`needsRetrieval`, so keeping the
+// capture here (rather than replacing the seam) preserves them byte for byte.
+let lastIntentArgs: Record<string, unknown> = {}
+let intentQuestionValue: unknown = undefined
+const orderIntentArgs = (a: Record<string, unknown>): Record<string, unknown> => {
+  intentOrder?.push('analyzeIntent')
+  lastIntentArgs = a
+  intentQuestionValue = a.question
+  return a
+}
 mock.module('@/lib/intent-pipeline', () => ({
-  analyzeIntent: async () => intentState.value,
-  rewriteQuery: async (a: { question: string }) => a.question,
+  // `orderIntentArgs` only RECORDS the call; it returns the arguments object. Returning that as the
+  // intent was a real bug in this mock: `intent.needsRetrieval` was then `undefined`, and since the
+  // dispatcher tests `!intent.needsRetrieval` the `prepareChatStream` early exit won EVERY time -- both
+  // router mocks recorded zero calls while a stream was still produced, so tests passed while the
+  // routing code never ran. The recorded arguments are kept for assertions, but the RESULT is the
+  // `intentState` seam, which is what the seam's own comment always claimed it was.
+  analyzeIntent: async (a: Record<string, unknown>) => ({ ...orderIntentArgs(a as never), ...intentState.value }),
+  rewriteQuery: async (a: { question: string }) => {
+    rewriteCalls++
+    rewriteOrder?.push('rewrite')
+    return effectiveQuestionValue
+  },
 }))
 
 // The agentic branch hands off to runAgenticLoop. Its arguments are captured
@@ -259,10 +309,33 @@ import { invalidateRagCache } from './rag'
 
 beforeEach(() => {
   intentState.value = { needsClarification: false, needsRetrieval: true }
+  effectiveQuestionValue = 'REWRITTEN-QUESTION'
+  rewriteCalls = 0
+  memoryContextValue = 'MEMORY-CONTEXT'
+  lastIntentArgs = {}
+  intentQuestionValue = undefined
+  streamCalls.length = 0
+  streamEventOrder = 0
+  chatStreamArgs.length = 0
+  sqlStreamArgs.length = 0
+  ragStreamArgs.length = 0
+  restStreamArgs.length = 0
+  pluginStreamArgs.length = 0
+  contextualStreamArgs.length = 0
+  mockPrepareChatStream.mockClear()
+  mockPrepareSqlStream.mockClear()
+  mockPrepareRagStream.mockClear()
+  mockPrepareRestStream.mockClear()
+  mockPreparePluginStream.mockClear()
+  mockPrepareContextualChatStream.mockClear()
   agenticState.calls = []
   agenticState.result = { answer: 'agentic answer', citations: [], chartData: null, toolRuns: [] }
   agenticState.delegate = false
   invalidateRagCache()
+  mockIntegrationSchemaFindMany.mockClear()
+  mockDocumentFindMany.mockClear()
+  mockIntegrationFindMany.mockClear()
+  mockRestEndpointFindMany.mockClear()
   mockIntegrationCount.mockClear()
   mockDocumentCount.mockClear()
   mockRestEndpointCount.mockClear()
@@ -313,9 +386,14 @@ beforeEach(() => {
   mockGenerateAnswer.mockImplementation(async () => 'The answer is 42')
   mockGenerateChat.mockImplementation(async () => 'Hello!')
   mockGenerateRestCall.mockImplementation(async () => ({ endpointId: 'ep-1', query: {}, body: null, explanation: 'test' }))
-  mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+  mockSmartRoute.mockImplementation(async () => {
+    smartRouteOrder?.push('smartRoute')
+    return { decision: 'CHAT' as RouteDecision, integrationId: undefined }
+  })
   mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
   mockPickBestIntegration.mockImplementation(async () => null)
+  mockIntegrationSchemaFindMany.mockImplementation(async () => [])
+  mockRestEndpointFindMany.mockImplementation(async () => [])
   mockGetPromptSettings.mockImplementation(async () => ({
     systemPrompt: '',
     tools: { rag: true, sql: true, restApi: true },
@@ -1236,5 +1314,668 @@ describe('preflight DB load — a failing query surfaces, it is not swallowed', 
       allowMultiStepDag: true,
     })
     expect(result.answer).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// STREAMING DISPATCHER — runStreamingChatCompletion (its private body
+// `_runStreamingChatCompletion`, roughly lines 174-235).
+//
+// Why this block looks like this.
+//
+// The streaming body and the non-streaming body are two near-identical
+// dispatchers, and they have already DIVERGED once in this repo (the comments in
+// tool-router.ts record the duplicated applyToolGating being folded back into
+// one function for exactly that reason). A defect here is a field dropped from
+// the hand-off, a branch taken that the caller cannot see, or an exit chosen on
+// the wrong condition — none of which are visible from the CALLER's result.
+//
+// So this block asserts on the ARGUMENTS each preparer was called with, not
+// merely that something came back. Two measurement notes:
+//
+//  * `@/lib/llm-client` is mocked here. The real `withUsageTracking` is
+//    AsyncLocalStorage plumbing (3 lines, no defect surface) and mocking it keeps
+//    this file from pulling the LLM transport module graph in.
+//  * `@/lib/tool-router-agentic` is DELIBERATELY left as the file's existing
+//    delegating wrapper. That wrapper spreads the REAL module and overrides only
+//    `runAgenticLoop`, so `runStreamingAgenticLoop` below is the genuine article
+//    and the agentic assertions measure production behaviour rather than a stand
+//    in. Its `combinedStream()` does not touch `output` until the generator is
+//    drained — which two of the tests do on purpose.
+// ---------------------------------------------------------------------------
+
+/** Every preparer call is recorded as {order, name, args} so ORDER is assertable. */
+const streamCalls: Array<{ order: number; name: string; args: Record<string, unknown> }> = []
+let streamEventOrder = 0
+
+async function* scriptedStream(chunks: string[]): AsyncGenerator<string> {
+  for (const chunk of chunks) yield chunk
+}
+
+function scriptedResult(chunks: string[] = ['streamed']): Record<string, unknown> {
+  return { toolRuns: [{ type: 'CHAT', status: 'success', inputSummary: 'q' }], citations: [], chartData: null, stream: scriptedStream(chunks) }
+}
+
+function recordPreparer(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  streamCalls.push({ order: ++streamEventOrder, name, args })
+  preparerOrder?.push(name)
+  return scriptedResult()
+}
+
+const chatStreamArgs: Array<Record<string, unknown>> = []
+const sqlStreamArgs: Array<Record<string, unknown>> = []
+const ragStreamArgs: Array<Record<string, unknown>> = []
+const restStreamArgs: Array<Record<string, unknown>> = []
+const pluginStreamArgs: Array<Record<string, unknown>> = []
+const contextualStreamArgs: Array<Record<string, unknown>> = []
+
+const mockPrepareChatStream = mock(async (a: Record<string, unknown>) => {
+  chatStreamArgs.push(a)
+  return recordPreparer('prepareChatStream', a)
+})
+const mockPrepareSqlStream = mock(async (a: Record<string, unknown>) => {
+  sqlStreamArgs.push(a)
+  return recordPreparer('prepareSqlStream', a)
+})
+const mockPrepareRagStream = mock(async (a: Record<string, unknown>) => {
+  ragStreamArgs.push(a)
+  return recordPreparer('prepareRagStream', a)
+})
+const mockPrepareRestStream = mock(async (a: Record<string, unknown>) => {
+  restStreamArgs.push(a)
+  return recordPreparer('prepareRestStream', a)
+})
+const mockPreparePluginStream = mock(async (a: Record<string, unknown>) => {
+  pluginStreamArgs.push(a)
+  return recordPreparer('preparePluginStream', a)
+})
+const mockPrepareContextualChatStream = mock(async (a: Record<string, unknown>) => {
+  contextualStreamArgs.push(a)
+  return recordPreparer('prepareContextualChatStream', a)
+})
+
+mock.module('@/lib/stream-preparers', () => ({
+  prepareChatStream: mockPrepareChatStream,
+  prepareSqlStream: mockPrepareSqlStream,
+  prepareRagStream: mockPrepareRagStream,
+  prepareRestStream: mockPrepareRestStream,
+  preparePluginStream: mockPreparePluginStream,
+  prepareContextualChatStream: mockPrepareContextualChatStream,
+}))
+
+// The real AsyncLocalStorage wrapper is not the subject; the transport module it
+// lives in pulls the whole LLM stack in behind it.
+mock.module('@/lib/llm-client', () => ({
+  withUsageTracking: async (fn: () => Promise<unknown>) => fn(),
+  getLastLlmUsage: () => undefined,
+}))
+
+const { runStreamingChatCompletion } = await import('./tool-router')
+
+/** Pull every chunk out of a StreamingCompletionResult. */
+async function drainStream(stream: AsyncGenerator<string, void, unknown>): Promise<string[]> {
+  const chunks: string[] = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return chunks
+}
+
+describe('runStreamingChatCompletion — the streamed dispatcher', () => {
+  /**
+   * One integration + one schema row, set LOCALLY inside each routed test.
+   *
+   * Set here rather than in `beforeEach` on purpose: this file's `beforeEach`
+   * runs BEFORE each test and cannot be undone, so a file-wide schema row would
+   * fill `schemaSummaries` in the tests that deliberately pass a malformed one,
+   * and their failure would never be observable.
+   *
+   * `schemas` matters to prepareSqlStream, which short-circuits to chat when the
+   * integration has none — the mocked preparer returns a fixed result, so only
+   * the ARGUMENTS it receives are under test here.
+   */
+  const useOneIntegration = () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'int-1', name: 'Warehouse', provider: 'POSTGRESQL', encryptedConfig: 'enc',
+      schemas: [{ tableName: 'orders', columns: '[]', rowCount: 10, sampleRow: null }],
+    }))
+    useSchemaRow()
+    needsRetrieval()
+  }
+
+  /**
+   * A well-formed `IntegrationSchema` row.
+   *
+   * Empty is safe; MALFORMED is not. `loadIntentPipeline` -> `loadDbData` reads
+   * `schemaRows`, and every routed turn maps them to
+   * `${integration.name}.${tableName}: ${description}`. The first version of
+   * these tests passed a row without `integration` and the dispatcher died at
+   * tool-router.ts:195 with a TypeError that read like a source bug — the
+   * fixture, not the code. Every test that reaches ROUTING needs this; the
+   * tests that only reach the intent gate or the agentic early-return do not.
+   */
+  /**
+   * Force the dispatcher past the `!intent.needsRetrieval` early exit.
+   *
+   * `_runStreamingChatCompletion` returns `prepareChatStream` BEFORE it ever calls the router when the
+   * intent says no retrieval is needed. The file-wide default is `needsRetrieval: false`, so EVERY
+   * routing test must raise this flag or it exercises the early exit instead of the branch it names --
+   * and the test still receives a stream, so a loose assertion would pass while the routing code under
+   * test never ran at all. Measured: without this, both router mocks recorded ZERO calls while the
+   * dispatch still produced a stream, which is the signature of the early exit.
+   */
+  const needsRetrieval = () => { intentState.value = { needsClarification: false, needsRetrieval: true } }
+
+  const useSchemaRow = () => mockIntegrationSchemaFindMany.mockImplementation(async () => [
+    { tableName: 'orders', description: 'one row per order', integration: { name: 'Warehouse' } },
+  ])
+
+  test('a DAG request WITH history delegates to runStreamingAgenticLoop and carries the prefix', async () => {
+    // The loop is driven for real here (the file's only agentic override is
+    // runAgenticLoop). Its per-round deadline is set already-past so the loop
+    // returns after ONE round and never streams a token: this test is about the
+    // hand-off, and a deadline is cheaper to reason about than a mocked loop.
+    process.env.AGENTIC_DEADLINE_MS = '-1'
+    try {
+      const result = await runStreamingChatCompletion({
+        question: 'and the total?',
+        userId: 'u1',
+        allowMultiStepDag: true,
+        skipClarification: true,
+        systemPromptPrefix: 'Be terse.',
+        chatHistory: [{ role: 'user', content: 'how many orders' }],
+      })
+      const chunks = await drainStream(result.stream)
+      // A follow-up needs the loop, which can call the model repeatedly with the
+      // prior turns; the single-tool path cannot see them at all.
+      expect(chunks).toHaveLength(1)
+      expect(chunks[0]).toContain('timed out before a complete answer')
+      // The dispatcher must NOT have run the pipeline it delegated away.
+      expect(streamCalls.some((c) => c.name === 'prepareChatStream')).toBe(false)
+      expect(intentState.value).toEqual({ needsClarification: false, needsRetrieval: true })
+    } finally {
+      delete process.env.AGENTIC_DEADLINE_MS
+    }
+  })
+
+  test('a DAG request with an EMPTY history does NOT take the agentic branch', async () => {
+    await runStreamingChatCompletion({
+      question: 'sales this month',
+      userId: 'u1',
+      allowMultiStepDag: true,
+      chatHistory: [],
+    })
+    // There is no conversation to continue; the loop would spend extra LLM calls
+    // on a BYOK key to no benefit.
+    expect(chatStreamArgs).toHaveLength(1)
+    expect(streamCalls[0].name).toBe('prepareChatStream')
+  })
+
+  test('a DAG request WITHOUT a history field at all does NOT take the agentic branch', async () => {
+    // Distinct from the empty-array case: an absent field and an empty array take
+    // different code paths through `args.chatHistory && args.chatHistory.length`,
+    // and only one of them is exercised by the test above.
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1', allowMultiStepDag: true })
+    expect(chatStreamArgs).toHaveLength(1)
+  })
+
+  test('without allowMultiStepDag the loop is never entered, history or not', async () => {
+    await runStreamingChatCompletion({
+      question: 'q',
+      userId: 'u1',
+      chatHistory: [{ role: 'user', content: 'hi' }],
+    })
+    // The flag is the caller's consent for multi-round LLM spending.
+    expect(chatStreamArgs).toHaveLength(1)
+  })
+
+  test('a clarification question streams as the ONLY chunk with an empty shape', async () => {
+    // MEASURED: `intentState.value` is returned by reference, and the real
+    // analyzeIntent MUTATES it (`parsed.clarificationQuestion = undefined`) when
+    // it overrides a clarification. Once any test in this file has done that, a
+    // later `{ clarificationQuestion: '...' }` assignment replaces the whole
+    // object, so this fixture is fine — but a test that only toggled the flag
+    // would silently stop clarifying. Asserted through the stream either way.
+    intentState.value = { needsClarification: true, clarificationQuestion: 'Which database?', needsRetrieval: true }
+    const result = await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    const chunks = await drainStream(result.stream)
+    // Asking is not answering: routing a tool here would answer a question the
+    // router just decided it could not understand.
+    expect(chunks).toEqual(['Which database?'])
+    expect(result.toolRuns).toEqual([])
+    expect(result.citations).toEqual([])
+    expect(result.chartData).toBeNull()
+    // No preparer and no routing may have run — the turn ended at the intent gate.
+    expect(streamCalls).toHaveLength(0)
+    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+    expect(mockRouteQuery).toHaveBeenCalledTimes(0)
+  })
+
+  test('skipClarification suppresses the question and routes instead', async () => {
+    intentState.value = { needsClarification: true, clarificationQuestion: 'Which database?', needsRetrieval: true }
+    const result = await runStreamingChatCompletion({ question: 'q', userId: 'u1', skipClarification: true })
+    const chunks = await drainStream(result.stream)
+    // The API path sets this when the caller already picked a source; a dead-end
+    // question there is a bug the user experiences as the bot ignoring them.
+    expect(chunks).toEqual(['streamed'])
+    expect(streamCalls[0].name).toBe('prepareChatStream')
+  })
+
+  test('a clarification with FALSY question text falls through instead of yielding empty', async () => {
+    intentState.value = { needsClarification: true, clarificationQuestion: '', needsRetrieval: false }
+    const result = await runStreamingChatCompletion({ question: 'hello', userId: 'u1' })
+    const chunks = await drainStream(result.stream)
+    // Both flags are required; an empty string must not become an empty stream.
+    expect(chunks).toEqual(['streamed'])
+    // When needsRetrieval is false the chat preparer is the correct exit, and the
+    // routing stack must not have been consulted at all.
+    expect(streamCalls[0].name).toBe('prepareChatStream')
+    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+  })
+
+  test('needsRetrieval=false goes straight to prepareChatStream with the EFFECTIVE question', async () => {
+    intentState.value = { needsClarification: false, needsRetrieval: false }
+    await runStreamingChatCompletion({
+      question: 'what is the procedure?',
+      userId: 'u1',
+      systemPromptPrefix: 'Be terse.',
+      chatHistory: [{ role: 'user', content: 'annual leave' }, { role: 'assistant', content: 'ok' }],
+    })
+    expect(chatStreamArgs).toHaveLength(1)
+    const sent = chatStreamArgs[0]
+    // The assertion that matters: a follow-up that is answered WITHOUT retrieval
+    // must still carry the rewritten question, or the answer is generated from
+    // "what is the procedure?" with no subject.
+    expect(sent.question).toBe(effectiveQuestionValue)
+    expect(sent.question).not.toBe('what is the procedure?')
+    expect(sent.systemPromptPrefix).toBe('Be terse.')
+    expect(sent.memoryContext).toBe(memoryContextValue)
+    // Routing is unnecessary: the intent gate already decided no tool is needed.
+    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+    expect(mockRouteQuery).toHaveBeenCalledTimes(0)
+  })
+
+  test('analyzeIntent sees the EFFECTIVE question when there is history', async () => {
+    await runStreamingChatCompletion({
+      question: 'and the total?',
+      userId: 'u1',
+      chatHistory: [{ role: 'user', content: 'orders' }],
+    })
+    // A follow-up is meaningless to the intent analyzer without the rewrite, so
+    // the rewritten form must be the one that reaches it.
+    expect(intentQuestionValue).toBe(effectiveQuestionValue)
+  })
+
+  test('analyzeIntent sees the RAW question when there is no history', async () => {
+    // The asymmetry is deliberate and easy to break: with no history there is
+    // nothing to rewrite, and stripSessionWrapper — not rewriteQuery — is what
+    // produces the effective question.
+    effectiveQuestionValue = 'STRIPPED-QUESTION'
+    await runStreamingChatCompletion({ question: 'RAW-QUESTION', userId: 'u1' })
+    expect(intentQuestionValue).toBe('RAW-QUESTION')
+    expect(intentQuestionValue).not.toBe(effectiveQuestionValue)
+  })
+
+  test('analyzeIntent is told what the org HAS: document, integration, schema, REST summaries', async () => {
+    mockDocumentCount.mockImplementation(async () => 2)
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockDocumentFindMany.mockImplementation(async () => [
+      { name: 'doc.pdf', category: 'HR', description: 'annual leave SOP' },
+    ])
+    mockIntegrationFindMany.mockImplementation(async () => [{ name: 'Warehouse' }])
+    mockIntegrationSchemaFindMany.mockImplementation(async () => [
+      { tableName: 'orders', description: 'one row per order', integration: { name: 'Warehouse' } },
+    ])
+    mockRestEndpointFindMany.mockImplementation(async () => [
+      { method: 'GET', path: '/invoices', description: 'invoice list' },
+      // No description and no fallback: the summary would end ': ' and must be
+      // DROPPED, or the prompt carries an empty label.
+      { method: 'POST', path: '/noop', description: null },
+    ])
+
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    const input = lastIntentArgs as unknown as {
+      question: string; hasDocuments: boolean; hasIntegrations: boolean
+      documentNames: string[]; integrationNames: string[]; schemaSummaries: string[]; restEndpointSummaries: string[]
+    }
+    expect(input.hasDocuments).toBe(true)
+    expect(input.hasIntegrations).toBe(true)
+    expect(input.documentNames).toEqual(['doc.pdf [HR] — annual leave SOP'])
+    expect(input.integrationNames).toEqual(['Warehouse'])
+    expect(input.schemaSummaries).toEqual(['Warehouse.orders: one row per order'])
+    expect(input.restEndpointSummaries).toEqual(['GET /invoices: invoice list'])
+  })
+
+  test('a schema row with NO integration row THROWS instead of printing undefined', async () => {
+    // DEFECT PINNED, NOT ENDORSED. `_runStreamingChatCompletion` formats each schema row as
+    // `${s.integration.name}.${s.tableName}: ${s.description}` with no guard. A row whose left-joined
+    // integration is null therefore raises a raw `TypeError: undefined is not an object (evaluating
+    // 's.integration.name')` that escapes the dispatcher, instead of dropping the row or reporting a
+    // sanitized error. The intent prompt is the one place where an `undefined.orders:` line would be
+    // merely ugly, so formatting is the wrong thing to be strict about.
+    //
+    // WHY IT IS NOT EXPLOITABLE TODAY: the production query is
+    // `integrationSchema.findMany({ where: { integration: { status: 'active' }, description: { not: null } } })`,
+    // a Prisma relation filter, so a schema row with no active integration is not returned. The crash
+    // is reachable only if that filter is relaxed or the read is changed to a raw query. Pinned so the
+    // relaxation is loud rather than silent.
+    // FIX: filter non-null integration rows, or use `s.integration?.name ?? 'unknown'` and drop it.
+    // INVERT WHEN FIXED: this test FAILS once the format tolerates a missing integration.
+    mockIntegrationCount.mockImplementation(async () => 1)
+    // Cast through `unknown` deliberately: the mock's declared row type requires a non-null
+    // `integration`, so tsc REFUSES the row that triggers the crash. That refusal is itself the
+    // evidence -- the shape below is off-contract, which is exactly why the source never guards for it
+    // and why the crash is real rather than a bad fixture.
+    mockIntegrationSchemaFindMany.mockImplementation((async () => [
+      { tableName: 'orphan_table', description: 'table with no integration row', integration: undefined },
+    ]) as unknown as () => Promise<Array<{ tableName: string; description: string | null; integration: { name: string } }>>)
+    await expect(
+      runStreamingChatCompletion({ question: 'q', userId: 'u1' }),
+    ).rejects.toThrow(/integration/)
+    // The formatter itself is what throws, so this is the dispatcher's own behaviour and not a mock
+    // artifact: assert it from source that the unguarded access is still there.
+    const src = readFileSync(join(import.meta.dir, 'tool-router.ts'), 'utf8')
+    expect(src).toContain('`${s.integration.name}.${s.tableName}: ${s.description}`')
+  })
+
+  test('SQL decision routes to prepareSqlStream', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    await runStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    expect(sqlStreamArgs).toHaveLength(1)
+    // The SMART-route branch is the one that carries an integrationId: `routeQuery` (the
+    // with-history router) is typed `{ decision, reason }` and never returns one, so this
+    // assertion and the history variant below are deliberately split across two tests.
+    expect(sqlStreamArgs[0].integrationId).toBe('int-1')
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareSqlStream'])
+  })
+
+  test('SQL decision with history routes to prepareSqlStream carrying the REWRITTEN question', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'int-1', name: 'Warehouse', type: 'POSTGRES', status: 'active',
+      schemas: [{ tableName: 'orders', columns: [] }],
+    }))
+    // chatHistory is REQUIRED for this assertion to mean anything: `rewriteQuery` is only consulted when
+    // there is history (`loadIntentPipeline`), so without it the effective question IS the raw question
+    // and the assertion would pass even if the dispatcher forwarded `args.question` by mistake.
+    //
+    // History also SWITCHES THE ROUTER (`resolveRouting` uses routeQuery, not smartRoute, when there is
+    // history), so the router mock must move with it -- leaving smartRoute mocked here would let the
+    // real routeQuery answer and the decision would silently be its own default instead of SQL.
+    mockRouteQuery.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, reason: 'test' }))
+    await runStreamingChatCompletion({
+      question: 'total sales',
+      userId: 'u1',
+      chatHistory: [{ role: 'user', content: 'prior turn' }],
+    })
+    expect(sqlStreamArgs).toHaveLength(1)
+    // The REWRITTEN question reaches the preparer, not the raw one -- and the rewrite really ran.
+    expect(sqlStreamArgs[0].question).toBe(effectiveQuestionValue)
+    expect(sqlStreamArgs[0].question).not.toBe('total sales')
+    expect(rewriteCalls).toBe(1)
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareSqlStream'])
+  })
+
+  test('RAG decision routes to prepareRagStream', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'RAG' as RouteDecision, integrationId: undefined }))
+    await runStreamingChatCompletion({ question: 'what is the policy?', userId: 'u1' })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareRagStream'])
+    expect(ragStreamArgs[0].memoryContext).toBe(memoryContextValue)
+  })
+
+  test('REST decision routes to prepareRestStream', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    // `hasRestApis` is derived from the restApiEndpoint.FINDMANY row count, NOT from the count() mock --
+    // `applyToolGating` otherwise downgrades REST to CHAT and this test would silently exercise the
+    // fallthrough branch instead of the REST one.
+    mockRestEndpointCount.mockImplementation(async () => 1)
+    mockRestEndpointFindMany.mockImplementation(async () => [
+      { method: 'GET', path: '/invoices', description: 'invoice list' },
+    ])
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'REST' as RouteDecision, integrationId: undefined }))
+    await runStreamingChatCompletion({ question: 'list invoices via api', userId: 'u1' })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareRestStream'])
+    // No chatHistory here, so the effective question IS the raw question. Assert the raw value
+    // explicitly rather than comparing against the rewrite seam, which would make this assertion pass
+    // for either behaviour.
+    expect(restStreamArgs[0].question).toBe('list invoices via api')
+  })
+
+  test('PLUGIN decision routes to preparePluginStream', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'PLUGIN' as RouteDecision, integrationId: undefined }))
+    await runStreamingChatCompletion({ question: 'what is the weather?', userId: 'u1' })
+    expect(streamCalls.map((c) => c.name)).toEqual(['preparePluginStream'])
+    // Same reasoning as the REST branch: with no history the effective question is the raw one.
+    expect(pluginStreamArgs[0].question).toBe('what is the weather?')
+    expect(pluginStreamArgs[0].chatHistory).toEqual([])
+  })
+
+  test('CONTEXTUAL_CHAT routes to prepareContextualChatStream ONLY with a truthy context', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    mockToolRunFindMany.mockImplementation(async () => [
+      { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
+    ])
+    await runStreamingChatCompletion({
+      question: 'what about that?',
+      userId: 'u1',
+      sessionId: 'sess-1',
+      chatHistory: [{ role: 'user', content: 'show sales' }],
+    })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareContextualChatStream'])
+    // MEASURED: loadContextualContext returns the rendered prior results, and
+    // this is the only place that value is passed on. Dropping it silently turns
+    // a contextual answer into a generic one.
+    const sent = contextualStreamArgs[0]
+    expect(sent.context).toContain('Sales: $5000')
+    expect(sent.context).toContain('[Prior SQL result for: show sales]')
+    expect(sent.question).toBe(effectiveQuestionValue)
+  })
+
+  test('CONTEXTUAL_CHAT with NO prior context falls through to prepareChatStream', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    // The branch a careless test skips. Choosing CONTEXTUAL_CHAT with nothing to
+    // be contextual about must not reach a preparer that requires a context.
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    mockToolRunFindMany.mockImplementation(async () => [])
+    await runStreamingChatCompletion({
+      question: 'what about that?',
+      userId: 'u1',
+      sessionId: 'sess-1',
+      chatHistory: [{ role: 'user', content: 'show sales' }],
+    })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+    expect(contextualStreamArgs).toHaveLength(0)
+  })
+
+  test('CONTEXTUAL_CHAT is never loaded without a sessionId, so it cannot route contextually', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    // loadContextualContext returns '' for a missing session, which makes the
+    // truthiness guard above the only thing standing between an empty context
+    // and a contextual answer. Pinned so a future "always return something"
+    // change shows up here rather than in production.
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    mockToolRunFindMany.mockImplementation(async () => [
+      { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
+    ])
+    await runStreamingChatCompletion({
+      question: 'what about that?',
+      userId: 'u1',
+      chatHistory: [{ role: 'user', content: 'show sales' }],
+    })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+  })
+
+  test('CHAT decision goes to prepareChatStream with the branch arguments', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    await runStreamingChatCompletion({
+      question: 'hello',
+      userId: 'u1',
+      sessionId: 'sess-1',
+      chatHistory: [{ role: 'user', content: 'prior turn' }],
+    })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+    const sent = chatStreamArgs[0]
+    // With history the rewrite runs, so the CHAT branch carries the standardised
+    // question rather than the raw follow-up — the same rule the SQL branch
+    // follows above.
+    expect(sent.question).toBe(effectiveQuestionValue)
+    expect(sent.memoryContext).toBe(memoryContextValue)
+  })
+
+  test('a SQL decision with NO integration available is gated to chat', async () => {
+    useSchemaRow()
+    needsRetrieval()
+    // chooseAvailableDecision turns SQL into CHAT when nothing can run SQL. If
+    // prepareSqlStream were reached here it would count 0 active integrations and
+    // answer from nowhere. `hasDocuments` must stay false too, or
+    // chooseAvailableDecision leaves SQL in place and the gate under test is
+    // never reached.
+    mockIntegrationCount.mockImplementation(async () => 0)
+    mockDocumentCount.mockImplementation(async () => 0)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    await runStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+    expect(sqlStreamArgs).toHaveLength(0)
+  })
+
+  test('a SQL tool disabled in prompt settings is gated to chat', async () => {
+    // applyToolGating runs BEFORE the branch is chosen. Gating after the fact
+    // would let a disabled tool execute and only relabel the result.
+    useOneIntegration()
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockGetPromptSettings.mockImplementation(async () => ({
+      systemPrompt: '',
+      tools: { rag: true, sql: false, restApi: true },
+    }))
+    await runStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+  })
+
+  test('the operator system prompt is MERGED with the caller prefix, joined by a blank line', async () => {
+    useOneIntegration()
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockGetPromptSettings.mockImplementation(async () => ({
+      systemPrompt: 'Operator prompt.',
+      tools: { rag: true, sql: true, restApi: true },
+    }))
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1', systemPromptPrefix: 'Caller prefix.' })
+    // The assertion reaches the PREPARER, not the argument object, and the SQL
+    // prompts build their system message from exactly this value.
+    expect(sqlStreamArgs[0].systemPromptPrefix).toBe('Caller prefix.\n\nOperator prompt.')
+  })
+
+  test('with BOTH prompts empty the merged prefix is undefined, not an empty string', async () => {
+    useOneIntegration()
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    // An empty prefix is not a no-op downstream: generateSql branches on whether
+    // a prefix exists, so '' would add an empty system message.
+    expect(sqlStreamArgs[0].systemPromptPrefix).toBeUndefined()
+  })
+
+  test('a caller prefix alone survives when the operator prompt is empty', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1', systemPromptPrefix: 'Caller only.' })
+    // No stray leading blank line from joining an empty second element.
+    expect(sqlStreamArgs[0].systemPromptPrefix).toBe('Caller only.')
+  })
+
+  test('the operator prompt alone survives when the caller gave no prefix', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockGetPromptSettings.mockImplementation(async () => ({
+      systemPrompt: 'Operator only.',
+      tools: { rag: true, sql: true, restApi: true },
+    }))
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    expect(sqlStreamArgs[0].systemPromptPrefix).toBe('Operator only.')
+  })
+
+  test('the side effects happen in order: rewrite, intent, routing, branch', async () => {
+    // A shared event log: each seam appends its own name as it is entered, so the
+    // assertion is about ORDER rather than about any one value. Routing before
+    // intent, or a branch before routing, is invisible in the returned result.
+    const order: string[] = []
+    rewriteOrder = order
+    intentOrder = order
+    smartRouteOrder = order
+    preparerOrder = order
+    try {
+      useOneIntegration()
+      needsRetrieval()
+      // History is present so the REWRITE step actually happens (without it `rewriteQuery` is never
+      // consulted and the first event would be missing), which also means the router is `routeQuery`.
+      // `smartRouteOrder` is the shared log for both router mocks, so either one records 'smartRoute'.
+      mockRouteQuery.mockImplementation(async () => {
+        smartRouteOrder?.push('smartRoute')
+        return { decision: 'SQL' as RouteDecision, reason: 'test' }
+      })
+      await runStreamingChatCompletion({
+        question: 'q',
+        userId: 'u1',
+        chatHistory: [{ role: 'user', content: 'prior' }],
+      })
+    } finally {
+      rewriteOrder = null
+      intentOrder = null
+      smartRouteOrder = null
+      preparerOrder = null
+    }
+    // Order, not merely membership: routing before intent, or a branch before routing, is invisible
+    // in the returned result.
+    expect(order).toEqual(['rewrite', 'analyzeIntent', 'smartRoute', 'prepareSqlStream'])
+  })
+
+
+  test('a prompt-settings read failure is NOT swallowed — it happens before any stream exists', async () => {
+    // loadDbData is awaited before the function can return, so an operator-config
+    // read failure must surface as a rejection. Silently defaulting here would
+    // answer with whatever the router guessed while the operator prompt and tool
+    // toggles were ignored.
+    mockGetPromptSettings.mockImplementation(async () => {
+      throw new Error('prompt settings unreadable')
+    })
+    await expect(runStreamingChatCompletion({ question: 'q', userId: 'u1' })).rejects.toThrow('prompt settings unreadable')
+    expect(streamCalls).toHaveLength(0)
+  })
+
+  test('a rejecting preflight query forwards the error instead of hanging', async () => {
+    mockDocumentCount.mockImplementationOnce(async () => {
+      throw new Error('relation "Document" does not exist')
+    })
+    await expect(runStreamingChatCompletion({ question: 'q', userId: 'u1' })).rejects.toThrow('relation "Document" does not exist')
+  })
+
+  // NOT A CONTROL — recorded rather than faked.
+  //
+  // The harness invariant "a READY streaming result always carries at least one
+  // toolRun" lives in the SSE route and in `send`; inside this dispatcher it
+  // cannot fail, because the only exit a caller can observe before routing is the
+  // clarification stream, which deliberately yields no tool run (`toolRuns: []`
+  // is asserted above). Asserting the invariant HERE would mean asserting on the
+  // mocked preparers. It belongs in the route-level test, which already owns it.
+  test.skip('every ready stream carries at least one tool run (needs the SSE route harness, not the dispatcher)', () => {
+    // Placeholder kept so the gap is visible in the suite output rather than in a
+    // comment nobody reads.
   })
 })
