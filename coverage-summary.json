@@ -1,12 +1,14 @@
 {
-  "linePct": 87.81,
-  "linesHit": 19841,
-  "linesFound": 22596,
-  "fnPct": 93.95,
-  "fnsHit": 1817,
-  "fnsFound": 1934,
-  "filesMeasured": 160,
-  "failedTestFiles": [],
+  "linePct": 88.05,
+  "linesHit": 20296,
+  "linesFound": 23051,
+  "fnPct": 94.07,
+  "fnsHit": 1855,
+  "fnsFound": 1972,
+  "filesMeasured": 170,
+  "failedTestFiles": [
+    "src/app/api/documents/search/route.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -864,6 +866,15 @@
       "fPct": 66.66666666666666
     },
     {
+      "file": "src/app/api/auth/invite/route.ts",
+      "hit": 84,
+      "found": 84,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/auth/login/route.ts",
       "hit": 66,
       "found": 66,
@@ -924,6 +935,15 @@
       "pct": 100,
       "fHit": 3,
       "fFound": 3,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/chat/sessions/[id]/route.ts",
+      "hit": 83,
+      "found": 83,
+      "pct": 100,
+      "fHit": 6,
+      "fFound": 6,
       "fPct": 100
     },
     {
@@ -999,6 +1019,24 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/documents/search/route.ts",
+      "hit": 52,
+      "found": 52,
+      "pct": 100,
+      "fHit": 3,
+      "fFound": 3,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/hyde.ts",
+      "hit": 61,
+      "found": 61,
+      "pct": 100,
+      "fHit": 16,
+      "fFound": 16,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/fetch-url/route.ts",
       "hit": 30,
       "found": 30,
@@ -1062,6 +1100,15 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/mcp/servers/[id]/test/route.ts",
+      "hit": 37,
+      "found": 37,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/metrics/route.ts",
       "hit": 43,
       "found": 43,
@@ -1089,6 +1136,15 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/org/license/route.ts",
+      "hit": 76,
+      "found": 76,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/prompt-tools/route.ts",
       "hit": 37,
       "found": 37,
@@ -1104,6 +1160,15 @@
       "pct": 100,
       "fHit": 8,
       "fFound": 8,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/schedules/[id]/run/route.ts",
+      "hit": 40,
+      "found": 40,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
       "fPct": 100
     },
     {
@@ -1131,6 +1196,15 @@
       "pct": 100,
       "fHit": 2,
       "fFound": 2,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/setup/status/route.ts",
+      "hit": 28,
+      "found": 28,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
       "fPct": 100
     },
     {
@@ -1179,6 +1253,15 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/users/route.ts",
+      "hit": 23,
+      "found": 23,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/v1/chat/completions/route.ts",
       "hit": 386,
       "found": 386,
@@ -1188,12 +1271,30 @@
       "fPct": 88.46153846153845
     },
     {
+      "file": "src/app/api/v1/health/route.ts",
+      "hit": 9,
+      "found": 9,
+      "pct": 100,
+      "fHit": 1,
+      "fFound": 1,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/vector-store/route.ts",
       "hit": 97,
       "found": 97,
       "pct": 100,
       "fHit": 7,
       "fFound": 7,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/webhooks/incoming/route.ts",
+      "hit": 23,
+      "found": 23,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
       "fPct": 100
     },
     {
@@ -1284,15 +1385,6 @@
       "pct": 100,
       "fHit": 2,
       "fFound": 2,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/hyde.ts",
-      "hit": 61,
-      "found": 61,
-      "pct": 100,
-      "fHit": 16,
-      "fFound": 16,
       "fPct": 100
     },
     {

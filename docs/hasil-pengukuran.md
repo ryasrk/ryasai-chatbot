@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `900e4ae`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d5b4053`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `900e4ae`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,81%** (19.841/22.596 baris, 160 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,95%** (1817/1934 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 201 file · **4.960 lulus · 0 gagal** | terukur |
+| Test coverage | **88,05%** (20.296/23.051 baris, 170 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,07%** (1855/1972 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 211 file · **5.243 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1084 kontrol + 18 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1128 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5890,6 +5890,85 @@ tiga kali tercatat**, kali ini dipicu oleh **berbagi berkas test**, bukan oleh m
 
 **Progres backlog: 28 dari 66 route orphan ditutup.** Repo **87,77% → 87,81%**; suite **4.911 → 4.960**
 (199 → **201 file**); gate **157 → 160 modul**.
+
+### 1.7ds Sepuluh rute dalam satu ronde — 100,00% kesepuluh, 170 modul ter-gate
+
+**Cara kerja diubah menjadi paralel.** Sebelumnya tiap rute dikerjakan serial oleh saya sendiri; ronde ini
+**sepuluh rute ditulis bersamaan**, dan fase global yang mahal (suite penuh, coverage gabungan, gate) **tetap
+dijalankan SEKALI di ujung** oleh saya. Pembagian itu bukan pilihan gaya: beberapa proses yang menyentuh
+`.coverage-merge`/`coverage/` **saling merusak**, dan `bun run test` adalah runner subprocess per-berkas —
+jadi paralelnya ditaruh di penulisan + verifikasi satu-berkas.
+
+| Rute | Baris | Cakupan merged |
+|---|---|---|
+| `chat/sessions/[id]` | 83 | **100,00%** |
+| `auth/invite` | 84 | **100,00%** |
+| `org/license` | 76 | **100,00%** |
+| `documents/search` | 52 | **100,00%** |
+| `schedules/[id]/run` | 40 | **100,00%** |
+| `mcp/servers/[id]/test` | 37 | **100,00%** |
+| `setup/status` | 28 | **100,00%** |
+| `users` | 23 | **100,00%** |
+| `webhooks/incoming` | 23 | **100,00%** |
+| `v1/health` | 9 | **100,00%** |
+
+**IDOR DIPERIKSA DI SEMUA RUTE BER-`[id]`, dan hasilnya bersih.** Ketiganya memakai **`findFirst` dengan
+`userId`** (`chat/sessions/[id]` dan `schedules/[id]/run`) atau **`findFirst` dengan `select` sempit**
+(`mcp/servers/[id]/test`), dan `id` klien **hanya pernah** masuk ke `findFirst`. Satu bahaya sisa dilaporkan:
+**`mcp-client.ts` membaca ulang `id` yang sama dengan `findUnique`** — **tidak dapat di-scope tenant** — tetapi
+**tidak terjangkau dari rute ini** karena `findFirst` yang ter-scope harus lolos lebih dulu. Arah perbaikannya
+di `mcp-client.ts`, bukan di rute.
+
+**DEFEK BARU YANG DITEMUKAN (semuanya DIPIN, tidak diperbaiki — sesuai keputusan tertunda #10):**
+
+1. **`/api/auth/invite`: `email: 42` atau `email: {}` → HTTP 500, bukan 400.** `email?.trim()` hanya menjaga
+   `null`/`undefined`; **angka dan objek melempar `TypeError`** yang keluar ke handler error. Dibuktikan dengan
+   probe: `42 → 500`, `{} → 500`, `null → 400`. **Kesalahan klien dilaporkan sebagai kesalahan server** —
+   monitoring menghitungnya sebagai outage. Efek sampingnya jinak: lemparan terjadi **sebelum** penulisan, jadi
+   tidak ada undangan setengah jadi.
+2. **`/api/webhooks/incoming`: body rusak → 500, bukan 400.** `JSON.parse` berjalan sebelum langkah tanda
+   tangan dan tidak ada cabang `instanceof SyntaxError`.
+3. **`/api/webhooks/incoming`: 401-vs-500 ditentukan REGEX pada teks pesan** (`/signature|secret/i`).
+   **Positif palsu terbukti:** galat upstream yang kebetulan memuat kata "secret" dikembalikan sebagai **401**.
+4. **`/api/schedules/[id]/run`: "Run now" mengembalikan `{ok:true}` untuk org yang SEDANG LOCKDOWN**, padahal
+   worker (`processJob` → `getLockdownReason`) **membuang job itu sebagai `skipped`.** Rute tidak pernah membaca
+   `Organization`, jadi **pesan sukses dan baris audit `SCHEDULE_MANUAL_RUN` itu bohong**; pemeriksaannya
+   tersedia (session.ts membaca baris yang sama). **Utang paling serius ronde ini.**
+5. **`/api/setup/status`: `NextResponse.json({ ok: true, ...state })` menyebar objek state.** Hari ini tidak
+   membocorkan apa pun, tetapi **bentuk respons menjadi fungsi dari apa pun yang dikembalikan `getSetupState`.**
+   Dibuktikan dengan menyuntikkan `apiKey` ke state → **muncul apa adanya di respons tanpa autentikasi.**
+6. **`/api/mcp/servers/[id]/test`: body respons upstream diteruskan apa adanya** ke browser admin (rantai tiga
+   hop diverifikasi di source SDK), **tanpa sanitasi dan tanpa batas ukuran.**
+
+**YANG JUSTRU TERBUKTI BENAR, dan penting untuk tidak dilaporkan sebagai bug:** `/api/webhooks/incoming`
+**TIDAK fail-open.** Rute tidak memverifikasi sendiri melainkan mendelegasikan; `incoming-webhook.ts` memeriksa
+**secret lebih dulu** sehingga instalasi tanpa secret **menerima apa pun = 401**, membandingkan dengan
+`timingSafeEqual` di atas **body mentah**, dan `?? ''` membuat header yang absen tiba sebagai string kosong
+(yang ditolak), bukan `undefined` (yang akan menjadi 500).
+
+**TIGA JENIS KESALAHAN SAYA SENDIRI, semuanya ditemukan oleh test yang merah:**
+
+1. **Saya mengasersikan `searchVectorStore` dipanggil dengan `provider === 'INTERNAL'`.** **Tidak ada cabang
+   INTERNAL** — empat cabangnya QDRANT/MILVUS/PINECONE/CHROMA dan **sisanya jatuh ke `return []` di akhir
+   fungsi.** Jadi provider tak dikenal **tidak melakukan panggilan jaringan sama sekali**: kegagalannya **lebih
+   senyap** daripada yang saya gambarkan, karena tidak ada permintaan yang gagal, tercatat, atau timeout.
+2. **Saya menaruh topK di posisi org pada kunci cache.** Kunci nyatanya
+   `rag:${orgId}:${topK}:${query}` — **org segmen KEDUA, topK ketiga.** Lebih buruk: org itu datang dari
+   **`getOrgContext()`**, bukan dari seam `orgContext` milik berkas test, jadi kuncinya `rag:global:...` dan
+   **asersi `org-1`/`org-2` saya tidak mungkin terpenuhi.** Diperbaiki dengan memasuki konteks org sungguhan.
+3. **Seam `orgContext` yang tidak diset membuat lima test menguji jalur yang salah.** Mock
+   `getEmbeddingRuntimeConfig` **gagal-tertutup lebih dulu** (`if (!orgContext) return null`), sehingga
+   **leg vektor tidak pernah berjalan** — itulah sebabnya nol panggilan QDRANT tercatat, dan asersi filter
+   `llmConfigCalls[0]` **tidak terjangkau**. Saya juga sempat menganggap panggilan `embedTexts` PERTAMA adalah
+   query pencarian; query di-embed **setelah** tahap dekomposisi/graph, jadi ia panggilan **terakhir**.
+
+**Empat kesalahan mock dari subagent juga dilaporkan dan diperbaiki**, dua di antaranya layak diingat:
+**`mock.module` di dalam body test TIDAK PERNAH dipulihkan** dan meracuni semua test setelahnya (5 merah);
+dan **`node:crypto` yang ditangkap di dalam factory `mock.module` adalah objek BERBEDA** dari yang ditangkap
+test, sehingga `createHmac` menjadi `undefined` dan tanda tangan yang benar ditolak (10 merah).
+
+**Progres backlog: 38 dari 66 route orphan ditutup.** Repo **87,81% → 88,05%**; suite **4.960 → 5.243**
+(201 → **211 file**); gate **160 → 170 modul**; cakupan fungsi **93,95% → 94,07%**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

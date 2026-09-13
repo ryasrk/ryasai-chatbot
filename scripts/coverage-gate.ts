@@ -125,6 +125,16 @@ const FLOORS: Record<string, number> = {
   // MERGED HITS ARE STILL 8/10 with identical hit counts, so the floor is real, not a free pass.
   'src/app/api/traces/route.ts': 80,
   'src/app/api/traces/stats/route.ts': 80,
+  'src/app/api/users/route.ts': 100, // merged 100.00%
+  'src/app/api/v1/health/route.ts': 100, // merged 100.00%
+  'src/app/api/webhooks/incoming/route.ts': 100, // merged 100.00%
+  'src/app/api/chat/sessions/[id]/route.ts': 100, // merged 100.00%
+  'src/app/api/mcp/servers/[id]/test/route.ts': 100, // merged 100.00%
+  'src/app/api/schedules/[id]/run/route.ts': 100, // merged 100.00%
+  'src/app/api/documents/search/route.ts': 100, // merged 100.00%
+  'src/app/api/setup/status/route.ts': 100, // merged 100.00%
+  'src/app/api/org/license/route.ts': 100, // merged 100.00%
+  'src/app/api/auth/invite/route.ts': 100, // merged 100.00%
   'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
   'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)
