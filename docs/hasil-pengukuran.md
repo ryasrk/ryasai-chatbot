@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a4b3712`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fd42b51`.
 
 ---
 
