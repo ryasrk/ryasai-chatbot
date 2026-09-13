@@ -1,12 +1,14 @@
 {
-  "linePct": 87.14,
-  "linesHit": 18201,
-  "linesFound": 20886,
-  "fnPct": 93.88,
-  "fnsHit": 1702,
-  "fnsFound": 1813,
-  "filesMeasured": 141,
-  "failedTestFiles": [],
+  "linePct": 87.23,
+  "linesHit": 18333,
+  "linesFound": 21018,
+  "fnPct": 93.93,
+  "fnsHit": 1717,
+  "fnsFound": 1828,
+  "filesMeasured": 142,
+  "failedTestFiles": [
+    "src/lib/mcp-installer.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -780,6 +782,15 @@
       "pct": 100,
       "fHit": 3,
       "fFound": 3,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/auth/accept-invite/route.ts",
+      "hit": 132,
+      "found": 132,
+      "pct": 100,
+      "fHit": 15,
+      "fFound": 15,
       "fPct": 100
     },
     {

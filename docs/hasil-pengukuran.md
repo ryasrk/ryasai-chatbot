@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a30d712`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `088613e`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a30d712`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,14%** (18.201/20.886 baris, 141 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,88%** (1702/1813 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 183 file · **4.330 lulus · 0 gagal** | terukur |
+| Test coverage | **87,23%** (18.333/21.018 baris, 142 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,93%** (1717/1828 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 184 file · **4.366 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**772 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**791 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5231,6 +5231,48 @@ dikembalikan.**
 
 **Progres backlog: 9 dari 66 route orphan ditutup.** Repo **87,10% → 87,14%**; file terinstrumen
 **140 → 141**; suite **4.309 → 4.330** (182 → **183 file**); gate **140 → 141 modul**.
+
+### 1.7dd `/api/auth/accept-invite` — SATU-SATUNYA penegakan kuota `maxUsers`: NOL → 100,00% (132/132)
+
+Rute publik tanpa sesi yang **membuat pengguna**, dan itulah mengapa ia berbahaya: **ini satu-satunya cara
+sebuah organisasi bertambah pengguna setelah signup.** `register` selalu membuat organisasi baru yang
+pengguna pertamanya pasti di bawah kuota, jadi **di sinilah batas `maxUsers` harus ditegakkan — dan tidak di
+tempat lain.**
+
+**Properti 1 — kuota diambil dari BARIS ORGANISASI, bukan dari pemanggil.** Pengundang **belum punya sesi**;
+field `plan` mereka tidak bermakna. **Rencana yang berasal dari body akan membuat siapa pun melewati batas
+dengan mengaku `enterprise`.** Kuota juga **diperiksa SEBELUM** penulisan pengguna, dan **undangan TIDAK
+dikonsumsi oleh percobaan yang ditolak** — kalau tidak, pengundang tidak akan pernah bisa mencoba lagi
+setelah operator menaikkan paket.
+
+**Properti 2 — peran datang dari UNDANGAN, bukan body.** Kalau tidak, undangan berisi `viewer` + body berisi
+`admin` = **eskalasi hak akses oleh siapa pun yang memegang token.** Email dan `organizationId` juga dari
+undangan, bukan body.
+
+**Properti 3 — token sekali pakai dan kedaluwarsa; keduanya diperiksa DI KEDUA handler.** Satu token bocor
+tanpa aturan sekali-pakai akan mencetak pengguna tanpa batas.
+
+**Dua KEGAGALAN pada putaran pertama, keduanya ditemukan oleh kontrol dan keduanya nyata:**
+
+1. **`req.nextUrl` tidak ada di `Request` biasa` — SELURUH 6 test GET gagal** sebelum menyentuh logika rute
+   apa pun. `nextUrl` adalah **ekstensi Next.js**, bukan bagian WHATWG `Request`; saya **membuktikannya**
+   dengan probe (`typeof r.nextUrl === 'undefined'`). Diperbaiki dengan memasang properti yang dibaca rute,
+   dan sesudahnya 35 test hijau.
+2. **K14 lolos.** Asersi saya `bypassCalls.length >= 6` **tidak bisa mendeteksi penghapusan** karena
+   hitungannya turun dari 8 ke 7 — **batas bawah dengan kelonggaran tidak menguji apa pun.** Setelah
+   diganti dengan **hitungan PERSIS (7, dan 8 saat AppConfig hilang)**, K14 → **2 merah**, dan dua varian
+   tambahan (melepas `bypassOrg` dari lookup org dan dari `user.create`) juga **2 merah** dan **1 merah**.
+   Ini kelas kesalahan yang sama dengan ronde 93/94: **asersi yang lemah, bukan kode yang salah.**
+
+**19 kontrol, dan KESEMUA 19 MENGGIGIT** (setelah K14 diganti menjadi hitungan persis): K1 cek kuota dihapus
+(**4 merah**), K2 plan dari body, K3 role dari body, K4 `organizationId` dari body, K5 email dari body,
+K6 status `accepted`, K7 kedaluwarsa (**2 merah**), K8 minimal 8 karakter, K9 cek 409 email terdaftar,
+K10 `hashPassword` dihapus (**password polos tersimpan**), K11 `enterWithOrg` dihapus, K12 cookie sesi
+dihilangkan, K13 undangan tidak ditandai (**2 merah**: token bisa dipakai ulang), K14/K14b/K14c `bypassOrg`,
+K15 status 402→400, K16 token null, K17 `trim` pada nama, K18 safety-net `AppConfig`, K19 cek org hilang.
+
+**Progres backlog: 10 dari 66 route orphan ditutup.** Repo **87,14% → 87,23%**; file terinstrumen
+**141 → 142**; suite **4.330 → 4.366** (183 → **184 file**); gate **141 → 142 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
