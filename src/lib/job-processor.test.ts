@@ -108,13 +108,17 @@ const dbState = {
 mock.module('@/lib/db', () => ({
   db: {
     document: {
+      // The SCOPE-DISCOVERY read in `resolveJobOrg`: unscoped on purpose, wrapped in bypassOrg.
       findUnique: async (args: { select?: Record<string, boolean> }) => {
         dbLookups.push({ select: args.select, doc: dbState.doc?.organizationId })
         if (!dbState.doc) return null
-        // The org fallback selects only organizationId; the cognify handler selects id+name.
-        if (args.select?.organizationId && !args.select?.name) {
-          return { organizationId: dbState.doc.organizationId }
-        }
+        return { organizationId: dbState.doc.organizationId }
+      },
+      // The org-SCOPED read the `document-cognify` handler uses. Kept separate from findUnique above so a
+      // regression back to the unscoped operation fails an assertion rather than silently matching.
+      findFirst: async (args: { where?: Record<string, unknown>; select?: Record<string, boolean> }) => {
+        dbLookups.push({ select: args.select, doc: dbState.doc?.organizationId })
+        if (!dbState.doc) return null
         return { id: dbState.doc.id, name: dbState.doc.name }
       },
     },

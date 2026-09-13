@@ -11,7 +11,7 @@ const warnings: string[] = []
 mock.module('@/lib/db', () => ({
   db: {
     document: {
-      findUnique: async () => docRow.current,
+      findFirst: async () => docRow.current,
       update: async ({ data }: { data: Record<string, unknown> }) => {
         if (docUpdateThrows) throw new Error('db write failed')
         updates.push({ model: 'document', data })
@@ -19,7 +19,7 @@ mock.module('@/lib/db', () => ({
       },
     },
     restApiEndpoint: {
-      findUnique: async () => endpointRow.current,
+      findFirst: async () => endpointRow.current,
       update: async ({ data }: { data: Record<string, unknown> }) => {
         updates.push({ model: 'restApiEndpoint', data })
         return data

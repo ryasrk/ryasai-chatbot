@@ -141,8 +141,26 @@ const DANGEROUS_FUNCTIONS: Array<{ re: RegExp; label: string }> = [
   { re: /\bsleep\s*\(/i, label: 'sleep' },
   { re: /\bbenchmark\s*\(/i, label: 'benchmark' },
   // MSSQL
+  // MEASURED GAP, NOW CLOSED. `real-connectors.ts` documented that
+  // `assertNoDangerousFunctions` "blocks xp_cmdshell / OPENROWSET / BULK INSERT / OPENDATASOURCE", and the other
+  // three WERE listed here while `xp_cmdshell` was not: probed directly, `EXEC master..xp_cmdshell 'whoami'`,
+  // `SELECT xp_cmdshell ON x`, and `SELECT xp_cmdshell('whoami')` all returned an EMPTY detection list. That is the
+  // single most valuable MSSQL primitive for an attacker -- arbitrary OS command execution as the SQL service
+  // account -- so a comment asserting it was blocked was worse than no comment at all.
+  //
+  // Matched WITHOUT a following `(` on purpose: the classic form is an extended stored procedure invoked as
+  // `EXEC master..xp_cmdshell 'cmd'`, which has no parenthesis after the name.
+  { re: /\bxp_cmdshell\b/i, label: 'xp_cmdshell' },
+  // Sibling extended procedures reachable the same way. `sp_configure` is the documented route to re-ENABLE
+  // xp_cmdshell on a server where an operator turned it off, so it belongs in the same family.
+  { re: /\bsp_configure\b/i, label: 'sp_configure' },
+  { re: /\bxp_reg(read|write|deletevalue|addmultistring|enumvalues)\b/i, label: 'xp_reg*' },
+  { re: /\bxp_servicecontrol\b/i, label: 'xp_servicecontrol' },
+  { re: /\bxp_dirtree\b|\bxp_fileexist\b|\bxp_subdirs\b/i, label: 'xp_dirtree/xp_fileexist' },
+  { re: /\bsp_OACreate\b|\bsp_OAMethod\b|\bsp_OAGetProperty\b|\bsp_OADestroy\b/i, label: 'sp_OA* (OLE automation)' },
   { re: /\bopenrowset\s*\(/i, label: 'openrowset' },
   { re: /\bopendatasource\s*\(/i, label: 'opendatasource' },
+  { re: /\bopenquery\s*\(/i, label: 'openquery' },
   { re: /\bbulk\s+insert\b/i, label: 'bulk insert' },
   // ClickHouse table functions
   { re: /\b(url|file|s3|hdfs|remote|remoteSecure|mysql|postgresql|jdbc|odbc|input)\s*\(/i, label: 'ClickHouse table function' },

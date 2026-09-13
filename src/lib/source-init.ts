@@ -60,7 +60,10 @@ async function llmSummarize(system: string, user: string): Promise<string | null
  * description was provided.
  */
 export async function initDocumentContext(documentId: string): Promise<void> {
-  const doc = await db.document.findUnique({
+  // findFirst, NOT findUnique. `findUnique` is the one read the tenant extension cannot rewrite, and this helper is
+  // called from `api/documents` with a client-supplied id: an unscoped read here would summarise ANOTHER tenant's
+  // document body into a description the caller can then read back. As a FILTER operation the org is appended.
+  const doc = await db.document.findFirst({
     where: { id: documentId },
     select: { id: true, name: true, category: true, description: true, contentText: true },
   })
@@ -90,7 +93,9 @@ export async function initDocumentContext(documentId: string): Promise<void> {
  * endpoint-selection prompt (empty descriptions there degrade routing badly).
  */
 export async function initRestEndpointContext(endpointId: string): Promise<void> {
-  const endpoint = await db.restApiEndpoint.findUnique({
+  // findFirst for the same reason as initDocumentContext: reached from the connector endpoint routes with a
+  // client-supplied id, and the read pulls `sampleResponse`, which is customer data.
+  const endpoint = await db.restApiEndpoint.findFirst({
     where: { id: endpointId },
     select: {
       id: true,

@@ -1399,15 +1399,18 @@ describe('MssqlConnector — read-only intent and executeQuery', () => {
     await expect(c.executeQuery('DELETE FROM t')).rejects.toThrow('Only SELECT/WITH queries are permitted.')
   })
 
-  test('assertNoDangerousFunctions catches the SQL-Server escape hatches it claims to, except xp_', async () => {
-    // MEASURED, and it corrects the comment in real-connectors.ts, which lists
-    // xp_cmdshell among what assertNoDangerousFunctions blocks.
+  test('FIXED: assertNoDangerousFunctions now catches EVERY SQL-Server escape hatch it claims to', async () => {
+    // INVERTED. This test used to record a GAP: `real-connectors.ts` claimed
+    // `assertNoDangerousFunctions` blocks "xp_cmdshell / OPENROWSET / BULK INSERT /
+    // OPENDATASOURCE", and the last three were true while `xp_cmdshell` was NOT in
+    // DANGEROUS_FUNCTIONS at all — probed directly, `SELECT xp_cmdshell ON x`,
+    // `EXEC master..xp_cmdshell 'whoami'` and `SELECT xp_cmdshell('whoami')` all
+    // returned an EMPTY detection list. Arbitrary OS command execution as the SQL
+    // service account, documented as blocked and not blocked.
     //
-    // assertNoDangerousFunctions() runs detectDangerousFunctions(), which scans
-    // DANGEROUS_FUNCTIONS + INJECTION_SHAPES — NOT DANGEROUS_PATTERNS, the list
-    // that actually holds /\bxp_\w+/i. Both rejections below are proven to be
-    // PRE-FLIGHT: the poison pool would throw "pool must not be reached" if any
-    // SQL had been sent.
+    // The rules now match the sentence. Both rejections are proven to be
+    // PRE-FLIGHT: the poison pool throws "pool must not be reached" if any SQL had
+    // been sent, so a rejection here cannot be the pool failing instead.
     const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
     ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error('pool must not be reached') } }
 
@@ -1420,14 +1423,21 @@ describe('MssqlConnector — read-only intent and executeQuery', () => {
     await expect(c.executeQuery("BULK INSERT t FROM 'c:\\x'"))
       .rejects.toThrow('Only SELECT/WITH queries are permitted.')
 
-    // xp_cmdshell is NOT stopped by this layer — it reaches the pool. A
-    // defence-in-depth gap, not an open hole: both production call sites
-    // (stream-preparers.ts:311, tool-branches.ts:376) run
-    // validateAndSanitizeLlmSql() first, which DOES reject it ("dangerous pattern
-    // detected — SQL Server extended proc (xp_)"). Pinned so that if the upper
-    // layer is ever bypassed or reordered, this test records exactly which layer
-    // is load-bearing for each pattern.
-    await expect(c.executeQuery("SELECT xp_cmdshell('dir')")).rejects.toThrow('pool must not be reached')
+    // The gap is closed. Each of the four FORMS is exercised, not just one: the
+    // classic invocation has NO parenthesis after the name, so a rule that only
+    // matched `xp_cmdshell(` would have looked fixed while leaving this open.
+    await expect(c.executeQuery("SELECT xp_cmdshell('dir')"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    await expect(c.executeQuery("SELECT xp_cmdshell ON x"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    // ...and the neighbours that reach the same capability: sp_configure is the
+    // documented way to re-ENABLE xp_cmdshell, and sp_OA* drives OLE automation.
+    await expect(c.executeQuery("SELECT * FROM sp_configure"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    await expect(c.executeQuery("SELECT xp_regread('HKLM', 'x', 'y')"))
+      .rejects.toThrow(/not permitted on a read-only data source/)
+    // The poison pool is still the proof that NOTHING reached it above.
+    await expect(c.executeQuery('SELECT 1')).rejects.toThrow('pool must not be reached')
   })
 
   test('a recordset the driver omits yields zero rows, not a crash', async () => {

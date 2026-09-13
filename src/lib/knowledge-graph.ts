@@ -126,15 +126,24 @@ export async function indexChunkKnowledgeGraph(args: {
     // Store entity names as keywords on the chunk (augments existing keyword extraction)
     const entityKeywords = extraction.entities.map((e) => e.name.toLowerCase()).join(',')
     if (entityKeywords) {
-      const existing = await db.documentChunk.findUnique({
+      // findFirst, NOT findUnique. `indexChunkKnowledgeGraph` is called from the ingest path with a chunk id, and
+      // the write below APPENDS to `keywords`: an unscoped read-modify-write could carry another tenant's keyword
+      // string into a row this tenant then reads, and would overwrite that row's keywords with a merged value.
+      // As a FILTER op the extension appends the org, so a foreign chunk id resolves to null and the update is a
+      // no-op for it.
+      const existing = await db.documentChunk.findFirst({
         where: { id: args.chunkId },
         select: { keywords: true },
       })
-      const merged = [existing?.keywords ?? '', entityKeywords].filter(Boolean).join(',')
-      await db.documentChunk.update({
-        where: { id: args.chunkId },
-        data: { keywords: merged },
-      })
+      // Guarded: with the read now org-scoped, a null result means the chunk is not this tenant's (or is gone), and
+      // updating it anyway would be the same unscoped write in a new costume.
+      if (existing) {
+        const merged = [existing.keywords ?? '', entityKeywords].filter(Boolean).join(',')
+        await db.documentChunk.update({
+          where: { id: args.chunkId },
+          data: { keywords: merged },
+        })
+      }
     }
 
     // Store relations. KgRelation.organizationId is NOT NULL — omitting it made

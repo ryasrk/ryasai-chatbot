@@ -670,11 +670,78 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
       'src/app/api/org/license/route.ts',
       'src/app/api/org/route.ts',
     ])
-    const files = globSync('src/app/api/**/route.ts').filter((rel) =>
+    const routeFiles = globSync('src/app/api/**/route.ts').filter((rel) =>
       readFileSync(join(REPO_ROOT, rel), 'utf8').includes('findUnique'),
     )
-    const offenders = files.filter((rel) => !ALLOWED.has(rel))
+    const offenders = routeFiles.filter((rel) => !ALLOWED.has(rel))
     expect(offenders).toEqual([])
+
+    // ---------------------------------------------------------------------
+    // AND THE LIBRARIES THE ROUTES DELEGATE TO.
+    //
+    // The check above globbed ONLY `api/**/route.ts`, and that blind spot was not
+    // theoretical: two live cross-tenant IDORs sat one level down in `src/lib` and
+    // this guard stayed green for both.
+    //   - `prompt-library.getPrompt` used `findUnique`, reached from
+    //     `api/prompts/[id]` GET/PUT/DELETE. `GET /api/prompts` hands out every
+    //     prompt id, so any tenant could read, rewrite or delete another's prompt.
+    //   - `doc-versioning.createDocVersion` and `restoreDocVersion` used
+    //     `db.document.findUnique`, so a cross-tenant id reached a DESTRUCTIVE
+    //     write.
+    // A route cannot be cleared by pushing its unscoped read into a helper.
+    //
+    // Scanning all of `src/lib` would flag a large number of legitimate uses
+    // (`findUnique` on a session id, a licence row, a webhook id that was already
+    // validated by an org-scoped findFirst), so the rule is deliberately the NARROW
+    // one that would have caught both incidents: a lib module that a ROUTE imports
+    // AND that reads an ORG-SCOPED model by unique key is a finding, because the
+    // only way such a read can be safe is if the caller re-scoped it first — which
+    // is exactly the assumption that failed twice.
+    const ORG_SCOPED_MODELS = [
+      'savedPrompt',
+      'document',
+      'documentChunk',
+      'documentVersion',
+      'chatSession',
+      'restApiConnector',
+      'restApiEndpoint',
+    ]
+    const LIB_ALLOWED = new Set([
+      // The org context is established BY these reads' callers, and the model is
+      // not one a client id addresses. Re-scoped reads use findFirst.
+      'src/lib/session.ts',
+      'src/lib/prisma-tenant.ts',
+      'src/lib/sso.ts',
+      'src/lib/auth.ts',
+      // The org-resolving read in `resolveJobOrg` is unscoped BY NECESSITY: it runs before any org context exists
+      // (BullMQ workers are outside request AsyncStorage) and its whole purpose is to DISCOVER the org to enter. It
+      // is wrapped in `bypassOrg`, reads only `organizationId`, and hands the value to `enterWithOrg`. Scoping it
+      // would make it return null and re-create the unscoped-job bug it exists to prevent. Its OTHER read -- the
+      // one in the `document-cognify` handler -- was changed to findFirst, and this entry is why that distinction
+      // is worth writing down rather than leaving to whoever reads it next.
+      'src/lib/job-processor.ts',
+    ])
+    const libFindings: string[] = []
+    for (const rel of globSync('src/lib/**/*.ts')) {
+      if (rel.endsWith('.test.ts') || LIB_ALLOWED.has(rel)) continue
+      const src = readFileSync(join(REPO_ROOT, rel), 'utf8')
+      if (!src.includes('findUnique')) continue
+      // Comments stripped first: a module that EXPLAINS in prose why it stopped using `findUnique` must not be
+      // flagged for saying the word. This cost a false positive on the very file fixed by the change above.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+      // Imported by any route?
+      const importedByARoute = globSync('src/app/api/**/route.ts').some((routeRel) =>
+        readFileSync(join(REPO_ROOT, routeRel), 'utf8').includes('@/lib/' + rel.replace(/^src\/lib\//, '').replace(/\.ts$/, '')),
+      )
+      if (!importedByARoute) continue
+      for (const model of ORG_SCOPED_MODELS) {
+        // `db.<model>.findUnique` on an org-scoped model.
+        if (new RegExp('db\\.' + model + '\\.findUnique').test(code)) {
+          libFindings.push(`${rel}: db.${model}.findUnique`)
+        }
+      }
+    }
+    expect(libFindings).toEqual([])
   })
 
   test('BYOK provider failures are classified, and the raw body never reaches a client', () => {

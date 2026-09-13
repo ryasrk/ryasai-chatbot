@@ -993,10 +993,15 @@ export class MssqlConnector implements BaseDatabaseConnector {
     // DBs), which is an operator decision we cannot make at runtime. We do what
     // is enforceable here: ApplicationIntent=ReadOnly is set on the pool (see
     // pool()) so servers with an Availability Group route us to a read replica,
-    // and `assertNoDangerousFunctions` blocks xp_cmdshell / OPENROWSET /
-    // BULK INSERT / OPENDATASOURCE. Residual risk: a read-write login on a
-    // non-AG server can still be used for write side effects if the scanner is
-    // somehow evaded — document this in the customer-facing DB setup guide.
+    // and `assertNoDangerousFunctions` blocks xp_cmdshell / sp_configure /
+    // xp_reg* / sp_OA* / OPENROWSET / OPENQUERY / BULK INSERT / OPENDATASOURCE.
+    // That list was WRONG when this comment was written: `xp_cmdshell` was named
+    // here but absent from DANGEROUS_FUNCTIONS, and probing it directly returned
+    // an empty detection list — the documented protection did not exist. The
+    // rules now match the sentence; if you edit the sentence, edit the list.
+    // Residual risk: a read-write login on a non-AG server can still be used for
+    // write side effects if the scanner is somehow evaded — document this in the
+    // customer-facing DB setup guide.
     const result = await pool.request().query(sql)
     const rows: QueryRow[] = (result.recordset as QueryRow[]) ?? []
     return {

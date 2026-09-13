@@ -24,7 +24,10 @@ mock.module('@/lib/db', () => ({
         chunkFindManyArgs.push(args)
         return [{ id: 'chunk-1', keywords: 'invoice,payment,refund' }]
       },
-      findUnique: async () => ({ keywords: 'existing' }),
+      // `indexChunkKnowledgeGraph` now uses the FILTER op so the tenant extension appends the org: the
+      // read-modify-write could otherwise carry a foreign chunk's keywords into this tenant's row.
+      findUnique: async () => null,
+      findFirst: async () => ({ keywords: 'existing' }),
       update: async () => {
         if (chunkUpdateThrows) throw chunkUpdateThrows
         return {}

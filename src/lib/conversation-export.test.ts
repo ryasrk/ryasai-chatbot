@@ -9,7 +9,15 @@ const mockMessageFindMany = mock<(...args: unknown[]) => Promise<Array<Record<st
 
 mock.module('@/lib/db', () => ({
   db: {
-    chatSession: { findUnique: mockSessionFindUnique },
+    chatSession: {
+      // Retained so a regression to the unscoped read fails an assertion rather than a TypeError.
+      findUnique: mockSessionFindUnique,
+      // `exportSession` now reads through the SCOPED operation: the export is reachable from
+      // `api/sessions/[id]/export` with a client-supplied id, so an unscoped read exported another tenant's
+      // whole conversation. The same mock function is wired to both, and a dedicated test asserts findUnique is
+      // never called.
+      findFirst: mockSessionFindUnique,
+    },
     chatMessage: { findMany: mockMessageFindMany },
   },
 }))

@@ -15,7 +15,11 @@ export async function exportSession(
   sessionId: string,
   format: 'json' | 'markdown',
 ): Promise<string> {
-  const session = await db.chatSession.findUnique({
+  // findFirst, NOT findUnique: this export is reachable from `api/sessions/[id]/export` with a client-supplied
+  // session id, and `findUnique` is not org-scoped -- so an unscoped read here exported ANOTHER tenant's whole
+  // conversation. The export is a data-disclosure surface, which makes the scope load-bearing rather than tidy.
+  // NOTE: the subsequent `chatMessage.findMany` IS scoped by the extension; this read was the way around it.
+  const session = await db.chatSession.findFirst({
     where: { id: sessionId },
     select: { id: true, title: true, createdAt: true },
   })

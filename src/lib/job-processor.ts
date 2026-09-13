@@ -93,7 +93,12 @@ registerJobHandler('document-embed', async (data) => {
 
 registerJobHandler('document-cognify', async (data) => {
   if (!data.documentId) return
-  const doc = await db.document.findUnique({
+  // findFirst, NOT findUnique. This handler runs inside `runWithJobOrg`, so the org IS entered before it is
+  // reached and an unscoped read would today return this tenant's row -- but that is a property of the CALLER, not
+  // of this line, and the two cross-tenant IDORs found this round were both exactly that mistake (an unscoped read
+  // whose safety depended on a caller doing the right thing). With a FILTER op the extension appends the org
+  // unconditionally, so the safety no longer relies on the wiring above staying correct.
+  const doc = await db.document.findFirst({
     where: { id: data.documentId },
     select: { id: true, name: true },
   })

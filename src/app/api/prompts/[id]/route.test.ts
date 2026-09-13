@@ -176,16 +176,24 @@ describe('IDOR EVIDENCE — replayed against the REAL library and the REAL tenan
     expect(routeSrc).toMatch(/import \{ getPrompt, updatePrompt, deletePrompt \} from '@\/lib\/prompt-library'/)
   })
 
-  test('the STATIC GUARD is blind here: invariants globs route files, so a lib-level findUnique escapes it', async () => {
-    // PINNED GAP, not an accusation of the guard: `src/lib/invariants.test.ts` asserts no
-    // `src/app/api/**\/route.ts` contains `findUnique` outside its allowlist, but it never scans
-    // `src/lib/`. A route can therefore acquire an unscoped read by delegating to a library
-    // function, and the guard stays green. INVERT WHEN FIXED: when the guard is widened to follow
-    // the delegate (or `getPrompt` switches to findFirst), this assertion fails and should be
-    // replaced by the real cross-tenant test.
+  test('FIXED: the STATIC GUARD now FOLLOWS the delegation into src/lib and would catch this', async () => {
+    // INVERTED. This test used to pin a gap: `invariants.test.ts` asserted no `api/**/route.ts` contained
+    // `findUnique`, but it never scanned `src/lib/`, so pushing an unscoped read into a helper cleared the route.
+    // Both cross-tenant IDORs found this round lived in exactly that blind spot -- this one in
+    // `prompt-library.getPrompt`, the other in `doc-versioning`.
+    //
+    // The guard now ALSO walks the lib modules that routes import and flags `db.<orgScopedModel>.findUnique` on
+    // them, with comments stripped so a module that explains why it stopped using the operation is not flagged for
+    // naming it. This test asserts the WIDENED shape, so deleting the second half of the guard turns it red.
     const invariants = readFileSync(join(import.meta.dir, '..', '..', '..', '..', 'lib', 'invariants.test.ts'), 'utf8')
+    // The original route-only scan is still there.
     expect(invariants).toContain("globSync('src/app/api/**/route.ts')")
-    expect(invariants).not.toContain("globSync('src/lib/**")
+    // ...and the delegation-following half is present.
+    expect(invariants).toContain("globSync('src/lib/**/*.ts')")
+    expect(invariants).toContain('ORG_SCOPED_MODELS')
+    expect(invariants).toContain('libFindings')
+    // The guard actually covers the model this file is about.
+    expect(invariants).toContain("'savedPrompt'")
   })
 
   test('FIXED: org-2 reading org-1 prompt id receives NOTHING', async () => {
