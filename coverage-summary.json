@@ -1,9 +1,11 @@
 {
-  "linePct": 84.23,
-  "linesHit": 16576,
+  "linePct": 84.33,
+  "linesHit": 16597,
   "linesFound": 19680,
   "filesMeasured": 128,
-  "failedTestFiles": [],
+  "failedTestFiles": [
+    "src/app/api/v1/chat/completions/route.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -28,18 +30,6 @@
       "hit": 41,
       "found": 64,
       "pct": 64.0625
-    },
-    {
-      "file": "src/app/api/fetch-url/route.ts",
-      "hit": 20,
-      "found": 30,
-      "pct": 66.66666666666666
-    },
-    {
-      "file": "src/lib/schema-enrichment.ts",
-      "hit": 36,
-      "found": 54,
-      "pct": 66.66666666666666
     },
     {
       "file": "src/lib/rag-fts.ts",
@@ -328,6 +318,12 @@
       "hit": 172,
       "found": 201,
       "pct": 85.57213930348259
+    },
+    {
+      "file": "src/lib/schema-enrichment.ts",
+      "hit": 47,
+      "found": 54,
+      "pct": 87.03703703703704
     },
     {
       "file": "src/app/api/chat/sessions/[id]/send/route.ts",
@@ -639,6 +635,12 @@
       "file": "src/app/api/documents/[id]/route.ts",
       "hit": 193,
       "found": 193,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/fetch-url/route.ts",
+      "hit": 30,
+      "found": 30,
       "pct": 100
     },
     {

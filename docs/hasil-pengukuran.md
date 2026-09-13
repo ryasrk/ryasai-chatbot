@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `468e767`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `689ecea`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `468e767`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,23%** (16.576/19.680 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.637 lulus · 0 gagal** | terukur |
+| Test coverage | **84,33%** (16.597/19.680 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.654 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **82 modul** | +20 |
+| Modul ter-gate | 62 modul | **84 modul** | +22 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -110,7 +110,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/citation-trail.ts` | 69,84% → **90,48%** merged | 86,27% → **100,00%** kode eksekutabel (57/57) | 16 |
 | `src/lib/source-guidance.ts` | 59,30% → **63,95%** merged (artefak LF) | 92,73% → **100,00%** kode eksekutabel (55/55) | 14 |
 | `src/lib/rag-fts.ts` | 68,18% → **70,13%** merged (artefak LF) | 97,22% → **100,00%** kode eksekutabel (108/108) | 2 |
-| **Total repo** | **62,44%** | **84,23%** | — |
+| `src/app/api/fetch-url/route.ts` | 66,67% → **100,00%** merged | 83,33% → **100,00%** kode eksekutabel (30/30) | 8 |
+| `src/lib/schema-enrichment.ts` | 66,67% → **87,04%** merged | 81,82% → **100,00%** kode eksekutabel (47/47) | 9 |
+| **Total repo** | **62,44%** | **84,33%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -369,7 +371,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**315 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**323 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2879,6 +2881,58 @@ Dua-duanya **kode benar, test saya salah**.
 **Kontrol negatif: 3, semuanya menggigit** — `return []` diubah jadi `throw` (retrieval mati
 total), `catch` dihapus (error bocor), dan guard org context dilumpuhkan (kebocoran lintas
 tenant).
+
+### 1.7be Dua permukaan lanjutan ditutup, dan aturan «capture by value» menyelamatkan saya dari REKURSI TAK TERBATAS
+
+**`fetch-url/route.ts` 83,33% → 100,00% (30/30).** **`schema-enrichment.ts` 81,82% →
+100,00% (47/47).** Repo **84,23% → 84,33% (+0,10)**. Modul ter-gate **82 → 84** (keduanya
+di-gate: 100 dan 87).
+
+**`fetch-url/route.ts` adalah permukaan SSRF** — membaca URL yang diberikan pengguna. Empat
+test yang ada **semuanya penolakan** (401, 400 ×2, 403); **jalur sukses, 422 dan 502 berjalan
+di test mana pun**. Yang kini dipatok: (a) **sukses mengembalikan teks, judul, dan
+`length`** — bentuk yang dikonsumsi planner; (b) **`title` hilang → `''`, bukan `undefined`**
+(klien akan merender `"undefined"`); (c) **`ok:true` dengan konten KOSONG adalah 422, bukan
+200** — mengembalikan 200 dengan `content:''` membuat pemanggil **menyimpan dokumen kosong
+sambil yakin sudah mengambilnya**; (d) **kegagalan non-blokir adalah 502, blokir adalah 403**
+— status itu yang dipakai pemanggil untuk **memutuskan retry**: menyatukan keduanya membuat
+loop retry **menghantam host terlarang**, atau **menyerah pada error sementara**; (e) **URL
+diteruskan APA ADANYA** — route tidak boleh menormalkan ulang, karena `fetchUrlForPlanner`
+memiliki pemeriksaan protokol + SSRF, dan menebak-nebak di sini **adalah persis drift yang
+dicatat header file**; (f) **fetcher tidak dipanggil untuk URL tidak valid**.
+
+**`schema-enrichment.ts`: JSON tersimpan adalah input TIDAK TEPERCAYA.** Kolom `columns` dan
+`sampleRow` adalah kolom TEXT yang ditulis versi ingestion lebih lama, jadi bisa terpotong
+atau diedit tangan. Kini dipatok: **JSON rusak → `[]`/`null`, bukan melempar**;
+**JSON valid yang bukan array ditolak**; **setiap entri kolom DIBANGUN ULANG field by field**,
+sehingga baris tersimpan dengan key ekstra **tidak bisa membocorkan data sembarang ke
+prompt**; **`sampleRow` harus objek** — array akan dirender sebagai tabel posisional, bukan
+nama kolom; dan **kegagalan generator deskripsi DITANGKAP** — enrichment ini best-effort,
+membiarkan provider outage melempar akan **menggagalkan SELURUH ingestion demi perbaikan
+kosmetik**.
+
+**Temuan saya sendiri yang paling tajam: REKURSI TAK TERBATAS, tertangkap dari stack trace.**
+Untuk menguji cabang-cabang itu saya membungkus `fetchUrlForPlanner`. Versi pertama saya
+menyimpan namespace modul lalu memanggil `realWebFetch.fetchUrlForPlanner(...)` **di dalam
+wrapper** — dan namespace itu **adalah objek yang sudah di-patch `mock.module`**, sehingga
+panggilan **masuk kembali ke wrapper**: `RangeError: Maximum call stack size exceeded`. Ini
+persis aturan yang sudah ada di catatan saya (**capture by value sebelum override**), dan saya
+melanggarnya. Perbaikan: `const realFetchUrlForPlanner = (await import(...)).fetchUrlForPlanner`
+**sebelum** `mock.module`. Dua kegagalan berurutan (200 lalu 500) menandai bahwa masalahnya di
+**harness**, bukan kode.
+
+**Kontrol negatif: 8 dijalankan, 6 menggigit.** Dua yang **tidak** menggigit adalah guard yang
+**memang tidak dapat dibedakan melalui perilaku**: (1) menghapus `if (!Array.isArray(parsed))
+return []` — tanpa guard, `.map` pada non-array melempar `TypeError` yang **ditangkap `catch`
+yang sama** dan tetap mengembalikan `[]`; (2) menghapus `if (!raw) return null` —
+`JSON.parse(undefined)` dan `JSON.parse('')` **juga** melempar ke `catch` yang mengembalikan
+`null`. Keduanya adalah **pertahanan eksplisit yang hasilnya identik dengan jalur `catch`**.
+Saya **mendeklarasikannya sebagai non-kontrol**, bukan memaksanya sampai menggigit.
+
+**Satu asumsi saya salah lagi.** Saya meng-assert `'primaryKey' in parsed[0]` adalah `false`
+setelah `Boolean(...) || undefined`; ternyata **key-nya tetap ada** dengan nilai `undefined`
+— `{ ...primaryKey: undefined }` **bukan** `{}` di JS. Kode benar; saya mematok bentuk
+terukur.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

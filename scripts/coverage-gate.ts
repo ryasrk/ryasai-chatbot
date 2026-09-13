@@ -157,6 +157,14 @@ const FLOORS: Record<string, number> = {
   // is what a user reads as the source of a claim. 86.27% -> 100.00% executable
   // (57/57). Merged is 90.48% because other test files instrument extra LF lines.
   'src/lib/citation-trail.ts': 90,
+  // SSRF surface: reads a user-supplied URL. 83.33% -> 100.00% executable (30/30).
+  // The refusal paths were the only ones tested; the SUCCESS, 422 and 502 branches
+  // (the shapes the planner actually consumes) ran in no test at all.
+  'src/app/api/fetch-url/route.ts': 100,
+  // Untrusted stored JSON: the columns/sampleRow TEXT columns were written by an
+  // earlier ingestion path and can be truncated or hand-edited. 81.82% -> 100.00%
+  // executable (47/47).
+  'src/lib/schema-enrichment.ts': 87,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
