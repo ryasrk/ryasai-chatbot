@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e7cb80d`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fcd85b5`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e7cb80d`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,70%** (19.628/22.381 baris, 156 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,99%** (1797/1912 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 198 file · **4.857 lulus · 0 gagal** | terukur |
+| Test coverage | **87,77%** (19.757/22.510 baris, 157 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,93%** (1810/1927 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 199 file · **4.911 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1032 kontrol + 14 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1062 kontrol + 15 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5800,6 +5800,44 @@ menghapusnya **menggabungkan dua permukaan produk secara diam-diam.** **S3 → 1
 **Progres backlog: 24 dari 66 route orphan ditutup** (tiga sub-route + rute SSE `dashboard/route.ts` **masih
 belum** — 163 baris, menyusul). Repo **87,62% → 87,70%**; suite **4.795 → 4.857** (195 → **198 file**);
 fungsi **93,94% → 93,99%**; gate **153 → 156 modul**.
+
+### 1.7dq `/api/agent/dashboard` — endpoint SSE konsol agen: 100,00% (129/129)
+
+**RUTE TERPANJANG DI PERMUKAAN AGEN, DAN HAMPIR SEMUA YANG PENTING TERJADI SETELAH STATUS HTTP SUDAH 200.**
+Itulah alasan berkas test ini ada: **kegagalan di sini menghasilkan jawaban yang salah, bukan error.**
+
+**FORMAT FRAME SSE ADALAH BEBAN.** Setiap event adalah **DUA penulisan** — `event: <nama>\n` dan
+`data: <json>\n\n`. **Baris kosong itu yang menutup frame**; tanpa itu browser **menahan selamanya** dan konsol
+menampilkan spinner **tanpa error di mana pun.** Diasersi dengan **mengurai teks mentah**, bukan mempercayai
+helper. **D1 → 18 merah.**
+
+**KEGAGALAN DI DALAM STREAM DIKIRIM SEBAGAI FRAME `error` DI BAWAH HTTP 200.** Status sudah dikomit sebelum
+`start()` berjalan, jadi **ia tidak bisa berubah.** Pemanggil yang hanya mengawasi non-2xx akan membaca ini
+sebagai **permintaan sukses yang tidak menghasilkan apa-apa.** Frame error diuji dari tiga sumber berbeda
+(planner, executor, sintesis), dan **setelah error tidak ada satu pun efek samping yang tercatat** — audit dan
+memori tidak boleh mengklaim sudah menghasilkan jawaban.
+
+**PESAN USER DISIMPAN SEBELUM PLAN BERJALAN, dan riwayat dimuat SETELAH insert itu** — sehingga **giliran yang
+sedang dijawab adalah bagian dari jendela riwayatnya sendiri.** **D7 → 2 merah.**
+
+**RIWAYAT MENGECUALIKAN PENGIRIM `agent`.** Jawaban konsol disimpan sebagai `agent`; memasukkannya di sini akan
+**menduplikasi jawaban sebelumnya ke dalam prompt pada giliran berikutnya.** **D6 → 1 merah.**
+
+**SEMUA EFEK SAMPING NON-FATAL** (menyimpan pesan user, memuat riwayat, menyimpan jawaban, memperbarui sesi
+masing-masing dijaga `catch`), sehingga **kegagalan penulisan transkrip tidak membatalkan jawaban yang sudah
+dibayar dengan token LLM.** Diuji dengan menyuntikkan kegagalan ke tiap seam.
+
+**DUA KESALAHAN SAYA SENDIRI LAGI, DITEMUKAN OLEH KONTROL:** **D29** (membuang `organizationId` dari create
+sesi) dan **D31** (membuang prefiks `[Agent] `) **sama-sama LOLOS** — karena saya **hanya mengasersikan bahwa
+create TERJADI, tidak pernah APA isinya.** Keduanya ditutup dengan merekam **argumen** create, dan **keduanya
+kini menggigit.**
+
+**30 kontrol, dan KETIGA PULUH MENGGIGIT.** Satu mutasi (`steps: plan.steps.length` → `results.length`)
+**tidak bisa dibedakan lewat HTTP** karena kedua angka identik untuk plan yang dieksekusi penuh; saya
+mendeklarasikannya alih-alih mengklaimnya tercakup.
+
+**Progres backlog: 25 dari 66 route orphan ditutup.** Repo **87,70% → 87,77%**; suite **4.857 → 4.911**
+(198 → **199 file**); gate **156 → 157 modul**. **Cakupan fungsi turun 93,99% → 93,93%**, dilaporkan apa adanya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
