@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1d616d5`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `416e032`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1d616d5`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,04%** (18.036/20.721 baris, 139 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,85%** (1694/1805 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 181 file · **4.277 lulus · 0 gagal** | terukur |
+| Test coverage | **87,10%** (18.129/20.814 baris, 140 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,87%** (1699/1810 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 182 file · **4.309 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**745 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**756 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5156,6 +5156,45 @@ dihapus (1).**
 
 **Progres backlog: 7 dari 66 route orphan ditutup.** Repo **86,96% → 87,04%**; file terinstrumen
 **138 → 139**; suite **4.248 → 4.277** (180 → **181 file**); gate **138 → 139 modul**.
+
+### 1.7db `/api/llm-config` — KREDENSIAL PELANGGAN (BYOK): NOL → 100,00% (93/93)
+
+Ini rute yang **menyimpan rahasia yang ditagihkan.** Karena model bisnis Anda adalah **BYOK**, baris ini
+**adalah uang pelanggan** — kunci API mereka, terenkripsi AES-256-GCM. Dua properti jauh lebih penting
+daripada plumbing field-nya:
+
+**1. KUNCI TIDAK BOLEH KELUAR.** `GET` harus mengembalikan **tampilan publik yang TERMASK**, tidak pernah
+baris mentahnya. Satu regresi `NextResponse.json(await db.llmConfig.findFirst())` di sini **membocorkan
+kunci API hidup ke sesi ber-peran viewer mana pun.** Diuji dengan **memindai seluruh respons terserialisasi**
+untuk plaintext, ciphertext, dan nama field terenkripsi.
+
+**2. apiKey KOSONG SAAT UPDATE TIDAK MEROTASI APA PUN.** Formulir edit tidak mengirim balik kunci yang
+tersimpan, jadi ia mengirim string kosong; memperlakukannya sebagai "kosongkan kunci" akan **mematikan
+chatbot pelanggan karena mereka mengganti nama model.** Ini jalur NORMAL, bukan kasus tepi.
+
+**14 kontrol. 11 menggigit, dan DUA di antaranya menemukan test saya sendiri yang lemah:**
+- **K8 (fallback key embedding dari key chat dihapus) LOLOS** — semua test saya hanya berjalan di jalur
+  yang menyuplai key embedding eksplisit. Ditutup dengan **meng-assert INPUT ENKRIPTOR**
+  (`encrypted === [{apiKey: PLAINTEXT}, {apiKey: PLAINTEXT}]`), sehingga fallback terbukti **membawa key
+  chat**, bukan sekadar menghasilkan ciphertext apa pun. Setelah itu **K8 → 1 merah, dan arah sebaliknya
+  (fallback selalu menang) → 2 merah.**
+- **K2 (key kosong ditimpa jadi `''`) TIDAK BISA menggigit, dan alasannya struktural — saya deklarasikan,
+  tidak saya samarkan.** Payload menyebarkan field kunci **secara kondisional**
+  (`...(apiKey ? { encryptedApiKey } : {})`, baris 96), jadi key kosong berarti **field itu tidak pernah
+  masuk ke update sama sekali**. Mutasinya **tidak teramati secara konstruksi** — situasi **"bug
+  menyembunyikan dirinya sendiri"** yang sudah terdokumentasi di repo ini. Yang saya patok adalah
+  **PROPERTINYA**: dua edit berturut-turut dengan key kosong meninggalkan ciphertext **identik**, dan
+  payload **tidak pernah** membawa nilai kunci yang falsy.
+
+**Kontrol lain yang menggigit:** K1 (`GET` kembalikan baris mentah — **bocor kunci**, 3 merah),
+K3 (key kosong saat create diterima → config mati, 1), K4 (whitelist provider dihapus, 2),
+K5 (`requireRole` dihapus → analyst bisa tulis kredensial, 1), **K6 (`organizationId` dari BODY → tulis
+lintas-tenant, 1)**, K7 (audit membawa kunci mentah, 1), K9 (`normalizeBaseUrl` dihapus, 3),
+K11 (model kosong menimpa model tersimpan, 1), K12 (`embeddingBaseUrl` tidak fallback, 1),
+K13 (default `embeddingModel` dihapus, 1), K14 (`purpose` bukan `'chat'`, 1).
+
+**Progres backlog: 8 dari 66 route orphan ditutup.** Repo **87,04% → 87,10%**; file terinstrumen
+**139 → 140**; suite **4.277 → 4.309** (181 → **182 file**); gate **139 → 140 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
