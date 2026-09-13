@@ -1,6 +1,6 @@
 {
-  "linePct": 85.83,
-  "linesHit": 16874,
+  "linePct": 85.84,
+  "linesHit": 16876,
   "linesFound": 19659,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -97,9 +97,9 @@
     },
     {
       "file": "src/lib/planner.ts",
-      "hit": 538,
+      "hit": 540,
       "found": 681,
-      "pct": 79.00146842878121
+      "pct": 79.29515418502203
     },
     {
       "file": "src/lib/connectors.ts",

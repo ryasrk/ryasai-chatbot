@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fb49396`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff32a78`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fb49396`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,83%** (16.874/19.659 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.875 lulus · 0 gagal** | terukur |
+| Test coverage | **85,84%** (16.876/19.659 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.881 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -135,6 +135,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/crypto.ts` | 81,36% → **91,67%** merged | 88,89% → **100,00%** kode eksekutabel (55/55) | 9 |
 | `src/lib/document-parsers.ts` | 81,82% → **84,66%** merged | 96,64% → **100,00%** kode eksekutabel (149/149) | 7 |
 | `src/lib/rag-fts.ts` | 70,13% → **70,78%** merged | 96,43% → **100,00%** kode eksekutabel (109/109) | 9 |
+| `src/lib/planner.ts` | 79,00% → **79,30%** merged | 99,26% → **99,45%** kode eksekutabel (540/543) | 5 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -394,7 +395,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**528 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**533 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3885,6 +3886,50 @@ ini.
 **Kesalahan saya:** saya hampir melaporkan 3 baris artefak alat saya sebagai celah kode. Dan saya
 kembali memakai **jendela tetap** sebagai heuristik, yang kemudian terbukti rapuh — persis kelas
 kesalahan yang sama dengan beberapa ronde sebelumnya, kali ini di dalam alat ukur itu sendiri.
+
+### 1.7bx PLANNER AGENTIK: cabang `admin:*` yang BERHASIL, plus satu kontradiksi lcov yang mustahil
+
+**`planner.ts` 99,26% → 99,45% (540/543).** Repo **85,83% → 85,84% (+0,01)**. **5 kontrol
+dijalankan, 5 menggigit.** Modul ini **sudah ter-gate** sejak ronde sebelumnya (floor 78) — saya
+sempat menambahkan kunci duplikat dan **`tsc` menolaknya dengan `TS1117`**; duplikat itu saya buang.
+
+**CABANG `admin:*` YANG BERHASIL TIDAK PERNAH DIEKSEKUSI.** Describe "admin tool gating" hanya menguji
+**PENOLAKAN** (non-admin, `isAdmin` absen). Baris 566-570 — `args.onStatus?.(... 'done' : 'error')`
+dan `return { ok: result.ok, output: result.output }` yang **dikonsumsi synthesizer** — belum pernah
+jalan. Yang kini dipatok, memakai **dispatcher `admin-tools` YANG NYATA** (`admin:show_monitoring`)
+dengan `db` yang di-mock: admin **mendapat OUTPUT-nya**, bukan penolakan; `error` **absen** saat
+sukses (string error truthy akan membuat UI menandai langkah sukses sebagai gagal); **angka-angkanya
+membuktikan aksi NYATA jalan** (`Tool Runs: 42`, `Avg Latency: 137ms`, `Documents Ready: 9`) alih-alih
+stub kosong yang memuaskan `ok: true`; **rata-rata latensi yang HILANG jatuh ke `0ms`, bukan `NaN`**;
+`onStatus` melaporkan **`done`**; dan langkah admin yang **GAGAL** melaporkan **`ok:false` dengan
+`output` sebagai `error`** — pesan spesifiknya (`Unknown tool: not-a-real-tool`) sampai ke
+synthesizer, bukan string generik.
+
+**`admin-tools` SENGAJA TIDAK di-mock** — file test itu sudah mendokumentasikan bahwa `mock.module`
+bersifat **process-global** dan akan bocor ke `admin-tools.test.ts`. Saya menghormati batasan itu dan
+memakai tool nyata; saya hanya **memperluas mock `db`**, bukan menambah mock modul.
+
+**KESALAHAN SAYA: satu test hijau lewat cabang yang SALAH.** Saya memakai
+`admin:show_audit_log` untuk jalur gagal, dan ia **BERHASIL** (`db.auditLog` tidak di-mock, dan
+aksinya mentolerirnya) sehingga test membaca `ok: true` padahal saya menegaskan `false`. Diganti
+dengan `admin:toggle_tool` + tool tidak dikenal, yang **menolak tanpa menyentuh DB sama sekali** —
+deterministik.
+
+**KONTRADIKSI lcov YANG MUSTAHIL SECARA KODE — dan saya memutuskan itu ARTEFAK, dengan bukti.**
+lcov melaporkan baris **631-632** `hits=0` dan **686-689** `hits=0`, tapi **baris bersebelahan**
+memiliki hit: 633/634/635 = **26/49/37**, 685 = **47**, 690 = **4**. Secara kode itu tidak mungkin:
+`output: result.ok ? result.content : ''` (633) **tidak dapat dievaluasi** bila `return {` (631) dan
+`stepId..., ok: result.ok,` (632) belum jalan. Saya memastikan **`grep -c "step.tool ===
+'web_fetch'"` = 1**, jadi **tidak ada jalur kedua** yang bisa mencapai 633 tanpa melewati 631. Test
+`web_fetch with a url returns the page content` **lulus**, yang hanya mungkin lewat 633.
+Kesimpulan: **instrumen baris bun tidak memberi hit pada `return {` dan properti pertama object
+literal multi-baris yang nilainya ternary bersarang** — kelas yang sama dengan artefak arrow-callback
+di `guardrails.ts` (341-342). Yang tersisa tak tercakup: **1 field opsional di deklarasi tipe**
+(baris 436, artefak `_field_decl`) + **2 baris artefak instrumen**.
+
+**Kesalahan proses:** saya menambahkan kunci gate duplikat (`TS1117`) padahal `planner.ts` sudah
+ter-gate — kesalahan yang **sudah pernah saya catat** di sesi ini. Saya memperbaikinya segera setelah
+`tsc` menolak, bukan setelah commit.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

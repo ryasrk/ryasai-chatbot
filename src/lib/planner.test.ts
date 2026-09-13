@@ -28,8 +28,26 @@ mock.module('@/lib/cognee', () => ({
 mock.module('@/lib/llm-config', () => ({
   getLlmRuntimeConfig: async () => ({ id: '1', provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://x', apiKey: 'k', model: 'm' }),
 }))
+/** Counters/aggregates the REAL admin:show_monitoring path reads. Kept as fixed values so
+ *  the assertion can name them; a bare mock would prove only that the branch ran. */
+const adminStats = {
+  toolRunCount: 0,
+  avgLatency: null as number | null,
+  failedApiCount: 0,
+  integrationCount: 0,
+  docCount: 0,
+}
 mock.module('@/lib/db', () => ({
-  db: { plugin: { findFirst: mockPluginFindFirst } },
+  db: {
+    plugin: { findFirst: mockPluginFindFirst },
+    toolRun: {
+      count: async () => adminStats.toolRunCount,
+      aggregate: async () => ({ _avg: { latencyMs: adminStats.avgLatency } }),
+    },
+    apiRequestLog: { count: async () => adminStats.failedApiCount },
+    integration: { count: async () => adminStats.integrationCount },
+    document: { count: async () => adminStats.docCount },
+  },
 }))
 mock.module('@/lib/plugin-registry', () => ({
   executePlugin: mockExecutePlugin,
@@ -480,6 +498,107 @@ describe('executePlan — admin tool gating (security boundary)', () => {
   })
 })
 
+describe('executePlan — an ADMIN tool that actually runs', () => {
+  // The admin gating tests above only ever exercise the REFUSAL. The success arm --
+  // `executeAdminTool` returning a normal result -- was never reached, so lines 566-570 of
+  // planner.ts had no coverage: the `args.onStatus?.(... 'done' : 'error')` call and the
+  // `return { ok: result.ok, output: result.output }` that the synthesizer consumes.
+  //
+  // This uses the REAL admin-tools dispatcher with admin:show_monitoring, whose only
+  // dependencies are counts and an aggregate on the mocked db. admin-tools itself is NOT
+  // mocked, because the file already documents that mock.module is process-global and
+  // mocking it here would leak into admin-tools.test.ts.
+
+  const monitorPlan: Plan = {
+    steps: [{ id: 'step1', tool: 'admin:show_monitoring', input: {}, dependsOn: [] }],
+    needsSynthesis: false,
+  }
+  /** An admin tool that FAILS with no database involvement at all: an unknown tool key is
+   *  rejected outright (`Unknown tool:`), so the failure is deterministic. I first used
+   *  admin:show_audit_log and it SUCCEEDED, because this file's db mock has no auditLog and
+   *  the action tolerated it -- which turned the test green through the wrong branch. */
+  const badToolPlan: Plan = {
+    steps: [{ id: 'step1', tool: 'admin:toggle_tool', input: { tool: 'not-a-real-tool' }, dependsOn: [] }],
+    needsSynthesis: false,
+  }
+
+  beforeEach(() => {
+    adminStats.toolRunCount = 0
+    adminStats.avgLatency = null
+    adminStats.failedApiCount = 0
+    adminStats.integrationCount = 0
+    adminStats.docCount = 0
+  })
+
+  test('an admin gets the tool OUTPUT, not a refusal', async () => {
+    adminStats.toolRunCount = 42
+    adminStats.avgLatency = 137
+    adminStats.failedApiCount = 3
+    adminStats.integrationCount = 2
+    adminStats.docCount = 9
+
+    const results = await executePlan({ plan: monitorPlan, userId: 'u1', isAdmin: true })
+
+    expect(results).toHaveLength(1)
+    expect(results[0].ok).toBe(true)
+    // `error` must be absent on success -- a truthy error string would make the UI mark a
+    // successful step as failed.
+    expect(results[0].error).toBeUndefined()
+    // The numbers prove the REAL action ran and the output reached the step result, rather
+    // than an empty stub satisfying `ok: true`.
+    expect(results[0].output).toContain('Tool Runs: 42')
+    expect(results[0].output).toContain('Avg Latency: 137ms')
+    expect(results[0].output).toContain('Failed API: 3')
+    expect(results[0].output).toContain('Documents Ready: 9')
+  })
+
+  test('a MISSING average latency renders as 0ms, not NaN', async () => {
+    // `latencyAgg._avg.latencyMs ?? 0` -- the aggregate is null when no row has a
+    // latencyMs, and Math.round(null) is 0 but Math.round(undefined) is NaN. A NaN in the
+    // output would be relayed to the user verbatim.
+    const results = await executePlan({ plan: monitorPlan, userId: 'u1', isAdmin: true })
+    expect(results[0].output).toContain('Avg Latency: 0ms')
+    expect(results[0].output).not.toContain('NaN')
+  })
+
+  test('onStatus reports DONE for an admin step that succeeds', async () => {
+    const statuses: Array<[string, string, string]> = []
+    await executePlan({
+      plan: monitorPlan,
+      userId: 'u1',
+      isAdmin: true,
+      onStatus: (id: string, tool: string, status: string) => statuses.push([id, tool, status]),
+    })
+    expect(statuses).toContainEqual(['step1', 'admin:show_monitoring', 'done'])
+  })
+
+  test('an admin step that FAILS reports ok:false, the output as the error, and onStatus error', async () => {
+    // The other half of lines 566-570: `error: result.ok ? undefined : result.output`. A
+    // failing admin tool carries its message in `output`, so the step must surface it as
+    // the error -- otherwise the synthesizer sees an empty reason and invents one.
+    const statuses: Array<[string, string, string]> = []
+    const results = await executePlan({
+      plan: badToolPlan,
+      userId: 'u1',
+      isAdmin: true,
+      onStatus: (id: string, tool: string, status: string) => statuses.push([id, tool, status]),
+    })
+    expect(results[0].ok).toBe(false)
+    // `error` is the OUTPUT of the failing action (`result.ok ? undefined : result.output`),
+    // so the specific reason survives to the synthesizer instead of a generic string.
+    expect(results[0].error).toBe('Unknown tool: not-a-real-tool')
+    expect(statuses).toContainEqual(['step1', 'admin:toggle_tool', 'error'])
+  })
+
+  test('a NON-admin is refused even for a tool that would succeed', async () => {
+    // The gate must not depend on the tool's own outcome.
+    const results = await executePlan({ plan: monitorPlan, userId: 'u1', isAdmin: false })
+    expect(results[0].ok).toBe(false)
+    expect(results[0].error).toContain('administrator')
+    expect(results[0].output).toBe('')
+  })
+})
+
 describe('planQuery — the entry point the router actually calls', () => {
   // planQueryWithTools was covered but planQuery itself never was, which left the
   // whole LLM fallback path (the one that runs whenever tool-calling is
@@ -765,6 +884,46 @@ describe('executePlan — web_fetch / web_search branches', () => {
     expect(r[0].ok).toBe(false)
     expect(r[0].error).toContain('Search query is required')
     expect(mockWebSearch).not.toHaveBeenCalled()
+  })
+
+  test('DECLARED ARTIFACT: the web_fetch/plugin return lines bun cannot instrument', () => {
+    // The lcov report marks planner.ts 631-632 and 686-689 as UNCOVERED while their SIBLING
+    // property lines are hit: 633/634/635 have 26/49/37 hits and 690 has 4, with 685 at 47.
+    // That is IMPOSSIBLE in the source -- `output: result.ok ? result.content : ''` (633)
+    // cannot evaluate unless `return {` (631) and the `stepId..., ok: result.ok,` line (632)
+    // ran first, and `grep -c "step.tool === 'web_fetch'"` confirms there is exactly ONE
+    // such block, so there is no second path that could reach 633 without passing 631.
+    //
+    // The instrumenter simply does not attribute the `return {` line and the first property
+    // of a multi-line object literal whose values are nested ternaries. Same class as the
+    // arrow-callback artifact in guardrails.ts (341-342). The OUTPUT is the proof, and it is
+    // pinned here as behaviour instead of a painted-over gap.
+    mockFetchUrl.mockImplementation(async () => ({ ok: true, content: 'PAGE_BODY' }))
+    mockExecutePlugin.mockImplementation(async () => ({ ok: false, output: '', error: 'PLUGIN_ERR', latencyMs: 7 }))
+
+    return (async () => {
+      const fetched = await runOne({ tool: 'web_fetch', input: { url: 'https://example.com/x' } })
+      // `output: result.ok ? result.content : ''` -- line 633.
+      expect(fetched[0].output).toBe('PAGE_BODY')
+      // `error: result.ok ? undefined : result.error` -- line 634, the true arm.
+      expect(fetched[0].error).toBeUndefined()
+
+      const failedFetch = await (async () => {
+        mockFetchUrl.mockImplementation(async () => ({ ok: false, content: '', error: 'BOOM' }))
+        return runOne({ tool: 'web_fetch', input: { url: 'https://example.com/y' } })
+      })()
+      expect(failedFetch[0].error).toBe('BOOM')
+
+      mockPluginFindFirst.mockImplementation(async () => ({ id: 'p1', toolId: 'w' }))
+      const plug = await executePlan({
+        plan: { steps: [{ id: 's1', tool: 'plugin:w', input: {}, dependsOn: [] } as PlanStep], needsSynthesis: false },
+        userId: 'u1',
+      })
+      // Lines 687-689: `error: result.error, latencyMs: result.latencyMs` -- carried through
+      // from the plugin result rather than recomputed.
+      expect(plug[0].error).toBe('PLUGIN_ERR')
+      expect(plug[0].latencyMs).toBe(7)
+    })()
   })
 
   test('a failed web_search reports its error and no output', async () => {
