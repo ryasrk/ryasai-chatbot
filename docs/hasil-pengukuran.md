@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7143e40`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `407a66c`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7143e40`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.261 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.277 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -74,6 +74,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
+| `src/lib/admin-tools.ts` | 81,78% merged | **86,12%** (2 file) / **96,49%** (3 file, satu proses) / **97,01%** (5 file) | 39 |
 | **Total repo** | **62,44%** | **80,37%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -223,8 +224,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Body respons tidak di-cap 8000 | `tool-branches.ts:770` | 1 |
 | Log REST dilewati pada sukses | `tool-branches.ts:775` | 2 |
 | `chatEnabled` diabaikan (plugin berat masuk jalur chat) | `tool-branches.ts:676` | 2 |
+| Gerbang konfirmasi `toggle_document` dihapus | `admin-tools.ts:264` | 1 |
+| Gerbang konfirmasi `toggle_integration` dihapus | `admin-tools.ts:242` | 2 |
+| Status integrasi ditulis boolean, bukan string | `admin-tools.ts:250` | 2 |
+| Audit `DOC_UPDATE` dihapus | `admin-tools.ts:273` | 1 |
 
-**126 kontrol + 3 kontrol gate, semuanya sah.**
+**130 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1067,6 +1072,63 @@ bisa menciptakan hit untuk baris yang **tak ada run-nya mencapai** (`coverage.ts
 Karena merged 83,88% **di bawah** ambang 85%, modul ini **tidak boleh di-gate**, dan
 **total repo tetap 80,37%** meski per-file-nya melompat hampir 50 poin. Melaporkan
 "naik ke 99,84%" tanpa menyebut merged akan **melebih-lebihkan**.
+
+### 1.7v `admin-tools.ts`: dua file test, dan ALAT UKURNYA yang salah
+
+**Ronde ini hasil terpentingnya bukan tentang test, tapi tentang cara saya mengukur.**
+
+`admin-tools.ts` punya **tiga** file test (`admin-tools.test.ts`, `-mcp`, `-actions`)
+plus beberapa file `mcp-*` yang juga menyentuhnya. Mengukur **satu** file menyesatkan:
+`admin-tools.test.ts` sendirian **29,41%**, `-mcp` sendirian **53,41%**, keduanya
+bersama **78,60%**, ketiganya bersama **96,49%**, lima file bersama **97,01%**. Saya
+hampir melaporkan angka 86,12% dari dua file sebagai "capaian" — itu **bukan** angka
+mana pun yang bermakna.
+
+**Yang saya ukur dan temukan tentang `coverage.ts` sendiri:**
+
+| Pengukuran | LH | LF | % |
+|---|---|---|---|
+| `admin-tools.test.ts` (lcov) | 238 | 662 | 35,95% |
+| `-mcp.test.ts` (lcov) | 298 | 558 | 53,41% |
+| `-actions.test.ts` (lcov) | 363 | 647 | 56,11% |
+| **tiga file, SATU proses** | **549** | **569** | **96,49%** |
+| **merged seluruh suite** | **552** | **675** | **81,78%** |
+
+Perhatikan **`LF` merged (675) LEBIH BESAR dari `LF` satu proses (569)**. Penyebut
+merged adalah **gabungan maksimum per-baris yang pernah terlihat** — 106 baris yang
+muncul di `LF` merged tapi tidak di satu proses. Jadi merged **meremehkan secara
+sistematis** begitu banyak file meng-instrumentasi modul yang sama: pembilangnya
+bertambah 3 baris (549→552) sementara penyebutnya bertambah 106 (569→675). Tabel Bun
+per-file (`--coverage` biasa) melaporkan angka **ketiga yang berbeda lagi** (29,41% vs
+lcov 35,95% untuk file yang sama) — jadi ada **tiga** angka berbeda untuk satu
+kebenaran yang sama, dan tidak satu pun dari ketiganya adalah "coveragenya".
+
+**Konsekuensi yang saya ambil:** gate **wajib** memakai angka merged (itulah kontraknya
+dan `suspicious` check menjaganya), merged `admin-tools.ts` = **81,78%** yang **di bawah**
+ambang 85%, jadi modul ini **TIDAK di-gate**. Tapi saya juga **tidak** melaporkan
+"admin-tools sudah ~97%" sebagai fakta — itu angka satu-proses yang tidak dipakai gate
+mana pun. Yang jujur: sebutkan **ketiga** angka beserta artinya, dan sebut bahwa
+**total repo tetap 80,37%** karena merged tidak bergerak **satu baris pun** (552/675
+sebelum dan sesudah ronde ini).
+
+**Yang tercakup (semuanya sebelumnya belum pernah dieksekusi):**
+`admin:toggle_document` dan `admin:toggle_integration` — **gerbang konfirmasi** yang
+wajib **tidak menulis apa pun** sebelum pengguna mengonfirmasi; target kosong ditolak
+**sebelum** lookup; target tak dikenal dilaporkan, **bukan** dibuat; audit membawa
+**before/after** (tanpa itu operator hanya tahu *ada* yang berubah, bukan *apa*). Dan
+perangkap utamanya: kedua aksi memakai **kosakata berbeda** — `toggle_integration`
+menulis **STRING** `'active'`/`'inactive'` sementara `toggle_document` menulis
+**BOOLEAN** `isEnabled`. Kontrol negatif yang menulis status boolean ke baris integrasi
+menggagalkan dua test. Plus `admin:seed_plugins` yang melaporkan jumlah baris
+**sebelum** dan **sesudah**.
+
+**Satu kontrak yang saya pin dengan sengaja:** `seedPlugins` yang gagal **menyebar**,
+bukan mengembalikan `ok:false` — dan itu **disengaja**. `executeAdminTool` **tidak**
+punya `try/catch` sendiri karena `planner.executeStep` membungkusnya supaya
+`selfCorrect()` bisa meminta model memperbaiki input dan mencoba sekali lagi. Menelan
+error di sini akan mengubah seeding yang gagal menjadi step `"ok"` dan **menghapus
+jalur pemulihan itu**. Versi pertama test saya meng-assert `ok:false` dan **salah
+tentang kontraknya**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
