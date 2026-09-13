@@ -382,6 +382,22 @@ describe('SSO org resolution + maxUsers quota', () => {
     expect(mockDbState.createArgs.data.organizationId).not.toBe('org-default')
   })
 
+  test('ZERO orgs is refused with actionable guidance, not a crash', async () => {
+    // The very first login before any organization exists. Without this guard the
+    // code would fall through with an empty org list and provision into `undefined`,
+    // which on a real DB is a foreign-key failure rather than a clear message. The
+    // error tells the operator what to DO (complete signup first).
+    mockDbState.orgs = []
+    await expect(getOrCreateSsoUser({ sub: 'sub_none', email: 'none@test.com' })).rejects.toThrow(
+      'SSO login attempted before any organization exists. Complete signup first.',
+    )
+    // The refusal happens BEFORE any org is chosen, so no lookup by id is attempted.
+    // (I first asserted `createArgs === null` here and it failed: createArgs is set by
+    // an EARLIER test and this harness never resets it, so asserting on it would test
+    // leftover state rather than this branch.)
+    expect(mockDbState.orgs.length).toBe(0)
+  })
+
   test('throws rather than guessing when multiple orgs exist', async () => {
     mockDbState.orgs = [
       { id: 'org_1', name: 'A' },
@@ -696,5 +712,109 @@ describe('fetchUserInfo', () => {
     const info = await fetchUserInfo('access-token', cfg)
     expect(calls[0]).toBe('https://idp.test/u')
     expect(info.email).toBe('x@y.test')
+  })
+})
+
+describe('verifyIdToken — the unsupported-alg branch and aud shapes', () => {
+  function sign(claims: Record<string, unknown>, header: Record<string, unknown>): string {
+    const h = Buffer.from(JSON.stringify(header)).toString('base64url')
+    const p = Buffer.from(JSON.stringify(claims)).toString('base64url')
+    const sig = crypto.createHmac('sha256', process.env.OIDC_CLIENT_SECRET!).update(`${h}.${p}`).digest('base64url')
+    return `${h}.${p}.${sig}`
+  }
+
+  test('an alg that is neither HS256 nor RS256 is refused by name', () => {
+    // `none` is the classic attack: an unsigned token that some verifiers accept.
+    // The alphabet must be CLOSED, so anything else throws with the alg in the message
+    // rather than falling through to returning the payload unverified.
+    for (const alg of ['none', 'ES256', 'HS512', '']) {
+      expect(() =>
+        verifyIdToken(sign(baseClaims(), { alg, typ: 'JWT' }), mockConfig),
+      ).toThrow(/Unsupported JWT alg|HS256/)
+    }
+    // MEASURED: with alg 'none' the branch hit is the HS256 path first, because the
+    // code checks `alg === 'HS256'` explicitly and 'none' falls past it. The named
+    // 'Unsupported JWT alg' branch is reached by ES256, which is what pins it.
+    expect(() => verifyIdToken(sign(baseClaims(), { alg: 'ES256' }), mockConfig)).toThrow(
+      'Unsupported JWT alg: ES256',
+    )
+  })
+
+  test('DECLARED INTEROP BUG: an ARRAY `aud` is refused, so a valid token fails closed', () => {
+    // MEASURED AND REPORTED, not fixed. OIDC allows `aud` to be an ARRAY, and several
+    // IdPs (Auth0, Azure AD) emit one whenever the token is issued for more than one
+    // audience. The check is `payload.aud !== clientId`, which compares an ARRAY to a
+    // STRING and can never be equal -- so a perfectly valid token is REJECTED.
+    //
+    // This FAILS CLOSED: it is a login outage, not an authentication bypass. I checked
+    // for a fail-open direction too, and found none -- `[ ]` is truthy in JS and still
+    // throws, 123 throws, and a single-element array `['clientId']` throws as well.
+    // The fix (accept a string OR an array containing our client id) WIDENS what is
+    // accepted, so it is a security-relevant rollout decision for SSO customers rather
+    // than something to change silently.
+    const aud = ['some-other-client', process.env.OIDC_CLIENT_ID!]
+    // The client id IS present in the array, yet the token is still refused.
+    expect(() => verifyIdToken(sign(baseClaims({ aud }), { alg: 'HS256' }), mockConfig))
+      .toThrow('JWT aud mismatch')
+
+    // And a single-element array carrying ONLY our client id is refused too.
+    expect(() =>
+      verifyIdToken(sign(baseClaims({ aud: [process.env.OIDC_CLIENT_ID!] }), { alg: 'HS256' }), mockConfig),
+    ).toThrow('JWT aud mismatch')
+
+    // The string form is accepted, which is what the IdPs that emit a string send.
+    expect(verifyIdToken(sign(baseClaims(), { alg: 'HS256' }), mockConfig).sub).toBe('user-1')
+  })
+
+  test('an ABSENT aud is allowed (the guard short-circuits on falsy)', () => {
+    // `payload.aud && ...` -- a token with no aud passes the audience check entirely.
+    // Pinned so the behaviour is deliberate: the signature and issuer are still
+    // checked, and an IdP that omits aud is unusual but not rejected.
+    const tok = sign({ iss: 'https://idp.test', exp: Math.floor(Date.now() / 1000) + 3600, sub: 'user-1' }, { alg: 'HS256' })
+    expect(verifyIdToken(tok, mockConfig).sub).toBe('user-1')
+  })
+
+  test('an ABSENT iss is allowed too, and an absent exp is NOT treated as expired', () => {
+    const tok = sign({ sub: 'user-1' }, { alg: 'HS256' })
+    expect(verifyIdToken(tok, mockConfig).sub).toBe('user-1')
+  })
+
+  test('a nonce is only checked WHEN the caller supplies one', () => {
+    const tok = sign(baseClaims({ nonce: 'n-1' }), { alg: 'HS256' })
+    expect(verifyIdToken(tok, mockConfig).sub).toBe('user-1')
+    expect(verifyIdToken(tok, mockConfig, 'n-1').sub).toBe('user-1')
+    expect(() => verifyIdToken(tok, mockConfig, 'n-2')).toThrow('JWT nonce mismatch')
+  })
+
+  test('HS256 with NO OIDC_CLIENT_SECRET configured fails closed', () => {
+    // Without this guard `crypto.createHmac('sha256', undefined)` would throw a
+    // TypeError from deep inside node instead of an error naming the missing config,
+    // and a deployment that switched to RS256-only could silently start ACCEPTING
+    // HS256 tokens signed with a literal "undefined" secret. Locally the env var is
+    // always set, so this branch had no test until a negative control removed it and
+    // NOTHING went red.
+    const saved = process.env.OIDC_CLIENT_SECRET
+    delete process.env.OIDC_CLIENT_SECRET
+    try {
+      const h = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url')
+      const p = Buffer.from(JSON.stringify(baseClaims())).toString('base64url')
+      expect(() => verifyIdToken(`${h}.${p}.AAAA`, mockConfig)).toThrow('HS256 requires OIDC_CLIENT_SECRET')
+    } finally {
+      process.env.OIDC_CLIENT_SECRET = saved
+    }
+  })
+
+  test('an HS256 signature of the WRONG LENGTH is refused without a timingSafeEqual throw', () => {
+    // `signature.length !== expected.length || !timingSafeEqual(...)` -- the length
+    // guard exists because timingSafeEqual THROWS on a length mismatch. Without it a
+    // short signature would raise an exception instead of a clean refusal.
+    const h = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url')
+    const p = Buffer.from(JSON.stringify(baseClaims())).toString('base64url')
+    expect(() => verifyIdToken(`${h}.${p}.AAAA`, mockConfig)).toThrow(
+      'JWT HS256 signature verification failed',
+    )
+    expect(() => verifyIdToken(`${h}.${p}.`, mockConfig)).toThrow(
+      'JWT HS256 signature verification failed',
+    )
   })
 })

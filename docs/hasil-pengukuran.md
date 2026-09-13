@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2fd44a4`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f0e4de`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2fd44a4`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,54%** (16.814/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.787 lulus · 0 gagal** | terukur |
+| Test coverage | **85,55%** (16.816/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.795 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -125,6 +125,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/passwords.ts` | 88,89% (tak berubah) | 88,89% (**6 kontrol tambahan**, 2 baris catch deklaratif) | 7 |
 | `src/lib/sso-saml.ts` | 79,31% → **89,41%** merged | 91,59% → **100,00%** kode eksekutabel (228/228) | 12 |
 | `src/lib/observability.ts` | 84,51% → **87,32%** merged | 98,36% → **100,00%** kode eksekutabel (124/124) | 10 |
+| `src/lib/sso.ts` | 87,97% → **88,66%** merged | 99,22% → **100,00%** kode eksekutabel (258/258) | 14 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -384,7 +385,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**422 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**436 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3483,6 +3484,48 @@ hari adalah keputusan produk.**
 **Kesalahan saya sendiri:** dua anchor kontrol tidak ketemu karena saya menebak nama konstanta
 (`MAX_TRACES` alih-alih **`RING_MAX`**), dan satu karena saya menebak bentuk literal field. Saya
 memperbaiki anchor dari sumber, bukan melonggarkan assertion.
+
+### 1.7bq OIDC: satu guard fail-closed yang TIDAK dijaga test apa pun — ditemukan oleh kontrol
+
+**`sso.ts` 99,22% → 100,00% (258/258)**. Repo **85,54% → 85,55% (+0,01)**. **14 kontrol, 14
+menggigit** (13 menggigit pada percobaan pertama; yang ke-14 menggigit setelah saya menambahkan
+test untuknya).
+
+**Guard yang tidak dijaga test — dan itu ketemu hanya karena kontrol.** Kontrol "cek clientSecret
+HS256 dihapus" menghasilkan **NOL test merah**. Padahal tanpa `if (!clientSecret) throw`, sebuah
+deployment yang pindah ke **RS256-only** dan **lupa menyetel `OIDC_CLIENT_SECRET`** akan membuat
+`crypto.createHmac('sha256', undefined)` — dan lebih buruk, **token HS256 yang ditandatangani
+dengan literal `"undefined"` akan DITERIMA**. Di lingkungan lokal variabel ini selalu terisi, jadi
+cabang itu **tidak punya test** sampai kontrol menghapusnya dan **tidak ada yang memerah**. Setelah
+test ditambahkan, kontrol yang sama **menggigit**.
+
+**TEMUAN: `aud` sebagai ARRAY DITOLAK — token SAH gagal, tapi FAIL-CLOSED.** OIDC **mengizinkan**
+`aud` berupa array, dan beberapa IdP (**Auth0, Azure AD**) mengirimnya begitu setiap kali token
+diterbitkan untuk lebih dari satu audiens. Pemeriksanya adalah `payload.aud !== clientId`, yang
+**membandingkan ARRAY dengan STRING dan tidak akan pernah sama** — jadi token yang **sepenuhnya
+sah DITOLAK**. Saya **memeriksa arah fail-open-nya juga dan tidak menemukannya**: `[]` truthy di JS
+dan tetap melempar, `123` melempar, dan array satu-elemen `['clientId']` **juga melempar**. Jadi ini
+**outage login, bukan bypass autentikasi** — pembedaan yang saya lakukan sebelum melaporkannya.
+**Tidak saya perbaiki:** perbaikannya (terima string ATAU array yang memuat client id) **melebarkan
+apa yang diterima**, jadi itu **keputusan rollout yang berdampak keamanan** bagi pelanggan SSO.
+
+**Yang kini dijaga pada `sso.ts`:** **alfabet alg TERTUTUP** — `ES256` melempar
+`Unsupported JWT alg: ES256` dengan nama alg-nya, dan `none` **tidak pernah** lolos ke pengembalian
+payload tanpa verifikasi; **RS256 yang diserahkan ke verifier sinkron melempar** alih-alih
+mengembalikan payload tanpa diverifikasi (fail-closed); **perbandingan panjang signature** ada
+sebelum `timingSafeEqual`, yang **melempar bila panjang berbeda** — tanpa guard itu, signature
+pendek memunculkan exception alih-alih penolakan bersih; **`aud` absen dan `iss` absen
+diizinkan** (guard short-circuit pada falsy) sementara **tanda tangan dan issuer tetap diperiksa**;
+**`exp` absen TIDAK dianggap kedaluwarsa**; **nonce hanya diperiksa bila pemanggil
+memberikannya**; dan **`orgs.length === 0`** (login SSO pertama sebelum organisasi ada) ditolak
+dengan **pesan yang memberi tindakan** — tanpa guard itu kode akan menyediakan `undefined` sebagai
+`organizationId`, yang di DB nyata adalah **kegagalan foreign-key**, bukan pesan yang jelas.
+
+**Kesalahan saya sendiri:** saya menulis `verifyIdToken(token, secret)` padahal argumen keduanya
+adalah **`OidcConfig`** — tsc menangkapnya. Lalu perbaikan saya **terlalu luas** dan mengubah
+`createHmac` di dalam helper `sign()`, yang memunculkan `TS2345`. Dan satu assertion saya
+(`createArgs === null`) menguji **state sisa test sebelumnya**, bukan cabang ini — harness tidak
+mereset `createArgs`. Ketiganya saya perbaiki dari sumber, bukan dengan melonggarkan assertion.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
