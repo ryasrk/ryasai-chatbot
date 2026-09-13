@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `99ebe47`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `051c9b9`.
 
 ---
 
@@ -4849,6 +4849,43 @@ Dua kandidat berikutnya diperiksa dan **terverifikasi 100% eksekutabel**, bukan 
 `admin-tools.ts` (569/569) dan `real-connectors.ts` (685/685).
 
 Repo **86,72%** baris / **93,71%** fungsi; suite **4.159 → 4.160**.
+
+### 1.7ct Cakupan CABANG: tidak terukur dengan toolchain ini, dan itu dibuktikan bukan diasumsikan
+
+Setelah cakupan baris (86,72%) dan cakupan fungsi (93,71%), dimensi berikutnya adalah **cakupan cabang**.
+Saya tidak mengasumsikan bisa mengukurnya — saya memeriksanya.
+
+**Hasil probe, terukur:**
+
+| Reporter `bun test --coverage-reporter=` | Hasil |
+|---|---|
+| `lcov` | **jalan**, tetapi `BRF:` = **0**, `BRH:` = **0**, `BRDA:` = **0** |
+| `text` | jalan (tabelnya tidak tercetak ke stdout yang saya tangkap) |
+| `text-summary` | **gagal** |
+| `json` | **gagal** |
+| `json-summary` | **gagal** |
+| `cobertura` | **gagal** |
+| `html` | **gagal** |
+
+Jadi Bun 1.3.14 hanya mendukung `lcov` dan `text`, dan **lcov-nya tidak memuat record cabang sama sekali**.
+**Cakupan cabang TIDAK BISA diukur di lingkungan ini.** Saya mencatat ini sebagai **keterbatasan
+terverifikasi**, bukan sebagai pekerjaan yang belum selesai atau angka yang bisa saya karang. Klaim
+cakupan cabang apa pun dari saya, sekarang atau nanti, harus ditolak sampai toolchain-nya berganti.
+
+**Yang saya lakukan sebagai gantinya.** Karena 132 dari 132 file `src/` terinstrumen sudah punya floor dan
+hampir semuanya terverifikasi 100% eksekutabel, saya memeriksa kandidat terbesar yang tersisa —
+`vector-stores.ts` (28/39 fungsi, **11 fungsi hilang** — rasio terburuk di repo) — **dan menemukannya
+BUKAN celah.** Sebelas fungsi itu adalah helper privat (`vectorFetch`, `vectorFetchAllow404`,
+`vectorHeaders`, `asRecord`, `chromaSpace`, …) yang dieksekusi lewat jalur publik, dan **cabang auth
+per-provider-nya sudah diuji lengkap**: Pinecone memakai `Api-Key` (bukan Bearer), Chroma memakai
+`X-Chroma-Token`, Qdrant/Milvus memakai `Bearer` + `api-key` — ketiganya punya assertion eksplisit di
+`vector-stores-pinecone-chroma.test.ts` dan `vector-stores.test.ts`.
+
+**Pelajaran metodenya:** **rasio fungsi per-file menghitung fungsi privat lebih dari sekali** (sebagai
+bagian dari beberapa jalur pemanggil) dan **meremehkan helper yang dieksekusi secara tidak langsung**.
+Dua kandidat fungsi-terburuk sebelumnya — `cognee.ts` (44,44%) dan `sso-saml.ts` (59,09%) — sudah terbukti
+artefak dengan cara yang sama. **Rasio fungsi per-file adalah PETUNJUK, bukan bukti.** Ia berguna justru
+karena pernah menemukan `db.ts` (nol fungsi dijalankan); ia menyesatkan bila dibaca sebagai skor.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
