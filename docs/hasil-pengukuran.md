@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `35c69e2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fde506b`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `35c69e2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,23%** (16.197/19.698 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.441 lulus · 0 gagal** | terukur |
+| Test coverage | **82,27%** (16.205/19.698 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.454 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **71 modul** | +9 |
+| Modul ter-gate | 62 modul | **72 modul** | +10 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -90,7 +90,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/smart-router.ts` | 98,71% → **77,42%** merged (**turun**, §1.7z) | 98,97% → **99,74%** kode eksekutabel (384/385) | 155 |
 | `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (386/386) | 30 |
 | `src/lib/stream-preparers.ts` | 81,58% → **82,14%** merged | 99,31% → **100,00%** kode eksekutabel (437/437) | 35 |
-| **Total repo** | **62,44%** | **82,23%** | — |
+| `src/lib/web-fetch.ts` | 69,86% → **73,52%** merged | 94,44% → **99,38%** kode eksekutabel (161/162) | 46 |
+| **Total repo** | **62,44%** | **82,27%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -315,8 +316,15 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Degradasi RAG: throw diteruskan | `stream-preparers.ts:108` | 1 |
 | Retry ECONNRESET dihapus | `stream-preparers.ts:325` | 2 |
 | Pola transient diperluas ke semua error | `stream-preparers.ts:324` | 1 |
+| Guard kredensial pada redirect dihapus | `web-fetch.ts:92` | 1 |
+| `!res.ok` dihapus | `web-fetch.ts:99` | 1 |
+| `redirect: 'manual'` → `'follow'` | `web-fetch.ts:71` | 1 |
+| Pemeriksaan DNS async per-hop dihapus | `web-fetch.ts:57` | 2 |
+| `Location` kosong tidak diperiksa | `web-fetch.ts:83` | 2 |
+| URL redirect invalid tidak ditangkap | `web-fetch.ts:88` | 1 |
+| Hop cap dilewati (setelah limit `?` ditambahkan) | `web-fetch.ts:80` | 1 |
 
-**215 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**222 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -1957,6 +1965,51 @@ antrean inilah yang membuat ketiga skenario (transien pulih, non-transien langsu
 transien berulang menyerah) dapat dibedakan.
 
 **Kontrol negatif: 3, semuanya menggigit.**
+
+### 1.7an `web-fetch.ts`: lapisan DNS belum pernah diuji sama sekali; 94,44% → 99,38%
+
+**Merged 73,52%** (turun dari 69,86%... naik tipis, tapi `LF` melonjak 162 → 219 karena
+berkas test lain meng-instrumentasi modul ini — pola §1.7z lagi), eksekutabel **99,38%
+(161/162)**, kini di-gate.
+
+**TEMUAN UTAMA: separuh guard di setiap hop TIDAK PERNAH DIEKSEKUSI.** Semua fixture lama
+memakai TLD `.example`, yang **lookup-nya gagal**, dan `isBlockedHostAsync` **fail open**
+saat resolusi gagal — jadi pemeriksaan DNS **selalu mengembalikan `false`** di setiap test.
+Artinya lapisan yang menangkap hostname yang **terlihat publik tapi RESOLVE ke alamat
+privat** — inti pertahanan DNS-rebinding — **tidak pernah dijalankan sekali pun**. Saya
+tutup dengan me-mock `node:dns/promises`: `rebind.example` → `10.0.0.5` (bentuk rebinding
+persis: guard string lolos, alamat hasil resolusi yang harus menghentikannya), sementara
+`fine.example` → IP publik sebagai **invers**, agar test tidak lulus hanya karena mock
+memblokir segalanya.
+
+**Yang kini terjaga:** kedua pemeriksaan DNS **dijalankan ulang di SETIAP hop**, bukan hanya
+hop 0 (kontrol: menghapusnya → **2 test gagal**) — hop 0 bisa publik sementara hop 1
+resolve privat, dan itulah bug yang header modulnya sendiri ceritakan; **tidak ada request
+sama sekali** saat host diblokir (guard mendahului fetch, jadi alamat privat tak pernah
+disambung); **`redirect: 'manual'`** adalah invariant pemanggilan, bukan sifat respons
+(kontrol: ubah ke `'follow'` → **1 test gagal**) — kalau runtime mengikuti redirect sendiri,
+suite guard hanya akan pernah melihat hop 0; **kredensial tertanam di `Location` ditolak**
+(kontrol: **1 test gagal**) — itu cara klasik menyelundupkan auth ke permintaan lanjutan;
+**body yang gagal di-DECODE** menjadi hasil error, bukan rejection (planner sedang menyusun
+jawaban; rejection akan **membatalkan seluruh turn**); dan **error non-`Error`** di-stringify
+agar operator tidak membaca `"Fetch error: undefined"`.
+
+**Kelemahan test saya sendiri yang saya temukan dan perbaiki:** test hop-cap saya lulus
+**meski cap-nya dihapus** — karena **baik cap di dalam loop maupun fall-through di ekor
+memberi pesan `'Too many redirects.'` yang sama**, jadi menghapus cap hanya memindahkan
+jalur. Setelah saya tambahkan assertion pada teks **`limit ${MAX_REDIRECT_HOPS}`** (yang
+hanya diproduksi cap), kontrolnya **menggigit**. Ini contoh "kontrol negatif yang lulus
+karena salah sasaran" yang persis menjadi judul §1.8.
+
+**Kontrol negatif: 7, semuanya menggigit** (satu setelah diperbaiki). Satu baris sisa —
+fall-through di ekor — adalah baris yang **komentar sumbernya sendiri menyatakan
+`Unreachable`**: setiap iterasi loop selalu `continue` atau `return`, dan loop terbatas
+`hop <= MAX`, sedangkan redirect pada hop terakhir sudah di-`return` oleh cap.
+
+**Catatan kejujuran soal flake:** satu kali `bun run test` keluar kode 1 tanpa detail test
+gagal; dua kali dijalankan ulang berturut-turut menghasilkan **3.454 lulus / 0 gagal**.
+Saya menyebutkannya alih-alih menyembunyikannya; penyebab paling mungkin beban paralel
+bertabrakan dengan backoff 1 detik di `stream-preparers`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -1,6 +1,6 @@
 {
-  "linePct": 82.23,
-  "linesHit": 16197,
+  "linePct": 82.27,
+  "linesHit": 16205,
   "linesFound": 19698,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -90,12 +90,6 @@
       "pct": 69.84126984126983
     },
     {
-      "file": "src/lib/web-fetch.ts",
-      "hit": 153,
-      "found": 219,
-      "pct": 69.86301369863014
-    },
-    {
       "file": "src/lib/tool-router.ts",
       "hit": 238,
       "found": 338,
@@ -112,6 +106,12 @@
       "hit": 685,
       "found": 937,
       "pct": 73.10565635005337
+    },
+    {
+      "file": "src/lib/web-fetch.ts",
+      "hit": 161,
+      "found": 219,
+      "pct": 73.51598173515981
     },
     {
       "file": "src/lib/intent-pipeline.ts",
