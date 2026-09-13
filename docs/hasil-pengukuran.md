@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `199ede3`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9710e7f`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `199ede3`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,24%** (18.360/21.045 baris, 143 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,93%** (1719/1830 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 185 file · **4.381 lulus · 0 gagal** | terukur |
+| Test coverage | **87,31%** (18.473/21.158 baris, 144 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,96%** (1727/1838 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 186 file · **4.416 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**804 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**822 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5305,6 +5305,64 @@ langsung alih-alih mencoba menugaskan ke namespace modul.
 
 **Progres backlog: 11 dari 66 route orphan ditutup.** Repo **87,23% → 87,24%**; file terinstrumen
 **142 → 143**; suite **4.366 → 4.381** (184 → **185 file**); gate **142 → 143 modul**.
+
+### 1.7df `/api/tools/[id]` — plugin + KREDENSIALNYA, dan DUA DEFEK yang ditemukan: 100,00% (113/113)
+
+**Ini salah satu dari DUA rute yang audit 2026-09 sebut sebagai IDOR lintas-tenant** (satunya
+`api/mcp/servers/[id]`). Sebuah id plugin **diberikan ke browser oleh rute daftar**, jadi pengguna org-A
+memegang id nyata yang **resolve juga di konteks org-B.** Perbaikannya: setiap pemuatan memakai `findFirst`
+(yang di-scope extension), **tidak pernah `findUnique`** — dan karena **`findFirst` vs `findUnique` TIDAK
+TERLIHAT pada test happy-path**, saya meng-assert **OPERASINYA**, bukan hasilnya. **K1/K2/K3 membuktikan ini
+bekerja:** mengganti `findFirst` → `findUnique` di GET, PATCH, dan DELETE masing-masing **2 merah**.
+
+**Properti kedua — perjalanan pulang-pergi kredensial.** GET harus mengembalikan manifest yang **ter-mask**;
+PATCH harus **MEMPRTahankan ciphertext tersimpan** saat editor tidak mengirim nilai baru (**UI merender
+kredensial sebagai bullet, jadi ini jalur NORMAL**); kredensial baru harus **dienkripsi** sebelum disimpan.
+
+## DUA DEFEK NYATA YANG SAYA TEMUKAN DI SINI — DIPATOK, TIDAK DIPERBAIKI
+
+**DEFEK 1 — GET mengirim `manifestJson` MENTAH ke klien, bersama mask-nya.** GET menyebar seluruh baris
+(`...plugin`) lalu baru menempelkan `manifest` yang ter-mask sebagai saudara. Jadi respons membawa manifest
+**DUA KALI: sekali ter-mask, sekali mentah.** Saya **membuktikan di runtime**, bukan menyimpulkan:
+
+```
+{"ok":true,"plugin":{"id":"p1","toolId":"w",
+ "manifestJson":"{\"authCredentials\":\"enc:SECRET\"}",   <- CIPHERTEXT terkirim
+ "manifest":{"authCredentials":"••••"}}}
+```
+
+**Dampak, saya nyatakan jujur:** ini mengekspos **CIPHERTEXT AES-256-GCM, bukan plaintext**, jadi **TIDAK
+setara dengan membocorkan kunci.** Tetapi ini tetap pengungkapan yang justru dicegah oleh masking: ciphertext
++ kompromi kunci di masa depan **ter-dekripsi surut**, dan responsnya harus dibaca ulang untuk memahami
+mengapa rahasia yang ia tampilkan bukan rahasia yang ia juga kirim. `manifest` (ter-mask) adalah permukaan
+yang dimaksudkan.
+
+**DEFEK 2 — `authType: 'NONE'` + kredensial tersisa = kredensial tersimpan PLAINTEXT.** Kedua penjaga di
+rute berbunyi `authType !== 'NONE'`. Itu **benar** mencegah membawa kredensial ke depan dan mencegah
+mengenkripsinya — **tetapi saat authType MEMANG `'NONE'` dan editor tetap mengirim `authCredentials`,
+nilainya tidak dienkripsi DAN tidak dihapus.** Ia ditulis ke `manifestJson` apa adanya, jadi **rahasia
+webhook hidup mendarat di database dalam bentuk terang.** Pemicunya UI usang atau body buatan tangan, jadi
+ini jalur frekuensi rendah, bukan jalur normal. Perbaikannya satu cabang `else`: saat `authType` `'NONE'`,
+hapus `authCredentials`.
+
+**Keduanya saya konversi menjadi test yang meng-assert PERILAKU SAAT INI**, dengan komentar eksplisit bahwa
+**test itu akan MERAH saat defeknya diperbaiki dan harus dibalik.** Itu arah yang benar: perbaikannya jadi
+**terlihat dan disengaja**, bukan lewat tanpa jejak. Sebagai pembanding, test **manifest ter-mask** saya tulis
+terpisah sehingga tetap hijau apa pun keputusan Anda nanti tentang `manifestJson`.
+
+**Kesalahan saya sendiri, dikoreksi dengan probe:** asersi `encryptPluginCredentials` saya mula-mula mengira
+argumennya sebuah **objek** (`{ apiKey: … }`). Saya **probe pemanggilan nyatanya** dan ternyata argumennya
+**STRING kredensial mentah**. Assertion yang salah itu gagal, saya perbaiki mock agar cocok dengan call site
+sebenarnya, bukan sebaliknya.
+
+**18 kontrol, dan KEDELAPAN BELAS MENGGIGIT.** Termasuk K4 `enterWithOrg` dihapus, K5 **kredensial tidak
+dibawa saat kosong**, **K6 kredensial baru tidak dienkripsi (2 merah)**, K7/K8 audit DELETE (dihapus dan
+severity salah), K9 cek `count === 0`, **K10 `select` membocorkan `manifestJson`**, **K11 cek body kosong
+dihapus (3 merah)**, K12 nama whitespace-only, K13 cek tipe boolean, K14 manifest tidak dimask (**2 merah**),
+K15 race `P2025` jadi 500, K16 404 jadi 200, K17 audit UPDATE, K18 kategori whitespace.
+
+**Progres backlog: 12 dari 66 route orphan ditutup.** Repo **87,24% → 87,31%**; file terinstrumen
+**143 → 144**; suite **4.381 → 4.416** (185 → **186 file**); gate **143 → 144 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
