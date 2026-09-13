@@ -40,19 +40,44 @@ const handlers: Partial<Record<JobType, JobHandler>> = {}
 // blowups). Enter the job's org before any DB work, mirroring mini-services/scheduler.
 // Falls back to resolving the org from the document so jobs enqueued before this fix
 // (which lack organizationId in their payload) stay scoped too.
-async function enterJobOrg(data: JobData): Promise<void> {
-  if (data.organizationId) {
-    enterWithOrg(data.organizationId)
-    return
-  }
-  if (!data.documentId) return
+async function resolveJobOrg(data: JobData): Promise<string | undefined> {
+  if (data.organizationId) return data.organizationId
+  if (!data.documentId) return undefined
   const doc = await bypassOrg(() =>
     db.document.findUnique({
       where: { id: data.documentId },
       select: { organizationId: true },
     }),
   )
-  if (doc?.organizationId) enterWithOrg(doc.organizationId)
+  return doc?.organizationId ?? undefined
+}
+
+/**
+ * Enter the job's org and run `fn` inside it.
+ *
+ * BUG (found by measurement; the MEASURED cause is narrower than it first looked). The previous
+ * code entered the org from inside `enterJobOrg`, i.e. AFTER `await bypassOrg(...)`. `bypassOrg`
+ * is `orgStorage.run(undefined, fn)`, and an inner `run()` RESTORES the outer store when its
+ * callback settles, so an `enterWith` issued after that await lands in a context that the caller
+ * never observes. Measured against the original code:
+ *   - payload path (`data.organizationId`, enter BEFORE any await) -> handler saw the org  OK
+ *   - document-fallback path (enter AFTER `await bypassOrg`)       -> handler saw `undefined`  BROKEN
+ * So a job enqueued without `organizationId` ran with NO org context at all -- exactly the
+ * unscoped-query incident the comment above claims to prevent -- while the payload path, and
+ * therefore every test anyone had written, looked fine.
+ *
+ * I initially blamed `enterWith` after ANY await. A direct probe disproved that: a plain
+ * `await Promise.resolve()` before `enterWith` DOES propagate, in the same frame and through
+ * `return fn()`. The offender is specifically the `run()`-scoped callback in `bypassOrg`
+ * restoring its parent context. The fix is the same either way and does not depend on which
+ * reading is right: return the org and let the CALLER -- the frame the handler actually runs in
+ * -- enter it synchronously before awaiting anything.
+ */
+async function runWithJobOrg<T>(data: JobData, fn: () => Promise<T>): Promise<T> {
+  const orgId = await resolveJobOrg(data)
+  // Synchronous enter in the CALLER's frame, before the handler is awaited.
+  if (orgId) enterWithOrg(orgId)
+  return fn()
 }
 
 export function registerJobHandler(type: JobType, handler: JobHandler): void {
@@ -135,6 +160,16 @@ async function ensureOrderReconcileRepeatable(): Promise<void> {
 
 // ponytail: start worker once on server boot (via instrumentation.ts).
 // BullMQ auto-reconnects when Redis comes up, so starting without Redis is safe.
+/**
+ * Test seam: drop the cached worker so `startJobWorker()` can be exercised again in the same
+ * process. The real singleton behaviour is what the idempotency test pins, and a module-level
+ * cache cannot be cleared from outside without this. Mirrors `resetJwksCache` /
+ * `resetEnsuredCollections` elsewhere in the repo.
+ */
+export function resetJobWorkerForTest(): void {
+  worker = null
+}
+
 export function startJobWorker(): Worker<JobData> {
   if (worker) return worker
   worker = new Worker<JobData>(
@@ -142,8 +177,7 @@ export function startJobWorker(): Worker<JobData> {
     async (job: Job<JobData>) => {
       const handler = handlers[job.data.type]
       if (!handler) throw new Error(`No handler for job type: ${job.data.type}`)
-      await enterJobOrg(job.data)
-      await handler(job.data)
+      await runWithJobOrg(job.data, () => handler(job.data))
     },
     {
       connection: redis,
@@ -210,8 +244,7 @@ export async function enqueueOrSync(type: JobType, data: JobData): Promise<'queu
   }
   const handler = handlers[type]
   if (handler) {
-    await enterJobOrg(data)
-    await handler(data)
+    await runWithJobOrg(data, () => handler(data))
   } else console.warn('[jobs] no handler for', type)
   return 'sync'
 }
