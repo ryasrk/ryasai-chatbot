@@ -153,6 +153,10 @@ const FLOORS: Record<string, number> = {
   // (90/90) executable. Floor set ABOVE default because a regression here is a
   // cross-tenant data leak, not a display bug.
   'src/lib/prisma-tenant.ts': 87,
+  // The citation trail names the ENTITY and RELATION a RAG answer came from, which
+  // is what a user reads as the source of a claim. 86.27% -> 100.00% executable
+  // (57/57). Merged is 90.48% because other test files instrument extra LF lines.
+  'src/lib/citation-trail.ts': 90,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

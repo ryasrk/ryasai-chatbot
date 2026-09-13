@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5248b97`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `88613d3`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5248b97`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,13%** (16.556/19.680 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.618 lulus · 0 gagal** | terukur |
+| Test coverage | **84,21%** (16.573/19.680 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.634 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **81 modul** | +19 |
+| Modul ter-gate | 62 modul | **82 modul** | +20 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -107,7 +107,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/audit/route.ts` | 27,66% → **100,00%** merged | 38,24% → **100,00%** kode eksekutabel (43/43) | 11 |
 | `src/lib/redis.ts` | 41,03% → **93,67%** merged | **tak terukur** → **98,67%** kode eksekutabel (74/75) | 27 |
 | `src/lib/prisma-tenant.ts` | 51,49% → **87,38%** merged | 63,41% → **100,00%** kode eksekutabel (90/90) | 24 |
-| **Total repo** | **62,44%** | **84,13%** | — |
+| `src/lib/citation-trail.ts` | 69,84% → **90,48%** merged | 86,27% → **100,00%** kode eksekutabel (57/57) | 16 |
+| `src/lib/source-guidance.ts` | 59,30% → **63,95%** merged (artefak LF) | 92,73% → **100,00%** kode eksekutabel (55/55) | 14 |
+| **Total repo** | **62,44%** | **84,21%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -366,7 +368,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**304 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**312 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2783,6 +2785,54 @@ cache* dengan menghapus dan menulis ulang file test — **tetap bersih**, jadi h
 **melaporkan penyebabnya secara eksplisit** bila terulang, sehingga kejadian berikutnya akan
 menghasilkan diagnosis, bukan sekadar nama file. Gejala **tidak** mereproduksi dalam 7
 percobaan.
+
+### 1.7bc Jalur SITASI & GUIDANCE: dua modul 92,73%/86,27% → 100,00%, dan satu kontrol yang saya TOLAK klaim
+
+**`citation-trail.ts` 86,27% → 100,00% (57/57).** **`source-guidance.ts` 92,73% → 100,00%
+(55/55).** Repo **84,13% → 84,21% (+0,08)**. **DI-GATE floor 90** untuk citation-trail —
+modul ter-gate **81 → 82**. `source-guidance.ts` merged 63,95% **tidak boleh di-gate**
+(artefak `LF`, §1.7z: 86 baris di-instrumentasi oleh file test lain), walaupun
+eksekutabelnya 100%.
+
+**Yang kini dijaga pada JALUR AKURASI.** Ini modul yang menentukan **dari mana** sebuah
+jawaban diklaim berasal: `citation-trail.ts` menamai **entitas dan relasi** yang memimpin ke
+setiap chunk, dan itu yang dibaca pengguna sebagai **sumber klaim**. Cabang yang kini
+dipatok: (a) **kecocokan substring di konten menang** atas fallback; (b) **fallback token
+query** memilih entitas yang **tidak muncul di konten** — teks chunk sering tidak mengulang
+entitas karena KG yang menghubungkannya, jadi token query adalah kesempatan kedua; tanpa itu
+trail jatuh ke entitas pertama dan **salah mengatribusi**; (c) **fallback `entities[0]`**, dan
+**`'unknown'` literal** bila tidak ada entitas (sebuah `undefined` akan tampil sebagai teks
+`"undefined"` di UI sitasi); (d) **relasi lewat endpoint** DAN **relasi lewat deskripsi**
+(`slice(0, 20)` — deskripsi panjang dicocokkan pada **frasa pembukanya**); (e) **baris graph
+yang gagal regex TETAP disimpan sebagai deskripsi**, bukan dikosongkan.
+
+`source-guidance.ts`: (f) **org prompt dipotong (bukan dibuang)** bila tidak muat tapi suffix
+masih muat — membuangnya akan **menghapus kebijakan organisasi dari setiap jawaban RAG
+secara senyap**; dan anggaran dihabiskan **tepat** (panjang = 100, bukan kurang — asumsi longgar
+saya `< 100` salah, dan kode yang lebih presisi itu yang benar); (g) **fail-closed `''`** bila
+tidak ada satu pun baris masuk, sehingga header `[Source guidance]` **telanjang tanpa isi**
+tidak pernah terbentuk — itu akan memberi tahu model ada panduan padahal tidak ada.
+
+**Dua kontrol yang TIDAK menggigit, dan yang saya lakukan terhadapnya.** (1) Kontrol
+«`line.trim()` → `''`» awalnya **0 fail**. Saya selidiki dan temukan **lubang nyata pada test
+saya**: test itu hanya meng-assert label fallback, dan deskripsi kosong **juga** menghasilkan
+label itu — jadi baris 64 **sama sekali tidak terjaga**. Saya tambahkan test yang meng-assert
+**deskripsi terparse itu sendiri**, dan kontrol yang sama kini **menggigit**. (2) Kontrol
+«hapus `Math.max(0, ...)` pada budget» juga **0 fail**. Saya **tidak** mengarang test untuk
+memaksanya: saya enumerasi **2.060 nilai budget × 8 panjang prompt = 16.480 kombinasi**, dan
+clamp itu **tidak pernah** mengubah hasil — `remaining` negatif dan nol sama-sama menolak
+semuanya. Jadi ia **tak dapat dibedakan melalui perilaku** dan saya **mendeklarasikannya
+sebagai non-kontrol**, bukan melaporkannya sebagai kontrol yang menggigit.
+
+**Dua asumsi saya sendiri yang salah, tertangkap oleh test yang merah.** (a) Assertion
+`out.length < 100` gagal karena panjangnya **tepat 100** — kode menghitung header, newline,
+dan suffix secara presisi. (b) Test relasi-deskripsi gagal karena chunk saya menulis
+`'were billed for'` sementara relasinya `'was billed for'` — **satu kata berbeda**; pencocokan
+ini **substring literal**, bukan kemiripan. Dua-duanya **kode yang benar, asumsi saya yang
+salah**.
+
+**Kontrol negatif: 8 dijalankan, 7 menggigit** (1 dideklarasikan tak dapat dibedakan, lihat di
+atas).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

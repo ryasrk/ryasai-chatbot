@@ -1,6 +1,6 @@
 {
-  "linePct": 84.13,
-  "linesHit": 16556,
+  "linePct": 84.21,
+  "linesHit": 16573,
   "linesFound": 19680,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -19,9 +19,9 @@
     },
     {
       "file": "src/lib/source-guidance.ts",
-      "hit": 51,
+      "hit": 55,
       "found": 86,
-      "pct": 59.30232558139535
+      "pct": 63.95348837209303
     },
     {
       "file": "src/lib/config.ts",
@@ -46,12 +46,6 @@
       "hit": 105,
       "found": 154,
       "pct": 68.18181818181817
-    },
-    {
-      "file": "src/lib/citation-trail.ts",
-      "hit": 44,
-      "found": 63,
-      "pct": 69.84126984126983
     },
     {
       "file": "src/lib/tool-router.ts",
@@ -412,6 +406,12 @@
       "hit": 167,
       "found": 185,
       "pct": 90.27027027027027
+    },
+    {
+      "file": "src/lib/citation-trail.ts",
+      "hit": 57,
+      "found": 63,
+      "pct": 90.47619047619048
     },
     {
       "file": "src/lib/rag.ts",

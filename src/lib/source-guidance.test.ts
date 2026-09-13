@@ -91,3 +91,55 @@ describe('buildSourceGuidance', () => {
     expect(out).toContain('also trimmed')
   })
 })
+
+// ===========================================================================
+// The budget edges that were never exercised
+// ===========================================================================
+
+describe('buildSourceGuidance — budget edges', () => {
+  it('TRUNCATES the ORG prompt when it does not fit but a suffix still does', () => {
+    // Line 65-67. The org prompt applies to EVERY RAG answer, so it is kept (cut
+    // down) rather than dropped as long as even the truncation suffix fits. This
+    // branch is distinct from the doc-prompt truncation: a dropped org prompt would
+    // strip organization-wide policy out of every answer silently.
+    const org = 'x'.repeat(500)
+    // Budget leaves room for the header plus a partial org line and the suffix.
+    const out = buildSourceGuidance([], { orgPrompt: org, budget: 100 })
+    expect(out).toContain('[Source guidance]')
+    expect(out).toContain('…[truncated]')
+    // Truncated DOWN, not emitted whole. The budget is spent EXACTLY (length 100,
+    // not less) -- my first assertion said < 100 and failed; the code accounts for
+    // the header, its newline and the suffix precisely, which is the better
+    // behaviour. Asserted as an exact contract instead of a loose bound.
+    expect(out.length).toBe(100)
+    expect(out).not.toContain(org)
+  })
+
+  it('does NOT truncate the org prompt when the suffix itself does not fit', () => {
+    // The `else if (remaining > TRUNC_SUFFIX.length)` guard. With almost no budget
+    // there is not even room for "…[truncated]", and emitting a bare suffix would
+    // be noise, so the org line falls through and the result is the fail-closed ''.
+    const out = buildSourceGuidance([], { orgPrompt: 'y'.repeat(500), budget: 20 })
+    expect(out).toBe('')
+  })
+
+  it('fails CLOSED (empty string) when the header alone would be misleading', () => {
+    // Line 93. If nothing at all landed in `lines`, a bare "[Source guidance]"
+    // header with no body would tell the model guidance exists when it does not.
+    // Returning '' is the deliberate fail-closed choice.
+    const out = buildSourceGuidance([], { orgPrompt: '', budget: 100 })
+    expect(out).toBe('')
+  })
+
+  it('a ZERO budget yields empty rather than a bare header', () => {
+    // budget is clamped with Math.max(0, ...), so 0 and negatives behave alike.
+    expect(buildSourceGuidance([{ name: 'd', content: 'c' }], { budget: 0 })).toBe('')
+    expect(buildSourceGuidance([{ name: 'd', content: 'c' }], { budget: -50 })).toBe('')
+  })
+
+  it('still emits the header when content DID land', () => {
+    // The inverse of the fail-closed case, so the two are distinguishable.
+    const out = buildSourceGuidance([{ name: 'd', content: 'c' }], { budget: 100 })
+    expect(out.startsWith('[Source guidance]')).toBe(true)
+  })
+})
