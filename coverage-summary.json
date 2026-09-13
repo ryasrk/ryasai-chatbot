@@ -1,14 +1,12 @@
 {
-  "linePct": 87.23,
-  "linesHit": 18333,
-  "linesFound": 21018,
+  "linePct": 87.24,
+  "linesHit": 18360,
+  "linesFound": 21045,
   "fnPct": 93.93,
-  "fnsHit": 1717,
-  "fnsFound": 1828,
-  "filesMeasured": 142,
-  "failedTestFiles": [
-    "src/lib/mcp-installer.test.ts"
-  ],
+  "fnsHit": 1719,
+  "fnsFound": 1830,
+  "filesMeasured": 143,
+  "failedTestFiles": [],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -980,6 +978,15 @@
       "pct": 100,
       "fHit": 6,
       "fFound": 6,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/setup/complete/route.ts",
+      "hit": 27,
+      "found": 27,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
       "fPct": 100
     },
     {

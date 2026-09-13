@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `088613e`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `199ede3`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `088613e`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,23%** (18.333/21.018 baris, 142 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,93%** (1717/1828 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 184 file · **4.366 lulus · 0 gagal** | terukur |
+| Test coverage | **87,24%** (18.360/21.045 baris, 143 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,93%** (1719/1830 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 185 file · **4.381 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**791 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**804 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5273,6 +5273,38 @@ K15 status 402→400, K16 token null, K17 `trim` pada nama, K18 safety-net `AppC
 
 **Progres backlog: 10 dari 66 route orphan ditutup.** Repo **87,14% → 87,23%**; file terinstrumen
 **141 → 142**; suite **4.330 → 4.366** (183 → **184 file**); gate **141 → 142 modul**.
+
+### 1.7de `/api/setup/complete` — gerbang onboarding + seed plugin per-org: NOL → 100,00% (27/27)
+
+Rute kecil dengan konsekuensi besar: `setupCompleted = true` **adalah GERBANG** yang dibaca middleware dan
+wizard untuk memutuskan apakah organisasi masih butuh onboarding, lalu menyalakan **seed plugin**.
+
+- **Admin-only.** Menyalakan `setupCompleted` tanpa cek peran berarti **viewer mana pun bisa menyatakan
+  organisasi siap** — dan seed di bawahnya lalu berjalan terhadap konfigurasi yang tidak ditinjau siapa pun.
+- **Seed plugin di-scope PER-ORGANISASI.** Komentar di dalam kode mencatat bug nyata sebelumnya: **cek
+  `plugin.count()` GLOBAL membuat seed dilewati untuk organisasi BARU setiap kali organisasi LAIN sudah
+  punya plugin** — organisasi baru dibiarkan dengan perangkat kosong. Jadi `where` **wajib** memuat
+  `organizationId`, dan `seedPlugins` dipanggil dengan id org. Keduanya saya patok, karena **inilah yang
+  dulu regresi.**
+- **Urutan penting:** config ditulis **sebelum** seed, dan audit **sesudah** seed. Kalau seed gagal,
+  operator melihat config selesai + error — bukan organisasi setengah ter-seed yang mengaku belum setup —
+  dan **audit tidak ditulis**, sehingga tidak ada catatan penyelesaian yang bohong.
+
+**13 kontrol, dan KETIGA BELAS MENGGIGIT.** K1 `requireRole` dihapus (**2 merah**),
+**K2 count plugin tidak di-scope — menguji ulang bug lama yang tercatat di komentar (1 merah)**,
+K3 seed jalan meski sudah ada plugin, **K4 seed dihapus sepenuhnya (5 merah)**, K5 `setupCompleted` ditulis
+`false`, K6 cabang CREATE dihapus, K7 `enterWithOrg` dihapus, K8 audit dihapus (**2 merah**), K9 action audit
+diganti, **K10 seed pakai org hardcoded (2 merah)**, K11 update menulis ke id yang salah,
+**K12 respons `{ ok: true, extra: 1 }` (kontraknya tepat)**, K13 **seed dijalankan SEBELUM config ditulis**.
+
+**Kegagalan pertama, terulang:** dua test peran gagal karena `Attempted to assign to readonly property` —
+**binding namespace modul bersifat read-only di Bun**, jadi menukar ekspor `getActiveUser` dari luar mock
+tidak mungkin. Diperbaiki dengan **seam binding yang bisa diubah di dalam closure mock** (`let user`), pola
+yang sama dengan rute `llm-config`. Ini kali ketiga pola ini muncul, jadi sekarang saya pakai seam itu
+langsung alih-alih mencoba menugaskan ke namespace modul.
+
+**Progres backlog: 11 dari 66 route orphan ditutup.** Repo **87,23% → 87,24%**; file terinstrumen
+**142 → 143**; suite **4.366 → 4.381** (184 → **185 file**); gate **142 → 143 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
