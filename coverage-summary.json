@@ -1,14 +1,12 @@
 {
   "linePct": 86.72,
-  "linesHit": 17503,
-  "linesFound": 20184,
-  "fnPct": 93.65,
-  "fnsHit": 1653,
+  "linesHit": 17505,
+  "linesFound": 20185,
+  "fnPct": 93.71,
+  "fnsHit": 1654,
   "fnsFound": 1765,
   "filesMeasured": 132,
-  "failedTestFiles": [
-    "src/lib/plugin-registry.test.ts"
-  ],
+  "failedTestFiles": [],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -731,15 +729,6 @@
       "fPct": 90
     },
     {
-      "file": "src/lib/job-processor.ts",
-      "hit": 128,
-      "found": 129,
-      "pct": 99.2248062015504,
-      "fHit": 32,
-      "fFound": 35,
-      "fPct": 91.42857142857143
-    },
-    {
       "file": "src/lib/cron-describe.ts",
       "hit": 140,
       "found": 141,
@@ -1044,6 +1033,15 @@
       "fHit": 3,
       "fFound": 3,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/job-processor.ts",
+      "hit": 130,
+      "found": 130,
+      "pct": 100,
+      "fHit": 33,
+      "fFound": 35,
+      "fPct": 94.28571428571428
     },
     {
       "file": "src/lib/license-reminder.ts",

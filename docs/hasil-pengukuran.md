@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `544911a`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `99ebe47`.
 
 ---
 
@@ -13,8 +13,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `544911a`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **86,72%** (17.503/20.184 baris, 132 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,65%** (1653/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 174 file · **4.159 lulus · 0 gagal** | terukur |
+| Cakupan fungsi | **93,71%** (1654/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 174 file · **4.160 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**679 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**682 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4823,6 +4823,32 @@ bertahan begitu lama, dan kenapa kontrol-kontrol itu tidak bisa membedakan apa p
 diperbaiki lebih dulu. Deklarasi demi kejujuran, bukan klaim tertutup.
 
 **Cakupan fungsi repo 93,54% → 93,65%** (1651 → 1653). Suite **4.155 → 4.159**.
+
+### 1.7cs Pekerja latar belakang: `catch()` saat boot yang belum pernah dijalankan
+
+Cakupan **baris** `job-processor.ts` sudah 99,22% dan **lima** test-nya (`ensureOrderReconcileRepeatable`)
+sudah lengkap: ensure saat boot, re-ensure saat hilang, tidak mengusik yang cocok, mengganti yang
+pattern-nya bergeser, dan payload-nya. Yang belum jalan hanyalah **satu baris: `.catch()` di baris 200**
+— jalur saat pendaftaran job repeatable **GAGAL** (mis. Redis sedang mati).
+
+**Mengapa itu penting.** `jobQueue.add(...)` dan `getRepeatableJobs()` menuju Redis, dan Redis
+didokumentasikan **opsional untuk startup** ("BullMQ auto-reconnects"). Tanpa `.catch()` itu, satu kilatan
+Redis membuat **boot gagal** — dan karena worker SUDAH terpasang pada titik itu, kegagalan boot berarti
+**pemrosesan dokumen mati seluruhnya**, bukan sekadar job rekonsiliasi tertunda.
+
+**Yang dipatok:** `startJobWorker()` **tidak boleh throw** saat bookkeeping gagal, dan **harus
+memperingatkan** (bukan gagal senyap). Pengujiannya menyuntik kegagalan lewat seam `redisState` yang
+sudah ada.
+
+**`job-processor.ts` 99,22% → 100,00% (130/130).** 3 kontrol, semuanya menggigit: `.catch()` dihapus
+sehingga error bocor ke boot (**1 merah**, dan yang penting — `expect(() => startJobWorker()).not.toThrow()`
+gagal, yaitu boot benar-benar mati), peringatan dihapus sehingga gagal senyap (1), dan `ensure` dilewati
+sama sekali (4).
+
+Dua kandidat berikutnya diperiksa dan **terverifikasi 100% eksekutabel**, bukan celah:
+`admin-tools.ts` (569/569) dan `real-connectors.ts` (685/685).
+
+Repo **86,72%** baris / **93,71%** fungsi; suite **4.159 → 4.160**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

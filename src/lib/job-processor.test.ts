@@ -44,6 +44,9 @@ const redisState = {
   added: [] as Array<{ name: string; data: unknown; opts: unknown }>,
   repeatable: [] as Array<{ name: string; pattern?: string; tz?: string }>,
   removedRepeatable: [] as Array<{ name: string; pattern?: string; tz?: string }>,
+  // When set, the repeatable bookkeeping throws. Used to drive the boot-time .catch() that a
+  // Redis blip would hit -- the one path that must NOT take the worker down with it.
+  failRepeatable: false,
 }
 mock.module('@/lib/redis', () => ({
   redis: { llen: async () => redisState.waitDepth },
@@ -52,7 +55,10 @@ mock.module('@/lib/redis', () => ({
     add: async (name: string, data: unknown, opts: unknown) => {
       redisState.added.push({ name, data, opts })
     },
-    getRepeatableJobs: async () => redisState.repeatable,
+    getRepeatableJobs: async () => {
+      if (redisState.failRepeatable) throw new Error('redis down')
+      return redisState.repeatable
+    },
     removeRepeatable: async (name: string, opts: { pattern?: string; tz?: string }) => {
       redisState.removedRepeatable.push({ name, ...opts })
     },
@@ -224,6 +230,26 @@ describe('startJobWorker — the wiring the boot file depends on', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(redisState.added).toHaveLength(0)
     expect(redisState.removedRepeatable).toHaveLength(0)
+  })
+
+  test('a FAILING repeatable bookkeeping does not crash the boot, and is reported', async () => {
+    // The `.catch()` on the boot call is what keeps a Redis blip from becoming a boot failure:
+    // the worker itself is already attached at this point, so the process must survive and only
+    // WARN. Redis is documented as optional for startup ("BullMQ auto-reconnects"), so throwing
+    // here would contradict that and kill document processing entirely.
+    redisState.failRepeatable = true
+    const warnings: unknown[][] = []
+    const realWarn = console.warn
+    console.warn = (...a: unknown[]) => { warnings.push(a) }
+    try {
+      // Must NOT reject: the call site is `void ... .catch(...)`.
+      expect(() => startJobWorker()).not.toThrow()
+      await new Promise((r) => setTimeout(r, 0))
+    } finally {
+      console.warn = realWarn
+      redisState.failRepeatable = false
+    }
+    expect(warnings.some((w) => String(w[0]).includes('failed to ensure order-reconcile repeatable'))).toBe(true)
   })
 
   test('replaces a repeatable whose PATTERN drifted, removing the old one first', async () => {

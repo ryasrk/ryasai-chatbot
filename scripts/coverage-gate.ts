@@ -211,7 +211,7 @@ const FLOORS: Record<string, number> = {
   // module ran uninstrumented -- the same blind spot the document-worker outage hid in.
   // 128/129 executable (99.22%). The uncovered line is the `.catch` on
   // ensureOrderReconcileRepeatable, reachable only when Redis is down at boot.
-  'src/lib/job-processor.ts': 97, // measured 97.67% merged
+  'src/lib/job-processor.ts': 99, // merged 99.39%%->100.00%% after the boot-time catch was driven // measured 97.67% merged
   'src/lib/rag-retrieval.ts': 75, // measured 100.00% executable; merged 76.29%
   'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
   // A REVENUE feature: a paying on-prem customer is warned before their license
