@@ -155,3 +155,108 @@ describe('previewNextRuns', () => {
     expect(runs[0].getUTCMinutes()).toBe(1)
   })
 })
+
+// ===========================================================================
+// The fall-through composition path: buildTimeDesc + buildDateDesc
+// ===========================================================================
+//
+// describeCron has a chain of specific early returns, so an expression that
+// outruns them all reaches lines 53-55 and the two composers. Those composers
+// also carry their OWN branches (a step in the HOUR field, a day RANGE, a month
+// list), none of which any existing test ran.
+
+describe('describeCron — composed time and date descriptions', () => {
+  // Outputs below are MEASURED, not assumed. My first draft wrote them with a comma
+  // after "minutes" ("Every 10 minutes, every Monday"); the real text has no comma
+  // because the two composers are joined with a single space. Seven of nine
+  // assertions went red and the dump corrected every one of them.
+
+  test('a MINUTE step combined with a day-of-week uses both composers', () => {
+    // `*/10 * * * 1` : the minute-step early return needs dowField === '*', so this
+    // falls through to buildTimeDesc + buildDateDesc.
+    expect(describeCron('*/10 * * * 1')).toBe('Every 10 minutes every Monday')
+  })
+
+  test('an HOUR step with minute 0 is described in HOURS by buildTimeDesc', () => {
+    // The early `Every N hours` return requires every other field to be '*'; with a
+    // day-of-week set it is buildTimeDesc that recognises the step.
+    expect(describeCron('0 */3 * * 5')).toBe('Every 3 hours every Friday')
+  })
+
+  test('a single minute with an HOUR step is NOT described as an hour count', () => {
+    // The `hourStep && minField === '0'` guard. With minField = 30 the step must be
+    // ignored and the raw fallback used, otherwise the description would claim the
+    // job runs every 3 hours when it actually runs at :30.
+    const out = describeCron('30 */3 * * 5')
+    expect(out).not.toContain('Every 3 hours')
+    expect(out).toBe('Minute: 30, Hour: */3 every Friday')
+  })
+
+  test('an unworded minute and hour fall back to the RAW fields', () => {
+    // A value the describer has no wording for still shows something readable rather
+    // than an empty string.
+    expect(describeCron('5,10 9 * * 3')).toBe('Minute: 5,10, Hour: 9 every Wednesday')
+  })
+
+  test('a day-of-week LIST of three or more is joined with commas', () => {
+    // Two days use "X and Y"; three or more use the comma join, and that third path
+    // is only reached by a longer list.
+    expect(describeCron('*/10 * * * 1,3,5'))
+      .toBe('Every 10 minutes every Monday, Wednesday, Friday')
+  })
+
+  test('a day RANGE spanning the week works in the composed path', () => {
+    // parseDayList expands a range; reached here through buildDateDesc rather than
+    // the dedicated weekday branch (which only matches the literal '1-5').
+    expect(describeCron('*/10 * * * 2-4'))
+      .toBe('Every 10 minutes every Tuesday, Wednesday, Thursday')
+  })
+
+  test('a MONTH list is named', () => {
+    expect(describeCron('*/10 * * 1,6 *')).toContain('month January, June')
+  })
+
+  test('an OUT-OF-RANGE month is REJECTED by parseCron, not rendered as a number', () => {
+    // Pinned as MEASURED. I expected the month branch's `months[n-1] || n` fallback
+    // to print "month 13"; parseCron rejects 13 first, so the describer never runs.
+    // The `|| n` fallback is therefore only reachable for a value parseCron accepts
+    // but the month-name array does not cover -- i.e. it is effectively dead for
+    // months, and this records that rather than inventing a case for it.
+    expect(describeCron('*/10 * * 13 *')).toBe('Invalid cron expression')
+  })
+
+  test('day-of-month is DROPPED when a month is also specified', () => {
+    // MEASURED BUG, pinned rather than fixed: `*/10 * 15 3 *` is "Every 10 minutes,
+    // month March" -- the day 15 disappears, and the description implies the job
+    // runs EVERY day in March when it actually runs on the 15th only.
+    //
+    // Cause: buildDateDesc guards the day-of-month fragment with
+    // `domField !== '*' && monthField === '*'`, so the two are mutually exclusive
+    // even though a cron expression can set both. Reported, not silently patched:
+    // changing the wording is a user-visible product decision.
+    expect(describeCron('*/10 * 15 3 *')).toBe('Every 10 minutes month March')
+    expect(describeCron('*/10 * 15 3 *')).not.toContain('day 15')
+  })
+
+  test('a schedule with NOTHING extra is described as "every day"', () => {
+    // buildDateDesc's `parts.length > 0 ? ... : 'every day'` fallback.
+    expect(describeCron('*/10 8 * * *')).toBe('Every 10 minutes every day')
+  })
+})
+
+describe('describeCron — the two composers are reachable for single values too', () => {
+  test('a single minute and hour WITH A MONTH uses buildTimeDesc\'s At-form', () => {
+    // The `Every day at HH:MM` early return requires dom='*' AND month='*' AND
+    // dow='*'. Setting ONLY the month skips every early return, so buildTimeDesc's
+    // own At-branch is what answers. Without a month here the branch is unreachable,
+    // because with dom='*' the dedicated `On day N` return fires instead.
+    expect(describeCron('30 9 * 3 *')).toBe('At 09:30 month March')
+  })
+
+  test('a single minute with hour=* and a MONTH uses the "every hour" form', () => {
+    const out = describeCron('30 * * 3 *')
+    expect(out).toContain('Every hour at minute 30')
+    // The invalid-cron guard does not fire, and the month is still reported.
+    expect(out).not.toBe('Invalid cron expression')
+  })
+})

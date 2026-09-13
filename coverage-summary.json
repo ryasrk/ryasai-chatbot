@@ -1,11 +1,9 @@
 {
-  "linePct": 84.58,
-  "linesHit": 16631,
-  "linesFound": 19664,
+  "linePct": 84.82,
+  "linesHit": 16677,
+  "linesFound": 19662,
   "filesMeasured": 128,
-  "failedTestFiles": [
-    "src/lib/tool-branches-branches.test.ts"
-  ],
+  "failedTestFiles": [],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -36,12 +34,6 @@
       "hit": 239,
       "found": 338,
       "pct": 70.71005917159763
-    },
-    {
-      "file": "src/lib/otel.ts",
-      "hit": 35,
-      "found": 49,
-      "pct": 71.42857142857143
     },
     {
       "file": "src/lib/real-connectors.ts",
@@ -78,12 +70,6 @@
       "hit": 119,
       "found": 158,
       "pct": 75.31645569620254
-    },
-    {
-      "file": "src/lib/cron-describe.ts",
-      "hit": 108,
-      "found": 143,
-      "pct": 75.52447552447552
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -584,6 +570,12 @@
       "pct": 99.0909090909091
     },
     {
+      "file": "src/lib/cron-describe.ts",
+      "hit": 140,
+      "found": 141,
+      "pct": 99.29078014184397
+    },
+    {
       "file": "src/app/api/audit/route.ts",
       "hit": 43,
       "found": 43,
@@ -719,6 +711,12 @@
       "file": "src/lib/llm-budget.ts",
       "hit": 57,
       "found": 57,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/otel.ts",
+      "hit": 49,
+      "found": 49,
       "pct": 100
     },
     {

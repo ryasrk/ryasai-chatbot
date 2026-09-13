@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `098aac2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `486ed58`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `098aac2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,58%** (16.631/19.664 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.668 lulus · 0 gagal** | terukur |
+| Test coverage | **84,82%** (16.677/19.662 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.686 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **85 modul** | +23 |
+| Modul ter-gate | 62 modul | **87 modul** | +25 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -114,7 +114,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/schema-enrichment.ts` | 66,67% → **87,04%** merged | 81,82% → **100,00%** kode eksekutabel (47/47) | 9 |
 | `src/lib/themes.ts` | 55,34% → **100,00%** merged | 96,61% → **100,00%** kode eksekutabel (87/87) | 8 |
 | `src/lib/config.ts` | 64,06% → **70,31%** merged (artefak LF) | 86,67% → **100,00%** kode eksekutabel (45/45) | 11 |
-| **Total repo** | **62,44%** | **84,58%** | — |
+| `src/lib/otel.ts` | 71,43% → **100,00%** merged | 77,78% → **100,00%** kode eksekutabel (49/49) | 6 |
+| `src/lib/cron-describe.ts` | 75,52% → **99,29%** merged | 80,60% → **100,00%** kode eksekutabel (140/140) | 13 |
+| **Total repo** | **62,44%** | **84,82%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -373,7 +375,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**332 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**342 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2985,6 +2987,57 @@ id sebenarnya `enterprise/midnight/forest/slate/sandstone`. Dua yang terakhir me
 hasilnya identik. **Dideklarasikan non-kontrol.** Yang menggigit termasuk: `Number.isFinite`
 dihapus, `optionalBool` memakai truthiness, ternary tema **dibalik** (2 test merah), event
 change dihapus, `setItem` dark hilang, dan entri-absent dibalik ke terang.
+
+### 1.7bg Tracing & wording jadwal: dua modul 77,78%/80,60% → 100,00%, satu BUG nyata, dan satu catch yang HILANG karena mock saya sendiri
+
+**`otel.ts` 77,78% → 100,00% (49/49).** **`cron-describe.ts` 80,60% → 100,00% (140/140).**
+Repo **84,58% → 84,82% (+0,24)**. Keduanya **DI-GATE** (100 dan 99) — modul ter-gate
+**85 → 87**.
+
+**Temuan paling penting: MOCK SAYA SENDIRI MENGHILANGKAN CAKUPAN SEBUAH `catch`.** Di
+`otel.ts`, hanya cabang **GAGAL** yang diuji ("SDK packages not installed"), karena paketnya
+memang tidak terpasang — jadi pemilihan exporter, atribut resource, dan `sdk.start()`
+**berjalan di test mana pun**. Untuk mencapai jalur sukses saya **harus** me-mock paket-paket
+OTel. Setelah mock itu mendarat, saya **instrumentasi body `catch`** untuk memeriksa, dan
+menemukan ia **dieksekusi NOL kali**: mock-nya **menyelamatkan import** sehingga catch tak
+pernah jalan, sementara test lama "does not throw" tetap **hijau** (kini ia menempuh jalur
+sukses). Jadi test lama itu **diam-diam berhenti menguji apa pun**. Saya bangun ulang jalur itu
+secara sengaja dengan membuat satu import gagal — skenario produksi yang sesungguhnya. **Tanpa
+instrumentasi, saya akan melaporkan catch itu "sudah tercakup".**
+
+**Yang kini dijaga di `otel.ts`:** **exporter OTLP dipilih dengan `/v1/traces` ditambahkan** —
+path itu bagian dari spesifikasi OTLP HTTP, dan menghilangkan atau menggandakannya membuat
+collector **menolak setiap batch** sehingga tracing **berhenti diam-diam**; **tanpa endpoint →
+Console**; **endpoint saja SUDAH cukup** (`enabled` adalah OR — pengguna yang menyediakan
+collector tapi lupa flag tetap mendapat trace); **SDK benar-benar `start()`** — SDK yang
+dikonstruksi tapi tak dimulai adalah **kegagalan senyap klasik**: tidak ada exporter yang
+menerima span dan tidak ada error; **SDK dimulai TEPAT SEKALI** (dua kali = setiap span
+dilaporkan ganda); **`OTEL_ENABLED` harus persis `"true"`** — `"1"`/`"yes"` **tidak**
+menyalakannya (dipatok sebagai terukur, penting diketahui sebelum mengira tracing aktif).
+
+**`cron-describe.ts`: teks yang dibaca operator.** Rantai early-return-nya menutupi
+`buildTimeDesc`/`buildDateDesc`, jadi saya harus merancang ekspresi yang **jatuh melewati
+semuanya**. Yang kini dipatok: **langkah MENIT + hari** (kedua komposer dipakai), **langkah JAM
+di `buildTimeDesc`** (early return `Every N hours` butuh field lain `*`), **guard `minField ===
+'0'`** — dengan menit 30 langkah jam **harus diabaikan**, kalau tidak deskripsinya mengklaim job
+jalan tiap 3 jam padahal jalan di `:30`; **daftar 3 hari atau lebih** digabung koma (dua hari
+pakai "and"); **rentang hari**; **daftar bulan dinamai**; dan **fallback `every day`**.
+
+**BUG NYATA, dilaporkan bukan ditambal:** `*/10 * 15 3 *` dideskripsikan sebagai
+**"Every 10 minutes month March"** — **`day 15` HILANG**, dan deskripsinya menyiratkan job
+jalan **SETIAP hari di bulan Maret** padahal **hanya tanggal 15**. Penyebab:
+`buildDateDesc` menjaga fragmen hari-dalam-bulan dengan `domField !== '*' && monthField === '*'`,
+sehingga keduanya **saling eksklusif** padahal cron mendukung keduanya sekaligus. **Dipatok
+sebagai perilaku terukur**; tidak saya tambal diam-diam karena mengubah kata-katanya adalah
+**keputusan produk yang terlihat pengguna**.
+
+**Tujuh dari sembilan assertion pertama saya langsung merah, dan itu berguna.** Saya menulis
+output dengan koma setelah "minutes"; teks aslinya **tanpa koma** (dua komposer digabung satu
+spasi). Saya juga mengira bulan `13` akan tampil **"month 13"**, ternyata `parseCron`
+**menolaknya lebih dulu** — sehingga fallback `months[n-1] || n` **praktis mati untuk bulan**,
+dan itu saya catat alih-alih mengarang kasus untuknya. **Dump fakta mengoreksi setiap asumsi.**
+
+**Kontrol negatif: 10, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -170,6 +170,14 @@ const FLOORS: Record<string, number> = {
   // executable (87/87). A wrong dark/light ternary or a missing change event is a
   // visible user-facing regression, so it is pinned at 100.
   'src/lib/themes.ts': 100,
+  // Tracing init. The false branch (packages not installed) was the only one tested,
+  // so the exporter CHOICE, the resource attributes and sdk.start() ran in no test --
+  // a constructed-but-unstarted SDK is the classic silent tracing failure.
+  // 77.78% -> 100.00% executable (49/49).
+  'src/lib/otel.ts': 100,
+  // User-facing schedule wording: a wrong description makes an operator believe a job
+  // runs at a different time than it does. 80.60% -> 100.00% executable (140/140).
+  'src/lib/cron-describe.ts': 99,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
