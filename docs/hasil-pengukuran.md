@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `698f1be`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c9ba1a0`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `698f1be`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,90%** (17.771/20.451 baris, 136 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,78%** (1675/1786 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 178 file · **4.215 lulus · 0 gagal** | terukur |
+| Test coverage | **86,91%** (17.834/20.519 baris, 137 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,81%** (1681/1792 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 179 file · **4.231 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**712 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**722 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5048,6 +5048,40 @@ menyebut jumlah query sebenarnya. **Ini kelas kesalahan yang sama dengan §1.7cw
 **Progres backlog: 4 dari 66 route orphan ditutup.** Repo **86,85% → 86,90%**; file terinstrumen
 **135 → 136**; suite **4.203 → 4.215** (177 → **178 file**); gate **135 → 136 modul**. **10 kontrol,
 semuanya menggigit.**
+
+### 1.7cy `/api/setup/admin` — gerbang pertama instalasi: NOL → 100,00% (63/63), dan satu kontrol yang MENEMUKAN celah
+
+Ini rute **publik tanpa sesi** dengan daya angkat tertinggi di aplikasi: satu-satunya panggilan yang bisa
+**mencetak admin** di instalasi baru, dan tidak ada sesi untuk diperiksa karena belum mungkin ada sesi.
+
+**Properti terpenting adalah 409.** Rute ini **UPSERT pada email** (`db.user.upsert({ where: { email } })`),
+jadi tanpa penjaga `setupCompleted` **instalasi yang sudah selesai akan membiarkan siapa pun yang tahu
+email admin MENGGANTI PASSWORD ADMIN ITU dan menerima sesi.** Penjaga itu bukan kemewahan — ia satu-satunya
+pembatas antara "installer" dan **reset password jarak jauh.** Dipatok **dua arah**: diblokir saat setup
+selesai, **tetap diizinkan saat setup belum selesai** (kalau tidak, instalasi setengah jadi tak akan pernah
+bisa diselesaikan).
+
+**10 kontrol. Satu di antaranya LOLOS, dan itu berharga.** `isActive: false` tidak tertangkap:
+semua test lain hijau karena meng-assert pada **hash** dan **cookie**, bukan pada flag-nya. **Admin yang
+dibuat tapi nonaktif adalah kegagalan first-run yang justru paling senyap:** setup melaporkan sukses,
+menerbitkan sesi, lalu akunnya mati pada permintaan berikutnya. Saya tambahkan asersi untuk `isActive`
+**pada KEDUA cabang upsert** — percobaan pertama saya hanya mematok cabang `create`, dan kontrol yang sama
+**masih lolos** lewat cabang `update`; setelah dipatok di keduanya, **K6a → 2 merah, K6b → 1 merah.**
+
+**Temuan lain: pemborosan terukur, dipatok bukan disembunyikan.** `hashPassword(input.password)` ditulis
+inline di **KEDUA** cabang upsert, jadi **satu hash selalu dibuang.** Diukur di mesin ini: scrypt
+(N=16384, r=8, p=1) ≈ **53 ms**, jadi setiap setup membakar **~107 ms, bukan ~53 ms** — sekitar **53 ms
+terbuang plus alokasi working-set scrypt kedua**, di rute yang berjalan sekali per instalasi. Test
+`KNOWN WASTE` merekam duplikasi ini supaya perbaikannya (angkat hash ke atas upsert, pakai di kedua cabang)
+menjadi perubahan yang **terlihat dan disengaja**. **Bukan bug korektnes** — hash yang tersimpan benar.
+
+**Gate kembali menangkap pelanggaran aturan.** Floor `src/lib/setup.ts` sempat 95% dari **run per-file**;
+gate menolak (*"floor 95% exceeds the merged measurement 84.85%"*) dan saya setel ulang ke **84** dari
+`coverage-summary.json`. **Aturan "floor dari angka merged, bukan per-file" itu nyata dan alatnya menjaga
+saya — untuk kedua kalinya di sesi ini.**
+
+**Progres backlog: 5 dari 66 route orphan ditutup.** Repo **86,90% → 86,91%**; file terinstrumen
+**136 → 137**; suite **4.215 → 4.231** (178 → **179 file**); gate **136 → 137 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

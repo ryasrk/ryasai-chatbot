@@ -1,11 +1,11 @@
 {
-  "linePct": 86.9,
-  "linesHit": 17771,
-  "linesFound": 20451,
-  "fnPct": 93.78,
-  "fnsHit": 1675,
-  "fnsFound": 1786,
-  "filesMeasured": 136,
+  "linePct": 86.91,
+  "linesHit": 17834,
+  "linesFound": 20519,
+  "fnPct": 93.81,
+  "fnsHit": 1681,
+  "fnsFound": 1792,
+  "filesMeasured": 137,
   "failedTestFiles": [],
   "files": [
     {
@@ -312,6 +312,15 @@
       "pct": 84.78260869565217,
       "fHit": 8,
       "fFound": 8,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/setup.ts",
+      "hit": 28,
+      "found": 33,
+      "pct": 84.84848484848484,
+      "fHit": 3,
+      "fFound": 3,
       "fPct": 100
     },
     {
@@ -927,6 +936,15 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/setup/admin/route.ts",
+      "hit": 63,
+      "found": 63,
+      "pct": 100,
+      "fHit": 6,
+      "fFound": 6,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/users/[id]/role/route.ts",
       "hit": 52,
       "found": 52,
@@ -1194,15 +1212,6 @@
       "pct": 100,
       "fHit": 17,
       "fFound": 17,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/setup.ts",
-      "hit": 28,
-      "found": 28,
-      "pct": 100,
-      "fHit": 3,
-      "fFound": 3,
       "fPct": 100
     },
     {

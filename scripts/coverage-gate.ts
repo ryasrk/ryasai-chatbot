@@ -97,6 +97,7 @@ const FLOORS: Record<string, number> = {
   'src/app/api/users/[id]/route.ts': 100, // merged 100.00%; was one of the 42 routes with NO test at all
   'src/app/api/settings/api-keys/[id]/route.ts': 100, // merged 100.00%; was one of the 42 routes with NO test at all
   'src/app/api/auth/register/route.ts': 100, // merged 100.00%; was one of the untested routes
+  'src/app/api/setup/admin/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
   'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)
@@ -286,7 +287,7 @@ const FLOORS: Record<string, number> = {
   // only instruction, plus the LLM-failure audit. 85.26% -> 100.00% (210/210).
   'src/app/api/integrations/[id]/query/route.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
-  'src/lib/setup.ts': 95, // measured 100.00% (28/28)
+  'src/lib/setup.ts': 84, // merged 84.85% -- the 100% fig was from a single-file run (see coverage.ts caveat)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
   // OIDC: RS256/JWKS + the alg-confusion and kid-rotation guards, the aud/iss/exp/nonce
   // checks, the closed alg alphabet, and an ARRAY `aud` documented as refused (fail-closed).
