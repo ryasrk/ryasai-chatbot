@@ -4,8 +4,11 @@ import { sendNotification, sendNotificationWithRetry } from './notifications'
 import { encryptConfig } from './crypto'
 
 const originalFetch = global.fetch
+const originalResendKey = process.env.RESEND_API_KEY
 afterEach(() => {
   global.fetch = originalFetch
+  if (originalResendKey === undefined) delete process.env.RESEND_API_KEY
+  else process.env.RESEND_API_KEY = originalResendKey
 })
 
 function enc(cfg: Record<string, unknown>): string {
@@ -412,4 +415,150 @@ describe('sendNotificationWithRetry — exhaustion', () => {
     expect(calls).toBe(4)
     expect(r.error).not.toContain('No attempt made')
   }, 20000)
+})
+
+/**
+ * The Resend email SEND path. Previously only the two GUARDS above were tested -- "no key" and "no
+ * recipient" -- both of which return before any fetch happens. So the request this module exists to
+ * make, and every way it can fail, had never run.
+ */
+describe('sendNotification — email via Resend', () => {
+  const RESEND_URL = 'https://api.resend.com/emails'
+
+  test('POSTs to the Resend endpoint with the org key, sender, subject and body', async () => {
+    process.env.RESEND_API_KEY = 're_live_key'
+    process.env.EMAIL_FROM = 'bot@example.com'
+    let seenUrl = ''
+    let seenInit: RequestInit | undefined
+    global.fetch = (async (url: string, init: RequestInit) => {
+      seenUrl = String(url)
+      seenInit = init
+      return new Response(JSON.stringify({ id: 'msg-1' }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'ops@example.com' }),
+      message: 'the nightly job failed',
+      title: 'Job failed',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(seenUrl).toBe(RESEND_URL)
+    const headers = seenInit!.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer re_live_key')
+    expect(headers['Content-Type']).toBe('application/json')
+    const body = JSON.parse(String(seenInit!.body)) as Record<string, unknown>
+    expect(body.to).toEqual(['ops@example.com'])
+    expect(body.subject).toBe('Job failed')
+    expect(body.text).toBe('the nightly job failed')
+    expect(body.from).toBe('bot@example.com')
+  })
+
+  test('an omitted title falls back to the default subject, but the BODY is never used as subject', async () => {
+    process.env.RESEND_API_KEY = 're_live_key'
+    let body: Record<string, unknown> = {}
+    global.fetch = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body)) as Record<string, unknown>
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'body text',
+    })
+    expect(body.subject).toBe('ryasai notification')
+    expect(body.text).toBe('body text')
+  })
+
+  test('a non-2xx Resend response becomes ok:false with the status AND a truncated body', async () => {
+    // A silent success here would mean a scheduled job reports "delivered" while nothing was sent.
+    process.env.RESEND_API_KEY = 're_live_key'
+    global.fetch = (async () =>
+      new Response('{"message":"domain not verified","name":"validation_error"}', {
+        status: 403,
+      })) as unknown as typeof fetch
+
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('403')
+    // The provider's own explanation is what makes the failure actionable.
+    expect(result.error).toContain('domain not verified')
+  })
+
+  test('a very long provider error body is TRUNCATED to 160 chars, not echoed whole', async () => {
+    // Resend can return a large HTML/JSON blob; an unbounded error string reaches the log and the UI.
+    process.env.RESEND_API_KEY = 're_live_key'
+    global.fetch = (async () =>
+      new Response('x'.repeat(500), { status: 500 })) as unknown as typeof fetch
+
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error!.length).toBeLessThanOrEqual(230)
+    expect(result.error!.length).toBeLessThan(500)
+  })
+
+  test('an error body that cannot be read still yields a usable failure, not a crash', async () => {
+    // `res.text().catch(() => '')` -- a stream error mid-read must not replace the HTTP status.
+    process.env.RESEND_API_KEY = 're_live_key'
+    global.fetch = (async () =>
+      ({
+        ok: false,
+        status: 502,
+        text: async () => {
+          throw new Error('stream closed')
+        },
+      }) as unknown as Response) as unknown as typeof fetch
+
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('502')
+  })
+
+  test('a THROWN network error is reported, not propagated', async () => {
+    process.env.RESEND_API_KEY = 're_live_key'
+    global.fetch = (async () => {
+      throw new Error('ECONNREFUSED')
+    }) as unknown as typeof fetch
+
+    const result = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toBeTruthy()
+  })
+
+  test('the key is read PER CALL, so one set after boot is honoured', async () => {
+    // This is why the module-load constant was replaced: with `const RESEND_API_KEY = ...` evaluated
+    // once at import, a key injected by a secret mount or a settings change was ignored forever.
+    delete process.env.RESEND_API_KEY
+    const before = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(before.ok).toBe(false)
+    expect(before.error).toContain('RESEND_API_KEY')
+
+    process.env.RESEND_API_KEY = 're_after_boot'
+    let authHeader = ''
+    global.fetch = (async (_url: string, init: RequestInit) => {
+      authHeader = (init.headers as Record<string, string>).Authorization
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+    const after = await sendNotification({
+      configEncrypted: enc({ type: 'email', to: 'a@b.com' }),
+      message: 'm',
+    })
+    expect(after.ok).toBe(true)
+    expect(authHeader).toBe('Bearer re_after_boot')
+  })
 })

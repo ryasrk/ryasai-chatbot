@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5164b67`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a4b3712`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5164b67`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,43%** (17.442/20.180 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 172 file · **4.098 lulus · 0 gagal** | terukur |
+| Test coverage | **86,55%** (17.468/20.183 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 172 file · **4.115 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**635 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**641 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4557,6 +4557,52 @@ masih ada**. **95,96% → 100,00% (99/99).**
 `SUPABASE` → `MSSQL` (1), `getVectorStoreBackend` fallback → `'INTERNAL'` (1), `QDRANT_CLOUD` →
 `MILVUS` (1), rethrow cleanup dihapus (1), catch `countDirectories` diganti throw (1).
 Repo **86,39% → 86,43%**; suite **4.082 → 4.098 lulus**.
+
+### 1.7cm Dua bug konfigurasi-nyata: env yang dibaca saat module load, dan jalur email yang tak pernah dikirim
+
+**Kelas bug yang berulang dan berdampak nyata.** `RESEND_API_KEY` dan `EMAIL_FROM` dibaca **saat module
+load** (`const RESEND_API_KEY = process.env.RESEND_API_KEY ?? ''`). Akibatnya:
+
+1. **Kunci yang dipasang setelah boot diabaikan selamanya.** Secret mount, config reload, perubahan
+   variabel di panel operator — semuanya tidak berpengaruh sampai restart. Untuk `EMAIL_FROM` ini
+   justru persis yang diubah operator **saat ia sedang men-debug penolakan "domain not verified"**.
+2. **Cabang "tanpa kunci" tidak bisa diuji** tanpa query-string import, yang membuat **instance modul
+   kedua yang tidak terinstrumentasi**.
+
+Ini bukan teori: test email pertama saya **gagal** karena mengubah `EMAIL_FROM` setelah import tidak
+berpengaruh — **test itu menemukan bug produk**, bukan salah tulis. Keduanya kini dibaca **per panggilan**
+(`resendApiKey()`, `resendFrom()`).
+
+**`license-client.ts` punya pola yang sama, dan itu menyembunyikan celah keamanan.** `PUBLIC_KEY_HEX`
+juga konstanta module-load. Lebih buruk: `license-client-failclosed.test.ts` **sudah menguji kedua cabang
+dengan benar** — tapi lewat `import('./license-client?badkey')`. Query-string import membuat **instance
+kedua**, sehingga file itu **menurunkan** cakupan terukur (96,09% → 75,22%) alih-alih menaikkannya, dan
+baris 38-42 **tidak pernah terlihat di laporan mana pun**. Setelah membaca kunci di **call-time**, file
+itu akhirnya terinstrumentasi: **85/113 → 126/128 (98,44%)**.
+
+**Temuan tambahan — `getVectorStoreBackend` (ronde 82) dan sekarang 2 modul 100% yang BELUM ter-gate.**
+Gate **melaporkan sendiri**: *"2 module(s) already clear 85% but are not gated yet"*. Modul yang baru saya
+dorong ke 100% **tidak akan menangkap regresi apa pun** sampai floor-nya ditambahkan. Kini
+**105 → 107 modul ter-gate** — saya menambahkan floor dari angka **merged** yang terukur, bukan dari
+angka eksekutabel (pelajaran ronde 80).
+
+**Dua kontrol yang TIDAK menggigit, dan saya buktikan mengapa.** `if (!signature) return false` dan guard
+`!publicKeyHex`: keduanya **redundan secara perilaku**.
+- Saya probe `crypto.verify` di Bun 1.3.14 dengan 6 panjang signature berbeda (1, 32, 63, 64, 65, 1000
+  byte) dan 6 bentuk input lain: dengan `KeyObject` valid ia **selalu mengembalikan boolean, tidak pernah
+  melempar**. Jadi signature kosong sudah ditolak `verify` sendiri.
+- Tanpa guard kunci, `Buffer.from(undefined)` melempar dan **catch yang sama** menangkapnya → tetap
+  fail-closed.
+
+Jadi **`catch` baris 73 tidak terjangkau dalam proses ini**, dan saya deklarasikan itu — bukan mengklaimnya
+tertutup. Karena tiga "kontrol" saya semula tidak menggigit, saya **menambahkan test penerimaan dengan
+keypair Ed25519 nyata** (signature benar-benar valid, nonce betul) — tanpa itu, **setiap test "harus
+menolak" bisa lulus karena alasan yang salah** dan tidak membuktikan guard yang ia sebut. Baru setelah
+itu K3 (nonce), K5 (kanonikalisasi JSON) dan K6 (hasil `verify` diabaikan) menggigit.
+
+**Kontrol ronde ini: 10, dengan 2 redundan terverifikasi dan 8 menggigit.** `notifications.ts` 6/6
+menggigit (guard kunci, guard penerima, pembalikan `!res.ok` → **9 merah**, truncation 160 char,
+`.catch()` pada `res.text()`, `EMAIL_FROM` diabaikan). Repo **86,43% → 86,55%**; suite **4.098 → 4.115**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

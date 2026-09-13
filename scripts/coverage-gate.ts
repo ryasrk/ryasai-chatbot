@@ -93,6 +93,8 @@ const FLOORS: Record<string, number> = {
   'src/lib/bounded-concurrency.ts': 95, // measured 100.00% (22/22)
   'src/lib/chat-layout.ts': 95, // measured 100.00% (8/8)
   'src/lib/cognee-types.ts': 100, // measured 100.00% (15/15); was mocked by every test that used it
+  'src/lib/notifications.ts': 100, // measured 100.00% (132/132); the Resend send path was never run
+  'src/lib/license-client.ts': 86, // merged 86.90%; 126/128 executable (98.44%); 2 declared non-controls
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
   'src/lib/cron.ts': 90, // measured 99.09% (109/110)

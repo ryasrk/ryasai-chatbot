@@ -28,15 +28,17 @@ const REVALIDATION_INTERVAL_MS = (Number(process.env.LICENSE_REVALIDATION_INTERV
 // ponytail: no hardcoded fallback — a missing LICENSE_SIGNING_PUBLIC_KEY must
 // fail closed (all signatures fail → lockdown), never trust a shipped default
 // key whose private half could exist somewhere.
-const PUBLIC_KEY_HEX = process.env.LICENSE_SIGNING_PUBLIC_KEY
-
+// ponytail: read at CALL time, not at module load. A module-load constant makes the
+// malformed-key branch unreachable without a query-string import (which creates a SECOND,
+// uninstrumented module instance), and it also meant a key set after boot was ignored.
 function getPublicKey(): crypto.KeyObject | null {
-  if (!PUBLIC_KEY_HEX) {
+  const publicKeyHex = process.env.LICENSE_SIGNING_PUBLIC_KEY
+  if (!publicKeyHex) {
     log.error('LICENSE_SIGNING_PUBLIC_KEY is not set — signature verification disabled (fail closed)')
     return null
   }
   try {
-    return crypto.createPublicKey({ key: Buffer.from(PUBLIC_KEY_HEX, 'hex'), format: 'der', type: 'spki' })
+    return crypto.createPublicKey({ key: Buffer.from(publicKeyHex, 'hex'), format: 'der', type: 'spki' })
   } catch {
     log.error('Failed to load LICENSE_SIGNING_PUBLIC_KEY — signature verification disabled')
     return null

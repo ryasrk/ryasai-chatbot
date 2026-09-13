@@ -117,8 +117,18 @@ async function sendTelegram(
 // the per-config encrypted blob only stores the recipient (`to`). Falls back to
 // a clear error when RESEND_API_KEY is not set (keeps scheduler working for
 // webhook/telegram even if email is unconfigured).
-const RESEND_API_KEY = process.env.RESEND_API_KEY ?? ''
-const RESEND_FROM = process.env.EMAIL_FROM ?? 'ryasai@ryasai.my.id'
+// ponytail: read the key at CALL time, not module load. A module-load constant silently ignores a
+// key set after boot (a secret mount, a config reload) AND makes the "no key" branch untestable
+// without a query-string import, which creates a second, uninstrumented module instance.
+function resendApiKey(): string {
+  return process.env.RESEND_API_KEY ?? ''
+}
+// ponytail: same call-time rule as the key above — an operator changing EMAIL_FROM in the
+// environment had no effect until a restart, and the sender is exactly what a customer changes
+// while debugging a "domain not verified" rejection.
+function resendFrom(): string {
+  return process.env.EMAIL_FROM ?? 'ryasai@ryasai.my.id'
+}
 const RESEND_URL = 'https://api.resend.com/emails'
 
 async function sendEmail(
@@ -129,7 +139,8 @@ async function sendEmail(
 ): Promise<NotificationResult> {
   const to = config.to as string | undefined
   if (!to) return { ok: false, error: 'Email recipient (to) is required.', latencyMs: Date.now() - started }
-  if (!RESEND_API_KEY) {
+  const apiKey = resendApiKey()
+  if (!apiKey) {
     return {
       ok: false,
       error: 'Email requires RESEND_API_KEY in .env. Use webhook or telegram for now.',
@@ -140,11 +151,11 @@ async function sendEmail(
   const res = await fetch(RESEND_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: RESEND_FROM,
+      from: resendFrom(),
       to: [to],
       subject: title ?? 'ryasai notification',
       text: message,

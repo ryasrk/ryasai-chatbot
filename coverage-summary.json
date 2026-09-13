@@ -1,7 +1,7 @@
 {
-  "linePct": 86.43,
-  "linesHit": 17442,
-  "linesFound": 20180,
+  "linePct": 86.55,
+  "linesHit": 17468,
+  "linesFound": 20183,
   "filesMeasured": 132,
   "failedTestFiles": [],
   "files": [
@@ -210,12 +210,6 @@
       "pct": 84.31372549019608
     },
     {
-      "file": "src/lib/notifications.ts",
-      "hit": 109,
-      "found": 129,
-      "pct": 84.49612403100775
-    },
-    {
       "file": "src/lib/document-parsers.ts",
       "hit": 149,
       "found": 176,
@@ -226,12 +220,6 @@
       "hit": 78,
       "found": 92,
       "pct": 84.78260869565217
-    },
-    {
-      "file": "src/lib/license-client.ts",
-      "hit": 123,
-      "found": 145,
-      "pct": 84.82758620689656
     },
     {
       "file": "src/lib/plugin-registry.ts",
@@ -262,6 +250,12 @@
       "hit": 235,
       "found": 272,
       "pct": 86.39705882352942
+    },
+    {
+      "file": "src/lib/license-client.ts",
+      "hit": 126,
+      "found": 145,
+      "pct": 86.89655172413792
     },
     {
       "file": "src/lib/schema-enrichment.ts",
@@ -723,6 +717,12 @@
       "file": "src/lib/mcp-sandbox.ts",
       "hit": 99,
       "found": 99,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/notifications.ts",
+      "hit": 132,
+      "found": 132,
       "pct": 100
     },
     {
