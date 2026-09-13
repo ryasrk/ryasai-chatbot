@@ -26,8 +26,20 @@ interface SendBody {
 }
 
 const MAX_TEXT_LENGTH = 100_000
-const OVERALL_DEADLINE_MS = 120_000
-const IDLE_TIMEOUT_MS = 120_000
+/**
+ * Two independent cut-offs for a streaming turn.
+ *
+ * - OVERALL_DEADLINE_MS bounds the whole turn.
+ * - IDLE_TIMEOUT_MS bounds the gap BETWEEN tokens, which is what actually matters when a
+ *   provider accepts the request and then stalls mid-answer: an overall deadline alone would
+ *   let a stalled stream hold the connection for its full duration.
+ *
+ * Both are overridable so the watchdog can be EXERCISED. Waiting out 120s in a unit test is not
+ * feasible, and the alternative — asserting only on a mocked timer — would not prove the stream
+ * is actually broken out of. Read at CALL time so a test can shrink them after import.
+ */
+const OVERALL_DEADLINE_MS = Number(process.env.CHAT_OVERALL_DEADLINE_MS ?? 120_000)
+const IDLE_TIMEOUT_MS = Number(process.env.CHAT_IDLE_TIMEOUT_MS ?? 120_000)
 const LLM_NOT_CONFIGURED_TEXT =
   'AI provider is not configured. Open Settings > AI Configuration and set the model API endpoint before using Chat.'
 const PROVIDER_ERROR_TEXT = 'Your AI provider refused the request.'
@@ -268,13 +280,38 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           }
 
           // 5. Stream tokens — with an idle watchdog + client/deadline abort.
-          //    If no token arrives within 120s, send a typed LLM_TIMEOUT error
-          //    frame and close (the partial answer is never saved as complete).
+          //    If no token arrives within 120s, the turn is cut off and the partial
+          //    answer is never saved as complete.
+          //
+          // ponytail: the watchdog used to be unable to actually STOP the loop. `for await`
+          // checks its guard only when the next value ARRIVES, and `stream.return()` does not
+          // interrupt an async generator that is suspended inside an `await` on a stalled
+          // upstream — MEASURED: a generator parked in `await sleep(400)` still resumed and
+          // yielded its next token after `return()` was called on it. So a provider that
+          // accepted the request and then stalled held the whole turn open forever: the client
+          // was told LLM_TIMEOUT and the controller was closed, but the loop never ran its
+          // post-processing, which meant `persistAssistantError` NEVER fired and a timed-out
+          // turn left no error row in the history at all.
+          //
+          // The fix races each `next()` against a promise the watchdog resolves, so the loop
+          // observes the timeout without waiting for a token that may never come. The abandoned
+          // `next()` is then left to settle on its own; `return()` is still called to give a
+          // well-behaved generator the chance to release its resources.
           let fullAnswer = ''
           let timedOut = false
+          /**
+           * Resolved by onIdleTimeout so a stalled stream cannot hold the loop. Held in a boxed
+           * object because a plain `let` assigned only inside the Promise executor narrows to
+           * `never` under control-flow analysis, which makes the later call non-callable.
+           */
+          const stall = { release: () => {} }
+          const stalled = new Promise<void>((resolve) => {
+            stall.release = resolve
+          })
           const onIdleTimeout = () => {
             timedOut = true
             streaming?.stream.return?.().catch(() => {})
+            stall.release()
             send('error', {
               code: 'LLM_TIMEOUT',
               message: LLM_TIMEOUT_TEXT,
@@ -282,13 +319,30 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             safeClose()
           }
           let idleTimer: ReturnType<typeof setTimeout> | null = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
-          for await (const token of streaming.stream) {
+          const iterator = streaming.stream[Symbol.asyncIterator]()
+          while (true) {
             if (timedOut || abortReason) break
+            // Race the next token against the watchdog. `STALLED` is a sentinel so a token that
+            // happens to be the empty string still counts as a token.
+            type Step = { done?: boolean; value?: string }
+            const STALLED = Symbol('stalled')
+            const step: Step | typeof STALLED = await Promise.race([
+              iterator.next().then((r): Step => r as Step),
+              stalled.then((): typeof STALLED => STALLED),
+            ])
+            // One guard, deliberately: `releaseStall()` is only ever called by the watchdog,
+            // which sets `timedOut` first, so a second `if (timedOut) break` here would be
+            // unreachable-by-measurement (a control that removed the STALLED branch still
+            // passed, because the timedOut branch caught it in the same iteration). Keeping one
+            // explicit check means the loop's exit is decided in exactly one place.
+            if (step === STALLED || step.done || timedOut || abortReason) break
             if (idleTimer) clearTimeout(idleTimer)
             idleTimer = setTimeout(onIdleTimeout, IDLE_TIMEOUT_MS)
+            const token = step.value ?? ''
             fullAnswer += token
             send('token', { content: token })
           }
+          stall.release()
           if (idleTimer) clearTimeout(idleTimer)
           if (abortReason === 'client') return // client disconnected — do not persist
           if (timedOut || abortReason === 'deadline') {

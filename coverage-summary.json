@@ -1,7 +1,7 @@
 {
-  "linePct": 86.09,
-  "linesHit": 17360,
-  "linesFound": 20165,
+  "linePct": 86.23,
+  "linesHit": 17401,
+  "linesFound": 20179,
   "filesMeasured": 132,
   "failedTestFiles": [],
   "files": [
@@ -276,12 +276,6 @@
       "pct": 87.03703703703704
     },
     {
-      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
-      "hit": 364,
-      "found": 418,
-      "pct": 87.08133971291866
-    },
-    {
       "file": "src/lib/prisma-tenant.ts",
       "hit": 90,
       "found": 103,
@@ -454,6 +448,12 @@
       "hit": 74,
       "found": 79,
       "pct": 93.67088607594937
+    },
+    {
+      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
+      "hit": 405,
+      "found": 432,
+      "pct": 93.75
     },
     {
       "file": "src/lib/tool-sandbox.ts",

@@ -274,7 +274,11 @@ const FLOORS: Record<string, number> = {
   // body (persistAssistantError, maybeUpdateSessionSummary). Floor is 85, not 95:
   // the MERGED figure is 87.08% (364/418) even though a per-file run reads higher,
   // and pasting a per-file number here is what the suspicious check exists to catch.
-  'src/app/api/chat/sessions/[id]/send/route.ts': 85, // measured 87.08% (364/418), merged
+  // The streaming watchdog: 26 tests existed and NONE touched it, so the branch deciding
+  // whether a stalled provider cuts the turn off was never exercised. Now covers the idle
+  // timeout, the overall deadline, the client-disconnect branch (which must persist
+  // NOTHING) and the per-token timer reset. 405/410 executable (98.78%).
+  'src/app/api/chat/sessions/[id]/send/route.ts': 93, // measured 93.75% merged
   'src/lib/tool-registry.ts': 85, // measured 91.82% (247/269)
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
   'src/lib/vector-stores.ts': 85, // measured 93.46% (343/367)

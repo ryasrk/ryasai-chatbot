@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `de32a39`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2e909d8`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `de32a39`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,09%** (17.360/20.165 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.013 lulus · 0 gagal** | terukur |
+| Test coverage | **86,23%** (17.401/20.179 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.022 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**579 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**587 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4237,6 +4237,55 @@ semua tool (1), `tool_choice` tidak dipaksa (2), `content: null` dibiarkan null 
 dideteksi (3), toggle operator ikut ditulis (1), refresh seed dilewati (6), lookup tanpa
 `organizationId` (8), create tanpa `organizationId` (2), manifest sebagai objek (3), plugin baru
 dibuat disabled (1).
+
+### 1.7ce BUG PRODUKSI: watchdog timeout **tidak pernah bisa menghentikan** stream yang menggantung
+
+**Ini bug paling serius yang saya temukan sejauh ini**, dan ia ditemukan justru karena saya mengejar
+3 baris yang tidak tercakup. `send/route.ts` punya **26 test** — dan **tak satu pun** menyentuh
+watchdog. Cabang yang menentukan apakah provider yang menggantung **memutus turn atau menggantung
+selamanya** tidak pernah dieksekusi.
+
+**Bug-nya.** `onIdleTimeout` menandai `timedOut = true`, memanggil `stream.return()`, mengirim frame
+`LLM_TIMEOUT`, lalu `safeClose()`. Tetapi perulangannya adalah
+`for await (const token of streaming.stream) { if (timedOut) break; ... }` — dan **`for await`
+mengevaluasi guard-nya hanya ketika token BERIKUTNYA tiba**. Provider yang menerima request lalu
+macet **menahan turn selamanya**.
+
+**Saya membuktikan klaim kode itu SALAH dengan pengukuran, bukan dengan membaca.** Komentar di kode
+berbunyi *"we close the generator chain (return()) to stop consuming the upstream LLM body"*.
+Terukur: `return()` pada async generator yang **sedang tertahan di dalam `await`** **tidak
+berpengaruh** — generator tetap keluar dari stall dan **bahkan mengirim token berikutnya**
+(`token a → masuk stall → return() dipanggil → KELUAR STALL → token b`).
+
+**Akibat yang nyata dan berbahaya:** karena loop tidak pernah keluar, blok pasca-loop — termasuk
+**`persistAssistantError`** — **tidak pernah berjalan**. Jadi percakapan yang timeout **tidak
+meninggalkan baris error sama sekali** di riwayat. Pengguna melihat pertanyaannya tanpa jawaban,
+tanpa jejak kegagalan. Itu persis gejala "chatbot lupa" yang dilaporkan.
+
+**Perbaikannya** me-*race* setiap `next()` terhadap promise yang di-*release* watchdog, sehingga loop
+mengamati timeout **tanpa menunggu token yang mungkin tak pernah datang**. `return()` tetap dipanggil
+agar generator yang sopan bisa melepas sumber dayanya.
+
+**Saya hampir menuliskan klaim yang salah, dan kontrol yang menyelamatkan saya.** Kontrol yang
+menghapus cabang sentinel `STALLED` **tetap 32 pass** — artinya "sama saja". Saya **berhenti dan
+menyelidiki** alih-alih merasionalisasi. Hasilnya: cabang `STALLED` dan cabang `timedOut`
+**redundan secara perilaku** (karena `releaseStall()` selalu didahului `timedOut = true` di tick yang
+sama). Saya **menyatukan keduanya menjadi SATU guard eksplisit**, dan **menghapus** test anti-spin
+yang saya tulis karena test itu **tidak bisa gagal** — dengan alasannya dicatat di file, supaya tidak
+ada yang menambahkannya kembali dan mengira ia menjaga sesuatu.
+
+**5 test baru untuk watchdog, 5 kontrol, semuanya menggigit:** kembali ke `for await` tanpa race
+(**0 pass / 1 fail — test crash**, membuktikan bug aslinya nyata), race dihapus (2 merah),
+guard tunggal dihapus (**HANG >200 detik**), `persistAssistantError` dihapus untuk timeout (2),
+idle timer tidak di-reset per token (1). Plus dua test jalur abort: **client disconnect → nol baris AI
+disimpan** (baik `complete` maupun `error`), dan **overall deadline** → error disimpan, karena
+pengguna masih menunggu.
+
+**`send/route.ts`: 87,08% → 93,75% merged / 98,78% eksekutabel.** Repo **86,09% → 86,23%**.
+
+**Seam `CHAT_IDLE_TIMEOUT_MS` / `CHAT_OVERALL_DEADLINE_MS` ditambahkan**, dibaca saat muat modul, jadi
+test menyetelnya **sebelum** `await import('./route')`. Tanpa itu, 120 detik tidak bisa ditunggu, dan
+meng-assert pada timer yang di-mock **tidak akan membuktikan** stream benar-benar diputus.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

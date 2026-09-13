@@ -349,7 +349,13 @@ mock.module('@/lib/llm-budget', () => ({
 
 // ---------------------------------------------------------------------------
 // Module under test — imported AFTER every mock.module() call.
+//
+// The watchdog timers are read at MODULE LOAD, so they must be shrunk HERE, before the import
+// below. The production values are 120s each; a unit test cannot wait them out, and a test that
+// only asserted on a mocked timer would never prove the stalled stream is actually broken out of.
 // ---------------------------------------------------------------------------
+process.env.CHAT_IDLE_TIMEOUT_MS = '60'
+process.env.CHAT_OVERALL_DEADLINE_MS = '150'
 const { POST } = await import('./route')
 
 beforeEach(() => {
@@ -534,6 +540,184 @@ async function drain(res: Response): Promise<string> {
   }
   return out
 }
+
+describe('the streaming watchdog — a stalled provider must not hold the turn open', () => {
+  /** A stream that yields `tokens` then never resolves again, mimicking a stalled provider. */
+  function stallingStream(tokens: string[], stallMs: number) {
+    // Returned as an INVOKED generator (not the factory) so it matches the stream type directly.
+    return (async function* () {
+      for (const t of tokens) yield t
+      // Never resolves within the test's patience — this is the stall the watchdog exists for.
+      await new Promise((r) => setTimeout(r, stallMs))
+    })()
+  }
+
+  function streamResult(stream: AsyncGenerator<string>) {
+    return async () => ({ stream, toolRuns: [], citations: [], chartData: null, integrationId: null })
+  }
+
+  test('a stall BETWEEN tokens sends a typed LLM_TIMEOUT frame and closes', async () => {
+    // THE regression this file was missing entirely: 25 tests existed and none touched the
+    // watchdog, so the branch that decides whether a hung provider ends the turn or hangs the
+    // connection forever was never exercised.
+    streamingImpl = streamResult(stallingStream(['partial answer'], 5_000))
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+
+    expect(body).toContain('event: error')
+    expect(body).toContain('LLM_TIMEOUT')
+    // The tokens that DID arrive are still streamed to the client.
+    expect(body).toContain('partial answer')
+  })
+
+  test('a timed-out turn is persisted as an ERROR, never as a complete answer', async () => {
+    // A partial answer saved with status 'complete' would appear in history as a finished
+    // reply, and the user would never know the model was cut off mid-sentence.
+    streamingImpl = streamResult(stallingStream(['half a thou'], 5_000))
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    await drain(res)
+
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    expect(aiCreate?.data?.status).toBe('error')
+    expect(calls.aiMessageCreates).toContain('s1')
+  })
+
+  test('the timeout error frame is sent EXACTLY ONCE', async () => {
+    // Two paths can report a timeout: the idle watchdog (which closes immediately) and the
+    // post-loop branch. If both fired, the client would receive a duplicate error frame after
+    // the stream was already closed, which surfaces as a transport-level error in the browser.
+    streamingImpl = streamResult(stallingStream(['x'], 5_000))
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+    const errorFrames = body.split('event: error').length - 1
+    expect(errorFrames).toBe(1)
+  })
+
+  test('the loop EXITS on the watchdog, without waiting for a token that never comes', async () => {
+    // The precise defect, asserted directly. Previously `for await` evaluated its timeout guard
+    // only when the NEXT token arrived, so a stream parked in an `await` held the turn open and
+    // the post-loop block (which persists the error) never ran. This test measures the WALL TIME
+    // of the route call: with the race in place it must settle close to the 60ms idle deadline,
+    // not the 5s stall. A version that merely sends the error frame but keeps looping would fail
+    // here, which is exactly what the earlier controls could not distinguish.
+    const stallMs = 3_000
+    streamingImpl = streamResult(stallingStream(['one token'], stallMs))
+    const started = Date.now()
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+    const elapsed = Date.now() - started
+
+    expect(body).toContain('LLM_TIMEOUT')
+    // Well under the stall, and comfortably above the 60ms idle deadline.
+    expect(elapsed).toBeLessThan(stallMs / 2)
+  })
+
+  test('the timed-out turn IS persisted now that the loop can exit', async () => {
+    // The downstream consequence of the same defect: because the loop never exited, this
+    // persistence call was unreachable and a timed-out turn left NO error row at all -- the user
+    // saw their question in the history with no trace of the failure.
+    streamingImpl = streamResult(stallingStream(['partial'], 3_000))
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    await drain(res)
+
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    expect(aiCreate?.data?.status).toBe('error')
+    expect(aiCreate?.data?.text).toContain('timed out')
+  })
+
+  // NOTE: a test asserting the loop does not SPIN after the watchdog fires was written and then
+  // REMOVED, because it could not fail. Neither the SSE body nor a `next()` call counter could
+  // observe the difference: the controller is already closed by then, and `releaseStall()` is
+  // followed by `timedOut` in the same tick, so the loop exits after at most one extra iteration.
+  // The sentinel branch and the timedOut branch are behaviourally redundant, which is why the
+  // production code now carries a single combined guard instead of two.
+
+  test('a client DISCONNECT aborts the turn and persists NOTHING', async () => {
+    // The `client` branch is the one that must NOT write an error row: the user navigated away,
+    // so surfacing a failure for a turn they abandoned would be noise, and the partial answer
+    // must not be stored as complete either. This is decided by `req.signal.aborted`.
+    const controller = new AbortController()
+    streamingImpl = streamResult(
+      (async function* () {
+        yield 'partial '
+        // Abort mid-stream, then stall so the loop is parked when the abort lands.
+        controller.abort()
+        await new Promise((r) => setTimeout(r, 200))
+        yield 'never'
+      })(),
+    )
+    const req = new Request('http://localhost/api/chat/sessions/s1/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'hello there' }),
+      signal: controller.signal,
+    })
+    const res = await POST(req as never, makeCtx())
+    await drain(res)
+
+    // No AI row at all — neither 'complete' nor 'error'.
+    expect(calls.chatMessageCreate.filter((c) => c?.data?.sender === 'ai')).toHaveLength(0)
+  })
+
+  test('the OVERALL DEADLINE aborts a still-producing stream and persists an error', async () => {
+    // Distinct from the idle watchdog: this fires on total elapsed time even while tokens are
+    // still flowing, and it takes the `deadline` branch — which DOES persist, because the user
+    // is still waiting and needs to see that the turn was cut off.
+    streamingImpl = streamResult(
+      (async function* () {
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 10))
+          yield `t${i} `
+        }
+      })(),
+    )
+    const started = Date.now()
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    await drain(res)
+    const elapsed = Date.now() - started
+
+    // The overall deadline is 150ms here; the stream would otherwise run ~400ms.
+    expect(elapsed).toBeLessThan(350)
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    expect(aiCreate?.data?.status).toBe('error')
+  })
+
+  test('a stream that finishes BEFORE the idle deadline is NOT reported as a timeout', async () => {
+    // The control worth having in the same file: the watchdog must not fire on a healthy stream.
+    streamingImpl = streamResult(
+      (async function* () {
+        yield 'all '
+        yield 'good'
+      })(),
+    )
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+
+    expect(body).not.toContain('LLM_TIMEOUT')
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    expect(aiCreate?.data?.status).toBe('complete')
+    expect(aiCreate?.data?.text).toBe('all good')
+  })
+
+  test('the idle timer is RESET by each token, so a slow-but-alive stream survives', async () => {
+    // Without the per-token reset, a legitimately long answer would be killed at a fixed point
+    // regardless of progress. Three tokens each arriving well inside the idle window must all
+    // get through even though their TOTAL time exceeds it.
+    streamingImpl = streamResult(
+      (async function* () {
+        for (const t of ['a', 'b', 'c'] as const) {
+          await new Promise((r) => setTimeout(r, 25))
+          yield t
+        }
+      })(),
+    )
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+
+    expect(body).not.toContain('LLM_TIMEOUT')
+    expect(calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')?.data?.text).toBe('abc')
+  })
+})
 
 describe('persistAssistantError — the failed turn is recorded', () => {
   beforeEach(() => {
