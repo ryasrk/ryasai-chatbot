@@ -1,11 +1,11 @@
 {
-  "linePct": 87.35,
-  "linesHit": 19006,
-  "linesFound": 21759,
-  "fnPct": 94.06,
-  "fnsHit": 1758,
-  "fnsFound": 1869,
-  "filesMeasured": 149,
+  "linePct": 87.41,
+  "linesHit": 19122,
+  "linesFound": 21875,
+  "fnPct": 94.02,
+  "fnsHit": 1761,
+  "fnsFound": 1873,
+  "filesMeasured": 150,
   "failedTestFiles": [],
   "files": [
     {
@@ -970,6 +970,15 @@
       "fHit": 1,
       "fFound": 1,
       "fPct": 100
+    },
+    {
+      "file": "src/app/api/integrations/[id]/test/route.ts",
+      "hit": 116,
+      "found": 116,
+      "pct": 100,
+      "fHit": 3,
+      "fFound": 4,
+      "fPct": 75
     },
     {
       "file": "src/app/api/llm-config/route.ts",

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `59c670c`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3e7fdd5`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `59c670c`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,35%** (19.006/21.759 baris, 149 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,06%** (1758/1869 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 191 file · **4.606 lulus · 0 gagal** | terukur |
+| Test coverage | **87,41%** (19.122/21.875 baris, 150 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,02%** (1761/1873 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 192 file · **4.642 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**910 kontrol + 7 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**931 kontrol + 8 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5579,6 +5579,41 @@ hits turun di bawah 81**, jadi regresi sejati tetap tertangkap. Tiga modul sekar
 **Progres backlog: 17 dari 66 route orphan ditutup.** Repo **87,41% → 87,35%** — **TURUN, dan sebabnya
 dinyatakan:** file terinstrumen naik **148 → 149**, dan `doc-versioning.ts` kini dihitung dengan
 **penyebut yang lebih jujur.** Suite **4.586 → 4.606** (190 → **191 file**); gate **148 → 149 modul**.
+
+### 1.7dl `/api/integrations/[id]/test` — tombol "Test Connection": 100,00% (116/116)
+
+**KEGAGALAN KONEKSI MENJAWAB HTTP 200 DENGAN `ok: false`**, dan itu **disengaja serta berlawanan dengan intuisi:**
+kontrak UI memperlakukan **setiap non-2xx sebagai galat TRANSPORT** dan menampilkan toast generik, sehingga
+4xx/5xx di sini akan **membuang diagnostik (SSL / auth / DNS / timeout) yang justru menjadi alasan seluruh rute
+ini ada.** Refactor "kembalikan 502 saat gagal" yang berniat baik akan **diam-diam meregresikan setiap kegagalan
+menjadi 'test failed'.** **K4 → 3 merah.**
+
+**KONEKTOR SELALU DI-DROP, BAHKAN SAAT HANDLER MELEMPAR.** Id sekali-pakai ada **supaya pool basi tidak pernah
+dipakai ulang**; membocorkan satu pool per klik adalah **kebocoran koneksi tanpa batas.** Diuji dari **jalur
+yang melempar**, bukan hanya jalur bahagia. **K2 → 1 merah, K3 → 3 merah.**
+
+**SELECT 1 yang SEHAT dengan REFLEKSI yang GAGAL TETAP LULUS.** `testConnection` adalah otoritas atas
+konektivitas; penyegaran skema hanyalah bonus dan dibungkus supaya galat refleksi **tidak bisa mengubah koneksi
+yang bekerja menjadi kegagalan yang dilaporkan.** **K16 → 3 merah.**
+
+**KEGAGALAN UPDATE YANG SENDIRI GAGAL TIDAK MENGGANTIKAN DIAGNOSTIK** — update baris dan audit kegagalan
+sama-sama dijaga `.catch(...)`: **jika DB-lah yang rusak, pengguna tetap butuh alasannya.** **K7 → 1 merah.**
+
+**K12 → 1 merah** dan itu penting: `deleteMany` cache skema ada **di dalam `if (tables.length > 0)`.** Tanpa
+penjaga itu, konektor yang mengembalikan snapshot kosong akan **menghapus cache yang terisi** dan sumber
+**diam-diam kehilangan skemanya.**
+
+**21 kontrol, dan KEDUA PULUH SATU MENGGIGIT.**
+
+## KOREKSI DIRI: BENTUK MOCK YANG SALAH, DAN `tsc` YANG MENANGKAPNYA
+
+Mock `describeConnectionError` pertama saya mengembalikan **string**, padahal **tanda tangan aslinya adalah
+`(e, providerId?) => { reason, message }`** — **diverifikasi langsung ke modulnya setelah `tsc` menolak
+asersinya.** Ini pengingat konkret bahwa **bentuk mock adalah KLAIM tentang modul nyata dan harus diperiksa,
+bukan diasumsikan** — kelas kesalahan yang sama dengan mock `encryptConfig` di ronde 105.
+
+**Progres backlog: 18 dari 66 route orphan ditutup.** Repo **87,35% → 87,41%**; suite **4.606 → 4.642**
+(191 → **192 file**); gate **149 → 150 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
