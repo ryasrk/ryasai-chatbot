@@ -136,12 +136,11 @@ async function _runNonStreamingChatCompletion(args: {
 
   const { decision, resolvedIntegrationId } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
 
-  let effectiveDecision = chooseAvailableDecision(decision, {
-    hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0,
-  })
-  if (effectiveDecision === 'SQL' && !promptSettings.tools.sql) effectiveDecision = 'CHAT'
-  if (effectiveDecision === 'RAG' && !promptSettings.tools.rag) effectiveDecision = 'CHAT'
-  if (effectiveDecision === 'REST' && !promptSettings.tools.restApi) effectiveDecision = 'CHAT'
+  const effectiveDecision = applyToolGating(
+    decision,
+    { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
+    promptSettings.tools,
+  )
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
@@ -215,12 +214,11 @@ async function _runStreamingChatCompletion(args: {
 
   const { decision, resolvedIntegrationId } = await resolveRouting(args, effectiveQuestion, dbData, memoryContext)
 
-  let effectiveDecision = chooseAvailableDecision(decision, {
-    hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0,
-  })
-  if (effectiveDecision === 'SQL' && !promptSettings.tools.sql) effectiveDecision = 'CHAT'
-  if (effectiveDecision === 'RAG' && !promptSettings.tools.rag) effectiveDecision = 'CHAT'
-  if (effectiveDecision === 'REST' && !promptSettings.tools.restApi) effectiveDecision = 'CHAT'
+  const effectiveDecision = applyToolGating(
+    decision,
+    { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
+    promptSettings.tools,
+  )
 
   // DEBUG: trace routing decisions
 
@@ -306,9 +304,32 @@ type DbData = Awaited<ReturnType<typeof loadDbData>>
  * The description comes from the uploader or the LLM first-scan (source-init);
  * it is what lets the router tell "annual leave SOP" from "Q3 invoice export".
  */
-function formatDocForIntent(d: { name: string; category: string | null; description: string | null }): string {
+export function formatDocForIntent(d: { name: string; category: string | null; description: string | null }): string {
   const label = d.category ? `${d.name} [${d.category}]` : d.name
   return d.description ? `${label} — ${d.description}` : label
+}
+
+/**
+ * Turn the router's preference into a decision this org can actually execute, and
+ * fall back to CHAT when the tool it picked is disabled in prompt settings.
+ *
+ * This existed TWICE, verbatim, in the non-streaming and streaming paths. Two
+ * copies of one policy means a fix applied to one path silently leaves the other
+ * wrong — and the two paths are chosen by a flag the user controls, so the bug
+ * would only show up for some users. Kept as one function so they cannot diverge.
+ */
+function applyToolGating(
+  decision: RouteDecision,
+  availability: { hasIntegrations: boolean; hasDocuments: boolean; hasRestApis: boolean },
+  tools: { sql: boolean; rag: boolean; restApi: boolean },
+): RouteDecision {
+  let effective = chooseAvailableDecision(decision, availability)
+  // A tool the operator switched OFF must not be reached by the router's
+  // preference: picking SQL for an org with no SQL tool would fail the request.
+  if (effective === 'SQL' && !tools.sql) effective = 'CHAT'
+  if (effective === 'RAG' && !tools.rag) effective = 'CHAT'
+  if (effective === 'REST' && !tools.restApi) effective = 'CHAT'
+  return effective
 }
 
 async function resolveRouting(

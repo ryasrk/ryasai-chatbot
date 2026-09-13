@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `01aa0fb`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff9c2b6`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `01aa0fb`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **81,71%** (16.080/19.679 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.397 lulus · 0 gagal** | terukur |
+| Test coverage | **81,77%** (16.101/19.690 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.414 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -86,7 +86,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/intent-pipeline.ts` | 73,7% merged | **100,00% kode eksekutabel** (337/337) — nol pekerjaan | 0 |
 | `src/lib/cognee-knowledge-graph.ts` | 94,76% → 77,62% merged (**turun**, §1.7z) | 95,47% → **100,00%** kode eksekutabel (267/267) | 38 |
 | `src/lib/connectors.ts` | 58,78% → **79,73%** merged | 75,00% → **100,00%** kode eksekutabel (118/118) | 21 |
-| **Total repo** | **62,44%** | **81,71%** | — |
+| `src/lib/tool-router.ts` | 66,4% → **70,41%** merged (selisih **29,6 poin** terbesar) | 94,94% → **100,00%** kode eksekutabel (238/238) | 58 |
+| **Total repo** | **62,44%** | **81,77%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -288,8 +289,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Nilai sample `null` tidak disaring | `connectors.ts:210` | 5 |
 | Truncate 40 char sample dihapus | `connectors.ts:213` | 4 |
 | `rowCount` `?` diganti `0` | `connectors.ts:198` | 5 |
+| `sort` skor ambiguitas dihapus | `tool-router.ts:361` | 1 |
+| Gating tool SQL dihapus | `tool-router.ts:47` | 1 |
+| Hand-off agentic: `sessionId` dihapus | `tool-router.ts:70` | 1 |
+| Teks klarifikasi dikembalikan kosong | `tool-router.ts:128` | 1 |
+| Fallback `pickBestIntegration` dilewati | `tool-router.ts:373` | 1 |
+| `applyToolGating` mengembalikan decision mentah | `tool-router.ts:44` | 1 |
 
-**191 kontrol + 3 kontrol gate, semuanya sah.**
+**197 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1699,6 +1706,57 @@ dirender PALING AWAL** (satu kalimat per tabel adalah token paling bernilai di p
 "tidak diketahui"); sample string **dipotong 40 char** agar satu sel tak mendominasi prompt.
 
 **Kontrol negatif: 8, semuanya menggigit** (4-5 test gagal per kontrol).
+
+### 1.7ai `tool-router.ts`: 94,94% → 100,00% eksekutabel (238/238) + mencabut duplikasi routing
+
+**Merged 66,4% → 70,41%, selisih terhadap kode eksekutabel 29,6 poin — terbesar sejauh
+ini.** Merged-nya sendiri **naik** meski `LF` naik 229 → 338.
+
+**Duplicate pertama yang saya cabut (refactor, bukan test):** blok 8 baris **identik
+verbatim** muncul **2×** — di jalur non-streaming dan streaming. Itu dua salinan dari
+**satu kebijakan routing** (pilih tool yang tersedia, dan jatuh ke CHAT bila tool itu
+dimatikan operator). Dua salinan berarti perbaikan yang masuk ke satu jalur **diam-diam
+meninggalkan jalur lain salah**, dan jalur mana yang dipakai ditentukan flag yang
+dikendalikan pengguna — jadi bug-nya hanya muncul untuk sebagian pengguna. Kini satu
+fungsi `applyToolGating`; komentarnya menyebut alasan ini.
+
+**Tiga jalur yang belum pernah dieksekusi, semuanya di jalur NON-streaming:**
+cabang **agentic** (68-73), **`formatDocForIntent`** (307-308), dan **klarifikasi**
+(128). Klarifikasi sudah teruji di jalur streaming — **implementasi kembar, satu
+teruji** (kelas 1.7aa). Untuk membuatnya terjangkau saya harus menambahkan mock
+`@/lib/intent-pipeline` yang **memang tidak ada** di file non-streaming, sehingga
+`analyzeIntent` asli berjalan dan `needsClarification` tak bisa dikendalikan dari test.
+`formatDocForIntent` kini diekspor dan diuji: kategori/deskripsi yang hilang **tidak
+boleh** meninggalkan " — " menggantung, dan deskripsi itulah yang membedakan dua dokumen
+bernama sama.
+
+**Dua bug mock nyata yang saya temukan pada diri sendiri:**
+1. Mock `@/lib/smart-router` hanya mengekspor `smartRoute`, padahal importer
+   meng-destructure **empat** nama — `pickBestIntegration`, `pickBestIntegrationByKeywords`,
+   `tokenize` menjadi `undefined`, jalur last-resort **melempar**, dan setiap test yang
+   mencapainya diam-diam jatuh ke plain chat. **Mock lama "lulus" sementara jalur itu
+   rusak.**
+2. Setelah itu saya **lupa mem-*mock* `pickBestIntegrationWithAmbiguity`**, sehingga
+   **`smart-router.ts` ASLI berjalan**, membaca `integ.schemas` dari fixture saya dan
+   melempar `TypeError: undefined is not an object`. **Mock parsial mengeksekusi kode
+   produksi.** Mock kini menutup **seluruh** permukaan ekspor.
+
+**Satu test saya yang "lulus" karena fixture hilang:** saat menulis ulang test ambiguitas
+saya **menghapus** baris `mockIntegrationFindFirst.mockImplementation(...)`, sehingga
+`findFirst` mengembalikan `null` (default), `runSqlBranch` menyimpulkan barisnya tidak
+ada, dan **bertanya kepada pengguna — yang juga merupakan jawaban yang terlihat sah**,
+jadi assertion-nya tetap hijau sementara yang terukur jalur lain. Ditemukan dengan
+instrumentasi `Bun.write` ke `/tmp` (console.log ditekan oleh runner bun). Setelah fixture
+dipulihkan, **kontrol `sort` skor yang tadinya TIDAK menggigit kini menggigit**.
+
+**Perilaku yang saya UKUR dan benarkan:** bila `resolvedIntegrationId` sudah dipilih
+`resolveRouting` tetapi barisnya **tidak terbaca** (terhapus antara count dan lookup),
+router **bertanya, tidak menebak** — itulah cara pertanyaan Sales dijawab angka HR secara
+diam-diam. Ia juga mencoba keyword dulu lalu embedding, dan hanya bertanya bila keduanya
+gagal.
+
+**Kontrol negatif: 6, semuanya menggigit** (tiga di antaranya tadinya tidak, sampai
+fixture dan permukaan mock diperbaiki).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

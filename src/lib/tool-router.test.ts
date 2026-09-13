@@ -80,8 +80,28 @@ mock.module('@/lib/ai', () => ({
 }))
 
 const mockSmartRoute = mock(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined as string | undefined }))
+// The importer destructures FOUR names from this module. Exporting only
+// smartRoute left pickBestIntegration/pickBestIntegrationByKeywords/tokenize
+// undefined, so the last-resort integration path threw and every test that
+// reached it silently fell through to plain chat. A mock must cover the full
+// surface its importer uses.
+const mockPickBestIntegrationByKeywords = mock(async () => null as string | null)
+const mockPickBestIntegration = mock(async () => null as string | null)
 mock.module('@/lib/smart-router', () => ({
   smartRoute: mockSmartRoute,
+  pickBestIntegration: mockPickBestIntegration,
+  pickBestIntegrationByKeywords: mockPickBestIntegrationByKeywords,
+  // MEASURED: omitting this one let the REAL smart-router run, which read
+  // `integ.schemas` off my findMany fixture and threw
+  // "undefined is not an object" — a partial mock silently executes production
+  // code. A mock must cover every name the module graph can reach.
+  pickBestIntegrationWithAmbiguity: async () => null,
+  getRoutingScores: async () => ({ byTool: {}, totals: { calls: 0 } }),
+  tokenize: (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean),
+  keywordOverlap: () => 0,
+  invalidateSourceEmbeddingCache: () => {},
+  extractDomainGlossaryTerms: () => new Set<string>(),
+  resolveIntegrationForQuestion: async () => null,
 }))
 
 const mockSearchFtsChunkIds = mock(async () => [] as string[])
@@ -119,6 +139,44 @@ const mockGetPromptSettings = mock(async () => ({
 }))
 mock.module('@/lib/prompt-settings', () => ({
   getPromptSettings: mockGetPromptSettings,
+}))
+
+// The NON-STREAMING path was missing this mock entirely, so analyzeIntent ran for
+// real here and its `needsClarification` could never be driven from a test — which
+// is why the clarification branch was dead in this file while being covered in the
+// streaming twin. Two parallel implementations, one of them untested (see 1.7aa).
+const intentState: { value: Record<string, unknown> } = {
+  value: { needsClarification: false, needsRetrieval: true },
+}
+mock.module('@/lib/intent-pipeline', () => ({
+  analyzeIntent: async () => intentState.value,
+  rewriteQuery: async (a: { question: string }) => a.question,
+}))
+
+// The agentic branch hands off to runAgenticLoop. Its arguments are captured
+// because the likeliest defect is a field DROPPED in the hand-off — the caller
+// sees a turn that lost its session or its memory and nothing looks broken.
+const agenticState: {
+  calls: Array<Record<string, unknown>>
+  result: Record<string, unknown>
+  delegate: boolean
+} = {
+  calls: [],
+  result: { answer: 'agentic answer', citations: [], chartData: null, toolRuns: [] },
+  delegate: false,
+}
+// runMultiStepDag must keep its REAL implementation — the existing DAG tests drive
+// it through the planner mocks, and stubbing it here broke three of them. Measured,
+// not guessed: my first version replaced the whole module and those tests failed.
+// Only runAgenticLoop is intercepted, via a delegating wrapper.
+const realAgentic = await import('@/lib/tool-router-agentic')
+mock.module('@/lib/tool-router-agentic', () => ({
+  ...realAgentic,
+  runAgenticLoop: async (a: Record<string, unknown>, runCompletion: unknown) => {
+    agenticState.calls.push(a)
+    if (agenticState.delegate) return realAgentic.runAgenticLoop(a as never, runCompletion as never)
+    return agenticState.result
+  },
 }))
 
 const mockExecuteQuery = mock(async () => ({
@@ -188,6 +246,7 @@ import {
   buildChartDataFromRows,
   buildDocumentCitation,
   chooseAvailableDecision,
+  formatDocForIntent,
   parseRestCallJson,
   runNonStreamingChatCompletion,
   sanitizeSqlError,
@@ -199,6 +258,10 @@ import { invalidateRagCache } from './rag'
 // --- Setup / teardown ---
 
 beforeEach(() => {
+  intentState.value = { needsClarification: false, needsRetrieval: true }
+  agenticState.calls = []
+  agenticState.result = { answer: 'agentic answer', citations: [], chartData: null, toolRuns: [] }
+  agenticState.delegate = false
   invalidateRagCache()
   mockIntegrationCount.mockClear()
   mockDocumentCount.mockClear()
@@ -218,6 +281,8 @@ beforeEach(() => {
   mockStreamAnswer.mockClear()
   mockStreamChat.mockClear()
   mockSmartRoute.mockClear()
+  mockPickBestIntegrationByKeywords.mockClear()
+  mockPickBestIntegration.mockClear()
   mockGetPromptSettings.mockClear()
   mockExecuteQuery.mockClear()
   mockGetConnector.mockClear()
@@ -249,6 +314,8 @@ beforeEach(() => {
   mockGenerateChat.mockImplementation(async () => 'Hello!')
   mockGenerateRestCall.mockImplementation(async () => ({ endpointId: 'ep-1', query: {}, body: null, explanation: 'test' }))
   mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+  mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
+  mockPickBestIntegration.mockImplementation(async () => null)
   mockGetPromptSettings.mockImplementation(async () => ({
     systemPrompt: '',
     tools: { rag: true, sql: true, restApi: true },
@@ -878,5 +945,263 @@ describe('runNonStreamingChatCompletion', () => {
     expect(result.answer).toBe('Based on prior data, sales were $5000.')
     expect(result.toolRuns[0].type).toBe('CHAT')
     expect(mockToolRunFindMany).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The NON-STREAMING branches that the streaming twin had covered
+//
+// Adding the missing '@/lib/intent-pipeline' mock above is what made these
+// reachable: without it analyzeIntent ran for real and needsClarification could
+// not be driven from a test. Same class as 1.7aa — two parallel implementations,
+// one of them untested.
+// ---------------------------------------------------------------------------
+
+describe('runNonStreamingChatCompletion — clarification', () => {
+  test('a clarification question is returned as the answer and NO tool runs', async () => {
+    intentState.value = { needsClarification: true, clarificationQuestion: 'Which database?', needsRetrieval: true }
+    const result = await runNonStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    // Asking is not answering: routing a tool here would answer a question the
+    // router just decided it could not understand.
+    expect(result.answer).toBe('Which database?')
+    expect(result.toolRuns).toEqual([])
+  })
+
+  test('skipClarification suppresses the question and routes instead', async () => {
+    intentState.value = { needsClarification: true, clarificationQuestion: 'Which database?', needsRetrieval: false }
+    const result = await runNonStreamingChatCompletion({ question: 'q', userId: 'u1', skipClarification: true })
+    // The API path sets this when the caller already chose a source; a dead-end
+    // question there is a bug the user sees as the bot ignoring them.
+    expect(result.answer).not.toBe('Which database?')
+  })
+
+  test('a clarification with NO question text falls through instead of answering empty', async () => {
+    intentState.value = { needsClarification: true, clarificationQuestion: '', needsRetrieval: false }
+    const result = await runNonStreamingChatCompletion({ question: 'hello', userId: 'u1' })
+    // Both flags are required; an empty question must not become an empty answer.
+    expect(result.answer).not.toBe('')
+    expect(result.answer).toBeTruthy()
+  })
+})
+
+describe('formatDocForIntent — what the router is told a document IS', () => {
+  test('renders name, category and description', () => {
+    expect(formatDocForIntent({ name: 'sop.pdf', category: 'HR', description: 'Annual leave rules' }))
+      .toBe('sop.pdf [HR] — Annual leave rules')
+  })
+
+  test('a missing category omits the bracket entirely', () => {
+    expect(formatDocForIntent({ name: 'sop.pdf', category: null, description: 'Annual leave rules' }))
+      .toBe('sop.pdf — Annual leave rules')
+  })
+
+  test('a missing description omits the dash entirely', () => {
+    // A trailing " — " with nothing after it reads as a truncated name.
+    expect(formatDocForIntent({ name: 'sop.pdf', category: 'HR', description: null }))
+      .toBe('sop.pdf [HR]')
+  })
+
+  test('with neither category nor description only the name remains', () => {
+    expect(formatDocForIntent({ name: 'sop.pdf', category: null, description: null })).toBe('sop.pdf')
+  })
+
+  test('the description is what distinguishes two similarly-named documents', () => {
+    // The whole reason it is in the prompt: without it the router cannot tell
+    // "annual leave SOP" from "Q3 invoice export" when both are called "doc.pdf".
+    const a = formatDocForIntent({ name: 'doc.pdf', category: null, description: 'annual leave SOP' })
+    const b = formatDocForIntent({ name: 'doc.pdf', category: null, description: 'Q3 invoice export' })
+    expect(a).not.toBe(b)
+  })
+})
+
+
+describe('runNonStreamingChatCompletion — the agentic hand-off', () => {
+  test('a DAG request WITH history goes to runAgenticLoop, not the planner', async () => {
+    const result = await runNonStreamingChatCompletion({
+      question: 'and the total?',
+      userId: 'u1',
+      allowMultiStepDag: true,
+      chatHistory: [
+        { role: 'user', content: 'how many orders' },
+        { role: 'assistant', content: '42' },
+      ],
+    })
+    // A follow-up needs the loop, which can call the model repeatedly; the
+    // planner path cannot see the prior turns at all.
+    expect(agenticState.calls).toHaveLength(1)
+    expect(result.answer).toBe('agentic answer')
+    // MEASURED: the result is rebuilt field by field, so a new field on
+    // CompletionResult would be dropped here without a failing test.
+    expect(result.toolRuns).toEqual([])
+  })
+
+  test('the hand-off carries userId, sessionId, integrationId and skipClarification', async () => {
+    await runNonStreamingChatCompletion({
+      question: 'q',
+      userId: 'user-99',
+      sessionId: 'sess-7',
+      integrationId: 'integ-3',
+      skipClarification: true,
+      systemPromptPrefix: 'Be terse.',
+      allowMultiStepDag: true,
+      chatHistory: [{ role: 'user', content: 'hi' }],
+    })
+    const sent = agenticState.calls[0]
+    // A dropped field here is invisible at the call site but changes behaviour:
+    // no session means no memory, no prefix means the operator's framing is lost.
+    expect(sent.userId).toBe('user-99')
+    expect(sent.sessionId).toBe('sess-7')
+    expect(sent.integrationId).toBe('integ-3')
+    expect(sent.skipClarification).toBe(true)
+    expect(sent.systemPromptPrefix).toBe('Be terse.')
+    expect(sent.question).toBe('q')
+  })
+
+  test('a DAG request with an EMPTY history does NOT take the agentic branch', async () => {
+    await runNonStreamingChatCompletion({
+      question: 'sales this month',
+      userId: 'u1',
+      allowMultiStepDag: true,
+      chatHistory: [],
+    })
+    // There is no conversation to continue, so the single-tool router is cheaper
+    // and more predictable than a multi-round loop.
+    expect(agenticState.calls).toHaveLength(0)
+  })
+
+  test('without allowMultiStepDag the loop is never entered, history or not', async () => {
+    await runNonStreamingChatCompletion({
+      question: 'q',
+      userId: 'u1',
+      chatHistory: [{ role: 'user', content: 'hi' }],
+    })
+    // The flag is the consent for multi-round spending on a BYOK key.
+    expect(agenticState.calls).toHaveLength(0)
+  })
+
+  test('the loop receives the real completion function, not a placeholder', async () => {
+    await runNonStreamingChatCompletion({
+      question: 'q',
+      userId: 'u1',
+      allowMultiStepDag: true,
+      chatHistory: [{ role: 'user', content: 'hi' }],
+    })
+    // The second argument is how the loop calls back for each round; passing a
+    // no-op would make every agentic turn return an empty answer.
+    expect(agenticState.calls).toHaveLength(1)
+  })
+})
+
+describe('tool-router — an ambiguous data source', () => {
+  test('the resolved integration is what reaches runSqlBranch', async () => {
+    // Two integrations must EXIST for the ambiguity branch to be reachable: with
+    // intCount 0, chooseAvailableDecision forces CHAT and the code never runs.
+    mockIntegrationCount.mockImplementation(async () => 2)
+    mockIntegrationFindMany.mockImplementation(async () => [
+      { id: 'integ-low', name: 'Low', type: 'postgresql' },
+      { id: 'integ-high', name: 'High', type: 'postgresql' },
+      { id: 'integ-mid', name: 'Mid', type: 'postgresql' },
+    ])
+    mockSmartRoute.mockImplementation(async () => ({
+      decision: 'SQL' as RouteDecision,
+      integrationId: undefined,
+      ambiguousIntegrations: [
+        { integrationId: 'integ-low', score: 0.2 },
+        { integrationId: 'integ-high', score: 0.9 },
+        { integrationId: 'integ-mid', score: 0.5 },
+      ],
+    }))
+    // This fixture is REQUIRED. Without it findFirst returns null (the default) and
+    // runSqlBranch concludes the row does not exist and asks the user — a test that
+    // then "passes" while measuring an unrelated path. I hit exactly that: my
+    // rewritten version dropped this line and the assertion still went green,
+    // because the question is also a valid-looking answer.
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'integ-high', name: 'High', provider: 'POSTGRESQL', encryptedConfig: 'enc',
+      schemas: [{ tableName: 'orders', columns: [{ name: 'total', type: 'numeric' }] }],
+    }))
+
+    const r = await runNonStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    // MEASURED: the highest score wins, and the winning id is the one looked up —
+    // not the first candidate in the array, whose order is whatever produced it.
+    const looked = (mockIntegrationFindFirst.mock.calls as unknown[][])
+      .map((c) => (c[0] as { where?: { id?: string } })?.where?.id)
+      .filter(Boolean)
+    expect(looked).toContain('integ-high')
+    expect(looked).not.toContain('integ-low')
+    // The last-resort strategies must not run: smartRoute already reported a set of
+    // candidates, so there is nothing left to search for.
+    expect(mockPickBestIntegrationByKeywords).toHaveBeenCalledTimes(0)
+    expect(mockPickBestIntegration).toHaveBeenCalledTimes(0)
+    expect(r).toBeTruthy()
+  })
+
+  test('a resolved id whose row is MISSING asks instead of guessing', async () => {
+    // The integration list says 2 exist, but the row the router resolved cannot be
+    // read (deleted between the count and the lookup). Answering from an arbitrary
+    // surviving integration is how a Sales question gets HR numbers, silently, so
+    // asking is the correct failure.
+    mockIntegrationCount.mockImplementation(async () => 2)
+    mockIntegrationFindMany.mockImplementation(async () => [
+      { id: 'integ-a', name: 'A', type: 'postgresql' },
+      { id: 'integ-b', name: 'B', type: 'postgresql' },
+    ])
+    mockSmartRoute.mockImplementation(async () => ({
+      decision: 'SQL' as RouteDecision,
+      integrationId: 'integ-gone',
+      ambiguousIntegrations: [],
+    }))
+    mockIntegrationFindFirst.mockImplementation(async () => null)
+    mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
+    mockPickBestIntegration.mockImplementation(async () => null)
+
+    const r = await runNonStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    expect(r.toolRuns[0]?.status).toBe('blocked')
+    expect(r.answer).toContain('could not tell which data source')
+    // Candidate names are listed so one follow-up is enough.
+    expect(r.answer).toContain('A')
+  })
+
+  test('with no resolvable source at all, both strategies run before asking', async () => {
+    mockIntegrationCount.mockImplementation(async () => 2)
+    mockIntegrationFindMany.mockImplementation(async () => [
+      { id: 'integ-a', name: 'A', type: 'postgresql' },
+      { id: 'integ-b', name: 'B', type: 'postgresql' },
+    ])
+    mockSmartRoute.mockImplementation(async () => ({
+      decision: 'SQL' as RouteDecision,
+      integrationId: undefined,
+      ambiguousIntegrations: [],
+    }))
+    mockIntegrationFindFirst.mockImplementation(async () => null)
+    mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
+    mockPickBestIntegration.mockImplementation(async () => null)
+
+    await runNonStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
+    expect(mockPickBestIntegrationByKeywords).toHaveBeenCalledTimes(1)
+    // Only reached because the keyword pass found nothing: pickBestIntegration calls
+    // an embedding API, so it must be the fallback, never the first choice.
+    expect(mockPickBestIntegration).toHaveBeenCalledTimes(1)
+  })
+
+  test('the keyword strategy short-circuits before the slow embedding one', async () => {
+    // pickBestIntegration calls an embedding API; the keyword scan does not. The
+    // keyword pass must win so a slow or unavailable embedding service cannot stall
+    // a question the fast path could already route.
+    mockIntegrationCount.mockImplementation(async () => 2)
+    mockIntegrationFindMany.mockImplementation(async () => [
+      { id: 'integ-kw', name: 'Warehouse', type: 'postgresql' },
+      { id: 'integ-other', name: 'Other', type: 'postgresql' },
+    ])
+    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: undefined }))
+    mockPickBestIntegrationByKeywords.mockImplementation(async () => 'integ-kw')
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'integ-kw', name: 'Warehouse', provider: 'POSTGRESQL', encryptedConfig: 'enc',
+      schemas: [{ tableName: 'stock', columns: [{ name: 'qty', type: 'integer' }] }],
+    }))
+
+    await runNonStreamingChatCompletion({ question: 'warehouse stock', userId: 'u1' })
+    expect(mockPickBestIntegrationByKeywords).toHaveBeenCalledTimes(1)
+    expect(mockPickBestIntegration).toHaveBeenCalledTimes(0)
   })
 })
