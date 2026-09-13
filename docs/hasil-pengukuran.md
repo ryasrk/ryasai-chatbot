@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c018bc5`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `299c9ce`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c018bc5`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **81,48%** (16.035/19.679 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 160 file · **3.368 lulus · 0 gagal** | terukur |
+| Test coverage | **81,55%** (16.049/19.679 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 160 file · **3.376 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -84,7 +84,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/sso.ts` | 77,52% → **87,97%** merged | 80,65% → **99,22%** kode eksekutabel (256/258) | 58 |
 | `src/lib/rag-retrieval.ts` | 81,25% → 74,38% merged (**turun**, §1.7z) | 89,40% → **91,69%** kode eksekutabel (320/349) | 58 |
 | `src/lib/intent-pipeline.ts` | 73,7% merged | **100,00% kode eksekutabel** (337/337) — nol pekerjaan | 0 |
-| **Total repo** | **62,44%** | **81,48%** | — |
+| `src/lib/cognee-knowledge-graph.ts` | 94,76% → 77,62% merged (**turun**, §1.7z) | 95,47% → **100,00%** kode eksekutabel (267/267) | 38 |
+| **Total repo** | **62,44%** | **81,55%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -273,8 +274,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Degradasi embedding dilewati (throw) | `rag-retrieval.ts:331` | 1 |
 | Degradasi vector store dilewati (throw) | `rag-retrieval.ts:388` | 1 |
 | Cacat laten helper test `fuseRankingsImpl` dipulihkan | `rag-retrieval.test.ts` | 1 |
+| Status `failed` batch tidak dicatat | `cognee-knowledge-graph.ts:147` | 1 |
+| Retry transient dihapus | `cognee-knowledge-graph.ts:168` | 2 |
+| Error tidak dipotong 500 char | `cognee-knowledge-graph.ts:150` | 1 |
+| `catch` reset mengembalikan `true` | `cognee-knowledge-graph.ts:411` | 1 |
+| `continue` batch dihapus | `cognee-knowledge-graph.ts:154` | 2 |
 
-**171 kontrol + 3 kontrol gate, semuanya sah.**
+**183 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1579,6 +1585,72 @@ padahal tidak. Helper kini menangani kedua bentuk (`string | { id }`).
 
 Kontrol negatif: **3** menggigit (invalidate jadi no-op; degradasi embedding dilewati;
 degradasi vector store dilewati), plus **1** untuk cacat helper.
+
+### 1.7af Audit: apakah cacat helper `fuseRankingsImpl` sebuah KELAS masalah? — Tidak
+
+Setelah §1.7ae saya tidak mengasumsikan cacatnya unik, dan tidak juga mengasumsikan ia
+tersebar. Saya **mencarinya**.
+
+**Yang dijalankan:** (1) `grep` untuk helper mock yang mengiterasi input dengan cast
+bentuk (`as string[]`, `as Array<{ id: string }>`); (2) `grep` untuk mock berdefault
+kosong (`= () => []`, `= () => {}`); (3) skrip `/tmp/audit_defaults.py` yang, untuk
+**setiap** `let X` di 160 berkas test, menghitung apakah `X` pernah di-assign di luar
+deklarasinya — holder yang **hanya memakai default** adalah tempat cacat macam itu
+bersembunyi.
+
+**Hasil: tidak ada cacat sejenis.** Tiga kandidat terdekat diperiksa satu per satu:
+- `toRankingImpl` (8 kemunculan, cast `as Array<{ id: string }>`) — **bukan** cacat:
+  default-nya `(entries) => entries` (identitas), dan `bm25RankImpl` konsisten
+  mengembalikan `{ id, score }`, jadi `.id` valid.
+- `admin-tools.test.ts:476 call` — **bukan** holder mock; itu counter `let` lokal di
+  dalam satu test.
+- `real-connectors-coverage.test.ts:35 lastMssqlCfg` — **bukan** cacat: di-assign oleh
+  konstruktor `FakeConnectionPool` lewat `this.cfg`, yang skrip saya tidak lihat karena
+  assignment-nya bernama `this.cfg = cfg` di dalam class.
+
+Sisanya adalah **counter** (`calls`, `n`, `seq`, `attempts`) yang memang benar tidak
+perlu di-reset.
+
+**Kesimpulan:** cacat §1.7ae adalah **insiden tunggal** di satu helper, bukan pola
+menyebar. Pelajaran yang tetap berlaku dan tetap saya pakai: **helper mock berdefault
+kosong layak dicurigai**, karena ia membuat test downstream tampak menguji sesuatu
+padahal tidak. Setelah audit ini, `fuseRankingsImpl` adalah **satu-satunya** helper
+berdefault-kosong-yang-berlogika di repo.
+
+### 1.7ag `cognee-knowledge-graph.ts`: 95,47% → 100,00% eksekutabel (267/267) — jalur kegagalan batch
+
+**Satu-satunya modul sejauh ini yang mencapai 100% kode eksekutabel dengan NOL baris
+tersisa.** 12 baris yang belum tercakup adalah **jalur kegagalan yang nyata**: `add`
+sebuah batch melempar, `cognify` gagal transien lalu pulih saat retry, dan `resetCognee`
+gagal.
+
+Yang dijaga: `add` yang gagal menandai **SETIAP** dokumen di batch itu `failed` dan
+menghitung kerugiannya (**`failed` adalah yang dilihat operator**, dan tiap baris harus
+punya status agar UI bisa menawarkan retry, bukan keadaan kosong); pesan error
+**dipotong 500 karakter** (teks error tanpa batas berisiko meluberi kolom); **satu batch
+buruk tidak menghentikan batch sesudahnya** (`continue` itulah yang mencegah satu
+kegagalan membatalkan seluruh unggahan — diukur: menghapusnya menggagalkan 2 test);
+**error `FOREIGN KEY`/`locked` dianggap transien dan di-retry** (cognee memancarkan error
+itu saat writer-nya menyusul; menggagalkan batch pada percobaan pertama membuang unggahan
+yang sah); **error permanen TIDAK di-retry** (`400 Bad Request` hanya 1 percobaan —
+setiap percobaan adalah komputasi nyata pada layanan yang sudah bilang tidak); dan
+`resetCognee` mengembalikan **`false`** saat gagal sehingga pemanggil bisa melaporkannya,
+bukan 500.
+
+**Satu test saya yang lemah, dan cara saya menemukannya:** percobaan pertama saya
+melempar dari getter klien dan hanya memeriksa `typeof res === 'boolean'` — **lulus
+sambil `catch` tetap mati**, karena `forget()` sudah dibungkus `try {} catch {}` di
+dalam. Yang menjangkau handler luar adalah `resetClientCache()`, yang **tidak dijaga**;
+test kini memicunya di sana, dan assertion-nya `toBe(false)` — bukan sekadar tipe.
+Kontrolnya menggigit.
+
+**Merged TURUN 94,76% → 77,62%** meski **hit naik 253 → 267**: `LF` naik 267 → 344
+karena berkas test lain meng-instrumentasi modul ini. Pola §1.7z yang sama —
+**hit naik, penyebut membengkak**.
+
+**Kontrol negatif: 7** menggigit (3 di antaranya perlu anchor diperbaiki setelah
+penggantian berbasis-string gagal karena escaping — dijalankan ulang lewat skrip Python
+agar pasti mendarat).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

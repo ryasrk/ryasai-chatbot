@@ -1,6 +1,6 @@
 {
-  "linePct": 81.48,
-  "linesHit": 16035,
+  "linePct": 81.55,
+  "linesHit": 16049,
   "linesFound": 19679,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -120,12 +120,6 @@
       "pct": 73.10565635005337
     },
     {
-      "file": "src/lib/cognee-knowledge-graph.ts",
-      "hit": 253,
-      "found": 344,
-      "pct": 73.54651162790698
-    },
-    {
       "file": "src/lib/intent-pipeline.ts",
       "hit": 337,
       "found": 457,
@@ -220,6 +214,12 @@
       "hit": 528,
       "found": 681,
       "pct": 77.5330396475771
+    },
+    {
+      "file": "src/lib/cognee-knowledge-graph.ts",
+      "hit": 267,
+      "found": 344,
+      "pct": 77.61627906976744
     },
     {
       "file": "src/lib/smart-router.ts",

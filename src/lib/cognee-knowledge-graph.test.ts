@@ -15,6 +15,7 @@ const core = {
   items: [] as Array<{ text: string; score: number }>,
   updateCalls: [] as Array<{ id: string; status: string; error?: string }>,
   resets: 0,
+  resetClientCacheThrows: false,
 }
 
 mock.module('@/lib/cognee-core', () => ({
@@ -29,7 +30,10 @@ mock.module('@/lib/cognee-core', () => ({
   updateDocumentCognifyStatus: async (id: string, status: string, error?: string) => {
     core.updateCalls.push({ id, status, error })
   },
-  resetClientCache: () => { core.resets++ },
+  resetClientCache: () => {
+    if (core.resetClientCacheThrows) throw new Error('client cache reset exploded')
+    core.resets++
+  },
 }))
 
 const dbState = {
@@ -100,6 +104,7 @@ beforeEach(() => {
   core.items = []
   core.updateCalls = []
   core.resets = 0
+  core.resetClientCacheThrows = false
   dbState.documents = []
   dbState.updateManyCalls = []
   dbState.findManyCalls = []
@@ -417,6 +422,135 @@ describe('forget / reset', () => {
   test('forgetAll returns true even when the status reset fails', async () => {
     dbState.updateManyCalls = []
     const res = await forgetAll()
+    expect(res).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The failure paths of a batch, and of a reset
+//
+// None of these had run: a failing `add`, a transient `cognify` that recovers on
+// retry, and a reset whose status sweep throws. They are the paths an operator
+// actually hits when the Cognee service is unhealthy.
+// ---------------------------------------------------------------------------
+
+describe('cognifyBatch — a batch that cannot be added', () => {
+  test('a failing add marks EVERY document in the batch failed and counts the loss', async () => {
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 2 }
+    core.client = client({ add: async () => { throw new Error('cognee add exploded') } })
+    const res = await cognifyBatch({
+      documents: [
+        { documentId: 'd1', documentName: 'a', chunks: [{ content: 'x', chunkIndex: 0 }] },
+        { documentId: 'd2', documentName: 'b', chunks: [{ content: 'y', chunkIndex: 0 }] },
+      ],
+    })
+    // Both must be accounted for: `failed` is what the operator sees, and each row
+    // must carry a status so the UI can offer a retry instead of a blank state.
+    expect(res.failed).toBe(2)
+    expect(res.processed).toBe(0)
+    const failed = core.updateCalls.filter((c) => c.status === 'failed')
+    expect(failed.map((c) => c.id).sort()).toEqual(['d1', 'd2'])
+    // The error is recorded, truncated — the cause must reach the operator.
+    expect(failed[0].error).toContain('cognee add exploded')
+  })
+
+  test('the error string is capped at 500 characters', async () => {
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 1 }
+    core.client = client({ add: async () => { throw new Error('E'.repeat(2000)) } })
+    await cognifyBatch({ documents: docs })
+    const rec = core.updateCalls.find((c) => c.status === 'failed')
+    // Unbounded error text is a column-overflow risk on a TEXT-with-limit column.
+    expect(rec!.error!.length).toBe(500)
+  })
+
+  test('one bad batch does not stop the batches after it', async () => {
+    let n = 0
+    core.settings = { cognifyBatchSize: 1, cognifyMaxRetries: 1 }
+    core.client = client({
+      add: async () => { n++; if (n === 1) throw new Error('first batch only') },
+    })
+    const res = await cognifyBatch({
+      documents: [
+        { documentId: 'd1', documentName: 'a', chunks: [{ content: 'x', chunkIndex: 0 }] },
+        { documentId: 'd2', documentName: 'b', chunks: [{ content: 'y', chunkIndex: 0 }] },
+      ],
+    })
+    // The `continue` is what keeps one failure from cancelling the whole upload.
+    expect(res.failed).toBe(1)
+    expect(res.processed).toBe(1)
+  })
+})
+
+describe('cognifyBatch — a transient cognify failure is retried', () => {
+  test('a FOREIGN KEY error retries, then succeeds', async () => {
+    let attempts = 0
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    core.client = client({
+      add: async () => undefined,
+      cognify: async () => {
+        attempts++
+        // The retry exists because cognee emits transient FK/constraint/locked
+        // errors while its own writer catches up; failing the batch on the first
+        // one would discard a valid upload.
+        if (attempts === 1) throw new Error('FOREIGN KEY constraint failed')
+      },
+    })
+    const res = await cognifyBatch({ documents: docs })
+    expect(attempts).toBe(2)
+    expect(res.processed).toBe(1)
+    expect(res.failed).toBe(0)
+  })
+
+  test('a locked error also counts as transient', async () => {
+    let attempts = 0
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    core.client = client({
+      add: async () => undefined,
+      cognify: async () => { attempts++; if (attempts === 1) throw new Error('database is locked') },
+    })
+    await cognifyBatch({ documents: docs })
+    expect(attempts).toBe(2)
+  })
+
+  test('a NON-transient error breaks out instead of burning every retry', async () => {
+    let attempts = 0
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    core.client = client({
+      add: async () => undefined,
+      cognify: async () => { attempts++; throw new Error('400 Bad Request: malformed payload') },
+    })
+    await cognifyBatch({ documents: docs })
+    // A permanent error must not be retried three times: each attempt is real
+    // compute on a service that has already said no.
+    expect(attempts).toBe(1)
+  })
+})
+
+describe('resetCognee — a failure returns false so the caller can report it', () => {
+  test('a failure the body cannot swallow yields false, not a throw', async () => {
+    // The outer catch exists so a broken reset surfaces as `false` — a boolean the
+    // caller turns into an operator-facing message — instead of 500ing the route.
+    //
+    // MEASURED: this catches the OUTER catch only when the throw happens OUTSIDE
+    // an inner swallow. `forget()` is already wrapped in `try {} catch {}`, and
+    // resetClientCache is called with no guard, so that call is the one that
+    // reaches the outer handler. My first attempt threw from a client getter and
+    // proved nothing — the assertion passed while the catch stayed dead.
+    const { resetCognee: reset } = await import('@/lib/cognee-knowledge-graph')
+    core.resetClientCacheThrows = true
+    const res = await reset()
+    core.resetClientCacheThrows = false
+    expect(res).toBe(false)
+  })
+
+  test('a failing updateMany still reports the reset as done', async () => {
+    // resetCognee is "reset the client and forget", not "reset the client, forget
+    // and also clear statuses". If the sweep throws, the reset HAS happened, so
+    // returning false would tell the operator to retry a completed operation.
+    const src = await Bun.file('./src/lib/cognee-knowledge-graph.ts').text()
+    const sweep = src.slice(src.indexOf('Reset all document cognify statuses'))
+    expect(sweep).toContain(".catch(logSwallowed('cognee: document.updateMany (resetCognee)'))")
+    const res = await resetCognee()
     expect(res).toBe(true)
   })
 })
