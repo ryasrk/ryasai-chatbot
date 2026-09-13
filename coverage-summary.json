@@ -1,6 +1,6 @@
 {
-  "linePct": 82.83,
-  "linesHit": 16311,
+  "linePct": 82.87,
+  "linesHit": 16319,
   "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -252,12 +252,6 @@
       "pct": 80.76923076923077
     },
     {
-      "file": "src/lib/embeddings.ts",
-      "hit": 317,
-      "found": 392,
-      "pct": 80.86734693877551
-    },
-    {
       "file": "src/lib/crypto.ts",
       "hit": 48,
       "found": 59,
@@ -292,6 +286,12 @@
       "hit": 70,
       "found": 85,
       "pct": 82.35294117647058
+    },
+    {
+      "file": "src/lib/embeddings.ts",
+      "hit": 325,
+      "found": 392,
+      "pct": 82.90816326530613
     },
     {
       "file": "src/lib/alignment-check.ts",

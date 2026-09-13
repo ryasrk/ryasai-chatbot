@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1549ad8`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0c185f1`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1549ad8`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,83%** (16.311/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.506 lulus · 0 gagal** | terukur |
+| Test coverage | **82,87%** (16.319/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.518 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -96,7 +96,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/planner.ts` | 77,53% → **79,00%** merged | 96,70% → **99,45%** kode eksekutabel (538/541) | 70 |
 | `src/lib/admin-tools.ts` | 81,78% → **84,30%** merged | 97,17% → **100,00%** kode eksekutabel (569/569) | 49 |
 | `src/lib/tool-router-agentic.ts` | 77,45% → **79,75%** merged | 95,87% → **98,45%** kode eksekutabel (382/388) | 61 |
-| **Total repo** | **62,44%** | **82,83%** | — |
+| `src/lib/embeddings.ts` | 96,92% → **82,91%** merged (**turun**, §1.7z) | 96,92% → **100,00%** kode eksekutabel (325/325) | 60 |
+| **Total repo** | **62,44%** | **82,87%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -355,7 +356,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**254 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**264 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2369,6 +2370,63 @@ tetap dilaporkan sebagai **3 deklarasi tipe terdokumentasi**, dengan bukti: bari
 367-370 memang daftar parameter yang dihapus TypeScript, bukan kode.
 
 **Kontrol negatif: 5, semuanya menggigit.**
+
+### 1.7au `embeddings.ts`: 96,92% → 100,00%, penjaga isolasi tenant yang tak pernah dijalankan, dan dua test yang tidak menguji klaimnya
+
+**Merged 96,92% → 82,91% (TURUN — artefak §1.7z: `LF` melonjak 325 → 392 karena file test
+lain meng-instrumentasi modul ini), eksekutabel 96,92% → 100,00% (325/325), nol tersisa.**
+Merged-nya masih di bawah 85, jadi modul ini **sengaja TIDAK di-gate**.
+
+**Temuan #1 — penjaga isolasi tenant tidak pernah dijalankan, karena MOCK-nya konstan.**
+Baris 99-102 menolak membaca config bila tidak ada org context. Komentarnya mencatat
+insiden nyata (trial/55): `findFirst()` tanpa scoping mengembalikan baris **pertama di
+seluruh tabel** — milik tenant mana pun — sehingga ia akan **membelanjakan kredensial dan
+kuota organisasi lain** serta menghitung vektor di ruang embedding mereka. Komentarnya juga
+mengatakan "production always has one: HTTP routes call enterWithOrg, and
+job-processor.ts enters the org before embedding" — dan test-nya memock
+`getOrgContext: () => 'test-org'` **sebagai konstanta**. Akibatnya cabang `if (!org)`
+**tidak pernah dieksekusi**: penjaga keamanan yang bisa dihapus tanpa satu pun test merah.
+Mock dibuat bisa dikendalikan, dan kini diuji **dua arah** — tanpa context: **`null` dan
+`findFirst` TIDAK PERNAH dipanggil**; dengan context: baris yang sama **tetap** resolve
+(kontrol invers, agar tidak lulus hanya karena resolusi rusak untuk semua input).
+
+**Temuan #2 — dekripsi gagal kini degradasi, bukan lempar.** Kunci yang dirotasi atau
+`ENCRYPTION_SECRET_KEY` yang korup tidak boleh menjatuhkan setiap panggilan embedding
+dengan throw tak tertangani; ia turun ke "tidak bisa embed" (yang sudah ditangani pemanggil)
+dan mencatat sebabnya. Diuji dengan `decryptConfig` yang bisa dibuat melempar.
+
+**Temuan #3 — DUA test saya tidak menguji apa yang saya klaim, dan kontrol negatif yang
+menangkapnya.** Kontrol "hapus fallback prefix statis" awalnya **0 fail**: test saya hanya
+memastikan LLM **tidak dipanggil**, yang tidak membuktikan apa pun tentang prefix. Saya
+perkuat dengan membaca **nilai yang benar-benar ditulis** ke `DocumentChunk.contextPrefix`
+(dari argumen tagged-template `$executeRaw`): kini `toBe('From Handbook:' + newline×2)`
+untuk jalur statis dan mengandung `[HR]` untuk jalur ringkasan. Setelah diperkuat kontrol
+yang sama **1 fail**. Ini kedua kalinya ronde ini sebuah test "hijau" mengukur hal lain.
+
+**Temuan #4 — lapisan mana yang menangkap, diukur bukan ditebak.** Vektor **kosong**
+ditolak oleh penjaga **jumlah** (baris 216), bukan penjaga **dimensi** (218): nilai kosong
+disaring saat parsing sebelum pemeriksaan dimensi. Assertion pertama saya menuntut
+`'inconsistent dimensions'` dan gagal — **kode benar, tebakan saya soal lapisannya yang
+salah**. Keduanya menolak, jadi yang penting perilakunya; assertion kini menamai penjaga
+jumlah secara eksplisit alih-alih lulus karena alasan yang salah.
+
+**Temuan #5 — kesalahan pembersihan mock, pola yang sudah dikenal.** Dua test lolos
+**terpisah** tapi gagal **bersamaan**: `mockExecuteRaw.mock.calls` menumpuk antar-test,
+sehingga helper prefix membaca nilai test **sebelumnya**. `mockClear()` ditambahkan untuk
+mock tulis juga. Ini persis kelas kontaminasi yang sudah terdokumentasi (§1.7as) — dan
+sisa 8 test penjaga org-context juga sempat gagal karena `toHaveBeenCalled()` melihat
+panggilan test sebelumnya.
+
+**Yang kini dijaga:** penolakan tanpa org context; degradasi kunci yang tak terdekripsi;
+**retry kegagalan jaringan** (rejection non-`Error` di-stringify, **error terakhir
+dipertahankan**, dan retry benar-benar bisa **pulih**); **vektor ragged/kosong ditolak**
+(vektor di-pair `vectors[index]` dengan `chunk[index]` di hilir, jadi respons ragged akan
+diam-diam menempelkan vektor yang salah ke chunk yang salah — bug retrieval tanpa error di
+mana pun); OLLAMA tanpa array embedding mengembalikan `[]`; dan **OLLAMA tidak butuh kunci
+API** (pemeriksaan kunci di-gate per provider — tanpa itu embedding lokal jadi mustahil).
+
+**Kontrol negatif: 10, semuanya menggigit** (dua di antaranya hanya menggigit **setelah**
+test-nya diperkuat, yang justru temuan utamanya).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
