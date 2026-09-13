@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `416e032`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a30d712`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `416e032`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,10%** (18.129/20.814 baris, 140 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,87%** (1699/1810 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 182 file · **4.309 lulus · 0 gagal** | terukur |
+| Test coverage | **87,14%** (18.201/20.886 baris, 141 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,88%** (1702/1813 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 183 file · **4.330 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**756 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**772 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5195,6 +5195,42 @@ K13 (default `embeddingModel` dihapus, 1), K14 (`purpose` bukan `'chat'`, 1).
 
 **Progres backlog: 8 dari 66 route orphan ditutup.** Repo **87,04% → 87,10%**; file terinstrumen
 **139 → 140**; suite **4.277 → 4.309** (181 → **182 file**); gate **139 → 140 modul**.
+
+### 1.7dc `/api/monitoring` — sumber angka "avg tokens/task": NOL → 100,00% (72/72)
+
+**Ini rute tempat angka token yang dilihat operator benar-benar dihitung** — termasuk
+`llmUsageByPurpose`, **rincian per-tujuan yang menjadi dasar setiap angka "rata-rata token per task".**
+Karena Anda meminta angka itu, rute ini layak diuji dengan teliti: **properti yang dipatok adalah yang
+menentukan apakah angkanya BERMAKNA.**
+
+- **Jendela 24 jam dikirim ke SETIAP agregat.** Satu `gte` yang hilang **melaporkan sepanjang waktu sebagai
+  "hari ini"**, sehingga keputusan anggaran membaca total seumur hidup.
+- **`llmUsageByPurpose` membawa `_count` bersama `_sum`**, sehingga tujuan dengan panggilan tapi tanpa token
+  tercatat **tetap terlihat sebagai aktivitas, bukan sebagai nol.**
+- **Null menjadi 0, tidak pernah NaN.** `_sum.promptTokens` bernilai null saat tidak ada baris yang cocok;
+  null merambat ke dashboard sebagai kartu kosong dan ke aritmetika lanjutan sebagai NaN.
+- **Redis dilaporkan sebagai FIELD, bukan dependensi.** Aplikasi **terdegradasi ke pemrosesan sinkron tanpa
+  Redis**, jadi halaman ini **harus tetap tampil** saat Redis mati. Diuji dengan `connected: false` **dan**
+  latency `null`.
+
+**16 kontrol, dan KESEMUA 16 MENGGIGIT — hasil terbersih sesi ini, tanpa satu pun non-kontrol.** Termasuk
+K1 (`enterWithOrg` dihapus), K2/K3 (jendela 24 jam dihapus dari dua agregat berbeda), **K4 (`gte: 400` →
+`gt: 400` sehingga setiap bad-request 400 HILANG dari daftar kegagalan)**, K5 (filter `errorMessage`
+dihapus), K6 (filter `GUARDRAIL_BLOCK` dihapus — **peristiwa keamanan tenggelam di antara baris info**),
+K7 (`latencyMs: { not: null }` dihapus — **rata-rata tertarik ke nol dan sistem lambat terlihat cepat**),
+K8 (`_sum` prompt/completion dihapus — tak bisa menjawab "apakah prompt atau output yang membesar?"),
+K9/K11 (null bocor menggantikan fallback 0), K10 (`Math.round` dihapus), K12 (`take` 50→500),
+K13 (`orderBy` desc→asc — **menampilkan aktivitas TERLAMA**), K14 (`groupBy` `purpose`→`model`),
+K15 (Redis dihapus dari respons, **2 merah**), K16 (`_count: true` dihapus).
+
+**Pengamatan metodologis:** rute ini lolos 100% pada percobaan PERTAMA dan keenam belas kontrolnya langsung
+menggigit. Itu bukan kebetulan — **saya menulis asersi terhadap ARGUMEN QUERY (filter, jendela, `take`,
+`orderBy`, `_sum`, `by`)**, bukan terhadap nilai kembalian mock. Asersi semacam itu **tidak bisa dilewati
+oleh mutasi yang mengubah perilaku** karena ia memeriksa **apa yang diminta ke database**, bukan **apa yang
+dikembalikan.**
+
+**Progres backlog: 9 dari 66 route orphan ditutup.** Repo **87,10% → 87,14%**; file terinstrumen
+**140 → 141**; suite **4.309 → 4.330** (182 → **183 file**); gate **140 → 141 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

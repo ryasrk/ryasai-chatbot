@@ -1,11 +1,11 @@
 {
-  "linePct": 87.1,
-  "linesHit": 18129,
-  "linesFound": 20814,
-  "fnPct": 93.87,
-  "fnsHit": 1699,
-  "fnsFound": 1810,
-  "filesMeasured": 140,
+  "linePct": 87.14,
+  "linesHit": 18201,
+  "linesFound": 20886,
+  "fnPct": 93.88,
+  "fnsHit": 1702,
+  "fnsFound": 1813,
+  "filesMeasured": 141,
   "failedTestFiles": [],
   "files": [
     {
@@ -933,6 +933,15 @@
       "pct": 100,
       "fHit": 5,
       "fFound": 5,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/monitoring/route.ts",
+      "hit": 72,
+      "found": 72,
+      "pct": 100,
+      "fHit": 3,
+      "fFound": 3,
       "fPct": 100
     },
     {
