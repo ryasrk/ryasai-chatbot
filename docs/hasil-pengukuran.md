@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8c148ff`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7143e40`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8c148ff`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.235 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.261 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -73,6 +73,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | Modul ter-gate | 62 modul | **68 modul** | +6 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
+| `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
 | **Total repo** | **62,44%** | **80,37%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -217,8 +218,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Peran `ai` tidak dipetakan ke `assistant` | `send/route.ts:516` | 1 |
 | Penjaga window + overflow kosong dihapus | `send/route.ts:504,511` | 1 |
 | Rerank LLM tetap jalan tanpa config | `rag-retrieval.ts:175` | 1 |
+| Blokir SSRF dihapus (169.254.169.254 bisa dihubungi) | `tool-branches.ts:766` | 1 |
+| Endpoint id tak dikenal diizinkan lewat whitelist | `tool-branches.ts:553` | 1 |
+| Body respons tidak di-cap 8000 | `tool-branches.ts:770` | 1 |
+| Log REST dilewati pada sukses | `tool-branches.ts:775` | 2 |
+| `chatEnabled` diabaikan (plugin berat masuk jalur chat) | `tool-branches.ts:676` | 2 |
 
-**121 kontrol + 3 kontrol gate, semuanya sah.**
+**126 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1010,6 +1016,57 @@ badan SSE:
 bukan per-file.** Gate sendiri yang melaporkan modul ini "sudah melewati 85% tapi belum
 di-gate" — dan kesunyian itu memang kegagalan yang laporan itu ada untuk menghilangkan.
 Modul ter-gate: **68**.
+
+### 1.7u `tool-branches.ts`: 50,58% → 99,84% per-file — SSRF & whitelist belum pernah diuji
+
+**50,58% → 99,84% baris, fungsi 75,00% → 100,00%.** Merged hanya bergerak ke **83,88%**
+(lihat di bawah). File testnya **hanya mencapai `runRagBranch` dan `runSqlBranch`**;
+`runChatBranch`, `runContextualChatBranch`, `runRestBranch`, `runPluginBranch`, dan
+`executeRestRequest` **belum pernah dieksekusi sama sekali** — termasuk **daftar blokir
+SSRF** dan **whitelist endpoint REST**, dua tempat di mana `baseUrl` dari admin dan id
+endpoint pilihan model bertemu dunia luar.
+
+Diuji: kedua cabang chat (jawaban, citations kosong, satu tool run `CHAT`, dan perbedaan
+yang disengaja bahwa `runChatBranch` meringkas **jawaban** sementara
+`runContextualChatBranch` meringkas **konteks** yang diberikan); **whitelist** (id
+endpoint yang **dikarang** model ditolak dan memblokir giliran **tanpa menyentuh
+fetch**; nol endpoint aktif melaporkan sumber tidak tersedia, bukan error yang
+menyiratkan ada yang rusak; sukses tercatat sebagai `REST_ENDPOINT_EXECUTE` di audit);
+`executeRestRequest` (host internal diblokir **sebelum** ada request dikirim; body
+dipotong 8000; **setiap** percobaan dicatat, sukses **dan** gagal transport, karena
+kegagalan justru yang paling perlu dilihat operator; tidak ada `Content-Type` pada GET);
+dan `runPluginBranch` (tak ada plugin relevan, plugin yang **bukan** `chatEnabled`, dan
+plugin `chatEnabled` yang **barisnya disabled** semuanya jatuh ke chat biasa alih-alih
+error; plugin yang crash menghasilkan giliran error, bukan menjatuhkan giliran).
+
+**Temuan terpenting adalah tentang test double saya sendiri, dan itu membatalkan versi
+pertama KEDUA test keamanan itu.** `buildEndpointUrl` di-stub menjadi literal
+`'http://x'` dan `matchEndpoint` ke id tetap, sehingga pemeriksaan blokir membaca
+hostname `'x'` dan request ke **`169.254.169.254` lolos begitu saja** — test SSRF saya
+meng-assert terhadap **stub**, dan test whitelist **tidak pernah menyentuh matcher
+aslinya**. Keduanya kini memakai helper **asli** dari `rest-api-connectors`; hanya
+bagian yang butuh kredensial/jaringan yang tetap di-mock.
+
+Juga tercatat: `.env` repo ini menyetel `LLM_ALLOW_BLOCKED_HOSTS`, yaitu **escape hatch
+test-only yang terdokumentasi** untuk daftar blokir SSRF. Membiarkannya aktif
+**mematikan** daftar blokir, jadi jalur produksi hanya teruji dengan env itu **dihapus**
+— dan test ini sekarang melakukannya.
+
+**Koreksi saya yang lain:** `unavailableDataSourceResult` di-stub mengembalikan
+`toolRuns: []`, yang **bukan** perilaku helper aslinya, dan satu test lama meng-assert
+**teks** literal `'no data source'` yang dikembalikan stub itu — kini meng-assert tool
+run `BLOCKED` dan pesan aslinya. Sebuah 4xx/5xx/3xx **tidak pernah mencapai** panggilan
+audit (karena `executeRestRequest` mengembalikan kegagalan lebih dulu), jadi batas
+severity yang saya karang **unreachable** dan testnya kini meng-assert nilai yang
+benar-benar dilihat operator.
+
+**Celah merge, terukur — dan floor sengaja TIDAK dinaikkan.** Merged `tool-branches.ts`
+**83,88%** (640/763) versus per-file **99,84%** (763 baris, ~762 hit): selisih **122
+baris** yang test saya eksekusi tapi **tidak dihitung** laporan merged. `Math.max` tidak
+bisa menciptakan hit untuk baris yang **tak ada run-nya mencapai** (`coverage.ts:165`).
+Karena merged 83,88% **di bawah** ambang 85%, modul ini **tidak boleh di-gate**, dan
+**total repo tetap 80,37%** meski per-file-nya melompat hampir 50 poin. Melaporkan
+"naik ke 99,84%" tanpa menyebut merged akan **melebih-lebihkan**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
