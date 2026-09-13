@@ -57,6 +57,9 @@ const FLOORS: Record<string, number> = {
   // SQL-injection guardrail: dangerous-function masking, the string-literal walker
   // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
   'src/lib/guardrails.ts': 85, // measured 85.84% merged; 188/189 executable
+  // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
+  // EXECUTION, the GET input channel, and the enabled-plugin listing's column select.
+  'src/lib/plugin-registry.ts': 85, // measured 85.09% merged; 137/138 executable
   'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)

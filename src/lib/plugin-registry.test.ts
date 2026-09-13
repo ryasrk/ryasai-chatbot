@@ -429,3 +429,172 @@ describe('executePlugin GET query params', () => {
     expect(init.body).toBe(JSON.stringify({ key: 'value' }))
   })
 })
+
+// ===========================================================================
+// The endpoint guards and the plugin LISTING
+// ===========================================================================
+
+describe('normalizeManifest — endpoint protocol and URL validity', () => {
+  test('a NON-http(s) scheme is rejected by the EXPLICIT protocol check', () => {
+    // Zod's `z.string().url()` accepts any scheme, so the protocol check is the only
+    // thing standing between a config row and `file:///etc/passwd` or `ftp://internal`.
+    // Each of these PARSES cleanly, so the catch is not what rejects them.
+    for (const endpoint of ['file:///etc/passwd', 'ftp://internal.test/x', 'gopher://x/1']) {
+      const r = normalizeManifest({ ...VALID_MANIFEST, endpoint })
+      expect(r).toEqual({ error: 'Endpoint must use http or https.' })
+    }
+  })
+
+  test('an UNPARSEABLE endpoint is caught by ZOD, before the URL parse runs', () => {
+    // `new URL(...)` throwing is a DIFFERENT failure from a bad scheme, and the message
+    // says so -- an operator typing `example.com/hook` (no scheme) needs to be told the
+    // URL is malformed rather than that its protocol is wrong.
+    for (const endpoint of ['not a url', 'example.com/hook', '://missing']) {
+      const r = normalizeManifest({ ...VALID_MANIFEST, endpoint })
+      expect(r).toEqual({ error: 'Invalid manifest: endpoint — Invalid URL' })
+    }
+    // The `catch` around `new URL(m.endpoint)` is UNREACHABLE through this API, and that
+    // is a MEASUREMENT, not a guess: I probed ten strings that `new URL` refuses --
+    // 'http://', 'https://', 'http://[', 'https://a b', 'https://%', 'http://?x' -- and
+    // Zod's `z.string().url()` rejected EVERY one of them first, so control never reaches
+    // the try at all. The reverse also holds: 'http://.' parses under BOTH. Declared
+    // unreachable rather than left as a silent gap.
+    expect(VALID_MANIFEST.endpoint).toBe('https://example.com/hook')
+  })
+})
+
+describe('executePlugin — the execution-time SSRF re-check', () => {
+  const originalFetch = global.fetch
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
+
+  test('a blocked internal host is refused at EXECUTION time, before any fetch', async () => {
+    // The comment says it plainly: "SSRF re-check at execution time -- don't trust
+    // registration-time check alone." Registration and execution can be far apart, and a
+    // hostname can be re-pointed at an internal address in between, so the guard must run
+    // again here. The fetch spy must therefore NEVER be called.
+    const fetchSpy = mock(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('nope') } as Response))
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    for (const endpoint of [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://10.0.0.1/hook',
+      'http://localhost:8080/hook',
+      'http://192.168.1.1/hook',
+    ]) {
+      const result = await executePlugin({
+        plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, endpoint }), toolId: 'test' },
+        input: 'hello',
+      })
+      expect(result.ok).toBe(false)
+      expect(result.error).toContain('blocked internal host')
+      expect(result.latencyMs).toBe(0)
+    }
+    // THE ASSERTION THAT MATTERS: no request was ever attempted.
+    expect(fetchSpy).toHaveBeenCalledTimes(0)
+  })
+
+  test('a hostname that only the ASYNC guard catches is refused too', async () => {
+    // `isBlockedHostAsync` is not decoration: it resolves the name and blocks if ANY
+    // resolved address is private, which catches a hostname the SYNCHRONOUS string check
+    // cannot. MEASURED: localtest.me, lvh.me, ip6-localhost and foo.localhost are NOT
+    // matched by isBlockedHost (false) but ARE blocked by isBlockedHostAsync (true) --
+    // each is a real public DNS name that resolves to 127.0.0.1.
+    //
+    // A negative control removing `await isBlockedHostAsync(...)` from the execution-time
+    // check passed every other test, because for IP literals the sync check already
+    // blocks. This is the input that distinguishes them: without the async half, the
+    // request would go out to a loopback address.
+    const fetchSpy = mock(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('leaked') } as Response))
+    global.fetch = fetchSpy as unknown as typeof fetch
+
+    const result = await executePlugin({
+      plugin: {
+        manifestJson: JSON.stringify({ ...VALID_MANIFEST, endpoint: 'http://localtest.me/hook' }),
+        toolId: 'test',
+      },
+      input: 'x',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('blocked internal host')
+    expect(fetchSpy).toHaveBeenCalledTimes(0)
+  })
+
+  test('a GET input that is not JSON falls back to a ?input= param', async () => {
+    // GET has no body channel, so a bare string input is carried as `?input=...`. The
+    // `else` arm is what makes `input: "hello"` (plain text, not JSON) work instead of
+    // sending no input at all.
+    let calledUrl = ''
+    global.fetch = mock((u: string) => {
+      calledUrl = String(u)
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('ok') } as Response)
+    }) as unknown as typeof fetch
+
+    await executePlugin({
+      plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, method: 'GET' }), toolId: 't' },
+      input: 'plain text input',
+    })
+    expect(calledUrl).toContain('input=plain+text+input')
+
+    // A JSON ARRAY also lands in the OBJECT arm, because `typeof [] === 'object'`. Its
+    // entries are the INDICES, so the params become `0=1&1=2&2=3` rather than a single
+    // `input=` value. MEASURED, and pinned as behaviour: it is odd for a caller, but it is
+    // what the code does, and asserting the tidier `input=[1,2,3]` (my first draft) was
+    // simply wrong about the product.
+    await executePlugin({
+      plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, method: 'GET' }), toolId: 't' },
+      input: '[1,2,3]',
+    })
+    expect(calledUrl).toBe('https://example.com/hook?0=1&1=2&2=3')
+
+    // The `else` arm runs when JSON.parse SUCCEEDS but yields a PRIMITIVE, and the `catch`
+    // when it throws. These are DIFFERENT branches and I had only exercised the catch:
+    // 'plain text input' makes JSON.parse throw, so line 146 stayed uncovered and I wrongly
+    // believed it was tested. A valid primitive -- 123, true, null, "str" -- is what reaches
+    // the else.
+    for (const [primitive, expected] of [
+      ['123', 'input=123'],
+      ['true', 'input=true'],
+      ['null', 'input=null'],
+      ['"str"', 'input=%22str%22'],
+    ] as Array<[string, string]>) {
+      calledUrl = ''
+      await executePlugin({
+        plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, method: 'GET' }), toolId: 't' },
+        input: primitive,
+      })
+      expect(calledUrl).toContain(expected)
+    }
+
+    // And the THROW path is separate again: not JSON at all.
+    for (const notJson of ['plain text input', '{oops', 'has "quotes']) {
+      calledUrl = ''
+      await executePlugin({
+        plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, method: 'GET' }), toolId: 't' },
+        input: notJson,
+      })
+      expect(calledUrl).toContain('input=')
+    }
+  })
+
+  test('a GET endpoint that is not a valid URL is left as-is rather than throwing', async () => {
+    // `new URL(manifest.endpoint)` failing inside the query-param block is caught and the
+    // URL is left untouched, so the EXECUTION-time SSRF check below it is what ultimately
+    // rejects the row. Without that catch a bad endpoint would throw here instead.
+    let calledUrl = ''
+    global.fetch = mock((u: string) => {
+      calledUrl = String(u)
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('ok') } as Response)
+    }) as unknown as typeof fetch
+
+    const result = await executePlugin({
+      plugin: { manifestJson: JSON.stringify({ ...VALID_MANIFEST, method: 'GET', endpoint: 'not-a-url' }), toolId: 't' },
+      input: 'x',
+    })
+    // `new URL('not-a-url')` in the execution-time check ALSO throws, so this lands in the
+    // outer catch and reports the message rather than crashing.
+    expect(result.ok).toBe(false)
+    expect(calledUrl).toBe('')
+  })
+})

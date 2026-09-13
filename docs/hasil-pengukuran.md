@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f4377c2`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `70a35ef`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f4377c2`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,73%** (16.852/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 164 file · **3.845 lulus · 0 gagal** | terukur |
+| Test coverage | **85,77%** (16.861/19.658 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.855 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **94 modul** | +32 |
+| Modul ter-gate | 62 modul | **95 modul** | +33 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -131,6 +131,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/mcp-client.ts` | 88,80% → **91,01%** merged | 91,36% → **100,00%** kode eksekutabel (243/243) | 15 |
 | `src/lib/llm-config.ts` | 77,56% → **81,50%** merged | 95,17% → **100,00%** kode eksekutabel (207/207) | 15 |
 | `src/lib/guardrails.ts` | 83,11% → **85,84%** merged | 96,30% → **99,47%** kode eksekutabel (188/189) | 9 |
+| `src/lib/plugin-registry.ts` | 80,00% → **85,09%** merged | 94,81% → **99,28%** kode eksekutabel (137/138) | 10 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -390,7 +391,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**493 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**503 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3715,6 +3716,62 @@ merah — `xp_cmdshell` **bukan** label di `DANGEROUS_FUNCTIONS` (semuanya menge
 alasan yang tak berhubungan), `10.0.0.6` **memang diblokir** padahal komentar saya sendiri menulis
 "still blocked", dan `other.host` **tidak** di blocklist (nama publik lolos by design). Juga satu
 apostrof tak ter-escape di judul test → `TS1005`.
+
+### 1.7bu PLUGIN REGISTRY: guard SSRF saat REGISTRASI **dan** saat EKSEKUSI, plus dua lapis yang saya kira satu
+
+**`plugin-registry.ts` 94,81% → 99,28% (137/138).** Repo **85,73% → 85,77% (+0,04)**. Modul
+ter-gate 94 → **95**. **10 kontrol dijalankan, 8 menggigit, 1 CRASH (menggigit), 1 awalnya tidak →
+setelah test baru **menggigit**.
+
+**File test terpisahnya saya temukan lebih dulu (§1.7bl).** Delapan file menyentuh modul ini
+(`tool-branches`, `planner`, `admin-tools-actions`, `stream-preparers`, `planner-recovery`,
+`plugin-registry`, `tool-router`, `tool-branches-branches`). Dengan **kedelapan**-nya: **94,81%**.
+
+**Yang kini dijaga:** **protokol endpoint** — `file://`, `ftp://`, `gopher://` **DITOLAK** meski Zod
+menerima scheme apa pun, jadi pemeriksaan protokollah satu-satunya penghalang; **SSRF saat
+REGISTRASI** (localhost, `127.0.0.1`, `169.254.x`, `10.x`, `192.168.x`); **SSRF saat EKSEKUSI** —
+dan komentarnya eksplisit: *"don't trust registration-time check alone"*, karena hostname bisa
+di-arahkan-ulang ke alamat internal di antara registrasi dan eksekusi; **`latencyMs: 0`** pada
+penolakan SSRF; dan **kanal input GET** — objek JSON menjadi query param, **primitif JSON** masuk
+`else`, non-JSON masuk `catch`.
+
+**DUA LAPIS GUARD SSRF EKSEKUSI — dan saya awalnya menyangka satu.** Kontrol yang menghapus
+`await isBlockedHostAsync(...)` dari cek eksekusi **LOLOS SEMUA TEST**: untuk IP literal, cek
+**sinkron** sudah memblokir, jadi separuh async-nya tak pernah jadi penentu. Saya **cari input yang
+memisahkan keduanya** dan menemukannya — **MEASURED**: `localtest.me`, `lvh.me`, `ip6-localhost`,
+`foo.localhost` **TIDAK** cocok dengan `isBlockedHost` (`false`) tapi **DIBLOKIR**
+`isBlockedHostAsync` (`true`); masing-masing adalah **nama DNS publik yang resolve ke `127.0.0.1`**.
+Dengan `localtest.me`, kontrol itu **langsung menggigit**. Ini **inti** dari lapisan async: tanpa
+ia, sebuah permintaan akan benar-benar keluar ke alamat loopback.
+
+**Lubang assertion lain yang saya temukan sendiri.** Test "GET non-objek" saya memakai
+`'plain text input'` — yang membuat `JSON.parse` **MELEMPAR** sehingga masuk **`catch`**, **BUKAN**
+`else`. Cabang `else` tetap tak tercakup dan saya **keliru menyangka sudah diuji**. Yang mencapai
+`else` adalah **primitif JSON yang SAH**: `123`, `true`, `null`, `"str"`. Kini keduanya dipisah dan
+dipatok. Sekaligus **MEASURED** bahwa `[1,2,3]` masuk cabang **objek** (`typeof [] === 'object'`)
+sehingga paramnya menjadi `0=1&1=2&2=3` — aneh bagi pemanggil, tapi **itulah perilakunya**, dan
+draft pertama saya yang menegaskan `input=[1,2,3]` **salah tentang produknya**.
+
+**`listEnabledPlugins` tidak punya test sama sekali** dan menyentuh database. Saya menaruhnya di
+**file terpisah** karena `plugin-registry.test.ts` **tidak punya mock `db`**, dan menambahkannya di
+sana akan mengubah modul yang dilihat semua test lain di file itu. Yang dipatok: **hanya plugin
+`isEnabled: true`** (kalau filter dihapus, plugin yang **dimatikan operator** tetap bisa dipanggil —
+kontrol keamanan yang diam-diam berhenti bekerja); **`select` HANYA empat kolom aman** —
+`manifestJson` menyimpan **kredensial terenkripsi** dan endpoint, jadi daftar ini tidak boleh
+membocorkannya; hasil kosong adalah **array kosong**, bukan `undefined`; dan urutan baris
+dipertahankan.
+
+**Kesalahan saya:** dua kali assertion Python saya **gagal sebelum menulis file**, jadi saya
+mengira perbaikan sudah mendarat padahal belum, dan satu test dijalankan dengan judul lama. Juga
+satu tebakan salah: `an UNPARSEABLE endpoint` ternyata ditolak **Zod** (`Invalid manifest: endpoint
+— Invalid URL`), bukan oleh catch `new URL` di kode saya.
+
+**Satu baris tak terjangkau, dan itu PENGUKURAN bukan dugaan.** `catch` di sekitar
+`new URL(m.endpoint)` di `normalizeManifest` **tidak dapat dicapai lewat API ini**: saya uji
+**sepuluh** string yang ditolak `new URL` — `http://`, `https://`, `http://[`, `https://a b`,
+`https://%`, `http://?x` — dan **Zod menolak SEMUANYA lebih dulu**, jadi kontrol tak pernah sampai
+ke `try`. Sebaliknya juga berlaku: `http://.` lolos **keduanya**. Dideklarasikan, bukan dibiarkan
+sebagai celah senyap.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

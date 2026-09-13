@@ -1,7 +1,7 @@
 {
-  "linePct": 85.73,
-  "linesHit": 16852,
-  "linesFound": 19657,
+  "linePct": 85.77,
+  "linesHit": 16861,
+  "linesFound": 19658,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -112,12 +112,6 @@
       "hit": 382,
       "found": 479,
       "pct": 79.74947807933194
-    },
-    {
-      "file": "src/lib/plugin-registry.ts",
-      "hit": 128,
-      "found": 160,
-      "pct": 80
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -238,6 +232,12 @@
       "hit": 123,
       "found": 145,
       "pct": 84.82758620689656
+    },
+    {
+      "file": "src/lib/plugin-registry.ts",
+      "hit": 137,
+      "found": 161,
+      "pct": 85.09316770186336
     },
     {
       "file": "src/lib/db-provider-presets.ts",
