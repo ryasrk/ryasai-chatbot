@@ -37,6 +37,23 @@ mock.module('@/lib/reflexion', () => ({
   },
 }))
 
+// The STREAMING loop takes its token usage from `getLastLlmUsage()`, which reads an
+// AsyncLocalStorage store populated only by a REAL chatStream call (`_usageStorage.enterWith`
+// in llm-client.ts). A mocked stream leaves that store empty, so `if (usage) budget.track(usage)`
+// never fires and the budget can never be crossed -- which is exactly why lines 424-428 (the
+// no-tools streaming exit) and 554-557 (the loop's final round) had no coverage. The real
+// `withUsageTracking`/`getLastLlmUsage` pair IS the public contract, so the holder below
+// substitutes only the last step: what a completed LLM round reports as its usage.
+//
+// This mock exists in THIS file only. tool-router-stream.test.ts mocks the same module with a
+// different shape (`withUsageTracking` only), which is fine because each file is a separate
+// process under scripts/test.ts.
+let lastUsage: { promptTokens: number; completionTokens: number } | undefined
+mock.module('@/lib/llm-client', () => ({
+  getLastLlmUsage: () => lastUsage,
+  withUsageTracking: async (fn: any) => fn(),
+}))
+
 import { appendToolRuns, dedupeToolRuns, toolRunTypeFor, runAgenticLoop, runStreamingAgenticLoop } from './tool-router-agentic'
 import { createTokenBudget } from './agentic-budget'
 import type { PendingToolRun, CompletionResult, StreamingCompletionResult } from './tool-utils'
@@ -1024,16 +1041,18 @@ describe('runStreamingAgenticLoop — deadline during the final synthesis', () =
 describe('runStreamingAgenticLoop — token budget exhaustion', () => {
   // Mirror of the non-streaming budget tests, which the streaming path never had.
   //
-  // WHY THE USUAL FIXTURE CANNOT REACH THESE BRANCHES. The non-streaming loop
-  // reads `result.usage` off the injected completion, so a fixture is enough. The
-  // STREAMING loop instead calls `getLastLlmUsage()`, which reads an
-  // AsyncLocalStorage store populated only by a REAL chatStream call
-  // (`_usageStorage.enterWith` in llm-client.ts). A mocked stream therefore leaves
-  // the store empty and the budget can never be crossed -- which is exactly why
-  // these branches had no coverage. The store is primed below by driving the real
-  // `withUsageTracking` + a seeded usage context, using the same public API the
-  // production path uses rather than reaching into a private symbol.
-  const budget = createTokenBudget(10)
+  // HOW THESE BRANCHES BECOME REACHABLE. The non-streaming loop reads `result.usage` off the
+  // injected completion, so an ordinary fixture is enough. The STREAMING loop instead calls
+  // `getLastLlmUsage()`, which reads an AsyncLocalStorage store populated only by a REAL
+  // chatStream call (`_usageStorage.enterWith` in llm-client.ts); a mocked stream leaves the
+  // store empty and the budget can never be crossed. This file therefore substitutes the LAST
+  // step only -- `getLastLlmUsage` is mocked at module level, driven by the `lastUsage` holder
+  // declared beside it, while `withUsageTracking` keeps its real pass-through behaviour. That
+  // keeps the loop under test entirely real.
+  //
+  // An earlier comment here claimed the store was primed "below" by driving the real
+  // withUsageTracking. It never was: the store has no public setter, and a `void budget`
+  // placeholder was left where the priming should have been. Fixed by the module mock.
 
   test('an exhausted budget stops the loop and DISCLOSES it to the user', async () => {
     const b = createTokenBudget(0)
@@ -1095,6 +1114,141 @@ describe('runStreamingAgenticLoop — token budget exhaustion', () => {
     expect(seen[1].confident).toBe(true)
   })
 
+  test('the NO-TOOLS streaming exit tracks usage and DISCLOSES an exhausted budget', async () => {
+    // Lines 424-428: when no tool ran, the stream is forwarded verbatim and the loop returns.
+    // The budget still has to be charged for that round, and an exhausted budget still has to
+    // be disclosed -- otherwise a user gets a silently truncated answer with no explanation.
+    lastUsage = { promptTokens: 9000, completionTokens: 9000 }
+    const b = createTokenBudget(10)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () =>
+      streamResult({
+        toolRuns: [], // <- the no-tools exit
+        stream: (async function* () { yield 'direct answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+
+    expect(text).toContain('direct answer')
+    // The usage was CHARGED: without the track() call the budget would still read 0.
+    expect(b.total()).toBe(18000)
+    expect(b.isExhausted()).toBe(true)
+    // ...and the disclosure followed.
+    expect(text).toContain('token budget exhausted')
+    expect(text).toContain('may be incomplete')
+  })
+
+  test('the no-tools exit does NOT disclose anything while the budget is healthy', async () => {
+    // The inverse. Without this, the test above would pass even if the disclosure were
+    // emitted unconditionally.
+    lastUsage = { promptTokens: 10, completionTokens: 10 }
+    const b = createTokenBudget(1_000_000)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () =>
+      streamResult({ toolRuns: [], stream: (async function* () { yield 'clean answer' })() }),
+    )
+    const text = await drain(out.stream)
+
+    expect(text).toContain('clean answer')
+    expect(text).not.toContain('token budget exhausted')
+    expect(b.total()).toBe(20)
+  })
+
+  test('the no-tools exit is safe when the provider reports NO usage', async () => {
+    // `if (usage)` -- a provider (or a proxy) that omits usage must not crash the stream.
+    lastUsage = undefined
+    const b = createTokenBudget(10)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () =>
+      streamResult({ toolRuns: [], stream: (async function* () { yield 'answer without usage' })() }),
+    )
+    const text = await drain(out.stream)
+
+    expect(text).toContain('answer without usage')
+    expect(b.total()).toBe(0)
+    // Nothing was charged, so nothing is disclosed either.
+    expect(text).not.toContain('token budget exhausted')
+  })
+
+  test('the FINAL round of a loop reports an exhausted budget after the answer', async () => {
+    // Lines 554-557: the tail of the multi-round loop, reached only when a TOOL ran (so the
+    // no-tools exit above is skipped) and the budget is crossed by the last round. This is the
+    // common real shape: the answer is produced and THEN the ceiling is noticed.
+    lastUsage = { promptTokens: 500, completionTokens: 500 }
+    const b = createTokenBudget(400)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () =>
+      streamResult({
+        toolRuns: [toolRun({ outputSummary: 'x'.repeat(600) })],
+        stream: (async function* () { yield 'the real answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+
+    expect(text).toContain('the real answer')
+    expect(text).toContain('token budget exhausted')
+    expect(b.total()).toBe(1000)
+  })
+
+  test('the FINAL SYNTHESIS can be the round that crosses the ceiling (loop tail)', async () => {
+    // Lines 554-557 are the tail AFTER the max-iteration final synthesis -- a different place
+    // from the in-loop check at 459. Reaching it needs a budget that survives all three
+    // ordinary iterations (the in-loop check would otherwise `return` at 463) and is only
+    // crossed by the last synthesis call. Charging 100 per round against a 300 ceiling with
+    // confidence pinned to false does exactly that: rounds 1-3 read 100/200/300 and
+    // `isExhausted()` compares `>` (not `>=`), so the loop runs to the cap, and the synthesis
+    // round takes it to 400.
+    confidenceState.confident = false
+    let round = 0
+    // 100 per round against a ceiling of 350: rounds 1-3 reach 100/200/300 and
+    // `isExhausted()` is `used >= max`, so 300 >= 350 is false and the loop runs all three.
+    // The synthesis round then takes it to 400 >= 350, which is the tail's trigger.
+    const b = createTokenBudget(350)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () => {
+      round++
+      lastUsage = { promptTokens: 50, completionTokens: 50 }
+      // outputSummary is kept SHORT on purpose. The heuristic at line 480 declares confidence
+      // once `accumulatedEvidence.length > 500`, which happened after two rounds when I used a
+      // 600-char summary -- so the loop returned at 495 and never reached the synthesis. Two
+      // short rounds and a short answer keep the evidence under that threshold.
+      return streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield `r${round} ` })(),
+      })
+    })
+    const text = await drain(out.stream)
+
+    expect(round).toBe(4) // 3 loop rounds + 1 synthesis
+    expect(text).toContain('r4')
+    expect(b.total()).toBe(400)
+    expect(b.isExhausted()).toBe(true)
+    expect(text).toContain('token budget exhausted')
+    expect(text).toContain('may be incomplete')
+  })
+
+  test('a final synthesis that stays UNDER the ceiling discloses nothing', async () => {
+    // The inverse, so the test above cannot pass on an unconditional disclosure. 10 tokens per
+    // round against a 1000 ceiling never crosses.
+    confidenceState.confident = false
+    let round = 0
+    const b = createTokenBudget(1000)
+
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () => {
+      round++
+      lastUsage = { promptTokens: 5, completionTokens: 5 }
+      return streamResult({
+        toolRuns: [toolRun({ outputSummary: 'tiny' })],
+        stream: (async function* () { yield `r${round} ` })(),
+      })
+    })
+    const text = await drain(out.stream)
+
+    expect(round).toBe(4)
+    expect(b.total()).toBe(40)
+    expect(text).not.toContain('token budget exhausted')
+  })
+
   test('the budget is SHARED, not copied, so tracking accumulates across rounds', async () => {
     // A budget cloned per round would never exhaust in production either.
     const b = createTokenBudget(1_000_000)
@@ -1103,5 +1257,4 @@ describe('runStreamingAgenticLoop — token budget exhaustion', () => {
     expect(b.isExhausted()).toBe(false)
   })
 
-  void budget
 })

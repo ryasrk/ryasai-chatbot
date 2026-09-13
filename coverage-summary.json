@@ -1,6 +1,6 @@
 {
-  "linePct": 85.84,
-  "linesHit": 16876,
+  "linePct": 85.86,
+  "linesHit": 16880,
   "linesFound": 19659,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -91,9 +91,9 @@
     },
     {
       "file": "src/lib/knowledge-graph.ts",
-      "hit": 154,
+      "hit": 155,
       "found": 196,
-      "pct": 78.57142857142857
+      "pct": 79.08163265306123
     },
     {
       "file": "src/lib/planner.ts",
@@ -109,9 +109,9 @@
     },
     {
       "file": "src/lib/tool-router-agentic.ts",
-      "hit": 382,
+      "hit": 385,
       "found": 479,
-      "pct": 79.74947807933194
+      "pct": 80.3757828810021
     },
     {
       "file": "src/lib/mcp-installer.ts",

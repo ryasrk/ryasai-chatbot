@@ -6,6 +6,7 @@ let kgCreateManyArgs: any[] = []
 let chunkFindManyArgs: any[] = []
 let queryRawCalls: Array<{ strings: string[]; values: unknown[] }> = []
 let kgRelationRows: Array<{ chunkId: string; source: string; target: string; description: string }> = []
+let chunkUpdateThrows: Error | null = null
 let kgCreateManyThrows: Error | null = null
 let queryRawThrows: Error | null = null
 
@@ -24,7 +25,10 @@ mock.module('@/lib/db', () => ({
         return [{ id: 'chunk-1', keywords: 'invoice,payment,refund' }]
       },
       findUnique: async () => ({ keywords: 'existing' }),
-      update: async () => ({}),
+      update: async () => {
+        if (chunkUpdateThrows) throw chunkUpdateThrows
+        return {}
+      },
     },
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
       queryRawCalls.push({ strings: [...strings], values })
@@ -94,6 +98,38 @@ describe('indexChunkKnowledgeGraph — relation storage', () => {
     await bypassOrg(async () => {
       await indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: 'x'.repeat(80) })
     })
+    expect(kgCreateManyArgs).toHaveLength(0)
+  })
+
+  test('a failure BEFORE relation storage is also contained (the outer catch)', async () => {
+    // The test above drives the INNER catch around kgRelation.createMany (line 161). The OUTER
+    // catch on line 177 is a different handler and had no coverage: it is what contains a
+    // failure in getRoleLlmConfig, in extractEntitiesRelations, or in the chunk keyword write
+    // that happens BEFORE relations are touched. A throw from documentChunk.update reaches
+    // only the outer one, and ingestion calls this function fire-and-forget -- an escaping
+    // error would take a document upload down with it.
+    mockChatOnce.mockImplementationOnce(async () => extraction)
+    chunkUpdateThrows = new Error('chunk write failed')
+    try {
+      await expect(
+        indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: 'x'.repeat(80) }),
+      ).resolves.toBeUndefined()
+      // The relation write must NOT have been attempted: the outer catch aborts the rest of
+      // the function, so a partially-applied graph is impossible.
+      expect(kgCreateManyArgs).toHaveLength(0)
+    } finally {
+      chunkUpdateThrows = null
+    }
+  })
+
+  test('an LLM failure during extraction is contained too', async () => {
+    // The same outer catch, entered from the other side: before ANY database write.
+    mockChatOnce.mockImplementationOnce(async () => {
+      throw new Error('provider 502')
+    })
+    await expect(
+      indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: 'x'.repeat(80) }),
+    ).resolves.toBeUndefined()
     expect(kgCreateManyArgs).toHaveLength(0)
   })
 

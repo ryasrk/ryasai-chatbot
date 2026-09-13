@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff32a78`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `54316c4`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff32a78`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,84%** (16.876/19.659 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.881 lulus · 0 gagal** | terukur |
+| Test coverage | **85,86%** (16.880/19.659 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.889 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **98 modul** | +36 |
+| Modul ter-gate | 62 modul | **100 modul** | +38 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -136,6 +136,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/document-parsers.ts` | 81,82% → **84,66%** merged | 96,64% → **100,00%** kode eksekutabel (149/149) | 7 |
 | `src/lib/rag-fts.ts` | 70,13% → **70,78%** merged | 96,43% → **100,00%** kode eksekutabel (109/109) | 9 |
 | `src/lib/planner.ts` | 79,00% → **79,30%** merged | 99,26% → **99,45%** kode eksekutabel (540/543) | 5 |
+| `src/lib/tool-router-agentic.ts` | 79,75% → **80,38%** merged | 98,45% → **99,23%** kode eksekutabel (385/388) | 5 |
+| `src/lib/knowledge-graph.ts` | 78,57% → **79,08%** merged | 99,35% → **100,00%** kode eksekutabel (155/155) | 2 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -395,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**533 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**540 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3930,6 +3932,50 @@ di `guardrails.ts` (341-342). Yang tersisa tak tercakup: **1 field opsional di d
 **Kesalahan proses:** saya menambahkan kunci gate duplikat (`TS1117`) padahal `planner.ts` sudah
 ter-gate — kesalahan yang **sudah pernah saya catat** di sesi ini. Saya memperbaikinya segera setelah
 `tsc` menolak, bukan setelah commit.
+
+### 1.7by LOOP AGENTIK STREAMING: anggapan lama saya tentang batas ini SALAH, dan saya baru tahu setelah mengujinya
+
+**`tool-router-agentic.ts` 98,45% → 99,23% (385/388). `knowledge-graph.ts` 99,35% → 100,00%
+(155/155).** Repo **85,84% → 85,86% (+0,02)**. Modul ter-gate 98 → **100**. **7 kontrol dijalankan, 7
+menggigit.**
+
+**ANGGAPAN LAMA SAYA DIKOREKSI, dan itu temuan terpenting ronde ini.** Catatan saya sendiri berkata
+bahwa cabang-cabang token-budget di loop streaming **"unreachable from a fixture"**. **Itu SALAH.**
+Alasannya benar (loop streaming mengambil usage dari `getLastLlmUsage()`, yang membaca store
+AsyncLocalStorage yang **hanya** diisi `chatStream` nyata) tetapi **kesimpulannya keliru**: store itu
+tidak perlu di-prime, karena `getLastLlmUsage` **bisa disubstitusi di langkah TERAKHIR saja**.
+`tool-router-agentic.test.ts` kini meng-mock `@/lib/llm-client` dengan **holder `lastUsage`** sambil
+mempertahankan `withUsageTracking` apa adanya — jadi **loop yang diuji tetap 100% nyata**. Tiga
+cabang yang dulu saya sebut mustahil kini **dieksekusi**: keluar **tanpa-tools** (424-428) dan **ekor
+loop setelah sintesis final** (554-557).
+
+**DAN SAYA MENEMUKAN JEJAK ANGGAPAN ITU DI DALAM TEST.** Komentar describe berbunyi *"The store is
+primed below by driving the real withUsageTracking + a seeded usage context"* — **priming itu tidak
+pernah ada.** Yang tertinggal hanyalah **`void budget`, sebuah placeholder** di tempat priming
+seharusnya. Store **tidak punya setter publik** (saya cek ke-11 ekspor `llm-client`: hanya
+`withUsageTracking` dan `getLastLlmUsage`, tanpa setter), jadi kalimat itu **tidak bisa** benar.
+Saya memperbaiki komentarnya dan **membuang placeholder itu**.
+
+**Aritmetika budget yang akhirnya benar.** `isExhausted()` adalah **`used >= maxTokens`**, bukan `>`.
+Untuk mencapai ekor loop saya butuh budget yang **selamat dari tiga iterasi** tetapi **habis karena
+sintesis final**: 100/ronde dengan plafon **350** → 100/200/300 lolos, sintesis → **400 ≥ 350**
+memicu. Dan dua test pertama saya **gagal** karena **dua sebab berbeda** yang keduanya informatif:
+(1) `confidenceState.confident = false` saja tidak cukup; (2) **`outputSummary` 600 karakter/ronde**
+membuat `accumulatedEvidence.length > 500` sehingga **heuristic di baris 480** menyatakan jawaban
+konfiden dan loop **berhenti di iterasi 2 lewat baris 495** — bukan ke sintesis. Diperbaiki dengan
+`outputSummary` pendek; loop kini benar-benar menempuh 3 ronde + 1 sintesis (`round === 4`).
+
+**`knowledge-graph.ts`: catch yang tak pernah dieksekusi.** Test lama menguji **catch DALAM** (sekitar
+`kgRelation.createMany`, baris 161). **Catch TERLUAR (177) adalah handler yang BERBEDA** dan belum
+pernah jalan: ia yang menahan kegagalan dari `getRoleLlmConfig`, `extractEntitiesRelations`, atau
+**penulisan keyword chunk** yang terjadi **SEBELUM** relasi disentuh. Dua test baru: `documentChunk.update`
+melempar (dan **relasi tidak boleh ikut ditulis** — graph separuh jadi harus mustahil), dan provider
+LLM melempar **sebelum penulisan DB apa pun**. Keduanya penting karena **ingestion memanggil fungsi ini
+fire-and-forget** — error yang lolos akan **menjatuhkan upload dokumen**.
+
+**Kesetaraan/artefak:** sisa 3 baris di `tool-router-agentic.ts` adalah **219** dan **369-370** —
+**deklarasi field opsional di tipe** (`skipClarification?`, `onConfidence?`), murni artefak
+instrumen.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

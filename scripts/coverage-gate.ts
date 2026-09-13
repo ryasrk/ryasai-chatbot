@@ -150,6 +150,11 @@ const FLOORS: Record<string, number> = {
   // merged figure before this round; now safely above.
   'src/lib/admin-tools.ts': 83, // measured 100.00% executable; merged 84.30%
   'src/lib/planner.ts': 78, // measured 99.45% executable; merged 79.00%
+  // The streaming agentic loop: termination (deadline, token budget), the no-tools exit and
+  // the max-iteration final synthesis.
+  'src/lib/tool-router-agentic.ts': 80, // measured 80.38% merged; 385/388 executable
+  // Chunk-level knowledge-graph indexing, including the two containment catches.
+  'src/lib/knowledge-graph.ts': 79, // measured 79.08% merged; 155/155 executable
   'src/lib/rag-retrieval.ts': 75, // measured 100.00% executable; merged 76.29%
   'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
   // A REVENUE feature: a paying on-prem customer is warned before their license
