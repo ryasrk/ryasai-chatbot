@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6900103`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f91097`.
 
 ---
 
@@ -3231,6 +3231,62 @@ generateSql, audit action, businessContext, malformed→throw, non-array, distin
 identik pada **10 nilai** termasuk `' '`, `'null'`, `'0'`, `'false'` — `JSON.parse` melempar untuk
 semuanya), `?? 0`, `throw` di dalam `try` yang ditangkap `catch` yang sama, dan
 `if (!signature) return false`.
+
+### 1.7bl KOREKSI BESAR: daftar "modul terendah" yang saya kejar selama ini sebagian besar adalah ARTEFAK PENGUKURAN
+
+**Ronde ini tidak menambah satu baris kode pun. Nilainya adalah KOREKSI.** Saya mulai dengan
+niat menulis test untuk `tool-router.ts` (merged 70,71%, **239/338 baris**), membaca
+`runStreamingChatCompletion`, dan menemukan **72 barisnya tidak tercakup** — termasuk
+**seluruh fungsi utama**: guard `allowMultiStepDag`, hand-off ke agentic loop, pemuatan intent
+pipeline, keempat cabang `prepareSqlStream`/`prepareRagStream`/`prepareRestStream`/
+`preparePluginStream`, dan jalur klarifikasi. Saya **hampir menulis ulang seluruh suite** untuk
+fungsi itu.
+
+**Lalu saya mencari SIAPA yang memanggilnya, dan menemukan `src/lib/tool-router-stream.test.ts`.**
+File test itu **sudah ada** dan **sudah menguji fungsi tersebut**. Saya memberi
+`coverage-honest.py` **hanya satu** file test, dan repo ini memakai pola
+**`-stream` / `-agentic` / `-dag` / `-loop`** sebagai file test **terpisah** untuk satu modul yang
+sama. **Angka yang saya lihat (72,62% eksekutabel) adalah artefak dari pengukuran saya sendiri,
+bukan kekurangan test.** Dengan file lengkap: **`tool-router.ts` = 239/239 = 100,00%**.
+
+**Saya lalu menguji apakah ini pola atau kebetulan, dengan MENCARI SEMUA FILE TEST per modul
+lebih dulu** — disiplin yang terlewat selama ini. Hasilnya sistematis:
+
+| modul | eksekutabel | merged | selisih |
+|---|---|---|---|
+| `tool-router.ts` | **239/239** | 70,71% | **−29,29 poin** |
+| `config.ts` | **45/45** | 70,31% | **−29,69 poin** |
+| `real-connectors.ts` | **685/685** | 73,89% | **−26,11 poin** |
+| `cognee.ts` | **34/34** | 73,91% | **−26,09 poin** |
+| `ai.ts` | **416/416** | 74,42% | **−25,58 poin** |
+| `intent-pipeline.ts` | 337/338 | 76,59% | −23,11 poin |
+| `planner.ts` | 538/541 | 86,36% | −13,09 poin |
+
+**Sebelas modul yang saya kejar lintas beberapa ronde: 2.625/2.630 baris eksekutabel tercakup =
+99,81%.** `config.ts` **punya TUJUH file test** (`config`, `config-derive`, `public-config`,
+`llm-config-runtime`, `crypto`, `llm-client`, `security-ssrf`, `llm-config`); saya hanya pernah
+memberinya **dua**. `real-connectors.ts` punya **empat**. `cognee.ts` dan `ai.ts` masing-masing
+**tiga**, lewat `tool-router-stream.test.ts`.
+
+**Konsekuensi jujur.** Rendahnya `merged` di sini adalah **inflasi `LF`** (§1.7z): penyebutnya
+adalah **gabungan maksimum per-baris** dari banyak run, sehingga ia **melebihi** yang
+diinstrumentasi run mana pun. Jadi dua `merged` yang rendah **tidak** berarti test kurang — dan
+saya **tidak boleh** memakai `merged` sendirian untuk memilih target. **Yang saya lakukan selama
+beberapa ronde, dengan `coverage-honest.py` dan satu file test, MASIH bisa menyesatkan** — dan
+angka yang mengoreksi saya adalah **selisih antara dua pengukuran**, bukan pembacaan satu angka.
+
+**Disiplin baru yang saya patuhi mulai sekarang:** **cari SEMUA file test yang menyebut modul itu
+SEBELUM mengukurnya**, dan berikan **semuanya** ke `coverage-honest.py`. Tanpa langkah ini,
+`coverage-honest.py` **overstatemen kekurangan** persis seperti `merged` **understatemen**
+cakupan.
+
+**Yang tidak berubah:** repo tetap **85,32%**, suite **3.737 lulus / 0 gagal**, gate **OK dengan 89
+modul**. Tidak ada kode yang disentuh, jadi tidak ada yang perlu diverifikasi ulang — dan saya
+**tidak** mengklaim kenaikan apa pun dari ronde ini.
+
+**Koreksi terhadap laporan saya sendiri di ronde-ronde sebelumnya:** daftar "remaining modules
+under 70% merged" yang saya ulang setiap ronde **menyesatkan sebagai daftar kerja**. Modul-modul
+itu **tidak** punya kekurangan test; yang kurang adalah **ketelitian pengukuran saya**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
