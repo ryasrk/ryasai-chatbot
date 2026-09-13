@@ -177,6 +177,26 @@ export function readErrorBody(res: Response): Promise<string> {
 }
 
 /**
+ * Strip credential-shaped substrings out of an upstream provider body before it goes into an Error
+ * message. The message is NOT user-facing (the typed error deliberately carries only a category +
+ * hint), but it IS persisted: `logLlmUsage` stores `e.message` in `LlmUsageLog`, the observability
+ * ring buffer keeps it for `GET /api/traces`, and `ApiLog.errorMessage` keeps it too. A BYOK provider
+ * frequently echoes the submitted key in a 401 body, so an unredacted message puts the CUSTOMER's
+ * secret into a trace buffer, a log line, and any bug report or OTel export that carries them.
+ *
+ * Pattern-based rather than value-based on purpose: the raw body arrives BEFORE we know which key was
+ * used, so there is nothing to compare against. Known provider key shapes are matched, plus any
+ * `sk-`/`key-` style token and any `Authorization: Bearer <token>` echo.
+ */
+export function redactProviderBody(body: string): string {
+  return body
+    .replace(/\b(sk|pk|rk|api|key|token)-[A-Za-z0-9_\-]{8,}/gi, '[REDACTED_KEY]')
+    .replace(/\bBearer\s+[A-Za-z0-9._\-]{8,}/gi, 'Bearer [REDACTED]')
+    .replace(/(["']?(?:api[_-]?key|access[_-]?token|secret)["']?\s*[:=]\s*["']?)[A-Za-z0-9._\-]{8,}/gi, '$1[REDACTED]')
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[REDACTED_SECRET]')
+}
+
+/**
  * Why a BYOK provider call failed, from the CUSTOMER's point of view.
  *
  * ryasai is bring-your-own-key: the credential we send belongs to the customer,
@@ -202,7 +222,9 @@ export class LlmProviderError extends Error {
   readonly failure: ProviderFailure
   constructor(status: number, body: string, stream = false) {
     const { failure } = { failure: classifyProviderFailure(status, body) }
-    super(`LLM ${stream ? 'stream ' : ''}error (HTTP ${status}): ${body.slice(0, 200)}`)
+    // Redact BEFORE the slice: a key that straddles the 200-char boundary would otherwise leave a
+    // fragment behind, and the classification above already ran on the raw body where it is useful.
+    super(`LLM ${stream ? 'stream ' : ''}error (HTTP ${status}): ${redactProviderBody(body).slice(0, 200)}`)
     this.name = 'LlmProviderError'
     this.status = status
     this.failure = failure

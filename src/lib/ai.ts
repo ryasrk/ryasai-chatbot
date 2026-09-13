@@ -388,7 +388,11 @@ export async function generateSessionTitle(firstMessage: string): Promise<string
     { purpose: 'title' },
   )
   const title = raw.replace(/^["'\s]+|["'\s.]+$/g, '').slice(0, 80)
-  return title
+  // A model that replies "A" or "OK" has not summarised anything, and returning that verbatim puts a
+  // one-word non-title in the session list. The caller only recovers if this THROWS, so a short reply has
+  // to be handled HERE. This guard was dropped by accident in a5d3d04 (a mutation-testing harness restored
+  // ai.ts from a truncated backup) and the two tests below caught it -- keep them.
+  return title.length >= 3 ? title : firstMessage.slice(0, 60)
 }
 
 // ---------------------------------------------------------------------------
