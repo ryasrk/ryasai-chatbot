@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f91097`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0cc7cfc`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f91097`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,32%** (16.776/19.662 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.737 lulus · 0 gagal** | terukur |
+| Test coverage | **85,38%** (16.789/19.663 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.756 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -121,7 +121,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/plugin-selector.ts` | 77,45% → **88,73%** merged | 95,18% → **100,00%** kode eksekutabel (181/181) | 5 |
 | `src/lib/notifications.ts` | 77,52% → **84,50%** merged (artefak LF) | 89,29% → **93,16%** kode eksekutabel (109/117) | 8 |
 | `src/app/api/integrations/[id]/query/route.ts` | 77,14% → **100,00%** merged | 85,26% → **100,00%** kode eksekutabel (210/210) | 11 |
-| **Total repo** | **62,44%** | **85,32%** | — |
+| `src/lib/rag-chunking.ts` | 64,95% → **84,30%** merged (artefak LF) | 70,79% → **100,00%** kode eksekutabel (188/188) | 14 |
+| **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -380,7 +381,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**380 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**393 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3287,6 +3288,40 @@ modul**. Tidak ada kode yang disentuh, jadi tidak ada yang perlu diverifikasi ul
 **Koreksi terhadap laporan saya sendiri di ronde-ronde sebelumnya:** daftar "remaining modules
 under 70% merged" yang saya ulang setiap ronde **menyesatkan sebagai daftar kerja**. Modul-modul
 itu **tidak** punya kekurangan test; yang kurang adalah **ketelitian pengukuran saya**.
+
+### 1.7bm Disiplin baru MENGUNGKAP satu modul yang benar-benar kurang test — dan membebaskan sepuluh yang bukan
+
+**Ronde ini saya mulai dengan menerapkan §1.7bl secara sistematis: cari SEMUA file test per modul
+SEBELUM mengukur.** Hasilnya memisahkan dua kelompok yang selama ini saya campur.
+
+**Yang benar-benar kurang test (nyata): `rag-chunking.ts` 70,79% → 100,00% (188/188)**, 52 baris
+tak tercakup — **terendah nyata di repo**. Repo **85,32% → 85,38% (+0,06)**. Merged 84,30% →
+**tidak boleh di-gate**.
+
+**Yang ternyata SUDAH 100% (artefak pengukuran saya):** `cognee-knowledge-graph.ts` (267/267),
+`connectors.ts` (118/118 — **punya TUJUH file test**, saya memberi... nol), `config.ts` (45/45,
+**tujuh** file test), `ai.ts` (416/416, tiga), `cognee.ts` (34/34, tiga), `tool-router.ts`
+(239/239, tiga), `real-connectors.ts` (685/685, empat), `source-guidance.ts` (55/55),
+`evidence-boundary.ts` (14/14), `agentic-budget.ts` (13/13).
+
+**Yang kini dijaga pada `rag-chunking`** — dan ini menentukan dokumen mana yang bisa dibaca:
+**`detectDocType` TIDAK case-sensitive** — tanpa `toLowerCase()`, `.PDF` jatuh ke cabang
+"ekstensi tak dikenal" dan **dokumen yang teksnya sempurna diekstraksi hilang secara diam-diam**;
+**guard `idx >= 0`** — tanpa itu `lastIndexOf` mengembalikan −1 dan `slice(0)` mengembalikan
+**SELURUH NAMA FILE** sebagai tipe, lalu nama file itu **di-parse sebagai binary**;
+**overlap chunk**: dengan token unik terukur, `overlapChars: 0` memberi chunk kedua mulai `t27`
+sementara `30` memberi `t20` — **tiga token diulang**, dan itulah yang membuat kalimat yang
+terpotong di batas **masih bisa ditemukan**; **`limitExtractedText`** — **cap 2.000.000 karakter**
+(terukur; draf pertama saya mengira 400.000) dan normalisasi `\s+\n` → `\n` yang menghapus spasi
+**SEBELUM** newline tetapi **mempertahankan indentasi SESUDAHNYA** dan **tidak** meruntuhkan
+newline berulang — saya menulis tiga assertion yang salah tentang ini sebelum mengukurnya;
+**probe rasio printable (>0,85)** yang menyelamatkan berkas ASCII dari dibuang; **cabang
+docx/xlsx/pdf yang berhasil**; dan **catch baca-gagal** yang mengubah berkas rusak menjadi
+placeholder **bernama** alih-alih membatalkan antrean.
+
+**Kontrol negatif: 13. 11 menggigit.** Dua dideklarasikan setara: **guard `maxChars <= 0`** —
+tanpa guard pun, `nextLength = 0 + len + 0 > 0` **langsung break** sehingga hasilnya `''` yang
+sama; dan `if (!raw) return undefined`. Keduanya **tak dapat dibedakan oleh input apa pun**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

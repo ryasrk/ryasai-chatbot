@@ -1,7 +1,7 @@
 {
-  "linePct": 85.32,
-  "linesHit": 16776,
-  "linesFound": 19662,
+  "linePct": 85.38,
+  "linesHit": 16789,
+  "linesFound": 19663,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -94,12 +94,6 @@
       "hit": 154,
       "found": 196,
       "pct": 78.57142857142857
-    },
-    {
-      "file": "src/lib/rag-chunking.ts",
-      "hit": 175,
-      "found": 222,
-      "pct": 78.82882882882883
     },
     {
       "file": "src/lib/planner.ts",
@@ -238,6 +232,12 @@
       "hit": 569,
       "found": 675,
       "pct": 84.29629629629629
+    },
+    {
+      "file": "src/lib/rag-chunking.ts",
+      "hit": 188,
+      "found": 223,
+      "pct": 84.30493273542601
     },
     {
       "file": "src/lib/constrained-output.ts",

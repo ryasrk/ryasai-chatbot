@@ -3,10 +3,15 @@ import { describe, expect, test, mock } from 'bun:test'
 mock.module('@/lib/logger', () => ({
   scopedLogger: () => ({ debug: () => {}, warn: () => {}, info: () => {}, error: () => {} }),
 }))
+/**
+ * Parser results are settable so the "parser produced text" branches are reachable.
+ * They default to empty text, which is the previous behaviour of this mock.
+ */
+const parserText = { pdf: '', docx: '', xlsx: '' }
 mock.module('@/lib/document-parsers', () => ({
-  extractPdfTextFromBuffer: () => '',
-  extractDocxTextFromBuffer: () => '',
-  extractXlsxTextFromBuffer: () => '',
+  extractPdfTextFromBuffer: () => parserText.pdf,
+  extractDocxTextFromBuffer: () => parserText.docx,
+  extractXlsxTextFromBuffer: () => parserText.xlsx,
 }))
 
 import {
@@ -15,6 +20,8 @@ import {
   splitStructuralBlocks,
   isPlaceholderChunk,
   emptyDocumentContent,
+  detectDocType,
+  extractFileText,
 } from './rag-chunking'
 
 describe('chunkText', () => {
@@ -164,5 +171,230 @@ describe('isPlaceholderChunk / emptyDocumentContent', () => {
   test('does not match a document that merely mentions the phrase mid-content', () => {
     const content = 'Ringkasan: dokumen ini berisi catatan. [Empty document: x] disebut di lampiran.'
     expect(isPlaceholderChunk(content)).toBe(false)
+  })
+})
+
+// ===========================================================================
+// detectDocType — decides WHICH parser runs, so a wrong answer is a lost doc
+// ===========================================================================
+
+describe('detectDocType', () => {
+  test('recognises the four parsed formats', () => {
+    expect(detectDocType('report.pdf')).toBe('pdf')
+    expect(detectDocType('report.docx')).toBe('docx')
+    expect(detectDocType('report.xlsx')).toBe('xlsx')
+    expect(detectDocType('report.md')).toBe('md')
+    expect(detectDocType('report.txt')).toBe('txt')
+  })
+
+  test('is CASE-INSENSITIVE, so a .PDF from a camera or Windows is not missed', () => {
+    // `lower = filename.toLowerCase()` -- without it a `.PDF` falls into the "unknown
+    // extension" branch and is treated as a BINARY placeholder, silently losing a
+    // document whose text was perfectly extractable.
+    expect(detectDocType('QUARTERLY.PDF')).toBe('pdf')
+    expect(detectDocType('Laporan.DOCX')).toBe('docx')
+    expect(detectDocType('Data.XLSX')).toBe('xlsx')
+    expect(detectDocType('NOTES.MD')).toBe('md')
+    expect(detectDocType('README.TXT')).toBe('txt')
+  })
+
+  test('an UNKNOWN extension is returned as-is, lowercased', () => {
+    // The fallback uses the LAST dot, so a multi-dot name resolves to its final part.
+    expect(detectDocType('archive.tar.gz')).toBe('gz')
+    expect(detectDocType('data.CSV')).toBe('csv')
+  })
+
+  test('a name with NO dot at all is treated as text', () => {
+    // `idx >= 0` guard: without it, lastIndexOf returns -1 and `slice(0)` would return
+    // the WHOLE FILENAME as the type -- and that filename would then be parsed as a
+    // binary placeholder.
+    expect(detectDocType('LICENSE')).toBe('txt')
+    expect(detectDocType('')).toBe('txt')
+  })
+
+  test('a LEADING dot is not treated as an extension separator', () => {
+    // '.gitignore' -> idx is 0, so `slice(1)` gives 'gitignore'. A file whose only dot
+    // is at index 0 has no extension in the usual sense, and the caller still gets a
+    // type rather than an exception.
+    expect(detectDocType('.gitignore')).toBe('gitignore')
+  })
+
+  test('a TRAILING dot yields an empty type rather than the whole name', () => {
+    // `slice(idx + 1)` on 'file.' gives ''. Recorded as measured: the caller sees an
+    // empty type, which matches no parser and falls through to the binary path.
+    expect(detectDocType('file.')).toBe('')
+  })
+})
+
+// ===========================================================================
+// trailingWordsWithin — the overlap seam of a split chunk
+// ===========================================================================
+
+describe('chunkText overlap (trailingWordsWithin)', () => {
+  /** Tokens that are each unique, so a seam repetition is visible rather than invisible. */
+  const tokens = (n: number) => Array.from({ length: n }, (_, i) => `t${i}`).join(' ')
+
+  test('an overlap REPEATS the tail of the previous chunk at the seam', () => {
+    // MEASURED with unique tokens: overlapChars 0 gives a second chunk starting at
+    // `t27`, while overlapChars 30 gives one starting at `t20` -- i.e. t20..t22 are
+    // repeated. That repetition is the whole point: a sentence cut across the boundary
+    // is still retrievable from the second chunk. Without it a query whose answer
+    // straddles the seam matches NEITHER chunk.
+    //
+    // My first version of this test used the word "word" for every token and checked
+    // `startsWith('word word')`, which is true for BOTH cases -- a wrong-branch pass.
+    const none = chunkText(tokens(120), { maxChars: 100, overlapChars: 0 })
+    const some = chunkText(tokens(120), { maxChars: 100, overlapChars: 30 })
+    expect(none.length).toBeGreaterThan(1)
+    expect(some.length).toBeGreaterThan(none.length)
+    // No overlap: the second chunk starts where the first ended, with no repeat.
+    expect(none[1]!.startsWith('t27 ')).toBe(true)
+    // With overlap: the second chunk REWINDS into the first one's tail.
+    expect(some[1]!.startsWith('t20 ')).toBe(true)
+    // And the rewound token is the LAST token of chunk 0's own text, confirming it.
+    expect(none[0]!.endsWith('t26')).toBe(true)
+  })
+
+  test('the overlap GROWS the chunk count, it does not shrink the text', () => {
+    // Every chunk still carries its `maxChars` budget; the overlap is added on top, so
+    // the same document yields MORE chunks rather than shorter ones.
+    const none = chunkText(tokens(120), { maxChars: 100, overlapChars: 0 })
+    const some = chunkText(tokens(120), { maxChars: 100, overlapChars: 30 })
+    expect(some.length).toBeGreaterThan(none.length)
+    expect(Math.min(...some.map((c) => c.length))).toBeGreaterThan(10)
+  })
+})
+
+// ===========================================================================
+// detectDocType consumers: extractFileText
+// ===========================================================================
+
+describe('extractFileText', () => {
+  function fileOf(name: string, body: string): File {
+    return new File([body], name)
+  }
+
+  test('a TEXT file returns its content verbatim', async () => {
+    const r = await extractFileText(fileOf('notes.txt', 'hello world'))
+    expect(r.text).toBe('hello world')
+    expect(r.isPlaceholder).toBe(false)
+  })
+
+  test('a MARKDOWN file is treated as text too', async () => {
+    const r = await extractFileText(fileOf('doc.md', '# Title'))
+    expect(r.text).toBe('# Title')
+    expect(r.isPlaceholder).toBe(false)
+  })
+
+  test('a parsed-format file whose parser returns NOTHING becomes a placeholder', async () => {
+    // The parsers are mocked to return '' here, which is the real "parser produced no
+    // text" case. The caller must be able to RECOGNISE this, or an empty chunk set
+    // looks like a document that legitimately had nothing in it.
+    const r = await extractFileText(new File([new Uint8Array([1, 2, 3])], 'scan.pdf'))
+    expect(r.isPlaceholder).toBe(true)
+    expect(r.text).toContain('scan.pdf')
+  })
+
+  test('an UNPARSEABLE binary with printable text is accepted as text', async () => {
+    // The printable-ratio probe (>0.85): a `.bin` full of ASCII is real content, and
+    // discarding it would lose a document the user can see is readable.
+    const r = await extractFileText(fileOf('weird.bin', 'plain ascii content here'))
+    expect(r.text).toBe('plain ascii content here')
+    expect(r.isPlaceholder).toBe(false)
+  })
+
+  test('an unparseable binary with BINARY bytes becomes a placeholder', async () => {
+    // Low printable ratio -> placeholder. Without this the raw bytes would be indexed
+    // as "text" and every query would match noise.
+    const bytes = new Uint8Array(64).fill(0)
+    const r = await extractFileText(new File([bytes], 'blob.bin'))
+    expect(r.isPlaceholder).toBe(true)
+    expect(r.text).toContain('blob.bin')
+  })
+
+  test('the placeholder names the file and its size so an operator can act', async () => {
+    const bytes = new Uint8Array(2048).fill(0)
+    const r = await extractFileText(new File([bytes], 'big.bin'))
+    expect(r.text).toContain('big.bin')
+    expect(r.text).toContain('2048 bytes')
+  })
+})
+
+describe('extractFileText — the parser-success branches', () => {
+  function bin(name: string): File {
+    return new File([new Uint8Array([1, 2, 3])], name)
+  }
+
+  test('DOCX and XLSX text is used, with whitespace BEFORE a newline collapsed', () => {
+    // MEASURED, and not what I assumed. The normalisation is `\s+\n` -> `\n`, which
+    // removes the blanks and spaces IMMEDIATELY BEFORE a newline while leaving any
+    // INDENTATION AFTER it, and it does NOT collapse repeated newlines. So
+    // '  Hello   world  \n\n  Second line  ' becomes 'Hello   world\n  Second line'
+    // -- note the two leading spaces survive on the second line, and so do the
+    // interior spaces in "Hello   world". My first version of this test asserted a
+    // tidier result and was simply wrong about the code.
+    parserText.docx = '  Hello   world  \n\n  Second line  '
+    parserText.xlsx = 'sheet1\n\n\nSheet name'
+    return (async () => {
+      const d = await extractFileText(bin('a.docx'))
+      expect(d.isPlaceholder).toBe(false)
+      expect(d.text).toBe('Hello   world\n  Second line')
+      // Three consecutive newlines collapse to ONE, because each one had whitespace
+      // (the preceding newline) before it.
+      expect((await extractFileText(bin('a.xlsx'))).text).toBe('sheet1\nSheet name')
+    })().finally(() => {
+      parserText.docx = ''
+      parserText.xlsx = ''
+    })
+  })
+
+  test('PDF text is used when the parser yields it', () => {
+    parserText.pdf = 'extracted pdf body'
+    return (async () => {
+      const r = await extractFileText(bin('a.pdf'))
+      expect(r.isPlaceholder).toBe(false)
+      expect(r.text).toBe('extracted pdf body')
+    })().finally(() => { parserText.pdf = '' })
+  })
+
+  test('extracted text is CAPPED at MAX_EXTRACTED_TEXT_CHARS', () => {
+    // MEASURED: the cap is 2_000_000 characters, so a document under that is passed
+    // through UNCHANGED -- my first version used 400k and asserted a trim, which was
+    // wrong. The cap bounds what an enormous PDF can push into the chunker, so the
+    // test must cross the real threshold to observe it.
+    const under = 1_500_000
+    parserText.pdf = 'x'.repeat(under)
+    return (async () => {
+      const r = await extractFileText(bin('big.pdf'))
+      expect(r.text.length).toBe(under)
+      // Now cross the cap; the TAIL is dropped and the head kept.
+      parserText.pdf = 'x'.repeat(2_500_000)
+      const capped = await extractFileText(bin('huge.pdf'))
+      expect(capped.text.length).toBe(2_000_000)
+    })().finally(() => { parserText.pdf = '' })
+  })
+
+  test('a TEXT file whose read FAILS becomes a named placeholder instead of throwing', async () => {
+    // The scheduler processes many files; one unreadable file must not abort the run.
+    const bad = new File([''], 'broken.txt')
+    Object.defineProperty(bad, 'text', {
+      value: () => Promise.reject(new Error('EIO')),
+    })
+    const r = await extractFileText(bad)
+    expect(r.isPlaceholder).toBe(true)
+    expect(r.text).toContain('broken.txt')
+    expect(r.text).toContain('Read failed')
+  })
+})
+
+describe('splitStructuralBlocks — a table meeting a heading flushes the table', () => {
+  test('a heading line closes an open table', () => {
+    // The `flush()` inside the isHeadingLine branch. Without it the heading text is
+    // appended INTO the table block, so a section title ships as a table row.
+    const doc = 'A\tB\n1\t2\n## Next Section\nbody text'
+    const blocks = splitStructuralBlocks(doc)
+    const tableBlock = blocks.find((b) => b.includes('A\tB'))
+    expect(tableBlock).toBeDefined()
+    expect(tableBlock).not.toContain('## Next Section')
   })
 })
