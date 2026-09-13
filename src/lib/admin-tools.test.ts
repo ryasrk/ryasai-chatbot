@@ -19,6 +19,7 @@ const mockIntegrationFindFirst = mock<(args: any) => Promise<any>>(async () => n
 const mockIntegrationUpdate = mock<(args: any) => Promise<any>>(async () => ({}))
 const mockDocumentFindFirst = mock<(args: any) => Promise<any>>(async () => null)
 const mockDocumentUpdate = mock<(args: any) => Promise<any>>(async () => ({}))
+const mockPluginCount = mock<(args: any) => Promise<number>>(async () => 0)
 
 const mockWriteAudit = mock<(args: any) => Promise<void>>(async () => undefined)
 // ponytail: writeAudit is verified via mockAuditLogCreate (the real writeAudit calls
@@ -59,7 +60,7 @@ mock.module('@/lib/db', () => ({
       update: mockDocumentUpdate,
     },
     auditLog: { findMany: mockAuditLogFindMany, create: mockAuditLogCreate },
-    plugin: { findMany: mockPluginFindMany },
+    plugin: { findMany: mockPluginFindMany, count: mockPluginCount },
     scheduledRun: { findMany: mockScheduledRunFindMany },
     appConfig: { findFirst: mockAppConfigFindFirst, update: mockAppConfigUpdate, create: mockAppConfigCreate },
   },
@@ -70,6 +71,18 @@ mock.module('@/lib/db', () => ({
 // ponytail: do NOT mock @/lib/session — Bun's mock.module merges with the real
 // module and the mock writeAudit breaks session.test.ts. Use the real writeAudit
 // (which calls db.auditLog.create, already in our db mock).
+// seedPluginsAction reaches these via dynamic import, so a plain mock here is what
+// the module under test actually sees.
+let seedPluginsResult: () => Promise<void> = async () => undefined
+mock.module('@/lib/plugin-seeds', () => ({
+  seedPlugins: async (_orgId: string) => { await seedPluginsResult() },
+}))
+mock.module('@/lib/prisma-tenant', () => ({
+  getOrgContext: () => 'org-1',
+  enterWithOrg: () => undefined,
+  bypassOrg: async (fn: () => unknown) => fn(),
+}))
+
 mock.module('@/lib/prompt-settings', () => ({
   getPromptSettings: mockGetPromptSettings,
   mergePromptSettings: mockMergePromptSettings,
@@ -121,6 +134,9 @@ beforeEach(() => {
   mockIntegrationUpdate.mockImplementation(async () => ({}))
   mockDocumentFindFirst.mockImplementation(async () => null)
   mockDocumentUpdate.mockImplementation(async () => ({}))
+  mockPluginCount.mockReset()
+  mockPluginCount.mockImplementation(async () => 0)
+  seedPluginsResult = async () => undefined
   mockWriteAudit.mockImplementation(async () => undefined)
   mockGetPromptSettings.mockImplementation(async () => ({
     systemPrompt: 'test prompt',
@@ -376,5 +392,177 @@ describe('executeAdminTool — unknown tool', () => {
     const result = await executeAdminTool('admin:unknown_tool', {}, 'user1', true)
     expect(result.ok).toBe(false)
     expect(result.output).toBe('Unknown admin tool: admin:unknown_tool')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// admin:toggle_document — the confirmation gate on a destructive-ish change
+//
+// Skipped in the per-file run of this file before, so the confirmation branch and
+// the unconfirmed/wrong-target paths had never executed.
+// ---------------------------------------------------------------------------
+
+describe('executeAdminTool — admin:toggle_document', () => {
+  const docRow = { id: 'doc-1', name: 'Leave Policy', isEnabled: true }
+
+  test('an unconfirmed call asks for confirmation and writes NOTHING', async () => {
+    mockDocumentFindFirst.mockImplementation(async () => docRow)
+    const result = await executeAdminTool('admin:toggle_document', { document: 'Leave Policy', action: 'disable' }, 'user1', false)
+
+    expect(result.ok).toBe(false)
+    expect(result.confirmationRequired?.action).toBe('TOGGLE_DOCUMENT')
+    // The message must name the document so the user knows what they are confirming.
+    expect(result.confirmationRequired?.message).toContain('Leave Policy')
+    // The whole point of the gate: nothing is persisted before confirmation.
+    expect(mockDocumentUpdate).not.toHaveBeenCalled()
+  })
+
+  test('the confirmation is CONFIRMED with isConfirmed=true and then persists', async () => {
+    mockDocumentFindFirst.mockImplementation(async () => docRow)
+    const result = await executeAdminTool('admin:toggle_document', { document: 'Leave Policy', action: 'disable' }, 'user1', true)
+
+    expect(result.ok).toBe(true)
+    expect(mockDocumentUpdate.mock.calls[0][0].data).toEqual({ isEnabled: false })
+  })
+
+  test('a missing document name is rejected before any lookup', async () => {
+    const result = await executeAdminTool('admin:toggle_document', { action: 'disable' }, 'user1', true)
+    expect(result.ok).toBe(false)
+    expect(result.output).toContain('required')
+    expect(mockDocumentFindFirst).not.toHaveBeenCalled()
+  })
+
+  test('an unknown document is reported, not silently treated as a create', async () => {
+    mockDocumentFindFirst.mockImplementation(async () => null)
+    const result = await executeAdminTool('admin:toggle_document', { document: 'Nope', action: 'enable' }, 'user1', true)
+    expect(result.ok).toBe(false)
+    expect(result.output).toContain('not found')
+    expect(mockDocumentUpdate).not.toHaveBeenCalled()
+  })
+
+  test('"enable" sets isEnabled true and "disable" sets it false', async () => {
+    mockDocumentFindFirst.mockImplementation(async () => ({ ...docRow, isEnabled: false }))
+    await executeAdminTool('admin:toggle_document', { document: 'Leave Policy', action: 'enable' }, 'user1', true)
+    expect(mockDocumentUpdate.mock.calls.at(-1)![0].data).toEqual({ isEnabled: true })
+
+    mockDocumentUpdate.mockClear()
+    mockDocumentFindFirst.mockImplementation(async () => docRow)
+    await executeAdminTool('admin:toggle_document', { document: 'Leave Policy', action: 'disable' }, 'user1', true)
+    expect(mockDocumentUpdate.mock.calls.at(-1)![0].data).toEqual({ isEnabled: false })
+  })
+
+  test('the audit records the BEFORE and AFTER state', async () => {
+    mockDocumentFindFirst.mockImplementation(async () => docRow)
+    await executeAdminTool('admin:toggle_document', { document: 'Leave Policy', action: 'disable' }, 'user1', true)
+
+    const audit = mockAuditLogCreate.mock.calls.at(-1)![0]
+    // Without the before value an operator cannot tell what changed, only that
+    // something did.
+    expect(audit.data.detail).toContain('doc-1')
+    expect(JSON.parse(audit.data.detail).before).toEqual({ isEnabled: true })
+    expect(JSON.parse(audit.data.detail).after).toEqual({ isEnabled: false })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// admin:seed_plugins
+// ---------------------------------------------------------------------------
+
+describe('executeAdminTool — admin:seed_plugins', () => {
+  test('reports the count BEFORE and AFTER seeding', async () => {
+    // mockImplementationOnce twice, and the next test RESETS mockPluginCount with
+    // its own mockImplementation — beforeEach only mockClears, which does NOT drop
+    // an installed implementation, so an un-reset one here leaks forward.
+    let call = 0
+    mockPluginCount.mockImplementation(async () => (++call === 1 ? 3 : 11))
+    const result = await executeAdminTool('admin:seed_plugins', {}, 'user1', true)
+
+    expect(result.ok).toBe(true)
+    // An operator needs to see that seeding actually added rows, and how many.
+    expect(result.output).toContain('Before: 3')
+    expect(result.output).toContain('After: 11')
+  })
+
+  test('seeding runs inside bypassOrg so the tenant extension cannot filter it', async () => {
+    // The mock bypassOrg simply calls through; the assertion is that seeding is
+    // wrapped at all, which is what the count pair proves (both counts ran).
+    mockPluginCount.mockImplementation(async () => 1)
+    const result = await executeAdminTool('admin:seed_plugins', {}, 'user1', true)
+    expect(result.ok).toBe(true)
+    expect(mockPluginCount).toHaveBeenCalledTimes(2)
+  })
+
+  test('the audit is recorded at severity warning', async () => {
+    const result = await executeAdminTool('admin:seed_plugins', {}, 'user1', true)
+    expect(result.ok).toBe(true)
+    const audit = mockAuditLogCreate.mock.calls.at(-1)![0]
+    // Seeding mutates the tool surface, so it must be visible in the audit trail.
+    expect(audit.data.action).toBe('PLUGINS_SEEDED')
+    expect(audit.data.severity).toBe('warning')
+  })
+
+  test('a failing seeding PROPAGATES rather than reporting success', async () => {
+    seedPluginsResult = async () => { throw new Error('seed table missing') }
+    // MEASURED, and deliberate: executeAdminTool has no try/catch of its own. The
+    // caller (planner.executeStep) wraps it so selfCorrect() can ask the model to
+    // fix the input and retry once. Swallowing the error here would silently turn a
+    // failed seeding into an "ok" step and remove that recovery path. This test
+    // pins the contract both sides depend on.
+    await expect(executeAdminTool('admin:seed_plugins', {}, 'user1', true)).rejects.toThrow('seed table missing')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// admin:toggle_integration — same confirmation gate, and it uses a DIFFERENT
+// status vocabulary from toggle_document (status 'active'/'inactive' vs a boolean)
+// ---------------------------------------------------------------------------
+
+describe('executeAdminTool — admin:toggle_integration', () => {
+  const intRow = { id: 'int-1', name: 'Warehouse', status: 'active' }
+
+  test('an unconfirmed call asks for confirmation and writes NOTHING', async () => {
+    mockIntegrationFindFirst.mockImplementation(async () => intRow)
+    const result = await executeAdminTool('admin:toggle_integration', { integration: 'Warehouse', action: 'disable' }, 'user1', false)
+
+    expect(result.confirmationRequired?.action).toBe('TOGGLE_INTEGRATION')
+    expect(result.confirmationRequired?.message).toContain('Warehouse')
+    expect(mockIntegrationUpdate).not.toHaveBeenCalled()
+  })
+
+  test('a confirmed disable persists the status as "inactive"', async () => {
+    mockIntegrationFindFirst.mockImplementation(async () => intRow)
+    await executeAdminTool('admin:toggle_integration', { integration: 'Warehouse', action: 'disable' }, 'user1', true)
+    // NOT false/'disabled': the column holds the string 'inactive', and writing a
+    // boolean here would corrupt every query that filters on status.
+    expect(mockIntegrationUpdate.mock.calls.at(-1)![0].data).toEqual({ status: 'inactive' })
+  })
+
+  test('a confirmed enable persists the status as "active"', async () => {
+    mockIntegrationFindFirst.mockImplementation(async () => ({ ...intRow, status: 'inactive' }))
+    await executeAdminTool('admin:toggle_integration', { integration: 'Warehouse', action: 'enable' }, 'user1', true)
+    expect(mockIntegrationUpdate.mock.calls.at(-1)![0].data).toEqual({ status: 'active' })
+  })
+
+  test('a missing target is rejected before any lookup', async () => {
+    const result = await executeAdminTool('admin:toggle_integration', { action: 'enable' }, 'user1', true)
+    expect(result.ok).toBe(false)
+    expect(result.output).toContain('required')
+    expect(mockIntegrationFindFirst).not.toHaveBeenCalled()
+  })
+
+  test('an unknown integration is reported, not created', async () => {
+    mockIntegrationFindFirst.mockImplementation(async () => null)
+    const result = await executeAdminTool('admin:toggle_integration', { integration: 'Ghost', action: 'enable' }, 'user1', true)
+    expect(result.ok).toBe(false)
+    expect(result.output).toContain('not found')
+    expect(mockIntegrationUpdate).not.toHaveBeenCalled()
+  })
+
+  test('the audit records the status transition', async () => {
+    mockIntegrationFindFirst.mockImplementation(async () => intRow)
+    await executeAdminTool('admin:toggle_integration', { integration: 'Warehouse', action: 'disable' }, 'user1', true)
+    const detail = JSON.parse(mockAuditLogCreate.mock.calls.at(-1)![0].data.detail)
+    expect(detail.before).toBe('active')
+    expect(detail.after).toBe('inactive')
   })
 })
