@@ -17,7 +17,7 @@ mock.module('@/lib/db', () => ({
   db: { llmUsageLog: { create: mockLlmUsageCreate } },
 }))
 
-import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig } from './llm-client'
+import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig, getLastLlmUsage, withUsageTracking } from './llm-client'
 import type { LlmRuntimeConfig } from './llm-config'
 import { LlmProviderError } from './llm-client-utils'
 import type { LlmToolDef } from './llm-client-types'
@@ -1279,3 +1279,97 @@ describe('chatOnce tool calls', () => {
     expect(toolCalls[0].arguments).toBe('{"q":"test"}')
   })
 })
+
+/**
+ * Usage tracking — the ONLY path by which token counts leave a completion.
+ *
+ * `withUsageTracking` and `getLastLlmUsage` are the wrapper and reader around an AsyncLocalStorage
+ * slot that `chatOnce` writes with `enterWith`. Neither function had EVER executed in a test: the
+ * 11 production readers (tool-branches.ts x5, tool-router-agentic.ts x3, tool-router.ts x1) all run
+ * against a MOCK (`mock.module('@/lib/llm-client', () => ({ getLastLlmUsage: () => null }))`), and
+ * tool-router.ts:53 is the only production caller of the wrapper.
+ *
+ * This is the number the product reports as "avg tokens/task" and the number per-request budget
+ * enforcement reads, so "the isolation actually isolates" is a correctness requirement, not a nicety.
+ */
+describe('withUsageTracking / getLastLlmUsage', () => {
+  function stubUsage(input: number, output: number) {
+    global.fetch = (async () =>
+      new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input_tokens: input, output_tokens: output },
+      }), { status: 200 })) as unknown as typeof fetch
+  }
+
+  test('returns undefined before any call has recorded usage in this context', () => {
+    // The contract the 11 readers rely on to mean "no LLM call happened here".
+    expect(getLastLlmUsage()).toBeUndefined()
+  })
+
+  test('KNOWN BUG: a completed chatOnce is NOT visible to getLastLlmUsage', async () => {
+    // *** THIS TEST PINS A DEFECT, NOT A DESIRE. ***
+    //
+    // chatOnce writes the usage slot with `_usageStorage.enterWith(...)` (line 114). `enterWith` changes
+    // the store for code that runs AFTERWARDS IN THAT ASYNC CONTEXT; it does NOT propagate back OUT to
+    // the caller once the awaited async function returns. So the store the CALLER reads is still the
+    // `undefined` that withUsageTracking seeded.
+    //
+    // Reproduced minimally, and it is a property of the API rather than of the mocks:
+    //   async function inner() { st.enterWith({n:1}) }        // nested, like chatOnce
+    //   await st.run(undefined, async () => { await inner(); return st.getStore() })  -> undefined
+    //   await st.run(undefined, async () => { st.enterWith({n:2}); return st.getStore() }) -> {n:2}
+    //
+    // THE CONSEQUENCE IS NOT COSMETIC. 11 production readers call getLastLlmUsage() (tool-branches.ts
+    // x5, tool-router-agentic.ts x3, tool-router.ts via the wrapper). Each guards with `if (usage)`, so
+    // `budget.track(usage)` is NEVER called (tool-router-agentic.ts:425), the per-request token budget
+    // never advances, and the "budget exhausted" stop never fires. It is also the number "avg
+    // tokens/task" would be computed from, so that figure cannot be correct from this path.
+    //
+    // I did NOT fix it: the repair changes shared transport control flow (either chatOnce must set the
+    // store through a value the caller can see, or the wrapper must own the write), and that is a
+    // product decision, not a coverage commit. Pinned so a fix is a deliberate change that reddens this.
+    stubUsage(11, 7)
+    const out = await withUsageTracking(async () => {
+      await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }], 0, 'chat')
+      return getLastLlmUsage()
+    })
+    expect(out).toBeUndefined()
+  })
+
+  test('the store an OUTER context reads is unaffected by an inner context\'s write', async () => {
+    // The same mechanism stated as isolation rather than as a bug, so the fix has to satisfy both: an
+    // inner context's write must reach its own caller eventually, while a SIBLING must not inherit it.
+    stubUsage(50, 9)
+    const outer = await withUsageTracking(async () => {
+      await withUsageTracking(async () => {
+        await chatOnce(anthropicCfg, [{ role: 'user', content: 'inner' }], 0, 'chat')
+      })
+      return getLastLlmUsage()
+    })
+    expect(outer).toBeUndefined()
+  })
+
+  test('the STREAMING path also leaves the caller\'s usage slot untouched', async () => {
+    // chatStream writes through a DIFFERENT call site (line ~181) than chatOnce (~114), so both were
+    // checked: a fix applied to only one would leave streaming spend unreported. Same defect and the same
+    // direction -- the write stays inside the transport.
+    //
+    // The assertion is about the USAGE SLOT only. The mock SSE body is a minimal frame set, so the text
+    // this particular stub yields is not the subject here and is deliberately not asserted.
+    const events = [
+      'event: message_start\ndata: {"message":{"usage":{"input_tokens":21,"output_tokens":0}}}\n\n',
+      'event: content_block_delta\ndata: {"delta":{"type":"text_delta","text":"hi"}}\n\n',
+      'event: message_delta\ndata: {"usage":{"output_tokens":4}}\n\n',
+    ].join('')
+    global.fetch = (async () =>
+      new Response(events, { status: 200, headers: { 'content-type': 'text/event-stream' } })) as unknown as typeof fetch
+
+    const usage = await withUsageTracking(async () => {
+      const stream = await chatStream(anthropicCfg, [{ role: 'user', content: 'hi' }], 0, 'chat')
+      for await (const chunk of stream as AsyncIterable<string>) void chunk
+      return getLastLlmUsage()
+    })
+    expect(usage).toBeUndefined()
+  })
+})
+

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e98106d`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `544911a`.
 
 ---
 
@@ -13,8 +13,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e98106d`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **86,72%** (17.503/20.184 baris, 132 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,54%** (1651/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 174 file · **4.155 lulus · 0 gagal** | terukur |
+| Cakupan fungsi | **93,65%** (1653/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 174 file · **4.159 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**675 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**679 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4774,6 +4774,55 @@ dihapus (1 merah), cabang `PINECONE` dihapus (1), `trim()`/`toUpperCase()` dihap
 (10/12 fungsi), **terverifikasi 100% eksekutabel (34/34)** — bukan celah.
 
 Repo **86,70% → 86,72%**; suite **4.150 → 4.155**.
+
+### 1.7cr BUG: penghitung token usage TIDAK PERNAH sampai ke pemanggil — mekanisme "avg tokens/task" mati
+
+Cakupan fungsi menunjuk `llm-client.ts` (22/23 fungsi): **`getLastLlmUsage()` (baris 42) dan
+`withUsageTracking()` (baris 47) belum pernah dieksekusi test mana pun** — padahal keduanya adalah
+**satu-satunya jalur token usage keluar dari sebuah completion**.
+
+**Mengapa tak pernah teruji:** 11 pembaca produksi (`tool-branches.ts` ×5, `tool-router-agentic.ts` ×3,
+plus wrapper) semuanya berjalan terhadap **MOCK** — `mock.module('@/lib/llm-client', () => ({
+getLastLlmUsage: () => null }))`. Mock mengembalikan nilai yang tak pernah bisa dikembalikan
+implementasi aslinya, sehingga cacatnya tak terlihat.
+
+**REPRODUKSI MINIMAL, dan ini sifat API-nya, bukan artefak mock:**
+```
+async function inner() { st.enterWith({n:1}) }                    // nested, seperti chatOnce
+await st.run(undefined, async () => { await inner(); return st.getStore() })   // -> undefined
+await st.run(undefined, async () => { st.enterWith({n:2}); return st.getStore() }) // -> {n:2}
+```
+`enterWith` mengubah store untuk kode yang berjalan **SETELAHNYA di konteks async itu**; ia **tidak
+menyebar keluar** ke pemanggil setelah fungsi async yang di-`await` selesai. `chatOnce` menulis slot
+dengan `enterWith` (baris 114) dari dalam sebuah fungsi async; pemanggil membaca slot yang masih berisi
+`undefined` yang disemai `withUsageTracking`. **Terkonfirmasi di produksi:** `chatOnce` sukses
+mengembalikan teks, `getLastLlmUsage()` tetap `undefined`.
+
+**Konsekuensinya nyata, bukan kosmetik.** 11 pembaca produksi menjaga dengan `if (usage)`, jadi:
+- **`budget.track(usage)` TIDAK PERNAH dipanggil** (`tool-router-agentic.ts:425`) → budget token
+  per-request tidak pernah maju → penghentian "budget exhausted" **tidak pernah aktif**.
+- **"avg tokens/task" tidak dapat dihitung dengan benar dari jalur ini.** Untuk tujuan yang meminta
+  angka itu, mekanisme pengumpulnya tidak pernah mengembalikan nilai.
+- `LlmUsageLog` tetap terisi karena `logLlmUsage()` dipanggil terpisah dengan `usageData` langsung
+  (bukan lewat slot) — jadi cacat ini **spesifik pada pembacaan slot**, bukan seluruh pelaporan usage.
+
+**Saya TIDAK memperbaikinya.** Perbaikannya mengubah alur kontrol transport bersama (entah `chatOnce`
+harus menulis lewat nilai yang bisa dilihat pemanggil, atau wrapper yang harus memiliki penulisannya),
+dan itu keputusan produk. Saya **memaku perilaku saat ini** dalam test berjudul *"KNOWN BUG ... THIS TEST
+PINS A DEFECT, NOT A DESIRE"*.
+
+**Bukti terkuat bahwa penguncian ini benar — kontrol K1.** Saya **mensimulasikan perbaikan** (menyemai
+slot dengan objek sehingga usage terlihat pemanggil): **3 test merah**. Jadi test ini **benar-benar
+merah saat bug diperbaiki**, bukan test yang selalu hijau.
+
+**Dua kontrol yang tidak menggigit, dan mengapa itu justru bukti tambahan:** memaksa
+`getLastLlmUsage()` selalu `undefined` (K2) dan menghapus `enterWith` dari jalur non-stream (K4)
+**sama-sama 0 merah**. Sebabnya logis: karena pembacaan **sudah** selalu `undefined` hari ini,
+keduanya tidak mengubah apa pun yang teramati. **Bug ini menutupi dirinya sendiri** — itulah kenapa ia
+bertahan begitu lama, dan kenapa kontrol-kontrol itu tidak bisa membedakan apa pun sampai bug-nya
+diperbaiki lebih dulu. Deklarasi demi kejujuran, bukan klaim tertutup.
+
+**Cakupan fungsi repo 93,54% → 93,65%** (1651 → 1653). Suite **4.155 → 4.159**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

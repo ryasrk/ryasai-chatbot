@@ -2,11 +2,13 @@
   "linePct": 86.72,
   "linesHit": 17503,
   "linesFound": 20184,
-  "fnPct": 93.54,
-  "fnsHit": 1651,
+  "fnPct": 93.65,
+  "fnsHit": 1653,
   "fnsFound": 1765,
   "filesMeasured": 132,
-  "failedTestFiles": [],
+  "failedTestFiles": [
+    "src/lib/plugin-registry.test.ts"
+  ],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",
@@ -508,9 +510,9 @@
       "hit": 269,
       "found": 296,
       "pct": 90.87837837837837,
-      "fHit": 20,
+      "fHit": 22,
       "fFound": 23,
-      "fPct": 86.95652173913044
+      "fPct": 95.65217391304348
     },
     {
       "file": "src/lib/mcp-client.ts",
