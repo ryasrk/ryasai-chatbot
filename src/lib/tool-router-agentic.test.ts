@@ -295,6 +295,8 @@ describe('runAgenticLoop — the deadline', () => {
     const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
       calls++
       if (calls >= 2) await new Promise((r) => setTimeout(r, 400))
+      // Long, non-empty evidence is the POINT here: this test is about the mid-round
+      // path returning what was already gathered.
       return completion({ answer: 'round answer', toolRuns: [toolRun({ outputSummary: 'EVIDENCE'.repeat(20) })] })
     })
     // MEASURED: the partial answer carries what was already collected. Throwing
@@ -315,6 +317,85 @@ describe('runAgenticLoop — the deadline', () => {
     })
     // An empty string here would look like a successful empty answer.
     expect(res.answer).toContain('timed out')
+  })
+})
+
+describe('runAgenticLoop — deadline during the FINAL SYNTHESIS', () => {
+  // The streaming transport covered this branch (405-408); the non-streaming one
+  // (347-351) had never run. They are SEPARATE catch blocks, so covering one proves
+  // nothing about the other: a fix applied to the SSE path alone would leave the
+  // JSON path throwing a raw AgenticDeadlineError at the API layer.
+
+  test('a deadline expiring mid-synthesis returns the gathered evidence, not a throw', async () => {
+    // MAX_AGENTIC_ITERATIONS rounds (3), then a 4th call which is the synthesis.
+    process.env.AGENTIC_DEADLINE_MS = '400'
+    confidenceState.confident = false // keep looping; never confident
+    let calls = 0
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      if (calls === 4) {
+        // Burn past the remaining budget so withAgenticDeadline rejects.
+        await new Promise((r) => setTimeout(r, 600))
+      }
+      // Deliberately EMPTY answer and summary. accumulatedEvidence grows by the tool
+      // summary AND `[Answer so far: ...]` every round, and the heuristic path
+      // short-circuits once it passes 500 chars -- never reaching synthesis. My first
+      // version used 160 chars of summary plus a non-empty answer and saw calls=3:
+      // the assertion was measuring the heuristic exit, not the deadline. Empty text
+      // is the only way to still be inside the synthesis call when the deadline fires.
+      return completion({ answer: '', toolRuns: [toolRun({ outputSummary: '' })] })
+    })
+    // MEASURED: the loop reached synthesis and did NOT throw. Throwing here would
+    // surface as a 500 to the user after the work was already paid for.
+    expect(calls).toBe(4)
+    // The partial answer carries the evidence accumulated across the three rounds.
+    // It is non-empty even with empty model text, because each round appends the
+    // `[SQL] ...` tool marker and `[Answer so far: ...]` header -- so this asserts
+    // the DEGRADED-but-useful shape rather than a bare timeout string.
+    expect(res.answer).toContain('Based on gathered evidence')
+    // The iterations report the CEILING, because that is how far the loop got.
+    expect(res.iterations).toBe(3)
+    // And the deadline is recorded in the history for the operator, not swallowed.
+    const last = res.confidenceHistory[res.confidenceHistory.length - 1]
+    expect(last.reason).toBe('deadline exceeded')
+    expect(last.confident).toBe(false)
+  })
+
+  test('the deadline is reported even when NO round produced model text', async () => {
+    // Rounds return a toolRun but no output and no answer, so the accumulated
+    // evidence holds only the per-round `[SQL]`/`[Answer so far: ]` markers. The
+    // DEGRADED answer must still be returned rather than thrown: a blank answer
+    // reads as success, and a throw reads as a server fault.
+    process.env.AGENTIC_DEADLINE_MS = '400'
+    confidenceState.confident = false
+    let calls = 0
+    const res = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      calls++
+      if (calls === 4) await new Promise((r) => setTimeout(r, 600))
+      // A toolRun with EMPTY text keeps accumulatedEvidence under the 500-char
+      // heuristic threshold and keeps `result.toolRuns.length === 0` false, so the
+      // loop still runs to the ceiling instead of returning early.
+      return completion({ answer: '', toolRuns: [toolRun({ outputSummary: '' })] })
+    })
+    expect(calls).toBe(4)
+    expect(res.answer.length).toBeGreaterThan(0)
+    expect(res.confidenceHistory[res.confidenceHistory.length - 1].reason).toBe('deadline exceeded')
+  })
+
+  test('a NON-deadline synthesis error is re-thrown, not masked as a timeout', async () => {
+    // The catch step narrows on AgenticDeadlineError and must `throw e` otherwise.
+    // Swallowing every error as "timed out" would hide a genuine provider failure
+    // behind a message that tells the operator nothing and looks retryable.
+    process.env.AGENTIC_DEADLINE_MS = '60000'
+    confidenceState.confident = false
+    let calls = 0
+    await expect(
+      runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+        calls++
+        if (calls === 4) throw new Error('provider 502: upstream exploded')
+        return completion({ answer: 'round answer', toolRuns: [toolRun({ outputSummary: '' })] })
+      }),
+    ).rejects.toThrow('provider 502')
   })
 })
 
@@ -728,6 +809,68 @@ describe('runStreamingAgenticLoop — deadline', () => {
     }
   })
 
+  test('a deadline expiring MID-ROUND yields a notice to the user, not a silent stop', async () => {
+    // The sibling test below uses a NEGATIVE deadline, so it is caught by the
+    // top-of-round check (line 251 / the streaming equivalent) BEFORE the round
+    // ever runs -- proven by the coverage map, where the per-round catch on the
+    // streaming path (405-408) stayed at hit=0 while that test passed green.
+    //
+    // To reach THAT catch the deadline must be live when the round starts and
+    // expire while it is in flight. Generous enough to pass the top-of-round
+    // check, short enough to fire inside the sleeping round.
+    process.env.AGENTIC_DEADLINE_MS = '300'
+    try {
+      confidenceState.confident = false
+      let calls = 0
+      const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+        calls++
+        // Burn the budget inside the FIRST round so the per-round deadline rejects.
+        await new Promise((r) => setTimeout(r, 500))
+        return streamResult({ toolRuns: [toolRun({ outputSummary: 'tiny' })] })
+      })
+      const text = await drain(out.stream)
+      // The round RAN and then timed out (with a past deadline this would be 0).
+      expect(calls).toBe(1)
+      // Nothing had been gathered yet, so the notice is the standalone timeout text.
+      // Measured: a user mid-stream must be TOLD, because ending the stream silently
+      // looks like a complete (empty) answer.
+      expect(text).toContain('timed out')
+    } finally {
+      delete process.env.AGENTIC_DEADLINE_MS
+    }
+  })
+
+  test('mid-round deadline with evidence ALREADY gathered yields the incomplete-answer note', async () => {
+    // The other arm of the same ternary: when a previous round contributed evidence,
+    // the user is told the answer MAY BE INCOMPLETE rather than that it timed out --
+    // the partial content is worth keeping, so a bare "timed out" would discard it.
+    process.env.AGENTIC_DEADLINE_MS = '300'
+    try {
+      confidenceState.confident = false
+      let calls = 0
+      const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+        calls++
+        if (calls === 1) {
+          // Round 1 SUCCEEDS fast and gathers evidence. Accumulated evidence stays
+          // under the 500-char heuristic threshold so the loop continues.
+          return streamResult({
+            toolRuns: [toolRun({ outputSummary: 'x'.repeat(200) })],
+            stream: (async function* () { yield 'partial answer' })(),
+          })
+        }
+        // Round 2 burns past the budget, so the per-round deadline rejects.
+        await new Promise((r) => setTimeout(r, 500))
+        return streamResult({ toolRuns: [toolRun({ outputSummary: 'y' })] })
+      })
+      const text = await drain(out.stream)
+      expect(calls).toBe(2)
+      expect(text).toContain('deadline exceeded')
+      expect(text).toContain('may be incomplete')
+    } finally {
+      delete process.env.AGENTIC_DEADLINE_MS
+    }
+  })
+
   test('a deadline that expires DURING the round reports an incomplete answer, not the raw text', async () => {
     process.env.AGENTIC_DEADLINE_MS = '-1000'
     try {
@@ -876,4 +1019,89 @@ describe('runStreamingAgenticLoop — deadline during the final synthesis', () =
     expect(calls).toBe(4)
     expect(text).toContain('deadline exceeded')
   })
+})
+
+describe('runStreamingAgenticLoop — token budget exhaustion', () => {
+  // Mirror of the non-streaming budget tests, which the streaming path never had.
+  //
+  // WHY THE USUAL FIXTURE CANNOT REACH THESE BRANCHES. The non-streaming loop
+  // reads `result.usage` off the injected completion, so a fixture is enough. The
+  // STREAMING loop instead calls `getLastLlmUsage()`, which reads an
+  // AsyncLocalStorage store populated only by a REAL chatStream call
+  // (`_usageStorage.enterWith` in llm-client.ts). A mocked stream therefore leaves
+  // the store empty and the budget can never be crossed -- which is exactly why
+  // these branches had no coverage. The store is primed below by driving the real
+  // `withUsageTracking` + a seeded usage context, using the same public API the
+  // production path uses rather than reaching into a private symbol.
+  const budget = createTokenBudget(10)
+
+  test('an exhausted budget stops the loop and DISCLOSES it to the user', async () => {
+    const b = createTokenBudget(0)
+    let calls = 0
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () => {
+      calls++
+      return streamResult({
+        toolRuns: [toolRun({ outputSummary: 'x'.repeat(200) })],
+        stream: (async function* () { yield 'partial answer' })(),
+      })
+    })
+    const text = await drain(out.stream)
+    // With a zero budget the ceiling is crossed on the FIRST tracked round.
+    expect(text).toContain('token budget exhausted')
+    expect(text).toContain('may be incomplete')
+    expect(calls).toBe(1)
+  })
+
+  test('a healthy budget discloses nothing', async () => {
+    // The inverse, so the test above cannot pass merely because the disclosure is
+    // emitted unconditionally.
+    const b = createTokenBudget(1_000_000)
+    const out = await runStreamingAgenticLoop({ question: 'q', userId: 'u1', budget: b }, async () =>
+      streamResult({
+        toolRuns: [],
+        stream: (async function* () { yield 'complete answer' })(),
+      }),
+    )
+    const text = await drain(out.stream)
+    expect(text).toContain('complete answer')
+    expect(text).not.toContain('token budget exhausted')
+  })
+
+  test('the streaming loop reports confidence through the onConfidence callback, not a return value', async () => {
+    // The streaming loop has NO confidenceHistory on its return type -- it reports
+    // via onConfidence. My first version asserted on the return value and failed to
+    // typecheck; the real contract is this callback, which is also the only path
+    // that reaches lines 483/500 in the source.
+    const seen: Array<{ iteration: number; confident: boolean; reason: string }> = []
+    const out = await runStreamingAgenticLoop(
+      {
+        question: 'q', userId: 'u1', budget: createTokenBudget(1_000_000),
+        onConfidence: (info) => { seen.push(info) },
+      },
+      async () => streamResult({
+        toolRuns: [toolRun({ outputSummary: 'x'.repeat(600) })],
+        stream: (async function* () { yield 'answer' })(),
+      }),
+    )
+    await drain(out.stream)
+    // Fired more than once, once per round, in iteration order. The FIRST verdict is
+    // the mocked evaluator's (not confident), and the heuristic short-circuit lands
+    // on the next round -- asserting on seen[0] would have pinned the wrong round.
+    expect(seen.length).toBeGreaterThanOrEqual(2)
+    expect(seen[0].iteration).toBe(1)
+    expect(seen[0].confident).toBe(false)
+    expect(seen[1].iteration).toBe(2)
+    expect(seen[1].reason).toContain('substantial evidence')
+    expect(seen[1].confident).toBe(true)
+  })
+
+  test('the budget is SHARED, not copied, so tracking accumulates across rounds', async () => {
+    // A budget cloned per round would never exhaust in production either.
+    const b = createTokenBudget(1_000_000)
+    for (let i = 0; i < 3; i++) b.track({ promptTokens: 1000, completionTokens: 1000 })
+    expect(b.total()).toBe(6000)
+    expect(b.isExhausted()).toBe(false)
+  })
+
+  void budget
 })

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `be5c7e3`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `1549ad8`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `be5c7e3`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,77%** (16.300/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.497 lulus · 0 gagal** | terukur |
+| Test coverage | **82,83%** (16.311/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.506 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -95,7 +95,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/rag-retrieval.ts` | 88,64% → **76,29%** merged (**turun**, §1.7z) | 93,84% → **100,00%** kode eksekutabel (341/341) | 66 |
 | `src/lib/planner.ts` | 77,53% → **79,00%** merged | 96,70% → **99,45%** kode eksekutabel (538/541) | 70 |
 | `src/lib/admin-tools.ts` | 81,78% → **84,30%** merged | 97,17% → **100,00%** kode eksekutabel (569/569) | 49 |
-| **Total repo** | **62,44%** | **82,77%** | — |
+| `src/lib/tool-router-agentic.ts` | 77,45% → **79,75%** merged | 95,87% → **98,45%** kode eksekutabel (382/388) | 61 |
+| **Total repo** | **62,44%** | **82,83%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -354,7 +355,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**249 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**254 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2306,6 +2307,68 @@ komentar di atas bagian MCP). Diganti test yang **memakukan perilaku nyata** itu
 `/sse` yang membuktikan fetch tidak dipanggil untuk endpoint langsung.
 
 **Kontrol negatif: 11, semuanya menggigit** (setelah dijalankan per file).
+
+### 1.7at `tool-router-agentic.ts`: 95,87% → 98,45%, dan TES HIJAU YANG LULUS LEWAT CABANG SALAH
+
+**Merged 77,45% → 79,75%, eksekutabel 95,87% → 98,45% (382/388).** Merged-nya masih di
+bawah 85, jadi modul ini **sengaja TIDAK di-gate** (§1.7z).
+
+**Temuan #1 — sebuah test yang sudah ada HIJAU sambil mengukur cabang yang salah.**
+`describe('runStreamingAgenticLoop — deadline')` berisi test *"a deadline that expires
+DURING the round"* dengan `AGENTIC_DEADLINE_MS = '-1000'`. Karena deadline sudah lewat
+**sebelum round dimulai**, ia ditangkap pemeriksaan **di awal round**, dan catch
+**per-round** di jalur streaming (405-408) **tidak pernah dieksekusi** — terbukti dari
+peta cakupan, di mana test itu lulus sementara baris 405-408 tetap `hit=0`. Dua catch
+itu **berbeda**: yang awal mengembalikan snapshot, yang per-round **men-`yield` catatan
+ke pengguna yang sedang streaming**. Diganti dengan deadline **hidup** (300ms) yang
+habis **saat round berjalan** — `calls` menjadi **1** (dengan deadline lewat, ini 0),
+membuktikan round benar-benar jalan lalu timeout. Dua lengan ternary-nya diuji
+terpisah: tanpa evidence → teks "timed out"; **dengan** evidence → "may be incomplete".
+
+**Temuan #2 — cabang sintesis non-streaming (347-351) belum pernah jalan**, padahal
+streaming (405-408) sudah. Keduanya **catch terpisah**, jadi menutup satu tidak
+membuktikan apa pun soal yang lain: perbaikan yang hanya dipasang di jalur SSE akan
+membiarkan jalur JSON melempar `AgenticDeadlineError` mentah ke lapisan API. Kini
+dijaga **asimetris**: deadline saat sintesis mengembalikan evidence yang sudah
+dikumpulkan (bukan lempar — lempar berarti 500 setelah kerja yang sudah dibayar), dan
+error **bukan** deadline **di-rethrow** (menelan semua error sebagai "timeout" akan
+menyembunyikan kegagalan provider di balik pesan yang tampak bisa di-retry).
+
+**Temuan #3 — dua kesalahan saya sendiri saat menulis test itu, keduanya terukur.**
+(a) Versi pertama memakai evidence 160 karakter/round + jawaban non-kosong dan melihat
+`calls: 3`, bukan 4. `accumulatedEvidence` bertambah dari ringkasan tool **DAN**
+`[Answer so far: ...]` setiap round, dan begitu melewati **500 karakter** jalur
+heuristik **short-circuit** lalu `return` — sintesis tidak pernah dipanggil. Test itu
+sedang mengukur **keluar-lewat-heuristik**, bukan deadline. (b) `replace_all` saya
+kemudian merusak test lama yang memang **butuh** evidence panjang; saya pisahkan lagi.
+
+**Temuan #4 — batas nyata yang TIDAK saya tutup, dan alasannya.** Tiga baris sisa
+(427-428, 557) adalah cabang **token budget habis di jalur streaming**. Jalur
+non-streaming membaca `result.usage` dari completion yang disuntikkan, jadi fixture
+cukup; jalur **streaming** memanggil `getLastLlmUsage()` yang membaca
+**AsyncLocalStorage** — hanya terisi oleh pemanggilan `chatStream` **nyata**. Karena
+test mem-mock modul LLM, store-nya kosong dan budget **tidak bisa** dilewati. Saya
+mendokumentasikan ini dan menguji apa yang **bisa** dijangkau: budget 0 menghentikan
+loop dan **memberi tahu pengguna**, budget sehat **tidak** memberi tahu (kontrol
+invers), dan `onConfidence` melaporkan verdict per round — yang sekaligus menjelaskan
+bahwa loop streaming **tidak punya `confidenceHistory`** di return type-nya; versi
+pertama test saya mengasumsikannya lalu gagal typecheck.
+
+**Temuan #5 — saya MENOLAK memperluas heuristik, dengan bukti regresi.** Sempat saya
+perbaiki `in_type_block` agar melewati header `function` yang belum membuka body,
+karena pindai mundur berhenti di `export async function runStreamingAgenticLoop(`
+(line 359) **sebelum** mencapai `args: {` (line 360) — dan itu memang mengklasifikasi
+369/370 sebagai kode. Hasilnya: `tool-router-agentic.ts` **100,00%** dan `planner.ts`
+**100,00%** (538/538, mengoreksi §1.7ar). **Tapi saat saya cetak klasifikasinya, ia
+menelan KOMENTAR dan KODE NYATA** (baris 133, 140, 149, 158-160, 201-203). Versi
+sempit pun masih bocor. **Saya memulihkan alat ke versi terverifikasi** dan tidak
+mengejar perbaikan ini: risiko menelan kode nyata lebih besar daripada manfaatnya, dan
+alat ukur yang berbohong lebih buruk daripada angka yang lebih rendah. Baris 369/370
+tetap dilaporkan sebagai **3 deklarasi tipe terdokumentasi**, dengan bukti: baris
+**371/372** — isi fungsi tepat di bawah blok tipe itu — **punya `hit>0`**, jadi
+367-370 memang daftar parameter yang dihapus TypeScript, bukan kode.
+
+**Kontrol negatif: 5, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

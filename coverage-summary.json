@@ -1,6 +1,6 @@
 {
-  "linePct": 82.77,
-  "linesHit": 16300,
+  "linePct": 82.83,
+  "linesHit": 16311,
   "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -186,12 +186,6 @@
       "pct": 77.45098039215686
     },
     {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 371,
-      "found": 479,
-      "pct": 77.45302713987473
-    },
-    {
       "file": "src/lib/notifications.ts",
       "hit": 100,
       "found": 129,
@@ -226,6 +220,12 @@
       "hit": 118,
       "found": 148,
       "pct": 79.72972972972973
+    },
+    {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 382,
+      "found": 479,
+      "pct": 79.74947807933194
     },
     {
       "file": "src/lib/plugin-registry.ts",
