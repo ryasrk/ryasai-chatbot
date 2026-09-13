@@ -140,7 +140,7 @@
     "note": "catalog",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-gb-13",
@@ -459,7 +459,7 @@
     "note": "join",
     "pass": true,
     "reason": "allowed",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-ga-17",
@@ -558,7 +558,7 @@
     "note": "empty",
     "pass": true,
     "reason": "ok (0 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-1",
@@ -624,7 +624,7 @@
     "note": "ampersand",
     "pass": true,
     "reason": "ok (4 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-7",
@@ -668,7 +668,7 @@
     "note": "emoji",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-11",
@@ -778,7 +778,7 @@
     "note": "arabic",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-21",
@@ -932,7 +932,7 @@
     "note": "wildcards",
     "pass": true,
     "reason": "ok (0 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-35",
@@ -1482,7 +1482,7 @@
     "note": "line comment",
     "pass": true,
     "reason": "ok (343 chars, fence balanced)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D2-p-34",
@@ -1878,7 +1878,7 @@
     "note": "safe fn sum",
     "pass": true,
     "reason": "allowed",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-fn-a-2",
@@ -2714,7 +2714,7 @@
     "note": "shared tokenizer",
     "pass": true,
     "reason": "ok (3 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-tok-7",
@@ -3341,7 +3341,7 @@
     "note": "evidence fence",
     "pass": true,
     "reason": "ok (324 chars, fence balanced)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D2-fence-24",
@@ -4540,7 +4540,7 @@
     "note": "case when 1=1 then 1 else 0 end via carrier 5",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-inj-10-6",
@@ -5420,7 +5420,7 @@
     "note": "realistic bilingual question",
     "pass": true,
     "reason": "ok (4 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-q-7",

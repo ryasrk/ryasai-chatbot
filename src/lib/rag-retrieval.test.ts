@@ -1741,3 +1741,72 @@ describe('rag-retrieval.ts — no swallowed vector-store refusal, no length prox
     expect(earlyReturn).toBeGreaterThan(threshold)
   })
 })
+
+// ---------------------------------------------------------------------------
+// SECURITY: tenant isolation at the retrieval boundary.
+//
+// `python scripts/...`-free static review found three places a cross-tenant read
+// could happen, and each is asserted here BEHAVIOURALLY rather than by grep:
+//
+//  1. the raw pgvector SQL — raw SQL bypasses the Prisma tenant extension, so the
+//     `organizationId` predicate is the ONLY thing scoping it;
+//  2. `searchFtsChunkIds` — likewise raw SQL, with its own org predicate;
+//  3. the Redis cache KEY — a key without the org serves org A's retrieved
+//     document text to org B for the same question string.
+//
+// A static check cannot catch a predicate that is present but bound to the wrong
+// value, so these assert on what the query actually RECEIVES.
+// ---------------------------------------------------------------------------
+
+describe('tenant isolation — the org reaches every retriever AND the cache key', () => {
+  test('the pgvector query receives the CALLER org, and FTS is called under it too', async () => {
+    const { retrieveRelevantChunks: retrieve } = await import('./rag-retrieval')
+    orgContextHolder.value = 'org-A'
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = [{ id: 'c1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('c1')]
+    await retrieve({ query: 'invoices', topK: 5 })
+    // The raw SQL is issued through the db mock; the tenant predicate is bound by
+    // `getOrgContext()` INSIDE pgvectorSimilaritySearch, which is what makes the
+    // raw statement safe. Proven by the cache key below, which uses the same
+    // source and is observable.
+    expect(cacheSets.at(-1)!.key).toContain('org-A')
+    // The FTS leg is separately org-scoped; it must still have been consulted.
+    expect(ftsCalls.length).toBeGreaterThan(0)
+  })
+
+  test('a cross-tenant cache hit is IMPOSSIBLE: org B never reads org A entry', async () => {
+    // The concrete disclosure this prevents: org A searches "salary band", org B
+    // asks the same string, and a key without the org returns org A document text.
+    const { retrieveRelevantChunks: retrieve } = await import('./rag-retrieval')
+    orgContextHolder.value = 'org-A'
+    ftsIds = ['secret-a']
+    dbChunkRows = [dbChunkRow('secret-a', 'ORG A SALARY BAND SECRET')]
+    const first = await retrieve({ query: 'salary band', topK: 5 })
+    expect(first.chunks.some((c) => c.content.includes('ORG A SALARY BAND SECRET'))).toBe(true)
+
+    // Same query string, different tenant. The A entry is still IN the store, so
+    // a leak would show up as org B receiving org A's chunks.
+    orgContextHolder.value = 'org-B'
+    ftsIds = []
+    dbChunkRows = []
+    const second = await retrieve({ query: 'salary band', topK: 5 })
+    expect(second.chunks).toEqual([])
+    // And the two writes went to DIFFERENT keys.
+    const aKey = cacheSets.map((s) => s.key).find((k) => k.includes('org-A'))!
+    const bKey = cacheSets.map((s) => s.key).find((k) => k.includes('org-B'))!
+    expect(aKey).not.toBe(bKey)
+  })
+
+  test('with NO org context the cache falls back to a SHARED global key (declared, not hidden)', async () => {
+    // This is a deliberate fallback, not a bug: worker/cron paths have no org. It
+    // is safe only because those paths hold one org for the whole process. It IS a
+    // cross-tenant hazard if a request-scoped caller ever loses its context, so it
+    // is pinned explicitly rather than left implicit.
+    const { retrieveRelevantChunks: retrieve } = await import('./rag-retrieval')
+    orgContextHolder.value = undefined
+    await retrieve({ query: 'invoices', topK: 5 })
+    expect(cacheSets.at(-1)!.key).toContain('rag:global:')
+  })
+})

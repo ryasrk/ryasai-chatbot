@@ -1478,3 +1478,63 @@ describe('intent-pipeline.ts — the incident can not be reintroduced', () => {
     expect(code).toContain("from '@/lib/rag-chunking'")
   })
 })
+
+// ---------------------------------------------------------------------------
+// The two module-level indices that `expandQuery` depends on.
+//
+// `SYNONYM_REVERSE` and `PRIMARY_SYNONYM` are built by IIFEs at module load.
+// Bun's function counter attributes those IIFEs as uncovered even though they
+// demonstrably ran (every expansion test below depends on their output), so the
+// 94.12% funcs figure has a ~2/34 phantom component. These tests pin the
+// DERIVED behaviour instead of the counter: they exercise the provenance rules
+// the comments in the source describe, so a change to either builder fails here
+// even if the counter never moves.
+// ---------------------------------------------------------------------------
+
+describe('the synonym indices — derived behaviour, not the load-time counters', () => {
+  test('an Indonesian query reaches the ENGLISH concept (the cross-lingual fix)', () => {
+    // trial/14-crosslingual.ts measured 5 of 11 Indonesian questions retrieving
+    // NOTHING because the map is English-keyed. `tarif`/`lembur`/`hari`/`kerja`
+    // are none of them keys, so the reverse index is what makes this work.
+    const out = expandQuery('berapa tarif lembur?')
+    const joined = out.join(' | ')
+    expect(joined).toContain('rate')
+    expect(joined).toContain('overtime')
+    // The whole-query translation is emitted FIRST, per the docstring, because a
+    // one-token-at-a-time substitution leaves unmatchable Indonesian words behind.
+    expect(out).toContain('berapa rate overtime')
+  })
+
+  test('a PRIMARY single-word synonym resolves to its own concept, not a phrase member', () => {
+    // "hari" is a PRIMARY synonym of `day` and only a SUB-WORD of the multi-word
+    // synonym "hari libur" (holiday). The measured regression: resolving "hari"
+    // to `holiday` turned "Berapa hari proses refund" into
+    // "...holiday processing refund...", which matched nothing.
+    const out = expandQuery('berapa hari proses refund?')
+    const translated = out.find((q) => q.includes('day')) ?? ''
+    expect(translated).toContain('day')
+    expect(translated).not.toContain('holiday')
+  })
+
+  test('the forward direction still works and never duplicates the original query', () => {
+    // `SYNONYM_REVERSE` is derived FROM the forward map, so this pins that the
+    // derivation did not consume or mutate the forward direction.
+    const out = expandQuery('leave')
+    expect(out[0]).toBe('leave')
+    expect(out).toContain('vacation')
+    expect(new Set(out).size).toBe(out.length)
+  })
+
+  test('a multi-word synonym contributes its content words to BOTH directions', () => {
+    // "cuti tahunan" (annual leave) is reachable from either word, which is what
+    // makes an Indonesian query for either part work.
+    expect(expandQuery('cuti').join(' | ')).toContain('leave')
+    expect(expandQuery('tahunan').join(' | ')).toContain('annual')
+  })
+
+  test('a query with NO synonyms returns exactly itself (no phantom expansions)', () => {
+    // The index builders must not emit empty-string keys: an empty entry would
+    // expand every unknown query into a bogus variant.
+    expect(expandQuery('zzzz qqqq')).toEqual(['zzzz qqqq'])
+  })
+})
