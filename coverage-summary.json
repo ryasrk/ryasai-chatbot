@@ -1,10 +1,10 @@
 {
-  "linePct": 84.33,
-  "linesHit": 16597,
-  "linesFound": 19680,
+  "linePct": 84.58,
+  "linesHit": 16631,
+  "linesFound": 19664,
   "filesMeasured": 128,
   "failedTestFiles": [
-    "src/app/api/v1/chat/completions/route.test.ts"
+    "src/lib/tool-branches-branches.test.ts"
   ],
   "files": [
     {
@@ -14,28 +14,22 @@
       "pct": 46.666666666666664
     },
     {
-      "file": "src/lib/themes.ts",
-      "hit": 57,
-      "found": 103,
-      "pct": 55.33980582524271
-    },
-    {
       "file": "src/lib/source-guidance.ts",
       "hit": 55,
       "found": 86,
       "pct": 63.95348837209303
     },
     {
-      "file": "src/lib/config.ts",
-      "hit": 41,
-      "found": 64,
-      "pct": 64.0625
-    },
-    {
       "file": "src/lib/rag-fts.ts",
       "hit": 108,
       "found": 154,
       "pct": 70.12987012987013
+    },
+    {
+      "file": "src/lib/config.ts",
+      "hit": 45,
+      "found": 64,
+      "pct": 70.3125
     },
     {
       "file": "src/lib/tool-router.ts",
@@ -767,6 +761,12 @@
       "file": "src/lib/source-init.ts",
       "hit": 104,
       "found": 104,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/themes.ts",
+      "hit": 87,
+      "found": 87,
       "pct": 100
     },
     {

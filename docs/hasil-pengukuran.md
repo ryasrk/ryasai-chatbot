@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `689ecea`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `098aac2`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `689ecea`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,33%** (16.597/19.680 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.654 lulus · 0 gagal** | terukur |
+| Test coverage | **84,58%** (16.631/19.664 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.668 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **84 modul** | +22 |
+| Modul ter-gate | 62 modul | **85 modul** | +23 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -112,7 +112,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/rag-fts.ts` | 68,18% → **70,13%** merged (artefak LF) | 97,22% → **100,00%** kode eksekutabel (108/108) | 2 |
 | `src/app/api/fetch-url/route.ts` | 66,67% → **100,00%** merged | 83,33% → **100,00%** kode eksekutabel (30/30) | 8 |
 | `src/lib/schema-enrichment.ts` | 66,67% → **87,04%** merged | 81,82% → **100,00%** kode eksekutabel (47/47) | 9 |
-| **Total repo** | **62,44%** | **84,33%** | — |
+| `src/lib/themes.ts` | 55,34% → **100,00%** merged | 96,61% → **100,00%** kode eksekutabel (87/87) | 8 |
+| `src/lib/config.ts` | 64,06% → **70,31%** merged (artefak LF) | 86,67% → **100,00%** kode eksekutabel (45/45) | 11 |
+| **Total repo** | **62,44%** | **84,58%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -371,7 +373,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**323 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**332 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2933,6 +2935,56 @@ Saya **mendeklarasikannya sebagai non-kontrol**, bukan memaksanya sampai menggig
 setelah `Boolean(...) || undefined`; ternyata **key-nya tetap ada** dengan nilai `undefined`
 — `{ ...primaryKey: undefined }` **bukan** `{}` di JS. Kode benar; saya mematok bentuk
 terukur.
+
+### 1.7bf Konfigurasi & tema: dua modul 86,67%/96,61% → 100,00%, satu getter TAK BERKONSUMEN, dan satu kontrol yang memang mustahil dibedakan
+
+**`config.ts` 86,67% → 100,00% (45/45).** **`themes.ts` 96,61% → 100,00% (87/87).** Repo
+**84,33% → 84,58% (+0,25)**. `themes.ts` **DI-GATE floor 100**; modul ter-gate **84 → 85**.
+`config.ts` merged 70,31% **tidak boleh di-gate** (artefak `LF`), walau eksekutabel 100%.
+
+**Getter dibaca saat AKSES, dan itu yang membuat cabang env terjangkau.** Kedua test file
+`config.ts` men-set `process.env` **sebelum import**, sehingga **hanya jalur DEFAULT** setiap
+getter yang pernah berjalan — cabang env `wsPort` dan **seluruh parsing numerik `optionalInt`
+tidak dieksekusi test mana pun**. Karena getter-nya sengaja dibaca saat akses (file itu
+menyatakannya), ia bisa didorong dari dalam test. Yang kini dipatok: **`wsPort` membaca
+`WS_PORT` sebagai integer basis-10**; **`WS_PORT` yang tak terurai JATUH ke default, bukan
+`NaN`** — `NaN` akan merembes ke `listen()` sebagai port sampah, bukan default yang jelas
+(guard `Number.isFinite`); **`WS_PORT` berisi spasi saja → default**; **`logRetentionDays`
+membaca env dan default 90**; **`dbQueryLog` mati secara default** (ia berisik **dan
+membocorkan parameter query**, yang bisa berisi kredensial) dan menerima **hanya `"1"` atau
+`"true"`** — `DB_QUERY_LOG=0` dan `=yes` **tidak** menyalakannya, karena tes "apakah env
+di-set?" yang longgar akan menyalakannya untuk nilai apa pun.
+
+**Temuan: `serverConfig.isProduction` TIDAK BERKONSUMEN.** `grep -rn isProduction src/` hanya
+menemukan deklarasinya dan `billing-ui.ts`, yang menerima `isProduction` sebagai
+**PARAMETER** — bukan membaca `serverConfig`. Yang benar-benar dipakai adalah `isTest`
+(`session.ts:191`). Getter-nya saya patok agar tetap benar, tetapi **deadness-nya saya
+laporkan, bukan saya hapus diam-diam**: menghapusnya akan **menurunkan total coverage repo
+tanpa menghilangkan risiko nyata**.
+
+**`themes.ts`: `getStoredDarkMode`, `applyTheme`, dan `setTheme` SAMA SEKALI tidak diuji.**
+File itu hanya mengimpor `getStoredTheme`, dan itu pun **hanya jalur early-return SSR**. Yang
+kini dipatok: **`stored === 'true'` perbandingan STRING** — pemeriksaan truthiness akan
+membuat string `"false"` menjadi **gelap**; **entri tidak ada jatuh ke gelap** (default
+aplikasi), bukan terang — ini jalur yang **berbeda** dari `"false"` tersimpan dan harus
+memberi jawaban **berlawanan**; **ternary `dark ? css.dark : css.light`** diuji **dua arah**;
+**`setTheme` menyimpan KEDUA key dan me-dispatch event `ryasai-theme-changed`** — tanpa event
+itu, apa pun yang bercabang pada tema aktif **menampilkan warna basi sampai reload**; dan
+**`applyTheme` menyuntikkan `<style>` dengan palet yang benar**.
+
+**Tiga asumsi saya sendiri salah, semuanya tertangkap.** (a) `DARK_KEY` adalah
+`'ryasai-dark-mode'`, bukan `'ryasai-dark'` — test saya merah, kode benar. (b) `'neo-olympian'`
+**bukan id tema** yang valid; `Neo-Olympian` adalah **LABEL** dari entri `'slate'` —
+**TypeScript yang menolak assertion saya**, bukan test. (c) `'sunset'` juga bukan id valid;
+id sebenarnya `enterprise/midnight/forest/slate/sandstone`. Dua yang terakhir menunjukkan
+**sistem tipe menangkap asumsi salah sebelum test berjalan**.
+
+**Kontrol negatif: 9 dijalankan, 8 menggigit.** Yang **tidak** menggigit adalah guard
+`!v.trim()` di `optionalInt`, dan saya **membuktikannya mustahil dibedakan**:
+`parseInt('   ', 10)` adalah **`NaN`**, jadi `Number.isFinite` sudah menangkapnya dan
+hasilnya identik. **Dideklarasikan non-kontrol.** Yang menggigit termasuk: `Number.isFinite`
+dihapus, `optionalBool` memakai truthiness, ternary tema **dibalik** (2 test merah), event
+change dihapus, `setItem` dark hilang, dan entri-absent dibalik ke terang.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

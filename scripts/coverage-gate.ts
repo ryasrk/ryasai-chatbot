@@ -165,6 +165,11 @@ const FLOORS: Record<string, number> = {
   // earlier ingestion path and can be truncated or hand-edited. 81.82% -> 100.00%
   // executable (47/47).
   'src/lib/schema-enrichment.ts': 87,
+  // Theme persistence: getStoredDarkMode/applyTheme/setTheme had NO test (the file
+  // imported only getStoredTheme, and only its SSR early-return). 96.61% -> 100.00%
+  // executable (87/87). A wrong dark/light ternary or a missing change event is a
+  // visible user-facing regression, so it is pinned at 100.
+  'src/lib/themes.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
