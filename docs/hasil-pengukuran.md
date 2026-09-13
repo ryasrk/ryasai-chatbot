@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f4e1bf`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ee63a29`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f4e1bf`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,47%** (19.219/21.972 baris, 151 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,04%** (1768/1880 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 193 file · **4.691 lulus · 0 gagal** | terukur |
+| Test coverage | **87,53%** (19.331/22.084 baris, 152 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,06%** (1774/1886 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 194 file · **4.738 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**953 kontrol + 9 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**977 kontrol + 10 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5660,6 +5660,57 @@ per-org**, jadi tanpa konteks pembacaan tak terskop; **K10** karena mutasi perta
 
 **Progres backlog: 19 dari 66 route orphan ditutup.** Repo **87,41% → 87,47%**; suite **4.642 → 4.691**
 (192 → **193 file**); gate **150 → 151 modul**.
+
+### 1.7dn `/api/tools` — katalog plugin dan penyegelan kredensial: 100,00% (112/112)
+
+**GET TIDAK PERNAH MENGEMBALIKAN `manifestJson`.** Barisnya diambil **BESERTA kolom mentahnya** (perlu untuk
+parse) dan responsnya **dibangun ulang field demi field**, menggantinya dengan `maskPluginManifest(manifest)`.
+**Sebaran `{...p}` — refactor "rapikan mapping ini" yang paling wajar — akan mengirim ciphertext berdampingan
+dengan mask-nya.** **K1 → 2 merah, K2 → 2 merah.** Diasersi dengan memindai body mentah untuk **ciphertext,
+nama kolom, dan awalan `enc:`.**
+
+**MANIFEST TERSIMPAN YANG TAK TERURAI MENGHASILKAN `manifest: null`, BUKAN 500.** Satu baris rusak **tidak
+boleh mematikan seluruh katalog**; klien merender plugin tanpa manifest-nya. **K3 → 2 merah** (membuatnya
+melempar menyalakan kontrol itu).
+
+**`toolId` UNIK PER ORG DAN DIPERIKSA SEBELUM INSERT** karena planner memakainya sebagai kunci stabil; pra-cek
+itu ada supaya pemanggil menerima **409, bukan 500 unique-constraint mentah.** **K9 → 4 merah, K10 → 2 merah.**
+
+**PLUGIN BARU `isEnabled: false` — sengaja inert** sampai admin menyalakannya, sehingga manifest setengah jadi
+**tidak bisa mulai melakukan panggilan keluar sendiri.** **K11 → 1 merah.**
+
+**KREDENSIAL DIENKRIPSI AT REST**, dan hanya bila `authType !== 'NONE'`. **K16 → 2, K17 → 1 merah.** Asersi
+terkuat di sini adalah **memindai SELURUH argumen create untuk plaintext** — lebih kuat daripada memeriksa satu
+field.
+
+**24 kontrol, dan KEDUA PULUH EMPAT MENGGIGIT.**
+
+## SAYA HAMPIR MELAPORKAN KEBOCORAN YANG TIDAK ADA — DAN PROBE PRISMA SUNGGUHAN MEMBUKTIKANNYA
+
+Test pertama saya gagal dengan **ciphertext muncul di respons create**, yang terbaca seperti **kebocoran
+rahasia kelas yang sama dengan `tools/[id]`.** Sebelum melaporkannya, saya **menguji klien Prisma sungguhan
+(DB hidup, kueri nyata)** untuk memisahkan artefak dari fakta:
+
+| kueri | kunci yang dikembalikan |
+|---|---|
+| `findFirst()` (tanpa select) | agenticEnabled, category, chatEnabled, createdAt, description, id, isEnabled, keywords, **manifestJson**, name, **organizationId**, subcategory, toolId, updatedAt |
+| `findFirst({ select })` | agenticEnabled, chatEnabled, createdAt, description, id, isEnabled, name, toolId — **`manifestJson` ABSEN** |
+
+**Prisma BENAR-BENAR menyaring.** Penyebabnya adalah **mock saya sendiri**, yang mengembalikan
+`{ id, ...args.data }` dan **mengabaikan `select`** — sehingga mock itu **lebih lebar daripada database
+sungguhan** dan **memfabrikasi kebocoran.** Mock diperbaiki agar menghormati `select`, plus **satu asersi baru
+yang menegaskan kontrak itu secara eksplisit** supaya regresi mock semacam ini tidak bisa kembali.
+
+Satu detail lagi dari jalur yang sama: `createdAt` **diisi oleh default skema, bukan oleh `data`**, jadi mock
+juga harus menyediakannya — kalau tidak, asersi kunci akan gagal karena alasan yang **tidak pernah dihasilkan
+database sungguhan.**
+
+Ini **kali keempat** di sesi ini bentuk mock saya sendiri nyaris menjadi temuan palsu (setelah `encryptConfig`,
+`describeConnectionError`, dan `maskSecret`/preset `vector-store`). **Polanya konsisten: mock adalah KLAIM
+tentang modul nyata, dan klaim itu harus diperiksa dengan menjalankan yang asli.**
+
+**Progres backlog: 20 dari 66 route orphan ditutup.** Repo **87,47% → 87,53%**; suite **4.691 → 4.738**
+(193 → **194 file**); gate **151 → 152 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
