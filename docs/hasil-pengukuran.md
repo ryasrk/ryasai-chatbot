@@ -14,7 +14,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **88,02%** (20.328/23.096 baris, 170 file) | terukur, **belum 95%** |
 | Cakupan fungsi | **94,03%** (1858/1976 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 211 file · **5.246 lulus · 0 gagal** | terukur |
+| Test suite | 211 file · **5.252 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
