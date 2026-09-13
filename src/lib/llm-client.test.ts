@@ -19,6 +19,8 @@ mock.module('@/lib/db', () => ({
 
 import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig } from './llm-client'
 import type { LlmRuntimeConfig } from './llm-config'
+import { LlmProviderError } from './llm-client-utils'
+import type { LlmToolDef } from './llm-client-types'
 
 const originalFetch = global.fetch
 afterEach(() => {
@@ -328,6 +330,83 @@ describe('chatStream', () => {
     }
 
     expect(tokens).toEqual(['Hi', '!'])
+  })
+
+  test('OpenAI streaming WITH tools puts them in the request body', async () => {
+    // Uncovered until now: the streaming path has its own `body.tools = tools` assignment,
+    // separate from the non-streaming one. If only this copy regressed, an agent that streams
+    // would send no tools at all and the model would simply answer in prose -- the request still
+    // succeeds, so nothing would look broken in the UI.
+    const fetchMock = mock(() =>
+      Promise.resolve(sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n', 'data: [DONE]\n'])),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const tools: LlmToolDef[] = [{ type: 'function', function: { name: 'search', description: 'search', parameters: { type: 'object' } } }]
+    for await (const _ of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat', tools)) {
+      /* drain */
+    }
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { tools?: unknown[]; stream?: boolean }
+    expect(body.tools).toEqual(tools)
+    expect(body.stream).toBe(true)
+  })
+
+  test('OpenAI streaming with an EMPTY tools array omits the key entirely', async () => {
+    // Some strict OpenAI-compatible gateways reject `tools: []`. The guard is `tools.length > 0`,
+    // so this pins the difference between "no tools" and "an empty list of tools".
+    const fetchMock = mock(() =>
+      Promise.resolve(sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n', 'data: [DONE]\n'])),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    for await (const _ of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat', [])) {
+      /* drain */
+    }
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect('tools' in body).toBe(false)
+  })
+})
+
+describe('agentChat — the system context block', () => {
+  test('a context is passed as its own system message', async () => {
+    // agentChat is the answer-only helper used by the non-planner paths. The `System context:`
+    // message is how retrieved documents and connector facts reach the model, so a regression that
+    // dropped it would silently degrade every answer to a bare model call -- no error, just worse
+    // output, which is the hardest kind of failure to notice.
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'answer' } }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await agentChat('what is the total?', 'Invoice INV-1 totals 500.')
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { messages: Array<{ role: string; content: string }> }
+    // The agent system prompt is always first; the context is a SECOND system message.
+    expect(body.messages[0]!.role).toBe('system')
+    const contextMsg = body.messages.find((m) => m.content.startsWith('System context:'))
+    expect(contextMsg?.content).toBe('System context:\nInvoice INV-1 totals 500.')
+    // The question itself is still present.
+    expect(body.messages.some((m) => m.content === 'what is the total?')).toBe(true)
+  })
+
+  test('NO context adds no context message (the guard is on truthiness)', async () => {
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'answer' } }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await agentChat('just the question')
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { messages: Array<{ role: string; content: string }> }
+    expect(body.messages.some((m) => m.content.startsWith('System context:'))).toBe(false)
   })
 })
 
@@ -658,6 +737,108 @@ describe('runMultiAgentLoop', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Provider failures THROUGH the Anthropic transport.
+//
+// The classification itself is covered in llm-provider-error.test.ts, but every failure test here
+// used openaiCfg. The Anthropic non-streaming branch has its OWN `!res.ok` handling (a different
+// endpoint, different auth headers, a different body shape), so a regression there -- a dropped
+// status, a body that never reaches the classifier -- would leave the unit tests green while real
+// BYOK customers got a useless error.
+// ---------------------------------------------------------------------------
+
+describe('chatOnce (Anthropic) — provider failures reach the classifier', () => {
+  test('a revoked key surfaces as an AUTH failure, not a generic one', async () => {
+    // The single most common BYOK support case: the customer's own key was revoked. They must be
+    // told it is theirs to fix, which only works if the 401 survives the transport.
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve('{"error":{"message":"invalid x-api-key"}}'),
+      } as Response),
+    ) as unknown as typeof fetch
+
+    const err = await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }]).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(LlmProviderError)
+    expect((err as LlmProviderError).status).toBe(401)
+    expect((err as LlmProviderError).failure.kind).toBe('auth')
+  })
+
+  test('the provider body informs the CLASSIFICATION without reaching the client', async () => {
+    // I first wrote this expecting `err.message` to exclude the body, and it FAILED -- err.message
+    // does carry the first 200 chars. Investigating instead of "fixing" it showed the real design:
+    // the body never reaches the browser because errors.ts branches on `instanceof
+    // LlmProviderError` FIRST and returns only failure.kind + failure.hint, never e.message. That
+    // branch's own comment records the bug it fixed: provider errors used to fall through to
+    // INTERNAL_ERROR/500 and return the raw "LLM error (HTTP 401): ..." text to the browser.
+    //
+    // So the property worth pinning is the CLIENT-FACING one, which is what a leak would actually
+    // expose. Asserting on err.message would pin the internal shape and miss the real invariant.
+    const secretish = 'sk-ant-SECRET-PREFIX-leaked'
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        text: () => Promise.resolve(`{"error":{"message":"${secretish}"}}`),
+      } as Response),
+    ) as unknown as typeof fetch
+
+    const err = (await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }]).catch(
+      (e: unknown) => e,
+    )) as LlmProviderError
+    expect(err.status).toBe(400)
+
+    const { toTypedError } = await import('./errors')
+    const forClient = toTypedError(err)
+    // The raw body stays internal...
+    expect(forClient.message).not.toContain(secretish)
+    // ...while the category and the fix DO reach the customer, which is the whole point of BYOK
+    // error classification.
+    expect(forClient.hint).toBeTruthy()
+    expect(forClient.statusCode).toBe(502)
+  })
+
+  test('an error body that cannot be read still produces a classified failure', async () => {
+    // readErrorBody() is `res.text().catch(() => '')`. A provider that closes the connection while
+    // the body is being read must not turn a clean 502 into an unhandled rejection.
+    global.fetch = mock(() =>
+      Promise.resolve({
+        ok: false,
+        status: 502,
+        text: () => Promise.reject(new Error('connection reset')),
+      } as Response),
+    ) as unknown as typeof fetch
+
+    const err = (await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }]).catch(
+      (e: unknown) => e,
+    )) as LlmProviderError
+    expect(err).toBeInstanceOf(LlmProviderError)
+    expect(err.status).toBe(502)
+  })
+
+  test('the OpenAI and Anthropic transports classify the SAME status identically', async () => {
+    // Two independent !res.ok branches must agree, or the error a customer sees depends on which
+    // provider they happened to configure.
+    const failWith = () =>
+      mock(() =>
+        Promise.resolve({ ok: false, status: 402, text: () => Promise.resolve('quota exceeded') } as Response),
+      ) as unknown as typeof fetch
+
+    global.fetch = failWith()
+    const anthropicErr = (await chatOnce(anthropicCfg, [{ role: 'user', content: 'hi' }]).catch(
+      (e: unknown) => e,
+    )) as LlmProviderError
+    global.fetch = failWith()
+    const openaiErr = (await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }]).catch(
+      (e: unknown) => e,
+    )) as LlmProviderError
+
+    expect(anthropicErr.status).toBe(openaiErr.status)
+    expect(anthropicErr.failure.kind).toBe(openaiErr.failure.kind)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // fetchWithRetry — tested indirectly via chatOnce
 // ---------------------------------------------------------------------------
 
@@ -964,6 +1145,32 @@ describe('agentChatStream', () => {
       tokens.push(t)
     }
     expect(tokens).toEqual(['agentic', ' reply'])
+  })
+
+  test('a context becomes a System context message (its own copy, separate from agentChat)', async () => {
+    // agentChatStream has its OWN `System context:` push, distinct from the one in agentChat. Every
+    // existing test here passed `undefined` for context, so this copy was never exercised: a
+    // regression would strip retrieved documents from every STREAMED agent answer while the
+    // non-streaming path kept working -- the kind of split that is easy to miss and looks like
+    // "the streaming answers are just worse".
+    mockGetAgentLlmConfig.mockImplementation(async () => openaiCfg)
+    global.fetch = mock(() =>
+      Promise.resolve(sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n', 'data: [DONE]\n'])),
+    ) as unknown as typeof fetch
+
+    for await (const _ of agentChatStream('what is the total?', 'Invoice INV-1 totals 500.')) {
+      /* drain */
+    }
+
+    const [, init] = (global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls[0]!
+    const body = JSON.parse(init.body as string) as { messages: Array<{ role: string; content: string }> }
+    const ctxMsg = body.messages.find((m) => m.content.startsWith('System context:'))
+    expect(ctxMsg?.content).toBe('System context:\nInvoice INV-1 totals 500.')
+    // The context is a SECOND system message; the agent system prompt still comes first.
+    expect(body.messages[0]!.role).toBe('system')
+    expect(body.messages[0]!.content).not.toContain('System context:')
+    // Order matters for the model: system prompt, then context, then the question.
+    expect(body.messages[body.messages.length - 1]!.content).toBe('what is the total?')
   })
 
   test('injects chatHistory into the prompt', async () => {

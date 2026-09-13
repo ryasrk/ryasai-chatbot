@@ -119,7 +119,11 @@ const FLOORS: Record<string, number> = {
   'src/lib/llm-client-anthropic.ts': 80, // measured 80.77% merged; 63/63 executable
   'src/lib/llm-client-openai.ts': 80, // measured 85.57% (172/201)
   'src/lib/llm-client-utils.ts': 85, // measured 90.27% (167/185)
-  'src/lib/llm-client.ts': 80, // measured 89.53% (265/296)
+  // Every provider-failure test used openaiCfg, so the Anthropic non-streaming !res.ok branch
+  // never ran -- a dropped status there would hit real BYOK customers while unit tests stayed
+  // green. Also covered: tools in the STREAMING OpenAI body (a separate assignment) and the
+  // `System context:` push in agentChatStream (a separate copy from agentChat's).
+  'src/lib/llm-client.ts': 90, // measured 90.88% merged; 266/270 executable
   'src/lib/logger.ts': 85, // measured 94.44% (34/36)
   'src/lib/metrics.ts': 90, // measured 96.13% (149/155)
   'src/lib/midtrans.ts': 85, // measured 94.03% (63/67)

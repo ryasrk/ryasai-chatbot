@@ -1,6 +1,6 @@
 {
-  "linePct": 86.29,
-  "linesHit": 17412,
+  "linePct": 86.31,
+  "linesHit": 17416,
   "linesFound": 20179,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -342,12 +342,6 @@
       "pct": 88.88888888888889
     },
     {
-      "file": "src/lib/llm-client.ts",
-      "hit": 265,
-      "found": 296,
-      "pct": 89.52702702702703
-    },
-    {
       "file": "src/lib/session.ts",
       "hit": 163,
       "found": 182,
@@ -370,6 +364,12 @@
       "hit": 126,
       "found": 139,
       "pct": 90.64748201438849
+    },
+    {
+      "file": "src/lib/llm-client.ts",
+      "hit": 269,
+      "found": 296,
+      "pct": 90.87837837837837
     },
     {
       "file": "src/lib/mcp-client.ts",

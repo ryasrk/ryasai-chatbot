@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `edeba09`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `382d2a6`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `edeba09`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,29%** (17.412/20.179 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.029 lulus · 0 gagal** | terukur |
+| Test coverage | **86,31%** (17.416/20.179 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.038 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**595 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**603 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4325,6 +4325,43 @@ pertama. Alasan saya pikirkan: mock DB mengembalikan baris apa pun yang saya ber
 test yang meng-assert **query yang direkam**.
 
 **`tool-registry.ts`: 91,82% → 95,91% merged / 100,00% (258/258) eksekutabel.** Repo **86,23% → 86,29%**.
+
+### 1.7cg Transport provider: cabang error Anthropic tak pernah dieksekusi, dan dua salinan paralel
+
+**`llm-client.ts` punya EMPAT cabang `!res.ok`** — Anthropic non-stream, OpenAI non-stream, Anthropic
+stream, OpenAI stream. **Setiap** test kegagalan memakai **`openaiCfg`**. Jadi cabang Anthropic
+non-streaming — endpoint berbeda, header auth berbeda, bentuk body berbeda — **tidak pernah dijalankan**.
+Regresi di sana (status hilang, body tak sampai ke classifier) akan membuat test unit **tetap hijau
+sementara pelanggan BYOK sungguhan menerima error yang tak berguna.** Repo **86,29% → 86,31%**.
+
+**Ekspektasi saya yang SALAH, dan investigasi yang menyelamatkannya.** Saya menulis test yang
+meng-assert `err.message` TIDAK memuat body provider. **Gagal.** `LlmProviderError` memang memasukkan
+**200 karakter pertama** body provider ke `message`.
+
+Saya **tidak "memperbaiki" kode** — saya telusuri dulu. Ternyata desainnya **benar**: `errors.ts`
+mencabang pada `instanceof LlmProviderError` **lebih dulu** dan mengembalikan **hanya
+`failure.kind` + `failure.hint`**, tidak pernah `e.message`. Komentar di cabang itu mencatat bug yang
+**pernah diperbaiki**: *"these errors fell through to INTERNAL_ERROR/500 and returned the raw
+'LLM error (HTTP 401): ...' text to the browser."* Jadi properti yang layak dipatok adalah **yang
+menghadap klien** — `toTypedError(err).message` — bukan bentuk internal. Test saya tulis ulang ke sana.
+
+**Dua salinan paralel yang ditemukan dengan mengukur, bukan membaca.** Setelah test pertama, sisa
+celah menunjukkan **`body.tools = tools` di jalur STREAMING OpenAI** (salinan terpisah dari
+non-streaming) dan **`System context:` di `agentChatStream`** (salinan terpisah dari `agentChat`).
+Keduanya adalah pola "dua tempat, satu diuji": regresi di satu salinan membuat **jawaban streaming
+lebih buruk tanpa error apa pun** — kegagalan yang paling sulit disadari. Test `agentChatStream` yang
+ada memakai `undefined` untuk context, jadi salinan itu memang **tak pernah dieksekusi**.
+
+**Nama properti saya tebak salah dua kali** (`classification`, lalu `chatStream` argumen ketiga) —
+`tsc` menangkap keduanya; yang benar adalah `failure.kind` dan `tools` sebagai argumen **kelima**.
+
+**7 test baru, 5 kontrol, semuanya menggigit:** `!res.ok` Anthropic dihapus (4 merah), status tidak
+diteruskan (4), `body.tools` streaming dihapus (1), guard `tools.length` diubah jadi selalu set (1),
+`System context:` dihapus (2). `llm-client.ts`: 88,85% → **90,88% merged / 98,52% eksekutabel**.
+
+**Non-kontrol yang saya deklarasikan:** baris 42/47 (`getLastLlmUsage`/`withUsageTracking`) sudah
+lama didokumentasikan — test meng-substitusi `getLastLlmUsage` di langkah terakhir — dan baris 172
+adalah deklarasi tipe.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
