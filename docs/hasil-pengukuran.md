@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `88613d3`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `468e767`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `88613d3`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,21%** (16.573/19.680 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.634 lulus · 0 gagal** | terukur |
+| Test coverage | **84,23%** (16.576/19.680 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.637 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -109,7 +109,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/prisma-tenant.ts` | 51,49% → **87,38%** merged | 63,41% → **100,00%** kode eksekutabel (90/90) | 24 |
 | `src/lib/citation-trail.ts` | 69,84% → **90,48%** merged | 86,27% → **100,00%** kode eksekutabel (57/57) | 16 |
 | `src/lib/source-guidance.ts` | 59,30% → **63,95%** merged (artefak LF) | 92,73% → **100,00%** kode eksekutabel (55/55) | 14 |
-| **Total repo** | **62,44%** | **84,21%** | — |
+| `src/lib/rag-fts.ts` | 68,18% → **70,13%** merged (artefak LF) | 97,22% → **100,00%** kode eksekutabel (108/108) | 2 |
+| **Total repo** | **62,44%** | **84,23%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -368,7 +369,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**312 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**315 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2833,6 +2834,51 @@ salah**.
 
 **Kontrol negatif: 8 dijalankan, 7 menggigit** (1 dideklarasikan tak dapat dibedakan, lihat di
 atas).
+
+### 1.7bd Aturan «jalankan dengan SEMUA test file» menyelamatkan 23 baris kerja sia-sia — dan satu batas observasi yang saya nyatakan terbuka
+
+**`rag-fts.ts` 97,22% → 100,00% (108/108).** Repo **84,21% → 84,23% (+0,02)**. Modul ter-gate
+tetap **82**.
+
+**Temuan metodologis, dan ini yang paling berharga ronde ini.** Saya mengukur `rag-fts.ts`
+dengan **satu** file test yang tampak relevan (`rag-fts.test.ts`) dan mendapat
+**74,26% dengan 26 baris nyata tak tercakup**. Menjalankan dengan **kedua** file test
+(`+ rag-fts-postgres.test.ts`) memberi **97,22% dengan 3 baris** — jadi **23 dari 26 baris
+«tak tercakup» itu sudah diuji** oleh file kedua. Kalau saya tidak menaati aturan
+«selalu sertakan SEMUA file test modul», ronde ini akan habis menulis test untuk 23 baris
+yang **sudah hijau**, dan saya akan melaporkan «26 baris kosong» sebagai fakta. Aturan itu
+bukan formalitas; ia menghemat satu ronde penuh. Sisa nyata: **3 baris**, seluruhnya satu
+blok `catch` degradasi.
+
+**Yang kini dijaga.** Jalur degradasi `searchFtsChunkIds`: bila query tsvector **gagal**
+(kolom `tsv` belum ada di database yang belum menjalankan migrasi), pencarian **degradasi ke
+`[]` alih-alih melempar** — sehingga **arm VECTOR tetap bisa menjawab**. Itu yang membuat
+full-text menjadi **booster opsional, bukan ketergantungan keras**. Dan bila **tidak ada org
+context**, fungsi mengembalikan `[]` **sebelum** menyentuh database — ini yang mencegah
+kebocoran lintas tenant pada pembacaan FTS.
+
+**Batas observasi, dinyatakan terbuka — bukan disembunyikan.** Saya mencoba mematok **teks
+warning** `[rag-fts] searchFtsChunkIds failed` dan **gagal dua kali dengan cara berbeda**:
+(a) mengganti `console.warn` merekam **0 panggilan**, karena **bun menekan `console.warn` di
+dalam test**; (b) mengganti `process.stdout.write` **juga** merekam 0, karena penekanannya
+terjadi **sebelum** keduanya. Saya memverifikasi bahwa **tidak ada satu pun test di repo ini**
+yang berhasil menangkap `console.warn`. Saya lalu mencoba **subprocess** — `bun -e` dengan
+topologi mock ini **crash** (bun.report). Jadi teks warning itu **tidak dapat dijangkau
+in-process**, dan saya **menghapus test yang gagal itu alih-alih melonggarkan assertionnya
+sampai hijau**. Yang **dapat** diobservasi dari cabang yang sama kini dipatok: kegagalan
+**tertangkap** (tidak melempar) dan `[]` dikembalikan — yang **hanya mungkin terjadi bila body
+`catch` berjalan**.
+
+**Dua bug pada test saya sendiri, keduanya tertangkap karena test merah.** (a) Test baru saya
+**tidak memanggil `enterWithOrg`**, sehingga `searchFtsChunkIds` mengembalikan `[]` **sebelum**
+query dan mock-nya **tak pernah tersentuh** — persis cabang yang sudah diuji test lain. (b)
+`mockImplementationOnce` bersisa dari test sebelumnya **dikonsumsi lebih dulu**, sehingga mock
+saya yang di-override tak terpakai; diperbaiki ke `mockImplementation` dengan reset eksplisit.
+Dua-duanya **kode benar, test saya salah**.
+
+**Kontrol negatif: 3, semuanya menggigit** — `return []` diubah jadi `throw` (retrieval mati
+total), `catch` dihapus (error bocor), dan guard org context dilumpuhkan (kebocoran lintas
+tenant).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

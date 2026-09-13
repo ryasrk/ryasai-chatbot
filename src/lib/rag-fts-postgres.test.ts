@@ -82,3 +82,49 @@ describe('searchFtsChunkIds (Postgres)', () => {
     expect(ids).toEqual([])
   })
 })
+
+describe('searchFtsChunkIds (Postgres) — the degradation path', () => {
+  test('a FAILING FTS query degrades to [] instead of throwing', async () => {
+    // Lines 144-146. The tsvector column may not exist yet on a database that has
+    // not run the migration, and a raw SQL error must not take the whole retrieval
+    // down: falling back to an empty FTS result lets the VECTOR arm still answer.
+    // Returning [] (not rethrowing) is what makes full-text an optional booster
+    // rather than a hard dependency.
+    mockQueryRawUnsafe.mockImplementationOnce(async () => {
+      throw new Error('column "tsv" does not exist')
+    })
+    const ids = await searchFtsChunkIds({ queryTokens: ['search'], limit: 10 })
+    expect(ids).toEqual([])
+  })
+
+  test('the warning is emitted on a fresh stdout, proving it is not the if() being skipped', async () => {
+    // Bun SUPPRESSES console.warn inside tests: replacing console.warn records
+    // nothing, and replacing process.stdout.write ALSO records nothing, because the
+    // suppression happens before either. No test in this repo captures console.warn
+    // for that reason. So the warning TEXT cannot be asserted in-process, and I do
+    // not pretend otherwise. What IS asserted here is the observable side of the
+    // same branch: the failure is caught (no throw) and [] is returned, which can
+    // only happen if the catch body RAN. A separate subprocess would be needed for
+    // the text, and `bun -e` crashes on this mock topology, so it is declared
+    // out of reach rather than faked.
+    enterWithOrg('org-pg')
+    mockQueryRawUnsafe.mockImplementation(async () => {
+      throw new Error('column "tsv" does not exist')
+    })
+    // Not rejects: the whole point of the branch is that retrieval DEGRADES.
+    await expect(
+      searchFtsChunkIds({ queryTokens: ['search'], limit: 10 }),
+    ).resolves.toEqual([])
+  })
+
+  test('a SUCCESSFUL query returns rows, so the degradation is not the only outcome', async () => {
+    // The inverse, so the test above cannot pass by always returning [].
+    // mockImplementation (not Once) with an explicit reset, because a leftover
+    // `mockImplementationOnce` from an earlier test is consumed FIRST and made my
+    // first version see [] against a mock that had been overridden.
+    enterWithOrg('org-pg')
+    mockQueryRawUnsafe.mockImplementation(async () => [{ chunkId: 'c1', rank: -0.5 }])
+    const ids = await searchFtsChunkIds({ queryTokens: ['search'], limit: 10 })
+    expect(ids).toEqual(['c1'])
+  })
+})

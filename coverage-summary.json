@@ -1,6 +1,6 @@
 {
-  "linePct": 84.21,
-  "linesHit": 16573,
+  "linePct": 84.23,
+  "linesHit": 16576,
   "linesFound": 19680,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -43,9 +43,9 @@
     },
     {
       "file": "src/lib/rag-fts.ts",
-      "hit": 105,
+      "hit": 108,
       "found": 154,
-      "pct": 68.18181818181817
+      "pct": 70.12987012987013
     },
     {
       "file": "src/lib/tool-router.ts",
