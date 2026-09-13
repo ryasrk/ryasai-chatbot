@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0cc7cfc`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0670e0`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0cc7cfc`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **85,38%** (16.789/19.663 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.756 lulus · 0 gagal** | terukur |
+| Test suite | 163 file · **3.767 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -122,6 +122,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/notifications.ts` | 77,52% → **84,50%** merged (artefak LF) | 89,29% → **93,16%** kode eksekutabel (109/117) | 8 |
 | `src/app/api/integrations/[id]/query/route.ts` | 77,14% → **100,00%** merged | 85,26% → **100,00%** kode eksekutabel (210/210) | 11 |
 | `src/lib/rag-chunking.ts` | 64,95% → **84,30%** merged (artefak LF) | 70,79% → **100,00%** kode eksekutabel (188/188) | 14 |
+| `src/lib/passwords.ts` | 88,89% (tak berubah) | 88,89% (**6 kontrol tambahan**, 2 baris catch deklaratif) | 7 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -381,7 +382,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**393 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**400 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3322,6 +3323,69 @@ placeholder **bernama** alih-alih membatalkan antrean.
 **Kontrol negatif: 13. 11 menggigit.** Dua dideklarasikan setara: **guard `maxChars <= 0`** —
 tanpa guard pun, `nextLength = 0 + len + 0 > 0` **langsung break** sehingga hasilnya `''` yang
 sama; dan `if (!raw) return undefined`. Keduanya **tak dapat dibedakan oleh input apa pun**.
+
+### 1.7bn SATU BUG KEAMANAN NYATA: hash password yang DIPOTONG tetap MENERIMA password yang benar
+
+**`passwords.ts`: cakupan tidak berubah (88,89%, 16/18), tetapi kualitas pengujiannya berubah
+total — dari 1 kontrol yang menggigit menjadi 5 — dan satu BUG KEAMANAN ditemukan.** Repo tetap
+**85,38%**; saya **tidak mengklaim kenaikan apa pun** dari ronde ini.
+
+**BUG: `verifyPassword` menerima hash yang DIPOTONG.** Panjang re-derivasi diambil dari hash yang
+TERSIMPAN:
+
+```
+const actual = crypto.scryptSync(password, salt, expected.length, SCRYPT)
+return crypto.timingSafeEqual(actual, expected)
+```
+
+Karena itu, hash yang dipotong **dibandingkan hanya pada prefiksnya** — dan prefiks hash asli
+**cocok**. Terukur: hash yang dipotong menjadi **1 byte tetap menerima password yang BENAR**,
+sementara password yang salah tetap ditolak, sehingga **tidak ada yang terlihat rusak**.
+
+**Dampaknya terukur, bukan teoretis.** Hash 1 byte hanya punya **256 kemungkinan**. Saya
+brute-force seluruh 256 lewat scrypt: **1,1 detik**, dan **password asli berhasil dipulihkan**.
+Jadi baris DB yang hash-nya terpotong **meruntuhkan work factor dari 2^256 menjadi 2^8** —
+dari "tidak layak dipecahkan" menjadi "terpecah sebelum kopi dingin".
+
+**Kontras yang membuktikan letaknya: SALT yang dipotong justru DITOLAK.** Salt adalah **input**
+ke scrypt, jadi memendekkannya **mengubah kunci turunannya** alih-alih memendekkan perbandingan.
+Itu memisahkan bug ini ke **bidang hash saja**, dan saya patok keduanya berdampingan.
+
+**Tidak saya tambal.** Perbaikannya adalah mewajibkan `expected.length === KEYLEN` sebelum
+membandingkan, yang **mengubah perilaku penolakan** — baris dengan hash terpotong akan mulai
+**menolak login** alih-alih menerimanya. Itu **keputusan rollout**: hash terpotong mungkin ada di
+produksi, dan menolaknya **mengunci pengguna**. Dipatok sebagai perilaku terukur dalam bentuk
+yang dapat dieksekusi, dan dilaporkan.
+
+**Kesalahan milik saya yang ditemukan oleh kontrol, dua kali.** (a) Draf pertama saya memakai
+keylen **500 juta** untuk mencapai `catch` scrypt: test itu **berjalan 30 DETIK** dan membuat
+suite tak terpakai — saya ganti dengan penyelidikan yang menunjukkan `catch` itu **butuh nilai
+tersimpan ~5,7 MILIAR karakter**, jadi **dideklarasikan tak terjangkau**, bukan dipaksa.
+(b) Sebuah skrip penyuntingan saya **menghapus enam test** saat menyisipkan blok baru —
+terlihat dari **test yang turun dari 12 menjadi 9** dan **tiga kontrol yang berhenti menggigit**;
+saya memulihkannya, dan kontrolnya kembali menggigit.
+
+**Dua lubang nyata yang ditutup setelah menyelidiki kontrol yang tidak menggigit.** Kontrol
+"prefix tidak diperiksa" dan "jumlah bagian tidak diperiksa" awalnya **tidak menggigit** karena
+fixture malformed saya memakai hash yang **tidak cocok** — jadi nilai itu ditolak oleh
+**PERBANDINGAN**, dan pemeriksaan prefix/panjang **tidak pernah menjadi alasannya**. Setelah
+saya **menghitung hash yang BENAR** lebih dulu, kedua kontrol **langsung menggigit**. Fixture yang
+tidak sengaja membuat kontrol lolos adalah **jalur-lulus-yang-salah** yang sama dengan yang
+dikejar seluruh suite ini.
+
+**Yang kini dijaga pada `passwords`:** **tag format `scrypt$` wajib** (tanpa itu, `bcrypt$<salt>$<hash
+benar>` **lolos**, dan migrasi hash di masa depan **tak bisa membedakan barisnya sendiri**);
+**format tepat TIGA bagian** (`scrypt$<salt>$<hash benar>$extra` **lolos** tanpa cek ini);
+**salt/hash kosong ditolak** (dua buffer kosong membuat `timingSafeEqual` **TRUE**, yang menerima
+**password apa pun**); **cost scrypt dipatok** — menurunkannya ke N=1024 **membuat 8 test merah**,
+karena semua hash tersimpan jadi tak terverifikasi = **lockout senyap yang baru ketahuan saat
+login pertama setelah deploy**; dan **loop 11 bentuk malformed** yang membuktikan kontrak header
+"never throws" tetap benar untuk setiap input yang bisa diberikan pemanggil.
+
+**Kontrol: 6 dijalankan pada `passwords`, 5 menggigit** (jumlah bagian, salt/hash kosong, prefix,
+cost turun, cost naik). **1 dideklarasikan setara: `timingSafeEqual` → `===`** — perbedaannya
+adalah **sifat keamanan (waktu konstan)**, yang **tidak dapat diamati oleh test fungsional mana
+pun**; perilakunya identik untuk seluruh input.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

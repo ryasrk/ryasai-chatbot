@@ -90,7 +90,10 @@ const FLOORS: Record<string, number> = {
   'src/lib/metrics.ts': 90, // measured 96.13% (149/155)
   'src/lib/midtrans.ts': 85, // measured 94.03% (63/67)
   'src/lib/order-reconcile.ts': 85, // measured 91.07% (51/56)
-  'src/lib/passwords.ts': 80, // measured 88.89% (16/18)
+  // Raised 80 -> 88: the format tag, the scrypt COST and the empty-field guard are
+  // now pinned, and a TRUNCATED stored hash is documented as ACCEPTING the correct
+  // password (256-value brute force, 1.1s). Remaining 2 lines are a defensive catch.
+  'src/lib/passwords.ts': 88, // measured 88.89% (16/18)
   'src/lib/plan-gating.ts': 85, // measured 94.87% (37/39)
   'src/lib/pricing.ts': 95, // measured 100.00% (39/39)
   'src/lib/prompt-library.ts': 95, // measured 100.00% (34/34)
