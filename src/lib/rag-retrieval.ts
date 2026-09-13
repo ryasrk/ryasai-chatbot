@@ -417,6 +417,19 @@ export function _resetIterativeScanProbe(): void {
   _iterativeScanSupported = null
 }
 
+/**
+ * Test seam — forgets the memoised index build.
+ *
+ * `retrieveRelevantChunks` fires `void ensureVectorIndexes()` on its vector path,
+ * so by the time a later test calls the function the memo is populated and it
+ * returns the cached promise WITHOUT issuing DDL. A test that wants to observe the
+ * DDL has to clear the memo first; otherwise the assertion silently measures the
+ * memo instead of the statement.
+ */
+export function _resetVectorIndexBuild(): void {
+  _vectorIndexBuild = null
+}
+
 async function pgvectorSimilaritySearch(queryVector: number[], limit: number): Promise<Map<string, number>> {
   const vectorStr = `[${queryVector.join(',')}]`
   const orgId = getOrgContext()

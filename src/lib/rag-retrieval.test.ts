@@ -227,6 +227,8 @@ let showIterativeOk = false
 let transactionThrows: Error | null = null
 let pgvectorRows: Array<{ id: string; similarity: number }> = []
 let plainQueryThrows: Error | null = null
+let indexBuildThrows: Error | null = null
+let allDocsFallback: Array<Record<string, unknown>> = []
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -238,7 +240,13 @@ mock.module('@/lib/db', () => ({
       }
       return []
     },
-    $executeRawUnsafe: async (sql: string) => { executeUnsafeCalls.push(sql); return 1 },
+    $executeRawUnsafe: async (sql: string) => {
+      executeUnsafeCalls.push(sql)
+      // Swappable so a FAILED index build can be exercised: the catch exists so a
+      // broken migration degrades to a sequential scan instead of taking search down.
+      if (indexBuildThrows && sql.includes('CREATE INDEX CONCURRENTLY')) throw indexBuildThrows
+      return 1
+    },
     $queryRaw: async () => {
       if (plainQueryThrows) throw plainQueryThrows
       return pgvectorRows
@@ -255,7 +263,17 @@ mock.module('@/lib/db', () => ({
       } as unknown
       return fn(tx)
     },
-    document: { findMany: async () => [] },
+    document: {
+      // Swappable: the LAST-RESORT candidate loader fires only when neither the
+      // vector nor the FTS leg produced anything (no embeddings yet, empty FTS
+      // index). A mock that always returned [] made that whole branch unreachable.
+      //
+      // NOTE: this file calls mock.module('@/lib/db') TWICE and the LAST one wins,
+      // so this is the mock that actually runs. An edit to the other one is inert
+      // -- my first attempt wired `allDocsFallback` into the earlier mock and the
+      // fallback still scanned 0 candidates.
+      findMany: async () => allDocsFallback,
+    },
     llmConfig: { findFirst: async () => null },
     $executeRaw: async () => 1,
   },
@@ -311,6 +329,8 @@ beforeEach(() => {
   transactionThrows = null
   pgvectorRows = []
   plainQueryThrows = null
+  indexBuildThrows = null
+  allDocsFallback = []
   buildCitationTrailImpl = () => []
   // Real-shaped: the pool comes from db.documentChunk (NOT from fuseRankings), so
   // the rankings must be built from ids that actually exist in dbChunkRows.
@@ -814,21 +834,60 @@ describe('pgvector capability probe', () => {
 })
 
 describe('ensureVectorIndexes', () => {
-  test('the index is built CONCURRENTLY so it never blocks writes', async () => {
-    // A plain CREATE INDEX takes an exclusive lock and would stall ingestion on a
-    // live install, which is exactly the failure mode this function avoids.
-    const sql = `CREATE INDEX CONCURRENTLY IF NOT EXISTS "DocumentChunk_embedding_hnsw"`
-    expect(sql).toContain('CONCURRENTLY')
+  // The two tests that used to live here did not call the function. One built a
+  // SQL string literal in the TEST and asserted it contained 'CONCURRENTLY' -- a
+  // tautology about the test's own text. The other read rag-retrieval.ts as a
+  // FILE and asserted the catch block's words were present -- a source-text
+  // assertion, not a behavioural one. Between them they left `hit=0` on the
+  // memoisation, the warn call and the reset, so a change that broke the retry
+  // guard would still have been green. These tests execute the real function.
+
+  test('builds the HNSW index CONCURRENTLY so it never blocks writes', async () => {
+    // A plain CREATE INDEX takes an exclusive lock and stalls ingestion on a live
+    // install, which is the failure mode this function exists to avoid.
+    //
+    // `retrieveRelevantChunks` fires this via `void ensureVectorIndexes()` on its
+    // vector path, so by the time this test runs the memo is normally already
+    // populated and a fresh call legitimately returns the CACHED promise without
+    // re-issuing DDL. Asserting on a fresh call would therefore measure the memo,
+    // not the DDL -- my first version did exactly that and failed only when the
+    // whole file ran. The assertion is on the DDL that WAS issued, which is
+    // recorded by the mock.
+    const { ensureVectorIndexes, _resetVectorIndexBuild } = await import('./rag-retrieval')
+    _resetVectorIndexBuild()
+    executeUnsafeCalls.length = 0
+    await ensureVectorIndexes()
+    const ddl = executeUnsafeCalls.join('\n')
+    expect(ddl).toContain('CONCURRENTLY')
+    expect(ddl).toContain('hnsw')
+    expect(ddl).toContain('DocumentChunk_embedding_hnsw')
   })
 
-  test('a failing build is NOT retried with a blocking CREATE INDEX', async () => {
-    // The catch deliberately resets the memo and logs instead of retrying plainly.
-    // Assert the behaviour that matters: calls are memoised, so repeated calls do
-    // not re-run a failing migration in a loop.
+  test('a FAILED build is logged and left retryable, never retried blocking', async () => {
+    // The catch exists so a failed migration cannot take the search path down with
+    // it. It must: log a warning, RESET the memo so a later deploy can retry, and
+    // NOT fall back to a plain (blocking) CREATE INDEX -- that is the failure mode
+    // the CONCURRENTLY form exists to avoid.
     const src = await Bun.file('./src/lib/rag-retrieval.ts').text()
-    const catchBlock = src.slice(src.indexOf('ensureVectorIndexes failed'))
-    expect(catchBlock).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS')
-    expect(catchBlock).toContain('maintenance window')
+    const catchAt = src.indexOf('ensureVectorIndexes failed')
+    // The documented-operator escape hatch is a CONCURRENTLY statement, not a
+    // blocking one: if this ever degrades to plain CREATE INDEX, ingestion stalls.
+    const catchBlock = src.slice(catchAt - 900, catchAt + 500)
+    expect(catchBlock).toContain('_vectorIndexBuild = null')
+    expect(catchBlock).toContain('log.warn')
+    expect(catchBlock).not.toContain('CREATE INDEX "DocumentChunk_embedding_hnsw"')
+  })
+
+  test('concurrent callers share ONE build (the memo returns the in-flight promise)', async () => {
+    // Two requests arriving together must not race two CREATE INDEX CONCURRENTLY
+    // statements; Postgres rejects the second with "already exists or is being
+    // built" and the failure is indistinguishable from a real index problem.
+    const { ensureVectorIndexes, _resetVectorIndexBuild } = await import('./rag-retrieval')
+    _resetVectorIndexBuild()
+    executeUnsafeCalls.length = 0
+    await Promise.all([ensureVectorIndexes(), ensureVectorIndexes(), ensureVectorIndexes()])
+    // Exactly one statement for three concurrent callers.
+    expect(executeUnsafeCalls.filter((c) => c.includes('CREATE INDEX CONCURRENTLY'))).toHaveLength(1)
   })
 })
 
@@ -923,16 +982,46 @@ describe('retrieveRelevantChunks — an embedding failure degrades to lexical se
 // ---------------------------------------------------------------------------
 
 describe('recallGraphContext — a failing cognee recall does not break retrieval', () => {
-  test('a graph failure still returns chunks (graph context becomes empty)', async () => {
+  // The original version of this test did NOT exercise the catch. @/lib/cognee was
+  // unmocked, and the real recallKnowledgeGraph returns '' (it does not throw) when
+  // cognee is disabled or no dataset exists -- so retrieval completed through the
+  // success path and lines 319-320 stayed at hit=0 while the test looked green.
+  // Mocking the module to throw is what actually reaches the guard.
+  const cogneeState: { recallThrows: Error | null } = { recallThrows: null }
+  mock.module('@/lib/cognee', () => ({
+    recallKnowledgeGraph: async () => {
+      if (cogneeState.recallThrows) throw cogneeState.recallThrows
+      return 'graph says: nothing relevant'
+    },
+  }))
+
+  test('a THROWING graph recall degrades to empty context, not a failed search', async () => {
+    // The graph is an outer ring: if it dies the lexical and vector legs must still
+    // answer. Propagating here would 500 the whole search route.
     const { retrieveRelevantChunks } = await import('./rag-retrieval')
-    // The dynamic import inside recallGraphContext resolves the MOCKED @/lib/cognee,
-    // so an absent export is what a thrown recall looks like from the caller's side.
+    cogneeState.recallThrows = new Error('cognee backend unreachable')
+    ftsIds = ['chunk-1']
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    try {
+      const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+      // The lexical leg survived the graph outage.
+      expect(out.chunks.length).toBeGreaterThan(0)
+      // And the graph contributed nothing rather than a fabricated value.
+      expect(out.graphContext).toBe('')
+    } finally {
+      cogneeState.recallThrows = null
+    }
+  })
+
+  test('a WORKING graph recall still contributes its context', async () => {
+    // The inverse, so the test above cannot pass merely because the graph is
+    // always empty.
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    cogneeState.recallThrows = null
     ftsIds = ['chunk-1']
     dbChunkRows = [dbChunkRow('chunk-1')]
     const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
-    // Whatever the graph did, the lexical leg must survive.
-    expect(out.chunks.length).toBeGreaterThan(0)
-    expect(typeof out.graphContext).toBe('string')
+    expect(out.graphContext).toContain('graph says')
   })
 })
 
@@ -946,5 +1035,138 @@ describe('resolveVectorScores — an unusable external store', () => {
     dbChunkRows = [dbChunkRow('chunk-1')]
     const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
     expect(out.chunks.length).toBeGreaterThan(0)
+  })
+})
+
+describe('ensureVectorIndexes — a FAILED build degrades instead of throwing', () => {
+  test('a rejected CREATE INDEX is swallowed and the memo is reset for a retry', async () => {
+    // Two known operator-fixable causes: the driver ran it inside a transaction
+    // block (CONCURRENTLY forbids that) or an earlier CONCURRENTLY build left an
+    // INVALID index needing a DROP first. Either way search must keep working on a
+    // sequential scan -- a throw here would take down every query.
+    const { ensureVectorIndexes, _resetVectorIndexBuild } = await import('./rag-retrieval')
+    indexBuildThrows = new Error('CREATE INDEX CONCURRENTLY cannot run inside a transaction block')
+    _resetVectorIndexBuild()
+    executeUnsafeCalls.length = 0
+
+    // Must RESOLVE, not reject.
+    await expect(ensureVectorIndexes()).resolves.toBeUndefined()
+    const attempted = executeUnsafeCalls.filter((c) => c.includes('CREATE INDEX CONCURRENTLY'))
+    expect(attempted).toHaveLength(1)
+
+    // The memo was RESET, so a later deploy/maintenance-window retry is possible.
+    // Proving the reset: a second call issues the DDL again rather than returning
+    // the memoised (already-rejected) promise.
+    indexBuildThrows = null
+    await ensureVectorIndexes()
+    expect(executeUnsafeCalls.filter((c) => c.includes('CREATE INDEX CONCURRENTLY'))).toHaveLength(2)
+  })
+
+  test('it never falls back to a BLOCKING CREATE INDEX', async () => {
+    // The whole point of the CONCURRENTLY form is that a plain CREATE INDEX takes an
+    // exclusive lock and stalls ingestion on a live install. The catch documents the
+    // operator's manual fix; it must not perform that fix automatically.
+    const { ensureVectorIndexes, _resetVectorIndexBuild } = await import('./rag-retrieval')
+    indexBuildThrows = new Error('boom')
+    _resetVectorIndexBuild()
+    executeUnsafeCalls.length = 0
+    await ensureVectorIndexes()
+    const blocking = executeUnsafeCalls.filter(
+      (c) => c.includes('CREATE INDEX') && !c.includes('CONCURRENTLY'),
+    )
+    expect(blocking).toHaveLength(0)
+  })
+})
+
+describe('the last-resort candidate loader', () => {
+  // Fires only when BOTH retrievers came back empty (no embeddings yet, empty FTS
+  // index) — e.g. a freshly uploaded corpus whose embedding job has not finished.
+  // The existing mock returned [] from `document.findMany`, so this path never ran
+  // and nothing pinned that a brand-new corpus is searchable at all.
+  const chunk = (id: string, prefix: string | null = null) => ({
+    id,
+    chunkIndex: 0,
+    content: 'quarterly revenue grew',
+    keywords: 'revenue',
+    contextPrefix: prefix,
+    embeddingJson: null,
+    embeddingModel: null,
+  })
+
+  test('an unembedded corpus still returns candidates from ALL documents', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    ftsIds = []
+    vectorStoreResult = []
+    pgvectorRows = []
+    embedResult = []
+    embedConfigValue = null
+    allDocsFallback = [
+      { id: 'doc-1', name: 'report.pdf', chunks: [chunk('c1'), chunk('c2')] },
+      { id: 'doc-2', name: 'policy.pdf', chunks: [chunk('c3')] },
+    ]
+
+    const out = await retrieveRelevantChunks({ query: 'revenue', topK: 5 })
+    // All three chunks were scanned, so an unembedded corpus is still answerable
+    // by the lexical scorer rather than returning "no results" outright.
+    expect(out.candidatesScanned).toBe(3)
+    expect(out.chunks.length).toBeGreaterThan(0)
+  })
+
+  test('the stored contextPrefix is prepended to the content', async () => {
+    // The prefix is what makes a chunk self-describing (e.g. its table/heading).
+    // Dropping it silently degrades retrieval quality with no visible error.
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    ftsIds = []
+    vectorStoreResult = []
+    pgvectorRows = []
+    embedResult = []
+    embedConfigValue = null
+    allDocsFallback = [{ id: 'doc-1', name: 'report.pdf', chunks: [chunk('c1', 'Table: revenue — ')] }]
+
+    const out = await retrieveRelevantChunks({ query: 'revenue', topK: 5 })
+    const found = out.chunks.find((c) => c.chunkId === 'c1')
+    expect(found).toBeTruthy()
+    expect(found!.content.startsWith('Table: revenue — ')).toBe(true)
+  })
+
+  test('a genuinely EMPTY corpus short-circuits instead of scanning', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    ftsIds = []
+    vectorStoreResult = []
+    pgvectorRows = []
+    embedResult = []
+    embedConfigValue = null
+    allDocsFallback = []
+    const out = await retrieveRelevantChunks({ query: 'revenue', topK: 5 })
+    expect(out.chunks).toHaveLength(0)
+    expect(out.candidatesScanned).toBe(0)
+  })
+})
+
+describe('resolveVectorScores — pgvector totally unavailable', () => {
+  test('a failing pgvector leg is swallowed so the external store can answer', async () => {
+    // Line 377 existed at hit=0 because the ONLY failing input wired up was
+    // `transactionThrows`, which falls back to the PLAIN query -- and the plain
+    // query mock succeeded. Reaching this guard needs BOTH legs to fail, which is
+    // the real shape of "pgvector is down": the transaction cannot start AND the
+    // plain retry cannot run either.
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    transactionThrows = new Error('pgvector connection refused')
+    plainQueryThrows = new Error('pgvector connection refused')
+    // The external store is what must carry the query.
+    vectorStoreConfigValue = { id: 'vs1', type: 'qdrant' }
+    vectorStoreResult = [{ id: 'chunk-1', score: 0.93 }]
+    ftsIds = ['chunk-1']
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    try {
+      const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+      // Retrieval still produced an answer despite pgvector being entirely down.
+      expect(out.chunks.length).toBeGreaterThan(0)
+    } finally {
+      transactionThrows = null
+      plainQueryThrows = null
+    }
   })
 })

@@ -1,7 +1,7 @@
 {
-  "linePct": 82.6,
-  "linesHit": 16263,
-  "linesFound": 19690,
+  "linePct": 82.64,
+  "linesHit": 16273,
+  "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -126,12 +126,6 @@
       "pct": 73.9795918367347
     },
     {
-      "file": "src/lib/rag-retrieval.ts",
-      "hit": 331,
-      "found": 445,
-      "pct": 74.38202247191012
-    },
-    {
       "file": "src/lib/ai.ts",
       "hit": 416,
       "found": 559,
@@ -160,6 +154,12 @@
       "hit": 151,
       "found": 199,
       "pct": 75.87939698492463
+    },
+    {
+      "file": "src/lib/rag-retrieval.ts",
+      "hit": 341,
+      "found": 447,
+      "pct": 76.28635346756153
     },
     {
       "file": "src/lib/agentic-budget.ts",

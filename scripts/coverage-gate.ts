@@ -112,6 +112,9 @@ const FLOORS: Record<string, number> = {
   // 59.80% -> 100.00% executable (119/119). The two untested functions were the
   // license-expiry reminder and the startup prune sweep: both idempotency-critical,
   // and a wrong prune silently drops a live job.
+  // 93.84% -> 100.00% executable (341/341). Merged is 76.29% because other test
+  // files instrument this module without covering it (LF jump, see the caveat).
+  'src/lib/rag-retrieval.ts': 75, // measured 100.00% executable; merged 76.29%
   'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)

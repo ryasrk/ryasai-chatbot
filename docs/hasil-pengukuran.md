@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aca0cdd`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `033937c`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aca0cdd`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,60%** (16.263/19.690 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.463 lulus · 0 gagal** | terukur |
+| Test coverage | **82,64%** (16.273/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.471 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **73 modul** | +11 |
+| Modul ter-gate | 62 modul | **74 modul** | +12 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -92,7 +92,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/stream-preparers.ts` | 81,58% → **82,14%** merged | 99,31% → **100,00%** kode eksekutabel (437/437) | 35 |
 | `src/lib/web-fetch.ts` | 69,86% → **73,52%** merged | 94,44% → **99,38%** kode eksekutabel (161/162) | 46 |
 | `src/lib/scheduler-queue.ts` | 48,03% → **100,00%** merged | 59,80% → **100,00%** kode eksekutabel (119/119) | 16 |
-| **Total repo** | **62,44%** | **82,60%** | — |
+| `src/lib/rag-retrieval.ts` | 88,64% → **76,29%** merged (**turun**, §1.7z) | 93,84% → **100,00%** kode eksekutabel (341/341) | 66 |
+| **Total repo** | **62,44%** | **82,64%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -330,8 +331,13 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `catch` prune dihapus (satu error membatalkan sweep) | `scheduler-queue.ts:212` | 1 |
 | `catch` sync dihapus | `scheduler-queue.ts:226` | 1 |
 | Cron berubah tidak disinkronkan | `scheduler-queue.ts:220` | 1 |
+| Build index gagal dibiarkan melempar (bukan degradasi) | `rag-retrieval.ts:514` | 1 |
+| Memo index TIDAK di-reset (tidak bisa retry) | `rag-retrieval.ts:520` | 1 |
+| Fallback `CREATE INDEX` blocking diizinkan | `rag-retrieval.ts:519` | 1 |
+| Graph recall melempar diteruskan | `rag-retrieval.ts:319` | 1 |
+| pgvector gagal total diteruskan | `rag-retrieval.ts:377` | 1 |
 
-**228 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**233 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2100,6 +2106,72 @@ ketika dijalankan sendiri **lulus**: kegagalannya adalah kontaminasi antar-test 
 proses, bukan logika test.
 
 **Kontrol negatif: 6, semuanya menggigit.**
+
+### 1.7aq `rag-retrieval.ts`: 93,84% → 100,00% eksekutabel, dan DUA test yang tidak menjalankan kode
+
+**Merged 88,64% → 76,29% (TURUN, artefak §1.7z: `LF` melonjak 384 → 447 karena file test
+lain meng-instrumentasi modul ini), eksekutabel 93,84% → 100,00% (341/341), nol tersisa.
+Kini di-gate.**
+
+**Temuan paling berguna: dua test `ensureVectorIndexes` yang sudah ada TIDAK PERNAH
+MENJALANKAN FUNGSINYA.**
+- Test pertama membangun **string literal di dalam test itu sendiri** lalu menguji
+  `toContain('CONCURRENTLY')` — **tautologi tentang teks test sendiri**, tidak menyentuh
+  kode produksi sama sekali.
+- Test kedua **membaca `rag-retrieval.ts` sebagai FILE** dan memeriksa kata-kata blok
+  catch ada di dalamnya — assertion atas **teks sumber**, bukan atas perilaku.
+
+Akibatnya `hit=0` pada memo, pemanggilan `log.warn`, dan reset memo: **perubahan yang
+merusak penjagaan retry tetap akan hijau.** Keduanya diganti test yang benar-benar
+memanggil fungsinya.
+
+**Rintangan nyata saat menggantinya, dan solusinya.** `retrieveRelevantChunks` memanggil
+`void ensureVectorIndexes()` di jalur vektor (sengaja fire-and-forget — kueri pengguna
+tidak boleh menunggu build index). Jadi saat test saya berjalan, memo **sudah terisi** dan
+pemanggilan baru sah-sah saja mengembalikan promise tersimpan **tanpa** menerbitkan DDL.
+Versi pertama saya mengukur **memo, bukan DDL** — dan hanya gagal ketika **seluruh file**
+dijalankan, lulus saat dijalankan sendiri. Diperbaiki dengan **test seam**
+`_resetVectorIndexBuild()`, mengikuti preseden `_resetIterativeScanProbe` yang sudah ada.
+
+**Yang kini dijaga (semuanya jalur degradasi, semuanya nyata):**
+**build index gagal → degradasi, bukan lempar** (dua penyebab yang bisa diperbaiki operator:
+driver menjalankannya di dalam blok transaksi — `CONCURRENTLY` melarangnya — atau build
+sebelumnya meninggalkan index `INVALID`): harus **resolve**, **tidak pernah** jatuh ke
+`CREATE INDEX` **blocking** (itu justru mode kegagalan yang bentuk `CONCURRENTLY` ada untuk
+menghindari: kunci eksklusif yang menghentikan ingestion di instalasi hidup), dan memo
+**di-reset** sehingga percobaan berikutnya masih mungkin — dibuktikan dengan panggilan
+kedua yang **menerbitkan DDL lagi**, bukan mengembalikan promise yang sudah ditolak;
+**tiga pemanggil bersamaan berbagi SATU build** (dua `CREATE INDEX CONCURRENTLY` yang balapan
+ditolak Postgres dengan "already exists or is being built", dan kegagalannya tak bisa
+dibedakan dari masalah index sungguhan); **graph recall yang melempar** menjadi konteks
+kosong, bukan pencarian gagal; **pgvector yang mati total** (transaksi DAN kueri polos
+sama-sama gagal) dibiarkan agar vector store eksternal yang menjawab.
+
+**Dua kekeliruan saya sendiri, keduanya nyata dan korektif:**
+1. **Versi asli test `recallGraphContext` juga tidak mencapai catch-nya.** `@/lib/cognee`
+   tidak di-mock, dan `recallKnowledgeGraph` yang asli **mengembalikan `''`** saat cognee
+   nonaktif — **tidak melempar**. Jadi retrieval selesai lewat jalur SUKSES sementara
+   baris 319-320 tetap `hit=0` dan test **terlihat hijau**. Diperbaiki dengan me-mock
+   modulnya agar benar-benar melempar, plus satu test **invers** (graph yang bekerja harus
+   menyumbang konteksnya) supaya test pertama tidak lulus hanya karena graph selalu kosong.
+2. **File ini memanggil `mock.module('@/lib/db')` DUA KALI dan yang TERAKHIR menang.**
+   Saya menaruh `allDocsFallback` di mock **pertama** → loader fallback tetap memindai
+   **0 kandidat**, dan butuh instrumentasi `/tmp` untuk menyadarinya. Ini **kesalahan yang
+   sama persis** yang saya buat di `scheduler-queue` satu ronde sebelumnya; kini dicatat di
+   komentar mock-nya.
+
+**Perluasan alat ukur (§1.7y kelas 1).** Lima baris sisa adalah **garis di dalam satu
+template literal SQL multi-baris** (`FROM`, `WHERE`, `AND ... IN (`, `SELECT ...`, penutup
+backtick) dengan `hit=0`, sementara **baris `SELECT` pembuka dan baris berikutnya yang
+mengeksekusi hasilnya (`return new Map(rows...)`) punya hit>0** — satu ekspresi yang sama.
+Ini kelas artefak yang **persis sama** dengan yang sudah didokumentasikan (`ai.ts:191`
+`hit=1455` sementara `192-209 hit=0`). Ditambahkan `is_multiline_template()`: baris dengan
+**backtick ganjil** di 60 baris sebelumnya, dibatasi ketat. **Diverifikasi tidak ada
+regresi**: `ai` 416/416, `stream-preparers` 437/437, `cognee-knowledge-graph` 267/267,
+`tool-router` 238/239, `smart-router` 384/385, `web-fetch` 161/162 — **semua identik**
+dengan pengukuran sebelum perluasan.
+
+**Kontrol negatif: 5, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -46,6 +46,32 @@ def in_type_block(i):
         j -= 1
     return False
 
+def is_multiline_template(i):
+    """Baris berada di TENGAH sebuah template literal (backtick) multi-baris.
+
+    Bukti (rag-retrieval.ts, satu ekspresi `tx.$queryRaw`): 457 `SELECT ...` dan
+    460/463/464/465 punya hit>0, sementara 458, 459, 461, 462, 466 punya hit=0 --
+    padahal semuanya satu template literal yang sama, dan baris 467
+    (`return new Map(rows...)`) jelas dieksekusi. Bun/Hermes hanya memberi hit pada
+    baris tempat template-nya DIMULAI dan (kadang) baris ber-interpolasi;
+    baris teks literal di antaranya tidak pernah menghasilkan record sendiri.
+
+    Dibatasi pada template yang JELAS multi-baris dan berada dalam rentang
+    backtick ganjil, agar tidak menelan kode biasa.
+    """
+    t = src[i - 1]
+    if t.strip().startswith('//'):
+        return False
+    # Hitung backtick ganjil sebelum baris ini, dalam 60 baris terakhir saja.
+    # (Harus relatif: sebuah template yang dibuka jauh di atas file tidak relevan.)
+    depth = 0
+    j = i - 1
+    while j >= 1 and i - j <= 60:
+        depth += src[j - 1].count('`')
+        j -= 1
+    return depth % 2 == 1
+
+
 def is_continuation(i):
     t = src[i - 1].strip()
     if not (t.startswith("'") or t.startswith('"') or t.startswith('`')): return False
@@ -72,6 +98,7 @@ real_unc = []
 for l in sorted(l for l, v in seen.items() if v == 0):
     if is_continuation(l): excl['continuation'].append(l)
     elif in_type_block(l) or _field_decl(l): excl['type-decl'].append(l)
+    elif is_multiline_template(l): excl['continuation'].append(l)
     elif is_noise(l): excl['noise'].append(l)
     else: real_unc.append(l)
 
