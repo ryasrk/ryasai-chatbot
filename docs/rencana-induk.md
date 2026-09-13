@@ -277,6 +277,16 @@ model ag/gemini-3.8-flash-low
   RATA-RATA: 309,0 tok/s   TTFT 6126ms (n=3)
 ```
 
+**Dikoreksi ronde ini: RATA-RATA 278,9 tok/s, TTFT 1.856 ms — dan angka tok/s itu
+sendiri TIDAK BISA DIPERCAYA.** Probe independen 6 run menunjukkan **5 dari 6 run
+punya `total − TTFT < 50 ms`**, satu run memberi **34.000 tok/s** dan run lain
+**0 tok/s**. Artinya stream 9router mengirim jawaban dalam **satu burst**, sehingga
+penyebut `total − TTFT` mendekati nol dan hasilnya liar. Untuk jawaban ~99 token,
+0 dan 34.000 sama-sama artefak.
+
+**Yang stabil dan karena itu dipertahankan: latensi ~1,8 detik per task, TTFT
+~1,6 detik**, konsisten 6/6 run. Gunakan angka itu, bukan tok/s.
+
 **Catatan penting (`trial/A2-overhead.ts`)**: prompt `"Reply with exactly: OK"` (5 token) dilaporkan memakai **2006 token input**. System prompt hanya menambah 7 token — sisanya **overhead proxy**, bukan biaya sistem kita.
 
 ```
@@ -285,7 +295,28 @@ model ag/gemini-3.8-flash-low
   SELISIH: 7 token
 ```
 
-**Konsekuensi**: angka "avg tokens/task" **tidak bisa** diambil dari pengukuran ini. Itu akan melaporkan overhead proxy sebagai biaya produk. **Belum diukur** pada prompt aplikasi nyata — butuh korpus pelanggan.
+**Konsekuensi**: angka "avg tokens/task" **tidak bisa** diambil dari pengukuran ini. Itu akan melaporkan overhead proxy sebagai biaya produk.
+
+**Sudah diukur ronde ini pada prompt aplikasi nyata** (`trial/A3-tokens-per-task.ts`),
+dihitung dari string prompt yang benar-benar dikirim kode ini dan mencakup
+**setiap** panggilan LLM yang dipicu satu pertanyaan pengguna:
+
+```
+stage                                     chars   tokens
+rewriteQuery (follow-up resolution)         204       51
+routeQuery   (tool selection)               720      180
+generateSql  (text-to-SQL)                  305       77
+streamAnswer (synthesis)                    281       71
+TOTAL per task                                       379
+```
+
+**~379 token prompt per task, dibagi 4 panggilan LLM (~95 token/panggilan).**
+Dikonfirmasi dengan probe langsung: prompt 20 kata dilaporkan **2.013** prompt
+token, selisihnya adalah preamble proxy. Jadi 2.076 dari A2 **tidak dipakai** —
+itu mencampur biaya proxy ke biaya produk.
+
+Batas: ini **estimasi chars/4**, bukan usage yang ditagih provider. Output token
+belum termasuk, karena panjangnya bergantung jawaban.
 
 ### 5.2 Latensi jalur panas — **diukur**, 1000 iterasi
 
@@ -317,13 +348,29 @@ Dataset dibangkitkan **secara kombinatorial** (teknik × pembawa), bukan dipilih
 
 **Cakupan jujur**: ini mengukur **lapisan yang dapat diperiksa mesin** (guardrail, tokenizer, fence). Kualitas jawaban LLM **belum diukur** — tidak ada LLM sungguhan yang dikonfigurasi untuk korpus ini.
 
-### 5.4 Coverage — **diukur**
+### 5.4 Coverage — **diukur**, dan sekarang ADA DUA ANGKA
 
 ```
-TOTAL: 51,35%  (9499/18497 baris)  — naik dari 50,24%
+Merge mentah                : 88,18%  (21.602/24.497 baris, 198 file)
+Baris yang BISA dieksekusi   : 96,20%  (18.718/19.457 baris)   <-- target 95% TERLAMPAUI
+Cakupan fungsi              : 94,61%  (1985/2098)
+Suite                       : 239 file · 6.472 lulus · 0 gagal · 0 skip
+Gate                        : OK, 198 modul ter-gate
+tsc --noEmit / eslint       : 0 error
 ```
 
-Setelah pekerjaan divisi selesai, angka ini akan naik. **Belum 95%.**
+**Kenapa ada dua angka.** Bun mengeluarkan record `DA:` untuk baris yang **tidak
+mungkin dieksekusi**. Terbukti: 5.040 record (20,6% penyebut) menunjuk baris
+kosong, komentar-saja, atau delimiter. Contoh paling telanjang: `tool-router.ts`
+dilaporkan **100,00%** oleh Bun di run-nya sendiri, sementara merge bilang
+**70,71%** — dihitung dari sumber nyata, **215/215 = 100,00%**.
+
+`scripts/coverage.ts` melaporkan keduanya. Klasifiernya konservatif: apa pun yang
+tidak bisa dipastikan non-eksekusi tetap dihitung, sehingga 96,20% hanya bisa
+lebih RENDAH dari kebenaran, tidak pernah lebih tinggi.
+
+**Yang tetap belum tercapai:** gate ini **belum pernah dijalankan di CI nyata**,
+dan branch coverage **tidak terukur** dengan Bun 1.3.14 (`BRF: 0`).
 
 ---
 
@@ -341,7 +388,31 @@ Sebuah tugas **selesai** hanya bila **semua** terpenuhi:
 - [ ] Komentar `// ponytail:` menjelaskan **mengapa**, dengan bukti pengukuran
 - [ ] Commit message menyebutkan perintah pengukurnya
 
-**Tidak ada klaim tanpa perintah yang bisa dijalankan ulang.**
+****Tidak ada klaim tanpa perintah yang bisa dijalankan ulang.**
+
+### Status pemenuhan (diverifikasi ronde ini, HEAD `d5a35fe`)
+
+| Kriteria | Status | Bukti (perintah) |
+|---|---|---|
+| `tsc` 0 error | ✅ | `bunx tsc --noEmit` → 0 |
+| `lint` 0 error | ✅ | `bunx eslint <berkas> --quiet` → 0 |
+| Ada tes baru, total tidak berkurang | ✅ | 6.353 → **6.472** lulus |
+| `bun run test` 0 gagal | ✅ | `239/239 files · 6472 pass · 0 fail · 0 skip` |
+| Trial tidak turun | ✅ | `bun trial/fleet/harness.ts` → `518/518 = 100,00%` |
+| Coverage domain tidak turun | ✅ | gate `OK — 198 gated module(s)` |
+| Coverage 95% | ✅ **baris-yang-bisa-dieksekusi** | `96,20%` (18.718/19.457) |
+| `bun run e2e` 12/12 | ✅ | `bun run e2e` → **`12 passed (1.6m)`** |
+
+**Dua kriteria yang TIDAK bisa dicentang dan tetap terbuka:**
+
+- **Gate coverage belum pernah dijalankan di CI nyata** — ia lulus di mesin ini
+  saja. Menjalankannya di CI adalah pekerjaan infrastruktur, bukan kode.
+- **Branch coverage tidak terukur** dengan Bun 1.3.14 (`BRF: 0`, `BRH: 0`), jadi
+  tidak ada angka branch yang bisa diklaim.
+
+Dan satu angka yang **sengaja tidak diklaim**: kualitas jawaban LLM. BYOK berarti
+tidak ada provider di lingkungan ini, sehingga akurasi yang diukur adalah lapisan
+yang dapat diperiksa mesin (guardrail, tokenizer, fence) — bukan model.**
 
 ---
 
