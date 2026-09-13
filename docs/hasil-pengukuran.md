@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `486ed58`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `4225ae7`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `486ed58`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **84,82%** (16.677/19.662 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.686 lulus · 0 gagal** | terukur |
+| Test coverage | **84,87%** (16.687/19.662 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.693 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -116,7 +116,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/config.ts` | 64,06% → **70,31%** merged (artefak LF) | 86,67% → **100,00%** kode eksekutabel (45/45) | 11 |
 | `src/lib/otel.ts` | 71,43% → **100,00%** merged | 77,78% → **100,00%** kode eksekutabel (49/49) | 6 |
 | `src/lib/cron-describe.ts` | 75,52% → **99,29%** merged | 80,60% → **100,00%** kode eksekutabel (140/140) | 13 |
-| **Total repo** | **62,44%** | **84,82%** | — |
+| `src/lib/cognee-memory.ts` | 75,32% → **81,65%** merged (artefak LF) | 92,97% → **100,00%** kode eksekutabel (129/129) | 7 |
+| **Total repo** | **62,44%** | **84,87%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -375,7 +376,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**342 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**348 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3038,6 +3039,46 @@ spasi). Saya juga mengira bulan `13` akan tampil **"month 13"**, ternyata `parse
 dan itu saya catat alih-alih mengarang kasus untuknya. **Dump fakta mengoreksi setiap asumsi.**
 
 **Kontrol negatif: 10, semuanya menggigit.**
+
+### 1.7bh Memori sesi: TTL/eviction/degradasi ke 100,00% — dan SATU KEJADIAN FLAKE AKHIRNYA BERLOKASI
+
+**`cognee-memory.ts` 92,97% → 100,00% (129/129).** Repo **84,82% → 84,87% (+0,05)**. Modul
+ter-gate tetap **87** (`cognee-memory` merged 81,65% < 85, jadi **tidak boleh di-gate**).
+
+**Yang kini dijaga — apa yang diingat asisten, dan kapan ia TIDAK mengingat.** (a) **TTL
+kedaluwarsa** (`getCachedRecall`, baris 63-64): setelah 60 detik entri **dibuang** dan query
+**dijalankan ulang** — tanpa itu percakapan yang sudah bergerak maju terus mendapat jawaban
+dari semenit lalu. (b) **Eviction saat KAPASITAS** (74-75): tanpa eviction, Map sesi panjang
+**tumbuh tanpa batas**; eviction memakai urutan penyisipan, jadi kunci **PERTAMA** yang
+dibuang — diuji dengan **101 pertanyaan berbeda** untuk memaksa batasnya nyata. (c)
+**`clearSessionCache(sessionId)` hanya membuang sesi ITU** — sesi lain tetap hit. (d)
+**Kegagalan pencarian sesi berdegradasi ke `''`**, sehingga strategi graf tetap bisa
+menyumbang alih-alih **seluruh giliran chat error** — dan regex yang membedakan "dataset not
+found / no history" yang **diharapkan** dari error tak terduga hanya memutuskan **apakah
+memperingatkan**, bukan nilai kembaliannya.
+
+**Fakta terukur mengoreksi lima assertion saya.** Satu `recallContext()` melakukan **EMPAT
+pencarian**: tiga strategi graf (SUMMARIES, CHUNKS, NATURAL_LANGUAGE) **plus** strategi sesi —
+dan teks gabungannya **mengulang** output strategi secara verbatim ketika beberapa
+mengembalikan string yang sama (`"one result\none result"`). Draf pertama saya mengasumsikan
+satu hasil, jadi lima assertion merah terhadap kode yang benar. Saya juga menemukan bahwa pada
+kasus **degradasi** teks graf muncul **SEKALI**, bukan dua kali — perbedaan yang hanya terlihat
+kalau assertion-nya mematok **string persis**, bukan helper.
+
+**FLAKE RUNNER: SATU KEJADIAN AKHIRNYA BERLOKASI.** Kejadian ini **tertangkap oleh perbaikan
+runner** yang saya buat di §1.7az: laporannya kini memuat **lokasi + stack trace**, bukan nama
+file telanjang. Lokasinya **`src/lib/plugin-registry.test.ts:192`** —
+`expect(result.ok).toBe(true)` pada test "successful webhook call", yang memakai `global.fetch`
+yang di-mock. Lalu saya menguji batasnya: **12/12 run file itu sendirian BERSIH** (42 lulus),
+sementara kegagalan muncul hanya di bawah runner 8-file-paralel.
+
+**Yang TIDAK saya klaim.** Hipotesis pertama saya adalah race deadline: `executePlugin` memakai
+`AbortSignal.timeout(manifest.timeoutMs || 15000)` dengan `timeoutMs` **minimum 1000ms**, jadi
+ia berpacu dengan event loop nyata. Saya membuat probe dengan deadline 1000ms + fetch yang
+resolve pada tick berikutnya, dan menjalankannya **di bawah 10 proses paralel**: hasilnya
+**117-121ms, `ok:true`, tanpa kegagalan**. Jadi **hipotesis race deadline TIDAK terbukti** dan
+saya **tidak** melaporkannya sebagai penyebab. Yang terbukti hanyalah **lokasi**, dan bahwa
+kegagalannya **bergantung pada eksekusi paralel**, bukan pada file itu sendiri.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

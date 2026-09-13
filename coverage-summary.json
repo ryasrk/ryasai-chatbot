@@ -1,6 +1,6 @@
 {
-  "linePct": 84.82,
-  "linesHit": 16677,
+  "linePct": 84.87,
+  "linesHit": 16687,
   "linesFound": 19662,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -64,12 +64,6 @@
       "hit": 416,
       "found": 559,
       "pct": 74.4186046511628
-    },
-    {
-      "file": "src/lib/cognee-memory.ts",
-      "hit": 119,
-      "found": 158,
-      "pct": 75.31645569620254
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -184,6 +178,12 @@
       "hit": 48,
       "found": 59,
       "pct": 81.35593220338984
+    },
+    {
+      "file": "src/lib/cognee-memory.ts",
+      "hit": 129,
+      "found": 158,
+      "pct": 81.64556962025317
     },
     {
       "file": "src/app/api/billing/pricing/route.ts",

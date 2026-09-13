@@ -315,3 +315,143 @@ describe('the session semantic cache', () => {
     expect(state.searchCalls.length).toBeGreaterThan(before)
   })
 })
+
+// ===========================================================================
+// The session cache's TTL and capacity, and recallFromSession's degradation
+// ===========================================================================
+//
+// MEASURED: one recallContext() issues FOUR searches -- three graph strategies
+// (SUMMARIES, CHUNKS, NATURAL_LANGUAGE) plus the session strategy -- and the merged
+// text repeats a strategy's output verbatim when several return the same string
+// ("one result\none result"). My first draft assumed a single result, so five
+// assertions were wrong against working code. The facts below come from a dump.
+
+/** The merged recall text for the stub, which returns `v` for every strategy. */
+const merged = (v: string) => `${v}\n${v}`
+
+describe('session cache — TTL and capacity', () => {
+
+  test('a cached answer is reused without a second cognee search', async () => {
+    // The cache exists to avoid a round-trip for a repeated question within a
+    // session, which is the common UI pattern (a user re-asking after an edit).
+    state.client = fakeClient()
+    state.searchImpl = () => ['remembered fact']
+    const first = await recallContext({ query: 'same question', sessionId: 's1' })
+    expect(first).toBe(merged('remembered fact'))
+    const afterFirst = state.searchCalls.length
+    const second = await recallContext({ query: 'same question', sessionId: 's1' })
+    expect(second).toBe(first)
+    // NOT ONE more call of any kind: a cache hit short-circuits everything.
+    expect(state.searchCalls.length).toBe(afterFirst)
+  })
+
+  test('an EXPIRED entry is dropped and the query is re-run', async () => {
+    // Lines 63-64. Past SESSION_CACHE_TTL the entry must be discarded, otherwise a
+    // conversation that has moved on keeps getting an answer from a minute ago.
+    const realNow = Date.now
+    state.client = fakeClient()
+    let answer = 'first answer'
+    state.searchImpl = () => [answer]
+    try {
+      expect(await recallContext({ query: 'q', sessionId: 's-ttl' })).toBe(merged('first answer'))
+      const before = state.searchCalls.length
+      // Move past the 60s TTL.
+      Date.now = () => realNow() + 61_000
+      answer = 'second answer'
+      expect(await recallContext({ query: 'q', sessionId: 's-ttl' })).toBe(merged('second answer'))
+      expect(state.searchCalls.length).toBeGreaterThan(before)
+    } finally {
+      Date.now = realNow
+    }
+  })
+
+  test('a FRESH entry is NOT re-run, so the TTL test above is not passing by accident', async () => {
+    // The inverse at 59s, so the suite distinguishes "expired" from "always re-runs".
+    const realNow = Date.now
+    state.client = fakeClient()
+    let answer = 'first answer'
+    state.searchImpl = () => [answer]
+    try {
+      await recallContext({ query: 'q', sessionId: 's-fresh' })
+      const before = state.searchCalls.length
+      Date.now = () => realNow() + 59_000
+      answer = 'second answer'
+      expect(await recallContext({ query: 'q', sessionId: 's-fresh' })).toBe(merged('first answer'))
+      expect(state.searchCalls.length).toBe(before)
+    } finally {
+      Date.now = realNow
+    }
+  })
+
+  test('at CAPACITY the OLDEST entry is evicted, keeping the cache bounded', async () => {
+    // Lines 74-75. Without eviction a long session grows the Map without limit; the
+    // eviction is by insertion order, so the FIRST key is the one dropped.
+    // SESSION_CACHE_MAX is 100, so the 101st distinct question must push out the 1st.
+    state.client = fakeClient()
+    state.searchImpl = (q: string) => [`answer for ${q}`]
+    for (let i = 0; i < 100; i++) {
+      await recallContext({ query: `question ${i}`, sessionId: 's-cap' })
+    }
+    // The very first question is still cached (nothing evicted yet).
+    const beforeRevisit = state.searchCalls.length
+    expect(await recallContext({ query: 'question 0', sessionId: 's-cap' }))
+      .toBe(merged('answer for question 0'))
+    expect(state.searchCalls.length).toBe(beforeRevisit)
+
+    // One more distinct question fills past the cap and evicts the oldest.
+    await recallContext({ query: 'question 100', sessionId: 's-cap' })
+    const afterInsert = state.searchCalls.length
+    // `question 0` was the oldest, so re-asking it must MISS and search again.
+    expect(await recallContext({ query: 'question 0', sessionId: 's-cap' }))
+      .toBe(merged('answer for question 0'))
+    expect(state.searchCalls.length).toBeGreaterThan(afterInsert)
+  })
+
+  test('clearSessionCache(sessionId) drops only THAT session', async () => {
+    state.client = fakeClient()
+    state.searchImpl = () => ['v']
+    await recallContext({ query: 'q', sessionId: 'keep' })
+    await recallContext({ query: 'q', sessionId: 'drop' })
+    clearSessionCache('drop')
+    const before = state.searchCalls.length
+    // 'keep' still hits its cache.
+    await recallContext({ query: 'q', sessionId: 'keep' })
+    expect(state.searchCalls.length).toBe(before)
+    // 'drop' must search again.
+    await recallContext({ query: 'q', sessionId: 'drop' })
+    expect(state.searchCalls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('recallFromSession — degradation', () => {
+  test('a THROWING session search degrades to empty instead of failing the chat', async () => {
+    // Lines 190-197. Session search before the first cognify is expected to fail;
+    // the recall must return '' so the graph strategy can still contribute rather
+    // than the whole chat turn erroring. The graph text alone must come back.
+    state.client = fakeClient({
+      search: async (q: any, opts: any) => {
+        state.searchCalls.push({ q, opts })
+        // The SESSION strategy is the one passing sessionId.
+        if (opts?.sessionId) throw new Error('dataset not found')
+        return ['from graph']
+      },
+    })
+    // MEASURED: the graph text appears ONCE here, not twice as in the capacity
+    // tests. recallFromGraph dedupes identical strategy outputs, and with a THROWING
+    // session strategy the session text is '' so it is filtered out. Asserting the
+    // exact string (not ) is what pins that difference.
+    expect(await recallContext({ query: 'q', sessionId: 's-throw' })).toBe('from graph')
+  })
+
+  test('an UNEXPECTED session-search error still degrades to empty', async () => {
+    // The regex only decides whether to WARN; the return value is the same.
+    state.client = fakeClient({
+      search: async (q: any, opts: any) => {
+        state.searchCalls.push({ q, opts })
+        if (opts?.sessionId) throw new Error('connection reset by peer')
+        return ['graph content']
+      },
+    })
+    expect(await recallContext({ query: 'q', sessionId: 's-unexpected' })).toBe('graph content')
+  })
+})
