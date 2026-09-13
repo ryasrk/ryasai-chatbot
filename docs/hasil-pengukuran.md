@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `65d9957`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6900103`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `65d9957`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,08%** (16.728/19.662 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.725 lulus · 0 gagal** | terukur |
+| Test coverage | **85,32%** (16.776/19.662 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.737 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **88 modul** | +26 |
+| Modul ter-gate | 62 modul | **89 modul** | +27 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -120,7 +120,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/mcp-installer.ts` | 75,88% → **80,40%** merged (artefak LF) | 90,97% → **100,00%** kode eksekutabel (160/160) | 15 |
 | `src/lib/plugin-selector.ts` | 77,45% → **88,73%** merged | 95,18% → **100,00%** kode eksekutabel (181/181) | 5 |
 | `src/lib/notifications.ts` | 77,52% → **84,50%** merged (artefak LF) | 89,29% → **93,16%** kode eksekutabel (109/117) | 8 |
-| **Total repo** | **62,44%** | **85,08%** | — |
+| `src/app/api/integrations/[id]/query/route.ts` | 77,14% → **100,00%** merged | 85,26% → **100,00%** kode eksekutabel (210/210) | 11 |
+| **Total repo** | **62,44%** | **85,32%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -379,7 +380,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**368 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**380 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3168,6 +3169,68 @@ mematok jadwal yang nyata**, dan saya menyimpannya alih-alih mempercepatnya.
 kelalaian: kode email itu **benar-benar dieksekusi** (dibuktikan sembilan kontrol), tetapi
 eksekusinya terjadi di **proses lain**, sehingga **tidak dapat diinstrumentasi di sini**.
 **Dideklarasikan, bukan disembunyikan.**
+
+### 1.7bk FLAKE RUNNER DITEMUKAN DAN DIPERBAIKI: dua assertion yang MENGUKUR JAM, bukan kontrak
+
+**FLAKE YANG SAYA LAPORKAN SEJAK §1.7az AKHIRNYA PUNYA PENYEBAB TERBUKTI — dan saya
+memperbaikinya.** Ini temuan terpenting ronde ini.
+
+**Mekanismenya, dari bukti bukan dugaan.** Test `latency_ms` meng-assert **`.toBe(0)`** pada
+nilai `latencyMs = Date.now() - started` — yaitu **latensi request NYATA**. Dari beban 8-proses
+paralel, request memakan **1 milidetik** dan suite gagal dengan **`Expected: 0, Received: 1`**.
+Saya mengukurnya: `args.latencyMs` bernilai **0 tanpa beban dan 5 dengan kerja** — jadi ia
+**variabel jam**, dan assertion `toBe(0)` **mengukur jam, bukan kode**. Komentar test itu sendiri
+**sudah menuliskan kontrak yang benar** — *"The contract is that it is NOT null: `null` means
+'we never measured', 0 means 'it was fast'"* — tetapi **assertion-nya bertentangan dengan
+kalimatnya sendiri**, dan flake inilah buktinya. **Perbaikannya: patok KONTRAK, bukan jam.**
+
+**DUA lokasi, bukan satu.** Setelah memperbaiki assertion baris 497, run 1 **masih gagal** —
+di **baris 510**, assertion yang sama rapuh pada respons wire. Inilah alasan saya menjalankan
+suite **8 KALI berturut-turut** dan bukan sekali: satu perbaikan membuat flake **lebih jarang**,
+dan itu **akan saya salah laporkan sebagai "sudah hilang"** seandainya saya berhenti di sana.
+Setelah perbaikan kedua: **8/8 run bersih**.
+
+**Dua lokasi flake yang saya tangkap sepanjang sesi kini terjelaskan.** Yang pertama
+(`plugin-registry.test.ts:192`) adalah test yang memakai `global.fetch` yang di-mock; yang kedua
+ini. Runner yang saya perbaiki di §1.7az — yang mencetak **lokasi + stack trace** alih-alih nama
+file telanjang — adalah **satu-satunya alasan lokasi ini bisa ditemukan**, dan tanpa itu flake
+ini akan tetap menjadi misteri.
+
+**KONTROL YANG TIDAK MENGGIGIT, DAN SAYA MEMBUKTIKAN MENGAPA.** Menulis ulang assertion menjadi
+`not.toBeNull()` membuat regresi **`?? null`** terdeteksi (1 fail, terbukti), tetapi **`?? 0` tetap
+tidak terdeteksi**. Saya periksa dan itu **bukan kelalaian**: ketika request selesai **<1ms**,
+`?? 0` dan `?? args.latencyMs` **KEDUANYA menghasilkan 0** — **tak dapat dibedakan** tanpa
+mengeksekusi >1ms di dalam request. Komentar asli test itu sudah mengakui hal yang sama. Jadi
+**dideklarasikan sebagai non-kontrol**, dan kontraknya (non-null) tetap dipatok.
+
+**`integrations/[id]/query/route.ts` 85,26% → 100,00% (210/210), merged 100,00%.** Repo
+**85,08% → 85,32% (+0,24)** — lompatan terbesar sesi ini. Modul ter-gate **88 → 89**.
+Yang kini dijaga pada SQL Playground: **dua prekondisi 409** yang **pesannya adalah satu-satunya
+instruksi operator** — integrasi yang **TERPUTUS** (409, bukan 404: barisnya ADA, jadi 404 akan
+mengirim orang mencari baris yang ada di depan mata) dan **skema belum direfleksikan** (409;
+tanpa guard ini prompt skemanya KOSONG, LLM **menebak nama tabel**, dan pengguna melihat error SQL
+yang membingungkan alih-alih "jalankan connection test dulu"); **urutan kedua guard** (terputus
+menang, karena re-enable adalah prasyarat munculnya skema); **`generateSql` yang MELEMPAR → 502
+dengan kalimat yang bisa diulang** dan **pesan mentah provider TIDAK bocor** ke klien; **audit
+`SQL_GENERATE_ERROR`** — tanpa itu **outage provider terlihat seperti "tidak ada yang memakai SQL
+Playground hari ini"**; **`businessContext` diteruskan** (bug parity yang sudah tercatat di
+sumber); dan **parser skema yang tahan-malformed** termasuk **`distinctValues` yang di-STRINGIFY**
+— daftar numerik yang lolos sebagai angka membuat model bisa menulis `WHERE x = 1` pada kolom teks.
+
+**Kesalahan milik saya sendiri, ditangkap kontrol.** Helper `schemaSeen` saya membaca
+`mockDescribeSchema.mock.calls[0]` — **panggilan PERTAMA dari mock yang DIPAKAI BERSAMA**, jadi
+nilai yang dibaca adalah **sisa test sebelumnya**, dan argumen yang terekam adalah
+`{tableName, columns, rowCount}` **tanpa `sampleRow` sama sekali**. Kontrol yang gagal
+menggigit itulah yang membongkarnya: setelah helper dibaca dari **panggilan TERAKHIR**, kontrol
+`!Array.isArray(parsed)` **LANGSUNG MENGGIGIT**. **Helper yang membaca panggilan pertama dari mock
+bersama adalah jalur-lulus-yang-salah yang laten.**
+
+**Kontrol negatif ronde ini: 14. 10 menggigit** (guard status, guard skema, urutan guard, catch
+generateSql, audit action, businessContext, malformed→throw, non-array, distinctValues, rowCount,
+`?? null`, nilai run mentah). **4 dideklarasikan setara:** `if (!raw) return undefined` (terbukti
+identik pada **10 nilai** termasuk `' '`, `'null'`, `'0'`, `'false'` — `JSON.parse` melempar untuk
+semuanya), `?? 0`, `throw` di dalam `try` yang ditangkap `catch` yang sama, dan
+`if (!signature) return false`.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

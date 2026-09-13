@@ -491,18 +491,27 @@ describe('POST /api/v1/chat/completions — tool runs are persisted', () => {
     // MEASURED: my first fixture gave BOTH runs a latencyMs, so replacing the
     // `?? latencyMs` fallback with `?? 0` failed 0 tests — the fallback was never
     // exercised. A tool run reported as 0ms looks like a caching bug to an operator.
-    // The request itself can complete in under a millisecond, so the fallback value
-    // is 0 here — asserting >0 measured the clock, not the fallback. The contract is
-    // that it is NOT null: `null` means "we never measured", 0 means "it was fast".
-    expect(seen[1].data.latencyMs).toBe(0)
+    // The contract stated right above is that the value is NOT NULL: `null` means
+    // "we never measured", 0 means "it was fast". Asserting `.toBe(0)` contradicted
+    // that sentence and made the test clock-dependent: the request completes in
+    // under a millisecond normally, but under load it takes 1ms, so the suite failed
+    // with `Expected: 0, Received: 1`. THIS WAS A REAL FLAKE, reproduced in the
+    // 8-process runner, and the fix is to assert the CONTRACT rather than the clock.
+    expect(seen[1].data.latencyMs).not.toBeNull()
+    // Still distinct from the first run's own latency, which the fixture sets to 12.
+    expect(seen[1].data.latencyMs).not.toBe(12)
     // The response echoes the PERSISTED rows, not the router's in-memory objects —
     // so the client can correlate a tool run with the audit row it created.
     const body = await res.json()
     await Bun.write('/tmp/r2.txt', JSON.stringify({ body, args: seen.map((x: any) => x.data) }))
     expect(body.tool_runs).toHaveLength(2)
     expect(body.tool_runs[0]).toMatchObject({ id: 'tr1', type: 'SQL', status: 'success', latency_ms: 12 })
-    // The fallback surfaces on the wire too, not just in the audit row.
-    expect(body.tool_runs[1].latency_ms).toBe(0)
+    // The fallback surfaces on the wire too, not just in the audit row. Same trap as
+    // the audit-row assertion above: `.toBe(0)` MEASURES THE CLOCK. Under load the
+    // request takes 1ms and the suite failed with `Expected: 0, Received: 1`. The
+    // contract is the non-null echo of the request latency, so assert that instead.
+    expect(body.tool_runs[1].latency_ms).not.toBeNull()
+    expect(body.tool_runs[1].latency_ms).not.toBe(12)
   })
 })
 

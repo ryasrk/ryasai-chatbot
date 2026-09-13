@@ -181,6 +181,9 @@ const FLOORS: Record<string, number> = {
   // The plugin picker's category tree: an empty-string or undefined category key
   // renders as a nameless group. 95.18% -> 100.00% executable (181/181).
   'src/lib/plugin-selector.ts': 88,
+  // The SQL Playground route: two 409 preconditions whose MESSAGE is the operator's
+  // only instruction, plus the LLM-failure audit. 85.26% -> 100.00% (210/210).
+  'src/app/api/integrations/[id]/query/route.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
