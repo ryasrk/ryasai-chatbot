@@ -1,7 +1,7 @@
 {
-  "linePct": 85.38,
-  "linesHit": 16789,
-  "linesFound": 19663,
+  "linePct": 85.52,
+  "linesHit": 16810,
+  "linesFound": 19657,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -100,12 +100,6 @@
       "hit": 538,
       "found": 681,
       "pct": 79.00146842878121
-    },
-    {
-      "file": "src/lib/sso-saml.ts",
-      "hit": 207,
-      "found": 261,
-      "pct": 79.3103448275862
     },
     {
       "file": "src/lib/connectors.ts",
@@ -352,6 +346,12 @@
       "hit": 8,
       "found": 9,
       "pct": 88.88888888888889
+    },
+    {
+      "file": "src/lib/sso-saml.ts",
+      "hit": 228,
+      "found": 255,
+      "pct": 89.41176470588236
     },
     {
       "file": "src/lib/llm-client.ts",
