@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7f3c9e0`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `de32a39`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7f3c9e0`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,96%** (17.167/19.972 baris, 131 file) | terukur, **belum 95%** |
-| Test suite | 169 file · **3.975 lulus · 0 gagal** | terukur |
+| Test coverage | **86,09%** (17.360/20.165 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.013 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**566 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**579 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4193,6 +4193,50 @@ diganti rethrow (2), guard `licenseKey` null dihapus (1), filter query dihapus (
 
 **Tidak ada `/var/mcp` yang dibuat** di mesin ini — seam `MCP_SANDBOX_DIR` dipakai, dibaca saat
 **panggil** bukan saat muat modul.
+
+### 1.7cd Dua modul yang **selalu di-mock** — pembangun request Anthropic dan auto-heal plugin
+
+**Pola yang paling produktif sesi ini, dikonfirmasi dua kali lagi.** `llm-client-anthropic.ts` dan
+`plugin-seeds.ts` **tidak pernah benar-benar dijalankan** oleh test mana pun:
+`coverage-honest.py` untuk yang pertama bahkan `ZeroDivisionError` (0 baris terinstrumeni). Repo
+**85,96% → 86,09%**. Gate **104 → 105 modul**. Suite **4.013 lulus, 0 gagal**.
+
+**`llm-client-anthropic.ts` — pembangun SETIAP request Anthropic, 0% tercakup.** Dua call site
+produksi di `llm-client.ts` (non-streaming dan streaming). Header file itu sendiri mencatat bug
+yang **sudah pernah terjadi**: *"only the first system message was kept, dropping memory context,
+chat history, and prompt prefixes on Anthropic"*. Properti itu kini dipatok dengan **tiga** system
+message — dan kontrolnya membuktikan test menggigit: mengembalikan bug historis itu (`.slice(0,1)`)
+→ **1 merah**. Dua belas test menutup translasi multimodal (`data:` base64 vs url, dengan padding
+`=`), penamaan `cache_control` **hanya di tool TERAKHIR**, dan mekanisme *structured output* —
+Anthropic tidak punya native structured output, jadi sebuah tool **disintesis lalu di-`tool_choice`
+paksa**; tanpa paksaan itu model menjawab prosa dan `JSON.parse` pemanggil gagal.
+
+**`plugin-seeds.ts` — dipanggil 4 jalur produksi, di-mock oleh SEMUA test.** `instrumentation.ts`
+(setiap boot), `POST /api/setup/complete`, `POST /api/setup/seed-plugins`, dan tool admin
+`seed_plugins` — tapi setiap test yang menyentuhnya **meng-mock-nya**. Komentar modulnya sendiri
+mendokumentasikan akibatnya: perbaikan endpoint news *"sat in the seed file while production kept
+404ing on the stale row"*. Kini **193/193 = 100,00%**.
+
+**Invarian yang dijaga adalah pembagian kepemilikan field** — dan membalik salah satunya adalah
+cacat nyata:
+- Field **milik seed** (`name`, `description`, `manifestJson`, `category`, `subcategory`,
+  `keywords`) **di-refresh setiap boot** → inilah yang membuat perbaikan manifest sampai ke
+  instalasi lama.
+- Field **milik operator** (`isEnabled`, `chatEnabled`, `agenticEnabled`) **TIDAK PERNAH ditulis**
+  pada baris yang sudah ada → kalau ditulis, **admin yang sengaja mematikan sebuah plugin akan
+  melihatnya hidup lagi setiap restart**, diam-diam.
+
+**Kesalahan saya, tertangkap `tsc` dan test merah:** anotasi tipe `source.media_type` yang tidak
+ada; dan satu assertion yang saya tulis **terbalik** (`every(...).toBe(false)` untuk satu baris
+yang ada = `true`) — assertion itu memang tidak bermakna dan saya buang, diganti hitungan yang
+sesungguhnya (`create` = `findFirst − 1`, dan `weather` TIDAK ikut dibuat ulang).
+
+**13 kontrol negatif, semuanya menggigit:** bug system-message historis (1), `cache_control` di
+semua tool (1), `tool_choice` tidak dipaksa (2), `content: null` dibiarkan null (1),
+`responseFormat` kalah dari `tools` (1), `tools: []` tetap dikirim (1), `data:` URL tidak
+dideteksi (3), toggle operator ikut ditulis (1), refresh seed dilewati (6), lookup tanpa
+`organizationId` (8), create tanpa `organizationId` (2), manifest sebagai objek (3), plugin baru
+dibuat disabled (1).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

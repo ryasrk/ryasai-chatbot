@@ -1,8 +1,8 @@
 {
-  "linePct": 85.96,
-  "linesHit": 17167,
-  "linesFound": 19972,
-  "filesMeasured": 131,
+  "linePct": 86.09,
+  "linesHit": 17360,
+  "linesFound": 20165,
+  "filesMeasured": 132,
   "failedTestFiles": [],
   "files": [
     {
@@ -735,6 +735,12 @@
       "file": "src/lib/otel.ts",
       "hit": 49,
       "found": 49,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/plugin-seeds.ts",
+      "hit": 193,
+      "found": 193,
       "pct": 100
     },
     {

@@ -112,6 +112,11 @@ const FLOORS: Record<string, number> = {
   // `suspicious` check below — which is exactly the trap it was written to catch.
   'src/lib/license-issue.ts': 85,
   'src/lib/llm-budget.ts': 95, // measured 100.00% (57/57)
+  // ZERO coverage until this session: no test imported it, even transitively, so the builder for
+  // EVERY Anthropic request ran uninstrumented. Its header documents a past bug where only the
+  // first system message survived, dropping memory context and history. 63/63 executable
+  // (100.00%); the merged figure is lower because 15 of its lines are type declarations.
+  'src/lib/llm-client-anthropic.ts': 80, // measured 80.77% merged; 63/63 executable
   'src/lib/llm-client-openai.ts': 80, // measured 85.57% (172/201)
   'src/lib/llm-client-utils.ts': 85, // measured 90.27% (167/185)
   'src/lib/llm-client.ts': 80, // measured 89.53% (265/296)
@@ -236,6 +241,11 @@ const FLOORS: Record<string, number> = {
   'src/lib/cron-describe.ts': 99,
   // The plugin picker's category tree: an empty-string or undefined category key
   // renders as a nameless group. 95.18% -> 100.00% executable (181/181).
+  // Ran uninstrumented in every test that touched it: instrumentation.ts, both setup routes and
+  // the seed_plugins admin tool all reach it, but each test MOCKED it. Its own comment documents
+  // the blind spot -- a "news endpoint fix" that "sat in the seed file while production kept
+  // 404ing on the stale row". 193/193 executable = 100.00%.
+  'src/lib/plugin-seeds.ts': 100, // measured 100.00% (193/193)
   'src/lib/plugin-selector.ts': 88,
   // The SQL Playground route: two 409 preconditions whose MESSAGE is the operator's
   // only instruction, plus the LLM-failure audit. 85.26% -> 100.00% (210/210).
