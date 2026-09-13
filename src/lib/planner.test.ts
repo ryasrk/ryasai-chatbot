@@ -1181,3 +1181,151 @@ describe('executePlan — a step rejected by the tool sandbox', () => {
     expect(results[0].ok).toBe(true)
   })
 })
+
+describe('synthesizeAnswer — the allOk guard on the single-step passthrough', () => {
+  // MUTATION-CONFIRMED GAP: deleting `allOk &&` from the passthrough condition
+  // turned ZERO tests red, because the only partial-failure test above sets
+  // needsSynthesis:true (which already fails that condition for an unrelated
+  // reason). The guard is load-bearing: without it, a plan whose sibling step
+  // FAILED would return the one successful step's output verbatim, and the
+  // caller would present a partial tool result as the complete answer.
+  test('a partial failure is NOT passed through even when needsSynthesis is false', async () => {
+    const plan: Plan = {
+      steps: [
+        { id: 's1', tool: 'sql', input: {} },
+        { id: 's2', tool: 'sql', input: {} },
+      ],
+      needsSynthesis: false,
+    }
+    const answer = await synthesizeAnswer({
+      question: 'combined question',
+      stepResults: [
+        { stepId: 's1', tool: 'sql', ok: true, output: 'PARTIAL_DATA', latencyMs: 10 },
+        { stepId: 's2', tool: 'sql', ok: false, output: '', error: 'table dropped', latencyMs: 4 },
+      ],
+      plan,
+    })
+    // The raw single output must NOT be the answer -- the failure has to be
+    // visible to the model so it can report it.
+    expect(answer).not.toBe('PARTIAL_DATA')
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1)
+    const ctx = mockGenerateAnswer.mock.calls[0][0].context
+    expect(ctx).toContain('PARTIAL_DATA')
+    expect(ctx).toContain('table dropped')
+  })
+
+  test('the passthrough DOES fire when every step succeeded and no synthesis is needed', async () => {
+    // The inverse, so the test above cannot pass merely because the passthrough
+    // is dead code. A single successful non-external step is returned as-is to
+    // avoid spending a pointless synthesis completion.
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'sql', input: {} }],
+      needsSynthesis: false,
+    }
+    const answer = await synthesizeAnswer({
+      question: 'q',
+      stepResults: [{ stepId: 's1', tool: 'sql', ok: true, output: 'DIRECT_OUTPUT', latencyMs: 3 }],
+      plan,
+    })
+    expect(answer).toBe('DIRECT_OUTPUT')
+    expect(mockGenerateAnswer).not.toHaveBeenCalled()
+  })
+})
+
+describe('parsePlanResponse — step ids are normalised, not taken literally', () => {
+  // MUTATION-CONFIRMED GAP: dropping `.toLowerCase()` from the id normaliser
+  // turned ZERO tests red. It is load-bearing: the LLM is told to emit "step1"
+  // but routinely emits "Step1"/"STEP1". dependsOn entries are lowercased, and
+  // so is the {{stepN}} placeholder, so a mixed-case id would fail to match its
+  // own dependency -- topoSort would then throw "depends on unknown step" and
+  // planQuery would fail closed to a single CHAT step, silently degrading every
+  // multi-tool question into a plain chat answer.
+  test('a mixed-case id and dependsOn are lowercased so they still match', () => {
+    const raw = JSON.stringify({
+      steps: [
+        { id: 'Step1', tool: 'sql', input: { question: 'a' } },
+        { id: 'STEP2', tool: 'rag', input: { query: '{{Step1}}' }, dependsOn: ['Step1'] },
+      ],
+      needsSynthesis: true,
+    })
+    const plan = parsePlanResponse(raw, TOOLS)
+    expect(plan.steps.map((s) => s.id)).toEqual(['step1', 'step2'])
+    expect(plan.steps[1].dependsOn).toEqual(['step1'])
+    // And the normalised plan must actually sort -- proof the ids now agree.
+    expect(topoSort(plan.steps).map((s) => s.id)).toEqual(['step1', 'step2'])
+  })
+
+  test('the placeholder is substituted even when the id arrived in a different case', () => {
+    // The end-to-end consequence: without normalisation this stays literal.
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [
+        { id: 'Step1', tool: 'web_fetch', input: { url: 'https://example.com' } },
+        { id: 'Step2', tool: 'chat', input: { message: 'summarise {{step1}}' }, dependsOn: ['Step1'] },
+      ],
+    }), TOOLS)
+    const resolved = resolveStepInput(plan.steps[1], new Map([['step1', 'PAGE_TEXT']]))
+    expect(resolved.input.message).toBe('summarise PAGE_TEXT')
+  })
+
+  test('a step without an id is dropped rather than producing an empty-id node', () => {
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [
+        { tool: 'chat', input: { message: 'no id' } },
+        { id: 'ok', tool: 'chat', input: { message: 'fine' } },
+      ],
+    }), TOOLS)
+    expect(plan.steps.map((s) => s.id)).toEqual(['ok'])
+  })
+
+  test('a step without a tool is dropped too', () => {
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [
+        { id: 'a', input: { message: 'no tool' } },
+        { id: 'b', tool: 'chat', input: { message: 'fine' } },
+      ],
+    }), TOOLS)
+    expect(plan.steps.map((s) => s.id)).toEqual(['b'])
+  })
+
+  test('non-object entries in steps are discarded, not turned into garbage steps', () => {
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [null, 'nope', 42, { id: 'ok', tool: 'chat', input: { message: 'fine' } }],
+    }), TOOLS)
+    expect(plan.steps).toHaveLength(1)
+    expect(plan.steps[0].id).toBe('ok')
+  })
+
+  test('an array input is discarded so it cannot become a numeric-keyed object', () => {
+    // String([1,2]) through the object branch would build {"0":"1","1":"2"} and
+    // the tool would receive nonsense parameters.
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [{ id: 'a', tool: 'chat', input: ['x', 'y'] }],
+    }), TOOLS)
+    expect(plan.steps[0].input).toEqual({})
+  })
+
+  test('absent dependsOn stays undefined rather than becoming an empty array', () => {
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [{ id: 'a', tool: 'chat', input: { message: 'x' } }],
+    }), TOOLS)
+    expect(plan.steps[0].dependsOn).toBeUndefined()
+  })
+
+  test('needsSynthesis is only true for a literal boolean true', () => {
+    const truthy = parsePlanResponse(JSON.stringify({
+      steps: [{ id: 'a', tool: 'chat', input: {} }], needsSynthesis: 'yes',
+    }), TOOLS)
+    // A truthy STRING must not enable synthesis -- it would spend an extra LLM
+    // call the plan never asked for.
+    expect(truthy.needsSynthesis).toBe(false)
+  })
+
+  test('non-numeric input values are stringified, not dropped', () => {
+    const plan = parsePlanResponse(JSON.stringify({
+      steps: [{ id: 'a', tool: 'chat', input: { n: 5, b: true, nested: null } }],
+    }), TOOLS)
+    expect(plan.steps[0].input.n).toBe('5')
+    expect(plan.steps[0].input.b).toBe('true')
+    expect(plan.steps[0].input.nested).toBe('null')
+  })
+})

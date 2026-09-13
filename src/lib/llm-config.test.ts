@@ -58,6 +58,45 @@ describe('isBlockedHost', () => {
     expect(isBlockedHost('FE80::1')).toBe(true)
   })
 
+  test('blocks IPv4-MAPPED / IPv4-COMPATIBLE IPv6 literals, which are the same address', () => {
+    // REGRESSION (found this round in the web-fetch SSRF sweep): `new URL('http://[::ffff:127.0.0.1]/')`
+    // canonicalises the host to `[::ffff:7f00:1]`, which matched neither the bare '::1' equality nor any
+    // IPv4 regex -- so a request to the cloud metadata service over a v4-MAPPED loopback literal was
+    // DIALED. The async guard could not save it either: it skips DNS for hex literals on the assumption
+    // that this function already checked them. Both spellings and the canonicalised form are asserted,
+    // because a caller can supply either and URL rewrites one into the other.
+    for (const h of [
+      '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '[::ffff:127.0.0.1]',
+      '[::ffff:7f00:1]',
+      '::ffff:169.254.169.254',
+      '[::ffff:a9fe:a9fe]',
+      '::ffff:10.0.0.1',
+      '::127.0.0.1',
+      '::7f00:1',
+      '::ffff:192.168.1.1',
+    ]) {
+      expect([h, isBlockedHost(h)], h).toEqual([h, true])
+    }
+  })
+
+  test('the v4-mapped decode does NOT over-block a public address in the same encoding', () => {
+    // Without this control the test above would pass for a guard that blocks every '::ffff:*' literal,
+    // which would break a legitimate LLM endpoint published over IPv6.
+    for (const h of ['::ffff:8.8.8.8', '::ffff:808:808', '[::ffff:8.8.8.8]', '2001:4860:4860::8888']) {
+      expect([h, isBlockedHost(h)], h).toEqual([h, false])
+    }
+  })
+
+  test('normalizeBaseUrl rejects a v4-mapped metadata literal, not just the bare IPv4 one', () => {
+    // The end of the chain that actually builds the baseUrl for a customer-configured LLM endpoint.
+    expect(() => normalizeBaseUrl('http://[::ffff:169.254.169.254]/latest/meta-data/')).toThrow(
+      /blocked internal host/,
+    )
+    expect(() => normalizeBaseUrl('http://[::ffff:127.0.0.1]:8080')).toThrow(/blocked internal host/)
+  })
+
   test('normalizeBaseUrl rejects blocked hosts', () => {
     expect(() => normalizeBaseUrl('http://169.254.169.254/latest/meta-data/')).toThrow(
       /blocked internal host/,

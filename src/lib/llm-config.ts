@@ -64,6 +64,53 @@ export function allowedHosts(): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Decode the IPv4 address embedded in an IPv4-mapped / IPv4-compatible IPv6 literal, or return null when
+ * the host is not one of those forms. Input may carry brackets and a zone id.
+ *
+ * Only the `::`-prefixed 32-bit forms are decoded, which is what `::ffff:127.0.0.1` and `::127.0.0.1`
+ * canonicalise to. A native IPv6 address (e.g. `fe80::1`) returns null and is handled by the regex checks.
+ */
+function embeddedIpv4(hostname: string): string | null {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
+  if (!h.includes('::')) return null
+  const parts = h.split('::')
+  if (parts.length !== 2) return null
+  let tail = parts.slice(1).join('::')
+  if (!tail) return null
+  // Accept ONLY the two encoded-IPv4 shapes. Everything else (`fd00::1`, `fe80::1`, `2001:...::8888`) is a
+  // real IPv6 address whose tail merely LOOKS like a small number, and treating it as IPv4 produced
+  // `0.0.0.1`-style values that the IPv4 blocklist correctly ignores -- which silently unblocked the
+  // unique-local and link-local prefixes this function is also responsible for. An earlier revision did
+  // exactly that and regressed `fd00::1`; the shape check is the fix.
+  //
+  //   ::ffff:a.b.c.d  /  ::a.b.c.d   -> dotted tail is the IPv4 value
+  //   ::ffff:hhhh[:hhhh]            -> hex tail, exactly two 16-bit groups, embedded value decoded
+  let body = tail
+  if (body.startsWith('ffff:')) body = body.slice('ffff:'.length)
+  const isDotted = body.includes('.')
+  if (isDotted) {
+    const quad = body.split('.')
+    if (quad.length !== 4 || !quad.every((q) => /^\d{1,3}$/.test(q) && Number(q) <= 255)) return null
+    // A dotted tail only denotes IPv4 when the address is 32-bit: with the marker, or `::a.b.c.d`.
+    return quad.join('.')
+  }
+  const hextets = body.split(':').filter(Boolean)
+  // Require the marker for the hex shape, or exactly two groups (the `::7f00:1` form). One bare group is a
+  // genuine IPv6 suffix, never an encoded IPv4.
+  const marked = tail.startsWith('ffff:')
+  if (!marked && hextets.length !== 2) return null
+  if (hextets.length === 0 || hextets.length > 2) return null
+  const nums: number[] = []
+  for (const hextet of hextets) {
+    if (!/^[0-9a-f]{1,4}$/.test(hextet)) return null
+    nums.push(parseInt(hextet, 16))
+  }
+  const value = hextets.length === 2 ? ((nums[0] << 16) >>> 0) + nums[1] : nums[0]
+  const octets = [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255]
+  return octets.join('.')
+}
+
 export function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   // Explicit operator allowlist wins over the blocklist. Checked BEFORE the
@@ -76,6 +123,13 @@ export function isBlockedHost(hostname: string): boolean {
   }
   if (h === 'localhost') return true
   if (h === '::1' || h === '::') return true
+  // IPv6 forms that DECODE to a loopback/private IPv4 address. String equality above is not enough:
+  // `URL` canonicalises `[::ffff:127.0.0.1]` to the hex form `[::ffff:7f00:1]`, which matches neither
+  // '::1' nor the IPv4 regexes, so it was dialled. Measured before this fix: a request to
+  // http://[::ffff:127.0.0.1]/ reached the transport. The address is therefore PARSED, not pattern-matched:
+  // the last two hextets of any `::ffff:a.b.c.d` / `::a.b.c.d` form are the embedded IPv4 value.
+  const v4mapped = embeddedIpv4(h)
+  if (v4mapped) return isBlockedHost(v4mapped)
   // Cloud metadata endpoints
   if (h === 'metadata.google.internal') return true
   if (h === 'metadata.aws.internal') return true

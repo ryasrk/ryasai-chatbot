@@ -388,7 +388,7 @@ export async function generateSessionTitle(firstMessage: string): Promise<string
     { purpose: 'title' },
   )
   const title = raw.replace(/^["'\s]+|["'\s.]+$/g, '').slice(0, 80)
-  return title.length >= 3 ? title : firstMessage.slice(0, 60)
+  return title
 }
 
 // ---------------------------------------------------------------------------

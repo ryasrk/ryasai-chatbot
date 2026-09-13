@@ -393,3 +393,47 @@ describe('executeStep — admin tools', () => {
     expect(r[0].error).toContain('database is down')
   })
 })
+
+describe('executeStep — the MCP tool name is everything after the server id', () => {
+  // MUTATION-CONFIRMED GAP: replacing `parts.slice(2).join(':')` with `parts[2]`
+  // turned ZERO tests red. The module-level comment claims toolName "may
+  // theoretically contain colons", and it does: MCP tool names are namespaced,
+  // so `mcp:<serverId>:filesystem:read_file` is a real shape. Truncating at
+  // parts[2] would ask the server for a tool called "filesystem" -- a name that
+  // does not exist -- and every namespaced MCP tool would fail at runtime while
+  // the plan still reported a clean, tool-shaped step.
+  test('a namespaced tool name keeps every colon-separated segment', async () => {
+    const r = await runStep({ tool: 'mcp:srv1:filesystem:read_file', input: {} })
+    expect(r[0].ok).toBe(true)
+    const [serverId, toolName] = mockCallMcpTool.mock.calls.at(-1) as unknown as [string, string]
+    expect(serverId).toBe('srv1')
+    expect(toolName).toBe('filesystem:read_file')
+  })
+
+  test('a single-segment tool name is passed through unchanged', async () => {
+    await runStep({ tool: 'mcp:srv1:list', input: {} })
+    const [serverId, toolName] = mockCallMcpTool.mock.calls.at(-1) as unknown as [string, string]
+    expect(serverId).toBe('srv1')
+    expect(toolName).toBe('list')
+  })
+
+  test('an empty tool name is still forwarded, so the server reports its own error', async () => {
+    // 'mcp:srv1:' is malformed. Passing '' lets the MCP server return a precise
+    // "unknown tool" instead of the planner inventing a reason.
+    await runStep({ tool: 'mcp:srv1:', input: {} })
+    const [, toolName] = mockCallMcpTool.mock.calls.at(-1) as unknown as [string, string]
+    expect(toolName).toBe('')
+  })
+
+  test('MCP inputs are re-typed from JSON so numbers and booleans reach the server typed', async () => {
+    // The planner normalises all step inputs to STRINGS (stringifyEntries).
+    // coerceMcpInput parses them back; without it a tool expecting
+    // {"max_results": 5} receives the string "5" and the MCP server rejects it.
+    await runStep({ tool: 'mcp:srv1:search', input: { max_results: '5', exact: 'true', q: 'plain text' } })
+    const [, , args] = mockCallMcpTool.mock.calls.at(-1) as unknown as [string, string, Record<string, unknown>]
+    expect(args.max_results).toBe(5)
+    expect(args.exact).toBe(true)
+    // A non-JSON value stays a string rather than being coerced to NaN/undefined.
+    expect(args.q).toBe('plain text')
+  })
+})

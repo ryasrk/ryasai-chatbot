@@ -1,11 +1,11 @@
 {
-  "linePct": 88.22,
-  "linesHit": 21422,
-  "linesFound": 24282,
-  "fnPct": 94.05,
-  "fnsHit": 1945,
-  "fnsFound": 2068,
-  "filesMeasured": 194,
+  "linePct": 88.08,
+  "linesHit": 21599,
+  "linesFound": 24521,
+  "fnPct": 94.35,
+  "fnsHit": 1970,
+  "fnsFound": 2088,
+  "filesMeasured": 198,
   "failedTestFiles": [],
   "files": [
     {
@@ -63,6 +63,24 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/llm-config.ts",
+      "hit": 239,
+      "found": 335,
+      "pct": 71.34328358208955,
+      "fHit": 22,
+      "fFound": 24,
+      "fPct": 91.66666666666666
+    },
+    {
+      "file": "src/lib/real-connectors.ts",
+      "hit": 685,
+      "found": 942,
+      "pct": 72.7176220806794,
+      "fHit": 97,
+      "fFound": 102,
+      "fPct": 95.09803921568627
+    },
+    {
       "file": "src/lib/doc-versioning.ts",
       "hit": 81,
       "found": 111,
@@ -70,15 +88,6 @@
       "fHit": 7,
       "fFound": 7,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/real-connectors.ts",
-      "hit": 685,
-      "found": 937,
-      "pct": 73.10565635005337,
-      "fHit": 87,
-      "fFound": 97,
-      "fPct": 89.69072164948454
     },
     {
       "file": "src/lib/web-fetch.ts",
@@ -112,9 +121,9 @@
       "hit": 416,
       "found": 559,
       "pct": 74.4186046511628,
-      "fHit": 43,
+      "fHit": 44,
       "fFound": 44,
-      "fPct": 97.72727272727273
+      "fPct": 100
     },
     {
       "file": "src/lib/rag-retrieval.ts",
@@ -144,6 +153,15 @@
       "fPct": 62.5
     },
     {
+      "file": "src/lib/knowledge-graph.ts",
+      "hit": 157,
+      "found": 205,
+      "pct": 76.58536585365854,
+      "fHit": 16,
+      "fFound": 16,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/cognee-knowledge-graph.ts",
       "hit": 267,
       "found": 344,
@@ -169,15 +187,6 @@
       "fHit": 30,
       "fFound": 31,
       "fPct": 96.7741935483871
-    },
-    {
-      "file": "src/lib/knowledge-graph.ts",
-      "hit": 155,
-      "found": 196,
-      "pct": 79.08163265306123,
-      "fHit": 16,
-      "fFound": 16,
-      "fPct": 100
     },
     {
       "file": "src/lib/planner.ts",
@@ -232,15 +241,6 @@
       "fHit": 8,
       "fFound": 8,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/llm-config.ts",
-      "hit": 207,
-      "found": 254,
-      "pct": 81.49606299212599,
-      "fHit": 21,
-      "fFound": 22,
-      "fPct": 95.45454545454545
     },
     {
       "file": "src/lib/cognee-memory.ts",
@@ -405,21 +405,21 @@
       "fPct": 90
     },
     {
-      "file": "src/lib/guardrails.ts",
-      "hit": 188,
-      "found": 219,
-      "pct": 85.84474885844749,
-      "fHit": 6,
-      "fFound": 6,
-      "fPct": 100
-    },
-    {
       "file": "src/app/api/documents/search/route.ts",
       "hit": 55,
       "found": 64,
       "pct": 85.9375,
       "fHit": 3,
       "fFound": 3,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/guardrails.ts",
+      "hit": 195,
+      "found": 226,
+      "pct": 86.28318584070797,
+      "fHit": 6,
+      "fFound": 6,
       "fPct": 100
     },
     {
@@ -798,6 +798,15 @@
       "pct": 98.56115107913669,
       "fHit": 9,
       "fFound": 9,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/rag-eval.ts",
+      "hit": 73,
+      "found": 74,
+      "pct": 98.64864864864865,
+      "fHit": 18,
+      "fFound": 18,
       "fPct": 100
     },
     {
@@ -1323,6 +1332,24 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/rag/evaluate/route.ts",
+      "hit": 51,
+      "found": 51,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/routing/scores/route.ts",
+      "hit": 10,
+      "found": 10,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/schedules/[id]/route.ts",
       "hit": 153,
       "found": 153,
@@ -1341,6 +1368,15 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/schedules/[id]/runs/export/route.ts",
+      "hit": 58,
+      "found": 58,
+      "pct": 100,
+      "fHit": 5,
+      "fFound": 5,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/schedules/[id]/runs/route.ts",
       "hit": 36,
       "found": 36,
@@ -1356,6 +1392,15 @@
       "pct": 100,
       "fHit": 5,
       "fFound": 5,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/sessions/[id]/export/route.ts",
+      "hit": 17,
+      "found": 17,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
       "fPct": 100
     },
     {
@@ -1698,15 +1743,6 @@
       "pct": 100,
       "fHit": 1,
       "fFound": 1,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/rag-eval.ts",
-      "hit": 73,
-      "found": 73,
-      "pct": 100,
-      "fHit": 18,
-      "fFound": 18,
       "fPct": 100
     },
     {
