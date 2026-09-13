@@ -987,8 +987,33 @@ describe('PINNED (a): an UNKNOWN vector provider yields ZERO vector hits, silent
     // CORRECTION #2 to this same assertion: I then asserted `searchVectorStoreCalls` was empty -- but that array
     // belongs to the MOCK of `@/lib/vector-stores` used by the route-level tests. `searchVectorStore` imported
     // here is the REAL function, so it never touches the mock's recorder and the array is trivially empty. That
-    // assertion proved nothing about this call and has been dropped; the observable fact is the empty result.
+    // assertion proved nothing about this call and has been dropped.
     expect(hits).toEqual([])
+
+    // WHAT THE EMPTY RESULT ACTUALLY COMES FROM. `[]` alone is weak evidence -- it is also what a QDRANT branch
+    // returning no matches would produce. The claim under test is that an unrecognised provider makes NO network
+    // call at all, so the source is read directly and the branch set is asserted: there is no INTERNAL branch, and
+    // the function ends in a bare `return []`. This FAILS the moment an INTERNAL/external-store branch is added,
+    // which is exactly when the silent-zero stops being silent.
+    const vectorSrc = readFileSync(
+      join(import.meta.dir, '..', '..', '..', '..', 'lib', 'vector-stores.ts'),
+      'utf8',
+    )
+    const searchFn = vectorSrc.slice(vectorSrc.indexOf('export async function searchVectorStore'))
+    expect(searchFn).not.toContain("provider === 'INTERNAL'")
+    expect(searchFn).toMatch(/provider === 'QDRANT'/)
+    expect(searchFn).toMatch(/provider === 'MILVUS'/)
+    expect(searchFn).toMatch(/provider === 'PINECONE'/)
+    expect(searchFn).toMatch(/provider === 'CHROMA'/)
+    // FOUR BRANCH GUARDS, then the fall-through. Asserting the COUNT as 4 was wrong: two of these providers
+    // repeat their guard deeper in the branch (an auth-mode or payload-shape decision), so the literal appears
+    // six times. The SET is what matters -- four distinct providers, INTERNAL absent.
+    expect([...new Set(searchFn.match(/provider === '([A-Z_]+)'/g)!.map((m) => m.slice(14, -1)))].sort()).toEqual([
+      'CHROMA',
+      'MILVUS',
+      'PINECONE',
+      'QDRANT',
+    ])
   })
 
   test('a configured but UNSUPPORTED vector store still answers 200 with a degraded (lexical-only) result set', async () => {
@@ -1244,8 +1269,20 @@ describe("PINNED (c): the embedding lookup for a SEARCH uses the chat-purpose co
     // cannot be selected, and the vector space is whatever chat happens to use.
     expect(llmConfigCalls[0]).toEqual({ where: { purpose: 'chat' } })
     expect(llmConfigCalls.some((c) => JSON.stringify(c).includes('search'))).toBe(false)
-    // INVERT WHEN FIXED: expect `purpose: 'search'` (or a purpose parameter threaded from the
-    // route) once a search-specific embedding model can be configured.
+
+    // INVERSION GUARD: read the purpose literal straight out of the REAL `embeddings.ts` so this
+    // test FAILS the moment the hardcoded purpose changes, instead of drifting along with a
+    // stale expectation. (Same technique as the vector-store normalizer above.)
+    const embeddingsSrc = readFileSync(
+      join(import.meta.dir, '..', '..', '..', '..', 'lib', 'embeddings.ts'),
+      'utf8',
+    )
+    const purposeMatches = [...embeddingsSrc.matchAll(/where:\s*\{\s*purpose:\s*'([^']+)'/g)]
+    // Exactly one hardcoded purpose lookup, and it is 'chat' -- a document SEARCH has no way to
+    // ask for anything else.
+    expect(purposeMatches.map((m) => m[1])).toEqual(['chat'])
+    // INVERT WHEN FIXED: this should become ['search'] (or the route should thread a purpose).
+    expect(embeddingsSrc).not.toMatch(/purpose:\s*'search'/)
   })
 
   test('a SEARCH embedding request carries the chat model name end-to-end through retrieval', async () => {

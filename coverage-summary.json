@@ -6,9 +6,7 @@
   "fnsHit": 1855,
   "fnsFound": 1972,
   "filesMeasured": 170,
-  "failedTestFiles": [
-    "src/app/api/documents/search/route.test.ts"
-  ],
+  "failedTestFiles": [],
   "files": [
     {
       "file": "src/lib/evidence-boundary.ts",

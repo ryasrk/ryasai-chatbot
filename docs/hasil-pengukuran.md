@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d5b4053`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b0b4177`.
 
 ---
 
@@ -14,7 +14,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `d5b4053`.
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **88,05%** (20.296/23.051 baris, 170 file) | terukur, **belum 95%** |
 | Cakupan fungsi | **94,07%** (1855/1972 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 211 file · **5.243 lulus · 0 gagal** | terukur |
+| Test suite | 211 file · **5.246 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1128 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1132 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5969,6 +5969,41 @@ test, sehingga `createHmac` menjadi `undefined` dan tanda tangan yang benar dito
 
 **Progres backlog: 38 dari 66 route orphan ditutup.** Repo **87,81% → 88,05%**; suite **4.960 → 5.243**
 (201 → **211 file**); gate **160 → 170 modul**; cakupan fungsi **93,95% → 94,07%**.
+
+### 1.7dt Pengaman INVERSI: test yang gagal justru saat defeknya DIPERBAIKI
+
+**Masalah yang saya temukan di pekerjaan paralel ronde ini, dan cara menutupnya.** Sebuah test yang mem-pin
+defek dengan **asersi tangan** (`expect(status).toBe(500)` karena seharusnya 400) **akan tetap hijau selama
+defeknya ada** — tetapi ia juga **tidak memberi sinyal apa pun saat diperbaiki**, sehingga catatan itu membusuk
+diam-diam. Tiga pengaman ditambahkan, semuanya **membaca SOURCE ASLI** dan **GAGAL begitu kontrak berubah**:
+
+1. **Normalizer provider** (`vector-stores.ts`) diekstrak dari berkasnya dan dijalankan lewat `new Function`.
+   Salinan logika **akan tetap lolos setelah perbaikan**; ekstraksi tidak. **Terbukti peka:** memutasi
+   `normalizeVectorStoreProvider` agar menolak `'WEAVIATE'` → **2 test merah**; memutasi `purpose` menjadi
+   `'search'` → **1 merah**; menghapus pembacaan cache → **2 merah**. Repo dipulihkan bersih tiap kali
+   (`git diff --stat` kosong untuk berkas itu).
+2. **Deklarasi `purpose`** dibaca langsung dari `embeddings.ts`: satu-satunya lookup ter-hardcode adalah
+   `'chat'`, dan **`'search'` tidak ada di berkas itu.** Perbaikan apa pun yang menambahkannya **merah**.
+3. **Klaim "nol panggilan jaringan"** untuk provider tak dikenal — sebelumnya hanya `expect(hits).toEqual([])`,
+   yang **lemah** karena **cabang QDRANT tanpa hasil pun menghasilkan `[]`**. Sekarang himpunan cabang
+   `searchVectorStore` dibaca dari source dan diasersi: **QDRANT/MILVUS/PINECONE/CHROMA, dan `INTERNAL` tidak
+   ada.** Perbaikan yang menambahkan cabang itu **merah**.
+
+**Satu koreksi lagi dari koreksi saya sendiri:** saya mengasersikan **jumlah** kemunculan `provider === '` adalah
+**4**, ternyata **6** — dua provider mengulang penjaganya lebih dalam (keputusan mode auth / bentuk payload).
+**Himpunan** yang penting, bukan hitungannya; asersi diganti menjadi himpunan empat provider.
+
+**Dua klaim lagi yang tadinya hanya komentar, kini diverifikasi:** urutan destructuring payload oleh worker
+(`mini-services/scheduler/index.ts`) dibaca dari source dan dibandingkan sebagai **himpunan kunci** — karena
+**urutan `Object.keys` untuk literal adalah keberuntungan, bukan kontrak**; dan **`mcp/servers/[id]/test` tidak
+pernah menyentuh `envJson`/`headersJson`** (diasersi dengan memindai source rute, bukan hanya `select`).
+
+**Catatan proses yang jujur dan penting:** seorang subagent **menulis ulang** berkas `documents/search` **setelah
+saya commit**, sehingga versi yang saya commit sempat **kehilangan komentar "INVERT WHEN FIXED"** pada blok
+`purpose`. Saya membandingkan kedua versi **sebelum** memutuskan: versi subagent ternyata **lebih kuat** (ia
+menambahkan pengaman inversi yang saya tandai hilang), jadi versi itu yang diambil, **plus** pemulihan asersi
+bermakna dan pengaman nol-jaringan di atas. **Berkas test harus beku pada saat commit** — penulisan ulang setelah
+commit hanya boleh masuk lewat commit yang mengatakannya.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

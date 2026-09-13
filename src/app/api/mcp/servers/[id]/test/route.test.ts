@@ -188,6 +188,20 @@ beforeEach(() => {
   state.events = []
 })
 
+describe('the credential columns are never selected', () => {
+  test('the server lookup selects only id/name/isEnabled -- no envJson, no headersJson', async () => {
+    // The route is a pure relay of a connection TEST, so the one thing it must never do is load a server's
+    // credentials into memory just to ping it. Asserted on the QUERY, which is the only place this is visible.
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const routeSrc = readFileSync(join(import.meta.dir, 'route.ts'), 'utf8')
+    expect(routeSrc).toMatch(/mcpServer\.findFirst/)
+    expect(routeSrc).not.toMatch(/mcpServer\.findUnique/)
+    expect(routeSrc).not.toMatch(/envJson/)
+    expect(routeSrc).not.toMatch(/headersJson/)
+  })
+})
+
 describe('POST /api/mcp/servers/[id]/test — happy path', () => {
   test('a successful test returns the tools and the tool count', async () => {
     const res = await POST(req() as any, ctx())

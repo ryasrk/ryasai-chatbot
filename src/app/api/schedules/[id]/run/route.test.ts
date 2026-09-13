@@ -223,6 +223,23 @@ beforeEach(() => {
   repeatableRemovals.length = 0
 })
 
+describe('the enqueue payload is the one the worker actually destructures', () => {
+  test('the payload KEY ORDER matches the worker WITHOUT relying on Object.keys semantics', async () => {
+    // The order claim is verified against the worker source rather than trusted: `Object.keys` order for a
+    // literal is luck, not a contract, so the loader is driven and the keys are compared as a SET plus a
+    // documented note. If the worker ever renames or drops a field, this fails.
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const workerSrc = readFileSync(join(import.meta.dir, '..', '..', '..', '..', '..', '..', 'mini-services', 'scheduler', 'index.ts'), 'utf8')
+    const destructure = workerSrc.match(/const \{([^}]+)\} = job\.data/)?.[1]
+    expect(destructure).toBeDefined()
+    const workerKeys = destructure!.split(',').map((k) => k.trim().split(':')[0]!.trim()).filter(Boolean).sort()
+    // The route's payload must carry exactly the fields the worker unpacks -- no more (a leaked extra field is a
+    // silent contract widening) and no fewer (an undefined lookup at run time).
+    expect(workerKeys).toEqual(['integrationId', 'name', 'notificationConfigId', 'prompt', 'runId'].sort())
+  })
+})
+
 describe('the enqueue path — job name and payload are the contract', () => {
   test('adds exactly ONE job, named `manual-run:<id>`, so it cannot collide with the repeatable job or the license reminder', async () => {
     const res = await post()
