@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b7f0bed`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `be5c7e3`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b7f0bed`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,69%** (16.283/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.479 lulus · 0 gagal** | terukur |
+| Test coverage | **82,77%** (16.300/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.497 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **75 modul** | +13 |
+| Modul ter-gate | 62 modul | **76 modul** | +14 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -94,7 +94,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/scheduler-queue.ts` | 48,03% → **100,00%** merged | 59,80% → **100,00%** kode eksekutabel (119/119) | 16 |
 | `src/lib/rag-retrieval.ts` | 88,64% → **76,29%** merged (**turun**, §1.7z) | 93,84% → **100,00%** kode eksekutabel (341/341) | 66 |
 | `src/lib/planner.ts` | 77,53% → **79,00%** merged | 96,70% → **99,45%** kode eksekutabel (538/541) | 70 |
-| **Total repo** | **62,44%** | **82,69%** | — |
+| `src/lib/admin-tools.ts` | 81,78% → **84,30%** merged | 97,17% → **100,00%** kode eksekutabel (569/569) | 49 |
+| **Total repo** | **62,44%** | **82,77%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -342,8 +343,18 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Sandbox menolak → tidak jadi *failed step* | `planner.ts:459` | 1 |
 | `onStatus('error')` tidak dipanggil saat sandbox menolak | `planner.ts:459` | 1 |
 | Error non-`Error` diganti konstanta | `planner.ts:462` | 2 |
+| Env var LLM dipisah hanya koma (bukan titik koma) | `admin-tools.ts:403` | 1 |
+| Fallback `runner.envVars` dihapus | `admin-tools.ts:405` | 1 |
+| `uvx` juga diberi flag `-y` milik npx | `admin-tools.ts:437` | 1 |
+| Merge env diganti timpa (kredensial lama hilang) | `admin-tools.ts:676` | 1 |
+| envJson korup tidak ditangkap (update gagal) | `admin-tools.ts:670` | 1 |
+| Gerbang allow-list KEDUA dihapus | `admin-tools.ts:488` | 5 |
+| Audit penolakan bukan `warning` | `admin-tools.ts:489` | 1 |
+| Daftar runner di-hardcode di pesan | `admin-tools.ts:498` | 1 |
+| Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
+| Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**238 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**249 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2242,6 +2253,59 @@ bersih, dan menambah aturan longgar berisiko menelan kode nyata. Dilaporkan seba
 **3 baris artefak terdokumentasi**, bukan diklaim sebagai cakupan.
 
 **Kontrol negatif: 4, semuanya menggigit.**
+
+### 1.7as `admin-tools.ts`: 97,17% → 100,00% eksekutabel, dan gerbang keamanan BERLAPIS
+
+**Merged 81,78% → 84,30%, eksekutabel 97,17% → 100,00% (569/569), nol tersisa. Kini
+di-gate — sebelumnya merged-nya di BAWAH ambang 85 sehingga tidak boleh di-gate.**
+
+**Temuan paling berguna: penolakan command punya DUA gerbang, dan itu benar.** Saat kontrol
+negatif menghapus pemeriksaan allow-list **di dalam `normalizeRunner`** (baris 342), test
+"runner di luar allow-list ditolak" **tetap hijau** — karena ada gerbang **kedua** setelah
+resolusi (`transport === 'stdio' && command && !ALLOWED_MCP_CMDS.has(command)`). Bukannya
+bug, ini **pertahanan berlapis**: `normalizeRunner` mengembalikan `null` ketika tak menemukan
+runner yang diizinkan, dan `command` tetap berisi teks **asli** operator, sehingga gerbang
+kedua menangkapnya. Saya **memverifikasi terhadap gerbang kedua**: menghapusnya membuat
+**5 test merah**. Perilaku yang ditemukan justru **lebih baik** dari dugaan saya — pesan
+penolakan mengutip **teks yang gagal** (`"some prose here"`), bukan bacaan parser, yang
+adalah diagnostik lebih berguna. Test saya yang pertama salah mengasumsikan `curl` muncul di
+pesan; **kode benar, asumsi saya salah**, dan saya perbaiki test-nya.
+
+**Yang kini dijaga:**
+**Rantai prioritas resolusi MCP** (LLM command → instruksi ter-parsing → URL → nama), empat
+cabang terakhirnya belum pernah tersentuh. **Env var dari LLM dipisah pada koma DAN titik
+koma** — halaman README menulisnya dengan dua cara, dan kehilangan satu berarti server
+start lalu langsung gagal auth, yang operator baca sebagai "alatnya rusak". **Fallback
+`runner.envVars`** saat LLM tak mengirim kredensial tapi parser menemukannya di halaman.
+**Nama server telanjang → paket resmi `@modelcontextprotocol/server-<nama>`**, dan **`uvx`
+TIDAK diberi flag `-y`** milik npx — memberikannya membuat proses gagal start dan
+kegagalannya tampak seperti paket rusak, bukan command line rusak. **Fetch URL ditunda ke
+eksekusi**: `/sse` langsung dipakai apa adanya dan **tidak pernah** di-fetch (memanggil fetch
+untuk endpoint yang sudah hidup membuang request, dan bisa menggantikan transport valid
+dengan perintah stdio hasil scraping HTML).
+
+**Blok merge kredensial akhirnya berjalan** (`decrypt` → overlay → `encrypt`). Ini penting:
+salah di sini berarti **menyetel SATU kredensial MENGHAPUS kredensial lain**, dan server
+lalu gagal auth dengan pesan yang menunjuk jauh dari kode ini. Diuji juga **blob korup
+memulai dari kosong** alih-alih menggagalkan update (tanpa itu operator tidak punya jalan
+pemulihan lewat alat ini) dan bahwa **env kosong `{}` bukan "korup"** sehingga dekripsi
+dilewati sepenuhnya. Plus **cabang kegagalan test koneksi** yang harus tetap memberi tahu
+operator bahwa kredensial **telah tersimpan** — tanpa itu mereka akan berulang kali memasukkan
+ulang kredensial yang sama.
+
+**Kesalahan lingkungan yang nyaris saya laporkan sebagai temuan palsu.** Sembilan kontrol
+pertama saya jalankan dengan **tiga file test sekaligus** dan semuanya melaporkan "7 fail" —
+**test yang sama** (`admin:generate_api_key`) untuk mutasi yang tak berhubungan. Dijalankan
+terpisah, ketiga file **lulus bersih** (39+48+47 = 134) sementara digabung 128/6. Itu
+kontaminasi `mock.module` antar-file, bukan efek mutasi. **Saya tidak melaporkan angka itu**;
+kontrol diulang **per file**, dan semuanya menggigit.
+
+**Kesalahan saya sendiri:** test "install butuh konfirmasi" — asumsi saya salah. Kode
+**sengaja** tidak meminta konfirmasi untuk install (hanya remove yang meminta; tercatat di
+komentar di atas bagian MCP). Diganti test yang **memakukan perilaku nyata** itu plus test
+`/sse` yang membuktikan fetch tidak dipanggil untuk endpoint langsung.
+
+**Kontrol negatif: 11, semuanya menggigit** (setelah dijalankan per file).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

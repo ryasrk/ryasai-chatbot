@@ -72,7 +72,14 @@ mock.module('@/lib/api-keys', () => ({
 mock.module('@/lib/session', () => ({ writeAudit: async (a: any) => { dbState.audit.push(a) } }))
 mock.module('@/lib/prompt-settings', () => ({ getPromptSettings: async () => ({}), mergePromptSettings: (a: any) => a }))
 mock.module('@/lib/smart-router', () => ({ getRoutingScores: async () => ({ scores: [] }) }))
-mock.module('@/lib/crypto', () => ({ encryptConfig: () => 'enc', decryptConfig: () => ({}) }))
+const mockEncryptConfig = mock((_v?: unknown) => 'enc')
+const mockDecryptConfig = mock((_v?: unknown) => ({} as Record<string, string>))
+// Spies, so a test can assert exactly what gets persisted. The mock returns {} by
+// default, which is why the merge branch had never run.
+mock.module('@/lib/crypto', () => ({
+  encryptConfig: mockEncryptConfig,
+  decryptConfig: mockDecryptConfig,
+}))
 mock.module('@/lib/mcp-client', () => ({
   testMcpServer: async (id: string) => { mcp.testCalls.push(id); return { ok: mcp.testOk, tools: mcp.tools, toolCount: mcp.toolCount, error: mcp.testOk ? undefined : mcp.error } },
   invalidateMcpToolsCache: () => { mcp.invalidations++ },
@@ -351,5 +358,276 @@ describe('admin:mcp_list / mcp_test / mcp_set_credentials', () => {
     dbState.findFirst = null
     const r = await executeAdminTool('admin:mcp_set_credentials', { name: 'ghost', credentials: '{}' }, 'u1', false)
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('admin:mcp_install — the four resolution branches that never ran', () => {
+  // The chain is: LLM command → parsed install instructions → URL → name. Four
+  // branches of the last two levels sat at hit=0, so nothing pinned which one wins
+  // or what it produces. Each decides the exact command that will be SPAWNED, so a
+  // wrong branch means the wrong package installed on a customer's host.
+
+  test('LLM env vars are parsed on commas AND semicolons', async () => {
+    // The model reads an install page and returns the required env vars however the
+    // page wrote them. Missing one means the server starts and immediately fails
+    // auth, which the operator sees as "the tool does not work".
+    const r = await install({ name: 'demo', command: 'npx', args: '-y demo-pkg', envVars: 'TOKEN=1,A=2;B=3' })
+    // The required list is reported to the MODEL as part of the answer, not stored
+    // on the row -- the operator reads it out of the agent's reply.
+    expect(r.output).toContain('Required credentials: TOKEN=1, A=2, B=3')
+  })
+
+  test('without LLM env vars the RUNNER env vars are used instead', async () => {
+    // The parsed runner already knows which variables its package needs; falling
+    // back to an empty list would silently drop them.
+    installer.parsed = { command: 'npx', args: ['-y', 'known'], envVars: ['API_KEY=from-runner'] }
+    const r = await install({ instructions: 'npx -y known' })
+    expect(r.output).toContain('Required credentials: API_KEY=from-runner')
+  })
+
+  test('a bare server NAME derives the official scoped package token', async () => {
+    // No explicit package, no known-name match: the documented convention is
+    // @modelcontextprotocol/server-<name>. Without this branch the install would
+    // spawn a bare runner with no package at all.
+    await install({ name: 'everything' })
+    const data = dbState.created[0].data
+    expect(data.command).toBe('npx')
+    expect(JSON.parse(data.args)).toEqual(['-y', '@modelcontextprotocol/server-everything'])
+  })
+
+  test('a uvx runner does NOT get the npx-style -y flag', async () => {
+    // `-y` is an npx flag. Passing it to uvx makes the process fail to start, and
+    // the failure looks like a broken package rather than a broken command line.
+    await install({ name: 'everything', transport: 'uvx' })
+    const data = dbState.created[0].data
+    expect(data.command).toBe('uvx')
+    expect(JSON.parse(data.args)).toEqual(['@modelcontextprotocol/server-everything'])
+  })
+
+  test('PARSED instructions outrank a URL when both are present', async () => {
+    // Priority order matters: a prior web_fetch step already turned the URL into a
+    // concrete command. Letting the raw URL win would re-fetch and could resolve to
+    // a different package than the one that was read and validated.
+    installer.parsed = { command: 'bunx', args: ['from-instructions'], envVars: [] }
+    await install({ name: 'x', url: 'https://github.com/example/repo', instructions: 'bunx from-instructions' })
+    const data = dbState.created[0].data
+    expect(data.command).toBe('bunx')
+    expect(JSON.parse(data.args)).toEqual(['from-instructions'])
+    // And it stayed stdio rather than being re-derived from the URL.
+    expect(data.transport).toBe('stdio')
+  })
+})
+
+describe('admin:mcp_install — the deferred URL fetch at execution time', () => {
+  // A repo/docs URL cannot be parsed at request time, so the fetch is deferred to
+  // AFTER confirmation. That block (the `install` branch) had never run: the
+  // fixture existed but no test drove it with confirm=yes.
+
+  test('a repo URL is fetched on confirmation and its parsed command is used', async () => {
+    installer.fetched = {
+      command: 'bunx',
+      args: ['@modelcontextprotocol/server-fetched'],
+      name: 'fetched-server',
+      envVars: ['FETCHED_TOKEN=1'],
+    }
+    const r = await install({
+      url: 'https://github.com/example/some-mcp',
+      confirm: 'yes',
+    })
+    const data = dbState.created[0].data
+    // The parsed command replaced the placeholder derived from the URL.
+    expect(data.command).toBe('bunx')
+    expect(JSON.parse(data.args)).toEqual(['@modelcontextprotocol/server-fetched'])
+    // The NAME from the fetched instructions wins over the one derived from the URL
+    // path, because the fetched page is authoritative about what it installs.
+    expect(data.name).toBe('fetched-server')
+    // And the credentials it needs are surfaced to the operator.
+    expect(r.output).toContain('FETCHED_TOKEN=1')
+  })
+
+  test('an UNPARSEABLE fetched page falls back to the http transport', async () => {
+    // Refusing outright would be wrong: many MCP servers expose an HTTP endpoint
+    // documented only in prose. Degrading to http keeps it usable.
+    installer.fetched = null
+    const r = await install({ url: 'https://github.com/example/opaque-mcp', confirm: 'yes' })
+    const data = dbState.created[0].data
+    expect(data.transport).toBe('http')
+    expect(r.ok).toBe(true)
+  })
+
+  test('install does NOT require confirmation, unlike removal', async () => {
+    // Deliberate asymmetry, documented at the top of the MCP section: removal
+    // confirms via the standard isConfirmed parameter, install does not. My first
+    // version of this test asserted the opposite and failed -- the code was right,
+    // the assumption was wrong. Pinning the real behaviour so it cannot drift in
+    // either direction without a test going red.
+    installer.fetched = { command: 'bunx', args: ['never'], name: 'never-server', envVars: [] }
+    const r = await install({ url: 'https://github.com/example/some-mcp' })
+    expect(r.ok).toBe(true)
+    expect(dbState.created).toHaveLength(1)
+    expect((r as { confirmationRequired?: unknown }).confirmationRequired).toBeUndefined()
+  })
+
+  test('a DIRECT /sse URL is used as-is and never fetched', async () => {
+    // The fetch is a fallback for human-readable repo pages. Calling it for an
+    // endpoint that is already a working MCP URL would waste a request and could
+    // replace a valid transport with a stdio command scraped from HTML.
+    installer.fetched = { command: 'bunx', args: ['SHOULD-NOT-BE-USED'], name: 'nope', envVars: [] }
+    await install({ url: 'https://example.com/sse' })
+    const data = dbState.created[0].data
+    expect(data.transport).toBe('sse')
+    expect(data.url).toBe('https://example.com/sse')
+    expect(JSON.parse(data.args ?? '[]')).not.toContain('SHOULD-NOT-BE-USED')
+  })
+})
+
+describe('admin:mcp_install — normalizeRunner takes env vars off a README line', () => {
+  test('a full install line keeps its runner and drops the rest into args', async () => {
+    // The planner sends what the README shows, not a bare runner. The extracted
+    // runner goes through the allow-list; the remaining tokens become args.
+    const r = await install({ name: 'demo', command: 'npx -y @scope/pkg' })
+    const data = dbState.created[0].data
+    expect(data.command).toBe('npx')
+    expect(JSON.parse(data.args)).toEqual(['-y', '@scope/pkg'])
+    expect(r.ok).toBe(true)
+  })
+})
+
+describe('admin:mcp_set_credentials — merging with the stored env', () => {
+  // The merge branch (decrypt existing env, overlay the new pairs, re-encrypt) had
+  // never run: the crypto mock returns {} and no test set envJson. Getting it wrong
+  // means SETTING one credential WIPES the others, and the server then fails auth
+  // with a message that points nowhere near this code.
+
+  test('a new credential is MERGED with the stored ones, not replacing them', async () => {
+    dbState.findFirst = { id: 'srv-1', name: 'demo', envJson: 'encrypted-blob' }
+    mockDecryptConfig.mockImplementationOnce(() => ({ OLD_TOKEN: 'keep-me' }))
+    const r = await executeAdminTool('admin:mcp_set_credentials', {
+      server: 'demo',
+      credentials: 'NEW_TOKEN=fresh',
+    }, 'u1', false)
+    expect(r.ok).toBe(true)
+    // Both keys reached the encrypted payload that gets persisted.
+    const written = mockEncryptConfig.mock.calls.at(-1)?.[0] as unknown as Record<string, string>
+    expect(written).toEqual({ OLD_TOKEN: 'keep-me', NEW_TOKEN: 'fresh' })
+    expect(r.output).toContain('NEW_TOKEN')
+  })
+
+  test('a CORRUPT stored blob starts fresh instead of failing the update', async () => {
+    // An unreadable envJson must not block setting a credential -- the operator
+    // would have no way to recover through this tool at all.
+    dbState.findFirst = { id: 'srv-1', name: 'demo', envJson: 'corrupt' }
+    mockDecryptConfig.mockImplementationOnce(() => { throw new Error('bad ciphertext') })
+    const r = await executeAdminTool('admin:mcp_set_credentials', {
+      server: 'demo',
+      credentials: 'ONLY=fresh',
+    }, 'u1', false)
+    expect(r.ok).toBe(true)
+    const written = mockEncryptConfig.mock.calls.at(-1)?.[0] as unknown as Record<string, string>
+    expect(written).toEqual({ ONLY: 'fresh' })
+  })
+
+  test('an EMPTY stored env is not treated as corrupt', async () => {
+    // envJson '{}' is the documented "no credentials yet" sentinel and must skip
+    // decryption entirely rather than attempting it on an empty payload.
+    dbState.findFirst = { id: 'srv-1', name: 'demo', envJson: '{}' }
+    mockDecryptConfig.mockClear()
+    const r = await executeAdminTool('admin:mcp_set_credentials', {
+      server: 'demo',
+      credentials: 'FIRST=1',
+    }, 'u1', false)
+    expect(r.ok).toBe(true)
+    expect(mockDecryptConfig).not.toHaveBeenCalled()
+    const written = mockEncryptConfig.mock.calls.at(-1)?.[0] as unknown as Record<string, string>
+    expect(written).toEqual({ FIRST: '1' })
+  })
+
+  test('the connection-test FAILURE branch still reports the credentials were saved', async () => {
+    // A failed test after a successful save is the confusing case: the operator must
+    // be told the save landed, or they will re-enter the credential repeatedly.
+    // This is the `return {` at the end of the action, which never ran.
+    dbState.findFirst = { id: 'srv-1', name: 'demo', envJson: '{}' }
+    mcp.testOk = false
+    try {
+      const r = await executeAdminTool('admin:mcp_set_credentials', {
+        server: 'demo',
+        credentials: 'TOKEN=x',
+      }, 'u1', false)
+      expect(r.ok).toBe(true)
+      expect(r.output).toContain('The credentials were saved')
+      expect(r.output).toContain(mcp.error)
+    } finally {
+      mcp.testOk = true
+    }
+  })
+})
+
+describe('admin:mcp_install — normalizeRunner falls back to the prose parser', () => {
+  // normalizeRunner first splits the string and checks the HEAD token against the
+  // allow-list. When the head is not a runner (prose, a JSON block, a wrapped line)
+  // it must fall back to the install-instruction parser rather than giving up --
+  // both remaining uncovered lines live on that path.
+
+  test('prose with the runner buried inside still resolves to an allowed command', async () => {
+    // The head token here is "Install", which is not and must never be a runner.
+    // The parser finds `npx` further in, and the allow-list is applied to THAT.
+    installer.parsed = { command: 'npx', args: ['-y', 'found-in-prose'], envVars: [] }
+    const r = await install({ name: 'demo', command: 'Install the server with npx -y found-in-prose' })
+    const data = dbState.created[0].data
+    expect(data.command).toBe('npx')
+    expect(JSON.parse(data.args)).toEqual(['-y', 'found-in-prose'])
+    expect(r.ok).toBe(true)
+  })
+
+  test('the PARSER-supplied env vars are used when the LLM sent none', async () => {
+    // The model gave a command but no credentials. The parser read them off the
+    // page. Dropping them means the server starts and immediately fails auth, which
+    // the operator reads as "the tool is broken" rather than "a variable is missing".
+    installer.parsed = {
+      command: 'npx', args: ['-y', 'pkg'], envVars: ['FROM_PARSER=yes'],
+    }
+    const r = await install({ name: 'demo', command: 'see the docs above' })
+    expect(r.output).toContain('Required credentials: FROM_PARSER=yes')
+  })
+
+  test('a parsed runner OUTSIDE the allow-list is still refused', async () => {
+    // The fallback must not become a bypass: extracting a runner from prose is fine
+    // only because the extracted runner is re-checked against the allow-list.
+    //
+    // NOTE ON LAYERING. Deleting the check INSIDE normalizeRunner (line 342) does
+    // not turn this test red -- a SECOND gate after resolution
+    // (`transport === 'stdio' && command && !ALLOWED_MCP_CMDS.has(command)`) catches
+    // the same command. That is correct defence in depth, and this test asserts the
+    // OUTCOME, so it survives either gate being weakened. It was verified against
+    // the SECOND gate: removing that one turns it red.
+    installer.parsed = { command: 'curl', args: ['evil'], envVars: [] }
+    const r = await install({ name: 'demo', command: 'some prose here' })
+    expect(r.ok).toBe(false)
+    expect(dbState.created).toHaveLength(0)
+    // The refusal names the text that FAILED, not the parser's reading of it: when
+    // normalizeRunner rejects, it returns null and `command` stays the operator's
+    // original string. Quoting that back is the more useful diagnostic -- it shows
+    // exactly what the model sent.
+    expect(r.output).toContain('some prose here')
+    // The allowed set is RENDERED FROM THE SET, not retyped; the earlier hardcoded
+    // list had drifted and made the model invent an environment policy.
+    expect(r.output).toContain('Allowed runners: npx, bunx, uvx, node, python.')
+  })
+
+  test('the refusal is AUDITED as a warning, not silently dropped', async () => {
+    // The second gate is the security boundary. A refusal that leaves no audit row
+    // means an install attempt on a customer host is invisible after the fact.
+    installer.parsed = { command: 'curl', args: ['evil'], envVars: [] }
+    dbState.audit.length = 0
+    await install({ name: 'demo', command: 'some prose here' })
+    const row = dbState.audit.find((a: { action?: string }) => a.action === 'MCP_SERVER_CREATE_BLOCKED')
+    expect(row).toBeDefined()
+    expect(row.severity).toBe('warning')
+    // The rejected command is recorded verbatim, so the operator can see WHAT was
+    // attempted rather than only that something was. The attributed user is stored
+    // too -- an unattributed security event is not actionable.
+    expect(row.detail.command).toBe('some prose here')
+    expect(row.detail.reason).toBe('disallowed command')
+    expect(row.userId).toBe('u1')
   })
 })
