@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `382d2a6`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `8174b2e`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `382d2a6`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,31%** (17.416/20.179 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.038 lulus · 0 gagal** | terukur |
+| Test coverage | **86,32%** (17.420/20.180 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 171 file · **4.048 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**603 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**608 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4362,6 +4362,46 @@ diteruskan (4), `body.tools` streaming dihapus (1), guard `tools.length` diubah 
 **Non-kontrol yang saya deklarasikan:** baris 42/47 (`getLastLlmUsage`/`withUsageTracking`) sudah
 lama didokumentasikan — test meng-substitusi `getLastLlmUsage` di langkah terakhir — dan baris 172
 adalah deklarasi tipe.
+
+### 1.7ch Dua guard yang tak pernah dijalankan: port WebSocket `NaN` dan task yang menggantung selamanya
+
+**Metode pemilihan target saya bergeser, dan itu perlu dicatat.** Daftar "modul tanpa test pengimpor
+langsung" **sudah habis** — keempat tersangkanya (`web-fetch`, `rag-retrieval`, `license-issue`,
+`public-config`) saya ukur satu per satu; **tiga di antaranya 100,00% eksekutabel** dan `web-fetch`
+99,38% (satu baris "Too many redirects" yang saya verifikasi **memang** tak terjangkau karena loop
+menangkap batas hop lebih dulu di baris 79-80).
+
+Yang berhasil adalah **daftar baru: modul KECIL (≤70 baris terinstrumen) yang kehilangan 1-4 baris** —
+di situ satu-dua baris berarti persentase besar, dan lebih penting lagi: **modul kecil sering punya
+guard yang tidak pernah dijalankan siapa pun**. Repo **86,31% → 86,32%**; suite **4.038 → 4.048 lulus**.
+
+**`public-config.ts` — port WebSocket `NaN` bisa bocor ke browser.** `publicInt` menerima
+`NEXT_PUBLIC_WS_PORT`. Guard `Number.isFinite(n) ? n : fallback` adalah **alasan fungsi itu ada**
+alih-alih `Number(...)` sebaris. Tapi **setiap** test yang ada hanya membaca **nilai default**, jadi
+cabang `!v` selalu menang dan guard `isFinite` **tidak pernah dieksekusi**. Browser yang menerima
+`NaN` sebagai port gagal sebagai **error koneksi generik**, tanpa apa pun yang menunjuk ke env var
+penyebabnya. Kini **100,00% (10/10)**. Seam `__publicIntForTest` ditambahkan karena `publicConfig`
+membaca `process.env` **saat muat modul**, jadi test tak bisa memvariasikan input lewat objek yang
+diekspor tanpa memanipulasi module cache — dan `require.cache` **dilarang eslint** di repo ini.
+
+**`async-worker.ts` — handler yang melempar meninggalkan task `running` selamanya.** Test kegagalan
+yang ada memakai tipe **tanpa handler** — itu `continue` di awal loop. Jalur **`try/catch` di sekitar
+pemanggilan handler** tak pernah jalan. Tanpa catch itu, satu handler yang melempar akan membuat
+**pemanggil menunggu task yang tak akan pernah selesai**. Kini **100,00% (59/59)**, dan saya patok juga
+bahwa worker **tetap memproses task berikutnya** setelah satu task melempar (catch yang tidak kembali
+ke loop akan **meracuni antrean**).
+
+**Satu kontrol yang hijau, dan saya tidak menyembunyikannya.** K2 — menghapus `if (!v || !v.trim())` —
+**tetap 10 pass**. Sebabnya nyata: `parseInt('')` → `NaN` → jatuh ke guard `isFinite`. Jadi **kedua
+guard redundan secara perilaku** (pola yang sama dengan watchdog ronde 76). Saya **tidak** menulis
+klaim bahwa keduanya load-bearing; yang load-bearing terbukti adalah guard `isFinite` (K1 → 1 merah).
+
+**Kesalahan saya:** patch regex saya menghilangkan koma sehingga `coverage-gate.ts` gagal `TS1005` di
+dua baris. `tsc` menangkapnya sebelum commit.
+
+**5 kontrol: 4 menggigit** — guard `isFinite` dihapus (1 merah), `try/catch` handler dihapus (**6
+merah**), `String(e)` fallback dihapus (1), `completedAt` tidak di-set saat gagal (**7 merah**); K2
+dijelaskan di atas.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

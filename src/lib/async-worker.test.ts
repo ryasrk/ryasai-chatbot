@@ -28,6 +28,54 @@ describe('async-worker', () => {
     expect(task?.error).toContain('No handler')
   })
 
+  test('a handler that THROWS marks the task failed with the message', async () => {
+    // The other failure test covers a MISSING handler (an early `continue` at the top of the loop).
+    // This covers the try/catch around the handler call itself, which had never executed. Without
+    // it, a throwing handler would leave the task stuck at 'running' forever -- the caller polls
+    // getTask() and waits on something that will never complete.
+    registerHandler('boom', async () => {
+      throw new Error('handler exploded')
+    })
+    const id = enqueue('boom', {})
+    await wait()
+
+    const task = getTask(id)
+    expect(task?.status).toBe('failed')
+    expect(task?.error).toBe('handler exploded')
+    // The failure is still TIMED, so a poller can tell it is not merely old.
+    expect(task?.completedAt).toBeGreaterThan(0)
+  })
+
+  test('a handler that throws a NON-Error value still records a string', async () => {
+    // `throw 'string'` and `throw {code:1}` are legal JS. String(e) is the fallback that keeps
+    // `task.error` a string, which the API and UI both assume.
+    registerHandler('boom-nonerror', async () => {
+      throw 'just a string'
+    })
+    const id = enqueue('boom-nonerror', {})
+    await wait()
+
+    const task = getTask(id)
+    expect(task?.status).toBe('failed')
+    expect(task?.error).toBe('just a string')
+  })
+
+  test('after a THROWING task the worker still processes the NEXT task', async () => {
+    // A catch that did not return the worker to the loop would poison the queue: one bad handler
+    // would stop every later task from ever running.
+    registerHandler('boom-then-ok', async (t) => {
+      if (t.input.fail) throw new Error('nope')
+      return 'recovered'
+    })
+    enqueue('boom-then-ok', { fail: true })
+    await wait(40)
+    const okId = enqueue('boom-then-ok', { fail: false })
+    await wait(40)
+
+    expect(getTask(okId)?.status).toBe('completed')
+    expect(getTask(okId)?.output).toBe('recovered')
+  })
+
   test('listTasks returns tasks sorted by createdAt desc', async () => {
     const id1 = enqueue('test-default', { n: 1 })
     await wait(30)

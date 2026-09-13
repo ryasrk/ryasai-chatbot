@@ -1,7 +1,7 @@
 {
-  "linePct": 86.31,
-  "linesHit": 17416,
-  "linesFound": 20179,
+  "linePct": 86.32,
+  "linesHit": 17420,
+  "linesFound": 20180,
   "filesMeasured": 132,
   "failedTestFiles": [],
   "files": [
@@ -336,12 +336,6 @@
       "pct": 88.88888888888889
     },
     {
-      "file": "src/lib/public-config.ts",
-      "hit": 8,
-      "found": 9,
-      "pct": 88.88888888888889
-    },
-    {
       "file": "src/lib/session.ts",
       "hit": 163,
       "found": 182,
@@ -516,12 +510,6 @@
       "pct": 96.26168224299066
     },
     {
-      "file": "src/lib/async-worker.ts",
-      "hit": 57,
-      "found": 59,
-      "pct": 96.61016949152543
-    },
-    {
       "file": "src/app/api/integrations/[id]/schema/route.ts",
       "hit": 186,
       "found": 191,
@@ -666,6 +654,12 @@
       "pct": 100
     },
     {
+      "file": "src/lib/async-worker.ts",
+      "hit": 59,
+      "found": 59,
+      "pct": 100
+    },
+    {
       "file": "src/lib/billing-ui.ts",
       "hit": 33,
       "found": 33,
@@ -747,6 +741,12 @@
       "file": "src/lib/prompt-library.ts",
       "hit": 34,
       "found": 34,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/public-config.ts",
+      "hit": 10,
+      "found": 10,
       "pct": 100
     },
     {

@@ -11,6 +11,14 @@ function publicInt(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+/**
+ * Exposed so the parse guard can be EXERCISED. `publicConfig` reads process.env at module load,
+ * so a test cannot vary the input through the exported object without manipulating the module
+ * cache. Every existing test only read the DEFAULT, which means the `Number.isFinite` branch --
+ * the reason this function exists rather than an inline `Number(...)` -- never ran.
+ */
+export const __publicIntForTest = publicInt
+
 export const publicConfig = {
   /** Version shown in the UI footer/sidebar. */
   appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0',
