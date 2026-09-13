@@ -1,7 +1,7 @@
 {
-  "linePct": 85.77,
-  "linesHit": 16861,
-  "linesFound": 19658,
+  "linePct": 85.83,
+  "linesHit": 16873,
+  "linesFound": 19659,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -132,12 +132,6 @@
       "pct": 80.76923076923077
     },
     {
-      "file": "src/lib/crypto.ts",
-      "hit": 48,
-      "found": 59,
-      "pct": 81.35593220338984
-    },
-    {
       "file": "src/lib/llm-config.ts",
       "hit": 207,
       "found": 254,
@@ -148,12 +142,6 @@
       "hit": 129,
       "found": 158,
       "pct": 81.64556962025317
-    },
-    {
-      "file": "src/lib/document-parsers.ts",
-      "hit": 144,
-      "found": 176,
-      "pct": 81.81818181818183
     },
     {
       "file": "src/lib/rest-api-connectors.ts",
@@ -220,6 +208,12 @@
       "hit": 109,
       "found": 129,
       "pct": 84.49612403100775
+    },
+    {
+      "file": "src/lib/document-parsers.ts",
+      "hit": 149,
+      "found": 176,
+      "pct": 84.6590909090909
     },
     {
       "file": "src/lib/api-keys.ts",
@@ -394,6 +388,12 @@
       "hit": 41,
       "found": 45,
       "pct": 91.11111111111111
+    },
+    {
+      "file": "src/lib/crypto.ts",
+      "hit": 55,
+      "found": 60,
+      "pct": 91.66666666666666
     },
     {
       "file": "src/lib/db.ts",

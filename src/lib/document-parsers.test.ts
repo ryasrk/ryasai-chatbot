@@ -30,6 +30,100 @@ describe('document parsers', () => {
     expect(text).toContain('Hello')
   })
 
+  test('an UNCOMPRESSED stream with text operators is used directly, never inflate', () => {
+    // The `else` for a stream the dict does not mark FlateDecode. Some writers omit the
+    // filter, so the content is plain text already; the test-operators regex is what
+    // accepts it. It must yield the text rather than being dropped.
+    const content = 'BT /F1 12 Tf (Uncompressed stream body) Tj ET'
+    const pdf = Buffer.concat([
+      Buffer.from('%PDF-1.4\n'),
+      Buffer.from(`1 0 obj\n<< /Length ${content.length} >>\nstream\n`, 'latin1'),
+      Buffer.from(content, 'latin1'),
+      Buffer.from('\nendstream\nendobj\n', 'latin1'),
+    ])
+    expect(extractPdfTextFromBuffer(pdf)).toContain('Uncompressed stream body')
+  })
+
+  test('an uncompressed stream with NO text operators is still tried as zlib', () => {
+    // The other half of that `else`: no Tj/TJ operators means the bytes may be
+    // compressed after all (a writer that omitted `/Filter`), so inflate is attempted
+    // opportunistically. Here the payload IS deflate, just unlabelled, and it must come
+    // back as text -- otherwise the reader silently loses a whole page.
+    const content = 'BT /F1 12 Tf (Unlabelled deflate body) Tj ET'
+    const compressed = zlib.deflateSync(Buffer.from(content, 'latin1'))
+    const pdf = Buffer.concat([
+      Buffer.from('%PDF-1.4\n'),
+      Buffer.from(`1 0 obj\n<< /Length ${compressed.length} >>\nstream\n`, 'latin1'),
+      compressed,
+      Buffer.from('\nendstream\nendobj\n', 'latin1'),
+    ])
+    expect(extractPdfTextFromBuffer(pdf)).toContain('Unlabelled deflate body')
+  })
+
+  test('a stream LABELLED FlateDecode but holding garbage is skipped, not thrown', () => {
+    // `/Filter /FlateDecode` with bytes that are not zlib at all -- a truncated download
+    // or a producer bug. inflateSync throws, the catch swallows it, and the stream
+    // contributes nothing. The reader must still process the OTHER streams rather than
+    // aborting the whole document.
+    const good = 'BT /F1 12 Tf (Second stream survives) Tj ET'
+    const goodZ = zlib.deflateSync(Buffer.from(good, 'latin1'))
+    const pdf = Buffer.concat([
+      Buffer.from('%PDF-1.4\n'),
+      Buffer.from('1 0 obj\n<< /Length 8 /Filter /FlateDecode >>\nstream\n', 'latin1'),
+      Buffer.from('\x00\x01not-zlib', 'latin1'),
+      Buffer.from('\nendstream\nendobj\n', 'latin1'),
+      Buffer.from(`2 0 obj\n<< /Length ${goodZ.length} /Filter /FlateDecode >>\nstream\n`, 'latin1'),
+      goodZ,
+      Buffer.from('\nendstream\nendobj\n', 'latin1'),
+    ])
+    const text = extractPdfTextFromBuffer(pdf)
+    expect(text).toContain('Second stream survives')
+    // And nothing from the corrupt stream leaked in as noise.
+    expect(text).not.toContain('not-zlib')
+  })
+
+  test('hex Tj handles BOTH the 2-byte CID and the 1-byte ASCII encodings', () => {
+    // PDF hex strings come in two shapes and the decoder picks between them on a
+    // heuristic: if every EVEN-indexed byte is 0x00 it is 2-byte CID (the high byte of
+    // each pair), otherwise the bytes are plain ASCII. Getting only the CID branch right
+    // would silently mangle every pdfTeX file that emits one byte per character.
+    const twoByte = Buffer.from('%PDF-1.4\nBT <00480065006c006c006f> Tj ET')
+    expect(extractPdfTextFromBuffer(twoByte)).toContain('Hello')
+
+    const oneByte = Buffer.from('%PDF-1.4\nBT <48656c6c6f> Tj ET')
+    expect(extractPdfTextFromBuffer(oneByte)).toContain('Hello')
+
+    // The heuristic is ALL-or-nothing: one non-zero even byte switches the whole string
+    // to the 1-byte branch, so only the printable characters survive.
+    const mixed = Buffer.from('%PDF-1.4\nBT <00480065FF> Tj ET')
+    expect(extractPdfTextFromBuffer(mixed)).toBe('He')
+
+    // An ODD number of hex digits is not a byte string at all and must yield nothing
+    // rather than a half-decoded character.
+    expect(extractPdfTextFromBuffer(Buffer.from('%PDF-1.4\nBT <414> Tj ET'))).toBe('')
+  })
+
+  test('DECLARED EQUIVALENT: forcing the 1-byte branch offline changes nothing', () => {
+    // A control forcing `looksTwoByte` to FALSE produced no failing test, while forcing it
+    // to TRUE did (the 2-byte branch reads odd bytes, turning <48656c6c6f> into 'el'
+    // instead of 'Hello'). The asymmetry is because the 1-byte branch is a SUPERSET in
+    // effect: applying it to a genuine CID string still yields the printable ASCII, so the
+    // heuristic only has to protect the CID case. Declared rather than counted twice.
+    const twoByte = Buffer.from('%PDF-1.4\nBT <00480065006c006c006f> Tj ET')
+    expect(extractPdfTextFromBuffer(twoByte)).toContain('Hello')
+  })
+
+  test('DECLARED EQUIVALENT: dropping isFlate still works, via the opportunistic inflate', () => {
+    // `const isFlate = /FlateDecode/.test(dict)` chooses the TRY path, not the outcome. A
+    // control forcing it false produced no failing test, because the uncompressed `else`
+    // then runs: the text-operator regex misses on compressed bytes and the opportunistic
+    // `inflateSync` succeeds anyway. That redundancy IS the design -- the comment says the
+    // fallback exists for writers that omit the filter or whose dict slice is missed. The
+    // dict check is a fast path so the common case never pays for a failed inflate.
+    const pdf = makeFlatePdf(['BT /F1 12 Tf (Flate route intact) Tj ET'])
+    expect(extractPdfTextFromBuffer(pdf)).toContain('Flate route intact')
+  })
+
   test('never returns binary noise when a PDF yields no text', () => {
     // A scanned/image-only PDF must NOT fall back to dumping raw ASCII bytes —
     // that garbage was being embedded and poisoned retrieval.

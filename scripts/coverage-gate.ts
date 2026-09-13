@@ -60,6 +60,10 @@ const FLOORS: Record<string, number> = {
   // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
   // EXECUTION, the GET input channel, and the enabled-plugin listing's column select.
   'src/lib/plugin-registry.ts': 85, // measured 85.09% merged; 137/138 executable
+  // Session token HMAC: verifySession + extractSessionVersion, the session-fixation pair.
+  'src/lib/crypto.ts': 90, // measured 91.67% merged; 55/55 executable
+  // PDF/DOCX/XLSX extraction: lossless-or-empty, both hex encodings, the inflate fallbacks.
+  'src/lib/document-parsers.ts': 84, // measured 84.66% merged; 149/149 executable
   'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)

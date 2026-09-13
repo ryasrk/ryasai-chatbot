@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `70a35ef`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f39005`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `70a35ef`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,77%** (16.861/19.658 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.855 lulus · 0 gagal** | terukur |
+| Test coverage | **85,83%** (16.873/19.659 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 165 file · **3.871 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **95 modul** | +33 |
+| Modul ter-gate | 62 modul | **97 modul** | +35 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -132,6 +132,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/llm-config.ts` | 77,56% → **81,50%** merged | 95,17% → **100,00%** kode eksekutabel (207/207) | 15 |
 | `src/lib/guardrails.ts` | 83,11% → **85,84%** merged | 96,30% → **99,47%** kode eksekutabel (188/189) | 9 |
 | `src/lib/plugin-registry.ts` | 80,00% → **85,09%** merged | 94,81% → **99,28%** kode eksekutabel (137/138) | 10 |
+| `src/lib/crypto.ts` | 81,36% → **91,67%** merged | 88,89% → **100,00%** kode eksekutabel (55/55) | 9 |
+| `src/lib/document-parsers.ts` | 81,82% → **84,66%** merged | 96,64% → **100,00%** kode eksekutabel (149/149) | 7 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -391,7 +393,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**503 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**519 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3772,6 +3774,70 @@ satu tebakan salah: `an UNPARSEABLE endpoint` ternyata ditolak **Zod** (`Invalid
 `https://%`, `http://?x` — dan **Zod menolak SEMUANYA lebih dulu**, jadi kontrol tak pernah sampai
 ke `try`. Sebaliknya juga berlaku: `http://.` lolos **keduanya**. Dideklarasikan, bukan dibiarkan
 sebagai celah senyap.
+
+### 1.7bv TOKEN SESI DAN PARSER PDF/DOCX — satu `catch` yang saya kira artefak, dan satu eksploitasi yang saya ukur lalu tolak
+
+**`crypto.ts` 88,89% → 100,00% (55/55). `document-parsers.ts` 96,64% → 100,00% (149/149).** Repo
+**85,77% → 85,83% (+0,06)**. Modul ter-gate 95 → **97**. **16 kontrol dijalankan, 11 menggigit, 2
+anchor salah (diulang, menggigit), 3 dideklarasikan setara.**
+
+**`tool-branches.ts` saya periksa lebih dulu dan BUANG sebagai target: sudah 100,00% (641/641).**
+Daftar "belum ter-gate terbesar" dari `coverage-summary.json` **menyesatkan sebagai daftar kerja** —
+merged % rendah karena **artefak union LF**. Dua target nyata yang belum pernah saya sentuh:
+**`crypto.ts`** dan **`document-parsers.ts`**.
+
+**`extractSessionVersion` — SETENGAH DARI PASANGAN ANTI-SESSION-FIXATION — TIDAK PUNYA TEST
+SAMA SEKALI.** `session.ts` menjalankan
+`if (u.isActive && u.sessionVersion === extractSessionVersion(token))`. Empat file test lain
+**meng-mock fungsi ini menjadi `() => 0`**, jadi implementasi aslinya tak pernah dieksekusi. Yang kini
+dipatok: **versi dibaca bulat-balik** dari token bertanda-tangan; **token hilang / < 3 bagian → 0
+(legacy)**, sesuai kontrak dan `@default(0)` di schema; **versi tak terurai → 0, BUKAN `NaN`**
+(`NaN === apa pun` adalah false — kalau lolos, **SETIAP request gagal dan semua pengguna terkunci**);
+**guard `isFinite`** itu load-bearing; **`parseInt` (bukan `Number`)** sehingga `1.0` → `1`; dan versi
+dibaca dari **indeks 1**.
+
+**KEAMANAN, DAN INI SAYA UJI BUKAN ASUMSI.** Versi ada **DI DALAM payload yang ditandatangani HMAC**,
+jadi ia **tidak bisa dipalsukan**: saya menulis ulang versi `1` → `999` pada token sah, dan
+`verifySession` mengembalikan **`null`**. Perubahan versi mengharuskan tanda-tangan ulang, yang butuh
+`SESSION_SECRET`. Juga dideklarasikan: token versi-0 dan versi tak terurai **tak bisa dibedakan**
+(keduanya 0, dan 0 adalah default kolom) — **aman hanya karena `verifySession` jalan lebih dulu**, dan
+itu properti **pemanggilnya**, bukan fungsi itu. Kalau `sessionVersion` pernah diubah agar **tidak**
+default 0, kesetaraan ini mulai penting.
+
+**SATU `catch` YANG SAYA KIRA ARTEFAK, TERNYATA LOAD-BEARING.** Baris 95 (catch `timingSafeEqual`)
+saya duga tak terjangkau. **SALAH.** Guard di atasnya memeriksa **panjang STRING** (`sig.length !==
+expected.length`) sedangkan `timingSafeEqual` membandingkan **BYTE** dan **MELEMPAR** bila beda.
+Untuk string **multi-byte** keduanya berbeda: `'é'.repeat(43)` punya **43 karakter dan 86 byte**, jadi
+guard **DILEWATI** dan `timingSafeEqual` **melempar** — lalu catch mengembalikan `null`. **Tanpa
+catch itu, sebuah `TypeError` akan lolos keluar dari `verifySession`**, yang di-`await` pada setiap
+request terautentikasi. Kontrol yang menghapus catch **menghasilkan 1 test merah**, membuktikannya.
+
+**Guard `parts < 3` juga load-bearing, dan saya temukan input pemisahnya.** Kontrol yang menghapusnya
+awalnya **tidak menggigit**, karena untuk `'user.signature'` jalur `isFinite` juga memberi `0`. Tapi
+**`'user.5'`** — token 2-bagian dengan ekor **numerik** — mengembalikan **5** tanpa guard,
+**melanggar kontrak "Returns 0 for legacy tokens"**. Kedua pemanggil kebetulan memverifikasi lebih
+dulu, tapi itu properti **pemanggil**, bukan fungsi yang **diekspor**. Setelah dipatok, kontrol itu
+**langsung menggigit**.
+
+**Parser PDF: tiga cabang tak teruji, semuanya invariant `lossless-or-empty`.** Yang kini dipatok:
+stream **tak-terkompresi dengan operator teks** dipakai langsung; stream **tak-terkompresi TANPA
+operator** tetap dicoba `inflate` (writer yang lupa `/Filter`); stream **berlabel `FlateDecode` tapi
+isinya sampah** dilewati **tanpa melempar**, dan **stream berikutnya tetap diproses** — plus
+memastikan sampah itu **tidak bocor** sebagai noise; **kedua encoding hex** (`<0048...>` 2-byte CID
+dan `<48656c6c6f>` 1-byte ASCII) didekode benar; heuristiknya **all-or-nothing** (satu byte genap
+non-nol mengalihkan **seluruh** string); dan hex **berjumlah digit ganjil** menghasilkan **kosong**,
+bukan karakter separuh.
+
+**Tiga kesetaraan yang saya buktikan.** (1) **Guard panjang tanda-tangan = catch**, keduanya memberi
+`null` yang sama; guard tetap ada sebagai **fast path**. (2) **`parts.length < 2`** tak bisa dicapai
+dengan hasil berbeda — `''` tak pernah sama dengan satu bagian tersisa. (3) **`looksTwoByte → false`**
+tidak mengubah apa pun, sedangkan **`→ true`** mengubah (`'Hello'` menjadi `'el'`); asimetri itu
+karena cabang 1-byte praktis **superset**. (4) **`isFlate → false`** juga tidak mengubah hasil, karena
+`inflate` oportunistik di cabang `else` menyelamatkannya — **itulah desainnya**.
+
+**Kesalahan saya:** dua anchor kontrol salah tempat lagi (`looksTwoByte` ada di **dua baris**), dan
+satu perintah shell mengembalikan **output basi** ("clean — nothing to commit") sehingga saya harus
+membaca hasil lewat file.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
