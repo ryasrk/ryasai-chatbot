@@ -9,8 +9,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `603a148`.
 
 | Metrik | Nilai | Status |
 |---|---|---|
-| Akurasi fleet trial | **518/518 = 100,00%** | terukur |
-| Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
+| Akurasi fleet trial | **518/518 = 100,00%** (dijalankan ulang ronde ini) | terukur |
+| Token speed (loopback, 9router) | **278,9 tok/s**, TTFT 1.856 ms | terukur, tapi lihat catatan §1.7dy.7 |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage (baris yang BISA dieksekusi) | **96,20%** (18.718/19.457 baris) | terukur, **target 95% terlampaui** |
 | Test coverage (merge mentah) | **88,18%** (21.602/24.497 baris, 198 file) | terukur, denominator menggelembung |
@@ -6693,6 +6693,58 @@ sudah tidak sepakat. Sekarang guard menghitung situs: wajib tepat dua, keduanya
 6. **`rag-retrieval.test.ts` butuh >300 detik** di mesin ini, sehingga timeout
    per-file yang terlalu ketat menghasilkan SIGKILL yang *terlihat* seperti hang.
    Ini bahaya pengukuran, bukan cacat kode.
+
+
+#### 1.7dy.7 Angka performa diukur ULANG, dan klaim "403,2 tok/s" dikoreksi turun
+
+Tiga harness dijalankan ulang ronde ini, pada 9router yang hidup
+(`localhost:20128` merespons 200, kredensial di `/tmp/nine.key`).
+
+**Akurasi — direproduksi persis.** `bun trial/fleet/harness.ts`:
+**518/518 = 100,00%**, 0 kegagalan. Rinciannya: D1 107/107, D2 114/114,
+D3 297/297; per jenis `guard-allow` 76/76, `guard-block` 221/221,
+`invariant` 221/221. Ini menjalankan **kode produksi** (guardrails, tokenizer,
+evidence-boundary), bukan mock — 518 kasus berada di dalam rentang 100–500 yang
+diminta.
+
+**Token speed — dikoreksi dari 403,2 menjadi 278,9 tok/s, dan angkanya sendiri
+diragukan.** Dua pengukuran berturut-turut:
+
+| Pengukuran | Hasil |
+|---|---|
+| `trial/A1-token-speed.ts` (3 run, gemini-3.8-flash-low) | **278,9 tok/s**, TTFT 1.856 ms |
+| Probe latensi independen (6 run) | latensi **1.824 ms**, TTFT **1.647 ms**, output **99,3 token** |
+
+Angka 278,9 tok/s berasal dari `CompletionTokens / (total − TTFT)`. Itu **tidak
+bisa dipercaya di lingkungan ini**, dan saya membuktikannya daripada
+melaporkannya: pada 6 run, **5 run punya `total − TTFT < 50 ms`**, dan satu run
+menghasilkan **34.000 tok/s** sementara run lain **0 tok/s**. Artinya stream
+9router mengirim seluruh jawaban dalam **satu burst**, sehingga penyebut
+`total − TTFT` mendekati nol dan hasilnya liar. Untuk jawaban sependek ~99 token,
+kedua ujungnya (0 dan 34.000) sama-sama artefak.
+
+Yang **benar-benar terukur dan stabil** adalah latensi: **~1,8 detik per task,
+TTFT ~1,6 detik**, konsisten di 6/6 run. Itu angka yang saya pertahankan.
+
+**Tokens/task — 379 (estimasi) dipertahankan, dan alasannya jadi jelas.**
+
+| Sumber | Nilai | Artinya |
+|---|---|---|
+| `trial/A3-tokens-per-task.ts` | **~379** token/task | prompt PRODUK, dihitung dari sumber |
+| Probe live, prompt 20 kata | **2.013** prompt token | termasuk preamble 9router |
+
+Selisih 379 vs 2.013 bukan kontradiksi: **9router menyuntikkan ~2.000 token
+preamble** ke setiap permintaan. Melaporkan 2.013 sebagai "biaya token kami"
+akan **salah**, karena itu biaya proxy, bukan produk. A3 sudah memutuskan hal ini
+dengan benar dan saya konfirmasi dengan pengukuran langsung.
+
+**Batas kejujuran angka performa:**
+1. Model di balik 9router adalah `ag/gemini-3.8-flash-low` lewat proxy, **bukan
+   provider BYOK pelanggan**. Angka ini mengukur jalur loopback, bukan produksi.
+2. `avg tokens/task` dari A1 (2.076) **tidak dipakai**: ia mencampur preamble
+   proxy ke dalam biaya produk.
+3. Satu model (`lim/glm-5.2-fast`) mengembalikan **503/402**; hanya satu model
+   yang berhasil diukur, jadi tidak ada perbandingan lintas-model.
 
 
 ## 9. Pertanyaan terbuka
