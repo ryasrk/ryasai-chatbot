@@ -12,7 +12,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `66ba842`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
+| Test coverage | **81,18%** (15.975/19.678 baris, 128 file) | terukur, **belum 95%** |
 | Test suite | 160 file · **3.342 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
