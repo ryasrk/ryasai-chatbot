@@ -94,6 +94,9 @@ const FLOORS: Record<string, number> = {
   // now pinned, and a TRUNCATED stored hash is documented as ACCEPTING the correct
   // password (256-value brute force, 1.1s). Remaining 2 lines are a defensive catch.
   'src/lib/passwords.ts': 88, // measured 88.89% (16/18)
+  // SSO login redirect + IdP metadata discovery + the SAML hardening options
+  // (both signatures required, 60s assertion age, audience = our entity id).
+  'src/lib/sso-saml.ts': 89, // measured 89.41% (228/255); 228/228 executable
   'src/lib/plan-gating.ts': 85, // measured 94.87% (37/39)
   'src/lib/pricing.ts': 95, // measured 100.00% (39/39)
   'src/lib/prompt-library.ts': 95, // measured 100.00% (34/34)

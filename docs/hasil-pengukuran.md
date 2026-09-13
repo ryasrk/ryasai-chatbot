@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0670e0`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `587fff1`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e0670e0`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,38%** (16.789/19.663 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.767 lulus · 0 gagal** | terukur |
+| Test coverage | **85,52%** (16.810/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.777 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -123,6 +123,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/integrations/[id]/query/route.ts` | 77,14% → **100,00%** merged | 85,26% → **100,00%** kode eksekutabel (210/210) | 11 |
 | `src/lib/rag-chunking.ts` | 64,95% → **84,30%** merged (artefak LF) | 70,79% → **100,00%** kode eksekutabel (188/188) | 14 |
 | `src/lib/passwords.ts` | 88,89% (tak berubah) | 88,89% (**6 kontrol tambahan**, 2 baris catch deklaratif) | 7 |
+| `src/lib/sso-saml.ts` | 79,31% → **89,41%** merged | 91,59% → **100,00%** kode eksekutabel (228/228) | 12 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -382,7 +383,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**400 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**412 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3386,6 +3387,56 @@ login pertama setelah deploy**; dan **loop 11 bentuk malformed** yang membuktika
 cost turun, cost naik). **1 dideklarasikan setara: `timingSafeEqual` → `===`** — perbedaannya
 adalah **sifat keamanan (waktu konstan)**, yang **tidak dapat diamati oleh test fungsional mana
 pun**; perilakunya identik untuk seluruh input.
+
+### 1.7bo SAML: discovery metadata IdP dan opsi pengerasan yang tidak pernah tersentuh test
+
+**`sso-saml.ts` 91,59% → 100,00% (228/228)**, 19 baris tak tercakup. Repo **85,38% → 85,52%
+(+0,14)**. Modul ter-gate 89 → **90**. **12 kontrol, 12 menggigit.**
+
+**Kenapa 19 baris itu penting.** Yang tak teruji bukan kode tepi: itu **`createSamlInstance`**
+(namun **seluruh login SSO lewat sini**), **`discoverFromMetadata`** (fetch metadata IdP),
+**pemuatan kunci SP**, dan **`generateAuthnRequestRedirectUrl`** (URL yang dikirim ke browser saat
+pengguna menekan "Sign in with SSO"). `validateSamlResponse` dan `getOrCreateSsoUser` **sudah**
+teruji menyeluruh di `sso-saml-provisioning.test.ts` — jadi file ini hanya menyentuh fungsi murni,
+dan **kedua file test-nya harus diberikan bersamaan** (disiplin §1.7bl).
+
+**Opsi pengerasan itu ternyata TIDAK dijaga oleh test mana pun** — dan setiap perubahan di sini
+**melemahkan setiap login SSO secara diam-diam**. Yang kini dipatok: **kedua tanda tangan
+WAJIB** (`wantAssertionsSigned` DAN `wantAuthnResponseSigned`); **usia assertion 60 detik**; **clock
+skew dibatasi 60 detik**; **audience HARUS entity id kita** — tanpanya, token yang dicetak untuk
+**SP lain** akan terverifikasi di sini; dan **`validateInResponseTo: 'never'`** yang dipatok
+**dengan alasannya**: cache provider di sini no-op, jadi menyetelnya ke `ifPresent` akan
+**menolak SETIAP login** karena id yang disimpan tidak pernah benar-benar tersimpan.
+
+**Bug yang ditemukan sendiri oleh kontrol saya — mock yang tidak lengkap merusak kode lain.**
+Mock `@node-saml` pertama saya mengganti kelasnya dengan konstruktor kosong; **`generateSpMetadata`
+langsung gagal**, karena ia memanggil `getMetadata()` yang asli. Itu contoh persis dari masalah
+yang dikejar seluruh suite ini: **mock parsial diam-diam merusak call site produksi yang tidak
+dicakupnya.** Mock sekarang **mendelegasikan ke kelas asli** (`class extends`), sehingga
+`getMetadata()` sungguhan tetap berjalan dan test metadata yang lama tetap sah.
+
+**Asumsi saya yang salah, dikoreksi oleh test merah:** saya membangun metadata **hanya berisi
+sertifikat** — ternyata `discoverFromMetadata` **WAJIB** menemukan `SingleSignOnService Location`
+dan **melempar** tanpa itu. Fixture saya salah, bukan kodenya. Terukur, lalu diperbaiki.
+
+**Yang kini dijaga pada `sso-saml`:** **fetch metadata dilewati sepenuhnya** bila entry point DAN
+cert sudah ada (tanpa itu, **setiap login bergantung pada endpoint metadata IdP bisa dijangkau**);
+**respons metadata non-OK ditolak** dan **status-nya ada di pesan** (404 bisa berupa halaman HTML
+yang kebetulan tak memuat sertifikat → konfigurasi **tanpa cert secara diam-diam**);
+**`<!DOCTYPE` yang tampak seperti XML sah** tidak dipakai; **isi sertifikat dibungkus 64
+karakter/baris** dengan baris kosong di akhir **dibuang**; **seluruh whitespace di dalam body
+sertifikat dihapus lebih dulu** (metadata IdP sering di-pretty-print, dan spasi di dalam base64
+membuat PEM **tak bisa di-parse**); **materi penandatanganan SP bersifat semua-atau-tidak-sama
+sekali** (`&&`, bukan `||`) — private key tanpa sertifikatnya membuat node-saml mencoba
+AuthnRequest bertanda tangan yang **tidak bisa diselesaikannya**; dan **kedua penemuan bersifat
+independen** — punya entry point **tidak** boleh membuang cert, dan sebaliknya.
+
+**Temuan lintas-modul yang saya laporkan, bukan perbaiki:** `sso-saml.ts` adalah **satu dari lima**
+`fetch` produksi **tanpa timeout sama sekali** — bersama `sso.ts` (4 lokasi, endpoint SSO OIDC),
+`observability.ts` (3, ekspor Langfuse), dan `midtrans.ts` (1, transaksi Snap). Sebuah IdP atau
+Langfuse yang **menggantung** akan menahan request **tanpa batas**. Saya belum menyentuhnya: itu
+**keputusan produk** tentang durasi timeout dan perilaku degradasi, bukan sesuatu yang saya ubah
+diam-diam.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
