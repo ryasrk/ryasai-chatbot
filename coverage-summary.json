@@ -1,7 +1,7 @@
 {
-  "linePct": 80.6,
-  "linesHit": 15858,
-  "linesFound": 19674,
+  "linePct": 80.81,
+  "linesHit": 15900,
+  "linesFound": 19675,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -52,12 +52,6 @@
       "hit": 55,
       "found": 102,
       "pct": 53.92156862745098
-    },
-    {
-      "file": "src/lib/mcp-installer.ts",
-      "hit": 109,
-      "found": 198,
-      "pct": 55.05050505050505
     },
     {
       "file": "src/lib/themes.ts",
@@ -190,6 +184,12 @@
       "hit": 195,
       "found": 258,
       "pct": 75.5813953488372
+    },
+    {
+      "file": "src/lib/mcp-installer.ts",
+      "hit": 151,
+      "found": 199,
+      "pct": 75.87939698492463
     },
     {
       "file": "src/lib/agentic-budget.ts",

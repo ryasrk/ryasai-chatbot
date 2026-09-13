@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c6437fd`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6b85a98`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c6437fd`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.310 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.321 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -79,7 +79,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/real-connectors.ts` | 70,65% → **73,11%** merged | 73,89% (union 4 file) | 99 |
 | `src/lib/ai.ts` | 74,4% merged | **100,00% kode eksekutabel** (416/416) — lihat §1.7z | 79 |
 | `src/lib/tool-router-agentic.ts` | 75,57% → **77,45%** merged | 93,78% → **95,87%** kode eksekutabel (371/387) | 52 |
-| **Total repo** | **62,44%** | **80,60%** | — |
+| `src/lib/mcp-installer.ts` | 55,1% → **75,88%** merged | 85,06% kode eksekutabel (131/154) | 22 |
+| **Total repo** | **62,44%** | **80,81%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -250,8 +251,10 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Reflexion tidak mengganti jawaban | `tool-router-agentic.ts:279` | 1 |
 | Deadline mid-round: state tidak dicatat | `tool-router-agentic.ts:253` | 1 |
 | Deadline: bukti terkumpul dibuang | `tool-router-agentic.ts:254` | 1 |
+| HTML tidak dibersihkan sebelum parse | `mcp-installer.ts:77` | 1 |
+| Response non-ok diterima | `mcp-installer.ts:75` | 1 |
 
-**150 kontrol + 3 kontrol gate, semuanya sah.**
+**152 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1390,6 +1393,38 @@ diperbaiki, **kembarannya tidak ikut teruji**.
 
 Kontrol negatif: **3**, masing-masing menggagalkan test yang dituju (reflexion tidak
 mengganti jawaban; state deadline tidak dicatat; bukti terkumpul dibuang).
+
+### 1.7ab `mcp-installer.ts`: 55,1% → 75,88% merged (151/199) — jalur fetch & SSRF belum dieksekusi
+
+**Hanya `parseMcpInstallInstructions` yang teruji.** Fungsi yang **benar-benar mengambil
+URL dari model** — dan **daftar blokir SSRF di depannya** — **belum pernah dieksekusi**.
+Itu batas di mana URL yang dibaca LLM dari halaman web menjadi **permintaan jaringan
+dari server kita**.
+
+Diuji (semuanya nol): host internal **ditolak sebelum ada permintaan** (`expect(fetchCalls)
+.toEqual([])` — inti dari blokir pra-penerbangan); URL yang tak dapat di-parse → null
+tanpa fetch; **urutan cabang GitHub** (main dulu, master cadangan — hanya mencoba satu
+akan gagal diam-diam di separuh repo); instruksi di-parse dari README yang diambil;
+**HTML dibersihkan** sehingga tag tidak bisa menyembunyikan atau memalsukan baris
+instal; response non-ok → null; fetch yang melempar → null tanpa crash; dan halaman
+**tanpa** pola instal → null, bukan default karangan (mengembalikan tebakan di sini akan
+**menginstal paket yang tak diminta siapa pun**).
+
+**Dua kontrol saya yang TIDAK menggigit, dan itu temuannya:**
+
+1. **Menghapus `isBlockedHost(...)` dari installer TIDAK menggagalkan test SSRF mana
+   pun.** Sebabnya: `isBlockedHostAsync` juga memblokir setiap host yang dipakai test,
+   jadi **lapisan DNS menutupi lapisan string**. Diukur: hapus blokir sync → 19 lulus /
+   0 gagal. Ini **redundansi by design** yang **menyembunyikan** apakah masing-masing
+   lapisan hidup. Assertion kini menguji **tiap lapisan atas namanya sendiri**
+   (`isBlockedHost('169.254.169.254') === true` DAN `await isBlockedHostAsync(...) ===
+   true`, plus host publik yang **hanya** lapisan DNS bisa lihat).
+2. **Test "response non-ok" saya lulus dengan guard `!res.ok` DIHAPUS** — karena body
+   `'gone'` tak mengandung pola instal, jadi **parser** yang mengembalikan null, bukan
+   guard status. Body kini sengaja **memuat baris instal yang valid**: hanya itu yang
+   membedakan cek status dari parser. Setelah diperkuat, kontrolnya menggigit (20
+   lulus / 1 gagal). **Halaman error tidak boleh dibaca sebagai instruksi instalasi** —
+   500 dengan README yang di-*cache* akan menginstal paket dari body error.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
