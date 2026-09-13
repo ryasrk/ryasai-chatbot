@@ -503,10 +503,16 @@ async function maybeUpdateSessionSummary(args: {
   })
   if (all.length <= HISTORY_WINDOW) return
 
-  // Messages strictly older than the live window AND not yet summarized.
+  // Messages older than the live window AND not yet summarized.
+  //
+  // `>=`, not `>`: the high-water mark stored in summaryUpTo is itself the
+  // createdAt of the last message folded in last time (lastOverflowAt), so a
+  // strict comparison re-admits that exact message on the next turn and its text
+  // gets summarized twice. Ties on createdAt are only possible for a message the
+  // previous pass already consumed, so including it is the correct reading.
   const overflow = all.slice(0, all.length - HISTORY_WINDOW).filter((m) => {
     if (!args.summaryUpTo) return true
-    return m.createdAt > args.summaryUpTo
+    return m.createdAt.getTime() > args.summaryUpTo.getTime()
   })
   if (overflow.length === 0) return
 

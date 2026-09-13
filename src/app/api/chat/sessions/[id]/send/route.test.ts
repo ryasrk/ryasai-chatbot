@@ -38,6 +38,8 @@ const calls = {
   chatMessageCreate: [] as any[],
   findMany: [] as any[],
   integrationFindFirst: [] as any[],
+  sessionUpdates: [] as any[],
+  toolRunCreates: [] as any[],
 }
 
 let getActiveUserImpl: () => Promise<typeof mockUser> = async () => mockUser
@@ -53,6 +55,15 @@ let session: any = {
 let integration: any = { id: 'int1' }
 let retryMessage: any = null
 let recentMessages: any[] = []
+let allMessages: any[] = []
+let summaryImpl: (args: any) => Promise<string> = async () => 'Generated summary'
+let streamingImpl: (args: any) => Promise<any> = async () => ({
+  stream: (async function* () {})(),
+  toolRuns: [],
+  citations: [],
+  chartData: null,
+  integrationId: null,
+})
 let savedPrompt: any = null
 let createImpl: (args: any) => any = (args) => ({
   id: 'm-new',
@@ -71,6 +82,17 @@ function resetState() {
   calls.chatMessageCreate.length = 0
   calls.findMany.length = 0
   calls.integrationFindFirst.length = 0
+  calls.sessionUpdates.length = 0
+  calls.toolRunCreates.length = 0
+  allMessages = []
+  summaryImpl = async () => 'Generated summary'
+  streamingImpl = async () => ({
+    stream: (async function* () {})(),
+    toolRuns: [],
+    citations: [],
+    chartData: null,
+    integrationId: null,
+  })
   getActiveUserImpl = async () => mockUser
   rateLimitImpl = async () => {}
   budgetImpl = async () => {}
@@ -104,7 +126,10 @@ mock.module('@/lib/db', () => ({
       findFirst: async () => session,
       findMany: async () => [],
       create: async () => ({}),
-      update: async () => ({}),
+      update: async (args: any) => {
+        calls.sessionUpdates.push(args)
+        return {}
+      },
       updateMany: async () => ({ count: 0 }),
       delete: async () => ({}),
       deleteMany: async () => ({ count: 0 }),
@@ -116,6 +141,14 @@ mock.module('@/lib/db', () => ({
       findFirst: async () => retryMessage,
       findMany: async (args: any) => {
         calls.findMany.push(args)
+        // A SECOND findMany shape: the rolling-summary query selects every user/ai
+        // message and includes createdAt in its projection. The handler asks for
+        // orderBy createdAt ASC, so the double must SORT — returning the fixture
+        // as-is let the reading order depend on how the fixture was built, and the
+        // "oldest" slice was silently the newest messages.
+        if (args?.select?.createdAt) {
+          return [...allMessages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        }
         return recentMessages
       },
       create: async (args: any) => {
@@ -157,7 +190,10 @@ mock.module('@/lib/db', () => ({
     toolRun: {
       findFirst: async () => null,
       findMany: async () => [],
-      create: async () => ({}),
+      create: async (args: any) => {
+        calls.toolRunCreates.push(args)
+        return {}
+      },
       createMany: async () => ({ count: 0 }),
       update: async () => ({}),
       delete: async () => ({}),
@@ -246,7 +282,7 @@ mock.module('@/lib/cognee', () => ({
 
 mock.module('@/lib/ai', () => ({
   generateSessionTitle: async () => 'Generated Title',
-  generateSessionSummary: async () => 'Generated summary',
+  generateSessionSummary: (args: any) => summaryImpl(args),
   routeQuery: async () => ({ decision: 'CHAT', reason: '' }),
   generateSql: async () => ({ sql: 'SELECT 1', explanation: '' }),
   generateAnswer: async () => 'answer',
@@ -279,13 +315,7 @@ mock.module('@/lib/tool-utils', () => ({
 }))
 
 mock.module('@/lib/tool-router', () => ({
-  runStreamingChatCompletion: async () => ({
-    stream: (async function* () {})(),
-    toolRuns: [],
-    citations: [],
-    chartData: null,
-    integrationId: null,
-  }),
+  runStreamingChatCompletion: (args: any) => streamingImpl(args),
   runNonStreamingChatCompletion: async () => ({
     answer: '',
     toolRuns: [],
@@ -480,5 +510,200 @@ describe('internal chat send error classification', () => {
   test('returns 404 when the session disappears before retitling', async () => {
     const { statusForInternalChatError } = await import('./route')
     expect(statusForInternalChatError({ code: 'P2025' })).toBe(404)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// persistAssistantError and maybeUpdateSessionSummary
+//
+// Both are private and both are called INSIDE the SSE body, so they are reached
+// by driving POST with a streaming mock rather than by importing them.
+// ---------------------------------------------------------------------------
+
+/** Drain an SSE Response body to a string (the body must be consumed for the
+ *  generator to run to completion). */
+async function drain(res: Response): Promise<string> {
+  const reader = res.body?.getReader()
+  if (!reader) return ''
+  let out = ''
+  const decoder = new TextDecoder()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    out += decoder.decode(value, { stream: true })
+  }
+  return out
+}
+
+describe('persistAssistantError — the failed turn is recorded', () => {
+  beforeEach(() => {
+    integration = { id: 'int1' }
+  })
+
+  test('an LLM failure writes an ERROR ai message, not a normal one', async () => {
+    streamingImpl = async () => {
+      throw new Error('LLM stream error: upstream 500')
+    }
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    await drain(res)
+
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    // The row must be marked status:'error' — a failed turn that looks successful
+    // in the history is worse than no row at all.
+    expect(aiCreate?.data?.status).toBe('error')
+    expect(calls.aiMessageCreates).toContain('s1')
+  })
+
+  test('the persisted error carries the organizationId', async () => {
+    streamingImpl = async () => {
+      throw new Error('LLM stream error: upstream 500')
+    }
+    const res = await POST(makeRequest({ text: 'hello' }) as any, makeCtx())
+    await drain(res)
+
+    const aiCreate = calls.chatMessageCreate.find((c) => c?.data?.sender === 'ai')
+    // Without the org stamp the row is invisible to every tenant-scoped query and
+    // the error vanishes from the session.
+    expect(aiCreate?.data?.organizationId).toBe('org-default')
+  })
+
+  test('a failed turn writes a ToolRun row so the failure is visible as a turn', async () => {
+    streamingImpl = async () => {
+      throw new Error('LLM stream error: upstream 500')
+    }
+    const res = await POST(makeRequest({ text: 'hello' }) as any, makeCtx())
+    await drain(res)
+
+    expect(calls.toolRunCreates.length).toBeGreaterThan(0)
+    const run = calls.toolRunCreates.at(-1)!.data
+    // latencyMs null, not 0: no work completed, and 0 would report a real duration.
+    expect(run.latencyMs).toBeNull()
+    expect(run.status).toBe('error')
+    expect(run.chatMessageId).toBe('m-new')
+  })
+
+  test('the ToolRun inputSummary is capped at its column budget', async () => {
+    streamingImpl = async () => {
+      throw new Error('LLM stream error: upstream 500')
+    }
+    const long = 'q'.repeat(5000)
+    const res = await POST(makeRequest({ text: long }) as any, makeCtx())
+    await drain(res)
+
+    const run = calls.toolRunCreates.at(-1)!.data
+    expect(run.inputSummary.length).toBe(240)
+  })
+
+  test('the session updatedAt is touched on a failed turn', async () => {
+    streamingImpl = async () => {
+      throw new Error('LLM stream error: upstream 500')
+    }
+    const res = await POST(makeRequest({ text: 'hello' }) as any, makeCtx())
+    await drain(res)
+
+    const touch = calls.sessionUpdates.find((u) => u?.data?.updatedAt)
+    // A failed turn still reorders the session list; without this the session
+    // sinks to the bottom as if nothing happened.
+    expect(touch?.where?.id).toBe('s1')
+  })
+})
+
+describe('maybeUpdateSessionSummary — the rolling window', () => {
+  /** Build N user/ai messages, ascending in time. */
+  function messages(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      id: `m${i}`,
+      sender: i % 2 === 0 ? 'user' : 'ai',
+      text: `msg ${i}`,
+      createdAt: new Date(2026, 0, 1, 0, i),
+    }))
+  }
+
+  async function runTurn() {
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    await drain(res)
+  }
+
+  test('a session within the window is NOT summarized', async () => {
+    allMessages = messages(10)
+    let called = 0
+    summaryImpl = async () => { called++; return 'Generated summary' }
+    await runTurn()
+    // Exactly HISTORY_WINDOW messages: nothing has fallen out yet, so the
+    // summarizer must not even be CALLED. Asserting only "no session update"
+    // would pass even with the guards removed, because slicing to a negative
+    // length yields an empty array anyway — measured, and it did pass.
+    expect(called).toBe(0)
+    expect(calls.sessionUpdates.filter((u) => u?.data?.summary !== undefined)).toHaveLength(0)
+  })
+
+  test('a session PAST the window summarizes only the overflow', async () => {
+    allMessages = messages(14)
+    await runTurn()
+
+    const write = calls.sessionUpdates.find((u) => u?.data?.summary !== undefined)
+    expect(write).toBeDefined()
+    expect(write!.data.summary).toBe('Generated summary')
+    // The overflow is the OLDEST 4 (14 - 10); the last one is m3, so summaryUpTo
+    // must be m3's createdAt and not the newest message.
+    expect((write!.data.summaryUpTo as Date).getTime()).toBe(allMessages[3].createdAt.getTime())
+  })
+
+  test('a message ALREADY at the high-water mark is not summarized again', async () => {
+    // Two turns, the way production runs: the first writes summaryUpTo, the second
+    // reads it back. MEASURED before the fix: the comparison was a strict `>`, but
+    // summaryUpTo IS the createdAt of the last message folded in — m3 in this
+    // fixture — so m3 was re-admitted on the next turn and summarized twice.
+    allMessages = messages(14)
+    const seen: number[] = []
+    summaryImpl = async (args) => { seen.push(args.messages.length); return 'Generated summary' }
+
+    await runTurn()
+    const first = calls.sessionUpdates.find((u) => u?.data?.summaryUpTo !== undefined)
+    expect(first).toBeDefined()
+    expect(seen).toEqual([4]) // m0..m3
+
+    // Second turn: the session now carries the high-water mark the handler stored.
+    session = { ...session, summary: first!.data.summary, summaryUpTo: first!.data.summaryUpTo }
+    calls.sessionUpdates.length = 0
+    // Two fresh messages arrive, pushing two more out of the window.
+    allMessages = messages(16)
+    await runTurn()
+
+    // Only the NEWLY fallen-out messages (m4, m5) may be folded in. Anything more
+    // means m3 was counted twice, and its text appears in two summaries.
+    expect(seen).toEqual([4, 2])
+  })
+
+  test('a summary failure does not fail the turn', async () => {
+    allMessages = messages(14)
+    summaryImpl = async () => { throw new Error('summary provider down') }
+    const res = await POST(makeRequest({ text: 'hello there' }) as any, makeCtx())
+    const body = await drain(res)
+    // Fire-and-forget: a dead summarizer must not surface as a turn error.
+    expect(body).not.toContain('LLM_ERROR')
+  })
+
+  test('the previous summary is handed to the summarizer for continuity', async () => {
+    allMessages = messages(14)
+    session = { ...session, summary: 'earlier summary', summaryUpTo: null }
+    let seen: any = null
+    summaryImpl = async (args) => { seen = args; return 'merged summary' }
+    await runTurn()
+    // A summary that forgot its predecessor would lose the start of a long session.
+    expect(seen?.previousSummary).toBe('earlier summary')
+    expect(seen?.messages?.length).toBeGreaterThan(0)
+  })
+
+  test('messages are mapped to user/assistant roles, not raw sender values', async () => {
+    allMessages = messages(14)
+    let seen: any = null
+    summaryImpl = async (args) => { seen = args; return 's' }
+    await runTurn()
+    const roles = seen.messages.map((m: any) => m.role)
+    expect(roles).toContain('user')
+    expect(roles).toContain('assistant')
+    // 'ai' is the DB's sender value; the LLM API only accepts 'assistant'.
+    expect(roles).not.toContain('ai')
   })
 })
