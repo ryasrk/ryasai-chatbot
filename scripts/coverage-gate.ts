@@ -109,6 +109,10 @@ const FLOORS: Record<string, number> = {
   // `Unreachable` fall-through that the source itself documents as unreachable.
   'src/lib/web-fetch.ts': 70, // measured 99.38% executable; merged 73.52% (see caveat)
   'src/lib/stream-preparers.ts': 80, // measured 100.00% executable (437/437); merged 82.14%
+  // 59.80% -> 100.00% executable (119/119). The two untested functions were the
+  // license-expiry reminder and the startup prune sweep: both idempotency-critical,
+  // and a wrong prune silently drops a live job.
+  'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

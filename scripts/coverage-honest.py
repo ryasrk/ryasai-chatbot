@@ -24,13 +24,22 @@ for f in files:
 
 src = open(target).read().split('\n')
 
+_DECL_RE = re.compile(r'^\s*(export\s+)?(?:declare\s+)?(interface|type)\s+\w+')
+
 def in_type_block(i):
     """Baris i berada di dalam interface/type alias yang dibuka di atasnya."""
-    depth = 0
+    # Baris DEKLARASI-nya sendiri juga dihapus TypeScript, sama seperti isinya.
+    # Pindai-mundur saja melewatkannya bila deklarasi berada DI DALAM sebuah fungsi
+    # (`interface EnrichJob {` bersarang di enrichSchema), karena pindai-mundur
+    # menemui `function` pembungkusnya lebih dulu lalu berhenti. Itu salah
+    # mengklasifikasi SATU baris di real-connectors.ts sebagai kode eksekutabel
+    # yang belum tercakup.
+    if _DECL_RE.match(src[i - 1]) and ('{' in src[i - 1] or src[i - 1].rstrip().endswith('=')):
+        return True
     j = i - 1
     while j >= 1:
         t = src[j - 1]
-        if re.match(r'^\s*(export\s+)?(interface|type)\s+\w+', t) and ('{' in t or t.rstrip().endswith('=')):
+        if _DECL_RE.match(t) and ('{' in t or t.rstrip().endswith('=')):
             return True
         if re.match(r'^\s*(export\s+)?(async\s+)?function\s|^\s*const\s+\w+\s*=\s*(async\s*)?\(', t):
             return False

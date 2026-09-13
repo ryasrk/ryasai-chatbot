@@ -1,7 +1,7 @@
 {
-  "linePct": 82.27,
-  "linesHit": 16205,
-  "linesFound": 19698,
+  "linePct": 82.6,
+  "linesHit": 16263,
+  "linesFound": 19690,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -34,12 +34,6 @@
       "hit": 14,
       "found": 30,
       "pct": 46.666666666666664
-    },
-    {
-      "file": "src/lib/scheduler-queue.ts",
-      "hit": 61,
-      "found": 127,
-      "pct": 48.031496062992126
     },
     {
       "file": "src/lib/prisma-tenant.ts",
@@ -753,6 +747,12 @@
       "file": "src/lib/reranker.ts",
       "hit": 36,
       "found": 36,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/scheduler-queue.ts",
+      "hit": 119,
+      "found": 119,
       "pct": 100
     },
     {

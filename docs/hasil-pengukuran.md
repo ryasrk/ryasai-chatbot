@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fde506b`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aca0cdd`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `fde506b`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,27%** (16.205/19.698 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.454 lulus · 0 gagal** | terukur |
+| Test coverage | **82,60%** (16.263/19.690 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.463 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **72 modul** | +10 |
+| Modul ter-gate | 62 modul | **73 modul** | +11 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -91,7 +91,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (386/386) | 30 |
 | `src/lib/stream-preparers.ts` | 81,58% → **82,14%** merged | 99,31% → **100,00%** kode eksekutabel (437/437) | 35 |
 | `src/lib/web-fetch.ts` | 69,86% → **73,52%** merged | 94,44% → **99,38%** kode eksekutabel (161/162) | 46 |
-| **Total repo** | **62,44%** | **82,27%** | — |
+| `src/lib/scheduler-queue.ts` | 48,03% → **100,00%** merged | 59,80% → **100,00%** kode eksekutabel (119/119) | 16 |
+| **Total repo** | **62,44%** | **82,60%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -323,8 +324,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `Location` kosong tidak diperiksa | `web-fetch.ts:83` | 2 |
 | URL redirect invalid tidak ditangkap | `web-fetch.ts:88` | 1 |
 | Hop cap dilewati (setelah limit `?` ditambahkan) | `web-fetch.ts:80` | 1 |
+| Guard reminder lisensi saat prune dihapus | `scheduler-queue.ts:208` | 1 |
+| Reminder lisensi tidak dibuat bila belum ada | `scheduler-queue.ts:84` | 4 |
+| Pola reminder usang tidak dibersihkan (job ganda) | `scheduler-queue.ts:77` | 1 |
+| `catch` prune dihapus (satu error membatalkan sweep) | `scheduler-queue.ts:212` | 1 |
+| `catch` sync dihapus | `scheduler-queue.ts:226` | 1 |
+| Cron berubah tidak disinkronkan | `scheduler-queue.ts:220` | 1 |
 
-**222 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**228 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2010,6 +2017,89 @@ fall-through di ekor — adalah baris yang **komentar sumbernya sendiri menyatak
 gagal; dua kali dijalankan ulang berturut-turut menghasilkan **3.454 lulus / 0 gagal**.
 Saya menyebutkannya alih-alih menyembunyikannya; penyebab paling mungkin beban paralel
 bertabrakan dengan backoff 1 detik di `stream-preparers`.
+
+### 1.7ao KOREKSI PENGUKURAN BESAR: `real-connectors.ts` ternyata 100%, dan peta modul dinilai ulang
+
+**Temuan yang mengubah gambaran seluruh proyek.** Saya mengukur `real-connectors.ts` dengan
+**satu** file test dari tiga yang ada (`real-connectors.test.ts`) dan mendapat 62,45% —
+angka yang tampak masuk akal, dan yang saya hampir laporkan. Dengan **ketiga** file
+(`-drivers.test.ts`, `-coverage.test.ts`), modul itu **99,85% eksekutabel**, dan satu baris
+sisanya adalah **deklarasi `interface` bersarang di dalam fungsi** yang tidak terdeteksi
+heuristik saya.
+
+**Bug pada alat ukur saya sendiri, bukan pada kode.** `in_type_block()` memindai ke belakang
+mencari `interface|type` **dengan berhenti saat menemukan `function`**. Ketika deklarasinya
+berada DI DALAM sebuah fungsi (`interface EnrichJob {` bersarang di `enrichSchema`), pindai
+mundur menemui `function` pembungkusnya lebih dulu lalu berhenti → baris deklarasi itu
+diklasifikasi sebagai kode eksekutabel yang belum tercakup. **Baris deklarasi itu sendiri
+juga dihapus TypeScript**, sama seperti isinya; sekarang diperiksa langsung sebelum memindai.
+Setelah perbaikan: **685/685 = 100,00%, nol tersisa** (dari 73,11% merged — dan dari 62,45%
+yang saya ukur sendiri dengan cara yang salah).
+
+**Pelajaran metodologi:** kelengkapan daftar file test adalah bagian dari kebenaran
+pengukuran. `real-connectors.ts` adalah modul "252 baris tak tercakup" — terbesar di repo
+menurut laporan merged — dan ternyata **tidak ada yang hilang sama sekali.**
+
+**Peta modul dinilai ulang dengan alat yang sudah dikoreksi** (semua file test disertakan):
+
+| modul | eksekutabel | sisa |
+|---|---|---|
+| `ai.ts` | **100,00%** (416/416) | 0 |
+| `intent-pipeline.ts` | **100,00%** (337/337) | 0 |
+| `cognee-knowledge-graph.ts` | **100,00%** (267/267) | 0 |
+| `real-connectors.ts` | **100,00%** (685/685) | 0 |
+| `tool-branches.ts` | 99,84% (640/641) | 1 |
+| `tool-router.ts` | 99,58% (238/239) | 1 |
+| `smart-router.ts` | 99,74% (384/385) | 1 |
+| `planner.ts` | 96,70% (528/546) | 18 |
+| `admin-tools.ts` | 96,83% (549/567) | 18 |
+| `embeddings.ts` | 96,92% (315/325) | 10 |
+| `tool-router-agentic.ts` | 95,87% (371/387) | 16 |
+| `rag-retrieval.ts` | 93,84% (320/341) | 21 |
+| **`scheduler-queue.ts`** | **59,80%** (61/102) | **41** |
+
+`ai.ts` dilaporkan **74,42%** oleh tabel merged dan **100,00%** sebenarnya. `intent-pipeline.ts`
+74,42% → **100,00%**. Sebaliknya **`scheduler-queue.ts` adalah gap TERBURUK sebenarnya**
+(59,80%) — bukan `real-connectors.ts`.
+
+### 1.7ap `scheduler-queue.ts`: 59,80% → 100,00% — dua fungsi terjadwal yang belum pernah dijalankan
+
+**Merged 48,03% → 100,00%**, lompatan terbesar sesi ini. Penyebab gap ini presisi dan mudah
+dilewatkan: file test hanya mengimpor `syncSchedule`, `removeSchedule`, dan `scheduleQueue`.
+**`ensureLicenseReminderRepeatable()` dan `syncAllSchedules()` tidak diimpor sama sekali** —
+41 dari 102 baris eksekutabel, di sebuah **penjadwal produksi**, tidak pernah berjalan.
+
+**Mengapa keduanya penting, dan apa yang dijaga:**
+
+**Reminder kedaluwarsa lisensi** — ini **mesin pendapatan**: pada produk yang entitlement-nya
+adalah lisensi bertanda tangan, email pengingat adalah satu-satunya hal yang membuat pelanggan
+memperbarui sebelum terkunci. Tiga sifat dijaga: **idempoten** (panggilan kedua tidak
+menduplikasi job — duplikat berarti pelanggan menerima email yang sama **dua kali sehari**);
+**menghapus job usang dengan pola TERSIMPAN**, bukan pola yang diinginkan (BullMQ meng-hash
+key dari `name:jobId:endDate:tz:pattern`, jadi menghapus dengan pola yang berbeda **tidak
+melakukan apa-apa** dan job lama **tetap menyala berdampingan** — kontrol: **1 test gagal**);
+dan **tidak pernah dipangkas** oleh sweep (kontrol: guard dihapus → **1 test gagal**;
+memangkasnya **menghentikan seluruh email lisensi di instalasi itu**).
+
+**`syncAllSchedules`** — sweep pemulihan yang berjalan saat worker start dan berkala. Dijaga:
+job yang cron-nya **berubah di DB harus di-sync ulang** (kontrol: **1 test gagal**) — tanpa
+ini UI menampilkan cron baru sementara BullMQ **terus menyala dengan cron lama**, dan jadwal
+diam-diam berbeda dari yang dikonfigurasi admin; job yang **tidak berubah tidak boleh
+di-churn** (key repeatable diperiksa tetap sama) — header fungsi menjanjikan hal ini, dan
+churn membuang akumulasi state serta bisa melewatkan satu kali eksekusi; jadwal
+**nonaktif dipangkas**; dan **satu kegagalan tidak boleh membatalkan seluruh sweep** (dua
+`catch` diuji terpisah: prune gagal → sweep tetap selesai dan job yang gagal **tetap ada**
+— tidak berpura-pura sudah dipangkas; sync gagal pada satu run → **run SETELAHNYA tetap
+ter-sync**; kontrol: kedua `catch` dihapus → **1 test gagal** masing-masing).
+
+**Kesalahan saya sendiri, keduanya lewat pengukuran:** dua `describe` terpisah sama-sama
+memanggil `mock.module('./db')`, dan **yang terakhir menang** — sehingga test describe pertama
+diam-diam membaca `runs` yang salah dan **3 test lama jadi merah**. Diperbaiki menjadi satu
+double di scope modul. Dan saya menyimpulkan terlalu cepat bahwa test baru "tidak berfungsi"
+ketika dijalankan sendiri **lulus**: kegagalannya adalah kontaminasi antar-test dalam satu
+proses, bukan logika test.
+
+**Kontrol negatif: 6, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
