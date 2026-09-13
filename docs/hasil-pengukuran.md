@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `54316c4`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `55d1bdc`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `54316c4`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **85,86%** (16.880/19.659 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 165 file · **3.889 lulus · 0 gagal** | terukur |
+| Test suite | 165 file · **3.890 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**540 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**541 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3976,6 +3976,53 @@ fire-and-forget** — error yang lolos akan **menjatuhkan upload dokumen**.
 **Kesetaraan/artefak:** sisa 3 baris di `tool-router-agentic.ts` adalah **219** dan **369-370** —
 **deklarasi field opsional di tipe** (`skipClarification?`, `onConfidence?`), murni artefak
 instrumen.
+
+### 1.7bz TINJAUAN AKUMULASI TEMUAN: dua klaim saya sendiri TERBANTAHKAN, dan satu bug yang saya patok sebagai kontrak
+
+**Saya akhirnya melakukan tinjauan yang tiga ronde saya tunda — dan hasilnya menuntut saya mencabut
+klaim saya sendiri.** Repo tetap **85,86%**; suite **165 file · 3.890 lulus · 0 gagal**.
+
+**TEMUAN YANG SAYA PERBAIKI: `describeCron` MENYEMBUNYIKAN HARI.** Terverifikasi terukur:
+`0 9 15 3 *` → **`"At 09:00 month March"`** — **hari 15 HILANG**. Lebih buruk: `*/10 * 15 3 *` dan
+`*/10 * * 3 *` menghasilkan teks **IDENTIK** (`"Every 10 minutes month March"`), padahal yang pertama
+jalan **hanya tanggal 15** dan yang kedua **setiap hari** di bulan Maret. **Pengguna membaca deskripsi
+itu dan bisa menjadwalkan job di hari yang salah.** Akar masalahnya satu baris di `buildDateDesc`:
+penjaga `domField !== '*' && monthField === '*'` membuat hari-dan-bulan **saling eksklusif**, padahal
+cron boleh menetapkan keduanya. Perbaikan: penjaga bulan dibuang.
+
+**DAN SAYA MENEMUKAN SAYA SENDIRI MEMATOK BUG INI SEBAGAI KONTRAK.** Ada test berjudul *"day-of-month
+is DROPPED when a month is also specified"* dengan komentar *"MEASURED BUG, pinned rather than fixed
+… changing the wording is a user-visible product decision"*. **Alasan itu benar tetapi kesimpulannya
+salah.** Ini **bukan pilihan kata** — ini **kebenaran informasi**: deskripsi yang menghilangkan hari
+membuat pengguna salah menjadwalkan. Dan perbaikannya **tidak mengubah satu pun kasus yang sudah
+benar**; ia hanya **menambahkan fragmen yang hilang**, dan suite penuh membuktikannya (**49 pass**,
+tidak ada test lain yang bergantung pada perilaku salah itu). Kini: `"Every 10 minutes day 15, month
+March"`, dan kedua ekspresi itu **dapat dibedakan**. Kontrol yang membalikkan perbaikan → **2 merah**.
+
+**KLAIM SAYA TERBANTAHKAN #1: `serverConfig.isProduction` BUKAN "tanpa konsumen".** Saya hapus getter
+itu dan `tsc` menolak (`TS2339` di `config.test.ts:168` + **1 test merah**). Jadi ia **punya konsumen
+test**, hanya **nol konsumen PRODUKSI**. Perbedaan itu penting dan catatan lama saya menghapusnya.
+
+**KLAIM SAYA TERBANTAHKAN #2: `semanticMargin` TIDAK "tidak bisa memveto".** Ia **dipakai** di
+`smart-router.ts:421-422` — `hasSemanticEvidence = top.semanticScore >= SEMANTIC_MATCH_FLOOR &&
+semanticMargin >= SEMANTIC_MATCH_MARGIN`. Catatan saya menggambarkannya sebagai tidak berpengaruh.
+
+**KLAIM YANG TERVERIFIKASI TEPAT: 9 `fetch` tanpa timeout.** Saya hitung ulang seluruh repo:
+**9 tanpa** vs **27 dengan** `AbortSignal`/`controller.signal`. Rincian saya sebelumnya **sedikit
+salah**: `midtrans.ts` ternyata **SUDAH** terlindungi, dan **`llm-client-utils.ts`** yang belum saya
+catat. Empat file: `sso.ts` (4), `observability.ts` (3), `llm-client-utils.ts` (1), `sso-saml.ts` (1).
+
+**Status temuan lain (terukur, bukan narasi):** `purpose: 'chat'` hardcoded di `embeddings.ts:105` dan
+`ai.ts:540/696` — **terkonfirmasi**. `contextPrefix` 28 pemakaian, `invalidateRagCache` 19 pemakaian —
+**jauh lebih banyak dari yang klaim saya implikasikan**, jadi keduanya **bukan** fungsi mati.
+`new Worker(`/`new Queue(` hanya 1 lokasi (`redis.ts:32`) — klaim "dua worker pool" **tidak terkonfirmasi
+oleh grep ini** dan perlu penyelidikan ulang sebelum saya menyatakannya lagi. `real-connectors.ts:996`
+memang satu-satunya penyebutan `xp_cmdshell`.
+
+**Pelajaran proses:** menunda tinjauan **tidak** menghemat apa pun — ia hanya membiarkan klaim saya
+menua menjadi salah, dan saya hampir melaporkan tiga di antaranya sebagai fakta di ronde berikutnya.
+Dan mematok sebuah bug sebagai "kontrak terukur" adalah cara paling halus untuk **membuat bug tampak
+seperti keputusan yang disengaja**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -120,7 +120,11 @@ function buildDateDesc(domField: string, monthField: string, dowField: string): 
     if (days) parts.push(`every ${days}`)
   }
 
-  if (domField !== '*' && monthField === '*') parts.push(`day ${domField}`)
+  // The day-of-month is emitted INDEPENDENTLY of the month. Guarding it with
+  // `monthField === '*'` made the two mutually exclusive, so `*/10 * 15 3 *` described
+  // itself as "Every 10 minutes month March" -- identical to `*/10 * * 3 *`, which runs
+  // every day in March. A user reading the description would schedule the wrong day.
+  if (domField !== '*') parts.push(`day ${domField}`)
   if (monthField !== '*') {
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     const monthNums = monthField.split(',').map(Number)

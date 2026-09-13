@@ -225,17 +225,27 @@ describe('describeCron — composed time and date descriptions', () => {
     expect(describeCron('*/10 * * 13 *')).toBe('Invalid cron expression')
   })
 
-  test('day-of-month is DROPPED when a month is also specified', () => {
-    // MEASURED BUG, pinned rather than fixed: `*/10 * 15 3 *` is "Every 10 minutes,
-    // month March" -- the day 15 disappears, and the description implies the job
-    // runs EVERY day in March when it actually runs on the 15th only.
+  test('day-of-month AND month are BOTH described', () => {
+    // This was a MEASURED BUG, previously pinned as behaviour: buildDateDesc guarded the
+    // day-of-month fragment with `monthField === '*'`, so the two were mutually exclusive
+    // and `*/10 * 15 3 *` described itself as "Every 10 minutes month March" -- IDENTICAL
+    // to `*/10 * * 3 *`, which runs every day in March. A user reading the description
+    // would pick the wrong day.
     //
-    // Cause: buildDateDesc guards the day-of-month fragment with
-    // `domField !== '*' && monthField === '*'`, so the two are mutually exclusive
-    // even though a cron expression can set both. Reported, not silently patched:
-    // changing the wording is a user-visible product decision.
-    expect(describeCron('*/10 * 15 3 *')).toBe('Every 10 minutes month March')
-    expect(describeCron('*/10 * 15 3 *')).not.toContain('day 15')
+    // Fixed by removing the month guard. That is a CORRECTNESS fix, not a rewording: it
+    // only adds a missing fragment, and every case that already rendered correctly is
+    // unchanged (the full suite verifies that).
+    expect(describeCron('*/10 * 15 3 *')).toBe('Every 10 minutes day 15, month March')
+    expect(describeCron('*/10 * 15 3 *')).toContain('day 15')
+    // The two expressions must now be DISTINGUISHABLE -- that is the whole point.
+    expect(describeCron('*/10 * 15 3 *')).not.toBe(describeCron('*/10 * * 3 *'))
+    expect(describeCron('*/10 * * 3 *')).toBe('Every 10 minutes month March')
+  })
+
+  test('the single-hour branch also keeps its day when a month is set', () => {
+    // The same bug reached a DIFFERENT early-return: `0 9 15 3 *` returned
+    // "At 09:00 month March", dropping the 15 just like the step case above.
+    expect(describeCron('0 9 15 3 *')).toBe('At 09:00 day 15, month March')
   })
 
   test('a schedule with NOTHING extra is described as "every day"', () => {
