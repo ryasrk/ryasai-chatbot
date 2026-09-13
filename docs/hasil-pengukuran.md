@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3e7fdd5`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2f4e1bf`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3e7fdd5`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,41%** (19.122/21.875 baris, 150 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,02%** (1761/1873 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 192 file · **4.642 lulus · 0 gagal** | terukur |
+| Test coverage | **87,47%** (19.219/21.972 baris, 151 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,04%** (1768/1880 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 193 file · **4.691 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**931 kontrol + 8 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**953 kontrol + 9 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5614,6 +5614,52 @@ bukan diasumsikan** — kelas kesalahan yang sama dengan mock `encryptConfig` di
 
 **Progres backlog: 18 dari 66 route orphan ditutup.** Repo **87,35% → 87,41%**; suite **4.606 → 4.642**
 (191 → **192 file**); gate **149 → 150 modul**.
+
+### 1.7dm `/api/vector-store` — kredensial backend vektor: 100,00% (97/97)
+
+**KUNCI API DI-MASK DARI SEBUAH KONSTANTA, BUKAN DARI KUNCI TERSIMPAN.** `maskSecret('configured-key')` berarti
+respons **tidak bisa memuat bagian mana pun dari kredensial asli bahkan jika fungsi mask-nya salah di kemudian
+hari** — mask dihitung atas nilai tetap. Diasersi dengan memindai **seluruh body** untuk ciphertext. **K1 → 1
+merah.**
+
+**`apiKey` KOSONG SAAT UPDATE MEMPERTAHANKAN CIPHERTEXT TERSIMPAN.** Muatannya menyebar kuncinya secara
+kondisional (`...(apiKey ? { encryptedApiKey } : {})`), dan itu disengaja: **UI tidak pernah menerima kunci itu
+kembali**, jadi penyimpanan yang hanya mengubah nama koleksi **tidak boleh menghapusnya.** Mode kegagalannya
+**senyap** — setiap pencarian berikutnya gagal dengan 401 buram. **K2 → 2 merah.**
+
+**BACKEND EKSTERNAL TANPA BASE URL DITOLAK SAAT SIMPAN (fail-closed).** Operator diberi tahu **selagi formulir
+masih terbuka**, bukan saat pencarian. Kunci-yang-dibutuhkan juga menolak simpan tanpa kunci — **KECUALI kunci
+sudah tersimpan**, yang justru alasan cabang "sudah terkonfigurasi" itu ada. **K3 → 1, K4 → 1, K5 → 1 merah.**
+
+**`requireRole` DIKEDUA PENULISAN, dan diperiksa SEBELUM pembacaan DB mana pun** — non-admin tidak pernah
+menyebabkan baca ataupun tulis. **K6 → 3 merah, K7 → 1 merah.**
+
+**22 kontrol, dan KEDUA PULUH DUA MENGGIGIT (dua di antaranya setelah diperkuat).**
+
+## TIGA KESALAHAN SAYA SENDIRI DITEMUKAN DENGAN MENJALANKAN, BUKAN MEMBACA
+
+**1. `vectorSize: -10` tersimpan `1`, bukan `1536`.** Saya salah membaca kode: `Number(-10) || 1536` adalah
+`-10` (truthy), jadi `|| 1536` **tidak berlaku** dan `Math.max(1, -10)` = **1** — dimensi yang tidak dihasilkan
+model embedding mana pun. **Saya catat sebagai perilaku apa adanya, dan saya tandai:** koleksi 1-dimensi
+**diterima di sini dan baru gagal saat upsert**, kebalikan dari janji fail-closed pada kasus base-URL/API-key.
+
+**2. Dua mock saya mengarang kontrak yang salah.** `maskSecret` saya mengembalikan `••••-key`, padahal aslinya
+`conf••••••-key`; dan `getVectorStorePreset` saya membuat `QDRANT` sebagai yang butuh kunci, padahal **yang butuh
+kunci adalah `QDRANT_CLOUD`** sedangkan `QDRANT` adalah server lokal yang **tidak butuh kunci**. Kalau saya
+tidak memeriksa, seluruh asersi fail-closed akan **menguji provider yang salah.** Saya juga menulis `handleApiError`
+sebagai bentuk datar `{ error: string }`, padahal aslinya **bersarang** `{ error: { code, message, hint? } }`
+dengan **pesan `AppError` yang dipertahankan** dan status dari `statusCode` (`VALIDATION_ERROR` → **400**, bukan
+500). Ketiganya diperbaiki **setelah memverifikasi modul nyatanya.**
+
+**3. `POST()` di rute ini TIDAK menerima argumen** — `tsc` menangkap saya memanggilnya dengan `Request`.
+
+**Dua kontrol awalnya tidak menggigit karena asersi saya kurang, bukan karena kode aman:** **K8** (GET tidak
+memasukkan konteks org) karena **tidak ada satu pun asersi** tentangnya — padahal barisnya adalah **singleton
+per-org**, jadi tanpa konteks pembacaan tak terskop; **K10** karena mutasi pertama saya (`null ?? default`)
+**tidak benar-benar mengubah perilaku.** Keduanya ditutup dan kini menggigit.
+
+**Progres backlog: 19 dari 66 route orphan ditutup.** Repo **87,41% → 87,47%**; suite **4.642 → 4.691**
+(192 → **193 file**); gate **150 → 151 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

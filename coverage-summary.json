@@ -1,11 +1,11 @@
 {
-  "linePct": 87.41,
-  "linesHit": 19122,
-  "linesFound": 21875,
-  "fnPct": 94.02,
-  "fnsHit": 1761,
-  "fnsFound": 1873,
-  "filesMeasured": 150,
+  "linePct": 87.47,
+  "linesHit": 19219,
+  "linesFound": 21972,
+  "fnPct": 94.04,
+  "fnsHit": 1768,
+  "fnsFound": 1880,
+  "filesMeasured": 151,
   "failedTestFiles": [],
   "files": [
     {
@@ -1105,6 +1105,15 @@
       "fHit": 23,
       "fFound": 26,
       "fPct": 88.46153846153845
+    },
+    {
+      "file": "src/app/api/vector-store/route.ts",
+      "hit": 97,
+      "found": 97,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
     },
     {
       "file": "src/app/api/webhooks/license/route.ts",
