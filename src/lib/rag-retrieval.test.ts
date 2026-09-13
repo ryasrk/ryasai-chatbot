@@ -151,6 +151,9 @@ const kgCalls: Array<Record<string, unknown>> = []
 const vectorStoreCalls: number[] = []
 
 let embedConfigValue: unknown = { id: 'e1' }
+// Overridable so a failing provider can be modelled; reset in beforeEach.
+let originalEmbedTexts: ((...a: unknown[]) => Promise<number[][]>) | null = null
+let originalSearchVectorStore: ((...a: unknown[]) => Promise<unknown[]>) | null = null
 let embedResult: number[][] = []
 let vectorStoreConfigValue: unknown = null
 let vectorStoreResult: unknown[] = []
@@ -173,14 +176,22 @@ mock.module('@/lib/redis', () => ({
   cacheDel: async () => { cacheStore.clear() },
 }))
 mock.module('@/lib/embeddings', () => ({
-  embedTexts: async (texts: string[]) => { embedCalls.push(texts); return embedResult },
+  embedTexts: async (texts: string[]) => {
+    embedCalls.push(texts)
+    if (originalEmbedTexts) return originalEmbedTexts(texts) as Promise<number[][]>
+    return embedResult
+  },
   getEmbeddingRuntimeConfig: async () => embedConfigValue,
   parseEmbeddingJson: (raw: string) => { try { return JSON.parse(raw) } catch { return null } },
   cosineSimilarity: () => 0,
 }))
 mock.module('@/lib/vector-stores', () => ({
   getVectorStoreRuntimeConfig: async () => vectorStoreConfigValue,
-  searchVectorStore: async () => { vectorStoreCalls.push(1); return vectorStoreResult },
+  searchVectorStore: async (...a: unknown[]) => {
+    vectorStoreCalls.push(1)
+    if (originalSearchVectorStore) return originalSearchVectorStore(...a)
+    return vectorStoreResult
+  },
 }))
 mock.module('@/lib/rag-fts', () => ({
   searchFtsChunkIds: async ({ queryTokens, limit }: { queryTokens: string[]; limit: number }) => {
@@ -280,6 +291,8 @@ beforeEach(() => {
   orgContextHolder.value = undefined
   embedConfigValue = { id: 'e1' }
   embedResult = []
+  originalEmbedTexts = null
+  originalSearchVectorStore = null
   vectorStoreConfigValue = null
   vectorStoreResult = []
   kgResultValue = { localChunks: [], allChunkIds: [], graphContext: '' }
@@ -307,11 +320,21 @@ beforeEach(() => {
   // leg is EMPTY whenever the vector store is unconfigured. Reading rankings[0]
   // made the fused set empty and every downstream test silently tested nothing.
   // Union all rankings, as RRF would.
+  //
+  // A second latent defect lived here and this round exposed it: bm25RankImpl
+  // returns objects ({ id, score }), but this helper walked each ranking as if it
+  // held bare IDS. So the union contained objects, byId.get(object) was undefined,
+  // and the scored list came back EMPTY. Every existing test passed only because it
+  // overrode fuseRankingsImpl explicitly, so the broken default was never exercised
+  // — a test helper that silently returns nothing is worse than no helper.
   fuseRankingsImpl = (rankingsInput: unknown) => {
     const rankings = (rankingsInput ?? []) as unknown[][]
     const ids: string[] = []
     for (const r of rankings) {
-      for (const id of (r ?? []) as string[]) if (!ids.includes(id)) ids.push(id)
+      for (const entry of (r ?? []) as Array<string | { id: string }>) {
+        const id = typeof entry === 'string' ? entry : entry?.id
+        if (id && !ids.includes(id)) ids.push(id)
+      }
     }
     return ids.map((id) => ({ id, score: 1 }))
   }
@@ -806,5 +829,122 @@ describe('ensureVectorIndexes', () => {
     const catchBlock = src.slice(src.indexOf('ensureVectorIndexes failed'))
     expect(catchBlock).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS')
     expect(catchBlock).toContain('maintenance window')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// invalidateRagCache
+//
+// Called when a document is edited or deleted (documents/[id]/route.ts,
+// documents/route.ts). It had never been executed, so nothing pinned that a
+// stale cache is actually evicted — the failure mode is a user deleting a
+// document and still receiving its chunks in search results.
+// ---------------------------------------------------------------------------
+
+describe('invalidateRagCache', () => {
+  test('it clears the rag cache namespace', async () => {
+    const { invalidateRagCache, getRagCacheStats, retrieveRelevantChunks } = await import('./rag-retrieval')
+    // Seed a real cached entry through the public path first, so the assertion is
+    // about eviction of something that was genuinely there.
+    ftsIds = ['chunk-1']
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    await retrieveRelevantChunks({ query: 'q', topK: 5 })
+    expect(cacheStore.size).toBeGreaterThan(0)
+    await invalidateRagCache()
+    // The cache must be empty afterwards: a leftover entry would serve deleted
+    // content on the next identical query.
+    expect(cacheStore.size).toBe(0)
+    // And the stats object must remain well-formed (no NaN from a zero denominator).
+    expect(getRagCacheStats().hitRate).toBeGreaterThanOrEqual(0)
+  })
+
+  test('invalidating an EMPTY cache is a no-op, not an error', async () => {
+    const { invalidateRagCache } = await import('./rag-retrieval')
+    cacheStore.clear()
+    // Deleting a document on a cold instance must not throw.
+    await expect(invalidateRagCache()).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveQueryEmbedding / resolveVectorScores — the degraded paths
+//
+// Both have a catch that keeps retrieval working when embeddings or the external
+// vector store are unavailable. They had never run, so nothing pinned that a
+// failure DEGRADES rather than throws: an exception here would take down the whole
+// search instead of falling back to lexical scoring.
+// ---------------------------------------------------------------------------
+
+describe('retrieveRelevantChunks — an embedding failure degrades to lexical search', () => {
+  test('a THROWING embedTexts still returns results, not an exception', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    // Embeddings configured, but the call itself fails (provider down / bad key).
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    originalEmbedTexts = async () => { throw new Error('embedding provider 500') }
+    ftsIds = ['chunk-1']
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+    // Lexical hits must still come back. Throwing here would 500 the search route.
+    expect(out.chunks.length).toBeGreaterThan(0)
+  })
+
+  test('a throwing vector store falls back to the pgvector scores', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = { id: 'vs1', type: 'qdrant' }
+    originalSearchVectorStore = async () => { throw new Error('vector store unreachable') }
+    pgvectorRows = [{ id: 'chunk-1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+    // The external store failing must not empty the result set when pgvector has rows.
+    expect(out.chunks.length).toBeGreaterThan(0)
+  })
+
+  test('an external store returning NOTHING keeps the pgvector scores', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = { id: 'vs1', type: 'qdrant' }
+    vectorStoreResult = [] // configured but holds no matching vector
+    pgvectorRows = [{ id: 'chunk-1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+    // An empty external result means "no extra signal", NOT "no results".
+    expect(out.chunks.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The two remaining catch blocks
+//
+// recallGraphContext and the resolveVectorScores catch both exist so a failure
+// DEGRADES instead of propagating. Neither had run, so nothing pinned that.
+// ---------------------------------------------------------------------------
+
+describe('recallGraphContext — a failing cognee recall does not break retrieval', () => {
+  test('a graph failure still returns chunks (graph context becomes empty)', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    // The dynamic import inside recallGraphContext resolves the MOCKED @/lib/cognee,
+    // so an absent export is what a thrown recall looks like from the caller's side.
+    ftsIds = ['chunk-1']
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+    // Whatever the graph did, the lexical leg must survive.
+    expect(out.chunks.length).toBeGreaterThan(0)
+    expect(typeof out.graphContext).toBe('string')
+  })
+})
+
+describe('resolveVectorScores — an unusable external store', () => {
+  test('an unconfigured store leaves the pgvector scores untouched', async () => {
+    const { retrieveRelevantChunks } = await import('./rag-retrieval')
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = null // nothing configured
+    pgvectorRows = [{ id: 'chunk-1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('chunk-1')]
+    const out = await retrieveRelevantChunks({ query: 'hello world', topK: 5 })
+    expect(out.chunks.length).toBeGreaterThan(0)
   })
 })
