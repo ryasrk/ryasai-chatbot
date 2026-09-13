@@ -1,7 +1,7 @@
 {
-  "linePct": 81.76,
-  "linesHit": 16101,
-  "linesFound": 19694,
+  "linePct": 82.2,
+  "linesHit": 16178,
+  "linesFound": 19682,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -172,12 +172,6 @@
       "hit": 13,
       "found": 17,
       "pct": 76.47058823529412
-    },
-    {
-      "file": "src/app/api/v1/chat/completions/route.ts",
-      "hit": 293,
-      "found": 382,
-      "pct": 76.70157068062828
     },
     {
       "file": "src/app/api/integrations/[id]/query/route.ts",
@@ -669,6 +663,12 @@
       "file": "src/app/api/metrics/route.ts",
       "hit": 43,
       "found": 43,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/v1/chat/completions/route.ts",
+      "hit": 370,
+      "found": 370,
       "pct": 100
     },
     {

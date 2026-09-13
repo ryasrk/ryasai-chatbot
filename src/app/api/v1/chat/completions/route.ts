@@ -231,30 +231,12 @@ export async function POST(req: NextRequest) {
             })
 
             const latencyMs = Date.now() - started
-            const toolRuns = await Promise.all(
-              streaming.toolRuns.map((toolRun) =>
-                db.toolRun.create({
-                  data: {
-                    organizationId: identity.organizationId,
-                    chatMessageId: aiMessage.id,
-                    restApiEndpointId: toolRun.restApiEndpointId,
-                    type: toolRun.type,
-                    status: toolRun.status,
-                    latencyMs: toolRun.latencyMs ?? latencyMs,
-                    inputSummary: toolRun.inputSummary,
-                    outputSummary: toolRun.outputSummary ?? null,
-                    errorMessage: toolRun.errorMessage ?? null,
-                  },
-                  select: {
-                    id: true,
-                    type: true,
-                    status: true,
-                    latencyMs: true,
-                    restApiEndpointId: true,
-                  },
-                }),
-              ),
-            )
+            const toolRuns = await persistToolRuns({
+              toolRuns: streaming.toolRuns,
+              organizationId: identity.organizationId,
+              chatMessageId: aiMessage.id,
+              latencyMs,
+            })
 
             await db.chatSession.update({
               where: { id: session.id },
@@ -274,13 +256,7 @@ export async function POST(req: NextRequest) {
                   choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
                   citations: streaming.citations,
                   chart_data: streaming.chartData,
-                  tool_runs: toolRuns.map((toolRun) => ({
-                    id: toolRun.id,
-                    type: toolRun.type,
-                    status: toolRun.status,
-                    latency_ms: toolRun.latencyMs,
-                    rest_api_endpoint_id: toolRun.restApiEndpointId,
-                  })),
+                  tool_runs: toToolRunsPayload(toolRuns),
                 })}\n\n`,
               ),
             )
@@ -342,30 +318,12 @@ export async function POST(req: NextRequest) {
     })
 
     const latencyMs = Date.now() - started
-    const toolRuns = await Promise.all(
-      completion.toolRuns.map((toolRun) =>
-        db.toolRun.create({
-          data: {
-            organizationId: identity.organizationId,
-            chatMessageId: aiMessage.id,
-            restApiEndpointId: toolRun.restApiEndpointId,
-            type: toolRun.type,
-            status: toolRun.status,
-            latencyMs: toolRun.latencyMs ?? latencyMs,
-            inputSummary: toolRun.inputSummary,
-            outputSummary: toolRun.outputSummary ?? null,
-            errorMessage: toolRun.errorMessage ?? null,
-          },
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            latencyMs: true,
-            restApiEndpointId: true,
-          },
-        }),
-      ),
-    )
+    const toolRuns = await persistToolRuns({
+      toolRuns: completion.toolRuns,
+      organizationId: identity.organizationId,
+      chatMessageId: aiMessage.id,
+      latencyMs,
+    })
 
     await db.chatSession.update({
       where: { id: session.id },
@@ -384,13 +342,7 @@ export async function POST(req: NextRequest) {
       citations: completion.citations,
       chart_data: completion.chartData,
       citation_trail: completion.citationTrail,
-      tool_runs: toolRuns.map((toolRun) => ({
-        id: toolRun.id,
-        type: toolRun.type,
-        status: toolRun.status,
-        latency_ms: toolRun.latencyMs,
-        rest_api_endpoint_id: toolRun.restApiEndpointId,
-      })),
+      tool_runs: toToolRunsPayload(toolRuns),
     }
 
     inc('http_requests_total', { method: 'POST', path: '/api/v1/chat/completions', status: '200' })
@@ -445,6 +397,71 @@ function latestUserMessage(messages: Array<{ role?: string; content?: string }>)
     }
   }
   return ''
+}
+
+/**
+ * Persist one audit row per tool run and return the created rows.
+ *
+ * This block existed TWICE, once per transport. Both copies wrote the same columns
+ * under the same `select` and differed only in their indentation and in which
+ * variable held the runs — so a change to one silently left the other reporting a
+ * different shape to API clients. One implementation means streaming and
+ * non-streaming clients see identical tool_runs.
+ */
+async function persistToolRuns(args: {
+  toolRuns: Array<{
+    type: string
+    status: string
+    latencyMs?: number | null
+    inputSummary: string
+    outputSummary?: string | null
+    errorMessage?: string | null
+    restApiEndpointId?: string | null
+  }>
+  organizationId: string
+  chatMessageId: string
+  latencyMs: number
+}): Promise<Array<{ id: string; type: string; status: string; latencyMs: number | null; restApiEndpointId: string | null }>> {
+  return Promise.all(
+    args.toolRuns.map((toolRun) =>
+      db.toolRun.create({
+        data: {
+          organizationId: args.organizationId,
+          chatMessageId: args.chatMessageId,
+          restApiEndpointId: toolRun.restApiEndpointId,
+          type: toolRun.type,
+          status: toolRun.status,
+          // A run with no measured latency falls back to the REQUEST latency, so it
+          // is never reported as instantaneous.
+          latencyMs: toolRun.latencyMs ?? args.latencyMs,
+          inputSummary: toolRun.inputSummary,
+          outputSummary: toolRun.outputSummary ?? null,
+          errorMessage: toolRun.errorMessage ?? null,
+        },
+        select: {
+          id: true,
+          type: true,
+          status: true,
+          latencyMs: true,
+          restApiEndpointId: true,
+        },
+      }),
+    ),
+  )
+}
+
+/**
+ * The wire shape of a persisted tool run. Snake case because this is the
+ * OpenAI-compatible surface, not our internal one.
+ */
+function toToolRunsPayload(toolRuns: Array<{ id: string; type: string; status: string; latencyMs: number | null; restApiEndpointId: string | null }>) {
+  return toolRuns.map((toolRun) => ({
+    id: toolRun.id,
+    type: toolRun.type,
+    status: toolRun.status,
+    latency_ms: toolRun.latencyMs,
+    rest_api_endpoint_id: toolRun.restApiEndpointId,
+  }))
 }
 
 async function findSession(sessionId: string) {

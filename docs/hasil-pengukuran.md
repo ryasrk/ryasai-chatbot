@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `866bdf5`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `257e8b8`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `866bdf5`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **81,76%** (16.101/19.694 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.426 lulus · 0 gagal** | terukur |
+| Test coverage | **82,20%** (16.178/19.682 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.437 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **69 modul** | +7 |
+| Modul ter-gate | 62 modul | **70 modul** | +8 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -88,7 +88,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/connectors.ts` | 58,78% → **79,73%** merged | 75,00% → **100,00%** kode eksekutabel (118/118) | 21 |
 | `src/lib/tool-router.ts` | 66,4% → **70,41%** merged (selisih **29,6 poin** terbesar) | 94,94% → **100,00%** kode eksekutabel (238/238) | 58 |
 | `src/lib/smart-router.ts` | 98,71% → **77,42%** merged (**turun**, §1.7z) | 98,97% → **99,74%** kode eksekutabel (384/385) | 155 |
-| **Total repo** | **62,44%** | **81,76%** | — |
+| `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (370/370) | 30 |
+| **Total repo** | **62,44%** | **82,20%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -301,8 +302,15 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Aturan kata signifikan dinonaktifkan | `smart-router.ts:283` | 1 |
 | Filter kata generik (`db`/`data`/`store`) dihapus | `smart-router.ts:278` | 1 |
 | `preferredIntegrationId` diabaikan | `smart-router.ts:187` | 1 |
+| Rate limit 429 tidak memblokir | `route.ts:69` | 1 |
+| Riwayat tidak dibalik (newest-first dibiarkan) | `route.ts:152` | 1 |
+| Baris riwayat kosong tidak disaring | `route.ts:152` | 1 |
+| Error frame stream tidak dikirim | `route.ts:266` | 2 |
+| `[DONE]` setelah error frame dihapus | `route.ts:276` | 1 |
+| 503 provider-tak-terkonfigurasi jadi 500 | `route.ts:412` | 1 |
+| `latencyMs` tidak jatuh ke request latency | `route.ts:436` | 1 |
 
-**202 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**210 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -1813,6 +1821,71 @@ cabang mana pun, dan **keduanya benar**. Ia disimpan demi menghemat kerja dan me
 sumber tunggal keluar dari picker semantik, dengan komentar di test yang **menyatakan
 bahwa tidak ada test yang membelanya**. Kontrol di ronde ini: **5 menggigit, 1 jujur
 dinyatakan gagal** — dan yang gagal itu dicatat, bukan disembunyikan.
+
+### 1.7ak `route.ts` API publik (OpenAI-compatible): 79,40% → 100,00% eksekutabel + mencabut duplikasi ketiga
+
+**Merged 76,70% → 100,00%.** Ini pintu masuk API publik — jalur yang dipakai klien
+eksternal lewat SDK OpenAI. 19 test lama menutupi validasi permintaan, tapi **semua jalur
+yang ditemui klien lebih dulu belum pernah jalan**.
+
+**Duplicate ketiga yang saya cabut (refactor, bukan test):** blok `toolRuns.map(...)` +
+`tool_runs.map(...)` muncul **2× identik** — sekali di jalur streaming, sekali di
+non-streaming. Keduanya menulis kolom yang sama di bawah `select` yang sama dan hanya
+berbeda indentasi serta variabel sumbernya, sehingga perubahan di satu salinan
+**diam-diam membuat klien streaming dan non-streaming melihat bentuk berbeda**. Kini
+`persistToolRuns()` + `toToolRunsPayload()`; satu implementasi.
+
+**Jalur yang belum pernah dieksekusi, dan mengapa penting:**
+**429 rate limit burst** — dinding pertama yang ditemui klien nakal; header
+`X-RateLimit-Remaining: 0` adalah yang memberitahunya berapa lama menunggu, dan baris audit
+429 harus tetap tertulis (kontrol: **1 test gagal**). Penting juga: rate limit bersifat
+**advisory** — `null` (Redis mati) **tidak boleh** memblokir, karena fallback ke pembatasan
+berbasis DB sudah ada; dan kuncinya **per API key** (`api:key1`), sebab berkunci IP akan
+membuat satu tenant membatasi tenant lain.
+**Serah-terima riwayat** — query DB **newest-first**, jadi `reverse()` itulah yang membuat
+model membaca percakapan dalam urutan sebenarnya (**kontrol: 1 test gagal**; salah di sini
+membalik setiap jawaban), peran `'ai'` harus tiba sebagai `'assistant'`, dan baris
+kosong/whitespace harus dibuang (**kontrol: 1 test gagal**) — blok kosong ditolak sebagian
+provider.
+**Error di tengah stream** — status line sudah terkirim saat streaming mulai, jadi
+kegagalan **hanya bisa dilaporkan in-band**; klien yang tidak menerima frame error melihat
+jawaban terpotong **tanpa cara tahu itu terpotong**. Sentinela `[DONE]` tetap harus tiba,
+atau klien OpenAI-compatible menggantung.
+**503 provider belum dikonfigurasi** — produk ini BYOK, jadi key belum diisi adalah
+keadaan first-run yang **diharapkan**; pesannya harus memberi tahu **di mana memperbaikinya**.
+
+**Empat kesalahan saya sendiri, semuanya lewat pengukuran:**
+1. `/tmp/r2.txt` dan `/tmp/r3.txt` **tidak pernah tertulis** dan saya sempat mengira
+   `Bun.write` gagal; ternyata assertion **sebelumnya** yang gagal — indikator yang tidak
+   tercapai adalah sinyal lokasi, bukan sinyal kegagalan fungsi.
+2. Saya menebak `chatMessageId` = `'msg1'`; yang benar **`msg2`**, karena baris user dibuat
+   lebih dulu. Dan saya lupa bahwa response memetakan kembali baris **hasil `create`** —
+   mock yang mengembalikan `{}` membuat `tool_runs` tampil `[{},{}]`. Mock kini meniru
+   `select` Prisma.
+3. Dua kali classifier error gagal karena saya menebak **nama kelas** error; route
+   sebenarnya mengklasifikasi lewat **substring pesan** (`'LLM not configured'`). Nama
+   kelas tidak pernah diperiksa.
+4. `expect(seen[1].data.latencyMs).toBeGreaterThan(0)` gagal karena request test selesai
+   **< 1 ms**, jadi nilainya 0 — saya mengukur jam, bukan fallback. Kontraknya adalah
+   **tidak `null`**: `null` berarti "tak pernah diukur", `0` berarti "cepat". Setelah
+   diperbaiki, kontrol `?? latencyMs` → `?? null` **menggigit** (sebelumnya 0 gagal,
+   karena kedua fixture tool run punya `latencyMs`).
+
+**SATU TEMUAN NYATA yang saya UKUR dan tidak saya perbaiki di ronde ini:** bila upstream
+**benar-benar menggantung** (tidak mengirim token, tidak menutup), watchdog 120 detik
+mengirim frame `LLM_TIMEOUT` ke klien **tetapi** `for await` tetap menunggu selamanya,
+sehingga kontrol **tidak pernah mencapai** cabang yang menulis baris audit 504 — socket
+tertinggal terbuka di sisi server. Test pertama saya memakai generator menggantung itu dan
+mengamati `logs: []`. Test yang ada kini memakai bentuk nyata yang **dapat** ditangani
+(upstream berhenti lalu menutup) dan menguji 504; **bug hang tercatat di komentar test**,
+belum diperbaiki.
+
+**Satu race di TEST, bukan di route:** baris audit 504 ditulis **setelah** loop keluar,
+yang bisa satu tick setelah body selesai — memeriksa secara sinkron melihat `logs: []`
+dan tampak seperti baris hilang. Setelah menunggu 200 ms, baris 504 terbukti ada.
+
+**Kontrol negatif: 8, semuanya menggigit** (dua di antaranya perlu anchor dan fixture
+diperbaiki lebih dulu). Route ini kini **100% merged** dan **di-gate di 100**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
