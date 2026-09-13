@@ -76,6 +76,9 @@ beforeEach(() => {
   reflexionState.calls = 0
   delete process.env.REFLEXION_ENABLED
   delete process.env.AGENTIC_DEADLINE_MS
+  // Reset the usage seam too: a value left over from one test would make the NEXT test's "no usage reported"
+  // assertion pass for the wrong reason, which is how a leak of this kind hides.
+  lastUsage = undefined
 })
 
 function run(over: Partial<PendingToolRun> = {}): PendingToolRun {
@@ -1257,4 +1260,59 @@ describe('runStreamingAgenticLoop — token budget exhaustion', () => {
     expect(b.isExhausted()).toBe(false)
   })
 
+})
+
+describe('runStreamingAgenticLoop — token usage is reported on the result', () => {
+  // THE DEFECT THIS PINS. The streaming loop read `getLastLlmUsage()` into its BUDGET and then dropped it;
+  // `output.usage` was never assigned, so an SSE chat turn reported no tokens while the non-streaming builders
+  // populate the identical field. Any "avg tokens/task" figure taken from the SSE path was therefore computed
+  // from nothing. `usage` is only readable AFTER the stream is consumed, because the calls happen inside.
+  test('usage is present after draining, and is the SUM across iterations', async () => {
+    let call = 0
+    // NOTE: `chatHistory` is deliberately NOT passed. An EMPTY array routes the caller through the multi-step DAG
+    // branch in tool-router.ts instead of this loop, which is why an earlier draft of this test saw `runStreaming`
+    // never invoked and `usage` undefined. Measured, not assumed.
+    const out = await runStreamingAgenticLoop({ question: 'hi', userId: 'u1' }, async () => {
+      call += 1
+      lastUsage = { promptTokens: 7 * call, completionTokens: call }
+      return streamResult({
+        stream: (async function* () { yield 'a' })(),
+        // Tool runs on the first two rounds force a THIRD call, and the third returns none -- which is the
+        // "no tools -> stream and return" exit that used to drop the usage on the floor.
+        toolRuns: call < 3 ? [toolRun()] : [],
+      })
+    })
+    await drain(out.stream)
+    expect(call).toBe(3)
+    expect(out.usage).toBeDefined()
+    // 7+14+21 = 42 and 1+2+3 = 6: the SUM, where a last-wins implementation would report 21/3.
+    expect(out.usage!.promptTokens).toBe(42)
+    expect(out.usage!.completionTokens).toBe(6)
+    lastUsage = undefined
+  })
+
+  test('a turn where the provider reported NO usage leaves the field ABSENT', async () => {
+    // Absent must mean "not reported", never "0 tokens" — a zero would be a measurement and would drag an average
+    // toward zero, which is exactly the kind of silent lie this round is removing.
+    lastUsage = undefined
+    const out = await runStreamingAgenticLoop({ question: 'hi', userId: 'u1' }, async () => streamResult())
+    await drain(out.stream)
+    // `undefined` (absent VALUE), which is what a JSON response then omits. The KEY exists because `usage` is a
+    // deferred getter -- that is deliberate: the accumulator is only filled during consumption, so a spread here
+    // would read 0/0 and omit the field even when usage WAS reported. `in` is therefore not the right probe; the
+    // value is.
+    expect(out.usage).toBeUndefined()
+    expect(JSON.stringify({ ...out, stream: undefined })).not.toContain('usage')
+  })
+
+  test('the budget still consumes the same usage the result now reports', async () => {
+    // The fix added the accumulation BESIDE `budget.track`. A later change that swaps one for the other would
+    // break budget enforcement, so both are asserted together here.
+    lastUsage = { promptTokens: 999999, completionTokens: 1 }
+    const out = await runStreamingAgenticLoop({ question: 'hi', userId: 'u1' }, async () => streamResult())
+    const text = await drain(out.stream)
+    expect(text).toContain('token budget exhausted')
+    expect(out.usage!.promptTokens).toBe(999999)
+    lastUsage = undefined
+  })
 })

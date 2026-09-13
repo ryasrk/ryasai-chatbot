@@ -57,12 +57,16 @@ let retryMessage: any = null
 let recentMessages: any[] = []
 let allMessages: any[] = []
 let summaryImpl: (args: any) => Promise<string> = async () => 'Generated summary'
+// What the loop reports as the turn's token usage. `undefined` means "the provider reported nothing", which is
+// DIFFERENT from zero and must stay distinguishable all the way to the frame.
+let streamingUsage: { promptTokens: number; completionTokens: number } | undefined
 let streamingImpl: (args: any) => Promise<any> = async () => ({
   stream: (async function* () {})(),
   toolRuns: [],
   citations: [],
   chartData: null,
   integrationId: null,
+  usage: streamingUsage,
 })
 let savedPrompt: any = null
 let createImpl: (args: any) => any = (args) => ({
@@ -86,12 +90,14 @@ function resetState() {
   calls.toolRunCreates.length = 0
   allMessages = []
   summaryImpl = async () => 'Generated summary'
+  streamingUsage = undefined
   streamingImpl = async () => ({
     stream: (async function* () {})(),
     toolRuns: [],
     citations: [],
     chartData: null,
     integrationId: null,
+    usage: streamingUsage,
   })
   getActiveUserImpl = async () => mockUser
   rateLimitImpl = async () => {}
@@ -889,5 +895,33 @@ describe('maybeUpdateSessionSummary — the rolling window', () => {
     expect(roles).toContain('assistant')
     // 'ai' is the DB's sender value; the LLM API only accepts 'assistant'.
     expect(roles).not.toContain('ai')
+  })
+})
+
+describe('send — the done frame carries token usage', () => {
+  // THE DEFECT. The agentic loop dropped every round's usage, so `streaming.usage` was always undefined and the
+  // `done` event reported no tokens: any "avg tokens/task" figure had no source on this path. The frame now
+  // carries a turn total, and OMITS it when the provider reported nothing rather than claiming zeros.
+  test('a reported usage reaches the done frame with a computed total', async () => {
+    streamingUsage = { promptTokens: 120, completionTokens: 30 }
+    const res = await POST(makeRequest({ text: 'hello' }) as any, makeCtx())
+    const body = await res.text()
+    const doneFrame = body.slice(body.lastIndexOf('event: done'))
+    expect(doneFrame).toContain('"usage"')
+    expect(doneFrame).toContain('"promptTokens":120')
+    expect(doneFrame).toContain('"completionTokens":30')
+    // totalTokens is computed here so every client does not have to add the two fields itself.
+    expect(doneFrame).toContain('"totalTokens":150')
+  })
+
+  test('with NO reported usage the frame omits the field instead of claiming 0 tokens', async () => {
+    // A zero IS a measurement. Reporting it for an unmeasured turn would drag an average toward zero and be
+    // indistinguishable from a genuinely free call.
+    streamingUsage = undefined
+    const res = await POST(makeRequest({ text: 'hello' }) as any, makeCtx())
+    const body = await res.text()
+    const doneFrame = body.slice(body.lastIndexOf('event: done'))
+    expect(doneFrame).toContain('event: done')
+    expect(doneFrame).not.toContain('usage')
   })
 })

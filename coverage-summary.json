@@ -1,10 +1,10 @@
 {
-  "linePct": 88.02,
-  "linesHit": 20328,
-  "linesFound": 23096,
+  "linePct": 87.97,
+  "linesHit": 20364,
+  "linesFound": 23150,
   "fnPct": 94.03,
-  "fnsHit": 1858,
-  "fnsFound": 1976,
+  "fnsHit": 1860,
+  "fnsFound": 1978,
   "filesMeasured": 170,
   "failedTestFiles": [],
   "files": [
@@ -144,6 +144,15 @@
       "fPct": 97.36842105263158
     },
     {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 409,
+      "found": 521,
+      "pct": 78.50287907869482,
+      "fHit": 30,
+      "fFound": 31,
+      "fPct": 96.7741935483871
+    },
+    {
       "file": "src/lib/knowledge-graph.ts",
       "hit": 155,
       "found": 196,
@@ -187,15 +196,6 @@
       "fHit": 7,
       "fFound": 7,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 385,
-      "found": 479,
-      "pct": 80.3757828810021,
-      "fHit": 28,
-      "fFound": 29,
-      "fPct": 96.55172413793103
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -612,15 +612,6 @@
       "fPct": 100
     },
     {
-      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
-      "hit": 405,
-      "found": 432,
-      "pct": 93.75,
-      "fHit": 23,
-      "fFound": 32,
-      "fPct": 71.875
-    },
-    {
       "file": "src/lib/tool-sandbox.ts",
       "hit": 30,
       "found": 32,
@@ -628,6 +619,15 @@
       "fHit": 7,
       "fFound": 7,
       "fPct": 100
+    },
+    {
+      "file": "src/app/api/chat/sessions/[id]/send/route.ts",
+      "hit": 417,
+      "found": 444,
+      "pct": 93.91891891891892,
+      "fHit": 23,
+      "fFound": 32,
+      "fPct": 71.875
     },
     {
       "file": "src/lib/midtrans.ts",

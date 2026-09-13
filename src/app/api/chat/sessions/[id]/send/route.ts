@@ -459,8 +459,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
             toolHasResults: finalToolHasResults,
           })
 
-          // 8. Done.
-          send('done', { messageId: aiMessage.id, latencyMs: Date.now() - started })
+          // 8. Done. `usage` is the turn total from the agentic loop. It was ALWAYS UNDEFINED here: the loop read
+          // each call's tokens into its own budget and dropped them, so the field existed on both result types
+          // and was never populated on this path. Emitted as part of `done` rather than a separate frame so a
+          // client that only reads the last event still gets the counts, and omitted entirely when no LLM call
+          // reported usage (a tool-only or cached turn) instead of claiming zeros.
+          send('done', {
+            messageId: aiMessage.id,
+            latencyMs: Date.now() - started,
+            ...(streaming.usage
+              ? {
+                  usage: {
+                    promptTokens: streaming.usage.promptTokens,
+                    completionTokens: streaming.usage.completionTokens,
+                    totalTokens: streaming.usage.promptTokens + streaming.usage.completionTokens,
+                  },
+                }
+              : {}),
+          })
         } catch (e) {
           if (abortReason === 'client') return // client disconnected — no persistence
           if (!closed) {

@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **88,02%** (20.328/23.096 baris, 170 file) | terukur, **belum 95%** |
+| Test coverage | **87,97%** (20.364/23.150 baris, 170 file) | terukur, **belum 95%** |
 | Cakupan fungsi | **94,03%** (1858/1976 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 211 file · **5.252 lulus · 0 gagal** | terukur |
+| Test suite | 211 file · **5.261 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1136 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1142 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -6040,6 +6040,56 @@ arah**, `17/19` sendirian, dan yang hilang di laporan merged hanyalah baris **40
 yang belum dieksekusi** (cabang error baru, kelas error baru, guard tipe) sementara satu rute berdefek
 (`documents/search` 45 test) tetap sama. **Cakupan fungsi turun tipis** 94,07% → 94,03%. Suite
 **5.243 → 5.252**.
+
+### 1.7dv Token usage dibuang di SETIAP jalur agentic — dan "avg tokens/task" akhirnya punya sumber
+
+**Ini akar masalah angka yang Anda minta dan tidak pernah bisa saya hitung.** Permintaan awal Anda meminta
+**avg tokens/task**; lapisan agentic **membuang** datanya, jadi tidak ada sumber untuk menghitungnya.
+
+**Defeknya, terukur.** `getLastLlmUsage()`/`result.usage` dibaca **hanya untuk token BUDGET** lalu dilepas.
+Akibatnya `usage` — field yang **ada di KEDUA tipe hasil** dan **diisi** oleh builder non-agentic — bernilai
+`undefined` di **setiap** giliran agentic. Klien bisa mendapat jumlah token lewat satu jalur dan **tidak sama
+sekali** lewat jalur lain.
+
+**Dua temuan tambahan saat memperbaikinya, keduanya hasil pengukuran bukan dugaan.**
+
+1. **`enterWith` MEMANG terlihat oleh caller.** Catatan lama saya ("`enterWith` tidak merambat, jadi usage tidak
+   pernah sampai") **salah**: probe dua-langkah menunjukkan `enterWith` dari dalam fungsi yang di-`await`
+   **terbaca** oleh caller-nya (nilai 42 terbaca setelah `await`), dan jatuh saat keluar dari `run`. Yang benar:
+   nilainya sampai, lalu **dibuang** oleh kode kita sendiri.
+2. **`...spread` SELALU membaca 0/0.** Versi pertama perbaikan saya menyebar `usage` ke objek hasil **sebelum**
+   stream dikonsumsi, dan akumulator baru terisi **selama** konsumsi — hasilnya field **tetap hilang**. Terukur
+   lewat `JSON.stringify(out)`: `{"stream":{},"toolRuns":[...]}` **tanpa `usage`**. Diperbaiki dengan **getter
+   tertunda** (`get usage()`), sehingga dibaca saat klien membacanya — yaitu setelah drain. **Komentar di kode
+   menyebutkan jebakan ini**, karena bentuk "spread" adalah yang paling wajar ditulis ulang orang berikutnya.
+
+**Cakupan perbaikan.** Akumulasi dipindah ke **SATU titik** tepat setelah tiap ronde kembali (sebelumnya hanya di
+dua titik "lanjut", sehingga **setiap `return` dini** — heuristik bukti substansial, gerbang alignment, stop
+keyakinan tinggi — membuang token ronde itu), ditambah **panggilan sintesis final** di jalur max-iterations.
+Loop non-streaming punya **sepuluh** `return`; semuanya dibungkus satu closure `withUsage` supaya perubahan
+berikutnya tidak setengah jalan. `done` frame sekarang membawa **total giliran** dan **menghilangkan** fieldnya
+saat provider tidak melaporkan apa pun — **nol adalah sebuah pengukuran**, dan nol palsu akan menyeret rata-rata
+ke bawah.
+
+**Kontrol (6 dijalankan, semua menggigit setelah satu diperkuat).**
+| Kontrol | Hasil |
+|---|---|
+| getter dihapus (kembali ke spread) | **2 merah** |
+| akumulasi streaming dihapus | **7 merah** |
+| **last-wins** di streaming, bukan SUM | **1 merah** |
+| usage sintesis final dihapus | 0 merah → **dideklarasikan non-kontrol** (butuh fixture yang menembus `MAX_AGENTIC_ITERATIONS`) |
+| `usage` dilepas dari `done` frame | **1 merah** |
+| `totalTokens` dihapus | **1 merah** |
+| `usage` selalu ada (0 saat tak dilaporkan) | **1 merah** |
+
+**Satu test saya sendiri awalnya TIDAK mengukur apa pun, dan saya perkuat.** Asersi
+`promptTokens > 10` + rasio **lolos juga untuk implementasi last-wins**. Diganti dengan jumlah **PERSIS**
+(30/3 untuk dua ronde) — sekarang kontrol last-wins **merah**.
+
+**Progres: 88,02% → 87,97%** — **turun 0,05 poin**, dilaporkan apa adanya: perbaikan menambah **54 baris baru**
+(akumulasi, getter, cabang `done`), sementara satu modul berdefek (`documents/search`) tetap sama. Suite
+**5.252 → 5.261**. `tool-router-agentic.ts` **78,50% merged** tapi **409/413 = 99,03% dari baris eksekutabel**
+(penyebutnya memuat artefak DA dari anotasi tipe) — floor diturunkan **80 → 78** dengan alasan tercatat di gate.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

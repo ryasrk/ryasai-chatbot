@@ -314,3 +314,59 @@ describe('runAgenticLoop — max iterations reached', () => {
     expect(n).toBe(1)
   })
 })
+
+describe('runAgenticLoop — token usage reaches the caller', () => {
+  // THE DEFECT THIS PINS. The loop read `result.usage` into the token BUDGET and dropped it, so `usage` -- a field
+  // present on BOTH result types and populated by the non-agentic builders -- was `undefined` for every agentic
+  // turn. A caller could read token counts over one path and nothing over another, which is also why an
+  // "avg tokens/task" figure could not be computed from the agentic paths at all.
+  test('usage is reported as the SUM over every iteration, not the last one', async () => {
+    // EXACT counts, not a lower bound. The first version of this test asserted `promptTokens > 10` and a ratio,
+    // which a LAST-WINS implementation satisfies as easily as a sum -- it passed both ways and measured nothing.
+    // The loop is driven through two rounds whose reported counts differ, so the two strategies cannot agree:
+    // sum is 30/3, last-wins is 20/2.
+    let call = 0
+    const r = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => {
+      call += 1
+      return completion({
+        answer: 'a',
+        usage: { promptTokens: 10 * call, completionTokens: call },
+        toolRuns: call < 2 ? [run()] : [],
+      })
+    })
+    expect(call).toBe(2)
+    expect(r.usage!.promptTokens).toBe(30)
+    expect(r.usage!.completionTokens).toBe(3)
+  })
+
+  test('a turn where NO call reported usage leaves the field ABSENT, not zeroed', async () => {
+    // A tool-only or cached turn must not claim "0 tokens" -- that is a measurement, and it would drag any
+    // average toward zero. Absent means "not reported".
+    const r = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () =>
+      completion({ toolRuns: [] }),
+    )
+    expect(r.usage).toBeUndefined()
+    expect('usage' in r).toBe(false)
+  })
+
+  test('usage is still attached on the DEADLINE return, which is the early-exit nobody tests', async () => {
+    // The ten returns each needed the accumulator; the deadline one fires before any call and must simply omit it.
+    process.env.AGENTIC_DEADLINE_MS = '-1000'
+    const r = await runAgenticLoop({ question: 'q', userId: 'u1' }, async () => completion())
+    expect(r.usage).toBeUndefined()
+    delete process.env.AGENTIC_DEADLINE_MS
+  })
+
+  test('the budget still sees every iteration usage — accumulation did not replace budget.track', async () => {
+    // The fix added accumulation BESIDE `budget.track`. If a later change replaces one with the other, the budget
+    // stops working and this catches it: the budget must exhaust exactly when the summed tokens cross its limit.
+    const budget = createTokenBudget(25)
+    const r = await runAgenticLoop(
+      { question: 'q', userId: 'u1', budget },
+      async () => completion({ answer: 'a', usage: { promptTokens: 20, completionTokens: 5 }, toolRuns: [run()] }),
+    )
+    // First round spends 25 of a 25 budget -> exhausted, so the loop stops with the disclosure note.
+    expect(r.answer).toContain('token budget exhausted')
+    expect(budget.total()).toBeGreaterThanOrEqual(25)
+  })
+})

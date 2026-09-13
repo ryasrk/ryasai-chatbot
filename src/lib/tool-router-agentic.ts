@@ -119,6 +119,12 @@ interface AgenticIterationResult {
   toolRuns: PendingToolRun[]
   iterations: number
   confidenceHistory: { confident: boolean; confidence: number; reason: string }[]
+  /**
+   * Turn-total token usage. Optional so existing callers and tests are unaffected, but it is now POPULATED on
+   * every return of `runAgenticLoop`: the loop read `result.usage` into the budget and then dropped it, so the
+   * field was never set on any agentic path even though both builders of the same shape do set it.
+   */
+  usage?: { promptTokens: number; completionTokens: number }
 }
 
 export async function runMultiStepDag(args: {
@@ -222,6 +228,17 @@ export async function runAgenticLoop(
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
+  // The loop read `result.usage` into the token BUDGET and then discarded it, so no agentic turn ever reported
+  // tokens. Accumulated across iterations and attached by `withUsage` at EVERY return, one closure instead of ten
+  // hand-edits that the next change would half-miss.
+  let loopPromptTokens = 0
+  let loopCompletionTokens = 0
+  const withUsage = <T extends Record<string, unknown>>(out: T) => ({
+    ...out,
+    ...(loopPromptTokens || loopCompletionTokens
+      ? { usage: { promptTokens: loopPromptTokens, completionTokens: loopCompletionTokens } }
+      : {}),
+  })
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
   const budget = args.budget ?? createTokenBudget()
   const deadline = Date.now() + agenticDeadlineMs()
@@ -230,7 +247,7 @@ export async function runAgenticLoop(
     if (Date.now() > deadline) {
       log.info('Agentic loop stopped — deadline exceeded', { iterations: iteration })
       confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
-      return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration, confidenceHistory }
+      return withUsage({ answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration, confidenceHistory })
     }
     const contextualQuestion = accumulatedEvidence
       ? `${args.question}\n\n[Context from prior tool calls: ${accumulatedEvidence.slice(0, 1000)}]`
@@ -251,23 +268,27 @@ export async function runAgenticLoop(
       if (e instanceof AgenticDeadlineError) {
         log.info('Agentic loop stopped — deadline exceeded mid-round', { iteration: iteration + 1 })
         confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
-        return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+        return withUsage({ answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
       }
       throw e
     }
 
-    if (result.usage) budget.track(result.usage)
+    if (result.usage) {
+      budget.track(result.usage)
+      loopPromptTokens += result.usage.promptTokens
+      loopCompletionTokens += result.usage.completionTokens
+    }
     if (budget.isExhausted()) {
       log.info('Agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
       confidenceHistory.push({ confident: false, confidence: 0, reason: 'token budget exhausted' })
-      return { answer: `${result.answer}\n\n[Note: token budget exhausted — answer may be incomplete.]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      return withUsage({ answer: `${result.answer}\n\n[Note: token budget exhausted — answer may be incomplete.]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
     }
 
     appendToolRuns(allToolRuns, result.toolRuns)
     if (result.citations) allCitations.push(...result.citations)
 
     if (result.toolRuns.length === 0) {
-      return { answer: result.answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      return withUsage({ answer: result.answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
     }
 
     // Reflexion: self-critique the answer before confidence eval (opt-in).
@@ -305,9 +326,9 @@ export async function runAgenticLoop(
       if (note) {
         log.info('Agentic loop flagged by alignment check (heuristic path)', { iteration: iteration + 1 })
         confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${note}` })
-        return { answer: `${answer}\n\n${note}`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+        return withUsage({ answer: `${answer}\n\n${note}`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
       }
-      return { answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      return withUsage({ answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
     }
 
     const confidence = await evaluateAnswerConfidence({ question: args.question, evidence: accumulatedEvidence })
@@ -320,10 +341,10 @@ export async function runAgenticLoop(
         if (alignment.risk === 'high') {
           log.info('Agentic loop stopped — alignment check high risk', { iteration: iteration + 1, reason: alignment.reason })
           confidenceHistory.push({ confident: false, confidence: 0, reason: `alignment: ${alignment.reason}` })
-          return { answer: `${answer}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+          return withUsage({ answer: `${answer}\n\n[Note: answer flagged by alignment check — ${alignment.reason}]`, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
         }
       }
-      return { answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory }
+      return withUsage({ answer, citations: allCitations, chartData: result.chartData, toolRuns: allToolRuns, iterations: iteration + 1, confidenceHistory })
     }
 
     const toolHint = confidence.nextToolHint && confidence.nextToolHint !== 'CHAT'
@@ -348,12 +369,12 @@ export async function runAgenticLoop(
     if (e instanceof AgenticDeadlineError) {
       log.info('Agentic loop stopped — deadline exceeded during synthesis', { iterations: MAX_AGENTIC_ITERATIONS })
       confidenceHistory.push({ confident: false, confidence: 0, reason: 'deadline exceeded' })
-      return { answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
+      return withUsage({ answer: accumulatedEvidence ? `Based on gathered evidence:\n\n${accumulatedEvidence.slice(0, 2000)}` : 'The request timed out before a complete answer could be generated.', citations: allCitations, chartData: null, toolRuns: allToolRuns, iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory })
     }
     throw e
   }
 
-  return { answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: dedupeToolRuns([...allToolRuns, ...finalResult.toolRuns]), iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory }
+  return withUsage({ answer: finalResult.answer, citations: [...allCitations, ...finalResult.citations], chartData: finalResult.chartData, toolRuns: dedupeToolRuns([...allToolRuns, ...finalResult.toolRuns]), iterations: MAX_AGENTIC_ITERATIONS, confidenceHistory })
 }
 
 export async function runStreamingAgenticLoop(
@@ -374,6 +395,12 @@ export async function runStreamingAgenticLoop(
   const allCitations: Citation[] = []
   let accumulatedEvidence = ''
   const confidenceHistory: { confident: boolean; confidence: number; reason: string }[] = []
+
+  // TOKEN USAGE WAS DROPPED ON THIS PATH. Each iteration read `getLastLlmUsage()` into the token BUDGET and then
+  // discarded it; `output.usage` was never assigned, so an SSE chat turn reported NO token counts while the
+  // non-streaming builders do populate the same field. Accumulated because one turn makes several LLM calls.
+  let streamPromptTokens = 0
+  let streamCompletionTokens = 0
   const budget = args.budget ?? createTokenBudget()
   const deadline = Date.now() + agenticDeadlineMs()
 
@@ -411,6 +438,17 @@ export async function runStreamingAgenticLoop(
         throw e
       }
 
+      // Accumulate usage IMMEDIATELY after the round returns, in ONE place. It was previously read only at the
+      // two points where the loop continues, so any early RETURN (the substantial-evidence heuristic, the
+      // alignment gate, the high-confidence stop) discarded that round's tokens entirely. One site also means a
+      // new exit added later cannot forget it.
+      const roundUsage = getLastLlmUsage()
+      if (roundUsage) {
+        budget.track(roundUsage)
+        streamPromptTokens += roundUsage.promptTokens
+        streamCompletionTokens += roundUsage.completionTokens
+      }
+
       appendToolRuns(allToolRuns, result.toolRuns)
       if (result.citations) allCitations.push(...result.citations)
 
@@ -421,8 +459,6 @@ export async function runStreamingAgenticLoop(
         for await (const chunk of result.stream) {
           yield chunk
         }
-        const usage = getLastLlmUsage()
-        if (usage) budget.track(usage)
         if (budget.isExhausted()) {
           log.info('Streaming agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
           yield '\n\n[Note: token budget exhausted — answer may be incomplete.]'
@@ -454,8 +490,6 @@ export async function runStreamingAgenticLoop(
 
       // Token budget — mirror runAgenticLoop: track this round's usage and stop
       // starting further tool iterations once exhausted.
-      const usage = getLastLlmUsage()
-      if (usage) budget.track(usage)
       if (budget.isExhausted()) {
         log.info('Streaming agentic loop stopped — token budget exhausted', { iteration: iteration + 1, total: budget.total() })
         confidenceHistory.push({ confident: false, confidence: 0, reason: 'token budget exhausted' })
@@ -551,8 +585,13 @@ export async function runStreamingAgenticLoop(
     for await (const chunk of finalResult.stream) {
       yield chunk
     }
+    // The max-iterations SYNTHESIS call is a real LLM call too, so its tokens belong in the turn total.
     const finalUsage = getLastLlmUsage()
-    if (finalUsage) budget.track(finalUsage)
+    if (finalUsage) {
+      budget.track(finalUsage)
+      streamPromptTokens += finalUsage.promptTokens
+      streamCompletionTokens += finalUsage.completionTokens
+    }
     if (budget.isExhausted()) {
       yield '\n\n[Note: token budget exhausted — answer may be incomplete.]'
     }
@@ -562,12 +601,21 @@ export async function runStreamingAgenticLoop(
   // citationTrail from whichever iteration produces the final answer. The
   // arrays (allToolRuns/allCitations) are also mutated during generation.
   // Callers must consume the stream before reading these fields.
+  // `usage` is a DEFERRED GETTER, not a spread. The accumulator is filled DURING stream consumption (each round
+  // reports its tokens after its call), so a spread here would always read 0/0 and silently omit the field --
+  // measured: the first version of this fix did exactly that. A getter is evaluated when the caller reads it,
+  // which is necessarily after the stream is drained.
   const output: StreamingCompletionResult = {
     stream: combinedStream(),
     toolRuns: allToolRuns,
     citations: allCitations,
     chartData: null,
     citationTrail: undefined,
+    get usage() {
+      return streamPromptTokens || streamCompletionTokens
+        ? { promptTokens: streamPromptTokens, completionTokens: streamCompletionTokens }
+        : undefined
+    },
   }
   return output
 }
