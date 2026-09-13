@@ -1,11 +1,11 @@
 {
-  "linePct": 86.91,
-  "linesHit": 17834,
-  "linesFound": 20519,
-  "fnPct": 93.81,
-  "fnsHit": 1681,
-  "fnsFound": 1792,
-  "filesMeasured": 137,
+  "linePct": 86.96,
+  "linesHit": 17898,
+  "linesFound": 20583,
+  "fnPct": 93.83,
+  "fnsHit": 1687,
+  "fnsFound": 1798,
+  "filesMeasured": 138,
   "failedTestFiles": [],
   "files": [
     {
@@ -979,6 +979,15 @@
       "fHit": 23,
       "fFound": 26,
       "fPct": 88.46153846153845
+    },
+    {
+      "file": "src/app/api/webhooks/license/route.ts",
+      "hit": 64,
+      "found": 64,
+      "pct": 100,
+      "fHit": 6,
+      "fFound": 6,
+      "fPct": 100
     },
     {
       "file": "src/lib/async-worker.ts",

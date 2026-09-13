@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c9ba1a0`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3d3f6bf`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `c9ba1a0`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,91%** (17.834/20.519 baris, 137 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,81%** (1681/1792 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 179 file · **4.231 lulus · 0 gagal** | terukur |
+| Test coverage | **86,96%** (17.898/20.583 baris, 138 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,83%** (1687/1798 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 180 file · **4.248 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**722 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**733 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5082,6 +5082,37 @@ saya — untuk kedua kalinya di sesi ini.**
 
 **Progres backlog: 5 dari 66 route orphan ditutup.** Repo **86,90% → 86,91%**; file terinstrumen
 **136 → 137**; suite **4.215 → 4.231** (178 → **179 file**); gate **136 → 137 modul**.
+
+### 1.7cz `/api/webhooks/license` — rute di JALUR PENDAPATAN: NOL → 100,00% (64/64)
+
+Ini satu-satunya panggilan masuk yang bisa **mencabut atau memulihkan entitlement**, dan seluruh
+pertahanannya **satu shared secret**. Rute ini publik (tanpa cookie sesi), jadi properti yang dipatok
+semuanya tentang batas itu dan tentang apa yang boleh dilakukan body palsu.
+
+**Properti terpenting: TANPA SECRET == TANPA AKSES.** Penjaga `if (!expectedSecret || ...)` menutup rute
+saat `LICENSE_WEBHOOK_SECRET` tidak diset. **Tanpa bagian `!expectedSecret`, instalasi yang belum
+dikonfigurasi akan menerima pencabutan lisensi palsu.** Mode gagalnya **FAIL-OPEN** — tidak terlihat sampai
+ada yang menyalahgunakannya, jadi ia dipatok di sini.
+
+**Pertahanannya timing-safe dan HASH kedua sisi**, jadi tidak ada oracle **prefix** maupun **panjang**.
+Karena `secretsMatch` tidak diekspor, ia diuji **lewat rute**: secret benar lolos, secret salah **dengan
+panjang sama** gagal, **prefix** dari secret asli gagal, dan header kosong gagal.
+
+**11 kontrol, semuanya menggigit.** Dua terkuat membuktikan pertahanan timing itu nyata:
+**`secretsMatch` → `===` perbandingan string mentah: 16 MERAH**; **`secretsMatch` → `startsWith`
+(prefix diterima): 15 MERAH**. Juga: `!expectedSecret` dibuang (1), header tidak dibaca (4), event tak
+dikenal jadi `valid` bukan 400 (1), `revoked`→`valid` (pencabutan menjadi aktivasi, 1), `suspended` dilebur
+ke `expired` (1), license key tak dikenal jadi 404 (**retry-storm**, 1), `bypassOrg` dibuang (1),
+`licenseValidatedAt` tidak dicap (1), `plan` selalu ditulis sehingga `null` menimpa plan lama (1).
+
+**Dua keputusan perilaku yang dipatok apa adanya:**
+- **key lisensi tak dikenal = 200 no-op, BUKAN error.** Menjawab 4xx akan membuat validator **retry tanpa
+  henti terhadap setiap instalasi yang bukan penerima yang dimaksud.** Ini pilihan sadar, bukan kelalaian.
+- **`suspended` adalah status TERSENDIRI, bukan `expired`.** Meleburnya akan menghilangkan kemampuan
+  operator membedakan masalah pembayaran dari pencabutan.
+
+**Progres backlog: 6 dari 66 route orphan ditutup.** Repo **86,91% → 86,96%**; file terinstrumen
+**137 → 138**; suite **4.231 → 4.248** (179 → **180 file**); gate **137 → 138 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
