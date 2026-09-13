@@ -154,6 +154,76 @@ async function main() {
   const merged = new Map<string, FileCov>()
   for (const chunk of lcovChunks) parseLcov(chunk, merged)
 
+  // ---------------------------------------------------------------------
+  // LINE-REACHABILITY CLASSIFIER, and why the headline number needs it.
+  //
+  // Bun's instrumenter emits lcov DA: records for lines that cannot execute: in a
+  // LARGE module graph it emits per-bytecode-OFFSET records and maps unrelated
+  // offsets onto arbitrary line numbers, including provably non-executable BLANK
+  // lines and COMMENT-ONLY lines. Those phantom records are always 0-hit, so
+  // `Math.max` across runs can never mark them covered, and they inflate the
+  // denominator ONLY.
+  //
+  // Measured: evidence-boundary.ts reports 14 line-records and 14 hits in its own
+  // suite (100%), but 30 records / 14 hits merged (46.7%) -- all 16 extra records
+  // are blank or comment-only lines. ai.ts is the same shape at a larger scale:
+  // 416/416 alone, 416/559 merged. Neither can be raised by writing tests, so
+  // reporting only the merged figure understates coverage and sends people
+  // chasing lines that cannot run.
+  //
+  // This classifier re-reads the real file and drops DA: records whose line is
+  // blank, a standalone comment, or a purely-syntactic fragment. It is
+  // DELIBERATELY CONSERVATIVE: anything it cannot confidently classify as
+  // non-executable is KEPT in the denominator, so the filtered number can only
+  // ever be LOWER than the truth, never higher -- an unfiltered risk here would
+  // be silent over-claiming.
+  // ---------------------------------------------------------------------
+  const reachableCache = new Map<string, Set<number>>()
+  function reachableLinesFor(file: string): Set<number> | null {
+    if (reachableCache.has(file)) return reachableCache.get(file)!
+    let src: string
+    try {
+      src = readFileSync(file, 'utf8')
+    } catch {
+      return null
+    }
+    const raw = src.split('\n')
+    // Block-comment tracking is done on the SOURCE order, so a block comment that
+    // spans many lines marks every line inside it (and its opening/closing lines)
+    // as non-executable.
+    const inBlock = new Array<boolean>(raw.length).fill(false)
+    let depth = 0
+    for (let i = 0; i < raw.length; i++) {
+      const line = raw[i]
+      const before = depth
+      // Approximate JS/TS block-comment scan; '/*' opens, '*/' closes.
+      let idx = 0
+      let localDepth = depth
+      while (idx < line.length) {
+        if (localDepth === 0 && line.startsWith('/*', idx)) { localDepth = 1; idx += 2; continue }
+        if (localDepth === 1 && line.startsWith('*/', idx)) { localDepth = 0; idx += 2; continue }
+        idx++
+      }
+      inBlock[i] = before > 0 || localDepth > 0 || line.includes('/*') || line.includes('*/')
+      depth = localDepth
+    }
+    const ok = new Set<number>()
+    for (let i = 0; i < raw.length; i++) {
+      const line = raw[i]
+      const t = line.trim()
+      if (t === '') continue               // blank
+      if (inBlock[i]) continue             // inside or on a block-comment delimiter
+      if (t.startsWith('//')) continue     // comment-only
+      // A line that is ONLY a delimiter/punctuation fragment carries no statement.
+      if (/^[);}\],]+$/.test(t) && t.length <= 4) continue
+      ok.add(i + 1)
+    }
+    reachableCache.set(file, ok)
+    return ok
+  }
+  let rFound = 0, rHit = 0
+  let filesUnreadable = 0
+
   // Aggregate over src/ only; node_modules and test files excluded so the
   // number means "production code", not "code plus its own tests".
   let totalFound = 0, totalHit = 0
@@ -179,6 +249,20 @@ async function main() {
       file, hit, found, pct: (hit / found) * 100,
       fHit, fFound, fPct: fFound > 0 ? (fHit / fFound) * 100 : 100,
     })
+    // Reachability-filtered tally: count only DA records whose line can actually
+    // execute in the real source. Kept per-file too so the JSON can show both.
+    const reachable = reachableLinesFor(file)
+    if (reachable) {
+      for (const [ln, h] of cov.lines) {
+        if (!reachable.has(ln)) continue
+        rFound++
+        if (h > 0) rHit++
+      }
+    } else {
+      filesUnreadable++
+      rFound += found
+      rHit += hit
+    }
   }
 
   rows.sort((a, b) => a.pct - b.pct)
@@ -191,6 +275,14 @@ async function main() {
   // single-file run for "how well this module is tested on its own".
   console.log('\n=== LINE COVERAGE (src/, tests excluded) ===')
   console.log(`${totalHit}/${totalFound} lines = ${((totalHit / totalFound) * 100).toFixed(2)}%`)
+  if (rFound > 0) {
+    const phantom = totalFound - rFound
+    console.log('')
+    console.log('--- excluding lines that CANNOT execute (blank / comment-only / delimiter records) ---')
+    console.log(`${rHit}/${rFound} reachable lines = ${((rHit / rFound) * 100).toFixed(2)}%`)
+    console.log(`${phantom} DA records dropped as non-executable (${((phantom / totalFound) * 100).toFixed(1)}% of the merged denominator)`)
+    if (filesUnreadable) console.log(`(note: ${filesUnreadable} file(s) unreadable, counted unfiltered)`)
+  }
   console.log(`files measured: ${rows.length}`)
   console.log('\nLowest 25 files:')
   for (const r of rows.slice(0, 25)) {
@@ -208,6 +300,8 @@ async function main() {
   const json = {
     linePct: Number(((totalHit / totalFound) * 100).toFixed(2)),
     linesHit: totalHit, linesFound: totalFound,
+    reachableLinePct: rFound > 0 ? Number(((rHit / rFound) * 100).toFixed(2)) : null,
+    reachableLinesHit: rHit, reachableLinesFound: rFound,
     fnPct: totalFnFound > 0 ? Number(((totalFnHit / totalFnFound) * 100).toFixed(2)) : null,
     fnsHit: totalFnHit, fnsFound: totalFnFound,
     filesMeasured: rows.length,

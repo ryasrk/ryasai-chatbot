@@ -298,10 +298,26 @@ describe('createSamlInstance', () => {
     // assertion to this browser's request whenever the id was saved and still accepts IdP-initiated POSTs (this
     // route accepts them by design) where no id exists to compare against.
     expect(captured!.validateInResponseTo).toBe('ifPresent')
-    // `never` anywhere in this file would mean the binding is off again.
+    // COUNT THE SITES, do not just look for the string.
+    //
+    // There are TWO places in sso-saml.ts that configure this option -- `createSamlInstance` (the
+    // validator that actually guards login) and `generateSpMetadata` (the config whose SP metadata is
+    // published). The previous guard here was `not.toContain('.never')` + `toContain('.ifPresent')`,
+    // and that PASSES while ONE of the two sites is reverted to `.never`, because the surviving
+    // `ifPresent` satisfies the positive check and a single `.never` is not what the negative check
+    // keys on... except it is, so the real hole is subtler: a revert of EITHER site to `.never` still
+    // leaves the other `.ifPresent` present, and `not.toContain('.never')` DOES fail -- which is why
+    // the meaningful assertion is that the two settings AGREE. A file where one site is `ifPresent`
+    // and the other is `always` passes both old checks while the two configs disagree, and a
+    // disagreement means the binding the login path enforces is not the binding we publish.
     const src = readFileSync(join(import.meta.dir, 'sso-saml.ts'), 'utf8')
+    const settings = [...src.matchAll(/validateInResponseTo:\s*ValidateInResponseTo\.(\w+)/g)].map((m) => m[1])
+    // Exactly two sites is itself the claim: a third config site added without this decision being
+    // revisited is a regression, and so is one of the two being deleted.
+    expect(settings).toHaveLength(2)
+    expect(settings).toEqual(['ifPresent', 'ifPresent'])
+    // `never` anywhere in this file would mean the binding is off again.
     expect(src).not.toContain('ValidateInResponseTo.never')
-    expect(src).toContain('ValidateInResponseTo.ifPresent')
   })
 
   test('an unresolvable entry point (metadata yields nothing usable) throws', async () => {
