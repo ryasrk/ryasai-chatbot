@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6becc98`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a9a0708`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6becc98`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,76%** (17.557/20.237 baris, 133 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,73%** (1658/1769 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 175 file · **4.174 lulus · 0 gagal** | terukur |
+| Test coverage | **86,85%** (17.699/20.379 baris, 135 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,76%** (1668/1779 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 177 file · **4.203 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**688 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**702 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4925,6 +4925,50 @@ itu nyata), `oldRole` dihapus dari audit (1), `enterWithOrg` dihapus (1), pemeta
 
 Repo **86,72% → 86,76%**; file terinstrumen **132 → 133**; suite **4.160 → 4.174** (174 → **175 file**);
 gate **132 → 133 modul**.
+
+### 1.7cv Tiga route berisiko: pencabutan kunci, profil, dan penonaktifan akun — semuanya dari NOL
+
+Melanjutkan backlog 42 route orphan, tiga route berikutnya ditutup **urut risiko**, bukan urut kemudahan.
+Ketiganya dari **nol test**.
+
+**1. `settings/api-keys/[id]` (DELETE) — PENCABUTAN KREDENSIAL. Nol → 100,00% (52/52).**
+Jika route ini diam-diam no-op, operator **percaya kunci yang bocor sudah mati padahal masih
+mengautentikasi.** Karena itu dua properti yang dipatok lebih penting daripada happy path:
+- baris **DI-UPDATE** (`isActive=false` + `revokedAt`), **bukan dihapus** — kunci yang pernah diterbitkan
+  harus tetap auditabel, dan hard delete akan memutus baris log yang mereferensikannya;
+- **mencabut kunci yang SUDAH dicabut MEMPERTAHANKAN `revokedAt` asli** (`existing.revokedAt ??
+  new Date()`): waktu pencabutan pertama adalah fakta yang relevan secara keamanan ("sejak kapan ini
+  berhenti bekerja"); pencabutan kedua tidak boleh menulis ulang riwayat.
+**7 kontrol, semuanya menggigit:** `isActive` dibiarkan `true` (1), `revokedAt` selalu `now()` (1),
+`requireRole` dihapus (1), **`findFirst`→`findUnique` (**7 merah**)** (1), audit dihapus (1),
+`enterWithOrg` dihapus (1), P2025→404 dihapus (1).
+
+**2. `users/[id]` (PATCH + DELETE) — PROFIL & PENONAKTIFAN AKUN. 94,32% → 100,00% (90/90).**
+Dua penjaga yang mudah hilang dan mahal akibatnya:
+- **DELETE: admin TIDAK BOLEH menonaktifkan akun sendiri.** Tanpa itu, sebuah instalasi bisa ditinggal
+  dengan **NOL admin aktif**, dan karena perubahan peran **memerlukan** admin, **tidak ada yang bisa
+  membatalkannya lewat produk.** Itu **lockout yang diciptakan sendiri**, bukan 400 biasa.
+- **PATCH: pengguna boleh mengedit profil SENDIRI, tetapi mengedit milik ORANG LAIN memerlukan admin.**
+  Kondisinya `if (user.userId !== id) requireRole(user, 'admin')` — kondisi yang **terbalik atau hilang**
+  mengubah viewer menjadi editor nama/avatar orang lain.
+- **Whitelist field:** `data` dibangun **field per field**, jadi `{ role: 'admin' }` yang diselundupkan ke
+  PATCH profil **tidak boleh** mencapai update. Tanpa ini, endpoint profil adalah **lubang eskalasi
+  hak akses**. Diuji eksplisit.
+**7 kontrol, semuanya menggigit** — termasuk **K4 (guard lockout dihapus)** dan **K6
+`findFirst`→`findUnique` (**11 merah**)**, kontrol IDOR terkuat sejauh ini. Juga: K1 (guard edit-lain
+dihapus), K2 (kondisi dibalik), K3 (whitelist field dihapus → body mentah dikirim), K5 (soft delete →
+`deletedAt`), K7 (`enterWithOrg` dihapus).
+
+**3. Empat test race yang ditambahkan setelah pengukuran menemukan 5 baris tak teruji.**
+Percobaan pertama saya hanya mencapai 94,32% karena **jalur P2025 dan catch DELETE belum dijalankan**.
+Ditutup dengan menyuntikkan error P2025 (baris hilang antara baca dan tulis) dan error non-P2025
+(mustahil disamarkan sebagai 404). Perbedaan perilaku **dipatok apa adanya**: **PATCH** memetakan P2025 →
+404, sedangkan **DELETE menelannya dan tetap menulis audit** karena baris yang hilang sudah berarti
+"nonaktif" — sebuah keputusan yang kini terlihat, bukan tersembunyi.
+
+**Progres backlog: 3 dari 42 route orphan ditutup.** Repo **86,76% → 86,85%**; file terinstrumen
+**133 → 135**; suite **4.174 → 4.203** (175 → **177 file**); gate **133 → 135 modul**. **13 kontrol,
+semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
