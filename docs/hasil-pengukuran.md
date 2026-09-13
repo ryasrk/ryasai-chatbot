@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `839e6ee`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9049f93`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `839e6ee`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **83,74%** (16.479/19.678 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.567 lulus · 0 gagal** | terukur |
+| Test coverage | **83,95%** (16.521/19.679 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 162 file · **3.594 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **79 modul** | +17 |
+| Modul ter-gate | 62 modul | **80 modul** | +18 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -105,7 +105,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/knowledge-graph.ts` | 93,55% → **78,57%** merged (**turun**, §1.7z) | 94,16% → **99,35%** kode eksekutabel (154/155) | 18 |
 | `src/app/api/auth/login/route.ts` | 18,06% → **100,00%** merged | 35,14% → **100,00%** kode eksekutabel (66/66) | 16 |
 | `src/app/api/audit/route.ts` | 27,66% → **100,00%** merged | 38,24% → **100,00%** kode eksekutabel (43/43) | 11 |
-| **Total repo** | **62,44%** | **83,74%** | — |
+| `src/lib/redis.ts` | 41,03% → **93,67%** merged | **tak terukur** → **98,67%** kode eksekutabel (74/75) | 27 |
+| **Total repo** | **62,44%** | **83,95%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -364,7 +365,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**290 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**296 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2673,6 +2674,55 @@ yang dapat diverifikasi.
 **Kontrol negatif: 6, semuanya menggigit** — `enterWithOrg` dihapus, allow-list severity
 dihapus, `orderBy desc → asc`, `include: user` dihapus, count tanpa `where`, dan
 `skip = page * pageSize`.
+
+### 1.7ba `lib/redis.ts`: modul yang SELURUH APLIKASI degraduasi ke atasnya, TIDAK PUNYA TEST SAMA SEKALI
+
+**Merged 41,03% → 93,67% (74/79); 0 baris tereksekusi menjadi 98,67% eksekutabel (74/75).**
+Repo **83,74% → 83,95% (+0,21)**. Kini **DI-GATE pada floor 90** — modul ter-gate **79 → 80**.
+
+**Mengapa ini yang saya dahulukan.** Sapuan diperluas ke **semua** modul ber-merged < 70
+memunculkan `src/lib/redis.ts` di **41,03% dengan `test` = TIDAK**. Modul ini memuat:
+**rate limiter** (kontrol keamanan), **peringatan TLS produksi**, health check, dan
+**cache terdistribusi dengan fallback in-memory** — jalur yang diandalkan `rag.ts` dan
+`smart-router.ts` **saat Redis mati**. Tidak ada satu pun test yang menyentuhnya; 43 test
+file mengimpor `prisma-tenant` tapi **selalu me-mock-nya**, dan `ioredis` **tidak muncul di
+test mana pun** di seluruh repo. Jadi modul tempat aplikasi mendarat ketika Redis down
+**belum pernah dieksekusi oleh suite**.
+
+**Yang kini dijaga.** (a) **TTL 60 detik di-set pada hit PERTAMA** bucket — tanpa itu
+hitungan tidak pernah reset dan pemanggil terkunci permanen setelah `maxPerMinute` request
+**total**, bukan per menit; (b) **hit berikutnya TIDAK mengulang TTL** — mengulangnya membuat
+jendela bergeser dan klien bisa melewati batas tanpa henti; (c) **`remaining` di-clamp ke 0**
+— angka negatif membocorkan kelebihan dan bisa tampil apa adanya di UI; (d) **Redis down
+mengembalikan `null`, bukan `{allowed:true}`** — mengembalikan "boleh" akan **mematikan
+pembatasan sepenuhnya** secara senyap; (e) **kunci bucket per-MENIT** (`floor(now/60000)`);
+(f) **`cacheDel` memakai SCAN, bukan KEYS** — `KEYS` memblokir seluruh server Redis;
+(g) **clear fallback in-memory saat Redis down** — map fallback **tanpa TTL**, jadi delete
+yang melewatkannya meninggalkan data **basi** yang tetap terbaca setelah pemanggil yakin
+sudah di-invalidasi; (h) **kedua klien memasang handler `error` no-op** — tanpa listener,
+event `error` yang tak tertangani **mematikan proses**; (i) **`disconnectRedis` memakai
+`allSettled`** sehingga shutdown tidak melempar karena satu socket sudah hilang.
+
+**Peringatan TLS: batas alat ukur, dinyatakan.** Baris 10 dievaluasi **saat MODULE LOAD**,
+jadi ia **tidak bisa** dicapai dengan mengimpor ulang modul di dalam proses yang sama —
+import pertama sudah berjalan dengan env proses itu. Satu-satunya cara jujur adalah
+**subprocess** dengan env berbeda, dan subprocess **tidak ikut instrumentasi**; karena itu
+baris 10 tetap `hit=0` **meskipun perilakunya kini dipatok 4 test** (`node -e` dengan
+`NODE_ENV=production` + `redis://` → memuat `SECURITY`; `rediss://` → senyap; dev → senyap;
+dan membuktikan ia **memperingatkan, bukan melempar**, sehingga deployment tetap boot).
+
+**Temuan — harness saya sendiri yang salah, dan itu terlihat dari 4 kegagalan serentak.**
+Versi pertama subprocess memanggil `mock.module(...)` tanpa mengimpor `bun:test`; **keempat**
+test gagal dengan `mock is not defined`. Kegagalan yang serentak pada semua kasus adalah
+sinyal **harness**, bukan kode — dan `bun -e` manual langsung memperlihatkannya. Perbaikan:
+`import { mock } from 'bun:test'` **di dalam** skrip subprocess. Saya juga menemukan bug
+test saya sendiri: `beforeEach` mengosongkan array bukti konstruksi, padahal kedua klien
+dibangun **sekali saat import** — sehingga 4 test koneksi melihat array kosong. Bukti
+konstruksi kini di-snapshot **setelah import**.
+
+**Kontrol negatif: 7 dijalankan, 6 menggigit.** Yang ketujuh (`JSON.parse` di luar try)
+**tidak valid** — suntingan saya hanya menambah komentar sehingga semantiknya tidak berubah,
+maka "0 fail" bukan temuan. Saya **tidak** melaporkannya sebagai kontrol yang menggigit.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

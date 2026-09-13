@@ -138,6 +138,13 @@ const FLOORS: Record<string, number> = {
   // arbitrary string never reaches the comparison. One pagination-helper test left
   // the handler at 38.24% executable; measured 100.00% (43/43) merged.
   'src/app/api/audit/route.ts': 100,
+  // Carries the RATE LIMITER (a security control), the production TLS warning, and
+  // the cache every RAG/router path falls back on. It had NO test file at all --
+  // the module the whole app degrades onto during a Redis outage was never
+  // executed by the suite. Measured 93.67% (74/79) merged; the one uncovered line
+  // is the TLS warning, which runs at MODULE LOAD and is therefore only reachable
+  // from a subprocess, so it is pinned by test but not instrumented here.
+  'src/lib/redis.ts': 90,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)
