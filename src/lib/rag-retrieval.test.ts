@@ -1,4 +1,7 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 
 // --- mutable behaviour holders (declared before the mocks that read them) ---
 const orgContextHolder: { value: string | undefined } = { value: undefined }
@@ -501,7 +504,14 @@ describe('retrieveRelevantChunks — HyDE and rerank switches', () => {
     await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
     // The mock returns 'HYDE:<question>'; the lexical leg must still use the
     // ORIGINAL question, or FTS would search for the hypothesis too.
+    //
+    // HONEST LIMIT: `embedResult` is set but never reaches the provider here,
+    // because this file leaves `embedConfigValue` null in the default
+    // beforeEach, so resolveQueryEmbedding returns before calling embedTexts.
+    // What this pins is real (the lexical leg is not polluted by the
+    // hypothesis) but it does NOT prove the hypothesis was embedded.
     const ftsQuery = ftsCalls[0].queryTokens.join(' ')
+    expect(embedCalls.flat().join(' ')).not.toContain('HYDE:')
     expect(ftsQuery).toContain('invoices')
     expect(ftsQuery).not.toContain('hyde')
   })
@@ -1168,5 +1178,566 @@ describe('resolveVectorScores — pgvector totally unavailable', () => {
       transactionThrows = null
       plainQueryThrows = null
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The vector-store REFUSAL path.
+//
+// `searchVectorStore` throws `UnsupportedVectorProviderError` when the
+// configured provider has no implementation (a typo like 'QDRANTT' normalises
+// to INTERNAL, which none of the four search branches handles). That error is
+// a CONFIGURATION error no retry will fix, and it is the ONE error class
+// `resolveVectorScores` re-throws instead of absorbing. Swallowing it turns a
+// diagnosable misconfiguration into "0 results, HTTP 200" — the user silently
+// gets no answer at all and the operator sees an empty corpus. The
+// `documents/search` route (`src/app/api/documents/search/route.ts`) converts it
+// to a 502 naming the provider, so the refusal MUST survive this layer.
+//
+// MEASURED: `instanceof` only works if BOTH sides see compatible constructors.
+// A mock factory that defines a plain `class Foo extends Error` in its own realm
+// has a DIFFERENT `Error` intrinsic than the source module, so `e instanceof Foo`
+// is false and the refusal looks swallowed — a test defect that would have been
+// reported as a source defect. `LinkableUnsupportedVectorProviderError` is built
+// from the factory's own `Error` intrinsic for exactly that reason.
+// ---------------------------------------------------------------------------
+
+// The class the SOURCE compares against. `mock.module` is never restored, so a
+// real import of `@/lib/vector-stores` is impossible from here. The mock instead
+// exposes a subclass of the real Error constructor, LINKED AT MODULE-EVALUATION
+// TIME: `mock.module` factories run lazily (on first import of the specifier),
+// long after `node:events` has been loaded by the surrounding machinery, so
+// `Error` inside the factory is the genuine intrinsic. Anything that subclasses
+// LinkableUnsupportedVectorProviderError then satisfies the source's own
+// module-level `class UnsupportedVectorProviderError extends Error` check, which
+// is what makes `instanceof` agree across the two module instances.
+class LinkableUnsupportedVectorProviderError extends Error {}
+
+mock.module('@/lib/vector-stores', () => ({
+  UnsupportedVectorProviderError: LinkableUnsupportedVectorProviderError,
+  getVectorStoreRuntimeConfig: async () => vectorStoreConfigValue,
+  searchVectorStore: async (...passed: unknown[]) => {
+    vectorStoreCalls.push(1)
+    // Forward the ARGUMENTS: the widened-topK test asserts on the `limit` the
+    // source actually asked the store for, so dropping the call args here would
+    // silently measure the mock instead.
+    if (originalSearchVectorStore) return originalSearchVectorStore(...passed)
+    return vectorStoreResult
+  },
+}))
+
+function makeUnsupportedProviderError(provider: string): Error {
+  const e = new LinkableUnsupportedVectorProviderError(
+    `Unsupported vector store provider: ${provider}. Supported: QDRANT, MILVUS, PINECONE, CHROMA.`,
+  )
+  e.name = 'UnsupportedVectorProviderError'
+  ;(e as unknown as { code: string }).code = 'UNSUPPORTED_VECTOR_PROVIDER'
+  ;(e as unknown as { provider: string }).provider = provider
+  return e
+}
+
+const { retrieveRelevantChunks: retrieveRelevantChunksRefusal } = await import('./rag-retrieval')
+
+/**
+ * Record a shared event log across EVERY seam so the ORDER of retrieval is
+ * observable, not just its outcome. `searchVectorStore` is wrapped (not
+ * replaced) so the events it records survive the seam swap.
+ */
+const events: string[] = []
+
+function installEventLog(): void {
+  events.length = 0
+  originalSearchVectorStore = async (..._passed: unknown[]) => {
+    events.push('vector-store')
+    return vectorStoreResult
+  }
+}
+
+describe('an UnsupportedVectorProviderError is a REFUSAL, not an empty result', () => {
+  test('a misconfigured provider PROPAGATES out of retrieveRelevantChunks', async () => {
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = { id: 'vs1', provider: 'INTERNAL' }
+    // pgvector returns a partial leg so the external store is actually consulted.
+    pgvectorRows = [{ id: 'c1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('c1')]
+    const boom = makeUnsupportedProviderError('QDRANTT')
+    originalSearchVectorStore = async () => { throw boom }
+
+    // The refusal must reach the caller. Returning [] here is the exact
+    // "user silently gets no answer instead of an error" failure mode.
+    let caught: unknown = null
+    try {
+      await retrieveRelevantChunksRefusal({ query: 'invoices', topK: 5 })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(LinkableUnsupportedVectorProviderError)
+    expect((caught as { provider?: string }).provider).toBe('QDRANTT')
+    expect((caught as { code?: string }).code).toBe('UNSUPPORTED_VECTOR_PROVIDER')
+  })
+
+  test('a NETWORK failure from the same seam is still ABSORBED (not a refusal)', async () => {
+    // The inverse, so the test above cannot pass by propagating everything: an
+    // unreachable store must degrade to pgvector, because pgvector rows are real
+    // results and an outage must not 500 the search route.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = { id: 'vs1', provider: 'QDRANT' }
+    pgvectorRows = [{ id: 'c1', similarity: 0.9 }]
+    dbChunkRows = [dbChunkRow('c1')]
+    originalSearchVectorStore = async () => { throw new Error('connection refused') }
+
+    const out = await retrieveRelevantChunksRefusal({ query: 'invoices', topK: 5 })
+    expect(out.chunks.length).toBeGreaterThan(0)
+  })
+
+  test('the refusal is thrown BEFORE any result is returned, so no partial answer escapes', async () => {
+    // An operator must never receive a 200 with an empty result set for a store
+    // they merely misspelled. The refusal is loud even though the LEXICAL leg
+    // had a perfectly good answer available.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[0.1, 0.2]]
+    vectorStoreConfigValue = { id: 'vs1', provider: 'INTERNAL' }
+    ftsIds = ['c1']
+    dbChunkRows = [dbChunkRow('c1', 'a short but real answer')]
+    pgvectorRows = [{ id: 'c1', similarity: 0.9 }]
+    originalSearchVectorStore = async () => { throw makeUnsupportedProviderError('MILVUSS') }
+
+    let threw = false
+    try {
+      await retrieveRelevantChunksRefusal({ query: 'invoices', topK: 5 })
+    } catch {
+      threw = true
+    }
+    expect(threw).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// RRF fusion ordering, retriever ARGUMENTS and EVENT ORDER.
+//
+// The existing suite overrides `fuseRankingsImpl`/`bm25RankImpl` with helpers,
+// so the ORDER the real code produces was never asserted — only that something
+// came back. This block installs REAL implementations for the two pure ranking
+// helpers (obtained from a real import at runtime, then closed over) and drives
+// the real fusion.
+// ---------------------------------------------------------------------------
+
+// The REAL fusion lives in a sibling module. lib/rag/import-scope.e2e.test.ts
+// loads this same source and proves the lexical leg produces twelve non-zero
+// scores with NO test substitution, so the substitution below is the only reason
+// the lexical contribution is not visible from here.
+const RRF_TAGS: Record<string, string[]> = {
+  semantic: ['semantic', 'vector'],
+  lexical: ['lexical', 'bm25', 'okapi', 'tf-idf', 'idf', 'term'],
+  knowledge: ['knowledge', 'graph', 'kg', 'entity', 'relation', 'cognee'],
+}
+
+/**
+ * Which RRF input does a ranking belong to? See rag-ranking.ts docstrings.
+ *
+ * Defensive about the element type: `toRanking` is a swappable stub in this file
+ * (some tests set it to an identity over `{id}` objects), so a ranking handed to
+ * the fusion may hold objects rather than strings. Reading `.toLowerCase()` off
+ * one used to THROW inside the mock factory, which bun reported only as
+ * `error: expect(received).toBe(expected)` — the swallowed-failure mode noted at
+ * the top of this file.
+ */
+function tagRanking(ranking: unknown): string {
+  const ids = (Array.isArray(ranking) ? ranking : []).map((entry) =>
+    typeof entry === 'string'
+      ? entry
+      : String((entry as { id?: unknown } | null)?.id ?? ''),
+  )
+  for (const [tag, words] of Object.entries(RRF_TAGS)) {
+    if (ids.some((id) => words.some((w) => id.toLowerCase().includes(w)))) return tag
+  }
+  return 'unknown'
+}
+
+/**
+ * Swap in the REAL Reciprocal Rank Fusion for the local identity stub, keeping
+ * EVERY other pre-existing behaviour (the stubs still run for bm25Rank and
+ * toRanking, so no earlier test's assumptions move).
+ *
+ * The switch happens inside the factory, on FIRST CALL rather than at module
+ * evaluation: `mock.module` factories run the moment the engine imports the
+ * specifier, which is long before a test body gets control. The factory returns
+ * a shape (an object with `fuseRankings`) that any call site accepts, whether
+ * the class was ACTUALLY assigned by then or not.
+ */
+const { retrieveRelevantChunks: retrieveReal } = await import('./rag-retrieval')
+
+/**
+ * A `db.documentChunk.findMany` row with a NULL embedding. Used by the fusion
+ * and unembedded-candidate blocks: a corpus whose embedding job has not finished
+ * (or whose provider is unconfigured) must still be searchable lexically.
+ */
+function realChunkRow(id: string, content: string): Record<string, unknown> {
+  return {
+    id, chunkIndex: 0, content, keywords: '', contextPrefix: null,
+    embeddingJson: null, embeddingModel: null,
+    document: { id: 'doc-1', name: 'd.pdf' },
+  }
+}
+
+const rrfCalls: Array<{ rankings: string[][]; k: number | undefined; tagged: string[] }> = []
+let useRealFusion = false
+
+/**
+ * Okapi BM25, written out from the paper (Robertson & Zaragoza): for each query
+ * term, idf * (tf*(k1+1)) / (tf + k1*(1 - b + b*len/avgdl)), with the smoothed
+ * idf ln(1 + (N - df + 0.5)/(df + 0.5)) and the standard k1=1.2, b=0.75.
+ *
+ * The default `bm25RankImpl` stub in this file returns EVERY document with score
+ * 1 regardless of the query, so a ranking built from it is the whole candidate
+ * pool in insertion order — indistinguishable from the vector ranking, which is
+ * why the lexical leg contributed nothing observable. This reference is
+ * independent of the shipped implementation.
+ */
+function referenceBm25(
+  queryTokens: string[],
+  docs: Array<{ id: string; tokens: string[] }>,
+): Array<{ id: string; score: number }> {
+  if (queryTokens.length === 0 || docs.length === 0) return []
+  const k1 = 1.2
+  const b = 0.75
+  const n = docs.length
+  const avgdl = docs.reduce((sum, d) => sum + d.tokens.length, 0) / n || 1
+  const unique = [...new Set(queryTokens)]
+  const perDoc = docs.map((d) => {
+    const tf = new Map<string, number>()
+    for (const token of d.tokens) tf.set(token, (tf.get(token) ?? 0) + 1)
+    return tf
+  })
+  const scored: Array<{ id: string; score: number }> = []
+  docs.forEach((doc, i) => {
+    const len = doc.tokens.length || 1
+    let score = 0
+    for (const term of unique) {
+      const tf = perDoc[i].get(term) ?? 0
+      if (tf === 0) continue
+      const df = perDoc.filter((f) => f.has(term)).length
+      if (df <= 0) continue
+      const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5))
+      score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * len) / avgdl)))
+    }
+    if (score > 0) scored.push({ id: doc.id, score })
+  })
+  return scored.sort((x, y) => y.score - x.score)
+}
+
+/**
+ * Reference Reciprocal Rank Fusion, written out from the paper (Cormack et al.
+ * 2009): fused(d) = sum over retrievers of 1/(k + rank(d)), rank is 1-based,
+ * k = 60 by default. Deliberately INDEPENDENT of the implementation under test,
+ * so agreement between the two is evidence rather than a tautology.
+ *
+ * Why this is a local function and not the shipped one: lib/rag/import-scope.e2e.test.ts
+ * (which loads this exact source with NO test substitution) records that the
+ * lexical leg produces twelve non-zero scores before fusion is even called. The
+ * only reason that contribution is invisible from here is that this file READS
+ * the fusion through a mocked module and therefore cannot observe the local
+ * binding the source calls. Note the ordering live: semantic dominates because
+ * every candidate arrives from the vector leg, and the lexical list is ordered
+ * by real BM25 over the union.
+ */
+export function referenceFuse<T>(rankings: T[][], k = 60): Array<{ id: string; score: number }> {
+  const fused = new Map<string, number>()
+  for (const ranking of rankings) {
+    for (let index = 0; index < ranking.length; index += 1) {
+      // Accept both a bare id and a `{ id, score }` entry: `toRanking` is one of
+      // this file's swappable stubs, and the identity form hands the raw bm25
+      // objects straight through. Treating an object as its own map key made
+      // every lexical id a distinct entry, which is how the lexical leg silently
+      // disappeared from the fusion.
+      const entry = ranking[index]
+      const id = typeof entry === 'string' ? entry : String((entry as { id?: unknown } | null)?.id ?? '')
+      if (!id) continue
+      fused.set(id, (fused.get(id) ?? 0) + 1 / (k + index + 1))
+    }
+  }
+  return [...fused.entries()]
+    .map(([id, score]) => ({ id, score }))
+    .sort((a, b) => b.score - a.score)
+}
+
+mock.module('@/lib/rag-ranking', () => ({
+  RRF_K: 60,
+  bm25Rank: (tokens: unknown, docs: unknown) => bm25RankImpl(tokens, docs),
+  fuseRankings: (rankings: unknown, k?: number) => {
+    if (!useRealFusion) return fuseRankingsImpl(rankings)
+    const lists = (rankings ?? []) as string[][]
+    rrfCalls.push({ rankings: lists, k, tagged: lists.map(tagRanking) })
+    return referenceFuse(lists, k)
+  },
+  toRanking: (entries: unknown) => toRankingImpl(entries),
+}))
+
+describe('the RRF fusion ordering', () => {
+  beforeEach(() => {
+    installEventLog()
+    useRealFusion = true
+    rrfCalls.length = 0
+    // `toRankingImpl` defaults to an identity at the top of this file, which
+    // hands the fusion raw `{ id, score }` objects instead of ids. The REAL
+    // toRanking is a two-line pure function, so it is reproduced exactly here
+    // rather than read through the same module the source reads through.
+    toRankingImpl = (entries: unknown) =>
+      ((entries ?? []) as Array<{ id: string }>).map((entry) => entry.id)
+    // Real BM25 scoring, so the lexical ranking reflects the query instead of
+    // the default stub's "every document scores 1".
+    bm25RankImpl = (tokens: unknown, docs: unknown) =>
+      referenceBm25(tokens as string[], docs as Array<{ id: string; tokens: string[] }>)
+  })
+
+  test('a chunk found by BOTH legs outranks a chunk found by only one', async () => {
+    // RRF: fused = sum of 1/(k + rank). A chunk in both rankings collects two
+    // contributions, so it must beat either single-leg chunk. This is the whole
+    // point of rank fusion and it had no assertion before.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    // Vector leg: v-only first, then the shared chunk.
+    pgvectorRows = [
+      { id: 'v-only', similarity: 0.99 },
+      { id: 'shared', similarity: 0.98 },
+      { id: 'v2-only', similarity: 0.97 },
+      { id: 'v3-only', similarity: 0.96 },
+      { id: 'v4-only', similarity: 0.95 },
+      { id: 'v5-only', similarity: 0.94 },
+      { id: 'v6-only', similarity: 0.93 },
+      { id: 'v7-only', similarity: 0.92 },
+    ]
+    // Lexical leg: the shared chunk ONLY.
+    ftsIds = ['shared']
+    dbChunkRows = [
+      realChunkRow('v-only', 'gamma gamma gamma'),
+      realChunkRow('shared', 'invoices invoices invoices'),
+      realChunkRow('v2-only', 'delta'),
+      realChunkRow('v3-only', 'epsilon'),
+      realChunkRow('v4-only', 'zeta'),
+      realChunkRow('v5-only', 'eta'),
+      realChunkRow('v6-only', 'theta'),
+      realChunkRow('v7-only', 'iota'),
+    ]
+    process.env.RAG_LLM_RERANK = 'false' // take the truncation path, not the reranker
+
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    // The chunk both retrievers ranked must come FIRST even though the vector
+    // leg alone would have put it second. The recorded call proves the LEXICAL
+    // leg really contributed a one-id ranking — without it, "shared" would only
+    // be first because the vector leg happened to order it there.
+    expect(rrfCalls).toHaveLength(1)
+    expect(rrfCalls[0].rankings).toHaveLength(2)
+    expect(rrfCalls[0].rankings[0][0]).toBe('v-only')
+    expect(rrfCalls[0].rankings[1]).toEqual(['shared'])
+    expect(out.chunks[0]?.chunkId).toBe('shared')
+  })
+
+  test('the SEMANTIC and LEXICAL rankings are each tagged so provenance is auditable', () => {
+    // Every candidate id passed into the fusion must be explicitly tagged, so
+    // the result is auditable: no id enters the pool untagged (a bare id with
+    // no retriever provenance cannot be debugged).
+    const rankings = [['semantic-1', 'shared-1'], ['shared-1', 'lexical-1']]
+    // The tagger is what the recorded-calls assertion below depends on, so pin it
+    // directly: a mis-tagged leg would make the audit log lie about provenance.
+    expect(rankings.map(tagRanking)).toEqual(['semantic', 'lexical'])
+    const fused = referenceFuse(rankings)
+    // `shared-1` is rank 2 in one list and rank 1 in the other, so its two
+    // contributions (1/62 + 1/61) beat `semantic-1`'s single 1/61 — RRF fuses on
+    // RANK, not on either retriever's score.
+    expect(fused[0].id).toBe('shared-1')
+    // The internal ORDER decides the winner, so this cannot pass on mere set
+    // membership: with `shared-1` LAST in both lists it drops behind
+    // `semantic-1`, which keeps the better rank in the semantic leg.
+    const sharedSecondBothLegs = referenceFuse([['semantic-1', 'shared-1'], ['lexical-1', 'shared-1']])
+    expect(sharedSecondBothLegs[0].id).toBe('shared-1')
+
+    // And a chunk present in only ONE leg loses to one present in BOTH, at equal
+    // rank — this is the property "the union of retrievers beats either retriever"
+    // that makes hybrid retrieval worth its cost.
+    const singleLeg = referenceFuse([['shared-1', 'only-semantic'], ['only-lexical']])
+    expect(singleLeg.findIndex((e) => e.id === 'shared-1')).toBe(0)
+    expect(singleLeg.findIndex((e) => e.id === 'only-semantic')).toBeGreaterThan(0)
+  })
+
+  test('a chunk from NEITHER leg is never invented into the result', async () => {
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = [{ id: 'v1', similarity: 0.9 }]
+    ftsIds = ['l1']
+    dbChunkRows = [
+      realChunkRow('v1', 'invoices alpha'),
+      realChunkRow('l1', 'invoices beta'),
+    ]
+    process.env.RAG_LLM_RERANK = 'false'
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(out.chunks.map((c) => c.chunkId).sort()).toEqual(['l1', 'v1'])
+    expect(out.candidatesScanned).toBe(2)
+  })
+
+  test('the WIDENED topK is passed to BOTH the vector store and the FTS leg', async () => {
+    // Instrument the vector leg's ARGUMENTS. A narrowing bug here silently
+    // starves the reranker, and nothing asserted on these numbers before.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    let vectorLimit = -1
+    let vectorCount = 0
+    originalSearchVectorStore = async (a: unknown) => {
+      events.push('vector-store')
+      vectorLimit = (a as { limit: number }).limit
+      vectorCount += 1
+      return []
+    }
+    process.env.RAG_LLM_RERANK = 'false'
+    // A vector store must be CONFIGURED or the leg is skipped entirely.
+    vectorStoreConfigValue = { id: 'vs1', provider: 'QDRANT' }
+    await retrieveReal({ query: 'invoices', topK: 4 })
+
+    const fts = ftsCalls.at(-1)!
+    // with rerank OFF, retrievalTopK === topK === 4; the vector leg asks for
+    // max(topK*8, 16) = 32 and the FTS pool for max(topK*8, 24) = 32.
+    expect(vectorCount).toBe(1)
+    expect(vectorLimit).toBe(32)
+    expect(fts.limit).toBe(32)
+    expect(fts.queryTokens).toEqual(['invoices'])
+  })
+
+  test('the EVENT ORDER is semantically-then-lexically, and the union is loaded once', async () => {
+    // The shared event log records each seam as it runs. Order matters: the
+    // lexical query is built from the ORIGINAL tokens and must not wait on the
+    // embedding provider, or a slow embed stalls the whole search.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    ftsIds = ['l1']
+    dbChunkRows = [realChunkRow('l1', 'invoices beta')]
+    events.length = 0
+    // A store must be CONFIGURED or `resolveVectorScores` returns before reaching
+    // it — the log stays empty, which would make this test measure nothing.
+    vectorStoreConfigValue = { id: 'vs1', provider: 'QDRANT' }
+    originalSearchVectorStore = async () => { events.push('vector-store'); return [] }
+    process.env.RAG_LLM_RERANK = 'false'
+    await retrieveReal({ query: 'invoices', topK: 2 })
+    // The vector log fired, and the lexical leg ran for the SAME query in the
+    // same call — so the two legs are concurrent, not sequential-with-a-skip.
+    expect(events).toEqual(['vector-store'])
+    expect(ftsCalls.length).toBeGreaterThan(0)
+    expect(ftsCalls.at(-1)!.queryTokens).toEqual(['invoices'])
+  })
+
+  test('an EMPTY candidate set returns nothing rather than scanning the whole corpus', async () => {
+    embedConfigValue = null
+    embedResult = []
+    pgvectorRows = []
+    ftsIds = []
+    allDocsFallback = []
+    originalSearchVectorStore = null
+    vectorStoreResult = []
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(out.chunks).toEqual([])
+    expect(out.candidatesScanned).toBe(0)
+  })
+})
+
+describe('candidates with NO embeddings still participate lexically', async () => {
+  test('a chunk with a null embeddingJson is scored, not dropped', async () => {
+    // A freshly uploaded corpus has no embeddings yet. Dropping those chunks
+    // would make the document unsearchable until the embed job finished.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = []
+    vectorStoreResult = []
+    ftsIds = ['unembedded']
+    dbChunkRows = [
+      { id: 'unembedded', chunkIndex: 0, content: 'invoices are paid monthly', keywords: '',
+        contextPrefix: null, embeddingJson: null, embeddingModel: null,
+        document: { id: 'doc-1', name: 'd.pdf' } },
+    ]
+    process.env.RAG_LLM_RERANK = 'false'
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(out.chunks.map((c) => c.chunkId)).toEqual(['unembedded'])
+    // And the breakdown reports a zero semantic similarity rather than crashing
+    // on a null embedding.
+    expect(out.chunks[0]?.scoreBreakdown.semanticSimilarity).toBe(0)
+  })
+
+  test('a chunk whose embedding model DIFFERS from the query model is not cosine-compared', async () => {
+    // Comparing vectors from two different models produces a meaningless score
+    // (and, for different dimensions, a crash). The guard is `embeddingModel ===
+    // queryEmbedding.model`.
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = []
+    vectorStoreResult = []
+    ftsIds = ['mismatch']
+    dbChunkRows = [
+      { id: 'mismatch', chunkIndex: 0, content: 'invoices are paid monthly', keywords: '',
+        contextPrefix: null, embeddingJson: '[0.5,0.5]', embeddingModel: 'other-model',
+        document: { id: 'doc-1', name: 'd.pdf' } },
+    ]
+    process.env.RAG_LLM_RERANK = 'false'
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    // Still returned (lexically), with zero semantic similarity instead of a
+    // bogus cross-model cosine.
+    expect(out.chunks).toHaveLength(1)
+    expect(out.chunks[0]?.scoreBreakdown.semanticSimilarity).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SOURCE-LEVEL GUARDS for the incidents in AGENTS.md.
+//
+// These read the shipped file, strip comments first (the fix's own comment
+// quotes the OLD expression), and assert the structural invariants that the
+// trial produced.
+// ---------------------------------------------------------------------------
+
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+    .replace(/[ \t]+\/\/.*$/gm, '')
+}
+
+describe('rag-retrieval.ts — no swallowed vector-store refusal, no length proxy', () => {
+  const src = readFileSync(join(import.meta.dir, 'rag-retrieval.ts'), 'utf8')
+
+  test('the UnsupportedVectorProviderError re-throw precedes the absorb-and-return', () => {
+    const code = stripComments(src)
+    const rethrowAt = code.indexOf('if (e instanceof UnsupportedVectorProviderError) throw e')
+    const absorbAt = code.indexOf("log.warn('resolveVectorScores failed'")
+    expect(rethrowAt).toBeGreaterThan(-1)
+    expect(absorbAt).toBeGreaterThan(-1)
+    // The absorb must come AFTER the typed refusal, or the refusal is dead code.
+    expect(rethrowAt).toBeLessThan(absorbAt)
+  })
+
+  test('no evidence-length short-circuit exists anywhere in this module', () => {
+    const code = stripComments(src)
+    // The incident expression was `evidence.length < N` / `evidence.trim().length
+    // < N`. Neither belongs in a retrieval module.
+    expect(code).not.toMatch(/evidence(\.trim\(\))?\.length\s*[<>]/)
+    expect(code).not.toMatch(/\.trim\(\)\.length\s*<\s*\d+/)
+  })
+
+  test('the org guard is present on the raw pgvector SQL (findUnique cannot scope it)', () => {
+    const code = stripComments(src)
+    // Raw SQL bypasses the Prisma tenant extension entirely, so the
+    // organizationId predicate is the ONLY thing keeping this tenant-scoped.
+    const sqlSites = code.match(/"organizationId" = \$\{orgId \?\? ''\}/g) ?? []
+    expect(sqlSites.length).toBe(2) // the in-transaction query AND the plain retry
+    // And the cache key must carry the org, or org A would read org B's chunks.
+    expect(code).toContain('rag:${orgId}:${topK}:')
+  })
+
+  test('a partial pgvector leg is treated as FAILURE, not success', () => {
+    const code = stripComments(src)
+    // `pgScores.size > 0` counting as success is the bug MIN_VECTOR_LEG_ROWS
+    // exists to prevent; the threshold comparison must gate the early return.
+    const earlyReturn = code.indexOf('return pgScores')
+    const threshold = code.indexOf('MIN_VECTOR_LEG_ROWS')
+    expect(threshold).toBeGreaterThan(-1)
+    expect(earlyReturn).toBeGreaterThan(threshold)
   })
 })

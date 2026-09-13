@@ -1,4 +1,6 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { RetrievedChunk } from './rag'
 
 // --- Mocks (must be before imports of modules under test) ---
@@ -14,6 +16,34 @@ const mockRetrieveRelevantChunks = mock(async (_args: { query: string; topK: num
   candidatesScanned: 0,
   graphContext: '',
 }))
+// Mirrors the real `selectTopRetrievedChunks` contract used by retrieveWithReflection:
+// sort by score desc then chunkIndex, cap per document, then cap at topK.
+const mockSelectTopRetrievedChunks = mock(
+  // RAG_MAX_PER_DOCUMENT is 3 in constants.ts; using 2 here made an existing
+  // test's 3-chunks-from-one-document fixture silently return 2.
+  <T extends { score: number; chunkIndex: number; documentId: string }>(rows: T[], topK: number, maxPerDocument = 3): T[] => {
+    const selected: T[] = []
+    const perDocument = new Map<string, number>()
+    for (const row of [...rows].sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex)) {
+      const count = perDocument.get(row.documentId) ?? 0
+      if (count >= maxPerDocument) continue
+      selected.push(row)
+      perDocument.set(row.documentId, count + 1)
+      if (selected.length >= topK) break
+    }
+    return selected
+  },
+)
+const mockTokenize = mock((text: string) =>
+  text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean),
+)
+const mockScoreChunk = mock(() => ({
+  total: 0, lexicalTotal: 0, contentHits: 0, keywordHits: 0,
+  phraseHits: 0, semanticSimilarity: 0, semanticScore: 0,
+}))
+const mockSortRetrievedChunks = mock(<T extends { score: number; chunkIndex: number }>(rows: T[]) =>
+  [...rows].sort((a, b) => b.score - a.score || a.chunkIndex - b.chunkIndex),
+)
 
 mock.module('@/lib/db', () => ({ db: {} }))
 mock.module('@/lib/rag-fts', () => ({ searchFtsChunkIds: async () => [] }))
@@ -26,7 +56,26 @@ mock.module('@/lib/llm-config', () => ({
   getLlmRuntimeConfig: mockGetLlmRuntimeConfig,
   getRoleLlmConfig: mockGetRoleLlmConfig,
 }))
-mock.module('@/lib/rag', () => ({ retrieveRelevantChunks: mockRetrieveRelevantChunks }))
+// intent-pipeline imports FIVE names from '@/lib/rag' -- a factory that exports
+// only `retrieveRelevantChunks` kills the whole file with
+// "SyntaxError: Export named 'selectTopRetrievedChunks' not found".
+mock.module('@/lib/rag', () => ({
+  retrieveRelevantChunks: mockRetrieveRelevantChunks,
+  selectTopRetrievedChunks: mockSelectTopRetrievedChunks,
+  tokenize: mockTokenize,
+  scoreChunk: mockScoreChunk,
+  sortRetrievedChunks: mockSortRetrievedChunks,
+}))
+
+/**
+ * `@/lib/rag-chunking` is NOT mocked. The whole point of these tests is that the
+ * placeholder detector is exercised against the REAL predicate and the REAL
+ * marker, so that changing the marker in one place and not the other fails here.
+ * The module is import-safe: its document parser imports are static but never
+ * invoked by `isPlaceholderChunk`/`emptyDocumentContent`.
+ */
+const { isPlaceholderChunk: realIsPlaceholderChunk, emptyDocumentContent: realEmptyDocumentContent, EMPTY_DOCUMENT_MARKER: realEmptyMarker } =
+  await import('@/lib/rag-chunking')
 
 // --- Imports ---
 
@@ -96,6 +145,10 @@ beforeEach(() => {
     candidatesScanned: 0,
     graphContext: '',
   }))
+  mockSelectTopRetrievedChunks.mockClear()
+  mockTokenize.mockClear()
+  mockScoreChunk.mockClear()
+  mockSortRetrievedChunks.mockClear()
 })
 
 // --- Pure function tests: expandQuery ---
@@ -947,5 +1000,481 @@ describe('evaluateAnswerConfidence', () => {
     // with no LLM configured, empty evidence was reported as confident — the one
     // verdict that is least trustworthy. Pinned by asserting no LLM call happened.
     expect(mockChatOnce.mock.calls.length - before).toBe(0)
+  })
+})
+
+// ===========================================================================
+// THE 2026-09 INCIDENT, pinned against the REAL function bodies.
+//
+// A document whose extraction produced nothing is stored as
+// `[Empty document: x.pdf]` so retrieval can still match the filename. That
+// marker was fed to the answer prompt AS EVIDENCE, and sufficiency was then
+// decided by EVIDENCE LENGTH (`evidence.trim().length < 50`), so:
+//   - a 46-char placeholder tripped a false "no evidence", AND
+//   - a genuinely complete short answer was also declared insufficient.
+// Both made retrieval advance to a second pass, which made tool-branches.ts
+// inject "if the evidence does not contain the answer, say so" — and the bot
+// disclaimed an answer it had actually retrieved.
+//
+// `evaluateAnswerConfidence` carried the SAME length bug PLUS an ordering bug:
+// its guards sat BELOW `if (!cfg) return { confident: true }`, so on a
+// deployment with no LLM the guards were UNREACHABLE and empty or
+// placeholder-only evidence was reported CONFIDENT.
+//
+// `@/lib/rag-chunking` is deliberately NOT mocked above, so every assertion
+// below runs the shipped `isPlaceholderChunk` / `emptyDocumentContent` /
+// EMPTY_DOCUMENT_MARKER. Mocking the predicate would make these tests agree with
+// whatever the mock says instead of with the code that ships.
+// ===========================================================================
+
+describe('the empty-document placeholder marker', () => {
+  test('the marker is the one the upload route stores', () => {
+    // `emptyDocumentContent` is the single source for the marker text. If the
+    // upload route and the detector ever disagree, placeholders silently become
+    // evidence again — the exact pre-incident state.
+    expect(realEmptyMarker).toBe('[Empty document:')
+    expect(realEmptyDocumentContent('x.pdf')).toBe('[Empty document: x.pdf]')
+    // The literal from the incident report, 46 characters, below the old floor.
+    expect(realEmptyDocumentContent('Scan Kontrak Vendor 2024.pdf').length).toBeLessThan(50)
+  })
+
+  test('isPlaceholderChunk recognises the exact marker', () => {
+    expect(realIsPlaceholderChunk(realEmptyDocumentContent('x.pdf'))).toBe(true)
+  })
+
+  test('isPlaceholderChunk tolerates LEADING whitespace but not a leading word', () => {
+    expect(realIsPlaceholderChunk('   \n\t[Empty document: x.pdf]')).toBe(true)
+    expect(realIsPlaceholderChunk('See also [Empty document: x.pdf]')).toBe(false)
+  })
+
+  test('isPlaceholderChunk recognises different filenames and suffixes', () => {
+    expect(realIsPlaceholderChunk('[Empty document: a.docx]')).toBe(true)
+    expect(realIsPlaceholderChunk('[Empty document: laporan tahunan.xlsx]')).toBe(true)
+    expect(realIsPlaceholderChunk('[Empty document: x.pdf] extra note')).toBe(true)
+  })
+
+  test('isPlaceholderChunk does NOT fire on a real chunk that mentions the word empty', () => {
+    // The predicate matches the MARKER, not the word. A policy about an "empty
+    // container" is real document text and must stay evidence.
+    expect(realIsPlaceholderChunk('An empty container must be sealed before shipping.')).toBe(false)
+    expect(realIsPlaceholderChunk('If the field is empty, default to zero.')).toBe(false)
+    // And not on a document that merely NAMES the marker in prose.
+    expect(realIsPlaceholderChunk('Empty document placeholders are filtered out.')).toBe(false)
+  })
+
+  test('isPlaceholderChunk is total: empty, null and undefined are NOT placeholders', () => {
+    // Falsy input is "no content", which the emptiness guard handles first. It is
+    // deliberately not a placeholder, so a bug in one guard cannot masquerade as
+    // the other's verdict.
+    expect(realIsPlaceholderChunk('')).toBe(false)
+    expect(realIsPlaceholderChunk(null)).toBe(false)
+    expect(realIsPlaceholderChunk(undefined)).toBe(false)
+  })
+})
+
+describe('evaluateEvidenceSufficiency — the content floor, both sides', () => {
+  beforeEach(() => {
+    // The single most valuable configuration: NO LLM. The floor must decide on
+    // its own, without a model to fall back on.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+  })
+
+  test('pure punctuation and whitespace is insufficient even when it is LONG', async () => {
+    // 200 characters, zero alphanumerics. The old length check (and any length
+    // check) would have accepted this.
+    const r = await evaluateEvidenceSufficiency({
+      question: 'what is the leave policy?',
+      evidence: '... --- ... !!! ??? ,,, ;;; ::: ((( ))) [[ ]] {{ }} /// \\\\\\ *** +++ === ',
+    })
+    expect(r.sufficient).toBe(false)
+    expect(r.reason).toBe('Evidence has no substantive content')
+    expect(r.confidence).toBe(0.8)
+  })
+
+  test('EXACTLY 7 alphanumerics is below the floor; 8 is not', async () => {
+    // The boundary, asserted from both sides so the test cannot pass by rejecting
+    // everything or accepting everything.
+    const seven = 'abcdefg'
+    const eight = 'abcdefgh'
+    expect(seven.replace(/[^\p{L}\p{N}]/gu, '').length).toBe(7)
+    expect(eight.replace(/[^\p{L}\p{N}]/gu, '').length).toBe(8)
+
+    expect((await evaluateEvidenceSufficiency({ question: 'q', evidence: seven })).reason)
+      .toBe('Evidence has no substantive content')
+    expect((await evaluateEvidenceSufficiency({ question: 'q', evidence: eight })).reason)
+      .toBe('No LLM for reflection — assuming sufficient')
+  })
+
+  test('digits and non-Latin letters COUNT toward the floor', async () => {
+    // The floor is `[^\p{L}\p{N}]` — letters in ANY script and digits. A business
+    // answer such as "級別3" or a bare amount must not be discarded.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"ok","confidence":0.9}')
+    const r = await evaluateEvidenceSufficiency({ question: 'q', evidence: '1.234.567' })
+    // Reaches the LLM (i.e. cleared the floor): digits with separators are 7
+    // alphanumerics, so use a 8-digit amount to make the intent unambiguous.
+    expect(r).toBeDefined()
+    mockChatOnce.mockClear()
+    const r2 = await evaluateEvidenceSufficiency({ question: 'q', evidence: '12.345.678' })
+    expect(mockChatOnce.mock.calls.length).toBe(1)
+    expect(r2.sufficient).toBe(true)
+  })
+
+  test('a 41-character complete answer is NOT rejected (the false negative)', async () => {
+    const answer = 'Tarif lembur hari kerja 1,5x upah per jam.'
+    // 41 characters per the incident report (42 here — the sentence's own length
+    // is what matters, and the point is that it is BELOW the old 50-char floor).
+    expect(answer.length).toBeLessThan(50)
+    expect(answer.length).toBeGreaterThanOrEqual(41)
+    const r = await evaluateEvidenceSufficiency({ question: 'berapa tarif lembur?', evidence: answer })
+    // No LLM configured: the verdict is the gate's own. It must NOT be the
+    // length-based "insufficient".
+    expect(r.sufficient).toBe(true)
+    expect(r.reason).not.toBe('Evidence too short')
+  })
+
+  test('a placeholder is insufficient BEFORE the LLM is ever consulted', async () => {
+    // Ordering: the placeholder branch must come first, or a configured model
+    // gets asked whether "[Empty document: x.pdf]" answers the question.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"sure","confidence":0.9}')
+    const before = mockChatOnce.mock.calls.length
+    const r = await evaluateEvidenceSufficiency({
+      question: 'isi kontrak vendor',
+      evidence: realEmptyDocumentContent('Scan Kontrak Vendor 2024.pdf'),
+    })
+    expect(r.sufficient).toBe(false)
+    expect(r.reason).toBe('Only placeholder content retrieved')
+    expect(mockChatOnce.mock.calls.length - before).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The placeholder FILTER inside retrieveWithReflection.
+//
+// This is the other half of the incident: even with a correct sufficiency gate,
+// if the placeholder survives into `evidence` the answer prompt receives it as
+// document text. The filter is `merged.chunks.slice(0, topK).filter((c) =>
+// !isPlaceholderChunk(c.content))`.
+// ---------------------------------------------------------------------------
+
+describe('retrieveWithReflection — placeholders never become evidence', () => {
+  test('a placeholder is never counted, even when it is the LONGEST candidate', async () => {
+    // The adversarial shape from the incident: give the placeholder the HIGHEST
+    // score so ranking puts it first and a length-based or score-based filter
+    // would keep it. The marker still must not reach the evidence string.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    const promptSeen: string[] = []
+    // `mockChatOnce` is declared with ZERO arity at the top of this file, so a
+    // two-argument implementation does not typecheck. The cast keeps the mock's
+    // declared shape and is scoped to this assertion's capture only.
+    const capture = mockChatOnce as unknown as {
+      mockImplementation: (fn: (cfg: unknown, messages: Array<{ content: string }>) => Promise<string>) => void
+    }
+    capture.mockImplementation(async (_cfg, messages) => {
+      promptSeen.push(messages[1]?.content ?? '')
+      return '{"sufficient":true,"reason":"ok","confidence":0.9}'
+    })
+    const placeholder = realEmptyDocumentContent('Scan Kontrak Vendor 2024.pdf')
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: [
+        makeChunk({ chunkId: `ph-${args.query}`, content: placeholder, score: 999 }),
+        makeChunk({ chunkId: `real-${args.query}`, content: 'Kontrak vendor berakhir 31 Desember 2024.', score: 1 }),
+      ],
+      queryTokens: [args.query],
+      candidatesScanned: 2,
+      graphContext: '',
+    }))
+
+    const r = await retrieveWithReflection({ query: 'isi kontrak vendor', topK: 5 })
+
+    // The reflection prompt contained the real chunk...
+    expect(promptSeen.join('\n')).toContain('Kontrak vendor berakhir')
+    // ...and NOT the placeholder marker.
+    expect(promptSeen.join('\n')).not.toContain(realEmptyMarker)
+    expect(r.reflection.sufficient).toBe(true)
+    // A SINGLE retrieval pass: pre-fix, the placeholder tripped the length gate,
+    // reflection said insufficient and a second pass ran.
+    expect(r.retrievalPasses).toBe(1)
+    expect(mockRetrieveRelevantChunks.mock.calls.slice(3)).toHaveLength(0)
+  })
+
+  test('a placeholder-ONLY result set reflects as insufficient, not as evidence', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"sure","confidence":0.9}')
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: [makeChunk({ chunkId: `ph-${args.query}`, content: realEmptyDocumentContent('a.pdf') })],
+      queryTokens: [args.query],
+      candidatesScanned: 1,
+      graphContext: '',
+    }))
+
+    const r = await retrieveWithReflection({ query: 'isi kontrak', topK: 5 })
+    // The evidence string was empty after filtering, so the LLM is never asked
+    // to bless a placeholder — the emptiness guard decides.
+    expect(r.reflection.sufficient).toBe(false)
+    expect(r.reflection.reason).toBe('No evidence retrieved')
+    expect(mockChatOnce.mock.calls).toHaveLength(0)
+  })
+
+  test('the SECOND pass keeps only real chunks too', async () => {
+    // The second pass is where the incident's damage landed (it is what set
+    // retrievalPasses >= 2 and made the "say you do not know" note appear). So
+    // the filter has to hold on THAT path as well, not just the first.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"sufficient":false,"reason":"need more","confidence":0.9}')
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: [makeChunk({ chunkId: `real-${args.query}-${args.topK}`, content: 'Isi kontrak: 12 bulan.', score: 1 })],
+      queryTokens: [args.query],
+      candidatesScanned: 1,
+      graphContext: '',
+    }))
+
+    const r = await retrieveWithReflection({ query: 'kontrak', topK: 5 })
+    expect(r.retrievalPasses).toBe(2)
+    // Second pass asks for 2x topK, per the documented contract.
+    const secondPass = mockRetrieveRelevantChunks.mock.calls.at(-1)![0] as { topK: number }
+    expect(secondPass.topK).toBe(10)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CONTENT FLOOR for evaluateAnswerConfidence — both sides, and the ARGUMENT.
+// ---------------------------------------------------------------------------
+
+describe('evaluateAnswerConfidence — the content floor, both sides', () => {
+  beforeEach(() => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+  })
+
+  test('a LONG string of pure punctuation is unconfident', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'q',
+      evidence: '!!! ??? ... --- *** +++ === /// ||| ((( ))) [[ ]] {{ }} $$$ %%% ^^^',
+    })
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('insufficient evidence')
+    expect(r.nextToolHint).toBeNull()
+    expect(r.confidence).toBe(0)
+  })
+
+  test('7 alphanumerics is unconfident; 8 alphanumerics is accepted as sufficient to judge', async () => {
+    // BOTH SIDES. Without the second half, a floor of 1e9 would pass this test.
+    // `alnum` strips non-letters/non-digits so the count is unambiguous.
+    const alnum = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, '')
+    const seven = 'a.b.c.d.e.f.g'
+    const eight = 'a.b.c.d.e.f.g.h'
+    expect(alnum(seven).length).toBe(7)
+    expect(alnum(eight).length).toBe(8)
+    expect((await evaluateAnswerConfidence({ question: 'q', evidence: seven })).confident).toBe(false)
+    expect((await evaluateAnswerConfidence({ question: 'q', evidence: eight })).confident).toBe(true)
+  })
+
+  test('real evidence with no LLM is confident and names why', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'q',
+      evidence: 'Tarif lembur hari kerja 1,5x upah per jam.',
+    })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toBe('no LLM configured')
+    expect(r.confidence).toBe(1.0)
+  })
+
+  test('a THROWING LLM still fails OPEN (an outage must not withhold answers)', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => { throw new Error('provider 503') })
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toBe('evaluation failed, proceeding with answer')
+    expect(r.confidence).toBe(0.5)
+  })
+
+  test('the evidence is TRUNCATED to 4000 chars before it reaches the prompt', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"confident":true,"reason":"ok","confidence":0.9}')
+    await evaluateAnswerConfidence({ question: 'q', evidence: `${'z'.repeat(50_000)}endmarker` })
+    const prompt = (mockChatOnce.mock.calls.at(-1) as unknown as [unknown, Array<{ content: string }>])[1][1].content
+    expect(prompt).not.toContain('endmarker')
+    expect(prompt.length).toBeLessThan(4200)
+  })
+
+  test('the verdict is requested under the confidence-evaluation purpose', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"confident":true,"reason":"ok","confidence":0.9}')
+    await evaluateAnswerConfidence({ question: 'q', evidence: 'en evidence panjang di sini' })
+    const call = mockChatOnce.mock.calls.at(-1) as unknown as [unknown, unknown, number, string]
+    expect(call[2]).toBe(0) // deterministic
+    expect(call[3]).toBe('confidence-evaluation')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE ORDERING FIX — the single most valuable assertion in this file.
+//
+// Pre-fix the function read:
+//     const cfg = await getRoleLlmConfig('query')
+//     if (!cfg) return { confident: true, reason: 'no LLM configured', ... }
+//     if (isPlaceholderChunk(evidence)) return { confident: false, ... }
+// so on a deployment with NO LLM the emptiness guards were DEAD CODE and empty
+// or placeholder-only evidence came back CONFIDENT — the one verdict that is
+// least trustworthy, on the deployment least able to catch it.
+//
+// Every test below therefore runs with NO LLM configured.
+// ---------------------------------------------------------------------------
+
+describe('evaluateAnswerConfidence — guards are reachable with NO LLM (the ordering fix)', () => {
+  beforeEach(() => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+  })
+
+  test('EMPTY evidence is UNCONFIDENT on a deployment with no LLM', async () => {
+    const r = await evaluateAnswerConfidence({ question: 'q', evidence: '' })
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('insufficient evidence')
+  })
+
+  test('WHITESPACE-ONLY evidence is UNCONFIDENT on a deployment with no LLM', async () => {
+    for (const evidence of [' ', '\n', '\t  \n\t', '   \n\n   ']) {
+      const r = await evaluateAnswerConfidence({ question: 'q', evidence })
+      expect(r.confident).toBe(false)
+      expect(r.reason).toBe('insufficient evidence')
+    }
+  })
+
+  test('PLACEHOLDER-ONLY evidence is UNCONFIDENT on a deployment with no LLM', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'isi kontrak',
+      evidence: realEmptyDocumentContent('Scan Kontrak Vendor 2024.pdf'),
+    })
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('only placeholder content')
+    expect(r.nextToolHint).toBeNull()
+  })
+
+  test('a placeholder hidden after LEADING NEWLINES is still caught', async () => {
+    const r = await evaluateAnswerConfidence({
+      question: 'q',
+      evidence: `\n\n  ${realEmptyDocumentContent('a.pdf')}`,
+    })
+    expect(r.confident).toBe(false)
+    expect(r.reason).toBe('only placeholder content')
+  })
+
+  test('the guard stack RESUMES after a legitimate short answer (no over-rejection)', async () => {
+    // The mirror image: with the SAME no-LLM configuration, a real 41-char answer
+    // must NOT be rejected. Together with the three tests above this pins the
+    // guard ORDER (placeholder -> emptiness -> LLM gate) rather than any single
+    // branch: rejecting everything passes the first three and fails this one.
+    const r = await evaluateAnswerConfidence({
+      question: 'berapa tarif lembur?',
+      evidence: 'Tarif lembur hari kerja 1,5x upah per jam.',
+    })
+    expect(r.confident).toBe(true)
+    expect(r.reason).toBe('no LLM configured')
+  })
+
+  test('no LLM is consulted for empty, whitespace or placeholder evidence', async () => {
+    // Ordering measured as a DELTA, so the assertion is about what THIS test did
+    // rather than about the harness's lifetime call bookkeeping.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => '{"confident":true,"reason":"sure","confidence":0.9}')
+    const before = mockChatOnce.mock.calls.length
+    await evaluateAnswerConfidence({ question: 'q', evidence: '' })
+    await evaluateAnswerConfidence({ question: 'q', evidence: '   \n ' })
+    await evaluateAnswerConfidence({ question: 'q', evidence: realEmptyDocumentContent('x.pdf') })
+    expect(mockChatOnce.mock.calls.length - before).toBe(0)
+  })
+
+  test('a SHORT answer does NOT burn a second agentic iteration', async () => {
+    // The user-visible consequence of the length bug: unconfident -> the loop
+    // called another tool -> the eventual answer came from a WORSE context than
+    // the one that already held the answer. Pinned by the confident verdict.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+    const r = await evaluateAnswerConfidence({
+      question: 'siapa yang menyetujui cuti?',
+      evidence: 'Atasan langsung.', // 15 chars, a complete answer
+    })
+    expect(r.confident).toBe(true)
+    expect(r.nextToolHint).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SOURCE-LEVEL GUARDS.
+//
+// These read the shipped module as TEXT with COMMENTS STRIPPED, because the
+// fix's own comment QUOTES the old `evidence.length < 50` expression — a naive
+// grep would match the explanation instead of an implementation. They are the
+// cheap half of the incident: `invariants.test.ts` already carries equivalents,
+// so if that file is ever relaxed these keep the property. Behavioural coverage
+// for the same properties lives in the describes above.
+// ---------------------------------------------------------------------------
+
+const intentSource = readFileSync(join(import.meta.dir, 'intent-pipeline.ts'), 'utf8')
+
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+    .replace(/[ \t]+\/\/.*$/gm, '')
+}
+
+describe('intent-pipeline.ts — the incident can not be reintroduced', () => {
+  test('no evidence-length short-circuit survives, comments excluded', () => {
+    const code = stripComments(intentSource)
+    expect(code).not.toMatch(/evidence\s*&&\s*evidence\.trim\(\)\.length\s*<\s*\d/)
+    expect(code).not.toMatch(/evidence\.trim\(\)\.length\s*<\s*\d/)
+    expect(code).not.toMatch(/evidence\.length\s*<\s*\d/)
+    // And no "too short" verdict string survives.
+    expect(code).not.toContain('Evidence too short')
+  })
+
+  test('the content floor is the `[^\\p{L}\\p{N}]` form, in BOTH functions', () => {
+    const code = stripComments(intentSource)
+    const occurrences = code.match(/replace\(\/\[\^\\p\{L\}\\p\{N\}\]\/gu, ''\)\.length < 8/g) ?? []
+    // One in evaluateEvidenceSufficiency, one in evaluateAnswerConfidence. Losing
+    // either reintroduces the length proxy in that function.
+    expect(occurrences.length).toBe(2)
+  })
+
+  test('in evaluateAnswerConfidence the placeholder check PRECEDES the LLM gate', () => {
+    const code = stripComments(intentSource)
+    const fn = code.slice(code.indexOf('export async function evaluateAnswerConfidence'))
+    const placeholder = fn.indexOf('isPlaceholderChunk(args.evidence)')
+    const floor = fn.indexOf(".length < 8")
+    const gate = fn.indexOf("getRoleLlmConfig('query')")
+    expect(placeholder).toBeGreaterThan(-1)
+    expect(floor).toBeGreaterThan(-1)
+    expect(gate).toBeGreaterThan(-1)
+    // Both guards sit ABOVE the `if (!cfg)` return, which is the ordering fix.
+    expect(placeholder).toBeLessThan(floor)
+    expect(floor).toBeLessThan(gate)
+  })
+
+  test('in evaluateEvidenceSufficiency the placeholder check precedes the LLM gate', () => {
+    const code = stripComments(intentSource)
+    const fn = code.slice(code.indexOf('export async function evaluateEvidenceSufficiency'))
+    const placeholder = fn.indexOf('isPlaceholderChunk(args.evidence)')
+    const gate = fn.indexOf("getRoleLlmConfig('query')")
+    expect(placeholder).toBeGreaterThan(-1)
+    expect(placeholder).toBeLessThan(gate)
+  })
+
+  test('the evidence string is BUILT by filtering placeholders out', () => {
+    const code = stripComments(intentSource)
+    // The filter must be on the chunk CONTENT and must run BEFORE the join, or a
+    // placeholder reaches the prompt as document text.
+    const filterAt = code.indexOf('const evidenceChunks = ')
+    const joinAt = code.indexOf("const evidence = evidenceChunks")
+    expect(filterAt).toBeGreaterThan(-1)
+    expect(joinAt).toBeGreaterThan(filterAt)
+    expect(code.slice(filterAt, joinAt)).toContain('!isPlaceholderChunk(c.content)')
+  })
+
+  test('the marker has ONE definition, in rag-chunking, and is not re-typed here', () => {
+    const code = stripComments(intentSource)
+    // A local literal would drift from the upload route's marker.
+    expect(code).not.toContain('[Empty document:')
+    expect(code).toContain("from '@/lib/rag-chunking'")
   })
 })
