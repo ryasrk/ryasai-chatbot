@@ -1,6 +1,6 @@
 {
-  "linePct": 80.37,
-  "linesHit": 15812,
+  "linePct": 80.43,
+  "linesHit": 15824,
   "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -198,12 +198,6 @@
       "pct": 75.5813953488372
     },
     {
-      "file": "src/lib/planner.ts",
-      "hit": 516,
-      "found": 681,
-      "pct": 75.77092511013215
-    },
-    {
       "file": "src/lib/agentic-budget.ts",
       "hit": 13,
       "found": 17,
@@ -232,6 +226,12 @@
       "hit": 100,
       "found": 129,
       "pct": 77.51937984496125
+    },
+    {
+      "file": "src/lib/planner.ts",
+      "hit": 528,
+      "found": 681,
+      "pct": 77.5330396475771
     },
     {
       "file": "src/lib/smart-router.ts",

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `407a66c`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f92b289`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `407a66c`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.277 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.284 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -74,8 +74,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
-| `src/lib/admin-tools.ts` | 81,78% merged | **86,12%** (2 file) / **96,49%** (3 file, satu proses) / **97,01%** (5 file) | 39 |
-| **Total repo** | **62,44%** | **80,37%** | — |
+| `src/lib/admin-tools.ts` | 81,78% merged | **96,49%** (3 file, satu proses) / **97,01%** (5 file) — lihat §1.7w | 39 |
+| `src/lib/planner.ts` | 75,77% → **77,53%** merged | 77,53% (union 5 file) | 28 |
+| **Total repo** | **62,44%** | **80,43%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -228,8 +229,12 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Gerbang konfirmasi `toggle_integration` dihapus | `admin-tools.ts:242` | 2 |
 | Status integrasi ditulis boolean, bukan string | `admin-tools.ts:250` | 2 |
 | Audit `DOC_UPDATE` dihapus | `admin-tools.ts:273` | 1 |
+| Gerbang admin dihapus (non-admin boleh jalankan) | `planner.ts:545` | 1 |
+| `confirmationRequired` diperlakukan sebagai error | `planner.ts:554` | 1 |
+| Alasan error dikosongkan pada kegagalan | `planner.ts:568` | 1 |
+| `isStepConfirmed` di-hardcode `true` | `planner.ts:485` | seluruh file |
 
-**130 kontrol + 3 kontrol gate, semuanya sah.**
+**134 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1129,6 +1134,66 @@ punya `try/catch` sendiri karena `planner.executeStep` membungkusnya supaya
 error di sini akan mengubah seeding yang gagal menjadi step `"ok"` dan **menghapus
 jalur pemulihan itu**. Versi pertama test saya meng-assert `ok:false` dan **salah
 tentang kontraknya**.
+
+### 1.7v `planner.ts`: cabang admin — blok terbesar yang belum pernah dieksekusi
+
+**75,77% → 77,53% merged (528/681, +12 baris), total repo 80,37% → 80,43%.**
+
+165 baris `planner.ts` **tidak pernah dieksekusi kelima file test-nya**. Blok terbesar
+adalah **cabang `admin:*` di `executeStep`** (baris **552-570**): jalur **sukses**, gerbang
+konfirmasi, dan pelaporan kegagalan. Yang sudah tercakup sebelumnya hanyalah penolakan
+"bukan admin" — jadi **tak satu pun** dari apa yang terjadi ketika seorang admin
+menjalankan tool-nya pernah diuji.
+
+Kenapa belum tersentuh: `planner.test.ts` **sengaja tidak** meng-mock `@/lib/admin-tools`,
+dengan alasan yang terdokumentasi di file itu — `mock.module` bersifat **proses-global**
+dan bocor ke `admin-tools.test.ts`. Jadi jalur sukses mustahil dicapai dari sana. Mock
+dipasang di **`planner-recovery.test.ts`**, file yang memang **ada** untuk menampung
+mock yang tidak boleh dimiliki `planner.test.ts`. **7 test baru** mencakup: caller
+non-admin **tidak pernah menyentuh `executeAdminTool`** sama sekali (pertahanan terhadap
+prompt injection); sukses dilaporkan `ok` dengan output tool dan **tanpa** field `error`
+(UI membaca "Failed" dari situ); identitas pemanggil dan flag konfirmasi **diteruskan**,
+tidak di-default; `confirmationRequired` **bukan error** — ia lewat sebagai `done` agar
+UI tidak menampilkan "Failed"; kegagalan melaporkan output sebagai **alasan** error; dan
+error yang **dilempar** tidak menjatuhkan plan.
+
+**Dua perilaku yang saya salah tebak, dan koreksinya justru intinya:**
+1. Hasil pertama setiap test admin adalah `ok:true, output:'mock-answer'` — **jawaban
+   chat** — padahal `mockExecuteAdminTool` **dipanggil** (`n:1`). Penyebabnya:
+   `mockExecuteAdminTool.mockReset()` di `beforeEach` **menghapus implementasi
+   wrapper-nya**, sehingga mock mengembalikan `undefined`, `result.confirmationRequired`
+   **melempar TypeError**, dan lemparan itu **ditelan `selfCorrect()`** — yang lalu
+   memanggil LLM dan mengembalikan `mock-answer`. Wrapper harus **dipasang ulang**
+   setelah `mockReset()`. Tanpa menyadari ini saya akan "menemukan bug" yang tidak ada.
+2. Assert saya "error yang dilempar tidak lolos dari plan, `ok:false`" **salah**: plan
+   **survive** dan `selfCorrect()` **berhasil** memulihkannya (`ok:true`). Meng-assert
+   `ok:false` berarti meng-assert **terhadap jalur pemulihan yang bekerja**. Sekarang
+   ada dua test: satu membuktikan **plan tidak jatuh** dan recovery jalan, satu lagi
+   membuktikan bila reformulasi **tidak berubah** maka step **gagal** dengan error asli.
+
+Kontrol negatif: **4**, masing-masing menggagalkan test yang dituju (menghapus gerbang
+admin; menganggap `confirmationRequired` sebagai error; mengosongkan alasan error;
+meng-hardcode `isStepConfirmed`).
+
+### 1.7w KOREKSI §1.7v: merged BENAR, alat ukurnya TIDAK perlu diperbaiki
+
+Rondé sebelumnya saya menyimpulkan merged "**meremehkan secara sistematis**" dan
+menjadikan perbaikan `coverage.ts` sebagai prioritas. **Itu salah**, dan ronde ini
+membuktikannya dengan menghitung **baris unik yang tidak pernah dieksekusi siapa pun**:
+
+| | unik `DA:` | tercakup | belum | % |
+|---|---|---|---|---|
+| 3 file `admin-tools-*` | 674 | 549 | **125** | 81,45% |
+| merged repo | 675 | 552 | 123 | 81,78% |
+
+Selisih unik (674) vs `LF` merged (675) hanya **1 baris** — praktis sama. Jadi **125 baris
+memang nyata dan belum tercakup**, dan angka satu-proses **96,49% menyembunyikannya**
+karena Bun hanya meng-instrumentasi jalur yang di-*load* proses itu. `Math.max` di
+`coverage.ts` **justru menghitung baris-baris itu dengan benar**; "memperbaiki"
+penyebutnya akan **menghapus 125 baris nyata** dari laporan dan membuat gate **lebih
+longgar secara palsu**. Perbaikan itu **dibatalkan**, dan cara ukur yang saya pakai
+sekarang (union `DA:` dari semua file test terkait) **harus** dipakai untuk memilih
+target — ia menghasilkan **77,53%** untuk `planner.ts`, **cocok persis** dengan merged.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

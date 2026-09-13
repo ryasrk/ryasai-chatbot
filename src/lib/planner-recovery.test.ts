@@ -20,6 +20,21 @@ const mockExecutePlugin = mock(async (): Promise<{ ok: boolean; output: string; 
 const mockToolRunCreate = mock(async (_a: unknown): Promise<unknown> => ({}))
 const mockRateLimit = mock(async (): Promise<{ allowed: boolean; remaining?: number; limit?: number }> => ({ allowed: true }))
 const org = { id: undefined as string | undefined }
+// The admin branch of executeStep was the largest unexecuted region in planner.ts:
+// its SUCCESS path needs executeAdminTool to return ok:true, which needs a live
+// database. planner.test.ts deliberately does not mock this module because
+// mock.module is process-global and leaks into admin-tools.test.ts; this file
+// already exists to hold the mocks that planner.test.ts cannot, so the mock
+// belongs here.
+let adminImpl: (toolId: string, input: Record<string, string>, userId: string, isConfirmed: boolean) => Promise<unknown> =
+  async () => ({ ok: true, output: 'admin-output' })
+// mockReset() below strips the implementation, so the wrapper is re-installed in
+// the same beforeEach. Without that the mock returns undefined, executeStep throws
+// on result.confirmationRequired, and the throw is swallowed by self-correction —
+// which made every admin test read 'mock-answer' and look like a chat branch.
+const mockExecuteAdminTool = mock(async (toolId: string, input: Record<string, string>, userId: string, isConfirmed: boolean) =>
+  adminImpl(toolId, input, userId, isConfirmed))
+
 
 mock.module('@/lib/tool-router', () => ({ runNonStreamingChatCompletion: mockRunNonStreaming, runStreamingChatCompletion: mockRunNonStreaming }))
 mock.module('@/lib/ai', () => ({ generateAnswer: async () => 'synthesized', generateChat: mockGenerateChat }))
@@ -38,6 +53,7 @@ mock.module('@/lib/web-fetch', () => ({
   webSearch: async () => ({ ok: true, results: [] }),
 }))
 mock.module('@/lib/tool-rate-limit', () => ({ checkToolRateLimit: mockRateLimit }))
+mock.module('@/lib/admin-tools', () => ({ executeAdminTool: mockExecuteAdminTool }))
 mock.module('@/lib/prisma-tenant', () => ({
   getOrgContext: () => org.id,
   enterWithOrg: () => {},
@@ -47,9 +63,9 @@ mock.module('@/lib/prisma-tenant', () => ({
 import { executePlan } from '@/lib/planner'
 import type { Plan, PlanStep } from '@/lib/planner'
 
-async function runStep(step: Partial<PlanStep>) {
+async function runStep(step: Partial<PlanStep>, opts: { isAdmin?: boolean } = {}) {
   const plan: Plan = { steps: [{ id: 's1', tool: 'mcp:srv1:fs.read', input: {}, dependsOn: [], ...step } as PlanStep], needsSynthesis: false }
-  return executePlan({ plan, userId: 'u1' })
+  return executePlan({ plan, userId: 'u1', isAdmin: opts.isAdmin ?? false })
 }
 
 beforeEach(() => {
@@ -66,6 +82,10 @@ beforeEach(() => {
   mockExecutePlugin.mockImplementation(async () => ({ ok: true, output: 'plugin-output', latencyMs: 10 }))
   mockToolRunCreate.mockReset()
   mockToolRunCreate.mockImplementation(async () => ({}))
+  adminImpl = async () => ({ ok: true, output: 'admin-output' })
+  mockExecuteAdminTool.mockReset()
+  mockExecuteAdminTool.mockImplementation(async (toolId: string, input: Record<string, string>, userId: string, isConfirmed: boolean) =>
+    adminImpl(toolId, input, userId, isConfirmed))
   mockRateLimit.mockReset()
   mockRateLimit.mockImplementation(async () => ({ allowed: true }))
 })
@@ -279,5 +299,97 @@ describe('executeStep — a chat step whose tool runs failed', () => {
     const r = await runStep({ tool: 'unknown-tool', input: { question: 'q' } })
     expect(r[0].ok).toBe(true)
     expect(r[0].output).toBe('the answer')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// executeStep — the admin:* branch
+//
+// This was the single largest unexecuted region in planner.ts (lines 552-570):
+// the SUCCESS path, the confirmation gate, and the failure reporting had never
+// run. Only the "caller is not an admin" refusal below it was covered.
+// ---------------------------------------------------------------------------
+
+describe('executeStep — admin tools', () => {
+  test('a non-admin caller never reaches executeAdminTool', async () => {
+    // Defense-in-depth against prompt injection: a plan that leaks an admin:* step
+    // must be stopped before the tool is invoked at all.
+    const r = await runStep({ tool: 'admin:show_monitoring' })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('administrator')
+    expect(mockExecuteAdminTool).not.toHaveBeenCalled()
+  })
+
+  test('an admin success is reported ok with the tool output', async () => {
+    adminImpl = async () => ({ ok: true, output: 'monitoring-output' })
+    const r = await runStep({ tool: 'admin:show_monitoring' }, { isAdmin: true })
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toBe('monitoring-output')
+    // No error field on success — the UI keys "Failed" off it.
+    expect(r[0].error).toBeUndefined()
+  })
+
+  test('the caller identity and confirmation flag are forwarded, not defaulted', async () => {
+    await runStep({ tool: 'admin:show_monitoring', input: {} }, { isAdmin: true })
+    const call = mockExecuteAdminTool.mock.calls.at(-1) as unknown as [string, Record<string, string>, string, boolean]
+    expect(call[0]).toBe('admin:show_monitoring')
+    expect(call[2]).toBe('u1')
+    // isConfirmed must come from the step, never be hardcoded true.
+    expect(call[3]).toBe(false)
+  })
+
+  test('confirmationRequired is NOT an error — it passes through as done', async () => {
+    adminImpl = async () => ({
+      ok: false,
+      output: '',
+      confirmationRequired: { action: 'TOGGLE_DOCUMENT', message: 'Are you sure you want to disable "Leave Policy"?' },
+    })
+    const statuses: Array<[string, string, string]> = []
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'admin:toggle_document', input: {}, dependsOn: [] } as PlanStep],
+      needsSynthesis: false,
+    }
+    const r = await executePlan({ plan, userId: 'u1', isAdmin: true, onStatus: (a, b, c) => statuses.push([a, b, c]) })
+
+    // A gate is not a failure: marking it ok keeps the UI from showing "Failed" and
+    // lets the synthesizer relay the question to the user.
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toContain('Are you sure')
+    expect(statuses.some(([, , s]) => s === 'error')).toBe(false)
+  })
+
+  test('an admin failure reports the output as the error reason', async () => {
+    adminImpl = async () => ({ ok: false, output: 'Document "Nope" not found.' })
+    const r = await runStep({ tool: 'admin:toggle_document', input: { document: 'Nope' } }, { isAdmin: true })
+    expect(r[0].ok).toBe(false)
+    // The reason must survive to the caller; an empty error leaves the synthesizer
+    // to invent one.
+    expect(r[0].error).toBe('Document "Nope" not found.')
+    expect(r[0].output).toBe('Document "Nope" not found.')
+  })
+
+  test('a THROWN admin error does not take down the plan — it is self-corrected', async () => {
+    adminImpl = async () => { throw new Error('database is down') }
+    const r = await runStep({ tool: 'admin:show_monitoring' }, { isAdmin: true })
+    // MEASURED: executeStep catches it and selfCorrect() retries through the LLM,
+    // so the plan SURVIVES with a result rather than rejecting. Asserting ok:false
+    // would have asserted against the recovery path working.
+    expect(r).toHaveLength(1)
+    expect(mockGenerateChat).toHaveBeenCalled()
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toBe('mock-answer')
+  })
+
+  test('a thrown admin error that self-correction CANNOT fix fails the step', async () => {
+    adminImpl = async () => { throw new Error('database is down') }
+    // An unchanged reformulation is rejected, so no retry happens and the original
+    // error is what the caller sees.
+    mockGenerateChat.mockImplementation((async (p: string) => {
+      const m = p.match(/Original question: "(.*)" failed/)
+      return m ? m[1] : p
+    }) as unknown as () => Promise<string>)
+    const r = await runStep({ tool: 'admin:show_monitoring', input: { q: 'same' } }, { isAdmin: true })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toContain('database is down')
   })
 })
