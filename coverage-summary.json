@@ -1,11 +1,11 @@
 {
-  "linePct": 87.41,
-  "linesHit": 18979,
-  "linesFound": 21712,
-  "fnPct": 94.05,
-  "fnsHit": 1754,
-  "fnsFound": 1865,
-  "filesMeasured": 148,
+  "linePct": 87.35,
+  "linesHit": 19006,
+  "linesFound": 21759,
+  "fnPct": 94.06,
+  "fnsHit": 1758,
+  "fnsFound": 1869,
+  "filesMeasured": 149,
   "failedTestFiles": [],
   "files": [
     {
@@ -160,6 +160,15 @@
       "fHit": 12,
       "fFound": 16,
       "fPct": 75
+    },
+    {
+      "file": "src/lib/doc-versioning.ts",
+      "hit": 81,
+      "found": 101,
+      "pct": 80.19801980198021,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
     },
     {
       "file": "src/lib/tool-router-agentic.ts",
@@ -918,6 +927,15 @@
       "fPct": 77.77777777777779
     },
     {
+      "file": "src/app/api/documents/[id]/versions/route.ts",
+      "hit": 27,
+      "found": 27,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/fetch-url/route.ts",
       "hit": 30,
       "found": 30,
@@ -1128,15 +1146,6 @@
       "file": "src/lib/conversation-export.ts",
       "hit": 79,
       "found": 79,
-      "pct": 100,
-      "fHit": 7,
-      "fFound": 7,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/doc-versioning.ts",
-      "hit": 81,
-      "found": 81,
       "pct": 100,
       "fHit": 7,
       "fFound": 7,

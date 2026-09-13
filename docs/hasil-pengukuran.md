@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `099773c`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `59c670c`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `099773c`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,41%** (18.979/21.712 baris, 148 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,05%** (1754/1865 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 190 file · **4.586 lulus · 0 gagal** | terukur |
+| Test coverage | **87,35%** (19.006/21.759 baris, 149 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,06%** (1758/1869 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 191 file · **4.606 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**895 kontrol + 6 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**910 kontrol + 7 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5540,6 +5540,45 @@ tidak membuktikan yang mana pun; test-nya menyatakan perilaku itu **apa adanya, 
 
 **Progres backlog: 16 dari 66 route orphan ditutup.** Repo **87,38% → 87,41%**; suite **4.544 → 4.586**
 (189 → **190 file**); gate **147 → 148 modul**; file terinstrumen **147 → 148**.
+
+### 1.7dk `/api/documents/[id]/versions` — batas tanggung jawab rute vs library: 100,00% (27/27)
+
+Rute tipis di atas `doc-versioning.ts`, jadi test-nya fokus pada **seam yang dimiliki rute**: konteks org yang
+dibangunnya, argumen yang diteruskannya, dan baris audit yang ditulisnya.
+
+**Temuan yang menentukan bentuk test:** **rute inilah — bukan library — yang masuk ke konteks org.**
+`createDocVersion` **tidak** membangun konteksnya sendiri; ia membaca `getOrgContext()!` untuk mengisi
+`organizationId` baris versi baru. Artinya **jika rute berhenti memanggil `enterWithOrg`, non-null assertion itu
+berubah menjadi field tenant bernilai null — bukan menjadi error.** Karena itu asersinya bukan "fungsi ini
+dipanggil" melainkan **URUTAN efek samping: konteks dulu, baru library.** **K1 → 2 merah, K2 → 3 merah.**
+
+**K15 (`audit ditulis SEBELUM create`) → 4 merah**, dan itu penting: mengaudit sebelum create berhasil akan
+meninggalkan **jejak versi yang tidak pernah ada.**
+
+**15 kontrol, dan KELIMA BELAS MENGGIGIT.**
+
+Dicatat jujur sebagai perilaku **apa adanya**: dokumen yang hilang **bukan 404 melainkan 500**, karena rute
+**tidak pernah memuat dokumennya** sehingga tidak bisa membedakan "tidak ada" dari "library gagal" — 404 akan
+menuntut rute melakukan lookup sendiri. Rute ini juga **bukan admin-only**, berbeda dari edit konektor;
+direkam lewat asersi supaya keputusan untuk membatasinya nanti harus mengubah test secara sengaja.
+
+## POLA ARTEFAK `mock.module` TERCIPTA UNTUK KETIGA KALINYA — dan hitsnya identik lagi
+
+Rute ini menurunkan `doc-versioning.ts` ke **80,20% (81/101)** dan **menggate MERAH**, dengan pola yang sama
+seperti `cron.ts` dan `scheduler-queue.ts`: **81 HIT di kedua pengukuran, hanya penyebutnya yang bergerak.**
+
+| modul | dengan mock | tanpa mock | HIT |
+|---|---|---|---|
+| `src/lib/doc-versioning.ts` | 80,20% (81/101) | **100,00% (81/81)** | **81 — IDENTIK** |
+
+Saya kembali **tidak menurunkan floor.** Modul ini **ditambahkan ke pengecualian terdokumentasi yang sudah
+ada** (`MOCK_INFLATED_DENOMINATOR`), dengan **jumlah HIT tercatat sebagai batas**: floor **tetap berlaku bila
+hits turun di bawah 81**, jadi regresi sejati tetap tertangkap. Tiga modul sekarang tercatat di sana
+(**109**, **119**, **81** hits), semuanya dengan bukti pengukuran.
+
+**Progres backlog: 17 dari 66 route orphan ditutup.** Repo **87,41% → 87,35%** — **TURUN, dan sebabnya
+dinyatakan:** file terinstrumen naik **148 → 149**, dan `doc-versioning.ts` kini dihitung dengan
+**penyebut yang lebih jujur.** Suite **4.586 → 4.606** (190 → **191 file**); gate **148 → 149 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
