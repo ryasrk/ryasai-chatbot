@@ -95,6 +95,14 @@ const FLOORS: Record<string, number> = {
   'src/lib/cognee-types.ts': 100, // measured 100.00% (15/15); was mocked by every test that used it
   'src/lib/notifications.ts': 100, // measured 100.00% (132/132); the Resend send path was never run
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
+  'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)
+  'src/lib/embeddings.ts': 82, // merged 82.91%; floor from coverage-summary.json (merged)
+  'src/lib/smart-router.ts': 77, // merged 77.62%; floor from coverage-summary.json (merged)
+  'src/lib/ai.ts': 74, // merged 74.42%; floor from coverage-summary.json (merged)
+  'src/lib/intent-pipeline.ts': 73, // merged 73.74%; floor from coverage-summary.json (merged)
+  'src/lib/real-connectors.ts': 73, // merged 73.11%; floor from coverage-summary.json (merged)
+  'src/lib/config.ts': 70, // merged 70.31%; floor from coverage-summary.json (merged)
+  'src/lib/source-guidance.ts': 63, // merged 63.95%; floor from coverage-summary.json (merged)
   'src/lib/evidence-boundary.ts': 46, // merged 46.67%; merged 46.67% but 14/14 executable (100.00%)
   'src/lib/rag-ranking.ts': 80, // merged 80.56%; merged 80.56% but 58/58 executable (100.00%)
   'src/lib/constrained-output.ts': 84, // merged 84.31%; measured 100.00% (43/43)

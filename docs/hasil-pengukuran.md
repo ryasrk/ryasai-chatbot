@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d46f29`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a87fd37`.
 
 ---
 
@@ -12,8 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d46f29`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,70%** (17.498/20.183 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 173 file · **4.143 lulus · 0 gagal** | terukur |
+| Test coverage | **86,70%** (17.500/20.184 baris, 132 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,54%** (1651/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 174 file · **4.150 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**658 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**670 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4686,6 +4687,59 @@ baris** yang tak terinstrumen sebagai deklarasi tipe (`smart-router.ts:556`, seb
 **6 kontrol OAuth2, semuanya menggigit:** token tidak dikirim (1 merah), `!tokenRes.ok` dihapus (1),
 `scope` selalu dikirim (1), `grant_type` salah (1), `tokenUrl` diabaikan/dipakai nilai tetap (**2**),
 `access_token` non-string diterima (1). Repo **86,62% → 86,70%**; suite **4.136 → 4.143**.
+
+### 1.7cp Cakupan FUNGSI: metrik yang belum pernah ada, dan satu file yang tidak pernah memasuki satu fungsi pun
+
+**Cakupan baris sudah habis di seluruh repo** — 8 modul terakhir yang belum ter-gate semuanya terverifikasi
+100% eksekutabel (`real-connectors` 685/685, `tool-branches` 641/641, `intent-pipeline` 337/338 sisa
+deklarasi tipe). Jadi saya pindah ke metrik yang **belum pernah diukur sama sekali**: **cakupan fungsi**.
+
+**Celah metriknya nyata dan ada di kode saya sendiri.** `parseLcov` di `scripts/coverage.ts` hanya membaca
+record `DA:`; record `FNF:`/`FNH:` yang **Bun keluarkan** diabaikan. Saya buktikan dengan menjalankan satu
+file `--coverage-reporter=lcov` dan memeriksa outputnya: Bun **tidak** mengeluarkan `FN:`/`FNDA:`
+per-fungsi, tetapi **mengeluarkan `FNF:`/`FNH:` per-FILE**. Jadi cakupannya di tingkat file, bukan
+per-nama-fungsi — keterbatasan yang saya catat di komentar, bukan disembunyikan. Itu tetap berguna,
+karena file bisa mencapai **cakupan baris tinggi sementara sebuah fungsi kecil belum pernah dimasuki**.
+
+**Ia langsung menemukan sesuatu: `src/lib/db.ts` adalah SATU-SATUNYA file di `src/` yang memasuki NOL
+dari fungsinya.** Cakupan barisnya 11/12 dan terlihat biasa saja selama ini; rasio fungsilah yang
+membongkar bahwa satu-satunya fungsi di sana **belum pernah berjalan**.
+
+**Kenapa itu penting.** Fungsi itu `isPrismaNotFound`, predikat tunggal yang dipakai **4 route produksi**
+(`integrations/[id]`, `notifications/[id]`, `schedules/[id]`, `tools/[id]`) untuk membedakan *"baris tidak
+ada"* (→ **404**, hasil normal yang ditangani UI) dari *"query gagal"* (→ **500**). **Setiap test yang
+menyentuhnya MENG-MOCK-nya** (mis. `isPrismaNotFound: (e) => /P2025/.test(e.message)`), jadi implementasi
+aslinya tak pernah dieksekusi — dan **predikat yang di-mock tidak bisa memberitahu apakah predikat asli
+mengenali bentuk error yang benar-benar dilempar Prisma**.
+
+**Yang ditemukan saat menguji yang asli:** mock di test route mencocokkan **`P2025` di `e.message`**,
+sedangkan implementasi asli membaca **`e.code`**. Itu **dua perilaku berbeda**: `new Error('failed with
+P2025 in text')` **diterima oleh mock**, **ditolak oleh kode asli**. Kontrol K3 (mengubah kode asli agar
+mencocokkan message seperti mock) **menggigit 3 merah** — bukti terukur bahwa mock itu memang menyimpang.
+Kode asli juga **struktural**, bukan `instanceof Error`, sehingga objek error yang sudah melewati batas
+serialisasi tetap dikenali; K4 (`instanceof`) menggigit. **`db.ts` kini 100% baris (13/13) DAN 100%
+fungsi (1/1).**
+
+**Kesalahan klasifikasi saya sendiri, dikoreksi dengan data.** Dua file teratas daftar fungsi-terendah
+ternyata **bukan** blind spot: `cognee.ts` (44,44% fungsi) adalah **barrel re-export** (`export * from`),
+dan `sso-saml.ts` (59,09% fungsi) terverifikasi **100% baris (235/235)** di tiga file testnya — 8 fungsi
+ekspornya semuanya dieksekusi. Angka rendah itu artefak per-file FNF, bukan celah. Saya juga
+**memverifikasi ulang `graceful-shutdown.ts`** yang saya kunci 100% di ronde 80: 6 kontrol (5 menggigit)
+menunjukkan **seluruh 7 fungsi kode dieksekusi**; sisa 2 di rasio Bun adalah fungsi anonim. Satu
+non-kontrol: menghapus `forceTimer.unref()` **tidak menggigit** — properti yang tak teramati in-process,
+sudah dideklarasikan sebelumnya.
+
+**Baris fungsi tidak naik dari menguji `db.ts` (93,48% → 93,54%)** karena pembulatan per-file: Bun
+menghitung 1 fungsi file itu. Yang berubah nyata adalah **satu file keluar dari kategori "nol fungsi
+dijalankan"**, dan kelas bug "mock yang menyimpang dari implementasi" tercatat.
+
+**Semua 132 file `src/` terinstrumen kini punya floor** (124 → 132): `source-guidance` 63, `config` 70,
+`real-connectors` 73, `intent-pipeline` 73, `ai` 74, `smart-router` 77, `embeddings` 82,
+`tool-branches` 84, `db` — **semuanya dari angka MERGED**, bukan eksekutabel.
+
+**5 kontrol `db.ts`, semuanya menggigit:** selalu true (5 merah), selalu false (2), cocokkan MESSAGE
+bukan code (3), `instanceof` bukan struktural (1), tanpa guard `typeof` (1). Repo **86,70%**; suite
+**4.143 → 4.150**; **174 file**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -10,6 +10,13 @@
  * So: run every test file with its own `bun test --coverage`, then merge the
  * lcov reports. Merging is textual: Bun emits lcov, and summing per-file
  * DA:/LF:/LH: records across runs is enough for a line-coverage number.
+ *
+ * FUNCTION coverage is collected too (FNF:/FNH:). Bun emits the per-FILE function
+ * totals but not the per-function FN:/FNDA: records, so the function number is
+ * per-file, not per-function-name. It is worth having anyway: a file can reach a
+ * high LINE percentage while a whole small function was never entered (its lines
+ * are counted as covered because a longer neighbour on the same physical line ran),
+ * and the function ratio is what exposes that.
  */
 import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync, renameSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -17,7 +24,7 @@ import { join, resolve } from 'node:path'
 const CONCURRENCY = Number(process.env.COVERAGE_CONCURRENCY ?? 8)
 const OUT_DIR = '.coverage-merge'
 
-type FileCov = { lines: Map<number, number>; found: number; hit: number }
+type FileCov = { lines: Map<number, number>; found: number; hit: number; fFound: number; fHit: number }
 
 const REPO_ROOT = process.cwd()
 
@@ -45,7 +52,7 @@ function parseLcov(text: string, into: Map<string, FileCov>) {
       // a repo-relative path, or the same file lands under two keys and its
       // coverage is under-counted instead of merged.
       const path = normalizeSfPath(line.slice(3))
-      current = into.get(path) ?? { lines: new Map(), found: 0, hit: 0 }
+      current = into.get(path) ?? { lines: new Map(), found: 0, hit: 0, fFound: 0, fHit: 0 }
       into.set(path, current)
     } else if (line.startsWith('DA:') && current) {
       const [num, count] = line.slice(3).split(',')
@@ -53,6 +60,13 @@ function parseLcov(text: string, into: Map<string, FileCov>) {
       const hits = Number(count)
       // A line counts as covered if ANY run covered it.
       current.lines.set(lineNo, Math.max(current.lines.get(lineNo) ?? 0, hits))
+    } else if (line.startsWith('FNF:') && current) {
+      // Per-FILE function totals. Bun reports the count for that file in THAT run; take the max
+      // across runs, mirroring the line rule, so a file whose functions are split across two test
+      // files is not counted as two-thirds covered by either run alone.
+      current.fFound = Math.max(current.fFound, Number(line.slice(4)) || 0)
+    } else if (line.startsWith('FNH:') && current) {
+      current.fHit = Math.max(current.fHit, Number(line.slice(4)) || 0)
     }
   }
 }
@@ -143,7 +157,8 @@ async function main() {
   // Aggregate over src/ only; node_modules and test files excluded so the
   // number means "production code", not "code plus its own tests".
   let totalFound = 0, totalHit = 0
-  const rows: Array<{ file: string; hit: number; found: number; pct: number }> = []
+  let totalFnFound = 0, totalFnHit = 0
+  const rows: Array<{ file: string; hit: number; found: number; pct: number; fHit: number; fFound: number; fPct: number }> = []
   for (const [file, cov] of merged) {
     // Bun emits repo-relative paths ("src/lib/x.ts"), not absolute ones.
     const inSrc = file.startsWith('src/') || file.includes('/src/')
@@ -154,7 +169,16 @@ async function main() {
     if (found === 0) continue
     totalFound += found
     totalHit += hit
-    rows.push({ file, hit, found, pct: (hit / found) * 100 })
+    // A file can report FNF > 0 with FNH 0 only if its functions were never entered at all --
+    // exactly the blind spot the line number hides.
+    const fHit = Math.min(cov.fHit, cov.fFound)
+    const fFound = cov.fFound
+    totalFnFound += fFound
+    totalFnHit += fHit
+    rows.push({
+      file, hit, found, pct: (hit / found) * 100,
+      fHit, fFound, fPct: fFound > 0 ? (fHit / fFound) * 100 : 100,
+    })
   }
 
   rows.sort((a, b) => a.pct - b.pct)
@@ -172,9 +196,21 @@ async function main() {
   for (const r of rows.slice(0, 25)) {
     console.log(`  ${r.pct.toFixed(1).padStart(5)}%  ${r.hit}/${r.found}  ${r.file.replace(/.*\/src\//, 'src/')}`)
   }
+  if (totalFnFound > 0) {
+    console.log('\n=== FUNCTION COVERAGE (src/, per-file ratio from FNF/FNH) ===')
+    console.log(`${totalFnHit}/${totalFnFound} functions = ${((totalFnHit / totalFnFound) * 100).toFixed(2)}%`)
+    const zeroFn = rows.filter((r) => r.fFound > 0 && r.fHit === 0)
+    if (zeroFn.length) {
+      console.log(`\n${zeroFn.length} file(s) entered ZERO of their functions:`)
+      for (const r of zeroFn) console.log(`  ${r.fFound} fn, 0 hit  ${r.file.replace(/.*\/src\//, 'src/')}`)
+    }
+  }
   const json = {
     linePct: Number(((totalHit / totalFound) * 100).toFixed(2)),
-    linesHit: totalHit, linesFound: totalFound, filesMeasured: rows.length,
+    linesHit: totalHit, linesFound: totalFound,
+    fnPct: totalFnFound > 0 ? Number(((totalFnHit / totalFnFound) * 100).toFixed(2)) : null,
+    fnsHit: totalFnHit, fnsFound: totalFnFound,
+    filesMeasured: rows.length,
     failedTestFiles: failed, files: rows,
   }
   writeFileSync('coverage-summary.json', JSON.stringify(json, null, 2))
