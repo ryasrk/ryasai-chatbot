@@ -103,7 +103,13 @@ export async function smartRoute(args: {
 
   const mentionResult = await detectMentionedIntegration(args.question, expandedTokens)
   const mentionedIntegration = mentionResult?.integrationId
-  const mentionedAmbiguous = mentionResult?.ambiguous
+  // NOTE: detectMentionedIntegration can no longer return `ambiguous` — every one
+  // of its 9 returns yields an id or undefined, because the behaviour that blocked
+  // on 2+ similar scores was deliberately replaced by "pick the top scorer" (see
+  // the comment at its tail). The `mentionedAmbiguous` branch that consumed it was
+  // therefore unreachable, and removing it changes nothing: measured, disabling it
+  // failed 0 tests. The read-side contract lives in smart-router.test.ts
+  // ("ambiguousIntegrations is populated only from the semantic picker").
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scorePromises = tools.map(async (tool): Promise<ToolScore> => {
@@ -180,8 +186,6 @@ export async function smartRoute(args: {
   if (decision === 'SQL' && args.hasIntegrations) {
     if (mentionedIntegration) {
       integrationId = mentionedIntegration
-    } else if (mentionedAmbiguous && mentionedAmbiguous.length > 1) {
-      ambiguousIntegrations = mentionedAmbiguous
     } else if (args.preferredIntegrationId) {
       integrationId = args.preferredIntegrationId
     } else {

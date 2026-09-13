@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff9c2b6`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `866bdf5`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ff9c2b6`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **81,77%** (16.101/19.690 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.414 lulus · 0 gagal** | terukur |
+| Test coverage | **81,76%** (16.101/19.694 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.426 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -87,7 +87,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/cognee-knowledge-graph.ts` | 94,76% → 77,62% merged (**turun**, §1.7z) | 95,47% → **100,00%** kode eksekutabel (267/267) | 38 |
 | `src/lib/connectors.ts` | 58,78% → **79,73%** merged | 75,00% → **100,00%** kode eksekutabel (118/118) | 21 |
 | `src/lib/tool-router.ts` | 66,4% → **70,41%** merged (selisih **29,6 poin** terbesar) | 94,94% → **100,00%** kode eksekutabel (238/238) | 58 |
-| **Total repo** | **62,44%** | **81,77%** | — |
+| `src/lib/smart-router.ts` | 98,71% → **77,42%** merged (**turun**, §1.7z) | 98,97% → **99,74%** kode eksekutabel (384/385) | 155 |
+| **Total repo** | **62,44%** | **81,76%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -295,8 +296,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Teks klarifikasi dikembalikan kosong | `tool-router.ts:128` | 1 |
 | Fallback `pickBestIntegration` dilewati | `tool-router.ts:373` | 1 |
 | `applyToolGating` mengembalikan decision mentah | `tool-router.ts:44` | 1 |
+| Ambang 2 istilah glossary dilewati | `smart-router.ts:267` | 2 |
+| Kecocokan nama integrasi penuh dihapus | `smart-router.ts:276` | 1 |
+| Aturan kata signifikan dinonaktifkan | `smart-router.ts:283` | 1 |
+| Filter kata generik (`db`/`data`/`store`) dihapus | `smart-router.ts:278` | 1 |
+| `preferredIntegrationId` diabaikan | `smart-router.ts:187` | 1 |
 
-**197 kontrol + 3 kontrol gate, semuanya sah.**
+**202 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1757,6 +1764,55 @@ gagal.
 
 **Kontrol negatif: 6, semuanya menggigit** (tiga di antaranya tadinya tidak, sampai
 fixture dan permukaan mock diperbaiki).
+
+### 1.7aj `smart-router.ts`: deteksi integrasi dari kalimat + satu perilaku jujur tak-terkontrol
+
+**Merged 98,71% → 77,42% meski hit naik 384 → 384** namun `LF` melonjak `388 → 496` —
+pola §1.7z lagi (berkas test lain meng-instrumentasi modul ini). **Eksekutabel 99,74%
+(384/385)**, dan **satu-satunya baris sisa adalah baris yang repo ini sendiri sudah
+buktikan TIDAK DAPAT DIJANGKAU** (bukti IEEE-754 di `smart-router.test.ts`: `schemaScore
+> 0.3` menuntut keyword term ≥0,75, yang membuat gap SQL-CHAT **≥0,10**, sehingga `gap <
+0,1` dan `schemaScore > 0,3` **tidak bisa berlaku bersamaan**).
+
+**Jalur yang belum pernah dieksekusi, dan mengapa penting:** deteksi integrasi dari
+kalimat. Semua fixture di berkas itu memasang **`businessContext: null`**, jadi jalur
+kecocokan domain-glossary **tidak bisa jalan sama sekali**. Padahal itulah yang membuat
+routing 10-database bekerja: bila mereka berbagi nama tabel generik (`orders`), kata
+kunci skema tak bisa membedakannya, dan istilah domain di `businessContext` yang bisa.
+Terjaga: **2 istilah** dalam satu konteks — ambang ini ada karena tiap glossary berbagi
+kata Inggris umum (kontrol: menurunkan ke 1 → **2 test gagal**).
+
+**Kode mati yang ditemukan dan dihapus (bukan bug baru, tetapi sisa berbahaya):**
+`detectMentionedIntegration` mengembalikan **9 `return`, NOL di antaranya menyertakan
+`ambiguous`** — jadi `mentionResult?.ambiguous` **selalu `undefined`** dan cabang yang
+mengonsumsinya **tidak dapat dijangkau**. Dibuktikan dua arah: menonaktifkannya → **0
+test gagal**, dan mencacah seluruh `return` → tidak ada yang mengembalikan `ambiguous`.
+Komentar `ponytail` di ekornya menjelaskan alasannya (perilaku "tanya dulu" sengaja
+diganti "pilih skor teratas"). Cabang itu dihapus, kontraknya tetap dipegang test yang
+sudah ada di repo ("ambiguousIntegrations is populated only from the semantic picker").
+
+**Empat kesalahan saya sendiri di ronde ini, semuanya lewat pengukuran:**
+1. Menambahkan test untuk `reason` baris 158 yang **sudah ada** dan **lebih presisi** di
+   repo — test duplikat saya **dihapus**, bukan dibiarkan.
+2. Tiga kali test `detectMentionedIntegration` saya mengembalikan `undefined`/`RAG`
+   karena **lupa mem-pin tiebreaker LLM** ke `SQL`: pada skor `SQL 0.30 vs CHAT 0.30`
+   tiebreaker menyala dan stub-nya menjawab RAG, sehingga integrasi **tidak pernah
+   diresolusi** dan assertion-nya **vakum**. Setelah di-pin, kontrol yang tadinya tidak
+   menggigit **menggigit**.
+3. Test filter kata generik saya memakai pertanyaan yang **memuat nama lengkap**
+   `"acme data store"` — sehingga aturan nama-penuh menangkapnya **sebelum** aturan kata
+   diuji. Diganti dengan urutan kata yang **tidak** mengandung nama lengkap.
+4. Test kata signifikan saya awalnya juga lulus lewat aturan nama-penuh; setelah
+   diisolasi, kontrolnya menggigit.
+
+**SATU PERILAKU YANG SAYA NYATAKAN TIDAK TERKONTROL, dan tidak saya klaim sebaliknya:**
+`if (integrations.length === 1) return undefined` di `detectMentionedIntegration` —
+menghapusnya tetap **0 test gagal**, bahkan setelah saya menulis test khusus untuk itu.
+Tidak dapat dipin dari luar karena dengan satu sumber jawabannya id yang sama lewat
+cabang mana pun, dan **keduanya benar**. Ia disimpan demi menghemat kerja dan menjaga
+sumber tunggal keluar dari picker semantik, dengan komentar di test yang **menyatakan
+bahwa tidak ada test yang membelanya**. Kontrol di ronde ini: **5 menggigit, 1 jujur
+dinyatakan gagal** — dan yang gagal itu dicatat, bukan disembunyikan.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

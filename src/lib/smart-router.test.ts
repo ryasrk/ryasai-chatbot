@@ -2263,3 +2263,298 @@ describe('score shape, weights and reasons', () => {
     expect(result.ambiguousIntegrations).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// detectMentionedIntegration — naming the source in the question
+//
+// Two of its three returns had never run: the businessContext/glossary match and
+// the integration-NAME match. Every fixture in this file sets
+// `businessContext: null`, so the domain-context path could not execute at all.
+// ---------------------------------------------------------------------------
+
+describe('detectMentionedIntegration — business context and names', () => {
+  // MEASURED: integration detection only runs when the decision is SQL, and these
+  // fixtures score SQL and CHAT close enough (0.30 vs 0.30) to trigger the LLM
+  // tiebreaker — whose default stub answers RAG, so every test here returned
+  // `undefined`. The tiebreaker has to be pinned to SQL for the name/context paths
+  // to be reachable at all. My first version omitted this and eight tests failed
+  // with `undefined`, which is exactly how a test measures the wrong thing.
+  beforeEach(() => {
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'SQL', reason: 'pinned' }))
+  })
+
+  test('a question matching 2+ glossary terms picks THAT integration', async () => {
+    // With 10 databases connected, schema keywords alone cannot separate them when
+    // they share generic table names like "orders". businessContext carries the
+    // domain words that can, so this path is the one that makes many-DB routing work.
+    const MINING = {
+      id: 'mining-1',
+      name: 'Mining Ops',
+      status: 'active',
+      businessContext: 'DOMAIN GLOSSARY\n- *haul truck* = equipment for ore transport\n- *ore grade* = concentration of target mineral\n- *pit bench* = mining level',
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'orders', description: null, columns: JSON.stringify([{ name: 'total' }]) }],
+    }
+    state.integrations = [MINING, HR]
+    // Two domain terms in ONE context is the bar; one is not enough to name a source.
+    const r = await smartRoute({
+      question: 'what is the ore grade at the haul truck pit bench',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).toBe('mining-1')
+  })
+
+  test('a single glossary term is NOT enough to name the source', async () => {
+    // One coincidental word must not route a question to a database; the threshold
+    // exists because every glossary shares common English words.
+    const MINING = {
+      id: 'mining-1',
+      name: 'Mining Ops',
+      status: 'active',
+      businessContext: 'DOMAIN GLOSSARY\n- *haul truck* = equipment for ore transport\n- *ore grade* = concentration',
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'unrelated_table', description: null, columns: JSON.stringify([{ name: 'z' }]) }],
+    }
+    state.integrations = [MINING, HR]
+    const r = await smartRoute({
+      question: 'only the haul truck',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // Falls through to scoring, so it must NOT be a confident name match.
+    expect(r.integrationId).not.toBe('mining-1')
+  })
+
+  test('naming the integration verbatim routes to it', async () => {
+    // The cheapest, most reliable signal available: the user said the name.
+    //
+    // Both schemas deliberately share NOTHING with the question, so scoring cannot
+    // pick a winner and ONLY the name match can produce 'nebulon-1'. My first
+    // version used HR/SALES, whose schemas (employees, orders) already matched the
+    // question — deleting the name match left all 153 tests green, i.e. the test
+    // was passing through a different path entirely.
+    const NAMED = {
+      id: 'nebulon-1', name: 'Nebulon Analytics', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [NAMED, OTHER]
+    const r = await smartRoute({
+      question: 'ask nebulon analytics for the figures',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).toBe('nebulon-1')
+  })
+
+  test('naming is case-INSENSITIVE', async () => {
+    // Same isolation as above: only the name can decide this one.
+    const NAMED = {
+      id: 'nebulon-1', name: 'Nebulon Analytics', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [NAMED, OTHER]
+    const r = await smartRoute({
+      question: 'ASK NEBULON ANALYTICS NOW',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // Users do not type identifiers; a case-sensitive compare would miss this.
+    expect(r.integrationId).toBe('nebulon-1')
+  })
+
+  test('two significant name words, both present, also route', async () => {
+    // "Zephyr Archive" → ["zephyr", "archive"] (>=4 chars, not a stopword). The
+    // generic suffixes "db"/"database"/"data"/"store"/"media" are excluded, because
+    // every integration contains one and they would match everything.
+    const ZEPHYR = {
+      id: 'zephyr-1', name: 'Zephyr Archive', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [ZEPHYR, OTHER]
+    const r = await smartRoute({
+      question: 'pull the zephyr archive figures please',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // Isolated from scoring the same way: neither table name appears in the question.
+    expect(r.integrationId).toBe('zephyr-1')
+  })
+
+  test('TWO significant name words spread across the question both count', async () => {
+    // Isolates the significant-WORD rule specifically. The full name string must NOT
+    // appear, or the verbatim rule above wins first and the word rule stays dead:
+    // measured — disabling this rule left every test green, so it had NO control.
+    // "Nebulon" and "Analytics" are both >=4 chars and not ignored, so their joint
+    // presence inside one question is what names the source.
+    const NAMED = {
+      id: 'nebulon-1', name: 'Nebulon Analytics', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [NAMED, OTHER]
+    const r = await smartRoute({
+      question: 'give me the nebulon monthly analytics please',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).toBe('nebulon-1')
+  })
+
+  test('one significant word is not enough when the full name is absent', async () => {
+    // The bar is TWO words precisely so a single shared term cannot capture a
+    // question. Here only "nebulon" appears, so the name rule must abstain.
+    const NAMED = {
+      id: 'nebulon-1', name: 'Nebulon Analytics', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [NAMED, OTHER]
+    const r = await smartRoute({
+      question: 'nebulon please',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).not.toBe('nebulon-1')
+  })
+
+  test('a generic name word alone does NOT route', async () => {
+    // "Warehouse Store" reduces to ["warehouse"] once "store" is dropped, which is
+    // below the two-word bar — so a question about a warehouse does not auto-route.
+    const WAREHOUSE = {
+      id: 'wh-1', name: 'Warehouse Store', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const OTHER = {
+      id: 'other-1', name: 'Ponderosa Ledger', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [WAREHOUSE, OTHER]
+    // MEASURED and corrected: I first asked "what is in the warehouse store" and it
+    // DID route to wh-1 — correctly so, because the full name string is contained in
+    // the question, which the verbatim-name rule catches before the word rule is
+    // consulted. To isolate the SIGNIFICANT-WORD rule the full name must be absent
+    // and only its distinctive word present. "store" is dropped as generic, so
+    // "warehouse" alone is below the two-word bar and must not decide.
+    const r = await smartRoute({
+      question: 'how much stock sits in a warehouse',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).not.toBe('wh-1')
+  })
+
+  test('a single integration is never a "mention" — nothing to disambiguate', async () => {
+    state.integrations = [HR]
+    const r = await smartRoute({
+      question: 'anything at all',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // With one source the routing is unambiguous, so detection must return early
+    // rather than pretend the user named it.
+    expect(r.decision).toBe('SQL')
+  })
+
+  test('no integrations means no detection', async () => {
+    state.integrations = []
+    const r = await smartRoute({
+      question: 'hello',
+      hasIntegrations: false, hasDocuments: false, hasRestApis: false,
+    })
+    expect(r.integrationId).toBeUndefined()
+  })
+})
+
+describe('detectMentionedIntegration — the generic-name filter', () => {
+  // Pinned like the others, and I initially forgot it here too: at SQL 0.30 vs
+  // CHAT 0.30 the tiebreaker fires, its stub answers RAG, and the integration is
+  // never resolved — leaving the assertion vacuous.
+  beforeEach(() => {
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'SQL', reason: 'pinned' }))
+  })
+
+  test('a question matching only generic name words does NOT route by name', async () => {
+    // "Acme Database" and "Acme Data Store" share the words "acme", "data" and
+    // "store". Without excluding db/database/data/store/media EVERY integration in a
+    // fleet matches every question — those words appear in most names and in no
+    // domain. Measured: removing the filter failed 0 tests before this one existed.
+    const A = {
+      id: 'acme-a', name: 'Acme Database', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    const B = {
+      id: 'acme-b', name: 'Acme Data Store', status: 'active', businessContext: null,
+      createdAt: new Date('2025-01-01'),
+      schemas: [{ tableName: 'yyy_tbl', description: null, columns: JSON.stringify([{ name: 'www' }]) }],
+    }
+    state.integrations = [A, B]
+    // MEASURED and corrected: my first question was "the acme data store database",
+    // which CONTAINS "acme data store" verbatim — so the full-name rule matched B
+    // before the word rule was ever consulted, and the test measured the wrong
+    // branch. The words must appear OUT OF ORDER and separated so no full name is
+    // a substring.
+    const r = await smartRoute({
+      question: 'acme please, from any kind of store or database',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // Both names reduce to ["acme"] once the generic words are dropped, which is
+    // below the two-word bar — so neither may be named as the source.
+    expect(r.integrationId).not.toBe('acme-a')
+    expect(r.integrationId).not.toBe('acme-b')
+  })
+})
+
+describe('detectMentionedIntegration — a single source is not a mention', () => {
+  // Pinned for the same reason as above: at SQL 0.30 vs CHAT 0.30 the LLM tiebreaker
+  // fires and its stub answers RAG, so the integration is never resolved at all.
+  beforeEach(() => {
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'SQL', reason: 'pinned' }))
+  })
+
+  test('with exactly ONE integration the name rule is bypassed entirely', async () => {
+    // HONEST LIMITATION, measured: removing the `integrations.length === 1` early
+    // return in detectMentionedIntegration still fails 0 tests, even with this test
+    // present. It cannot be pinned from outside, because with one source the answer
+    // is the same id either way — the only difference is which internal branch
+    // produced it, and both are correct. The early return is therefore real but
+    // UNCONTROLLABLE: kept for the wasted-work saving and for keeping a lone source
+    // out of the semantic picker, with no test claiming to defend it.
+    const ONLY = {
+      id: 'only-1', name: 'Nebulon Analytics', status: 'active', businessContext: null,
+      createdAt: new Date('2024-01-01'),
+      schemas: [{ tableName: 'zzz_tbl', description: null, columns: JSON.stringify([{ name: 'qqq' }]) }],
+    }
+    state.integrations = [ONLY]
+    const r = await smartRoute({
+      question: 'ask nebulon analytics for the figures',
+      hasIntegrations: true, hasDocuments: false, hasRestApis: false,
+    })
+    // The only source is still the answer, but it must be reached by the
+    // single-source rule, not by pretending the user named it.
+    expect(r.decision).toBe('SQL')
+    expect(r.integrationId).toBe('only-1')
+  })
+})
