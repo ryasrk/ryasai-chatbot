@@ -1,11 +1,11 @@
 {
-  "linePct": 87.62,
-  "linesHit": 19493,
-  "linesFound": 22246,
-  "fnPct": 93.94,
-  "fnsHit": 1783,
-  "fnsFound": 1898,
-  "filesMeasured": 153,
+  "linePct": 87.7,
+  "linesHit": 19628,
+  "linesFound": 22381,
+  "fnPct": 93.99,
+  "fnsHit": 1797,
+  "fnsFound": 1912,
+  "filesMeasured": 156,
   "failedTestFiles": [],
   "files": [
     {
@@ -765,12 +765,12 @@
       "fPct": 100
     },
     {
-      "file": "src/app/api/analytics/route.ts",
-      "hit": 138,
-      "found": 138,
+      "file": "src/app/api/agent/dashboard/sessions/route.ts",
+      "hit": 58,
+      "found": 58,
       "pct": 100,
-      "fHit": 7,
-      "fFound": 7,
+      "fHit": 5,
+      "fFound": 5,
       "fPct": 100
     },
     {
@@ -789,6 +789,33 @@
       "pct": 100,
       "fHit": 1,
       "fFound": 1,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/agent/dashboard/tasks/route.ts",
+      "hit": 39,
+      "found": 39,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/agent/dashboard/tools/route.ts",
+      "hit": 38,
+      "found": 38,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/analytics/route.ts",
+      "hit": 138,
+      "found": 138,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
       "fPct": 100
     },
     {

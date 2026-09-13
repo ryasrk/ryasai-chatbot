@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aa10e45`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e7cb80d`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aa10e45`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,62%** (19.493/22.246 baris, 153 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,94%** (1783/1898 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 195 file · **4.795 lulus · 0 gagal** | terukur |
+| Test coverage | **87,70%** (19.628/22.381 baris, 156 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,99%** (1797/1912 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 198 file · **4.857 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1007 kontrol + 11 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1032 kontrol + 14 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5754,6 +5754,52 @@ turun karena file yang baru diinstrumen membawa fungsi yang belum dieksekusi; sa
 
 **Progres backlog: 21 dari 66 route orphan ditutup.** Repo **87,53% → 87,62%**; suite **4.738 → 4.795**
 (194 → **195 file**); gate **152 → 153 modul**.
+
+### 1.7dp `/api/agent/dashboard/*` — sesi, tugas, katalog tool: 100,00% (58+39+38)
+
+**TEMUAN ALAT YANG PENTING: `mock.module` TIDAK BERLAKU PADA MODUL YANG DIIMPOR SECARA STATIS.** Ini saya buktikan
+dua arah, di berkas yang sama, **hanya gaya impornya yang berubah:**
+
+| impor | apakah `registerHandler` mock terpanggil? |
+|---|---|
+| `import { GET } from './route'` (statis) | **TIDAK** — recorder `[]` |
+| `await import('./route')` (dinamis) | **YA** — recorder `["chat"]` |
+
+`route.ts` memanggil `registerHandler('chat', …)` pada **lingkup modul**. Dengan impor statis, modul rute
+**dievaluasi SEBELUM `mock.module` berjalan**, sehingga yang dipanggil adalah **implementasi asli** dan recorder
+mock saya tetap kosong — **yang terbaca persis seperti "rute tidak mendaftarkan handler", sebuah temuan palsu
+tentang kode yang disebabkan oleh tata letak test.** Setelah impor diubah ke dinamis, **19 → 22 pass** dan
+`registerHandler` terpanggil.
+
+**Ini juga mengoreksi catatan sesi sebelumnya** yang menyebut "impor statis dinahkan di atas `process.env`":
+yang sebenarnya terjadi adalah **impor statis mengungguli pemasangan mock.** Seam mutable **harus** dideklarasikan
+di paling atas berkas test karena badan modul tetap berjalan **sebelum** pernyataan di bawah impor.
+
+**KESALAHAN SAYA BERUNTUN DI RONDE INI.** Saya menambal berkas `tasks/route.test.ts` dengan patch berurutan dan
+**merusaknya sendiri** (deklarasi ganda, `events` hilang) sampai `tsc` mengeluh dan **18 test gagal sekaligus.**
+Saya berhenti menambal, **menghapus berkasnya, dan menulis ulang bersih** — itu satu-satunya langkah yang benar
+setelah patch beruntun gagal.
+
+**TEMUAN KEDUA: `agent/dashboard/sessions/route.ts` MEMBACA TRANSKRIP LINTAS SENDER DENGAN SENGAJA BERBEDA.**
+Daftar sesi menghitung `['user','agent']`, sedangkan pemuat riwayat di `dashboard/route.ts` memakai
+`['user','ai']`. Jawaban agent disimpan sebagai `agent`, jadi **menghitung `ai` di sini akan membuat setiap sesi
+agentik terlihat kosong.** **S1/S4 → 1 merah masing-masing.**
+
+**Filter prefiks judul `[Agent]` adalah SATU-SATUNYA yang memisahkan sesi agentik dari sesi chat biasa**, jadi
+menghapusnya **menggabungkan dua permukaan produk secara diam-diam.** **S3 → 1 merah.**
+
+**12 kontrol pada rute sesi, KEDUA BELAS MENGGIGIT.**
+
+**DUA KONTROL DIDEKLARASIKAN TIDAK BISA MENGGIGIT, DAN SAYA COBA MENUTUPNYA DULU:**
+- **T5** (`body.type ?? 'other'`): default non-chat **ditolak oleh penjaga yang sama**, jadi responsnya
+  **identik byte demi byte**; test "type tak didukung" pun lolos di kedua default. **Gagal saya tutup → saya
+  deklarasikan.**
+- **T8** (`enqueue(type, …)`): satu-satunya `type` yang mencapai baris itu adalah `'chat'`, jadi literal dan
+  variabelnya **string yang sama.** **Dideklarasikan.**
+
+**Progres backlog: 24 dari 66 route orphan ditutup** (tiga sub-route + rute SSE `dashboard/route.ts` **masih
+belum** — 163 baris, menyusul). Repo **87,62% → 87,70%**; suite **4.795 → 4.857** (195 → **198 file**);
+fungsi **93,94% → 93,99%**; gate **153 → 156 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
