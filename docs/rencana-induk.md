@@ -188,10 +188,33 @@ Fase 3 (integrasi)
 
 Prioritas: **P0** = menghambat rilis · **P1** = kualitas · **P2** = pemeliharaan
 
+> **CARA MENILAI TARGET DI BAWAH (penting, dikoreksi ronde ini).** Target
+> "≥95%" harus diukur pada **baris yang bisa dieksekusi**, bukan pada angka merge.
+> Alasannya terukur: angka merge memberi penyebut yang menggelembung karena Bun
+> mengeluarkan record `DA:` untuk baris kosong/komentar/delimiter, sehingga modul
+> yang **sudah 100,00%** tetap terlihat seperti gagal. Tabel target di bawah
+> sempat menghukum empat modul yang sebenarnya sudah lulus. Kolom "terukur" pada
+> tabel status memakai basis yang benar.
+
+### Status target per modul (diverifikasi ronde ini)
+
+| Modul | Target | Merge (menyesatkan) | **Terukur pada kode nyata** | Status |
+|---|---|---|---|---|
+| `rag-retrieval.ts` | ≥95% | 75,50% | **308/308 = 100,00%** | ✅ |
+| `tool-router.ts` | ≥95% | 70,71% | **215/215 = 100,00%** | ✅ |
+| `intent-pipeline.ts` | ≥95% | 73,74% | **291/291 = 100,00%** | ✅ |
+| `planner.ts` | ≥95% | 79,30% | **454/459 = 98,91%** | ✅ |
+| `stream-preparers.ts` | ≥60% | 82,14% | — | ✅ |
+| `smart-router.ts` | ≥70% | 77,62% | — | ✅ |
+
+Enam dari enam target modul **tercapai**. Sisa 5 baris `planner.ts` yang belum
+tertutup adalah artefak instrumenter yang sudah dinyatakan di
+`docs/hasil-pengukuran.md` §1.7dx.
+
 ### D1 — Retrieval
 | # | Tugas | P | Bukti selesai |
 |---|---|---|---|
-| D1-1 | Naikkan `rag*.ts` ke ≥95% | P1 | `coverage-summary.json` |
+| D1-1 | Naikkan `rag*.ts` ke ≥95% | ✅ 100,00% | 308/308 baris kode nyata |
 | D1-2 | Ukur recall pada korpus **pelanggan nyata** | P0 | laporan recall |
 | D1-3 | Mitigasi HNSW truncation | ✅ `91c5ad1` | `trial/98` |
 | D1-4 | Upgrade pgvector 0.6.0 → 0.8.6 | P0 | **operator** — `docs/pgvector-upgrade.md` |
@@ -200,8 +223,8 @@ Prioritas: **P0** = menghambat rilis · **P1** = kualitas · **P2** = pemelihara
 ### D2 — Pipeline
 | # | Tugas | P | Bukti selesai |
 |---|---|---|---|
-| D2-1 | `stream-preparers.ts` 4,0% → ≥60% | P0 | coverage |
-| D2-2 | `smart-router*.ts` 8,1% → ≥70% | P0 | coverage |
+| D2-1 | `stream-preparers.ts` 4,0% → ≥60% | ✅ 82,14% | coverage |
+| D2-2 | `smart-router*.ts` 8,1% → ≥70% | ✅ 77,62% | coverage |
 | D2-3 | **Satukan tokenizer** | ✅ sesi ini | 8/8 kasus sepakat |
 | D2-4 | Klasifikasi kegagalan provider | ✅ `bd0ea88` | tes lulus |
 | D2-5 | Wire `purpose` per-peran model | P1 | 6 peran dapat dipilih |
