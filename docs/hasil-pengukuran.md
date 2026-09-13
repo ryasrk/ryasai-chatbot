@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cdb9a40`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `35c69e2`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cdb9a40`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,21%** (16.194/19.698 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.437 lulus · 0 gagal** | terukur |
+| Test coverage | **82,23%** (16.197/19.698 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.441 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **70 modul** | +8 |
+| Modul ter-gate | 62 modul | **71 modul** | +9 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -88,8 +88,9 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/connectors.ts` | 58,78% → **79,73%** merged | 75,00% → **100,00%** kode eksekutabel (118/118) | 21 |
 | `src/lib/tool-router.ts` | 66,4% → **70,41%** merged (selisih **29,6 poin** terbesar) | 94,94% → **100,00%** kode eksekutabel (238/238) | 58 |
 | `src/lib/smart-router.ts` | 98,71% → **77,42%** merged (**turun**, §1.7z) | 98,97% → **99,74%** kode eksekutabel (384/385) | 155 |
-| `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (370/370) | 30 |
-| **Total repo** | **62,44%** | **82,21%** | — |
+| `src/app/api/v1/chat/completions/route.ts` | 76,70% → **100,00%** merged | 79,40% → **100,00%** kode eksekutabel (386/386) | 30 |
+| `src/lib/stream-preparers.ts` | 81,58% → **82,14%** merged | 99,31% → **100,00%** kode eksekutabel (437/437) | 35 |
+| **Total repo** | **62,44%** | **82,23%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -311,8 +312,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `latencyMs` tidak jatuh ke request latency | `route.ts:436` | 1 |
 | **BUG LAMA DIKEMBALIKAN**: race dengan deadline dihapus | `route.ts:214` | 2 |
 | Sentinel `IDLE` tidak dikenali | `route.ts:221` | 2 |
+| Degradasi RAG: throw diteruskan | `stream-preparers.ts:108` | 1 |
+| Retry ECONNRESET dihapus | `stream-preparers.ts:325` | 2 |
+| Pola transient diperluas ke semua error | `stream-preparers.ts:324` | 1 |
 
-**212 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**215 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -1926,6 +1930,33 @@ bersifat best-effort defensif — tidak ada perilaku teramati yang membedakannya
 ada test yang mengklaim membelanya.
 
 Merged route tetap **100,00%**; 16 baris kode baru **sepenuhnya tercakup** (386/386).
+
+### 1.7am `stream-preparers.ts`: 99,31% → 100,00% eksekutabel (437/437) — dua jalur kegagalan
+
+**Merged 82,14%; kini di-gate.** Tiga baris sisa semuanya jalur kegagalan nyata:
+
+**Degradasi RAG** — bila retriever melempar, stream **tidak boleh mati**. Ia jatuh ke plain
+chat, dan **tidak ada tool run `RAG`** yang dicatat: tidak ada yang diambil, jadi mengklaim
+sebaliknya adalah **kebohongan di jejak audit** (kontrol: meneruskan throw → **1 test
+gagal**). Stream yang tetap bisa di-drain juga diperiksa — janji yang ditolak akan muncul
+sebagai **SSE mati**, dan pengguna tidak melihat apa pun, jauh lebih buruk daripada jawaban
+polos tanpa sitasi.
+
+**Retry `ECONNRESET`** — database remote menjatuhkan koneksi saat beban tinggi; **satu**
+percobaan ulang memulihkan sebagian besar kasus. Terjaga: retry **hanya** untuk
+`ECONNRESET|ETIMEDOUT|EPIPE|socket hang up` (kontrol: memperluas ke semua error → **1 test
+gagal**; **error permission/sintaks tidak di-retry** karena biayanya satu detik penuh dan
+tidak mungkin berhasil), dan retry **menyerah setelah satu percobaan** sehingga host yang
+permanen tak terjangkau muncul sebagai error, bukan loop tanpa akhir.
+
+**Dua koreksi pada test saya sendiri:** versi pertama test retry memakai `setInterval` untuk
+membalik flag error dari luar — hack rapuh yang **tidak mengukur retry**. Diganti dengan
+**antrean error per-percobaan** (`connectorErrors.shift()`) plus penghitung percobaan, sehingga
+assertion-nya benar-benar tentang "percobaan pertama gagal, percobaan kedua berhasil". Pola
+antrean inilah yang membuat ketiga skenario (transien pulih, non-transien langsung gagal,
+transien berulang menyerah) dapat dibedakan.
+
+**Kontrol negatif: 3, semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

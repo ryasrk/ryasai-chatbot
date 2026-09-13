@@ -105,6 +105,7 @@ const FLOORS: Record<string, number> = {
   // the duplicated tool-run block extracted, so it meets the floor with no slack to
   // give back. Gated at 100 because a regression here breaks the public contract.
   'src/app/api/v1/chat/completions/route.ts': 100, // measured 100.00% (370/370)
+  'src/lib/stream-preparers.ts': 80, // measured 100.00% executable (437/437); merged 82.14%
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

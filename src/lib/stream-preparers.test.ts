@@ -31,6 +31,8 @@ let integrationCount = 0
 let generateSqlResults: Array<{ sql: string; explanation?: string } | Error> = []
 let connectorRows: Row[] = []
 let connectorError: Error | null = null
+let connectorErrors: Error[] = []
+let connectorAttempts = 0
 let resolveChoice: { integrationId: string; name: string } | null = null
 let restExecResult: any = { ok: true, statusCode: 200, latencyMs: 7, bodyText: '{"items":[1,2]}', body: { items: [1, 2] } }
 let restExecThrows = false
@@ -91,6 +93,11 @@ mock.module('@/lib/connectors', () => ({
     getConnector: () => ({
       executeQuery: async (sql: string) => {
         executedSql.push(sql)
+        connectorAttempts++
+        // A QUEUE, so a test can make the first attempt fail and the retry succeed —
+        // which is the only way to observe the retry rather than the failure.
+        const next = connectorErrors.shift()
+        if (next) throw next
         if (connectorError) throw connectorError
         return { rows: connectorRows, rowCount: connectorRows.length }
       },
@@ -116,16 +123,22 @@ mock.module('@/lib/ai', () => ({
   },
 }))
 
+// Swappable, because the interesting case is the retriever FAILING: RAG is
+// best-effort and must degrade to plain chat rather than kill the stream.
+let retrievalError: Error | null = null
 mock.module('@/lib/intent-pipeline', () => ({
-  retrieveWithReflection: async () => ({
-    chunks: [
-      { chunkId: 'c1', documentId: 'd1', content: 'evidence text', score: 0.9, documentName: 'doc.pdf' },
-      { chunkId: 'c2', documentId: 'd1', content: 'more evidence', score: 0.8, documentName: 'doc.pdf' },
-    ],
-    confidence: 0.9,
-    citations: [],
-    sufficient: true,
-  }),
+  retrieveWithReflection: async () => {
+    if (retrievalError) throw retrievalError
+    return {
+      chunks: [
+        { chunkId: 'c1', documentId: 'd1', content: 'evidence text', score: 0.9, documentName: 'doc.pdf' },
+        { chunkId: 'c2', documentId: 'd1', content: 'more evidence', score: 0.8, documentName: 'doc.pdf' },
+      ],
+      confidence: 0.9,
+      citations: [],
+      sufficient: true,
+    }
+  },
 }))
 
 mock.module('@/lib/smart-router', () => ({
@@ -198,6 +211,9 @@ beforeEach(() => {
   generateSqlResults = []
   connectorRows = [{ id: 1, total: 100 }]
   connectorError = null
+  connectorErrors = []
+  connectorAttempts = 0
+  retrievalError = null
   resolveChoice = null
   restCallThrows = false
   restConnectors = []
@@ -565,5 +581,58 @@ describe('preparePluginStream', () => {
     pluginResult = { ok: false, output: '', error: 'upstream 503' }
     const r = await preparePluginStream({ question: 'q' })
     expect(r).toBeDefined()
+  })
+})
+
+describe('streaming failure paths that had never run', () => {
+  test('a retriever failure DEGRADES to plain chat instead of failing the stream', async () => {
+    // RAG is best-effort: the knowledge backend being down must not kill the turn.
+    // Returning a rejected promise would surface as a dead SSE stream — the user sees
+    // nothing at all, which is strictly worse than a plain answer with no citations.
+    retrievalError = new Error('vector store unavailable')
+    const r = await prepareRagStream({ question: 'what is the refund policy' })
+    // No RAG tool run: nothing was retrieved, and claiming otherwise would be a lie
+    // in the audit trail.
+    expect(r.toolRuns.some((t) => t.type === 'RAG')).toBe(false)
+    // A drainable stream is still returned, so the caller can always finish the SSE.
+    await expect(drain(r.stream)).resolves.toBeString()
+  })
+
+  test('a transient ECONNRESET is retried ONCE and can still succeed', async () => {
+    // Remote databases drop connections under load; one retry recovers most of them.
+    // The 1000ms backoff is real, so this test takes about a second — worth it,
+    // because without the retry a single reset becomes a failed question.
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    // A queue of failures, consumed one per attempt: the first call resets, the
+    // second succeeds. Driving this from a counter (rather than a timer flipping a
+    // shared flag) is what makes the assertion about the RETRY and nothing else.
+    connectorErrors.length = 0
+    connectorErrors.push(new Error('read ECONNRESET'))
+
+    const r = await prepareSqlStream({ question: 'q', userId: 'u1', integrationId: 'int-1' })
+    // The retry is what turns a transient reset into a successful answer.
+    expect(connectorAttempts).toBe(2)
+    expect(r.toolRuns[0].status).toBe('success')
+    await expect(drain(r.stream)).resolves.toBeString()
+  })
+
+  test('a NON-transient error is not retried — it fails on the first attempt', async () => {
+    // Retrying a syntax or permission error costs a full second and cannot succeed.
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    connectorErrors.length = 0
+    connectorErrors.push(new Error('permission denied for table orders'))
+    const r = await prepareSqlStream({ question: 'q', userId: 'u1', integrationId: 'int-1' })
+    expect(connectorAttempts).toBe(1)
+    expect(r.toolRuns[0].status).not.toBe('success')
+  })
+
+  test('the retry gives up after one attempt when the reset repeats', async () => {
+    // A permanently unreachable host must surface as an error, not an endless loop.
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    connectorErrors.length = 0
+    connectorErrors.push(new Error('socket hang up'), new Error('socket hang up'))
+    const r = await prepareSqlStream({ question: 'q', userId: 'u1', integrationId: 'int-1' })
+    expect(connectorAttempts).toBe(2)
+    expect(r.toolRuns[0].status).not.toBe('success')
   })
 })

@@ -1,6 +1,6 @@
 {
-  "linePct": 82.21,
-  "linesHit": 16194,
+  "linePct": 82.23,
+  "linesHit": 16197,
   "linesFound": 19698,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -270,12 +270,6 @@
       "pct": 81.35593220338984
     },
     {
-      "file": "src/lib/stream-preparers.ts",
-      "hit": 434,
-      "found": 532,
-      "pct": 81.57894736842105
-    },
-    {
       "file": "src/lib/admin-tools.ts",
       "hit": 552,
       "found": 675,
@@ -298,6 +292,12 @@
       "hit": 78,
       "found": 95,
       "pct": 82.10526315789474
+    },
+    {
+      "file": "src/lib/stream-preparers.ts",
+      "hit": 437,
+      "found": 532,
+      "pct": 82.14285714285714
     },
     {
       "file": "src/middleware.ts",
