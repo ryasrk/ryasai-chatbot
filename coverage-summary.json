@@ -1,11 +1,11 @@
 {
-  "linePct": 87.53,
-  "linesHit": 19331,
-  "linesFound": 22084,
-  "fnPct": 94.06,
-  "fnsHit": 1774,
-  "fnsFound": 1886,
-  "filesMeasured": 152,
+  "linePct": 87.62,
+  "linesHit": 19493,
+  "linesFound": 22246,
+  "fnPct": 93.94,
+  "fnsHit": 1783,
+  "fnsFound": 1898,
+  "filesMeasured": 153,
   "failedTestFiles": [],
   "files": [
     {
@@ -891,6 +891,24 @@
       "fPct": 100
     },
     {
+      "file": "src/app/api/cognee/route.ts",
+      "hit": 162,
+      "found": 162,
+      "pct": 100,
+      "fHit": 9,
+      "fFound": 12,
+      "fPct": 75
+    },
+    {
+      "file": "src/lib/cognee-types.ts",
+      "hit": 15,
+      "found": 15,
+      "pct": 100,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
+    },
+    {
       "file": "src/app/api/data-sources/rest-connectors/[id]/route.ts",
       "hit": 157,
       "found": 157,
@@ -1095,15 +1113,6 @@
       "pct": 100,
       "fHit": 7,
       "fFound": 7,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/cognee-types.ts",
-      "hit": 15,
-      "found": 15,
-      "pct": 100,
-      "fHit": 4,
-      "fFound": 4,
       "fPct": 100
     },
     {

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ee63a29`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `aa10e45`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `ee63a29`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,53%** (19.331/22.084 baris, 152 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,06%** (1774/1886 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 194 file · **4.738 lulus · 0 gagal** | terukur |
+| Test coverage | **87,62%** (19.493/22.246 baris, 153 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,94%** (1783/1898 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 195 file · **4.795 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**977 kontrol + 10 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1007 kontrol + 11 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5711,6 +5711,49 @@ tentang modul nyata, dan klaim itu harus diperiksa dengan menjalankan yang asli.
 
 **Progres backlog: 20 dari 66 route orphan ditutup.** Repo **87,47% → 87,53%**; suite **4.691 → 4.738**
 (193 → **194 file**); gate **151 → 152 modul**.
+
+### 1.7do `/api/cognee` — graf pengetahuan: purge, kredensial store, dan empat aksi: 100,00% (162/162)
+
+**PURGE TERJADI SEBELUM PENONAKTIFAN DITULIS KE DATABASE.** `forgetKnowledgeGraph()` **berhenti lebih awal
+pada `isCogneeEnabled()`**, jadi urutan lama "tulis config disabled, lalu purge fire-and-forget" berarti
+**grafnya TIDAK PERNAH benar-benar dihapus** — ia hanya berhenti dibaca, dan **kembali utuh saat diaktifkan
+lagi.** Urutannya adalah perbaikannya, dan **ia tak terlihat di respons** (yang melaporkan `purged: true` di
+kedua urutan). **K2 → 6 merah.**
+
+**K1 awalnya LOLOS** (memindahkan purge ke setelah penulisan). Sebabnya **asersi saya sendiri**: saya
+membandingkan urutan hanya terhadap `invalidateCogneeSettings()` — yang **juga** berjalan setelah penulisan,
+sehingga mutasinya **mempertahankan urutan relatif** yang saya uji. Perbandingan yang menentukan adalah
+terhadap **PENULISAN ITU SENDIRI**, dan setelah diperbaiki **K1 → 1 merah.**
+
+**`dbUrl` HARUS TERURAI SEBAGAI POSTGRES, BUKAN SEKADAR TRUTHY.** Ini string koneksi berisi kredensial yang
+**di-dial server**, jadi `mysql://`, `file://`, dan URL **tanpa host** semuanya ditolak; **string KOSONG justru
+MEMBERSIHKAN-nya** (aksi yang sah, dan tidak boleh tertukar dengan field yang tak ada). **K7/K8/K10/K11/K12
+masing-masing merah.**
+
+**`dbUrl` WAJIB saat `dbProvider` postgres** — menyimpannya tanpa URL meninggalkan cognee menunjuk ke
+ketiadaan, dan kegagalannya baru muncul jauh kemudian. **K9 → 1 merah.**
+
+**AUDIT MENCATAT `dbUrlSet` SEBAGAI BOOLEAN, TIDAK PERNAH STRING KONEKSINYA** (yang membawa password).
+**K18 → 1, K19 → 1 merah.**
+
+**29 dari 31 kontrol menggigit; K1 dan K14 saya periksa satu per satu.**
+
+**K14 DIDEKLARASIKAN SEBAGAI NON-KONTROL, DAN MEMANG TIDAK BISA MENGGIGIT.** Memindahkan `requireRole` ke
+setelah parse body **tidak mengubah apa pun yang teramati**: `req.json().catch(() => ({}))` menelan body rusak,
+sehingga non-admin mencapai **403 yang sama** di kedua urutan. Urutannya tetap saya pertahankan di kode (agar
+body besar tidak di-parse untuk pemanggil yang akan ditolak), tetapi **saya deklarasikan, bukan saya klaim
+sebagai tercakup.**
+
+**Tiga kesalahan saya sendiri lagi, semuanya ditemukan dengan menjalankan:** `config` fixture saya `null`
+sehingga route masuk **cabang create** dan enam asersi memeriksa `update` yang tak ada; lalu
+**`batchSize: 0` menjadi `50`, BUKAN `1`** karena `parseInt('0') || 50` adalah `50`, jadi **plafon
+`Math.max(1, ...)` tidak pernah mendapat kesempatan bertindak** — saya perbaiki asersinya, bukan kodenya.
+
+**PROGRES HARI INI SANGAT BESAR, TAPI TOTAL REPO BARU NAIK KE 87,62% DAN FUNGSI TURUN KE 93,94%.** Angka fungsi
+turun karena file yang baru diinstrumen membawa fungsi yang belum dieksekusi; saya laporkan apa adanya.
+
+**Progres backlog: 21 dari 66 route orphan ditutup.** Repo **87,53% → 87,62%**; suite **4.738 → 4.795**
+(194 → **195 file**); gate **152 → 153 modul**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
