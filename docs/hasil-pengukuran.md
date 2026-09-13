@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dbeb7fc`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `698f1be`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `dbeb7fc`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,85%** (17.699/20.379 baris, 135 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **93,76%** (1668/1779 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 177 file · **4.203 lulus · 0 gagal** | terukur |
+| Test coverage | **86,90%** (17.771/20.451 baris, 136 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **93,78%** (1675/1786 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 178 file · **4.215 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**702 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**712 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5012,6 +5012,42 @@ yang saya tutup di ronde 91-92 tetap sah dan tetap bernilai** (mereka memang orp
 **Pelajaran yang saya catat untuk diri sendiri:** sebuah angka yang berasal dari skrip yang **belum
 dikontrol negatif** adalah **hipotesis**, bukan temuan — **terutama ketika angka itu enak dipakai untuk
 membenarkan rencana.** Saya menulisnya sebagai fakta di dokumen sebelum mengontrolnya. Itu kesalahan saya.
+
+### 1.7cx `/api/auth/register` — endpoint publik pertama yang menulis: NOL → 100,00% (72/72)
+
+Melanjutkan backlog orphan dengan **tool yang sudah dikoreksi (§1.7cw)**. Target dipilih karena ini
+**endpoint PUBLIK dan TANPA AUTENTIKASI** yang **menulis tiga baris** dan **memberikan cookie sesi** — jadi
+ia adalah **pintu yang pertama dijangkau penyerang** sekaligus **jalur yang harus bekerja sebelum apa pun
+yang lain bisa.**
+
+**Properti yang dipatok, dan mengapa:**
+
+- **Bypass tenant itu load-bearing, bukan kemewahan.** Registrasi terjadi **SEBELUM organisasi ada** dan
+  **sebelum ada sesi**, jadi `getOrgContext()` memang `undefined`. Kalau extension men-scope query-query
+  ini, **cek email duplikat** (`db.user.findUnique({ where: { email } })`) akan memfilter dengan
+  `organizationId` yang undefined, **tidak menemukan apa pun**, dan **berubah menjadi no-op tanpa suara.**
+  Rute membuat **EMPAT query** (`findUnique` + tiga `create`) dan **setiap satunya dibungkus
+  `bypassOrg`**, dihitung supaya suntingan di masa depan yang membuang satu akan terlihat.
+- **Cek duplikat HARUS mendahului penulisan (409)** — tanpa itu pendaftaran menjadi **primitif pengambilalihan
+  akun**: daftarkan alamat yang sudah ada, dapatkan sesi admin atas organisasi orang lain.
+- **Pengguna pertama adalah `admin`**, dan password disimpan **HASH**, tidak pernah plaintext.
+- **Org dimulai `licenseStatus: 'none'` dan `setupCompleted: false`** — instalasi on-prem **tidak boleh
+  terlihat berlisensi atau terkonfigurasi** sebelum operator membuktikannya. Itu gerbang pada pendapatan.
+- Password minimal **8 karakter ditegakkan di SERVER**, bukan hanya di form.
+
+**10 kontrol, semuanya menggigit:** `bypassOrg` dibuang pada cek email (1 merah), `bypassOrg` dibuang pada
+create org (1), cek duplikat dihapus (**3 merah**), peran `admin`→`viewer` (1), password disimpan plaintext
+(1), minimal password 8→1 (1), email tidak dinormalisasi (1), cookie sesi tidak diset (1),
+`licenseStatus`→`active` (1), `setupCompleted`→`true` (1).
+
+**Satu koreksi jujur di tengah ronde.** Percobaan pertama saya **GAGAL** — saya menulis asersi
+`toHaveLength(5)` sementara kodenya memanggil `bypassOrg` **empat kali**. Saya **menghitung dari ingatan,
+bukan dari kode**; yang salah adalah asersi saya, bukan kodenya. Diperbaiki menjadi 4 dengan komentar yang
+menyebut jumlah query sebenarnya. **Ini kelas kesalahan yang sama dengan §1.7cw: angka tanpa verifikasi.**
+
+**Progres backlog: 4 dari 66 route orphan ditutup.** Repo **86,85% → 86,90%**; file terinstrumen
+**135 → 136**; suite **4.203 → 4.215** (177 → **178 file**); gate **135 → 136 modul**. **10 kontrol,
+semuanya menggigit.**
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

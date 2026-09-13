@@ -1,11 +1,11 @@
 {
-  "linePct": 86.85,
-  "linesHit": 17699,
-  "linesFound": 20379,
-  "fnPct": 93.76,
-  "fnsHit": 1668,
-  "fnsFound": 1779,
-  "filesMeasured": 135,
+  "linePct": 86.9,
+  "linesHit": 17771,
+  "linesFound": 20451,
+  "fnPct": 93.78,
+  "fnsHit": 1675,
+  "fnsFound": 1786,
+  "filesMeasured": 136,
   "failedTestFiles": [],
   "files": [
     {
@@ -780,6 +780,15 @@
       "pct": 100,
       "fHit": 5,
       "fFound": 5,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/auth/register/route.ts",
+      "hit": 72,
+      "found": 72,
+      "pct": 100,
+      "fHit": 7,
+      "fFound": 7,
       "fPct": 100
     },
     {
