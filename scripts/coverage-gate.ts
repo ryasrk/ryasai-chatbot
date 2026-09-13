@@ -145,6 +145,14 @@ const FLOORS: Record<string, number> = {
   // is the TLS warning, which runs at MODULE LOAD and is therefore only reachable
   // from a subprocess, so it is pinned by test but not instrumented here.
   'src/lib/redis.ts': 90,
+  // THE TENANT ISOLATION EXTENSION -- the single most security-critical module in
+  // the repo. Forty-three test files import it and ALL of them mock it, so the real
+  // injection code (injectOrgWhere/injectOrgCreate, the PascalCase normalisation,
+  // the model allow-list) had never executed: 63.41% executable with every branch
+  // of the injection engine unreached. Measured 87.38% (90/103) merged, 100.00%
+  // (90/90) executable. Floor set ABOVE default because a regression here is a
+  // cross-tenant data leak, not a display bug.
+  'src/lib/prisma-tenant.ts': 87,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

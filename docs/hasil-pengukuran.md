@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9049f93`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5248b97`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `9049f93`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **83,95%** (16.521/19.679 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 162 file · **3.594 lulus · 0 gagal** | terukur |
+| Test coverage | **84,13%** (16.556/19.680 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.618 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **80 modul** | +18 |
+| Modul ter-gate | 62 modul | **81 modul** | +19 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -106,7 +106,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/app/api/auth/login/route.ts` | 18,06% → **100,00%** merged | 35,14% → **100,00%** kode eksekutabel (66/66) | 16 |
 | `src/app/api/audit/route.ts` | 27,66% → **100,00%** merged | 38,24% → **100,00%** kode eksekutabel (43/43) | 11 |
 | `src/lib/redis.ts` | 41,03% → **93,67%** merged | **tak terukur** → **98,67%** kode eksekutabel (74/75) | 27 |
-| **Total repo** | **62,44%** | **83,95%** | — |
+| `src/lib/prisma-tenant.ts` | 51,49% → **87,38%** merged | 63,41% → **100,00%** kode eksekutabel (90/90) | 24 |
+| **Total repo** | **62,44%** | **84,13%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -365,7 +366,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**296 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**304 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2723,6 +2724,65 @@ konstruksi kini di-snapshot **setelah import**.
 **Kontrol negatif: 7 dijalankan, 6 menggigit.** Yang ketujuh (`JSON.parse` di luar try)
 **tidak valid** — suntingan saya hanya menambah komentar sehingga semantiknya tidak berubah,
 maka "0 fail" bukan temuan. Saya **tidak** melaporkannya sebagai kontrol yang menggigit.
+
+### 1.7bb `prisma-tenant.ts`: MESIN ISOLASI TENANT yang di-mock 43 kali, 63,41% → 100,00%
+
+**Merged 51,49% → 87,38% (90/103). Eksekutabel 63,41% → 100,00% (90/90).** Repo
+**83,95% → 84,13% (+0,18)**. **DI-GATE pada floor 87** — sengaja **di atas** default,
+karena regresi di sini adalah **kebocoran data lintas tenant**, bukan bug tampilan. Modul
+ter-gate **80 → 81**.
+
+**Mengapa ini target terpenting yang tersisa.** `prisma-tenant.ts` adalah modul yang
+mencegah satu organisasi membaca baris milik organisasi lain. **43 file test
+mengimpornya, dan SEMUANYA me-mock** — jadi kode injeksi yang sebenarnya
+(`injectOrgWhere`, `injectOrgCreate`, normalisasi PascalCase, allow-list model) **tidak
+pernah tereksekusi**: 63,41% eksekutabel dengan **setiap cabang mesin injeksi tak
+terjangkau**. Yang tereksekusi hanyalah file guard statis (`tenant-route-guard.test.ts`)
+dan stub di `smart-router.test.ts`.
+
+**Yang kini dijaga — dan mengapa tiap satu penting.** (a) **Setiap operasi baca scoped**:
+`findFirst`, `findFirstOrThrow`, `findMany`, `count`, `aggregate`, `groupBy` — satu
+kelalaian berarti kebocoran pada route mana pun yang memakainya. (b) **Setiap operasi
+mutasi scoped lewat `where`**: `update`, `updateMany`, `delete`, `deleteMany` — dan
+**`deleteMany` TANPA `where` tetap di-scope**, karena `deleteMany` tanpa `where` adalah
+**hapus seluruh tabel**; kalau extension membiarkannya, ia akan **menghapus baris semua
+organisasi**. (c) **Create menstempel `organizationId`** pada `create`, `createMany`
+(**SETIAP baris**, bukan hanya yang pertama), dan `createManyAndReturn`. (d) **`upsert`
+hanya menstempel `create`, tidak `where`** — `where` unik akan **ditolak Prisma**. (e)
+**Filter pemanggil dipertahankan** dan **`organizationId` eksplisit TIDAK ditimpa** —
+menimpanya akan diam-diam membuang filter pemanggil (baris hilang) atau merusak jalur
+admin lintas-org. (f) **Normalisasi PascalCase** — Prisma mengirim `"User"`, himpunan
+dikunci `"user"`; header file mencatat ini sebagai penyebab "injeksi tidak pernah menyala
+(kebocoran lintas-org)". Diuji untuk **seluruh 28 model** dalam `ORG_SCOPED_MODELS`, bukan
+beberapa contoh, karena **daftar itu adalah batas keamanannya**: model yang punya
+`organizationId` di schema tapi **hilang dari daftar** akan di-query tanpa scope. (g)
+**`findUnique` sengaja TIDAK di-scope** — dipatok sebagai keputusan sadar, karena file itu
+sendiri mencatat bahwa rasional lama ("ID cuid() acak, akses lintas tenant tak mungkin")
+adalah **security-through-obscurity yang terukur SALAH**: `api/mcp/servers/route.ts`
+mengembalikan `id: true` ke browser, jadi pengguna org-A memegang ID miliknya sendiri dan
+ID itu **resolve di konteks org B**. Dua route tereksploitasi; keduanya **sudah** memanggil
+`enterWithOrg()` dan benar — konteks orgnya **diabaikan oleh query**. (h) **Tanpa org
+context tidak ada injeksi** — `bypassOrg` adalah opt-out eksplisit untuk login/signup/seed.
+
+**Cara menguji modul ini tanpa Prisma hidup.** `Prisma.defineExtension` hanya **membungkus**
+objek yang diberikan, jadi me-mock `@prisma/client` agar mengembalikan input apa adanya
+membuat handler `$allOperations` **asli** tertangkap dan bisa dipanggil langsung. Itu
+membuat seluruh mesin injeksi dapat diuji **tanpa database** dan tanpa me-mock modul yang
+sedang diuji.
+
+**Kontrol negatif: 8, semuanya menggigit.** Yang paling tajam: **menghapus normalisasi
+PascalCase menyalakan 12 test** (injeksi mati total), dan **menghapus `findFirst` dari
+`FILTER_OPS` menyalakan 1**. Lainnya: model tidak dicek terhadap allow-list, `MUTATE_WHERE_OPS`
+memakai `injectOrgCreate`, `createMany` hanya menstempel baris pertama, `where` eksplisit
+ditimpa, `upsert` menaruh org di `where`, dan `bypassOrg` tidak mengosongkan store.
+
+**Flake runner: 2 kejadian lagi, tetap tak tereproduksi.** Dua eksekusi lagi keluar 1 pada
+jalannya, lalu **7 eksekusi berurutan bersih (3.618 pass)**. Saya menguji hipotesis *cold
+cache* dengan menghapus dan menulis ulang file test — **tetap bersih**, jadi hipotesis itu
+**tidak terbukti** dan saya tidak mengklaimnya. Yang berubah dari ronde lalu: runner kini
+**melaporkan penyebabnya secara eksplisit** bila terulang, sehingga kejadian berikutnya akan
+menghasilkan diagnosis, bukan sekadar nama file. Gejala **tidak** mereproduksi dalam 7
+percobaan.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

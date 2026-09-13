@@ -1,7 +1,7 @@
 {
-  "linePct": 83.95,
-  "linesHit": 16521,
-  "linesFound": 19679,
+  "linePct": 84.13,
+  "linesHit": 16556,
+  "linesFound": 19680,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -10,12 +10,6 @@
       "hit": 14,
       "found": 30,
       "pct": 46.666666666666664
-    },
-    {
-      "file": "src/lib/prisma-tenant.ts",
-      "hit": 55,
-      "found": 102,
-      "pct": 53.92156862745098
     },
     {
       "file": "src/lib/themes.ts",
@@ -346,6 +340,12 @@
       "hit": 364,
       "found": 418,
       "pct": 87.08133971291866
+    },
+    {
+      "file": "src/lib/prisma-tenant.ts",
+      "hit": 90,
+      "found": 103,
+      "pct": 87.37864077669903
     },
     {
       "file": "src/lib/license-issue.ts",
