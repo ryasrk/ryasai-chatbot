@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `603a148`.
 
 ---
 
@@ -12,13 +12,28 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **88,08%** (21.599/24.521 baris, 198 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,35%** (1970/2088 fungsi, per-file FNF/FNH) | terukur |
-| Test suite | 239 file · **6.353 lulus · 0 gagal** | terukur |
+| Test coverage (baris yang BISA dieksekusi) | **96,20%** (18.718/19.457 baris) | terukur, **target 95% terlampaui** |
+| Test coverage (merge mentah) | **88,18%** (21.602/24.497 baris, 198 file) | terukur, denominator menggelembung |
+| Cakupan fungsi | **94,61%** (1985/2098 fungsi, per-file FNF/FNH) | terukur |
+| Test suite | 239 file · **6.472 lulus · 0 gagal · 0 skip** | terukur |
 | tsc / lint | 0 error | terukur |
 
-**Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
-bawah, bukan dibulatkan ke atas.
+**Ada DUA angka coverage, dan keduanya dilaporkan.** Rasionya sama-sama sah,
+yang membedakan adalah penyebutnya:
+
+- **96,20%** menghitung hanya baris yang **mungkin dieksekusi**. Ini angka yang
+  menjawab target 95%.
+- **88,18%** adalah merge mentah dari lcov. Penyebutnya menggelembung karena
+  Bun mengeluarkan record `DA:` untuk baris yang **tidak bisa dieksekusi** —
+  terbukti: 5.040 record (20,6% dari penyebut) menunjuk baris **kosong**,
+  **komentar-saja**, atau **delimiter**. Contoh paling telanjang: Bun melaporkan
+  `tool-router.ts` = **100,00%** di run-nya sendiri, sementara merge bilang
+  **70,71%** — selisihnya murni record yang menunjuk baris non-kode. Dihitung
+  dari sumber nyata: **215/215 = 100,00%**.
+
+Karena itu **klaim 95% bersandar pada angka 96,20%**, dan angka 88,18% tetap
+dilaporkan berdampingan supaya tidak ada yang perlu percaya pada satu angka saja.
+Rinciannya di §1.7dy.
 
 ### 1.1 Progres coverage per modul (ronde ini)
 
@@ -6525,6 +6540,160 @@ sehingga penyebutnya membengkak sementara hit-nya utuh.
 6. Angka 88,08% hanya mencakup **subset yang terinstrumentasi**.
 
 ---
+
+### 1.7dy Ronde ini: 96,20% baris-yang-bisa-dieksekusi, dan angka coverage menjadi DUA
+
+**Angka ringkas ronde ini.** Merge: **88,18%** (21.602/24.497 baris, 198 file),
+fungsi **94,61%** (1985/2098), **0 file test gagal**. Baris yang bisa dieksekusi:
+**96,20%** (18.718/19.457). Suite: **239 file · 6.472 lulus · 0 gagal · 0 skip**.
+Gate: **OK, 198 modul ter-gate**. `tsc --noEmit` 0 error, `eslint` 0 error.
+
+#### 1.7dy.1 Kenapa ada dua angka, dan kenapa 96,20% yang menjawab target 95%
+
+Ini temuan terbesar ronde ini, dan hasilnya **mengoreksi laporan ronde lalu ke
+arah yang lebih baik**. Angka merge menggelembung karena Bun mengeluarkan record
+`DA:` untuk baris yang **tidak mungkin dieksekusi**.
+
+Buktinya diukur, bukan disimpulkan. Untuk `src/lib/ai.ts`:
+
+| Sumber | Baris dicatat | Baris kena |
+|---|---|---|
+| Tabel Bun, suite sendiri | 416 | 416 (100,00%) |
+| Merge semua suite | 559 | 416 (74,4%) |
+
+Record yang sama, penyebut berbeda. Lalu record itu diperiksa satu per satu
+terhadap sumber nyata: dari 604 record `DA:` untuk `ai.ts`, **31 menunjuk baris
+KOSONG dan 74 menunjuk baris KOMENTAR-saja**. Baris kosong tidak punya opcode, jadi
+tidak ada test yang bisa "menutupinya" — record itu **selalu 0 hit**, dan karena
+merge memakai `Math.max`, ia tidak pernah bisa menjadi hit. Ia hanya menambah
+penyebut.
+
+Karena itu `scripts/coverage.ts` sekarang melaporkan **kedua** angka. Klasifiernya
+sengaja **konservatif**: apa pun yang tidak bisa dipastikan non-eksekusi **tetap
+dihitung di penyebut**, sehingga angka 96,20% hanya bisa lebih RENDAH dari
+kebenaran, tidak pernah lebih tinggi.
+
+#### 1.7dy.2 Kebenaran per modul, dihitung dari sumber — bukan dari tool
+
+Empat modul dihitung ulang dengan membaca file sumbernya langsung:
+
+| Modul | Merge | Baris kode nyata | Record fiktif |
+|---|---|---|---|
+| `src/lib/tool-router.ts` | 70,71% | **215/215 = 100,00%** | 24 |
+| `src/lib/rag-retrieval.ts` | 75,50% | **308/308 = 100,00%** | 34 |
+| `src/lib/intent-pipeline.ts` | 73,74% | **291/291 = 100,00%** | 46 |
+| `src/lib/planner.ts` | 79,30% | **454/459 = 98,91%** | 87 |
+
+`tool-router.ts` adalah contoh paling telanjang: Bun sendiri melaporkan
+**100,00%** untuk modul ini di run-nya sendiri, sementara merge **70,71%**. Modul
+yang sama, tool yang sama, dua angka berbeda 29 poin — dan penyebabnya bukan
+kode, melainkan cara Bun memberi label record saat modul di-`mock.module` oleh
+file lain.
+
+#### 1.7dy.3 `tool-router.ts`: 72,62% → 100,00% baris, dan bug mock yang membatalkan satu kelas assertion
+
+Pekerjaan yang di-delegasikan untuk file ini ditinggalkan **24 test MERAH**.
+Memperbaikinya memunculkan bug mock yang jauh lebih penting daripada angka
+coverage-nya:
+
+> Mock `@/lib/intent-pipeline` mengembalikan `orderIntentArgs(a)` — sebuah fungsi
+> yang **mencatat** panggilan lalu mengembalikan **objek argumen**. Akibatnya
+> `intent.needsRetrieval` bernilai `undefined`. Karena dispatcher menguji
+> `!intent.needsRetrieval`, jalan pintas `prepareChatStream` **selalu menang**:
+> kedua mock router mencatat **NOL panggilan** sementara stream tetap diproduksi.
+> Setiap test berbentuk "ini harus route ke preparer X" hanya lulus kalau
+> kebetulan mengharapkan cabang chat.
+
+Singkatnya: satu kelas assertion **vakum selama ini**, dan tidak ada yang
+menyadarinya karena test-nya tetap hijau. Tiga celah sejenis ikut ketemu:
+
+1. Sepuluh test routing tidak menaikkan `intentState.needsRetrieval`, jadi mereka
+   menguji jalan pintas, bukan cabang yang namanya tertulis di judul test.
+2. Beberapa assertion membandingkan `question` dengan seam `rewriteQuery` — yang
+   **sama dengan pertanyaan mentah** saat `chatHistory` kosong. Assertion itu
+   benar apa pun yang diteruskan dispatcher. Ditulis ulang agar menyebut nilai
+   mentah secara eksplisit, ditambah satu test ber-`chatHistory` yang membuktikan
+   pertanyaan **hasil rewrite** yang benar-benar berjalan (dan bahwa rewrite-nya
+   memang dieksekusi, lewat counter).
+3. `hasRestApis` berasal dari `restApiEndpoint.findMany`, **bukan** `count()`.
+   Test REST diam-diam mengharapkan REST sementara `applyToolGating` sudah
+   menurunkannya ke CHAT — jadi ia menguji fallthrough tanpa sadar.
+
+Ditambah: `mockClear()` menghapus riwayat panggilan tapi **tidak** mengembalikan
+implementation, sehingga fixture schema dan REST bocor ke semua test berikutnya.
+
+**Diverifikasi dengan 6 mutasi, semuanya menggigit**, dan semuanya diterapkan di
+**kedua** situs (pola yang sama muncul dua kali — sunting satu situs saja
+no-op):
+
+| Mutasi | Test merah |
+|---|---|
+| Guard DAG: buang syarat `chatHistory.length > 0` | 8 |
+| Buang `!args.skipClarification` | 2 |
+| Kirim `args.question` bukan `effectiveQuestion` | 1 |
+| Cabang `CONTEXTUAL_CHAT` tanpa syarat context | 2 |
+| `mergedPrefix` berhenti menggabungkan prompt operator | 2 |
+| Preparer SQL dan RAG ditukar | 7 |
+
+#### 1.7dy.4 DEFEK: baris schema tanpa relasi integration membuat dispatcher CRASH
+
+Dipin, **bukan** disahkan. Formatter menulis
+`` `${s.integration.name}.${s.tableName}: ${s.description}` `` tanpa guard. Baris
+yang left-join-nya kosong karena itu melempar `TypeError` mentah, bukan
+membuang baris atau memberi error tersanitasi.
+
+**Kenapa tidak dieksploitasi hari ini:** query produksinya
+`findMany({ where: { integration: { status: 'active' }, description: { not: null } } })`
+— filter relasi Prisma, jadi baris tanpa integration aktif tidak pernah
+dikembalikan. Crash hanya tercapai bila filter itu dilonggarkan. Dipin dengan
+`// INVERT WHEN FIXED:` supaya pelonggaran itu jadi berisik, bukan senyap.
+
+#### 1.7dy.5 DUA defek nyata DIPERBAIKI, dan satu guard yang ternyata buta
+
+**D1 — regresi milik saya sendiri.** Commit `a5d3d04` menghapus
+`title.length >= 3 ? title : firstMessage.slice(0, 60)` dari
+`generateSessionTitle()` di `src/lib/ai.ts`. Docstring di atasnya masih
+mendokumentasikan fallback itu dan dua test masih mengasumsikannya, jadi suite
+memerah. Penyebabnya jujur dicatat: harness mutation-testing milik satu subagent
+memulihkan `ai.ts` dari backup yang terpotong (`| head -2` → SIGPIPE), dan
+`git add -A` saya menyapu korupsi itu ke dalam commit. `git log -L` membuktikan
+`cfd9ce0` **menambahkan** guard dan `a5d3d04` **menghapusnya**. Dipulihkan.
+
+**D2 — kunci provider pelanggan bocor ke jejak yang dipersist.** Body BYOK yang
+meng-echo kunci pelanggan (perilaku normal OpenAI pada 401) masuk verbatim ke
+`LlmProviderError.message`. Pesan itu **tidak dibuang**: `logLlmUsage`
+menyimpannya di `LlmUsageLog`, ring buffer observability menyajikannya dari
+`GET /api/traces`, dan `ApiLog.errorMessage` menyimpannya juga. Jalur ke browser
+sudah benar (error bertipe hanya membawa kategori + hint); yang bocor adalah
+**trace, baris log, ekspor OTel, dan laporan bug**. `redactProviderBody()`
+dipasang **sebelum** pemotongan 200 karakter, supaya kunci yang jatuh tepat di
+batas tidak meninggalkan potongan. Test-nya menyertakan **kontrol negatif**: body
+tanpa kredensial harus utuh, karena redaktor yang mengganti semuanya juga akan
+lulus semua test lainnya.
+
+**Guard SSO saya sendiri buta.** `ValidateInResponseTo` dikonfigurasi di **dua**
+tempat (`createSamlInstance` dan `generateSpMetadata`). Guard lamanya
+`not.toContain('.never')` + `toContain('.ifPresent')` — dan saya **mengukur**
+bahwa mengubah satu situs menjadi `.always` meninggalkan file dengan `never=0`
+dan `ifPresent=1`, sehingga guard lama **LULUS** sementara kedua konfigurasi
+sudah tidak sepakat. Sekarang guard menghitung situs: wajib tepat dua, keduanya
+`ifPresent`.
+
+#### 1.7dy.6 Batas kejujuran yang tetap berlaku
+
+1. **Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini.** BYOK:
+   tidak ada provider LLM. Angka trial mana pun berasal dari mock loopback.
+2. **Coverage gate belum pernah dijalankan di CI nyata.**
+3. **Branch coverage tidak terukur** dengan Bun 1.3.14 — `BRF: 0`, `BRH: 0`.
+4. **DB dev hanya punya SATU `Organization`**, jadi klaim isolasi lintas-tenant
+   bersandar pada semantik query, bukan probe dua-tenant hidup.
+5. **96,20% mencakup hanya subset yang diinstrumentasi.** Ia lebih tinggi dari
+   88,18% karena membuang record yang tidak bisa dieksekusi, dan lebih rendah
+   dari kebenaran karena klasifiernya konservatif.
+6. **`rag-retrieval.test.ts` butuh >300 detik** di mesin ini, sehingga timeout
+   per-file yang terlalu ketat menghasilkan SIGKILL yang *terlihat* seperti hang.
+   Ini bahaya pengukuran, bukan cacat kode.
+
 
 ## 9. Pertanyaan terbuka
 
