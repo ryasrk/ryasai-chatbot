@@ -1,6 +1,6 @@
 {
-  "linePct": 81.55,
-  "linesHit": 16049,
+  "linePct": 81.71,
+  "linesHit": 16080,
   "linesFound": 19679,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -52,12 +52,6 @@
       "hit": 57,
       "found": 103,
       "pct": 55.33980582524271
-    },
-    {
-      "file": "src/lib/connectors.ts",
-      "hit": 87,
-      "found": 148,
-      "pct": 58.78378378378378
     },
     {
       "file": "src/lib/source-guidance.ts",
@@ -238,6 +232,12 @@
       "hit": 207,
       "found": 261,
       "pct": 79.3103448275862
+    },
+    {
+      "file": "src/lib/connectors.ts",
+      "hit": 118,
+      "found": 148,
+      "pct": 79.72972972972973
     },
     {
       "file": "src/lib/plugin-registry.ts",
