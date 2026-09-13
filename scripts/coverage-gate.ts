@@ -128,6 +128,11 @@ const FLOORS: Record<string, number> = {
   // lastUsedAt refresh) was entirely uncovered until it was driven through real
   // mocks; measured 100.00% (66/66) merged.
   'src/lib/license-reminder.ts': 100,
+  // THE AUTHENTICATION BOUNDARY. The 401 must stay generic (no user enumeration),
+  // a failure must be audited, and a success must rotate sessionVersion so old
+  // cookies die. The route sat at 35.14% executable with the entire POST flow
+  // unexecuted; measured 100.00% (66/66) merged.
+  'src/app/api/auth/login/route.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
   'src/lib/setup.ts': 95, // measured 100.00% (28/28)
   'src/lib/smart-router-helpers.ts': 80, // measured 88.06% (332/377)

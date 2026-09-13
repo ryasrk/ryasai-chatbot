@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72622b1`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f98f0cf`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `72622b1`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **83,28%** (16.396/19.688 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.543 lulus · 0 gagal** | terukur |
+| Test coverage | **83,57%** (16.449/19.682 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.557 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **77 modul** | +15 |
+| Modul ter-gate | 62 modul | **78 modul** | +16 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -103,7 +103,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-reminder.ts` | 30,00% → **100,00%** merged | 47,73% → **100,00%** kode eksekutabel (66/66) | 15 |
 | `src/lib/cognee-core.ts` | 91,12% → **83,33%** merged (**turun**, §1.7z) | 91,98% → **100,00%** kode eksekutabel (215/215) | 27 |
 | `src/lib/knowledge-graph.ts` | 93,55% → **78,57%** merged (**turun**, §1.7z) | 94,16% → **99,35%** kode eksekutabel (154/155) | 18 |
-| **Total repo** | **62,44%** | **83,28%** | — |
+| `src/app/api/auth/login/route.ts` | 18,06% → **100,00%** merged | 35,14% → **100,00%** kode eksekutabel (66/66) | 16 |
+| **Total repo** | **62,44%** | **83,57%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -362,7 +363,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**277 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**284 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2579,6 +2580,49 @@ dengan artefak yang sudah dideklarasikan di modul lain.
 
 **Kontrol negatif: 4, semuanya menggigit** (tiga di antaranya **hanya** setelah test
 diperbaiki).
+
+### 1.7ay `auth/login/route.ts`: BATAS AUTENTIKASI pada 35,14% — 24 baris nyata, 18,06% merged
+
+**Merged 18,06% → 100,00% (66/66). Repo 83,28% → 83,57% (+0,29), lompatan terbesar sesi
+ini.** Kini **DI-GATE pada floor 100** — modul ter-gate **77 → 78**.
+
+**Mengapa ini yang saya dahulukan.** Modul ber-merged terendah di seluruh repo adalah
+`src/app/api/auth/login/route.ts` pada **18,06%**. File test-nya ada dan hijau, jadi modul
+ini **tidak muncul** di daftar sisa mana pun yang diurutkan berdasarkan besarnya selisih
+baris — hanya 59 baris. Yang membuatnya penting: ia adalah **batas autentikasi**, dan test
+yang ada hanya menguji `normalizeLoginInput` (fungsi murni), sehingga **seluruh alur `POST`
+0%**.
+
+**Yang kini dijaga, dan mengapa masing-masing penting.** (a) **Pesan 401 tetap GENERIK dan
+identik** untuk kredensial salah dan email tak dikenal — kalau berbeda, itu **user
+enumeration**; dua test terpisah menegakkan keduanya sehingga regresi enumerasi tidak bisa
+lolos. (b) **`isActive === false` DITOLAK** — karyawan yang sudah di-offboard dan hanya
+ditandai nonaktif **tidak boleh** bisa login; ini bypass yang bisa terjadi kalau syarat
+`user.isActive` hilang dari ekspresi `ok`. (c) **`sessionVersion` di-rotate** dan cookie
+ditandatangani dengan versi **BARU**, bukan yang basi — inilah yang membuat cookie lama
+mati. (d) **Cookie `httpOnly`** — cookie yang bisa dibaca JS adalah cookie yang bisa
+dicuri XSS. (e) **`LOGIN_FAILED` di-audit dengan `severity: 'warning'`** untuk user yang
+**dikenal**; (f) `enterWithOrg` **sebelum** audit, kalau tidak baris audit tertulis tanpa
+tenant. (g) **Body non-JSON menjadi 400**, bukan 500 — `req.json().catch(() => null)` itu
+disengaja; klien yang mengirim sampah harus mendapat 400 yang sama, **tidak pernah** throw
+tak tertangani. (h) **400 tidak menyentuh database** sama sekali, jadi ia tidak bisa dipakai
+untuk memeriksa keberadaan akun.
+
+**Temuan — assertion saya sendiri yang salah, lagi.** Versi pertama saya menuntut body 401
+**tidak mengandung kata "password"** — dan gagal, karena pesan generiknya **memang**
+mengandung kata itu. Yang tidak boleh bocor bukan katanya, melainkan **apakah akunnya ada**.
+Saya ganti dengan pemeriksaan yang bermakna: hash dan nilai yang dikirim tidak muncul, dan
+pesannya identik dengan kasus email tak dikenal.
+
+**Celah yang saya DOKUMENTASIKAN, bukan tutupi.** Percobaan login untuk email yang **tidak
+dikenal tidak bisa di-audit** di sini: tidak ada `user.id`/`organizationId` untuk
+mengatribusikan barisnya. Test-nya mematok **kedua** sisi (dikenal → 1 baris, tak dikenal → 0
+baris) supaya celah ini terlihat, bukan tersirat sebagai cakupan yang tidak ada.
+
+**Kontrol negatif: 7, semuanya menggigit** — `isActive` dihapus, `verifyPassword` dilewati,
+rotasi `sessionVersion` dihapus, `httpOnly` dimatikan, audit `LOGIN_FAILED` dihapus,
+`enterWithOrg` dilewati, dan `req.json().catch()` dihapus. Masing-masing menyalakan test yang
+spesifik.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
