@@ -108,6 +108,7 @@ const FLOORS: Record<string, number> = {
   'src/app/api/notifications/[id]/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/schedules/[id]/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/data-sources/rest-connectors/[id]/route.ts': 100, // merged 100.00%; was one of the untested routes
+  'src/app/api/documents/[id]/chunks/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
   'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)

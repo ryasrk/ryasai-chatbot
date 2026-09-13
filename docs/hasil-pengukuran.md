@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a730e4a`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `099773c`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a730e4a`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **87,38%** (18.920/21.653 baris, 147 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,04%** (1752/1863 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 189 file · **4.544 lulus · 0 gagal** | terukur |
+| Test coverage | **87,41%** (18.979/21.712 baris, 148 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,05%** (1754/1865 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test suite | 190 file · **4.586 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**879 kontrol + 5 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**895 kontrol + 6 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -5509,6 +5509,37 @@ seharusnya mencatat **BAHWA** kredensial berotasi, bukan bentuk terenkripsinya.
 **Progres backlog: 15 dari 66 route orphan ditutup.** Repo **87,29% → 87,38%**; suite **4.492 → 4.544**
 (188 → **189 file**); gate **146 → 147 modul**. Mock **tidak lagi mencemari** `cron.ts`/`scheduler-queue.ts`
 (lihat §1.7dh): keduanya tetap tercatat dengan HIT utuh **109** dan **119**.
+
+### 1.7dj `/api/documents/[id]/chunks` — paginasi yg tidak boleh salah: 100,00% (59/59)
+
+Permukaan berbentuk baca, dan justru di situ kegagalan yang menarik bersembunyi. **Empat di antaranya:**
+
+**1. `page` YANG TAK TERURAI BUKAN ERROR, MELAINKAN HALAMAN 1.** `parseInt('abc') || 1` sengaja menelan nilai
+sampah, dan `pageSize` jatuh ke **20, bukan 1**. Pemanggil yang mengirim `?page=abc` harus mendapat halaman
+pertama — bukan 400, dan bukan body kosong yang **terlihat seperti dokumen kosong.**
+
+**2. `pageSize` DI-CLAMP ke [1, 100], dan nilai yang DI-CLAMP harus DILAPORKAN.** Batas atas adalah vektor
+pengurasan memori pada rute yang mengembalikan **isi chunk penuh**; melaporkan nilai setelah clamp adalah
+bagian dari kontrak supaya klien yang memaginasi dengan 1000 **bisa melihat bahwa ia menerima 100.**
+
+**3. `total` BERASAL DARI COUNT SENDIRI, bukan dari `_count` dokumen, dan keduanya bisa berbeda saat
+reindex.** Rute **sengaja mengabaikan** `doc._count.chunks` yang sudah tersedia; **K5 (memakai `_count`) → 6
+merah** — jumlah terbanyak dari ronde ini, karena `total` menggerakkan pager sehingga harus merupakan hitungan
+**dari apa yang benar-benar dikembalikan.** Filter `count` juga diasersi, karena filter yang hilang akan
+memaginasi **setiap chunk di org.**
+
+**4. `totalPages` TIDAK PERNAH 0.** `Math.max(1, ...)` berarti dokumen kosong melaporkan **satu** halaman,
+sehingga klien yang membangun pager tidak merender **"halaman 1 dari 0"**. **K9 → 1 merah.**
+
+**16 kontrol, dan KEDUA PULUH... KEENAM BELAS MENGGIGIT.**
+
+Satu pengamatan metodologi yang layak dicatat: **K14 (`pageSize=0`) membutuhkan asersi eksplisit tentang
+nilai 20.** Alasannya `parseInt('0')` adalah `0`, `0` **falsy**, sehingga `|| DEFAULT_PAGE_SIZE` berlaku dan
+hasilnya **20 — bukan 1.** Dua kandidat (1 dan 20) **sama-sama masuk akal**, jadi tanpa asersi eksplisit test
+tidak membuktikan yang mana pun; test-nya menyatakan perilaku itu **apa adanya, tanpa penilaian.**
+
+**Progres backlog: 16 dari 66 route orphan ditutup.** Repo **87,38% → 87,41%**; suite **4.544 → 4.586**
+(189 → **190 file**); gate **147 → 148 modul**; file terinstrumen **147 → 148**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

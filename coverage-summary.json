@@ -1,11 +1,11 @@
 {
-  "linePct": 87.38,
-  "linesHit": 18920,
-  "linesFound": 21653,
-  "fnPct": 94.04,
-  "fnsHit": 1752,
-  "fnsFound": 1863,
-  "filesMeasured": 147,
+  "linePct": 87.41,
+  "linesHit": 18979,
+  "linesFound": 21712,
+  "fnPct": 94.05,
+  "fnsHit": 1754,
+  "fnsFound": 1865,
+  "filesMeasured": 148,
   "failedTestFiles": [],
   "files": [
     {
@@ -888,6 +888,15 @@
       "pct": 100,
       "fHit": 8,
       "fFound": 8,
+      "fPct": 100
+    },
+    {
+      "file": "src/app/api/documents/[id]/chunks/route.ts",
+      "hit": 59,
+      "found": 59,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
       "fPct": 100
     },
     {
