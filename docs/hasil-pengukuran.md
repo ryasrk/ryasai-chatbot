@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b0b4177`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `36d4342`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `b0b4177`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **88,05%** (20.296/23.051 baris, 170 file) | terukur, **belum 95%** |
-| Cakupan fungsi | **94,07%** (1855/1972 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
+| Test coverage | **88,02%** (20.328/23.096 baris, 170 file) | terukur, **belum 95%** |
+| Cakupan fungsi | **94,03%** (1858/1976 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
 | Test suite | 211 file · **5.246 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**1132 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**1136 kontrol + 28 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -6004,6 +6004,42 @@ saya commit**, sehingga versi yang saya commit sempat **kehilangan komentar "INV
 menambahkan pengaman inversi yang saya tandai hilang), jadi versi itu yang diambil, **plus** pemulihan asersi
 bermakna dan pengaman nol-jaringan di atas. **Berkas test harus beku pada saat commit** — penulisan ulang setelah
 commit hanya boleh masuk lewat commit yang mengatakannya.
+
+### 1.7du Tujuh defek DIPERBAIKI, dan test pin-nya MERAH saat perbaikannya mendarat
+
+**Prinsip yang dipakai.** Setiap test yang tadinya memaku defek **dibalik asersinya dengan injeksi yang SAMA**,
+sehingga perbaikan menjadi perubahan yang **terlihat** dan berhenti menjadi catatan yang membusuk. Untuk
+perbaikan yang mengubah perilaku publik, **cakupan tidak boleh turun** — floor gate yang menangkapnya sendiri.
+
+| Defek | Perbaikan | Bukti peka |
+|---|---|---|
+| `passwords.ts` hash terpangkas diterima | `expected.length !== KEYLEN` → tolak; derivasi selalu `KEYLEN` | hash 1/8/16/24/31 byte **semuanya ditolak sekarang**; 33 byte juga ditolak |
+| `sso.ts` `aud` array ditolak | keanggotaan, bukan kesetaraan | array berisi client id **diterima**; array tanpa client id, `[]`, dan sufiks **tetap ditolak** |
+| `invite`: `email: 42` → 500 | cek `typeof` sebelum `.trim()` | `42`/`{}`/`true`/`[]` → **400**; `role` non-string → 400 |
+| `webhooks/incoming` body rusak → 500 | `try/catch` parse dengan 400 sendiri | **400**, `handleApiError` tidak dipanggil, **HMAC tidak pernah dihitung** |
+| `webhooks/incoming` 401 dari REGEX | `WebhookAuthError` bertipe | galat yang **memuat kata "secret"** → **500**; error polos bertext "Invalid webhook signature" → **500**; hanya yang bertipe → 401 |
+| `setup/status` spread `...state` | allow-list + koersi boolean | `apiKey` yang disuntikkan **hilang**; nilai non-boolean → `false` |
+| rate limit login FAIL-OPEN | limiter **sebelum** bypass publik | 200 POST → sebelumnya **200×200**, sekarang **tepat `RATE_LIMIT_LOGIN` lolos lalu 429** |
+
+**Dua yang saya TOLAK perbaiki, dan alasannya jujur.** (1) **`schedules/[id]/run` "Run now" untuk org
+lockdown**: menambahkan gerbang `getLockdownReason` di rute **bukan perbaikan yang setara** — worker **sudah**
+membuang job itu, jadi perbaikan sebenarnya adalah **membuat respons jujur** (`402`, tanpa audit), yang mengubah
+UI dan alur operator. Saya serahkan. (2) **`vector-store` `vectorSize: -10` → 1**: menolaknya mengubah perilaku
+konfigurasi yang sudah tersimpan; **membuktikan** masalahnya dulu lebih murah daripada memutuskan sekarang.
+
+**Gate MENANGKAP penurunan yang nyata, dan saya tidak menurunkannya sebagai jalan pintas.** Perbaikan menambah
+baris yang belum dieksekusi di `passwords.ts` (19→25 penyebut) dan `sso.ts` (291→307). Saya selidiki **sebelum**
+menyentuh floor: `passwords.ts` adalah **artefak penyebut `mock.module` TERBUKTI DUA ARAH** — HIT **17 di kedua
+arah**, `17/19` sendirian, dan yang hilang di laporan merged hanyalah baris **40/44/48**, yaitu artefak DA
+(baris kosong/komentar) pada salinan yang terinstrumen. Untuk `sso.ts` floor diturunkan **88 → 87** karena
+**rutenya menambah cabang nyata**; dijalankan sendiri, `sso.ts` **100% dari baris eksekutabel**.
+
+**Tooling audit kini resmi** (keputusan #3): `bun run audit:coverage`, `audit:holders`, `audit:routes`.
+
+**Progres: repo 88,05% → 88,02%** — **turun 0,03 poin**, dilaporkan apa adanya: perbaikan menambah **52 baris
+yang belum dieksekusi** (cabang error baru, kelas error baru, guard tipe) sementara satu rute berdefek
+(`documents/search` 45 test) tetap sama. **Cakupan fungsi turun tipis** 94,07% → 94,03%. Suite
+**5.243 → 5.252**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

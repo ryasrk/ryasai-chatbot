@@ -8,6 +8,27 @@ import {
   RATE_LIMIT_UPLOAD,
 } from '@/lib/constants'
 
+/**
+ * Public paths that still need the rate limiter.
+ *
+ * `PUBLIC_API_PATHS` means "do not require a session", and the early return for it used to skip the rate
+ * limiter entirely -- so the bucket whose own comment reads `// brute force protection` never ran for
+ * `/api/auth/login`. Measured before the fix: 200 POSTs to /api/auth/login -> 200 x HTTP 200, while a
+ * NON-public path with the same key went 20 x 200 then 180 x 429.
+ *
+ * The three credential-guessing endpoints are listed here because they have NO session to key on and NO
+ * second limiter inside the handler. The other public paths are deliberately absent:
+ *   - `/api/v1/chat/completions` and `/api/v1/agent/run` rate-limit per API KEY inside their handlers;
+ *   - `/api/webhooks/*` and `/api/billing/webhook` are signature-authenticated server-to-server callers,
+ *     and throttling them would DROP DELIVERIES rather than block an attacker;
+ *   - `/api/v1/health`, `/api/health` and `/api` are read-only liveness probes hit by orchestrators.
+ */
+const PUBLIC_PATHS_RATE_LIMITED = new Set([
+  '/api/auth/login',
+  '/api/auth/signup',
+  '/api/auth/register',
+])
+
 const PUBLIC_API_PATHS = new Set([
   '/api',
   '/api/v1/health',
@@ -69,11 +90,52 @@ function rateLimitKey(req: NextRequest, route: string): string {
   return `session:${session.slice(0, 20)}:${route}`
 }
 
+/**
+ * The rate-limit decision, shared by the public-credential path and the normal path so the two cannot drift.
+ * Returns a 429 response when the bucket is exhausted, or null to continue. The periodic eviction is a memory
+ * optimisation, not a correctness guard: the read path already resets a stale bucket, which is why removing the
+ * sweep is unobservable (recorded in the middleware tests).
+ */
+function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null {
+  const { limit, route } = limitFor(pathname)
+  const key = rateLimitKey(req, route)
+  const now = Date.now()
+  const bucket = RATE_BUCKETS.get(key)
+  if (!bucket || now > bucket.resetAt) {
+    RATE_BUCKETS.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    if (RATE_BUCKETS.size > 1000) {
+      for (const [k, b] of RATE_BUCKETS) if (now > b.resetAt) RATE_BUCKETS.delete(k)
+    }
+    return null
+  }
+  bucket.count += 1
+  if (bucket.count <= limit) return null
+  return NextResponse.json(
+    { error: 'Rate limit reached. Try again later.' },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': '60',
+        'X-RateLimit-Limit': String(limit),
+        'X-RateLimit-Remaining': '0',
+      },
+    },
+  )
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
   const isApi = pathname === '/api' || pathname.startsWith('/api/')
 
   if (!isApi) return NextResponse.next()
+
+  // Throttle the credential-guessing endpoints even though they are public. This MUST happen before the public
+  // early-return below, which is exactly where the limiter used to be skipped.
+  if (PUBLIC_PATHS_RATE_LIMITED.has(pathname) && RATE_LIMITED_METHODS.has(req.method)) {
+    const limited = applyRateLimit(req, pathname)
+    if (limited) return limited
+  }
+
   if (PUBLIC_API_PATHS.has(pathname)) return NextResponse.next()
 
   // ponytail: existence-only check; full HMAC verification happens in route handlers via getActiveUser().
@@ -84,32 +146,8 @@ export function middleware(req: NextRequest) {
   // Rate limiting — only for state-changing/expensive methods (POST/PUT/DELETE/PATCH).
   // GET requests are read-only and cheap; limiting them breaks UI navigation.
   if (RATE_LIMITED_METHODS.has(req.method)) {
-    const { limit, route } = limitFor(pathname)
-    const key = rateLimitKey(req, route)
-    const now = Date.now()
-    const bucket = RATE_BUCKETS.get(key)
-    if (!bucket || now > bucket.resetAt) {
-      RATE_BUCKETS.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
-      // Evict stale buckets periodically
-      if (RATE_BUCKETS.size > 1000) {
-        for (const [k, b] of RATE_BUCKETS) if (now > b.resetAt) RATE_BUCKETS.delete(k)
-      }
-    } else {
-      bucket.count += 1
-      if (bucket.count > limit) {
-        return NextResponse.json(
-          { error: 'Rate limit reached. Try again later.' },
-          {
-            status: 429,
-            headers: {
-              'Retry-After': '60',
-              'X-RateLimit-Limit': String(limit),
-              'X-RateLimit-Remaining': '0',
-            },
-          },
-        )
-      }
-    }
+    const limited = applyRateLimit(req, pathname)
+    if (limited) return limited
   }
 
   return NextResponse.next()

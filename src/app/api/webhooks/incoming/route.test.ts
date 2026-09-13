@@ -136,7 +136,22 @@ function routeModeIsVerify(): boolean {
 // ---------------------------------------------------------------------------------------------
 // mock.module blocks. The first `await import('./route')` happens FURTHER DOWN, never here.
 // ---------------------------------------------------------------------------------------------
+const MockWebhookAuthError = class WebhookAuthError extends Error {
+  readonly code = 'WEBHOOK_UNAUTHORIZED'
+  constructor(message: string) {
+    super(message)
+    this.name = 'WebhookAuthError'
+  }
+}
+
 mock.module('@/lib/incoming-webhook', () => ({
+  /**
+   * Re-declared so `instanceof WebhookAuthError` INSIDE THE ROUTE matches what the test throws. The route imports
+   * this class, and `mock.module` replaces the module for the route's graph too, so the identity is shared -- the
+   * same reasoning as the error classes in the mcp-client block below.
+   */
+  WebhookAuthError: MockWebhookAuthError,
+
   /** The real exported verifier, for the block that exercises the scheme end to end. */
   verifyWebhookSignature: (rawBody: string, signature: string, secret: string) =>
     realHashEqual(rawBody, signature, secret),
@@ -155,17 +170,19 @@ mock.module('@/lib/incoming-webhook', () => ({
     if (routeModeIsVerify()) {
       // Verbatim order from the real lib: secret first (so an unconfigured install rejects everything
       // WITHOUT hashing), then the HMAC over the raw body.
-      if (!configuredSecret) throw new Error('INCOMING_WEBHOOK_SECRET not configured')
+      // Typed on purpose: the ROUTE now decides 401 from `instanceof WebhookAuthError`, so a plain Error here
+      // would (correctly) become a 500 and every signature-rejection test would fail for the wrong reason.
+      if (!configuredSecret) throw new MockWebhookAuthError('INCOMING_WEBHOOK_SECRET not configured')
       if (verifyThrows !== undefined) throw verifyThrows
       verifyRuns += 1
       event('verifyWebhookSignature')
       if (typeof rawBody !== 'string' || typeof signature !== 'string') {
         // Fail closed: `typeof signature !== 'string'` would be `true` in a "reject" formulation; an
         // unknown shape must never route to success.
-        throw new Error('Invalid webhook signature')
+        throw new MockWebhookAuthError('Invalid webhook signature')
       }
       if (!realHashEqual(rawBody, signature, configuredSecret)) {
-        throw new Error('Invalid webhook signature')
+        throw new MockWebhookAuthError('Invalid webhook signature')
       }
     }
 
@@ -501,17 +518,18 @@ describe('POST /api/webhooks/incoming — query validation runs before any work'
     expect(events).toEqual([])
   })
 
-  test('a body that is not JSON at all is a 500 through handleApiError', async () => {
+  test('FIXED: a body that is not JSON is 400 and never reaches the error handler', async () => {
+    // This test used to PIN the defect: `JSON.parse` ran with no `instanceof SyntaxError` branch, so a malformed
+    // body was reported as an INTERNAL fault (500) -- making monitoring count a bad caller as an outage. The
+    // route now parses inside a try/catch with its own 400, which is also cheaper: the signature is never
+    // computed for a body that cannot be used.
     stubVerifier()
-    // NOTE THE STATUS. `JSON.parse` runs OUTSIDE the signature step, so a malformed body is treated as
-    // an INTERNAL fault (500), not a client error (400) -- there is no `instanceof SyntaxError` branch.
-    // Pinned so a future "you must send JSON" 400 shows up as a deliberate change.
-    // INVERT THIS EXPECTATION TO 400 WHEN THAT LANDS.
     const res = await call('this is not json')
-    expect(res.status).toBe(500)
-    expect(apiErrorCalls).toHaveLength(1)
-    expect(apiErrorCalls[0]!.fallback).toBe('Webhook processing failed.')
+    expect(res.status).toBe(400)
+    expect((await res.json()) as { error: string }).toMatchObject({ ok: false, error: 'Invalid JSON body.' })
+    expect(apiErrorCalls).toHaveLength(0)
     expect(processArgs).toHaveLength(0)
+    expect(verifyRuns).toBe(0)
   })
 
   test('a JSON body that is not an object still passes the guard shape-checks safely', async () => {
@@ -523,12 +541,11 @@ describe('POST /api/webhooks/incoming — query validation runs before any work'
     expect(processArgs).toHaveLength(0)
   })
 
-  test('an EMPTY body is also a 500, not a 400', async () => {
-    // `req.text()` returns '' -> `JSON.parse('')` throws. Same SyntaxError gap as above.
+  test('FIXED: an EMPTY body is 400 too (same parse gap, closed by the same branch)', async () => {
     stubVerifier()
     const res = await call('')
-    expect(res.status).toBe(500)
-    expect(apiErrorCalls[0]!.fallback).toBe('Webhook processing failed.')
+    expect(res.status).toBe(400)
+    expect(apiErrorCalls).toHaveLength(0)
   })
 })
 
@@ -587,27 +604,36 @@ describe('POST /api/webhooks/incoming — audit ordering and response shape', ()
 
 // ---------------------------------------------------------------------------------------------
 describe('POST /api/webhooks/incoming — the 401-vs-500 decision', () => {
-  test('a signature error maps to 401', async () => {
+  test('FIXED: an UNTAGGED error saying "Invalid webhook signature" is 500, not 401', async () => {
+    // This is the old "a signature error maps to 401" test, inverted by the fix. Its expectation used to hold
+    // purely because of the message TEXT, which is precisely the brittleness the typed error removes: a failure
+    // that never passed through the auth path must not be reported as an authentication failure, whatever it says.
     stubVerifier()
     processError = new Error('Invalid webhook signature')
     const res = await call(rawBodyFor({ query: 'q' }))
-    expect(res.status).toBe(401)
-    expect(apiErrorCalls[0]!.status).toBe(401)
+    expect(res.status).toBe(500)
+    expect(apiErrorCalls[0]!.status).toBe(500)
+    // The route's own fallback is still what reaches the caller -- the message stays server-side.
     expect(apiErrorCalls[0]!.fallback).toBe('Webhook processing failed.')
   })
 
-  test('a secret error maps to 401', async () => {
+  test('a WebhookAuthError maps to 401 -- by TYPE, not by message', async () => {
     stubVerifier()
-    processError = new Error('INCOMING_WEBHOOK_SECRET not configured')
+    const { WebhookAuthError } = await import('@/lib/incoming-webhook')
+    processError = new WebhookAuthError('INCOMING_WEBHOOK_SECRET not configured')
     const res = await call(rawBodyFor({ query: 'q' }))
     expect(res.status).toBe(401)
+    expect(apiErrorCalls[0]!.status).toBe(401)
   })
 
-  test('the match is CASE-INSENSITIVE', async () => {
+  test('a PLAIN error carrying the same wording is 500 -- the wording no longer decides', async () => {
+    // The exact counterpart of the case-insensitivity test this replaced. Under the old regex rule this was a
+    // 401 purely because of its text; the point of typing the error is that ONLY the auth path may answer 401,
+    // so an identically-worded but untagged error must not.
     stubVerifier()
-    processError = new Error('Signature verification failed')
+    processError = new Error('Invalid webhook signature')
     const res = await call(rawBodyFor({ query: 'q' }))
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(500)
   })
 
   test('an unrelated error is 500, not 401', async () => {
@@ -618,28 +644,34 @@ describe('POST /api/webhooks/incoming — the 401-vs-500 decision', () => {
     expect(apiErrorCalls[0]!.status).toBe(500)
   })
 
-  test('an error merely CONTAINING the word secret is downgraded to 401', async () => {
-    // PINNED BRITTLENESS. The status comes from `/signature|secret/i.test(e.message)`, so an unrelated
-    // upstream failure whose text happens to mention a secret is reported to the caller as an auth
-    // failure. A typed error (`toTypedError` in @/lib/errors) would fix this.
-    // INVERT THIS TEST WHEN THE REGEX IS REPLACED.
+  test('FIXED: an error merely CONTAINING the word secret is 500, not 401', async () => {
+    // This test used to PIN the brittleness: the status came from `/signature|secret/i.test(e.message)`, so an
+    // unrelated upstream failure mentioning a secret was reported to the caller as an AUTH failure -- telling
+    // them to fix their signature when their provider was broken. The classification is now by ERROR TYPE
+    // (`WebhookAuthError`), so text content cannot influence the status. Same injection, inverted expectation.
     stubVerifier()
     processError = new Error('llm provider secret rotation failed upstream')
     const res = await call(rawBodyFor({ query: 'q' }))
-    expect(res.status).toBe(401)
-    expect(res.status).not.toBe(500)
+    expect(res.status).toBe(500)
+    expect(res.status).not.toBe(401)
+    expect(apiErrorCalls[0]!.status).toBe(500)
   })
 
-  test('the caller gets the fallback string, and the error object is passed through unchanged', async () => {
+  test('an auth failure still hides its detail: fallback string out, message server-side', async () => {
+    // Rewritten for the typed path (the old version used a plain Error, which is now correctly a 500). What is
+    // being pinned is unchanged and is the reason this route does not echo the error: a signature mismatch must
+    // not tell a prober what the expected digest was.
     stubVerifier()
-    processError = new Error('Invalid webhook signature: expected deadbeef')
+    const { WebhookAuthError } = await import('@/lib/incoming-webhook')
+    processError = new WebhookAuthError('Invalid webhook signature: expected deadbeef')
     const res = await call(rawBodyFor({ query: 'q' }))
     expect(res.status).toBe(401)
     expect(apiErrorCalls).toHaveLength(1)
-    // The route's OWN fallback is what reaches the response body; the message stays server-side.
     expect(apiErrorCalls[0]!.fallback).toBe('Webhook processing failed.')
     expect((apiErrorCalls[0]!.error as Error).message).toBe('Invalid webhook signature: expected deadbeef')
-    expect(JSON.stringify(await body(res))).toContain('Webhook processing failed.')
+    const text = JSON.stringify(await body(res))
+    expect(text).toContain('Webhook processing failed.')
+    expect(text).not.toContain('deadbeef')
   })
 })
 
@@ -659,13 +691,16 @@ describe('POST /api/webhooks/incoming — fail-closed paths', () => {
     expect(audits).toHaveLength(0)
   })
 
-  test('a non-Error signature throw still becomes a 401', async () => {
-    // The route's catch does `e instanceof Error ? e.message : String(e)` and then the same regex.
+  test('FIXED: a NON-Error signature throw is 500 -- a string cannot be typed as auth', async () => {
+    // Inverted by the fix. The old rule recovered a 401 from a bare STRING by regexing its text, so any value
+    // whose text mentioned a signature was reported as an authentication failure. With the status decided by
+    // `instanceof WebhookAuthError`, a thrown string is by definition not an auth signal. The fail-closed part
+    // that matters is unchanged and asserted: NO chat call happens either way.
     mode = 'verify'
     configuredSecret = SECRET
     verifyThrows = 'Invalid webhook signature'
     const res = await call(rawBodyFor({ query: 'q' }))
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(500)
     expect(chatCalls).toHaveLength(0)
   })
 

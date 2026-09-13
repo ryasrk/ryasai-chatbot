@@ -85,7 +85,7 @@ describe('verifyPassword — hostile / corrupted stored values', () => {
     expect(verifyPassword('anything', 'scrypt$$')).toBe(false)
   })
 
-  it('SECURITY GAP: a TRUNCATED hash still ACCEPTS the correct password', () => {
+  it('FIXED: a TRUNCATED hash is REJECTED -- the 1-byte brute-force window is closed', () => {
     // MEASURED AND REPORTED, not fixed. The re-derivation length is taken from the
     // stored hash (`scryptSync(password, salt, expected.length)`), so a SHORT stored
     // hash is compared only over its own short prefix -- and a prefix of the real
@@ -97,11 +97,13 @@ describe('verifyPassword — hostile / corrupted stored values', () => {
     // recovered from it. So a database whose stored hashes are truncated (or a row
     // an attacker can truncate) collapses the work factor from 2^256 to 2^8.
     //
-    // The header promises the stored format is `scrypt$<salt b64url>$<hash b64url>`
-    // with KEYLEN 32. Pinning the measured behaviour documents the gap in executable
-    // form; the FIX is to require `expected.length === KEYLEN` before comparing, which
-    // changes rejection behaviour, so it is a product/rollout decision rather than
-    // something to change silently here.
+    // THIS TEST USED TO PIN THE GAP. The fix is `if (expected.length !== KEYLEN) return false`
+    // before the comparison, so a stored hash that is not exactly 32 bytes is now treated as a
+    // corrupt row rather than as a credential. The re-derivation is also asked for KEYLEN again
+    // instead of `expected.length`, so the two buffers being compared are always full length.
+    // The rollout cost is real and accepted: a legitimately truncated row now FAILS to verify and
+    // its owner must reset the password -- which is the correct outcome, because that row was
+    // also verifiable by any 1-byte collision.
     const full = hashPassword('correct-horse')
     const parts = full.split('$')
     const hashBytes = Buffer.from(parts[2]!, 'base64url')
@@ -109,11 +111,17 @@ describe('verifyPassword — hostile / corrupted stored values', () => {
 
     for (const keep of [1, 8, 16, 24, 31]) {
       const truncated = `scrypt$${parts[1]}$${hashBytes.subarray(0, keep).toString('base64url')}`
-      // The gap: the CORRECT password is accepted against a truncated hash.
-      expect(verifyPassword('correct-horse', truncated)).toBe(true)
-      // A wrong password is still rejected, which is why the gap is invisible.
+      // FIXED: even the CORRECT password is now rejected, because the stored hash is not 32 bytes.
+      expect(verifyPassword('correct-horse', truncated)).toBe(false)
       expect(verifyPassword('wrong-horse', truncated)).toBe(false)
     }
+    // A 33-byte hash is equally invalid -- the rule is exact equality, not a minimum.
+    const tooLong = Buffer.concat([hashBytes, Buffer.from([1])])
+    expect(
+      verifyPassword('correct-horse', `scrypt$${parts[1]}$${tooLong.toString('base64url')}`),
+    ).toBe(false)
+    // And the full-length value still verifies, so the guard rejects only malformed rows.
+    expect(verifyPassword('correct-horse', full)).toBe(true)
   })
 
   it('a truncated SALT fails, because the salt feeds the derivation input', () => {

@@ -740,29 +740,40 @@ describe('verifyIdToken — the unsupported-alg branch and aud shapes', () => {
     )
   })
 
-  test('DECLARED INTEROP BUG: an ARRAY `aud` is refused, so a valid token fails closed', () => {
-    // MEASURED AND REPORTED, not fixed. OIDC allows `aud` to be an ARRAY, and several
-    // IdPs (Auth0, Azure AD) emit one whenever the token is issued for more than one
-    // audience. The check is `payload.aud !== clientId`, which compares an ARRAY to a
-    // STRING and can never be equal -- so a perfectly valid token is REJECTED.
+  test('FIXED: an ARRAY `aud` containing our client id is ACCEPTED (OIDC interop)', () => {
+    // THIS TEST USED TO PIN THE BUG. OIDC allows `aud` to be an ARRAY, and Auth0/Azure AD emit one whenever the
+    // token is issued for more than one audience. `payload.aud !== clientId` compared an ARRAY to a STRING, which
+    // is never equal, so a valid token was refused -- a login outage, not a bypass. The check is now
+    // "is our client id AMONG the audiences", which widens what is accepted by exactly the tokens that were
+    // always meant to be accepted.
     //
-    // This FAILS CLOSED: it is a login outage, not an authentication bypass. I checked
-    // for a fail-open direction too, and found none -- `[ ]` is truthy in JS and still
-    // throws, 123 throws, and a single-element array `['clientId']` throws as well.
-    // The fix (accept a string OR an array containing our client id) WIDENS what is
-    // accepted, so it is a security-relevant rollout decision for SSO customers rather
-    // than something to change silently.
+    // The security-relevant half is kept and strengthened: an array that does NOT contain our client id must
+    // still be refused, so this is not a blanket acceptance of arrays.
     const aud = ['some-other-client', process.env.OIDC_CLIENT_ID!]
-    // The client id IS present in the array, yet the token is still refused.
-    expect(() => verifyIdToken(sign(baseClaims({ aud }), { alg: 'HS256' }), mockConfig))
-      .toThrow('JWT aud mismatch')
+    // Our client id IS present in the array -> accepted.
+    expect(verifyIdToken(sign(baseClaims({ aud }), { alg: 'HS256' }), mockConfig).sub).toBe('user-1')
 
-    // And a single-element array carrying ONLY our client id is refused too.
+    // A single-element array carrying ONLY our client id -> accepted.
+    expect(
+      verifyIdToken(sign(baseClaims({ aud: [process.env.OIDC_CLIENT_ID!] }), { alg: 'HS256' }), mockConfig).sub,
+    ).toBe('user-1')
+
+    // An array with NO matching audience is still refused -- the widening is not indiscriminate.
     expect(() =>
-      verifyIdToken(sign(baseClaims({ aud: [process.env.OIDC_CLIENT_ID!] }), { alg: 'HS256' }), mockConfig),
+      verifyIdToken(sign(baseClaims({ aud: ['other-a', 'other-b'] }), { alg: 'HS256' }), mockConfig),
+    ).toThrow('JWT aud mismatch')
+    expect(() =>
+      verifyIdToken(sign(baseClaims({ aud: [] }), { alg: 'HS256' }), mockConfig),
+    ).toThrow('JWT aud mismatch')
+    // A prefix/substring of our client id must not match either -- membership, not containment.
+    expect(() =>
+      verifyIdToken(
+        sign(baseClaims({ aud: [`${process.env.OIDC_CLIENT_ID!}-suffix`] }), { alg: 'HS256' }),
+        mockConfig,
+      ),
     ).toThrow('JWT aud mismatch')
 
-    // The string form is accepted, which is what the IdPs that emit a string send.
+    // The string form is still accepted, which is what the IdPs that emit a string send.
     expect(verifyIdToken(sign(baseClaims(), { alg: 'HS256' }), mockConfig).sub).toBe('user-1')
   })
 

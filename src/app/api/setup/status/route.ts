@@ -35,7 +35,16 @@ export async function GET() {
       }
     }
     const state = await bypassOrg(() => getSetupState(db, organizationId))
-    return NextResponse.json({ ok: true, ...state })
+    // An UNAUTHENTICATED caller reaches this route, so the response is built from an explicit allow-list rather
+    // than `...state`. Spreading made the published surface a function of whatever `getSetupState` returns: the
+    // moment that object grows a field (the connector URL or config it read to decide setupCompleted, an
+    // AppConfig column), it is published to anyone on the internet with no test to stop it. Both fields are
+    // booleans, and a non-boolean value is coerced rather than forwarded.
+    return NextResponse.json({
+      ok: true,
+      setupCompleted: state.setupCompleted === true,
+      hasAdmin: state.hasAdmin === true,
+    })
   } catch (e) {
     return handleApiError(e, 'Failed to read setup status.')
   }

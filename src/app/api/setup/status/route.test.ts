@@ -271,19 +271,27 @@ describe('GET /api/setup/status — the response must be booleans only (no confi
     expect(typeof body.hasAdmin).toBe('boolean')
   })
 
-  test('CURRENT BEHAVIOUR: an extra key on the setup state IS forwarded by the `...state` spread', async () => {
-    // THE LEAK GUARD. The handler spreads `...state` into the response. Today `getSetupState`
-    // returns only the two booleans, so this is safe — but the spread means ANY extra key a future
-    // `getSetupState` returns (e.g. a connector URL it read to decide `setupCompleted`) would be
-    // published to an unauthenticated caller. We pin the current behaviour honestly: the extra key
-    // IS currently forwarded, and it must not be a config value. This test fails loudly the moment
-    // the state object grows, which is exactly when the spread needs to be replaced with an
-    // explicit two-field pick.
+  test('FIXED: an extra key on the setup state is NOT forwarded by the response', async () => {
+    // THE LEAK GUARD, NOW INVERTED. This test used to pin the DEFECT: the handler spread `...state`, so any
+    // extra key `getSetupState` returned was published to an unauthenticated caller. It was proven by injecting
+    // `apiKey` and watching it appear verbatim. The route now builds the response from an explicit allow-list, so
+    // the injection must be UNDETECTABLE in the body -- keeping the same injection is what makes this a
+    // regression guard rather than a fresh assertion.
     setupState = { setupCompleted: true, hasAdmin: false, apiKey: 'sk-live-DEADBEEF' } as never
     const body = await readJson(await GET())
-    // CURRENT BEHAVIOUR: `...state` forwards apiKey. INVERT THIS TEST when the route is fixed to
-    // destructure `{ setupCompleted, hasAdmin }` explicitly — then this key must be absent.
-    expect(body.apiKey).toBe('sk-live-DEADBEEF')
+    expect(body.apiKey).toBeUndefined()
+    expect(Object.keys(body as object).sort()).toEqual(['hasAdmin', 'ok', 'setupCompleted'])
+    // And the raw text, so a nested or re-keyed copy cannot slip through the shape check.
+    expect(JSON.stringify(body)).not.toContain('sk-live-DEADBEEF')
+  })
+
+  test('a NON-boolean setup field is coerced to a boolean, never forwarded as-is', async () => {
+    // An allow-list that copies values still leaks if the value is an object. `state.setupCompleted === true`
+    // makes the type part of the contract instead of a hope.
+    setupState = { setupCompleted: 'yes', hasAdmin: 1 } as never
+    const body = await readJson(await GET())
+    expect(body.setupCompleted).toBe(false)
+    expect(body.hasAdmin).toBe(false)
   })
 })
 

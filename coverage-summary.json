@@ -1,10 +1,10 @@
 {
-  "linePct": 88.05,
-  "linesHit": 20296,
-  "linesFound": 23051,
-  "fnPct": 94.07,
-  "fnsHit": 1855,
-  "fnsFound": 1972,
+  "linePct": 88.02,
+  "linesHit": 20328,
+  "linesFound": 23096,
+  "fnPct": 94.03,
+  "fnsHit": 1858,
+  "fnsFound": 1976,
   "filesMeasured": 170,
   "failedTestFiles": [],
   "files": [
@@ -22,6 +22,15 @@
       "hit": 55,
       "found": 86,
       "pct": 63.95348837209303,
+      "fHit": 2,
+      "fFound": 2,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/passwords.ts",
+      "hit": 17,
+      "found": 25,
+      "pct": 68,
       "fHit": 2,
       "fFound": 2,
       "fPct": 100
@@ -423,6 +432,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/sso.ts",
+      "hit": 268,
+      "found": 307,
+      "pct": 87.29641693811075,
+      "fHit": 34,
+      "fFound": 35,
+      "fPct": 97.14285714285714
+    },
+    {
       "file": "src/lib/prisma-tenant.ts",
       "hit": 90,
       "found": 103,
@@ -493,24 +511,6 @@
       "fHit": 14,
       "fFound": 14,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/passwords.ts",
-      "hit": 16,
-      "found": 18,
-      "pct": 88.88888888888889,
-      "fHit": 2,
-      "fFound": 2,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/sso.ts",
-      "hit": 264,
-      "found": 297,
-      "pct": 88.88888888888889,
-      "fHit": 32,
-      "fFound": 33,
-      "fPct": 96.96969696969697
     },
     {
       "file": "src/lib/session.ts",
@@ -720,6 +720,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/incoming-webhook.ts",
+      "hit": 42,
+      "found": 43,
+      "pct": 97.67441860465115,
+      "fHit": 3,
+      "fFound": 4,
+      "fPct": 75
+    },
+    {
       "file": "src/lib/license-revalidation.ts",
       "hit": 44,
       "found": 45,
@@ -865,8 +874,8 @@
     },
     {
       "file": "src/app/api/auth/invite/route.ts",
-      "hit": 84,
-      "found": 84,
+      "hit": 90,
+      "found": 90,
       "pct": 100,
       "fHit": 7,
       "fFound": 7,
@@ -1198,8 +1207,8 @@
     },
     {
       "file": "src/app/api/setup/status/route.ts",
-      "hit": 28,
-      "found": 28,
+      "hit": 32,
+      "found": 32,
       "pct": 100,
       "fHit": 4,
       "fFound": 4,
@@ -1288,8 +1297,8 @@
     },
     {
       "file": "src/app/api/webhooks/incoming/route.ts",
-      "hit": 23,
-      "found": 23,
+      "hit": 26,
+      "found": 26,
       "pct": 100,
       "fHit": 2,
       "fFound": 2,
@@ -1386,15 +1395,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/incoming-webhook.ts",
-      "hit": 40,
-      "found": 40,
-      "pct": 100,
-      "fHit": 3,
-      "fFound": 3,
-      "fPct": 100
-    },
-    {
       "file": "src/lib/job-processor.ts",
       "hit": 130,
       "found": 130,
@@ -1432,11 +1432,11 @@
     },
     {
       "file": "src/middleware.ts",
-      "hit": 85,
-      "found": 85,
+      "hit": 97,
+      "found": 97,
       "pct": 100,
-      "fHit": 3,
-      "fFound": 3,
+      "fHit": 4,
+      "fFound": 4,
       "fPct": 100
     },
     {

@@ -139,7 +139,7 @@ interface JwtHeader { alg: string; kid?: string; typ?: string }
 interface JwtPayload {
   iss?: string
   sub?: string
-  aud?: string
+  aud?: string | string[]
   exp?: number
   iat?: number
   nonce?: string
@@ -172,7 +172,12 @@ export function verifyIdToken(
   const clientId = env('OIDC_CLIENT_ID')
 
   if (payload.iss && payload.iss !== issuer) throw new Error(`JWT iss mismatch: ${payload.iss}`)
-  if (payload.aud && clientId && payload.aud !== clientId) throw new Error('JWT aud mismatch')
+  // OIDC allows `aud` to be an ARRAY of audiences, and a compliant provider sends one whenever the token
+  // was issued for more than a single relying party. Comparing an array to a string with `!==` is always
+  // true, so a valid token was refused. The semantics is "the client is among the audiences".
+  const audMatches = (aud: string | string[] | undefined, expected: string) =>
+    Array.isArray(aud) ? aud.includes(expected) : aud === expected
+  if (payload.aud && clientId && !audMatches(payload.aud, clientId)) throw new Error('JWT aud mismatch')
   if (payload.exp && payload.exp * 1000 < Date.now()) throw new Error('JWT expired')
   if (expectedNonce && payload.nonce !== expectedNonce) throw new Error('JWT nonce mismatch')
 
@@ -212,7 +217,12 @@ export async function verifyIdTokenRs256(
   const issuer = config.issuer
   const clientId = env('OIDC_CLIENT_ID')
   if (payload.iss && payload.iss !== issuer) throw new Error(`JWT iss mismatch: ${payload.iss}`)
-  if (payload.aud && clientId && payload.aud !== clientId) throw new Error('JWT aud mismatch')
+  // OIDC allows `aud` to be an ARRAY of audiences, and a compliant provider sends one whenever the token
+  // was issued for more than a single relying party. Comparing an array to a string with `!==` is always
+  // true, so a valid token was refused. The semantics is "the client is among the audiences".
+  const audMatches = (aud: string | string[] | undefined, expected: string) =>
+    Array.isArray(aud) ? aud.includes(expected) : aud === expected
+  if (payload.aud && clientId && !audMatches(payload.aud, clientId)) throw new Error('JWT aud mismatch')
   if (payload.exp && payload.exp * 1000 < Date.now()) throw new Error('JWT expired')
   if (expectedNonce && payload.nonce !== expectedNonce) throw new Error('JWT nonce mismatch')
 

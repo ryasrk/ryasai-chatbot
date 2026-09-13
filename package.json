@@ -24,7 +24,10 @@
     "test:coverage": "bun test --coverage",
     "coverage": "bun scripts/coverage.ts",
     "e2e:prod": "playwright test -c playwright.prod.config.ts",
-    "coverage:gate": "bun scripts/coverage-gate.ts"
+    "coverage:gate": "bun scripts/coverage-gate.ts",
+    "audit:coverage": "python3 scripts/coverage-honest.py",
+    "audit:holders": "python3 scripts/audit-test-holders.py",
+    "audit:routes": "python3 scripts/audit-route-tests.py"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",

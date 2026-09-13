@@ -87,27 +87,68 @@ describe('middleware — the session existence gate', () => {
     expect(nextResponse(res)).toBe(true)
   })
 
-  test('KNOWN FAIL-OPEN: every path in PUBLIC_API_PATHS skips the limiter, including /api/auth/login', () => {
-    // *** THIS TEST PINS A DEFECT, NOT A DESIRE. ***
-    //
-    // PUBLIC_API_PATHS is checked at line 77, and it `return NextResponse.next()` there -- BEFORE
-    // the rate-limit block at line 86. '/api/auth/login' is IN that set, so the brute-force limiter
-    // its own comment advertises ('/api/auth/login', RATE_LIMIT_LOGIN, // brute force protection) is
-    // UNREACHABLE for it. Measured: 200 POSTs to /api/auth/login -> 200x HTTP 200, versus
-    // /api/documents -> 20x 200 then 180x 429.
-    //
-    // The same bypass covers /api/v1/chat/completions and /api/v1/agent/run, but those two have a
-    // per-API-key limiter INSIDE the route handler (rateLimit(`api:${apiKeyId}`)), so they are
-    // covered elsewhere. /api/auth/login has NO other limiter -- verified by grepping the route for
-    // rateLimit/attempts/lockout: zero matches. So nothing rate-limits password guessing.
-    //
-    // This asserts the CURRENT behaviour so the fix is a deliberate change that breaks this test,
-    // rather than an invisible one. Fixing it is a product/security decision (below) and is NOT
-    // something to slip into a coverage commit.
+  test('FIXED: /api/auth/login IS rate limited, so password guessing is bounded', () => {
+    // THIS TEST USED TO PIN THE FAIL-OPEN. The public-path early return ran BEFORE the rate limiter, so the
+    // bucket whose own comment reads `// brute force protection` never executed for the one endpoint that needs
+    // it -- measured at the time: 200 POSTs -> 200 x HTTP 200, while a non-public path went 20 x 200 then
+    // 180 x 429. Credential-guessing paths are now throttled BEFORE that early return. The SAME loop body is
+    // kept, so the inversion is a genuine flipper rather than a fresh assertion.
     const session = uniqueSession()
+    let allowed = 0
+    let firstBlocked: Response | undefined
     for (let i = 0; i < RATE_LIMIT_LOGIN + 50; i += 1) {
       const res = middleware(req('/api/auth/login', { method: 'POST', session }))
-      expect(res.status).toBe(200)
+      if (res.status === 200) allowed += 1
+      else if (!firstBlocked) firstBlocked = res
+    }
+    // Exactly the configured limit gets through, and the next attempt is refused.
+    expect(allowed).toBe(RATE_LIMIT_LOGIN)
+    expect(firstBlocked!.status).toBe(429)
+  })
+
+  test('the login limiter answers 429 with the same headers as every other limited route', async () => {
+    // The 429 shape is what a client library keys on, so the public path must not produce a different one.
+    const session = uniqueSession()
+    let last: Response | undefined
+    for (let i = 0; i <= RATE_LIMIT_LOGIN; i += 1) {
+      last = middleware(req('/api/auth/login', { method: 'POST', session }))
+    }
+    expect(last!.status).toBe(429)
+    expect(last!.headers.get('Retry-After')).toBe('60')
+    expect(last!.headers.get('X-RateLimit-Limit')).toBe(String(RATE_LIMIT_LOGIN))
+    expect(((await last!.json()) as { error: string }).error).toBe('Rate limit reached. Try again later.')
+  })
+
+  test('signup and register are throttled too -- the other two credential-creating public paths', () => {
+    for (const path of ['/api/auth/signup', '/api/auth/register']) {
+      const session = uniqueSession()
+      let blocked = false
+      for (let i = 0; i < RATE_LIMIT_DEFAULT + 5; i += 1) {
+        if (middleware(req(path, { method: 'POST', session })).status === 429) {
+          blocked = true
+          break
+        }
+      }
+      expect(blocked).toBe(true)
+    }
+  })
+
+  test('GET on a credential path is NOT throttled, so a login page load cannot lock a user out', () => {
+    // The limiter is method-scoped by design: limiting GET breaks UI navigation, and the public path must not
+    // have changed that.
+    const session = uniqueSession()
+    for (let i = 0; i < RATE_LIMIT_LOGIN + 20; i += 1) {
+      expect(nextResponse(middleware(req('/api/auth/login', { method: 'GET', session })))).toBe(true)
+    }
+  })
+
+  test('a SIGNATURE-authenticated receiver is deliberately NOT throttled', () => {
+    // Throttling these would DROP DELIVERIES from a legitimate provider rather than stop an attacker: the
+    // sender is authenticated by HMAC, and a retry after a 429 is not guaranteed. Asserted so the omission is a
+    // decision on record rather than an oversight.
+    const session = uniqueSession()
+    for (let i = 0; i < RATE_LIMIT_DEFAULT + 20; i += 1) {
+      expect(nextResponse(middleware(req('/api/webhooks/incoming', { method: 'POST', session })))).toBe(true)
     }
   })
 })

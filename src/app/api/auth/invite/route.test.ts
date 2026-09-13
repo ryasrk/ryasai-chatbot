@@ -169,29 +169,42 @@ describe('authorisation and body validation', () => {
     expect((await post({ email: undefined })).status).toBe(400)
   })
 
-  test('DEFECT: a NUMERIC or OBJECT email is 500, NOT the 400 the validation implies', async () => {
-    // Found by running, not reading. `email?.trim()` guards only null/undefined -- `(42).trim()` and
-    // `({}).trim()` both throw TypeError, which leaves the handler and becomes a 500 ("Invitation failed.")
-    // instead of the 400 "A valid email is required." that every other malformed input gets.
-    //
-    // Recorded as the CURRENT behaviour. A client sending a number in this field is a client bug, but it is not
-    // OUR server fault, and 5xx is the wrong signal -- monitoring counts it as an outage, and the caller cannot
-    // tell it was their own payload. The fix is a `typeof email === 'string'` guard before the trim; THIS TEST
-    // MUST BE INVERTED to expect 400 when that lands.
-    const numeric = await post({ email: 42 })
-    expect(numeric.status).toBe(500)
-    const object = await post({ email: {} })
-    expect(object.status).toBe(500)
-    // The guard DOES hold for the two shapes it was written for.
+  test('FIXED: a NUMERIC or OBJECT email is 400, not the 500 it used to be', async () => {
+    // This test used to PIN the defect. `email?.trim()` guards only null/undefined, so `(42).trim()` and
+    // `({}).trim()` threw a TypeError that left the handler and became a 500 -- reporting a client payload error
+    // as a server fault, which monitoring counts as an outage. The route now type-checks before calling any
+    // method on the value, so every malformed shape takes the SAME 400 path the message promises. Keeping the
+    // original injections is what makes this a regression guard.
+    for (const bad of [42, {}, true, []]) {
+      const res = await post({ email: bad })
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toBe('A valid email is required.')
+    }
     expect((await post({ email: null })).status).toBe(400)
+    expect((await post({ email: undefined })).status).toBe(400)
   })
 
-  test('DEFECT: no invitation row is written for a numeric email (the throw happens first)', async () => {
-    // The upside of the defect: the crash is early, so a malformed payload cannot create a half-built invite.
+  test('FIXED: no invitation row and no audit for a non-string email', async () => {
     await post({ email: 42 })
+    await post({ email: {} })
     expect(invitationCreates).toHaveLength(0)
     expect(invitationUpdates).toHaveLength(0)
     expect(audits).toHaveLength(0)
+  })
+
+  test('FIXED: a NON-STRING role is 400 rather than silently coerced', async () => {
+    // `role ?? 'viewer'` would pass 42 through to VALID_ROLES.has (false -> 400), but an object or an array
+    // would reach the DB write as a non-string. The check is explicit now, so the rejection reason is the same
+    // one the caller sees for a typo'd role.
+    for (const bad of [42, {}, [], true]) {
+      const res = await post({ email: 'x@y.com', role: bad })
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toBe('Invalid role.')
+    }
+    expect(invitationCreates).toHaveLength(0)
+    // And an ABSENT role still defaults to the least-privileged one.
+    expect((await post({ email: 'x@y.com', role: undefined })).status).toBe(200)
+    expect((invitationCreates[0]!.data as { role: string }).role).toBe('viewer')
   })
 
   test('a malformed JSON body is 400 with the body-specific message', async () => {

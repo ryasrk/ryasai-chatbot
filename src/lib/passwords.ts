@@ -29,7 +29,14 @@ export function verifyPassword(password: string, stored: string): boolean {
     const salt = Buffer.from(parts[1], 'base64url')
     const expected = Buffer.from(parts[2], 'base64url')
     if (salt.length === 0 || expected.length === 0) return false
-    const actual = crypto.scryptSync(password, salt, expected.length, SCRYPT)
+    // ponytail: a TRUNCATED stored hash must NEVER be accepted. `scryptSync` is asked for
+    // `expected.length` bytes and `timingSafeEqual` then compares like with like, so a hash stored as
+    // a 1-byte prefix ("scrypt$<salt>$AA") would be compared only on its first byte and would match any
+    // password whose first hash byte happened to line up -- and every stored hash for that salt shares
+    // its first byte with a 1/256 chance. The digest length is FIXED by KEYLEN, so anything else is a
+    // corrupt or hand-edited row, not a valid credential. Rejected outright rather than padded.
+    if (expected.length !== KEYLEN) return false
+    const actual = crypto.scryptSync(password, salt, KEYLEN, SCRYPT)
     return crypto.timingSafeEqual(actual, expected)
   } catch {
     return false

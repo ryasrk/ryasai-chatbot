@@ -25,15 +25,24 @@ export function verifyWebhookSignature(
   return crypto.timingSafeEqual(a, b)
 }
 
+/**
+ * Raised when the webhook cannot be AUTHENTICATED (missing or mismatched signature/secret). Typed so the route
+ * can answer 401 without sniffing message text: `/signature|secret/i.test(msg)` classified an unrelated upstream
+ * error containing the word "secret" as a 401 (a proven false positive).
+ */
+export class WebhookAuthError extends Error {
+  readonly code = 'WEBHOOK_UNAUTHORIZED'
+}
+
 export async function processIncomingWebhook(
   payload: WebhookPayload,
   signature: string,
   rawBody: string,
 ): Promise<WebhookResult> {
   const secret = process.env.INCOMING_WEBHOOK_SECRET
-  if (!secret) throw new Error('INCOMING_WEBHOOK_SECRET not configured')
+  if (!secret) throw new WebhookAuthError('INCOMING_WEBHOOK_SECRET not configured')
   if (!verifyWebhookSignature(rawBody, signature, secret)) {
-    throw new Error('Invalid webhook signature')
+    throw new WebhookAuthError('Invalid webhook signature')
   }
 
   const admin = await db.user.findFirst({

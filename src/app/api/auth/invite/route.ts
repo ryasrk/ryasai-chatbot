@@ -32,13 +32,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
     }
 
-    const { email, role } = body as Record<string, string | undefined>
-    const normalizedEmail = email?.trim().toLowerCase()
+    const { email, role } = body as Record<string, unknown>
+    // `email?.trim()` guards only null/undefined. A NUMBER or OBJECT in this field throws a TypeError that
+    // leaves the handler entirely and becomes a 500 -- reporting a client payload error as a server fault, which
+    // monitoring counts as an outage. The type is checked before any method is called on it.
+    if (typeof email !== 'string') {
+      return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 })
+    }
+    const normalizedEmail = email.trim().toLowerCase()
     if (!normalizedEmail || !EMAIL_RE.test(normalizedEmail)) {
       return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 })
     }
 
-    const finalRole = role ?? 'viewer'
+    // Only a STRING can be a role; anything else is not in the allowlist, so the same 400 applies. The cast is
+    // narrowed instead of trusted, which keeps `VALID_ROLES.has` total for its declared input type.
+    const finalRole = typeof role === 'string' ? role : 'viewer'
+    if (role !== undefined && typeof role !== 'string') {
+      return NextResponse.json({ error: 'Invalid role.' }, { status: 400 })
+    }
     if (!VALID_ROLES.has(finalRole)) {
       return NextResponse.json({ error: 'Invalid role.' }, { status: 400 })
     }
