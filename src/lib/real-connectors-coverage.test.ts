@@ -1141,3 +1141,107 @@ describe('fetchSchema', () => {
   })
 })
 
+
+// ---------------------------------------------------------------------------
+// executeQuery — the SUCCESS path and the read-only transaction
+//
+// Every existing assertion here proves a REFUSAL. Nothing proved that a query the
+// guards ALLOW actually runs, and nothing executed the read-only transaction at
+// all — the stubPool used by the fetchSchema tests has connect() throw 'not used',
+// so BEGIN / SET TRANSACTION READ ONLY / COMMIT / ROLLBACK had never run once.
+//
+// That matters because "the DATABASE rejects writes, not just our scanner" is a
+// security claim in the source comment with no test behind it.
+// ---------------------------------------------------------------------------
+
+function scriptedClient(respond: (sql: string) => { rows?: unknown[]; rowCount?: number }) {
+  const statements: string[] = []
+  const client = {
+    statements,
+    async query(sql: string) {
+      statements.push(sql)
+      if (sql === 'ROLLBACK') return { rows: [] }
+      return respond(sql)
+    },
+    release() { (client as unknown as { released: boolean }).released = true },
+    released: false,
+  }
+  return client
+}
+
+describe('PostgresConnector.executeQuery — the read-only transaction', () => {
+  function withClient(client: ReturnType<typeof scriptedClient>) {
+    const c = new PostgresConnector({ host: 'h', port: 5432, database: 'd', user: 'u', password: 'p' })
+    ;(c as unknown as { _pool: unknown })._pool = {
+      connect: async () => client,
+      query: async () => ({ rows: [] }),
+      end: async () => {},
+    }
+    return c
+  }
+
+  test('a permitted SELECT runs INSIDE a read-only transaction', async () => {
+    const client = scriptedClient(() => ({ rows: [{ n: 1 }], rowCount: 1 }))
+    const c = withClient(client)
+    const r = await c.executeQuery('SELECT n FROM t')
+
+    expect(r.rows).toEqual([{ n: 1 }])
+    expect(r.rowCount).toBe(1)
+
+    // The ORDER is the control: BEGIN first, then READ ONLY, then the query, then
+    // COMMIT. A COMMIT before the query, or a missing SET, would silently drop the
+    // guarantee while every result-based assertion above still passed.
+    const iBegin = client.statements.indexOf('BEGIN')
+    const iReadOnly = client.statements.indexOf('SET TRANSACTION READ ONLY')
+    const iQuery = client.statements.findIndex((s) => s.startsWith('SELECT n'))
+    const iCommit = client.statements.indexOf('COMMIT')
+    expect(iBegin).toBe(0)
+    expect(iReadOnly).toBe(iBegin + 1)
+    expect(iQuery).toBeGreaterThan(iReadOnly)
+    expect(iCommit).toBeGreaterThan(iQuery)
+  })
+
+  test('a statement timeout is set so a runaway query cannot hold the connection', async () => {
+    const client = scriptedClient(() => ({ rows: [], rowCount: 0 }))
+    await withClient(client).executeQuery('SELECT 1')
+    expect(client.statements.some((s) => s.startsWith('SET LOCAL statement_timeout ='))).toBe(true)
+  })
+
+  test('the client is RELEASED on success (a leak would exhaust the pool)', async () => {
+    const client = scriptedClient(() => ({ rows: [], rowCount: 0 }))
+    await withClient(client).executeQuery('SELECT 1')
+    expect((client as unknown as { released: boolean }).released).toBe(true)
+  })
+
+  test('a failing query is ROLLED BACK and rethrows the original error', async () => {
+    const client = scriptedClient(() => { throw new Error('relation "t" does not exist') })
+    const c = withClient(client)
+    await expect(c.executeQuery('SELECT n FROM t')).rejects.toThrow('relation "t" does not exist')
+    // Without the ROLLBACK the backend keeps the aborted transaction open.
+    expect(client.statements).toContain('ROLLBACK')
+    expect(client.statements).not.toContain('COMMIT')
+    expect((client as unknown as { released: boolean }).released).toBe(true)
+  })
+
+  test('a rowCount the driver omits falls back to the row count we got', async () => {
+    const client = scriptedClient(() => ({ rows: [{ a: 1 }, { a: 2 }] }))
+    const r = await withClient(client).executeQuery('SELECT a FROM t')
+    expect(r.rowCount).toBe(2)
+  })
+
+  test('rows are normalised (a Date becomes an ISO string)', async () => {
+    const when = new Date('2024-01-02T03:04:05.000Z')
+    const client = scriptedClient(() => ({ rows: [{ created_at: when }], rowCount: 1 }))
+    const r = await withClient(client).executeQuery('SELECT created_at FROM t')
+    // BigInt/Date values do not survive JSON.stringify into the LLM prompt.
+    expect(r.rows[0].created_at).toBe('2024-01-02T03:04:05.000Z')
+  })
+
+  test('the read-only transaction is NOT opened for a rejected query', async () => {
+    const client = scriptedClient(() => ({ rows: [] }))
+    const c = withClient(client)
+    await expect(c.executeQuery('DELETE FROM t')).rejects.toThrow('Only SELECT/WITH queries are permitted.')
+    // The guard is pre-flight: a write must be refused before any SQL is sent.
+    expect(client.statements).toEqual([])
+  })
+})
