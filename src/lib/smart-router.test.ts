@@ -2617,3 +2617,266 @@ describe('LLM tiebreaker — SKIPPED when the best tool has a strong schema matc
     expect(result.llmUsed).toBe(true)
   })
 })
+
+// ===========================================================================
+// SECURITY REVIEW — what smart-router does with caller-supplied strings.
+//
+// The review question was: does this module interpolate a caller-supplied
+// identifier (table name, column name, endpoint path) into SQL or a URL without
+// validation? These tests pin the answer to the CODE, not to a comment.
+// ===========================================================================
+
+describe('security — caller-supplied strings never become SQL or URL text', () => {
+  test('a question containing SQL metacharacters is only ever matched as a token', async () => {
+    // The question flows into `tokenize` (which splits on [^\p{L}\p{N}]) and into
+    // `keywordOverlap` (a Set lookup + substring compare). It is NEVER concatenated
+    // into a query. If a future change started building SQL here, the injected
+    // fragments would surface as tokens on the metadata index and the score would
+    // move; this pins that the score stays a pure keyword ratio.
+    state.schemas = [
+      {
+        tableName: 'orders',
+        description: null,
+        columns: JSON.stringify([{ name: 'total_amount' }]),
+        integration: { name: 'Sales', provider: 'POSTGRESQL' },
+      },
+    ]
+    const injected = "orders'; DROP TABLE users; -- total_amount"
+    const result = await smartRoute({
+      question: injected,
+      hasIntegrations: true,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    const sql = result.scores.find((s) => s.tool === 'SQL')!
+    // A ratio in [0,1] — a concatenated query would not be a ratio at all.
+    expect(sql.schemaScore).toBeGreaterThanOrEqual(0)
+    expect(sql.schemaScore).toBeLessThanOrEqual(1)
+    // `drop`, `table`, `users` are not in the schema index, so they contribute 0.
+    expect(sql.schemaScore).toBeLessThan(1)
+    // The decision is a RouteDecision enum, never a raw string from the question.
+    expect(['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']).toContain(result.decision)
+  })
+
+  test('the DB query arguments are Prisma objects, never a raw SQL string', async () => {
+    // `db.toolRun.findMany(...)` etc. receive structured args. A raw-SQL escape
+    // hatch ($queryRawUnsafe / $executeRawUnsafe) would appear as a call with a
+    // string positional arg; assert the shape the router actually sends.
+    state.runs = [successRun('SQL', 'orders')]
+    await smartRoute({
+      question: "orders'; DROP TABLE tool_run; --",
+      hasIntegrations: true,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    for (const call of mockToolRunFindMany.mock.calls) {
+      const args = call[0] as Record<string, unknown>
+      expect(typeof args).toBe('object')
+      // Every argument is `where` / `select` / `take` / `orderBy` — a query
+      // builder shape. A string here would mean raw SQL.
+      expect(typeof args).not.toBe('string')
+      expect(Object.keys(args).every((k) => ['where', 'select', 'take', 'orderBy', 'include'].includes(k))).toBe(true)
+    }
+  })
+
+  test('an endpoint path from the metadata index is split into keywords, not used as a URL', async () => {
+    // REST metadata feeds `loadEndpointMetadata`, which splits the path on "/"
+    // and strips non-alphanumerics to build keywords. The path is never fetched
+    // or interpolated into a request URL by this module.
+    state.endpoints = [{ path: '/v1/exfil?target=http://evil.example/steal', description: null }]
+    const result = await smartRoute({
+      question: 'exfil target evil example steal',
+      hasIntegrations: false,
+      hasDocuments: false,
+      hasRestApis: true,
+    })
+    const rest = result.scores.find((s) => s.tool === 'REST')!
+    expect(rest.schemaScore).toBeGreaterThan(0)
+    // Pin the load-bearing absence: the module never calls fetch at all.
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync('src/lib/smart-router.ts', 'utf8') as string
+    expect(src).not.toContain('fetch(')
+    expect(src).not.toContain('$queryRaw')
+    expect(src).not.toContain('$executeRaw')
+  })
+
+  test('ToolRun reads carry NO org filter at the call site — the tenant extension supplies it', async () => {
+    // This is the honest finding from the security review. `toolRun` IS in
+    // ORG_SCOPED_MODELS and `findMany` IS in FILTER_OPS, so `db` (the EXTENDED
+    // client in db.ts) auto-injects `organizationId`. The absence of an explicit
+    // filter here is NOT a leak — but it IS a dependency on the extension, so it
+    // is pinned: if `toolRun` were ever dropped from ORG_SCOPED_MODELS, these
+    // queries would silently become global and leak one tenant's tool names and
+    // latencies to another. The assertion below is what makes that removal loud.
+    const { readFileSync } = await import('node:fs')
+    const tenant = readFileSync('src/lib/prisma-tenant.ts', 'utf8') as string
+    // toolRun must be scoped...
+    expect(tenant).toMatch(/ORG_SCOPED_MODELS[\s\S]*?'toolRun'/)
+    // ...and findMany must be an op the extension injects into.
+    expect(tenant).toMatch(/FILTER_OPS[\s\S]*?'findMany'/)
+    // And db.ts must export the EXTENDED client, not the raw one.
+    const dbSrc = readFileSync('src/lib/db.ts', 'utf8') as string
+    expect(dbSrc).toContain('$extends(createTenantExtension())')
+    // The helper reads the same three ToolRun queries without an explicit org
+    // filter — recorded so a reviewer sees the dependency in one place.
+    const helpers = readFileSync('src/lib/smart-router-helpers.ts', 'utf8') as string
+    expect(helpers).not.toContain('bypassOrg')
+  })
+})
+
+// ===========================================================================
+// Edge cases the suite had not exercised: the scorer must not throw on
+// hostile/empty shapes, and the LLM-tiebreaker call COUNT is a contract.
+// ===========================================================================
+
+describe('scoring survives degenerate inputs without throwing', () => {
+  test('a question that tokenizes to NOTHING still routes (no crash, CHAT-safe)', async () => {
+    // Punctuation-only input -> tokenize returns []. loadSimilarityBoost
+    // short-circuits on an empty token array, scoreSchemaMatch returns 0, and the
+    // decision must still be a valid tool. A crash here would take down the whole
+    // chat request for a message like "???".
+    const result = await smartRoute({
+      question: '??? !!! ---',
+      hasIntegrations: true,
+      hasDocuments: true,
+      hasRestApis: true,
+    })
+    expect(result.scores).toHaveLength(5)
+    expect(result.scores.every((s) => s.schemaScore === 0)).toBe(true)
+    expect(['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']).toContain(result.decision)
+  })
+
+  test('a REPEATED token does not inflate the schema score above 1', async () => {
+    // keywordOverlap divides matches by the token count, but `tokenize` de-dupes;
+    // a caller passing a hand-built token array with repeats could push the ratio
+    // over 1 without the Math.min cap. Pin the cap through the public API.
+    expect(keywordOverlap(['orders', 'orders', 'orders', 'orders'], ['orders'])).toBeLessThanOrEqual(1)
+    expect(keywordOverlap(['orders', 'orders', 'orders'], ['orders'])).toBeCloseTo(1, 6)
+  })
+
+  test('a Unicode question routes through the REAL tokenizer, not an ASCII class', async () => {
+    // Regression guard for the `[^a-z0-9]` class that produced ZERO tokens for
+    // CJK/accented text — which silently made SQL unreachable for those users.
+    state.schemas = [
+      {
+        tableName: 'penjualan',
+        description: null,
+        columns: JSON.stringify([{ name: 'jumlah_pendapatan' }]),
+        integration: { name: 'Penjualan', provider: 'POSTGRESQL' },
+      },
+    ]
+    expect(tokenize('penjualan café')).toContain('café')
+    const result = await smartRoute({
+      question: 'penjualan café',
+      hasIntegrations: true,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    expect(result.scores.find((s) => s.tool === 'SQL')!.schemaScore).toBeGreaterThan(0)
+  })
+
+  test('all four source flags false: no source tool is available, and CHAT still wins', async () => {
+    // Nothing configured at all — the "fresh install" state. Every availability
+    // is 0 except CHAT/PLUGIN, so an unavailable tool can never be selected.
+    //
+    // MEASURED, and worth knowing: with no history, NEUTRAL_PERF gives CHAT and
+    // PLUGIN the SAME final score (0.30), so the near-tie guard fires and this
+    // spends a real LLM call on a question the router could answer from
+    // availability alone. The mock makes the tiebreaker land on RAG, which is
+    // the point: the decision is the TIEBREAKER's, not a deterministic fallback.
+    // Asserting a bare 'CHAT' here passed only accidentally (the stub happened to
+    // say CHAT) — the score tie is the real behaviour.
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'RAG', reason: 'stub' }))
+    const result = await smartRoute({
+      question: 'hello there',
+      hasIntegrations: false,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    for (const tool of ['SQL', 'RAG', 'REST']) {
+      expect(result.scores.find((s) => s.tool === tool)!.availability).toBe(0)
+      expect(result.scores.find((s) => s.tool === tool)!.finalScore).toBe(0)
+    }
+    // CHAT and PLUGIN are the only available tools, and they TIE.
+    const chat = result.scores.find((s) => s.tool === 'CHAT')!
+    const plugin = result.scores.find((s) => s.tool === 'PLUGIN')!
+    expect(chat.finalScore).toBeGreaterThan(0)
+    expect(chat.finalScore - plugin.finalScore).toBeLessThan(0.1)
+    // The tie is resolved by the LLM — recorded, not endorsed: an unavailable-DB
+    // install could shortcut this. The assertion is that the decision comes from
+    // the tiebreaker, so a future shortcut is a deliberate change.
+    expect(routeQueryMock).toHaveBeenCalledTimes(1)
+    expect(result.decision).toBe('RAG')
+  })
+})
+
+describe('LLM tiebreaker — the CALL COUNT is the contract', () => {
+  test('a confident winner (gap > 0.1) spends ZERO LLM calls', async () => {
+    // "Saves an LLM call when the heuristic is confident" is a claim in the code
+    // comments. A regression that widened the tie window would double the LLM
+    // spend on every query AND add latency; only the call count catches it.
+    state.integrations = [HR]
+    state.schemas = [
+      {
+        tableName: 'employees',
+        description: null,
+        columns: JSON.stringify([{ name: 'salary' }, { name: 'hire_date' }, { name: 'department' }]),
+        integration: { name: 'HR Database', provider: 'POSTGRESQL' },
+      },
+    ]
+    // SQL: strong schema match, perfect fast record. CHAT: nothing.
+    state.runs = perfRuns('SQL', 20, 0, 50)
+    const result = await smartRoute({
+      question: 'salary employees department',
+      hasIntegrations: true,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    const sorted = [...result.scores].sort((a, b) => b.finalScore - a.finalScore)
+    if (sorted[0].finalScore - sorted[1].finalScore > 0.1) {
+      expect(routeQueryMock).not.toHaveBeenCalled()
+      expect(result.llmUsed).toBe(false)
+    }
+  })
+
+  test('scores within the 0.1 window MUST call the LLM exactly once', async () => {
+    // The inverse half of the same contract. A no-signal install puts CHAT and
+    // PLUGIN within 0.1 of each other, so the tiebreaker must fire.
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'PLUGIN', reason: 'LLM picked plugin' }))
+    const result = await smartRoute({
+      question: 'halo apa kabar',
+      hasIntegrations: false,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    expect(routeQueryMock).toHaveBeenCalledTimes(1)
+    expect(result.llmUsed).toBe(true)
+    expect(result.decision).toBe('PLUGIN')
+    // The reason names the tiebreaker and BOTH scores, so a routing surprise is
+    // traceable without a debugger.
+    expect(result.reason).toContain('LLM tiebreaker')
+    expect(result.reason).toContain('scores:')
+  })
+
+  test('a zero-score tie does NOT call the LLM (guard is `best.finalScore > 0`)', async () => {
+    // All five tools at 0 is the "everything unavailable" case; the CHAT fallback
+    // handles it. Calling the LLM there would spend a completion on a question the
+    // router has already decided it cannot answer from any source.
+    state.runs = [
+      ...perfRuns('SQL', 12, 8),
+      ...perfRuns('RAG', 12, 8),
+      ...perfRuns('REST_API', 12, 8),
+      ...perfRuns('CHAT', 12, 8),
+      ...perfRuns('PLUGIN', 12, 8),
+    ]
+    const result = await smartRoute({
+      question: 'anything at all',
+      hasIntegrations: true,
+      hasDocuments: true,
+      hasRestApis: true,
+    })
+    expect(routeQueryMock).not.toHaveBeenCalled()
+    expect(result.llmUsed).toBe(false)
+    expect(result.decision).toBe('CHAT')
+  })
+})

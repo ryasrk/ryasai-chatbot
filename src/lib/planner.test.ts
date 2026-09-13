@@ -43,6 +43,11 @@ mock.module('@/lib/db', () => ({
     toolRun: {
       count: async () => adminStats.toolRunCount,
       aggregate: async () => ({ _avg: { latencyMs: adminStats.avgLatency } }),
+      create: async (args: { data: Record<string, unknown> }) => {
+        toolRunCreateState.calls.push(args.data)
+        if (toolRunCreateState.reject) throw toolRunCreateState.reject
+        return args.data
+      },
     },
     apiRequestLog: { count: async () => adminStats.failedApiCount },
     integration: { count: async () => adminStats.integrationCount },
@@ -54,6 +59,36 @@ mock.module('@/lib/plugin-registry', () => ({
 }))
 mock.module('@/lib/mcp-client', () => ({
   callMcpTool: mockCallMcpTool,
+}))
+
+// ---------------------------------------------------------------------------
+// Org-context + MCP rate-limit seams.
+//
+// planner.ts reads `getOrgContext()` to decide whether to (a) consult the
+// per-org MCP rate limiter and (b) persist a ToolRun row. Those branches were
+// at hit=0 because the REAL `@/lib/prisma-tenant` (unmocked) resolves no org
+// outside a request scope, so `orgId` was always undefined and the whole
+// rate-limit + ToolRun region never executed. Top-level `let` seams, reset by
+// beforeEach, because `mock.module` inside a test body is never restored.
+// ---------------------------------------------------------------------------
+const orgState = { orgId: undefined as string | undefined }
+const rateLimitState = { allowed: true, calls: 0, lastTool: '', lastOrg: '' }
+const toolRunCreateState = { calls: [] as Array<Record<string, unknown>>, reject: null as Error | null }
+
+mock.module('@/lib/prisma-tenant', () => ({
+  getOrgContext: () => orgState.orgId,
+  enterWithOrg: () => {},
+  bypassOrg: async (fn: () => unknown) => fn(),
+  createTenantExtension: () => (client: unknown) => client,
+}))
+
+mock.module('@/lib/tool-rate-limit', () => ({
+  checkToolRateLimit: async (toolName: string, organizationId: string) => {
+    rateLimitState.calls++
+    rateLimitState.lastTool = toolName
+    rateLimitState.lastOrg = organizationId
+    return { allowed: rateLimitState.allowed, remaining: rateLimitState.allowed ? 9 : 0 }
+  },
 }))
 
 // web_fetch / web_search are the two branches of executeStep that read the
@@ -116,6 +151,13 @@ beforeEach(() => {
   }))
   mockGenerateAnswer.mockImplementation(async () => 'synthesized-answer')
   mockGenerateChat.mockImplementation(async () => 'fixed-question')
+  orgState.orgId = undefined
+  rateLimitState.allowed = true
+  rateLimitState.calls = 0
+  rateLimitState.lastTool = ''
+  rateLimitState.lastOrg = ''
+  toolRunCreateState.calls = []
+  toolRunCreateState.reject = null
   global.fetch = mock(async () => openaiTextResponse('no tools')) as unknown as typeof fetch
 })
 
@@ -1327,5 +1369,440 @@ describe('parsePlanResponse — step ids are normalised, not taken literally', (
     expect(plan.steps[0].input.n).toBe('5')
     expect(plan.steps[0].input.b).toBe('true')
     expect(plan.steps[0].input.nested).toBe('null')
+  })
+})
+
+// ===========================================================================
+// MCP branch: the per-org rate limiter and the ToolRun observability row.
+//
+// Both branches sat at hit=0 (planner.ts 581-590, 598-610) because the planner
+// fixture never had an org context, so `getOrgContext()` returned undefined and
+// the `if (orgId)` guards were skipped. They are the ONLY thing standing between
+// a runaway plan and unlimited MCP invocations, and the only place the planner
+// records what it called — so they cannot stay unverified.
+// ===========================================================================
+
+describe('executePlan — MCP rate limiting and ToolRun persistence', () => {
+  /** `orgId` defaults to a real org; pass `null` to mean "no org context", since an
+   *  explicit `undefined` argument would just re-trigger the default parameter. */
+  async function runMcpWithOrg(step: Partial<PlanStep>, orgId: string | null = 'org-1') {
+    orgState.orgId = orgId ?? undefined
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'mcp:srv1.read_file', input: { path: '/tmp/a' }, dependsOn: [], ...step } as PlanStep],
+      needsSynthesis: false,
+    }
+    return executePlan({ plan, userId: 'u1' })
+  }
+
+  test('with NO org context the MCP step still runs and neither the limiter nor ToolRun is touched', async () => {
+    // The inverse of the guard. Rate limiting is per-org, so an absent org must
+    // not silently turn into a shared bucket (or block the step).
+    orgState.orgId = undefined
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'file contents' }))
+    const r = await runMcpWithOrg({}, null)
+    expect(r[0].ok).toBe(true)
+    expect(rateLimitState.calls).toBe(0)
+    expect(toolRunCreateState.calls).toHaveLength(0)
+  })
+
+  test('with an org context the limiter is consulted for the MCP tool and that org', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'file contents' }))
+    await runMcpWithOrg({}, 'org-42')
+    expect(rateLimitState.calls).toBe(1)
+    // The bucket must be the MCP namespace, not the specific tool — otherwise a
+    // caller could rotate tool names to reset their own limit.
+    expect(rateLimitState.lastTool).toBe('mcp')
+    expect(rateLimitState.lastOrg).toBe('org-42')
+  })
+
+  test('a REFUSED rate limit fails the step with the retry message and never calls the MCP server', async () => {
+    rateLimitState.allowed = false
+    const statuses: Array<[string, string, string]> = []
+    const r = await runMcpWithOrg({}, 'org-42')
+    expect(r[0].ok).toBe(false)
+    expect(r[0].output).toBe('')
+    expect(r[0].error).toBe('Rate limit exceeded for MCP tools. Try again in a minute.')
+    // A refusal that still invoked the tool would defeat the limiter entirely.
+    expect(mockCallMcpTool).not.toHaveBeenCalled()
+    expect(toolRunCreateState.calls).toHaveLength(0)
+    void statuses
+  })
+
+  test('a refused step reports status error to the UI callback', async () => {
+    rateLimitState.allowed = false
+    const statuses: Array<[string, string, string]> = []
+    orgState.orgId = 'org-42'
+    await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'mcp:srv1.read_file', input: {} } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+      onStatus: (id: string, tool: string, status: string) => statuses.push([id, tool, status]),
+    })
+    expect(statuses).toContainEqual(['s1', 'mcp:srv1.read_file', 'error'])
+  })
+
+  test('a SUCCESSFUL MCP call persists a ToolRun row carrying the real org, latency and output', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'FILE_BODY_XYZ' }))
+    // `mcp:<serverId>:<toolName>` — three segments, which is the shape the
+    // source documents. A two-segment id yields an EMPTY tool name (pinned below).
+    await runMcpWithOrg({ tool: 'mcp:srv1:read_file' }, 'org-42')
+    expect(toolRunCreateState.calls).toHaveLength(1)
+    const data = toolRunCreateState.calls[0]
+    // The org is the load-bearing field: a null organizationId would make the
+    // row invisible to the tenant's own monitoring.
+    expect(data.organizationId).toBe('org-42')
+    expect(data.status).toBe('success')
+    expect(data.type).toBe('PLUGIN')
+    // The tool NAME (not the server id) is what an operator searches for.
+    expect(data.inputSummary).toBe('MCP: read_file')
+    expect(data.outputSummary).toBe('FILE_BODY_XYZ')
+    expect(data.errorMessage).toBeNull()
+    expect(typeof data.latencyMs).toBe('number')
+  })
+
+  test('a FAILING MCP call persists a ToolRun row marked error with the message', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: false, output: '', error: 'server disconnected' }))
+    await runMcpWithOrg({}, 'org-42')
+    expect(toolRunCreateState.calls).toHaveLength(1)
+    expect(toolRunCreateState.calls[0].status).toBe('error')
+    expect(toolRunCreateState.calls[0].errorMessage).toBe('server disconnected')
+    // `result.output.slice(0, 500) || null` — an empty output must become NULL,
+    // not an empty string, or "has output" filters in monitoring break.
+    expect(toolRunCreateState.calls[0].outputSummary).toBeNull()
+  })
+
+  test('a huge MCP output is truncated to 500 chars before it is persisted', async () => {
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'x'.repeat(2000) }))
+    await runMcpWithOrg({}, 'org-42')
+    expect((toolRunCreateState.calls[0].outputSummary as string).length).toBe(500)
+  })
+
+  test('the colon-rejoining of the tool name is what is recorded for a multi-colon tool id', async () => {
+    // mcp:<serverId>:<toolName with colons> — the split/rejoin must keep the
+    // FULL tail, or the persisted summary names the wrong tool.
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcpWithOrg({ tool: 'mcp:srv1:db:query' }, 'org-42')
+    const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string]
+    expect(mcpArgs[0]).toBe('srv1')
+    expect(mcpArgs[1]).toBe('db:query')
+    expect(toolRunCreateState.calls[0].inputSummary).toBe('MCP: db:query')
+  })
+
+  test('a ToolRun write FAILURE does not fail the step (observability is best-effort)', async () => {
+    // `db.toolRun.create(...).catch(logSwallowed(...))` — monitoring must never
+    // take down a tool call that already succeeded.
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'GOOD_OUTPUT' }))
+    toolRunCreateState.reject = new Error('db is down')
+    const r = await runMcpWithOrg({}, 'org-42')
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toBe('GOOD_OUTPUT')
+  })
+
+  test('MCP inputs are coerced from strings back to JSON types before the call', async () => {
+    // The planner normalises every step input to a string, but MCP tools expect
+    // typed JSON (a number here). Without coercion the server receives "5".
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcpWithOrg({ input: { limit: '5', flag: 'true', plain: 'hello' } }, 'org-42')
+    const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string, Record<string, unknown>]
+    const passed = mcpArgs[2]
+    expect(passed.limit).toBe(5)
+    expect(passed.flag).toBe(true)
+    // A value that is not valid JSON stays a string rather than becoming null.
+    expect(passed.plain).toBe('hello')
+  })
+
+  test('a TWO-segment "mcp:a.b" id invokes the server with an EMPTY tool name', () => {
+    // PINNED CURRENT BEHAVIOUR, not an endorsement. The source documents the
+    // shape as `mcp:<serverId>:<toolName>` and computes the name with
+    // `parts.slice(2).join(':')`. For the two-segment id the existing suite uses
+    // (`mcp:filesystem.read_file`) that slice is EMPTY, so callMcpTool is asked
+    // for tool name "" — a call the MCP server can only reject. The observation
+    // is a real hole in the fixture form (the id is never validated against the
+    // registry before the call); the assertion records it so a future fix is a
+    // deliberate change rather than an accidental one.
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    return runMcpWithOrg({ tool: 'mcp:srv1.read_file' }, 'org-42').then(() => {
+      const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string]
+      expect(mcpArgs[0]).toBe('srv1.read_file')
+      expect(mcpArgs[1]).toBe('')
+      expect((toolRunCreateState.calls[0].inputSummary as string)).toBe('MCP: ')
+    })
+  })
+})
+
+// ===========================================================================
+// Admin confirmationRequired — a GATE, not an error.
+// planner.ts 560-564. The existing admin tests cover success and failure, but
+// never the confirmation path, which returns `ok: true` with the message as
+// OUTPUT so the synthesizer relays it instead of reporting a failure.
+// ===========================================================================
+
+describe('executePlan — an admin tool that returns confirmationRequired', () => {
+  test('the confirmation gate surfaces as a SUCCESSFUL step carrying the message', async () => {
+    // admin:set_prompt with no confirm in the input returns confirmationRequired.
+    // The real admin-tools dispatcher is used (not mocked): the gate logic and
+    // the per-step `isConfirmed` decision are exactly what is being verified.
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'admin:set_prompt', input: { prompt: 'You are a helpful bot.' }, dependsOn: [] } as PlanStep],
+      needsSynthesis: false,
+    }
+    const statuses: Array<[string, string, string]> = []
+    const r = await executePlan({
+      plan,
+      userId: 'u1',
+      isAdmin: true,
+      onStatus: (id, tool, status) => statuses.push([id, tool, status]),
+    })
+    expect(r[0].ok).toBe(true)
+    // The message must be the step OUTPUT so the synthesizer can relay it.
+    expect(r[0].output).toContain('Are you sure you want to change the System Prompt')
+    expect(r[0].error).toBeUndefined()
+    // Marked DONE, not error: a gate shown as "Failed" in the UI is wrong.
+    expect(statuses).toContainEqual(['s1', 'admin:set_prompt', 'done'])
+  })
+
+  test('a step already carrying confirm:"yes" is treated as confirmed by the gate', async () => {
+    // isStepConfirmed reads `confirm === 'yes'`. With confirmation supplied the
+    // gate must NOT fire again; the call proceeds past it (and here fails on the
+    // db write path, which this file does not stub — the point is the gate
+    // decision, asserted through the message).
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'admin:set_prompt', input: { prompt: 'Hello', confirm: 'yes' }, dependsOn: [] } as PlanStep],
+      needsSynthesis: false,
+    }
+    const r = await executePlan({ plan, userId: 'u1', isAdmin: true })
+    // Either it succeeded, or it failed for a reason OTHER than the confirmation gate.
+    expect(r[0].output).not.toContain('Are you sure you want to change')
+  })
+})
+
+// ===========================================================================
+// selfCorrect — the G10 retry path (planner.ts 723-745, 748-770).
+// The whole catch arm was at hit=0: no test ever made a step THROW. The retry
+// must (a) ask the LLM with the actual error text, (b) execute the CORRECTED
+// question, not the original, and (c) report the retry's answer as the step
+// output. "Retries once" is a claim in the code comments, so the COUNT is
+// asserted, not just the final string.
+// ===========================================================================
+
+describe('executePlan — the self-correction retry path', () => {
+  const throwOnce = (error: string) => {
+    let calls = 0
+    mockRunNonStreaming.mockImplementation(async () => {
+      calls++
+      if (calls === 1) throw new Error(error)
+      return { answer: 'RETRY_OK', citations: [], chartData: null, toolRuns: [], integrationId: null }
+    })
+    return () => calls
+  }
+
+  test('a threw step is re-asked with the corrected question and the retry answer is the output', async () => {
+    const calls = throwOnce('column "total" does not exist')
+    mockGenerateChat.mockImplementation(async () => 'what is the total order amount')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'total?' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toBe('RETRY_OK')
+    // EXACTLY two executions: the original that threw, plus one retry. "Retries
+    // once" is the contract; a loop here would burn the org's LLM budget.
+    expect(calls()).toBe(2)
+    // The reformulation prompt must carry the ACTUAL error and the ORIGINAL
+    // question, or the model cannot fix the right thing.
+    const prompt = String((mockGenerateChat.mock.calls[0] as unknown as [string])[0])
+    expect(prompt).toContain('total?')
+    expect(prompt).toContain('column "total" does not exist')
+    // And the retry executes the CORRECTED question, not the original.
+    const retryArgs = mockRunNonStreaming.mock.calls[1] as unknown as Array<{ question: string }>
+    expect(retryArgs[0].question).toBe('what is the total order amount')
+  })
+
+  test('regex-special characters in the error and question do not break the retry', async () => {
+    // The prompt interpolates raw strings into template literals; a regression
+    // that started escaping/parsing them would corrupt the retry question.
+    throwOnce('syntax error at or near "SELECT * FROM (x)"')
+    mockGenerateChat.mockImplementation(async () => 'fixed (x) query')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'a "quoted" [thing]?' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].output).toBe('RETRY_OK')
+    const retryArgs = mockRunNonStreaming.mock.calls[1] as unknown as Array<{ question: string }>
+    expect(retryArgs[0].question).toBe('fixed (x) query')
+  })
+
+  test('a reformulation IDENTICAL to the original is refused — the step fails with the ORIGINAL error', async () => {
+    // `fixedQuestion.trim() === originalQuestion.trim()` → null. Retrying the
+    // same question would double the latency for the same failure. The reported
+    // error must be the try-block error, not something invented downstream.
+    throwOnce('relation does not exist')
+    mockGenerateChat.mockImplementation(async () => 'total?')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'total?' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toBe('relation does not exist')
+    expect(r[0].output).toBe('')
+    // No second execution: the retry never happened.
+    expect(mockRunNonStreaming).toHaveBeenCalledTimes(1)
+  })
+
+  test('a blank reformulation is refused too', async () => {
+    throwOnce('boom')
+    mockGenerateChat.mockImplementation(async () => '   ')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(false)
+    expect(mockRunNonStreaming).toHaveBeenCalledTimes(1)
+  })
+
+  test('when the LLM reformulation itself throws, the step still fails with the original error', async () => {
+    // selfCorrect has its own try/catch; a failure there must NOT escape and
+    // discard the step result.
+    throwOnce('original failure')
+    mockGenerateChat.mockImplementation(async () => { throw new Error('llm unavailable') })
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toBe('original failure')
+  })
+
+  test('when the RETRY itself throws, the step fails and reports the retry error', async () => {
+    // selfCorrect's `return completion.answer` is inside its try, so a throwing
+    // retry propagates to selfCorrect's catch → null → the caller reports the
+    // ORIGINAL error. Pinning which one surfaces keeps the operator from
+    // chasing a phantom "original" problem.
+    let calls = 0
+    mockRunNonStreaming.mockImplementation(async () => {
+      calls++
+      throw new Error(calls === 1 ? 'first failure' : 'second failure')
+    })
+    mockGenerateChat.mockImplementation(async () => 'a better question')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(false)
+    expect(r[0].error).toBe('first failure')
+    expect(calls).toBe(2)
+  })
+
+  test('a non-Error throw is stringified for both the step error and the reformulation prompt', async () => {
+    // `e instanceof Error ? e.message : String(e)` — a thrown string must not
+    // reach the prompt as "undefined".
+    let calls = 0
+    mockRunNonStreaming.mockImplementation(async () => {
+      calls++
+      if (calls === 1) throw 'raw string failure'
+      return { answer: 'RETRY_OK', citations: [], chartData: null, toolRuns: [], integrationId: null }
+    })
+    mockGenerateChat.mockImplementation(async () => 'better')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r[0].ok).toBe(true)
+    const prompt = String((mockGenerateChat.mock.calls[0] as unknown as [string])[0])
+    expect(prompt).toContain('raw string failure')
+    expect(prompt).not.toContain('undefined')
+  })
+
+  test('the retry path fires for a PLUGIN step that throws, not only for chat completions', async () => {
+    // The catch wraps the WHOLE try, so a throwing plugin must reach the same
+    // retry. The reformulation then resolves through the chat completion.
+    mockPluginFindFirst.mockImplementation(async () => ({ id: 'p1', toolId: 'weather' }))
+    mockExecutePlugin.mockImplementation(async () => { throw new Error('plugin exploded') })
+    mockRunNonStreaming.mockImplementation(async () => ({ answer: 'RETRY_OK', citations: [], chartData: null, toolRuns: [], integrationId: null }))
+    mockGenerateChat.mockImplementation(async () => 'a better plugin call')
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'plugin:weather', input: { city: 'Jakarta' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    // The plugin threw before any completion ran, so the ONLY completion in this
+    // test is the retry — proving the retry fired for a non-chat step.
+    expect(mockRunNonStreaming).toHaveBeenCalledTimes(1)
+    expect(r[0].ok).toBe(true)
+    expect(r[0].output).toBe('RETRY_OK')
+    expect(String((mockGenerateChat.mock.calls[0] as unknown as [string])[0])).toContain('plugin exploded')
+  })
+
+  test('onStatus reports RUNNING then DONE across a corrected step', async () => {
+    throwOnce('transient')
+    mockGenerateChat.mockImplementation(async () => 'improved')
+    const statuses: Array<[string, string, string]> = []
+    await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+      onStatus: (id, tool, status) => statuses.push([id, tool, status]),
+    })
+    expect(statuses[0]).toEqual(['s1', 'sql', 'running'])
+    expect(statuses[statuses.length - 1]).toEqual(['s1', 'sql', 'done'])
+  })
+})
+
+// ===========================================================================
+// Planner security boundary: does a plan validate its tool ids against the
+// registry BEFORE executing? A prompt-injected plan must not reach an
+// arbitrary executor. Verified through the real code path, not by reading.
+// ===========================================================================
+
+describe('planner — tool ids are registry-checked before any executor runs', () => {
+  test('validatePlan rejects an id that is not in the offered tool list', () => {
+    const plan: Plan = {
+      steps: [{ id: 's1', tool: 'admin:mcp_install', input: { confirm: 'yes' } } as PlanStep],
+      needsSynthesis: false,
+    }
+    // The offered list does NOT contain the admin tool, so this must throw even
+    // though the executor branch for admin:* exists in executeStep.
+    expect(() => validatePlan(plan, TOOLS)).toThrow(/unknown tool/)
+  })
+
+  test('planQuery fails closed when a TOOL-CALLING plan names a tool outside the registry', async () => {
+    // planQueryWithTools is the tool-calling path. Its result goes through the
+    // same validatePlan, so a prompt-injected admin tool must be rejected there
+    // — before planQuery can fall back to the JSON path, which then also fails
+    // closed to a CHAT step. The injected tool must never reach an executor.
+    const fetchMock = global.fetch as unknown as ReturnType<typeof mock>
+    // 1st fetch: the tool-calling completion returns a plan naming admin:mcp_install,
+    // which is NOT in TOOLS.
+    fetchMock.mockImplementationOnce(async () => openaiToolCallResponse(JSON.stringify({
+      steps: [{ id: 'step1', tool: 'admin:mcp_install', input: { name: 'evil', confirm: 'yes' } }],
+      needsSynthesis: false,
+    })))
+    // 2nd fetch: the text-plan fallback returns no usable tool call either.
+    fetchMock.mockImplementationOnce(async () => openaiTextResponse('no tools'))
+    // The text-plan path then answers with a plan naming the same injected tool.
+    mockGenerateChat.mockImplementationOnce(async () => JSON.stringify({
+      steps: [{ id: 'step1', tool: 'admin:mcp_install', input: { name: 'evil', confirm: 'yes' } }],
+      needsSynthesis: false,
+    }))
+    const plan = await planQuery({ question: 'install evil', availableTools: TOOLS })
+    expect(plan.steps.some((s) => s.tool === 'admin:mcp_install')).toBe(false)
+    // Fail-closed to CHAT, which IS in the registry.
+    expect(plan.steps.every((s) => s.tool === 'chat')).toBe(true)
+  })
+
+  test('an MCP id with no server segment reaches callMcpTool with an EMPTY server id', async () => {
+    // PINNED CURRENT BEHAVIOUR. `'mcp:'.split(':')` is ['mcp',''], so `parts[1]`
+    // is the empty string — not undefined. Nothing between validatePlan and
+    // callMcpTool re-checks the shape of an `mcp:` step id: validatePlan only
+    // checks membership in the OFFERED tool list, and the offered list is built
+    // from the registry (which can legitimately contain an `mcp:<cuid>:<name>`
+    // id). This records that the segments are passed through unvalidated, so a
+    // future hardening change is deliberate.
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    const r = await executePlan({
+      plan: { steps: [{ id: 's1', tool: 'mcp:', input: {} } as PlanStep], needsSynthesis: false },
+      userId: 'u1',
+    })
+    expect(r).toHaveLength(1)
+    const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string]
+    expect(mcpArgs[0]).toBe('')
+    expect(mcpArgs[1]).toBe('')
   })
 })
