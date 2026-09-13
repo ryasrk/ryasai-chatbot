@@ -97,6 +97,9 @@ const FLOORS: Record<string, number> = {
   // SSO login redirect + IdP metadata discovery + the SAML hardening options
   // (both signatures required, 60s assertion age, audience = our entity id).
   'src/lib/sso-saml.ts': 89, // measured 89.41% (228/255); 228/228 executable
+  // Trace buffering + both vendor forwards (Langfuse ingestion/scores, Helicone),
+  // including the failure paths and the no-timeout gap (declared, not fixed).
+  'src/lib/observability.ts': 87, // measured 87.32% (124/142); 124/124 executable
   'src/lib/plan-gating.ts': 85, // measured 94.87% (37/39)
   'src/lib/pricing.ts': 95, // measured 100.00% (39/39)
   'src/lib/prompt-library.ts': 95, // measured 100.00% (34/34)

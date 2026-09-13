@@ -1,6 +1,6 @@
 {
-  "linePct": 85.52,
-  "linesHit": 16810,
+  "linePct": 85.54,
+  "linesHit": 16814,
   "linesFound": 19657,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -246,12 +246,6 @@
       "pct": 84.49612403100775
     },
     {
-      "file": "src/lib/observability.ts",
-      "hit": 120,
-      "found": 142,
-      "pct": 84.50704225352112
-    },
-    {
       "file": "src/lib/api-keys.ts",
       "hit": 78,
       "found": 92,
@@ -292,6 +286,12 @@
       "hit": 364,
       "found": 418,
       "pct": 87.08133971291866
+    },
+    {
+      "file": "src/lib/observability.ts",
+      "hit": 124,
+      "found": 142,
+      "pct": 87.32394366197182
     },
     {
       "file": "src/lib/prisma-tenant.ts",

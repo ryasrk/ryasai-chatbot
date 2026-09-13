@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `587fff1`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2fd44a4`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `587fff1`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,52%** (16.810/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.777 lulus · 0 gagal** | terukur |
+| Test coverage | **85,54%** (16.814/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.787 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -70,7 +70,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/license-issue.ts` | 10,63% | **87,50%** (baris merged) / 100,00% (fungsi) | 29 |
 | `src/lib/source-init.ts` | 13,51% (0,00% fungsi) | **100,00%** (baris + fungsi) | 31 |
 | `src/lib/rag-retrieval.ts` | 9,86% (15,79% fungsi) | **90,43% per-file / 73,48% merged** (baris), 87,76% (fungsi) | 51 |
-| Modul ter-gate | 62 modul | **90 modul** | +28 |
+| Modul ter-gate | 62 modul | **91 modul** | +29 |
 | `src/lib/embeddings.ts` | 79,52% (91,43% fungsi) | **96,92% per-file / 80,87% merged** (baris), 97,22% (fungsi) | 48 |
 | `src/app/api/chat/sessions/[id]/send/route.ts` | 69,29% (40,00% fungsi) | **87,08%** (baris), 65,38% (fungsi) | 25 |
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
@@ -124,6 +124,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/rag-chunking.ts` | 64,95% → **84,30%** merged (artefak LF) | 70,79% → **100,00%** kode eksekutabel (188/188) | 14 |
 | `src/lib/passwords.ts` | 88,89% (tak berubah) | 88,89% (**6 kontrol tambahan**, 2 baris catch deklaratif) | 7 |
 | `src/lib/sso-saml.ts` | 79,31% → **89,41%** merged | 91,59% → **100,00%** kode eksekutabel (228/228) | 12 |
+| `src/lib/observability.ts` | 84,51% → **87,32%** merged | 98,36% → **100,00%** kode eksekutabel (124/124) | 10 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -383,7 +384,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**412 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**422 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3437,6 +3438,51 @@ independen** — punya entry point **tidak** boleh membuang cert, dan sebaliknya
 Langfuse yang **menggantung** akan menahan request **tanpa batas**. Saya belum menyentuhnya: itu
 **keputusan produk** tentang durasi timeout dan perilaku degradasi, bukan sesuatu yang saya ubah
 diam-diam.
+
+### 1.7bp DUA jaring keselamatan yang benar-benar setara — dan kebocoran socket yang saya laporkan
+
+**`observability.ts` 98,36% → 100,00% (124/124)**. Repo **85,52% → 85,54% (+0,02)**. Modul
+ter-gate 90 → **91**. **10 kontrol dijalankan, 8 menggigit, 1 anchor tidak ketemu (diulang dan
+menggigit), 1 dideklarasikan setara.**
+
+**Test yang ada melewatkan catch LANGFUSE secara sistematis.** Test "forward failure does not
+throw" hanya menyetel **`HELICONE_API_KEY`** — jadi ia menguji catch **Helicone** dan **tidak
+pernah** menyentuh catch **Langfuse**, padahal keduanya jalur gagal yang berbeda dari vendor yang
+berbeda. Itu jenis kesalahan yang sama sepanjang sesi ini: **hijau karena melewati cabang yang
+salah.**
+
+**Yang kini dijaga:** **trace tetap tercatat ketika forward Langfuse GAGAL** (buffer lokal, bukan
+vendor, adalah sumber kebenaran — **outage vendor tidak boleh menghilangkan trace**); **post skor
+yang gagal tidak melempar** (skor bersifat saran; skor rendah dari alignment check **tidak boleh**
+menjadi unhandled rejection yang menjatuhkan request yang menghasilkannya); **respons skor NON-OK
+juga bukan error**, karena `res.ok` memang **tidak pernah diperiksa** di sana; **ternary `usage`** —
+trace **dengan** usage meneruskan `promptTokens`+`completionTokens`, sedangkan trace **tanpa**
+usage mengirim **`undefined`**, bukan objek ber-nol, sebab objek ber-nol **tampak seperti pengukuran
+nyata 0 token** dan merusak rata-rata di hilir; dan **`error` dilipat ke `metadata`** bersama kunci
+metadata yang sudah ada.
+
+**TEMUAN: catch Langfuse TIDAK DAPAT DIBEDAKAN — dan saya membuktikannya, bukan menduga.**
+`traceLlmCall` melepaskan forward sebagai `forwardTrace(entry).catch(() => {})`. Kontrol yang
+**menghapus catch internal** menghasilkan **NOL test merah**; kontrol yang **menghapus catch LUAR**
+juga **NOL test merah**. Keduanya jaring yang benar-benar setara dari luar. Saya berhenti dan
+menelusuri sebabnya: **`.catch()` di pemanggil menelan apa pun yang lolos dari catch internal**.
+Kontrasnya menentukan: **`postLangfuseScore` di-`await` LANGSUNG** oleh pemanggilnya, jadi di sana
+catch internal **menahan beban** dan menghapusnya **membuat 2 test merah**. Saya deklarasikan
+catch dalam sebagai **setara** dan **tidak mengklaimnya tercakup** — meski ia tetap berguna bila
+kelak ada pemanggil yang meng-`await` `forwardTrace` langsung.
+
+**TEMUAN: `observability.ts` adalah SATU DARI LIMA `fetch` produksi TANPA timeout** (bersama
+`sso.ts` 4 lokasi, `sso-saml.ts`, `midtrans.ts`). **Terukur:** dengan vendor yang **tidak pernah
+merespons**, `traceLlmCall` **tetap kembali seketika** — fire-and-forget benar-benar terlepas, jadi
+**request LLM TIDAK diblokir**. Yang bocor adalah **socket-nya**: promise fetch **tidak pernah
+settle**, dan `init` **sama sekali tidak membawa `signal`** (dipatok oleh test). Jadi ini
+**kebocoran resource, bukan pemblokiran request** — pembedaan yang saya lakukan sebelum
+melaporkannya. Tidak saya perbaiki: **durasi timeout dan arti timeout bagi ekspor metrik malam
+hari adalah keputusan produk.**
+
+**Kesalahan saya sendiri:** dua anchor kontrol tidak ketemu karena saya menebak nama konstanta
+(`MAX_TRACES` alih-alih **`RING_MAX`**), dan satu karena saya menebak bentuk literal field. Saya
+memperbaiki anchor dari sumber, bukan melonggarkan assertion.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
