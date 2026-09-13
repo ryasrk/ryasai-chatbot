@@ -92,14 +92,14 @@ const FLOORS: Record<string, number> = {
   'src/lib/billing-verify.ts': 95, // measured 100.00% (18/18)
   'src/lib/bounded-concurrency.ts': 95, // measured 100.00% (22/22)
   'src/lib/chat-layout.ts': 95, // measured 100.00% (8/8)
-  'src/lib/cognee-types.ts': 85, // measured 93.33% (14/15)
+  'src/lib/cognee-types.ts': 100, // measured 100.00% (15/15); was mocked by every test that used it
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
   'src/lib/cron.ts': 90, // measured 99.09% (109/110)
   'src/lib/db-provider-presets.ts': 80, // measured 85.29% (29/34)
   'src/lib/db-provider.ts': 95, // measured 100.00% (3/3)
   'src/lib/db.ts': 85, // measured 91.67% (11/12)
-  'src/lib/doc-versioning.ts': 90, // measured 97.53% (79/81)
+  'src/lib/doc-versioning.ts': 98, // merged 100.00% (81/81); failed-restore path was uncovered
   'src/lib/env-schema.ts': 95, // measured 100.00% (167/167)
   'src/lib/errors.ts': 80, // measured 85.48% (53/62)
   'src/lib/extract-error.ts': 95, // measured 100.00% (6/6)

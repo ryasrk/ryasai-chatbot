@@ -1,6 +1,6 @@
 {
-  "linePct": 86.34,
-  "linesHit": 17423,
+  "linePct": 86.35,
+  "linesHit": 17426,
   "linesFound": 20180,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -408,12 +408,6 @@
       "pct": 93.33333333333333
     },
     {
-      "file": "src/lib/cognee-types.ts",
-      "hit": 14,
-      "found": 15,
-      "pct": 93.33333333333333
-    },
-    {
       "file": "src/lib/vector-stores.ts",
       "hit": 343,
       "found": 367,
@@ -508,12 +502,6 @@
       "hit": 186,
       "found": 191,
       "pct": 97.38219895287958
-    },
-    {
-      "file": "src/lib/doc-versioning.ts",
-      "hit": 79,
-      "found": 81,
-      "pct": 97.53086419753086
     },
     {
       "file": "src/lib/license-revalidation.ts",
@@ -642,6 +630,12 @@
       "pct": 100
     },
     {
+      "file": "src/lib/cognee-types.ts",
+      "hit": 15,
+      "found": 15,
+      "pct": 100
+    },
+    {
       "file": "src/app/api/v1/chat/completions/route.ts",
       "hit": 386,
       "found": 386,
@@ -675,6 +669,12 @@
       "file": "src/lib/conversation-export.ts",
       "hit": 79,
       "found": 79,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/doc-versioning.ts",
+      "hit": 81,
+      "found": 81,
       "pct": 100
     },
     {

@@ -58,6 +58,21 @@ mock.module('@/lib/rag-chunking', () => ({ chunkText: mockChunkText }))
 import { createDocVersion, listDocVersions, restoreDocVersion } from './doc-versioning'
 
 beforeEach(() => {
+  // Clear every mock's CALL LOG, not just its implementation. Without this the logs accumulate
+  // across tests in this file, so a positional assertion (`mock.calls[0]`) reads a call from an
+  // earlier test, and a content assertion can be satisfied by a different test's call.
+  mockDocFindUnique.mockClear()
+  mockDocUpdate.mockClear()
+  mockChunkFindMany.mockClear()
+  mockVersionCreate.mockClear()
+  mockVersionFindFirst.mockClear()
+  mockVersionFindMany.mockClear()
+  mockChunkDeleteMany.mockClear()
+  mockChunkCreateMany.mockClear()
+  mockReadFile.mockClear()
+  mockExtractFileText.mockClear()
+  mockChunkText.mockClear()
+  mockEmbedDocumentChunks.mockClear()
   mockDocFindUnique.mockImplementation(async () => ({ id: 'doc-1', version: 1 }))
   mockChunkFindMany.mockImplementation(async () => [
     { id: 'c1', content: 'hello' },
@@ -167,6 +182,84 @@ describe('restoreDocVersion', () => {
     expect(mockChunkDeleteMany.mock.calls.length).toBe(1)
     expect(mockChunkCreateMany.mock.calls.length).toBe(1)
     expect(mockEmbedDocumentChunks.mock.calls.length).toBe(1)
+  })
+
+  test('a FAILED restore still moves the version pointer, and says restored: false', async () => {
+    // The catch covers the case the comment names: the version row exists and the doc still carries
+    // an uploadPath, but the original file is gone from disk (or the re-embed call fails). Without
+    // the catch this THROWS out of restoreDocVersion, and the operator loses the fact that the
+    // version pointer had already been updated -- leaving the doc's metadata claiming v2 while its
+    // chunks are still v1.
+    mockVersionFindFirst.mockImplementation(async () => ({
+      id: 'ver-1',
+      documentId: 'doc-1',
+      version: 2,
+      contentHash: 'abc',
+      chunkCount: 2,
+      createdAt: new Date('2026-01-01'),
+    }))
+    mockDocFindUnique.mockImplementation(async () => ({
+      id: 'doc-1',
+      uploadPath: '/tmp/gone.txt',
+      name: 'gone.txt',
+      type: 'txt',
+      mimeType: 'text/plain',
+      organizationId: 'org-1',
+    }))
+    mockReadFile.mockImplementation(async () => {
+      throw new Error('ENOENT: no such file or directory')
+    })
+    const deletesBefore = mockChunkDeleteMany.mock.calls.length
+    const createsBefore = mockChunkCreateMany.mock.calls.length
+    const embedsBefore = mockEmbedDocumentChunks.mock.calls.length
+
+    const result = await restoreDocVersion('doc-1', 'ver-1')
+    // The pointer move is NOT rolled back -- the caller is told it did not get its content back.
+    expect(result.version).toBe(2)
+    expect(result.restored).toBe(false)
+    // The version pointer WAS written, even though the content restore failed. Exactly ONE update
+    // call, and it sets the version -- a strict assertion now that beforeEach clears the call logs.
+    const updates = mockDocUpdate.mock.calls as unknown as Array<[{ data: Record<string, unknown> }]>
+    expect(updates).toHaveLength(1)
+    expect(updates[0]![0].data.version).toBe(2)
+    // Nothing downstream of the failure ran: no chunk wipe, no re-embed. A partial restore that
+    // deleted the OLD chunks and then failed to insert new ones would leave the document empty.
+    // Counted as a DELTA: these mock call logs are not cleared between tests in this file, so an
+    // absolute assertion would depend on which tests ran first.
+    expect(mockChunkDeleteMany.mock.calls.length - deletesBefore).toBe(0)
+    expect(mockChunkCreateMany.mock.calls.length - createsBefore).toBe(0)
+    expect(mockEmbedDocumentChunks.mock.calls.length - embedsBefore).toBe(0)
+  })
+
+  test('a failure during RE-EMBED is caught the same way', async () => {
+    // The failure point matters: chunks are already replaced at this stage, so this pins that the
+    // call still returns rather than rejecting.
+    mockVersionFindFirst.mockImplementation(async () => ({
+      id: 'ver-1',
+      documentId: 'doc-1',
+      version: 2,
+      contentHash: 'abc',
+      chunkCount: 2,
+      createdAt: new Date('2026-01-01'),
+    }))
+    mockDocFindUnique.mockImplementation(async () => ({
+      id: 'doc-1',
+      uploadPath: '/tmp/doc.txt',
+      name: 'doc.txt',
+      type: 'txt',
+      mimeType: 'text/plain',
+      organizationId: 'org-1',
+    }))
+    mockEmbedDocumentChunks.mockImplementation(async () => {
+      throw new Error('embedding provider rejected the batch')
+    })
+    const createsBefore = mockChunkCreateMany.mock.calls.length
+
+    const result = await restoreDocVersion('doc-1', 'ver-1')
+    expect(result.version).toBe(2)
+    expect(result.restored).toBe(false)
+    // The chunks WERE replaced before the re-embed failed -- that ordering is the point.
+    expect(mockChunkCreateMany.mock.calls.length - createsBefore).toBe(1)
   })
 
   test('throws when version not found', async () => {

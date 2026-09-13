@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `464c55f`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f1bf968`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `464c55f`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,34%** (17.423/20.180 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 171 file · **4.059 lulus · 0 gagal** | terukur |
+| Test coverage | **86,35%** (17.426/20.180 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 172 file · **4.073 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**613 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**622 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4440,6 +4440,46 @@ terinstrumen, bukan karena test baru "menaikkan" persentase lama.
 guard idempotensi `shuttingDown` dihapus (1). **`graceful-shutdown.ts` 92,11% → 100,00% (38/38)
 eksekutabel; `prompt-settings.ts` 41/41 eksekutabel.** Repo **86,32% → 86,34%**; suite
 **4.048 → 4.059 lulus**.
+
+### 1.7cj Batas isolasi tenant cognee yang selalu di-mock, dan restore dokumen yang gagal
+
+**`cognee-types.ts` tidak punya test file sama sekali.** `datasetFor()` dan `kbDatasetFor()` membangun
+**nama dataset** — dan di mode `postgres` beberapa organisasi bisa berbagi satu database cognee, jadi
+**nama dataset ITU batas isolasi**. Yang penting bukan hanya itu: komentarnya menyatakan properti
+*fail-closed*-nya, *"Falls back to a dead name with no org context so a caller that forgot enterWithOrg
+reads and writes nothing instead of the shared 'default'"*. `cognee-memory.test.ts` meng-mock keduanya
+(`datasetFor: () => 'org:acme'`), jadi fungsinya **tak pernah dijalankan**. Sekarang **100,00% (15/15)**.
+
+**`doc-versioning.ts` — jalur restore yang GAGAL.** Test yang ada menutupi `restored: false` karena
+**`uploadPath` tidak ada** (baris 115) — bukan karena **`catch`** (baris 108). Dua jalur berbeda dengan
+konsekuensi berbeda: yang satu "tidak ada file untuk dibaca", yang lain "file ada tapi sudah hilang",
+dan pada yang kedua **pointer versi sudah terlanjur dipindahkan** sementara chunk masih versi lama.
+Sekarang **100,00% (81/81)**.
+
+**Tiga kesalahan saya sendiri, dan yang ketiga paling penting.**
+
+1. Assertion memakai **hitungan absolut** (`mock.calls.length`), padahal file itu **tidak** punya
+   `mockClear` — log menumpuk antar test, jadi "Received: 1" dan "2" itu **bocoran dari test
+   sebelumnya**, bukan bug produk.
+2. Saya ganti ke **delta** — tetap salah, karena `updatesBefore` membaca panjang log yang sama.
+3. Saya ganti ke assertion **berbasis konten** (`ada update dengan version=2`) — **lulus sendirian,
+   GAGAL di suite, lalu lulus lagi setelah diubah**. Itu tanda assertion tidak membedakan apa pun:
+   test LAIN juga menulis version 2, jadi kontrolnya tetap hijau.
+
+**Perbaikan yang benar bukan mengutak-atik assertion, melainkan menambahkan `mockClear` untuk SETIAP
+mock di `beforeEach`.** Baru setelah itu assertion posisional yang tegas (`toHaveLength(1)`) bisa
+dipakai — dan kontrol K7 (hapus update pointer) akhirnya **menggigit dengan 2 merah**. Sebelumnya ia
+melaporkan `8 pass / 0 fail`, artinya **nol test yang gagal** untuk perilaku yang saya klaim terjaga.
+
+**Suite menangkapnya, bukan saya.** `bun run test` **exit 1** sementara test itu **lulus sendirian** —
+pola kontaminasi cross-file yang sudah terdokumentasi, dan alasan repo memakai runner per-file. Saya
+tidak melewatinya; saya telusuri sampai akar.
+
+**9 kontrol, semuanya menggigit:** fallback no-org → `'default'` (2 merah), `datasetFor` tanpa org id
+(3), `kbDatasetFor` = chat dataset (4), `isValidSearchType` selalu true (2), `GRAPH_ENTITIES`
+ditambahkan (1), `catch` restore dihapus (**crash**), update pointer dihapus (2 seteluh `mockClear`),
+version ditulis `version+1` (2). Repo **86,34% → 86,35%**; suite **171 → 172 file**, **4.059 → 4.073
+lulus**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
