@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0c185f1`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `cfffcf3`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `0c185f1`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **82,87%** (16.319/19.692 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 161 file · **3.518 lulus · 0 gagal** | terukur |
+| Test coverage | **82,89%** (16.322/19.692 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 161 file · **3.524 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -97,7 +97,10 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/admin-tools.ts` | 81,78% → **84,30%** merged | 97,17% → **100,00%** kode eksekutabel (569/569) | 49 |
 | `src/lib/tool-router-agentic.ts` | 77,45% → **79,75%** merged | 95,87% → **98,45%** kode eksekutabel (382/388) | 61 |
 | `src/lib/embeddings.ts` | 96,92% → **82,91%** merged (**turun**, §1.7z) | 96,92% → **100,00%** kode eksekutabel (325/325) | 60 |
-| **Total repo** | **62,44%** | **82,87%** | — |
+| `src/lib/tool-branches.ts` | 99,84% → **84,01%** merged (**turun**, §1.7z) | 99,84% → **100,00%** kode eksekutabel (641/641) | 49 |
+| `src/lib/tool-router.ts` | 99,58% → **70,71%** merged (**turun**, §1.7z) | 99,58% → **100,00%** kode eksekutabel (239/239) | 60 |
+| `src/lib/smart-router.ts` | 98,85% → **77,62%** merged (**turun**, §1.7z) | 99,74% → **100,00%** kode eksekutabel (385/385) | 159 |
+| **Total repo** | **62,44%** | **82,89%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -356,7 +359,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**264 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**267 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -2427,6 +2430,53 @@ API** (pemeriksaan kunci di-gate per provider — tanpa itu embedding lokal jadi
 
 **Kontrol negatif: 10, semuanya menggigit** (dua di antaranya hanya menggigit **setelah**
 test-nya diperkuat, yang justru temuan utamanya).
+
+### 1.7av Tiga modul 100% sekaligus, dan sebuah kontrol negatif yang menggigit sebagai TIMEOUT
+
+**`tool-branches.ts` 99,84% → 100,00% (641/641) · `tool-router.ts` 99,58% → 100,00%
+(239/239) · `smart-router.ts` 99,74% → 100,00% (385/385).** Repo **82,87% → 82,89%**.
+**Ketiga modul TETAP tidak di-gate**: merged-nya 84,01% / 70,71% / 77,62% — semuanya **di
+bawah 85** — walau kode eksekutabelnya 100,00%. Itu artefak §1.7z (`LF` union: 763/338/496
+baris di-instrumentasi oleh file test lain), dan justru contoh terjelas mengapa merged-% dan
+executable-% harus dilaporkan berdampingan.
+
+**Yang kini dijaga.** (a) **RAG best-effort**: `retrieveWithReflection` yang **melempar**
+harus membuat turn **degradasi ke chat biasa**, bukan 500 — pengguna yang bertanya tidak
+peduli vector store-nya sakit. (b) **`withTimeout` meneruskan rejection**, bukan menelannya:
+kalau tidak, pemanggil menunggu promise yang **tidak pernah settle**. (c) Cabang
+**"schema match strong → lewati tiebreaker LLM"**, yang ada karena bug routing nyata: prompt
+router LLM tidak mengenal nama tabel/kolom domain-spesifik, jadi saat SQL dan CHAT berada
+dalam 0,1 ia akan **menggeser SQL→CHAT di SETIAP pertanyaan data** — gejala "chatbot balik
+bertanya alih-alih men-query database".
+
+**Kontrol negatif yang menggigit sebagai TIMEOUT.** Menghapus `reject(error)` dari
+`withTimeout` membuat `tool-router.test.ts` **hang >300 detik** — bun tidak melaporkan
+kegagalan, ia berhenti. Itu **bukti langsung** bahaya yang saya tulis di komentar test
+(request menggantung, lebih buruk daripada 500 karena tidak ada yang di-log dan socket
+bocor). Dua kontrol lain menggigit normal. Semuanya dijalankan **per file** setelah
+pelajaran §1.7as, dan file sumber dipulihkan lalu diverifikasi tanpa diff.
+
+**Tiga kesalahan fixture yang saya temukan di tengah jalan — semuanya lewat instrumentasi,
+bukan tebakan.** (1) Saya isi `state.integrations` untuk memicu `schemaScore`, padahal
+sinyal itu datang dari **`state.schemas`**; `schemaScore` tetap **0** untuk semua tool
+sehingga tiebreaker menyala dan test gagal. (2) Setelah schema benar, SQL justru berakhir
+**0,14 di atas CHAT** — di luar ambang 0,1 — sehingga cabang 164 tidak pernah
+dipertimbangkan dan `reason` kembali sebagai `'SQL: schema match 40%'` (reason per-tool dari
+`scoreSchemaMatch`, **bukan** cabang yang saya uji). Dua-duanya terlihat seperti "kode
+salah". (3) Percobaan menurunkan SQL dengan `perfRuns('SQL', 20, 11, 4000)` malah
+**memicu circuit breaker** (`cb=True` → `finalScore = 0`), menurunkan schemaScore di bawah
+assertion saya, dan karena `Bun.write` instrumentasi saya berada **setelah** assertion itu,
+**tidak ada file output yang muncul** — petunjuk pertama bahwa yang gagal adalah assertion
+sebelumnya, bukan yang saya duga. Fixture final dikalibrasi lewat perhitungan eksplisit
+(`perfRuns('SQL', 20, 6, 2000)`: gagal 6/20, latency 2000ms → skor 0,5050 vs CHAT 0,4970,
+**gap 0,008**, `schemaScore` 0,4, circuit breaker **tidak** trip), dan `reason` akhirnya
+persis `'SQL: schema match strong (40%), skipping LLM tiebreaker'`.
+
+**Pelajaran metodologi untuk alat ukur saya sendiri:** `Bun.write` harus diletakkan
+**sebelum** assertion pertama yang mungkin gagal, kalau tidak "file tidak muncul" ambigu
+antara "test gagal lebih awal" dan "test tidak pernah jalan".
+
+**Kontrol negatif: 3, semuanya menggigit** (satu sebagai timeout, yang justru temuan).
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -2558,3 +2558,62 @@ describe('detectMentionedIntegration — a single source is not a mention', () =
     expect(r.integrationId).toBe('only-1')
   })
 })
+
+describe('LLM tiebreaker — SKIPPED when the best tool has a strong schema match', () => {
+  // Line 164. This branch exists because of a real routing bug: the LLM router
+  // prompt does not know domain-specific table/column names, so when SQL and CHAT
+  // land within 0.1 it would override SQL→CHAT on EVERY data question -- the
+  // "chatbot asks a clarifying question instead of querying the database"
+  // symptom. A strong keyword overlap with real DB tables/docs is the signal that
+  // the heuristic already knows better, so the extra LLM call is skipped.
+  test('a strong schema match skips the LLM call and says so in the reason', async () => {
+    // The schema signal comes from state.SCHEMAS, not state.integrations -- my
+    // first version set integrations only, so schemaScore stayed 0 for every tool,
+    // the tiebreaker fired, and the test failed. Instrumenting the scores is how I
+    // found it; the assertion below would otherwise have looked like a code bug.
+    state.integrations = [HR]
+    state.schemas = [
+      { tableName: 'employees', description: null, columns: JSON.stringify([{ name: 'salary' }, { name: 'hire_date' }]), integration: { name: 'HR Database', provider: 'POSTGRESQL' } },
+    ]
+    // The narrowing has to be done from BOTH ends: the best tool must still have a
+    // schema match above 0.3 while its final score lands within 0.1 of the runner-up.
+    // My first version gave SQL a healthy perf run, so its score sat 0.14 above CHAT's,
+    // the near-tie guard never fired, and the reason came back as the per-tool
+    // 'SQL: schema match 40%' -- a green-looking fixture measuring the wrong branch.
+    // SQL here has a mediocre, slow track record (which is what drags it down into a
+    // near-tie) while keeping the schema signal, and CHAT is a healthy fast fallback.
+    state.runs = [...perfRuns('SQL', 20, 6, 2000), ...perfRuns('CHAT', 20, 0, 100)]
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'CHAT', reason: 'LLM says CHAT' }))
+    const result = await smartRoute({
+      question: 'salary of employees',
+      hasIntegrations: true,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    const best = [...result.scores].sort((a, b) => b.finalScore - a.finalScore)[0]
+    expect(best.schemaScore).toBeGreaterThan(0.3)
+    // No LLM call -- that is the whole point of the branch.
+    expect(routeQueryMock).not.toHaveBeenCalled()
+    expect(result.llmUsed).toBe(false)
+    // The reason names the tool and the matched strength, so the routing decision
+    // is diagnosable without re-running the scorer.
+    expect(result.reason).toContain('schema match strong')
+    expect(result.reason).toContain('skipping LLM tiebreaker')
+    expect(result.reason).toContain(`${best.tool}:`)
+  })
+
+  test('a WEAK schema match still consults the LLM (the branch is not a blanket skip)', async () => {
+    // The inverse. Without this, removing the `schemaScore > 0.3` condition
+    // entirely would keep the test above green.
+    state.integrations = [HR]
+    routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'RAG', reason: 'LLM says RAG' }))
+    const result = await smartRoute({
+      question: 'halo ada apa',
+      hasIntegrations: false,
+      hasDocuments: false,
+      hasRestApis: false,
+    })
+    expect(routeQueryMock).toHaveBeenCalledTimes(1)
+    expect(result.llmUsed).toBe(true)
+  })
+})

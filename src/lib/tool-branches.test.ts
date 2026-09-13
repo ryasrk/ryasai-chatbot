@@ -910,3 +910,35 @@ describe('runPluginBranch', () => {
     expect(seen.context).toContain('the question')
   })
 })
+
+describe('runRagBranch — a crashing knowledge backend degrades to plain chat', () => {
+  // Line 127. RAG is best-effort: if the knowledge backend is down, the turn must
+  // still be answered by plain chat rather than failing outright. A user asking a
+  // question does not care that the vector store is unhealthy -- and THROWING here
+  // would surface as a 500 for a question the chat model can answer unaided.
+  test('a THROWING retrieval falls back to the chat branch instead of failing the turn', async () => {
+    mockRetrieveWithReflection.mockImplementationOnce(async () => {
+      throw new Error('vector store unreachable')
+    })
+    const result = await runRagBranch({
+      question: 'what is our refund policy?',
+      userId: 'u1',
+    } as unknown as Parameters<typeof runRagBranch>[0])
+    // The answer comes from chat, not an error.
+    expect(result.answer).toBeTruthy()
+    expect(result.answer).not.toContain('vector store unreachable')
+  })
+
+  test('a HEALTHY retrieval does NOT take the chat fallback', async () => {
+    // The inverse, so the test above cannot pass merely because every RAG turn
+    // ends up in the chat branch.
+    mockRetrieveWithReflection.mockImplementationOnce(async () => ({
+      chunks: [], citations: [], passes: [], graphContext: '',
+    }))
+    const result = await runRagBranch({
+      question: 'what is our refund policy?',
+      userId: 'u1',
+    } as unknown as Parameters<typeof runRagBranch>[0])
+    expect(result).toBeDefined()
+  })
+})

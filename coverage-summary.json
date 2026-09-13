@@ -1,6 +1,6 @@
 {
-  "linePct": 82.87,
-  "linesHit": 16319,
+  "linePct": 82.89,
+  "linesHit": 16322,
   "linesFound": 19692,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -85,9 +85,9 @@
     },
     {
       "file": "src/lib/tool-router.ts",
-      "hit": 238,
+      "hit": 239,
       "found": 338,
-      "pct": 70.41420118343196
+      "pct": 70.71005917159763
     },
     {
       "file": "src/lib/otel.ts",
@@ -174,12 +174,6 @@
       "pct": 77.14285714285715
     },
     {
-      "file": "src/lib/smart-router.ts",
-      "hit": 384,
-      "found": 496,
-      "pct": 77.41935483870968
-    },
-    {
       "file": "src/lib/plugin-selector.ts",
       "hit": 158,
       "found": 204,
@@ -196,6 +190,12 @@
       "hit": 267,
       "found": 344,
       "pct": 77.61627906976744
+    },
+    {
+      "file": "src/lib/smart-router.ts",
+      "hit": 385,
+      "found": 496,
+      "pct": 77.62096774193549
     },
     {
       "file": "src/lib/rag-chunking.ts",
@@ -313,9 +313,9 @@
     },
     {
       "file": "src/lib/tool-branches.ts",
-      "hit": 640,
+      "hit": 641,
       "found": 763,
-      "pct": 83.8794233289646
+      "pct": 84.01048492791612
     },
     {
       "file": "src/lib/admin-tools.ts",

@@ -1205,3 +1205,36 @@ describe('tool-router — an ambiguous data source', () => {
     expect(mockPickBestIntegration).toHaveBeenCalledTimes(0)
   })
 })
+
+describe('preflight DB load — a failing query surfaces, it is not swallowed', () => {
+  // withTimeout's rejection handler (line 295). The preflight counts documents and
+  // integrations to decide whether SQL/RAG/REST are even offerable. If a count
+  // query REJECTS, the outer handler must surface a sanitized error rather than
+  // hang: the timer is cleared and the rejection forwarded. A swallowed rejection
+  // would leave the caller awaiting a promise that never settles -- a hung request
+  // is strictly worse than a 500, because nothing is logged and the socket leaks.
+  test('a rejecting preflight query forwards the error instead of hanging', async () => {
+    mockDocumentCount.mockImplementationOnce(async () => {
+      throw new Error('relation "Document" does not exist')
+    })
+    await expect(
+      runNonStreamingChatCompletion({
+        question: 'how many documents?',
+        userId: 'user-1',
+        allowMultiStepDag: true,
+      }),
+    ).rejects.toThrow('relation "Document" does not exist')
+  })
+
+  test('a HEALTHY preflight does not reject', async () => {
+    // The inverse, so the test above cannot pass merely because this entry point
+    // always rejects.
+    mockDocumentCount.mockImplementation(async () => 3)
+    const result = await runNonStreamingChatCompletion({
+      question: 'Compare sales with the return policy',
+      userId: 'user-1',
+      allowMultiStepDag: true,
+    })
+    expect(result.answer).toBeTruthy()
+  })
+})
