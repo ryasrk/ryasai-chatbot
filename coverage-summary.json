@@ -1,6 +1,6 @@
 {
-  "linePct": 85.55,
-  "linesHit": 16816,
+  "linePct": 85.57,
+  "linesHit": 16821,
   "linesFound": 19657,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -498,12 +498,6 @@
       "pct": 94.87179487179486
     },
     {
-      "file": "src/app/api/billing/webhook/route.ts",
-      "hit": 101,
-      "found": 106,
-      "pct": 95.28301886792453
-    },
-    {
       "file": "src/app/api/billing/orders/route.ts",
       "hit": 48,
       "found": 50,
@@ -597,6 +591,12 @@
       "file": "src/lib/pricing.ts",
       "hit": 39,
       "found": 39,
+      "pct": 100
+    },
+    {
+      "file": "src/app/api/billing/webhook/route.ts",
+      "hit": 106,
+      "found": 106,
       "pct": 100
     },
     {

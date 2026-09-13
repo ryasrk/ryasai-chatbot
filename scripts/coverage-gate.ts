@@ -45,7 +45,10 @@ const FLOORS: Record<string, number> = {
   'src/app/api/auth/signup/route.ts': 90, // measured 96.26% (103/107)
   'src/app/api/billing/orders/[id]/route.ts': 85, // measured 92.59% (25/27)
   'src/app/api/billing/orders/route.ts': 90, // measured 96.00% (48/50)
-  'src/app/api/billing/webhook/route.ts': 90, // measured 95.28% (101/106)
+  // Payment webhook: signature fail-closed when SERVER_KEY is unset, the order_id
+  // guard, gross_amount mismatch, the atomic settlement claim and the retry on a
+  // THROWN issuance are all pinned.
+  'src/app/api/billing/webhook/route.ts': 100, // measured 100.00% (106/106)
   'src/app/api/chat/sessions/route.ts': 85, // measured 93.62% (44/47)
   'src/app/api/documents/[id]/route.ts': 95, // measured 100.00% (169/169)
   'src/app/api/documents/[id]/reprocess/route.ts': 95, // measured 100.00% (55/55)

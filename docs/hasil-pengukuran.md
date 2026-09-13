@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f0e4de`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `07ca8d2`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5f0e4de`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,55%** (16.816/19.657 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 163 file · **3.795 lulus · 0 gagal** | terukur |
+| Test coverage | **85,57%** (16.821/19.657 baris, 128 file) | terukur, **belum 95%** |
+| Test suite | 163 file · **3.800 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -126,6 +126,7 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/sso-saml.ts` | 79,31% → **89,41%** merged | 91,59% → **100,00%** kode eksekutabel (228/228) | 12 |
 | `src/lib/observability.ts` | 84,51% → **87,32%** merged | 98,36% → **100,00%** kode eksekutabel (124/124) | 10 |
 | `src/lib/sso.ts` | 87,97% → **88,66%** merged | 99,22% → **100,00%** kode eksekutabel (258/258) | 14 |
+| `src/app/api/billing/webhook/route.ts` | 95,28% → **100,00%** merged | 96,19% → **100,00%** kode eksekutabel (106/106) | 8 |
 | **Total repo** | **62,44%** | **85,38%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
@@ -385,7 +386,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**436 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**444 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -3526,6 +3527,51 @@ adalah **`OidcConfig`** — tsc menangkapnya. Lalu perbaikan saya **terlalu luas
 `createHmac` di dalam helper `sign()`, yang memunculkan `TS2345`. Dan satu assertion saya
 (`createArgs === null`) menguji **state sisa test sebelumnya**, bukan cabang ini — harness tidak
 mereset `createArgs`. Ketiganya saya perbaiki dari sumber, bukan dengan melonggarkan assertion.
+
+### 1.7br WEBHOOK PEMBAYARAN: fail-closed tanpa SERVER_KEY dan guard `order_id` tidak pernah tersentuh
+
+**`src/app/api/billing/webhook/route.ts` 96,19% → 100,00% (106/106)**, 4 baris nyata. Merged
+**95,28% → 100,00%**. Repo **85,55% → 85,57% (+0,02)**. **8 kontrol, 8 menggigit.** Floor naik
+**90 → 100**.
+
+**Lima dari empat belas baris yang tadinya tak teruji tidak ada** — ronde ini menguji lebih dulu,
+lalu menemukan bahwa `midtrans.ts` **sudah 100,00% (63/63)**, jadi targetnya bergeser ke
+**konsumennya**, webhook pembayaran. Ini modul dengan niat terbaik di repo: claim settlement
+atomik, audit trail pada mismatch, dan retry terbatas. Yang **benar-benar kosong** justru dua guard
+terpentingnya.
+
+**(1) Fail-closed ketika `MIDTRANS_SERVER_KEY` tidak diset.** Komentar route menyatakannya
+eksplisit — "missing MIDTRANS_SERVER_KEY makes verification throw → 403" — dan **tidak ada test
+yang membuktikannya**. `serverKey()` melempar, throw-nya ditangkap, `signatureOk` tetap `false`,
+respons **403**. Diuji langsung dengan **menghapus env var** (sebelumnya selalu terisi di test).
+Yang saya patok: **403**, dan **nol `updateMany` serta nol penerbitan lisensi** — notifikasi tak
+terverifikasi **tidak boleh** menyelesaikan pesanan. Saya juga mengontrol **`signatureOk = true`
+sebagai default**: itu **satu test merah**, membuktikan default fail-closed-nya **menahan beban**
+dan bukan hiasan.
+
+**(2) Guard `order_id`.** Tanpa itu, `order_id` yang absen menjadi string `"undefined"` **di dalam
+string tanda tangan** sekaligus sebagai kunci lookup. Dipatok dalam **bentuk terkuatnya**: saya
+mengirim notifikasi dengan **tanda tangan SHA-512 yang VALID untuk `order_id` kosong**, sehingga
+**hanya** pemeriksaan `order_id` yang bisa menolaknya — dan DB **tidak pernah disentuh**
+(`findUnique.length === 0`). Kontrol yang menghapus guard itu membuat **3 test merah**.
+
+**(3) Catch pada penerbitan lisensi fire-and-forget.** Respons HTTP sudah **200 sebelum** penerbitan
+berjalan, jadi throw di sana **tak terlihat di batas HTTP** — dan tanpa catch, lisensi untuk
+pesanan yang **SUDAH DIBAYAR** hilang **diam-diam**. Mock penerbit saya kini bisa **melempar**, bukan
+hanya mengembalikan `ok: false`; test lama hanya menutup jalur `ok: false`.
+
+**Kesalahan saya sendiri, dua.** (a) Saya menulis `body.order_id` padahal responsnya
+`{ ok, error }` — assertion gagal terhadap field yang **tidak pernah dikirim route**. (b) Saya
+menulis `mock.module('@/lib/license-issue', ...)` **di dalam sebuah test**, padahal **dua
+`mock.module` untuk path yang SAMA di file yang sama → yang TERAKHIR menang dan yang pertama
+INERT**; mock saya tidak melakukan apa pun sampai saya menyalurkan kegagalan lewat **spy yang sudah
+ada** (`issueThrows`). Keduanya saya perbaiki dari sumber.
+
+**Yang kini dijaga:** guard `order_id` **sebelum kerja tanda tangan apa pun**; **fail-closed
+tanpa SERVER_KEY**; **`gross_amount` yang tidak cocok TIDAK menyelesaikan** dan **mencatat audit
+trail** sambil tetap membalas 200 agar Midtrans berhenti mengulang; **claim atomik** —
+`count === 0` berarti kalah lomba atau replay idempoten, **tidak pernah menerbitkan ulang**; dan
+**retry terbatas** saat penerbitan mengembalikan `ok: false` **maupun saat ia MELEMPAR**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
