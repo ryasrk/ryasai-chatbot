@@ -1,6 +1,6 @@
 {
-  "linePct": 86.7,
-  "linesHit": 17500,
+  "linePct": 86.72,
+  "linesHit": 17503,
   "linesFound": 20184,
   "fnPct": 93.54,
   "fnsHit": 1651,
@@ -558,15 +558,6 @@
       "fPct": 95.45454545454545
     },
     {
-      "file": "src/lib/vector-stores.ts",
-      "hit": 343,
-      "found": 367,
-      "pct": 93.46049046321527,
-      "fHit": 28,
-      "fFound": 39,
-      "fPct": 71.7948717948718
-    },
-    {
       "file": "src/lib/redis.ts",
       "hit": 74,
       "found": 79,
@@ -601,6 +592,15 @@
       "fHit": 5,
       "fFound": 6,
       "fPct": 83.33333333333334
+    },
+    {
+      "file": "src/lib/vector-stores.ts",
+      "hit": 346,
+      "found": 367,
+      "pct": 94.27792915531336,
+      "fHit": 28,
+      "fFound": 39,
+      "fPct": 71.7948717948718
     },
     {
       "file": "src/lib/logger.ts",

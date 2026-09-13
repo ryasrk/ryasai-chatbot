@@ -238,6 +238,101 @@ describe('getVectorStoreRuntimeConfig', () => {
     expect(cfg!.provider).toBe('QDRANT')
   })
 
+  test('PINECONE provider → returns config (a name the fallback would have read as INTERNAL)', async () => {
+    // normalizeVectorStoreProvider maps a stored provider name to the runtime enum. PINECONE is one of
+    // the names on the explicit list; without its branch it would fall through to 'INTERNAL' and the
+    // install would silently search its own pgvector table instead of the configured Pinecone index --
+    // a wrong-answer bug with no error, since both paths return hits.
+    mockFindFirst.mockImplementationOnce(async () => ({
+      provider: 'PINECONE',
+      baseUrl: 'https://p.example.com',
+      collectionName: 'pine-col',
+      vectorSize: 1536,
+      distance: 'Cosine',
+      encryptedApiKey: null,
+    }))
+    const cfg = await getVectorStoreRuntimeConfig()
+    expect(cfg!.provider).toBe('PINECONE')
+  })
+
+  test('CHROMA and the CHROMADB alias both normalize to CHROMA', async () => {
+    for (const stored of ['CHROMA', 'CHROMADB']) {
+      mockFindFirst.mockImplementationOnce(async () => ({
+        provider: stored,
+        baseUrl: 'https://c.example.com',
+        collectionName: 'chroma-col',
+        vectorSize: 1536,
+        distance: 'Cosine',
+        encryptedApiKey: null,
+      }))
+      const cfg = await getVectorStoreRuntimeConfig()
+      expect(cfg!.provider).toBe('CHROMA')
+    }
+  })
+
+  test('provider matching is case- and whitespace-insensitive', async () => {
+    // The value comes from a DB column an operator (or an import) can write directly, so 'qdrant ' with
+    // a trailing space or lower case is a realistic value rather than a hostile one.
+    mockFindFirst.mockImplementationOnce(async () => ({
+      provider: '  qdrant_cloud  ',
+      baseUrl: 'https://q.example.com',
+      collectionName: 'col',
+      vectorSize: 1536,
+      distance: 'Cosine',
+      encryptedApiKey: null,
+    }))
+    const cfg = await getVectorStoreRuntimeConfig()
+    expect(cfg!.provider).toBe('QDRANT')
+  })
+
+  test('KNOWN GAP: an UNRECOGNISED provider yields a config labelled INTERNAL, not null', async () => {
+    // *** THIS TEST PINS A DEFECT, NOT A DESIRE. ***
+    //
+    // The INTERNAL guard at line 160 tests the RAW DB string (`row.provider === 'INTERNAL'`), NOT the
+    // NORMALISED value returned on line 174. So a provider the normaliser does not know -- 'WEAVIATE'
+    // here, and any future backend an operator configures by hand -- SKIPS the guard, and the returned
+    // config carries `provider: 'INTERNAL'` alongside a non-empty baseUrl and collectionName.
+    //
+    // The consequence is silent: searchVectorStore switches on `config.provider`, has no INTERNAL
+    // branch, and so returns [] (line 372). The operator has configured and paid for Weaviate, the
+    // search returns ZERO HITS with no error and no log, and the model answers as if the knowledge
+    // base were empty. A config with a baseUrl that no branch can serve would be better refused here.
+    //
+    // I did NOT fix it: the right answer depends on product intent (should an unknown provider be an
+    // error, or should the normaliser be extended?), and that is the operator's call, not a coverage
+    // commit's. Pinned so the fix is a deliberate change that breaks this test.
+    mockFindFirst.mockImplementationOnce(async () => ({
+      provider: 'WEAVIATE',
+      baseUrl: 'https://w.example.com',
+      collectionName: 'weaviate-col',
+      vectorSize: 1536,
+      distance: 'Cosine',
+      encryptedApiKey: null,
+    }))
+    const cfg = await getVectorStoreRuntimeConfig()
+    // Not null today: the guard saw the raw string 'WEAVIATE'.
+    expect(cfg).not.toBeNull()
+    expect(cfg!.provider).toBe('INTERNAL')
+    // The mismatch that makes it silent: an INTERNAL label attached to a real remote endpoint.
+    expect(cfg!.baseUrl).toBe('https://w.example.com')
+    expect(cfg!.collectionName).toBe('weaviate-col')
+  })
+
+  test('the INTERNAL guard is applied to the RAW value, so a literal INTERNAL row is refused', () => {
+    // The other half of the same line: a row that really says INTERNAL is rejected before any config is
+    // built, which is why the defect above is specifically about UNRECOGNISED names rather than all
+    // INTERNAL-labelled rows.
+    mockFindFirst.mockImplementationOnce(async () => ({
+      provider: 'INTERNAL',
+      baseUrl: 'https://internal.example.com',
+      collectionName: 'col',
+      vectorSize: 1536,
+      distance: 'Cosine',
+      encryptedApiKey: null,
+    }))
+    expect(getVectorStoreRuntimeConfig()).resolves.toBeNull()
+  })
+
   test('MILVUS provider → returns config', async () => {
     mockFindFirst.mockImplementationOnce(async () => ({
       provider: 'MILVUS',

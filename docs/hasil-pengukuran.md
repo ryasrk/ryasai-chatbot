@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a87fd37`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `e98106d`.
 
 ---
 
@@ -12,9 +12,9 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `a87fd37`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,70%** (17.500/20.184 baris, 132 file) | terukur, **belum 95%** |
+| Test coverage | **86,72%** (17.503/20.184 baris, 132 file) | terukur, **belum 95%** |
 | Cakupan fungsi | **93,54%** (1651/1765 fungsi, per-file FNF/FNH) | terukur, metrik BARU ronde 86 |
-| Test suite | 174 file · **4.150 lulus · 0 gagal** | terukur |
+| Test suite | 174 file · **4.155 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -398,7 +398,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**670 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**675 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4740,6 +4740,40 @@ dijalankan"**, dan kelas bug "mock yang menyimpang dari implementasi" tercatat.
 **5 kontrol `db.ts`, semuanya menggigit:** selalu true (5 merah), selalu false (2), cocokkan MESSAGE
 bukan code (3), `instanceof` bukan struktural (1), tanpa guard `typeof` (1). Repo **86,70%**; suite
 **4.143 → 4.150**; **174 file**.
+
+### 1.7cq Pencarian yang mengembalikan nol hasil secara DIAM-DIAM saat provider tak dikenal
+
+Cakupan fungsi (metrik dari ronde 86) menunjuk `vector-stores.ts` — **28/39 fungsi**. Cakupan barisnya
+93,46% dan terlihat biasa; tiga baris yang belum diuji semuanya ada di **`normalizeVectorStoreProvider`**
+(baris 375-382), yang **tidak diekspor** dan hanya dijangkau lewat `getVectorStoreRuntimeConfig`
+(baris 174). Test yang ada melewatkan `'QDRANT'`/`'MILVUS'` mentah, jadi **cabang `PINECONE`, alias
+`CHROMADB`, dan fallback `INTERNAL` belum pernah dieksekusi.**
+
+**Saat mengujinya, ekspektasi saya sendiri salah — dan kode yang benar, tapi karena alasan yang buruk.**
+Saya mengira provider tak dikenal → `null`. Ternyata `getVectorStoreRuntimeConfig` mengembalikan config
+penuh. Sebabnya: **guard di baris 160 memeriksa string DB MENTAH** (`row.provider === 'INTERNAL'`),
+**bukan nilai ternormalisasi** di baris 174.
+
+**Itu defect yang nyata dan senyap.** Provider yang normaliser tidak kenal — `WEAVIATE` di test ini, dan
+backend apa pun yang dikonfigurasi operator di masa depan — **lolos guard**, lalu config dikembalikan
+dengan `provider: 'INTERNAL'` **sambil membawa `baseUrl` dan `collectionName` sungguhan**.
+`searchVectorStore` men-`switch` pada `config.provider`, **tidak punya cabang INTERNAL**, dan jatuh ke
+`return []` (baris 372). Jadi: operator sudah mengonfigurasi dan membayar Weaviate, **pencarian
+mengembalikan NOL hasil tanpa error dan tanpa log**, dan model menjawab seolah knowledge base kosong.
+
+**Saya TIDAK memperbaikinya.** Jawaban yang benar bergantung pada niat produk — apakah provider tak
+dikenal harus menjadi **error**, atau normaliser-nya harus **diperluas**? Itu keputusan operator, bukan
+keputusan commit coverage. Saya **memaku perilaku saat ini** dalam test yang menyebut dirinya
+*"KNOWN GAP ... THIS TEST PINS A DEFECT, NOT A DESIRE"*, sekaligus memakau **separuh lainnya dari baris
+yang sama**: baris yang benar-benar bertuliskan `INTERNAL` **ditolak** sebelum config dibangun — itu
+sebabnya cacat ini spesifik tentang nama **tak dikenal**, bukan semua baris berlabel INTERNAL.
+
+**`vector-stores.ts` 99,13% → 100,00% (346/346).** 5 kontrol, semuanya menggigit: alias `CHROMADB`
+dihapus (1 merah), cabang `PINECONE` dihapus (1), `trim()`/`toUpperCase()` dihapus (1), fallback
+`INTERNAL` diubah ke `QDRANT` (1), alias `QDRANT_CLOUD` dihapus (**2**). Kandidat kedua, `logger.ts`
+(10/12 fungsi), **terverifikasi 100% eksekutabel (34/34)** — bukan celah.
+
+Repo **86,70% → 86,72%**; suite **4.150 → 4.155**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

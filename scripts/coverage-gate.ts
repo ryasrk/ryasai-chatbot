@@ -315,7 +315,7 @@ const FLOORS: Record<string, number> = {
   // whether an MCP tool is offered in chat vs agentic never ran. 258/271 executable.
   'src/lib/tool-registry.ts': 95, // measured 95.91% merged
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
-  'src/lib/vector-stores.ts': 85, // measured 93.46% (343/367)
+  'src/lib/vector-stores.ts': 94, // merged 94.28%%; was 93.46%% before the normaliser branches were tested // measured 93.46% (343/367)
   'src/lib/view-routing.ts': 95, // measured 100.00% (19/19)
 }
 
