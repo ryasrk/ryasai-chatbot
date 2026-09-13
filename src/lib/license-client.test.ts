@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import crypto from 'crypto'
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import {
   licenseStatusFromResult,
   licenseUpdateFromResult,

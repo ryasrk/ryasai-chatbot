@@ -1,7 +1,7 @@
 {
-  "linePct": 80.81,
-  "linesHit": 15900,
-  "linesFound": 19675,
+  "linePct": 81.18,
+  "linesHit": 15975,
+  "linesFound": 19678,
   "filesMeasured": 128,
   "failedTestFiles": [],
   "files": [
@@ -22,12 +22,6 @@
       "hit": 21,
       "found": 70,
       "pct": 30
-    },
-    {
-      "file": "src/lib/license-client.ts",
-      "hit": 48,
-      "found": 142,
-      "pct": 33.80281690140845
     },
     {
       "file": "src/lib/redis.ts",
@@ -364,6 +358,12 @@
       "hit": 78,
       "found": 92,
       "pct": 84.78260869565217
+    },
+    {
+      "file": "src/lib/license-client.ts",
+      "hit": 123,
+      "found": 145,
+      "pct": 84.82758620689656
     },
     {
       "file": "src/lib/db-provider-presets.ts",

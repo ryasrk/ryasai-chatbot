@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6b85a98`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `66ba842`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6b85a98`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.321 lulus · 0 gagal** | terukur |
+| Test suite | 160 file · **3.342 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -80,7 +80,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/ai.ts` | 74,4% merged | **100,00% kode eksekutabel** (416/416) — lihat §1.7z | 79 |
 | `src/lib/tool-router-agentic.ts` | 75,57% → **77,45%** merged | 93,78% → **95,87%** kode eksekutabel (371/387) | 52 |
 | `src/lib/mcp-installer.ts` | 55,1% → **75,88%** merged | 85,06% kode eksekutabel (131/154) | 22 |
-| **Total repo** | **62,44%** | **80,81%** | — |
+| `src/lib/license-client.ts` | 35,56% → **84,83%** merged | 44,04% → **96,09%** kode eksekutabel (123/128) | 54 |
+| **Total repo** | **62,44%** | **81,18%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -253,8 +254,11 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Deadline: bukti terkumpul dibuang | `tool-router-agentic.ts:254` | 1 |
 | HTML tidak dibersihkan sebelum parse | `mcp-installer.ts:77` | 1 |
 | Response non-ok diterima | `mcp-installer.ts:75` | 1 |
+| Verifikasi tanda tangan dilewati | `license-client.ts:104` | 4 |
+| Cek nonce dilewati | `license-client.ts:66` | 2 |
+| Kunci hilang TIDAK fail-closed | `license-client.ts:57` | 3 |
 
-**152 kontrol + 3 kontrol gate, semuanya sah.**
+**158 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1425,6 +1429,61 @@ instal; response non-ok → null; fetch yang melempar → null tanpa crash; dan 
    membedakan cek status dari parser. Setelah diperkuat, kontrolnya menggigit (20
    lulus / 1 gagal). **Halaman error tidak boleh dibaca sebagai instruksi instalasi** —
    500 dengan README yang di-*cache* akan menginstal paket dari body error.
+
+### 1.7ac `license-client.ts`: 35,56% → 84,83% merged (123/145) — verifikasi tanda tangan Ed25519 belum pernah diuji
+
+**Ini gerbang pembayaran (paywall) untuk deployment on-prem, jadi cek tanda tangan adalah
+satu hal yang tidak boleh diasumsikan.** Yang teruji sebelumnya **hanya fungsi murni**
+(`licenseStatusFromResult`, `getLockdownReason`, `isWithinGracePeriod`,
+`generateMachineId`). `validateLicense`, `verifySignature`, `getPublicKey` dan
+`deactivateMachine` **belum pernah dieksekusi**: **44,04%** kode eksekutabel, kini
+**96,09%** (48 → 123 dari 128).
+
+**Rancangan test:** setiap kasus menggerakkan **verifier Ed25519 ASLI** dengan keypair
+yang dibangkitkan in-process — **bukan `verifySignature` yang di-stub**, karena stub
+akan meloloskan apa pun yang dilakukan kode. `LICENSE_SIGNING_PUBLIC_KEY` dibaca
+**saat modul dimuat** dan bun mengangkat `import` statis ke atas setiap pernyataan, jadi
+modul dicapai lewat **`await import` tingkat-atas setelah env di-set**. Kegagalan
+pertama saya persis dari sini: import statis di baris 3 membekukan `PUBLIC_KEY_HEX`
+sebagai `undefined`, dan jalur **"fail closed"** itu menyamar sebagai **tanda tangan
+rusak**. Itu sebabnya berkasnya dipecah menjadi tiga.
+
+Yang diuji: jalur bahagia beserta plan/expiresAt; permintaan membawa key, machine,
+product dan **nonce 32-hex** yang segar; URL validator dipakai dengan **garis miring
+akhir dipangkas** (garis miring ganda 404 di banyak reverse proxy); **respons TANPA
+tanda tangan ditolak meski mengklaim `valid: true`** — tanpa ini, siapa pun yang bisa
+menjawab di jaringan **memberi dirinya sendiri lisensi**; tanda tangan dari **kunci
+SALAH** ditolak; **bidang yang DIUBAH membatalkan tanda tangan yang asli** (inilah
+gunanya menandatangani payload: MITM tidak bisa menaikkan penolakan menjadi hak
+akses dengan mengubah satu bidang); tanda tangan atas **nonce BERBEDA** ditolak
+(pertahanan replay); HTTP error memunculkan statusnya; dan bidang opsional menjadi
+`null`/`''`, **bukan `undefined`** (dipersistensi ke DB).
+
+**Fail-closed diuji di berkas sendiri** (`license-client-failclosed.test.ts`), karena
+kedua cabang `getPublicKey` hanya terjangkau bila env di-set **sebelum modul pertama
+kali dievaluasi**: **kunci tidak ada** → respons yang tampak sah tetap ditolak
+(**)meluncur tanpa kunci tidak boleh berarti "semua berlisensi"**); **kunci rusak** →
+`createPublicKey` melempar, klien harus menyerapnya dan menolak, bukan 500.
+
+**Kontrol negatif: 9, masing-masing menggagalkan test yang dituju.** Melewati
+verifikasi → 4 gagal; melewati cek nonce → 2 gagal; dan **`if (!pubKey) return false`
+diubah menjadi `return true` → 3 gagal**, yang membuktikan fail-closed benar-benar
+dijaga.
+
+**Satu kontrol yang TIDAK menggigit, dan saya catat apa adanya:** menghapus
+`if (!signature) return false` **tidak menggagalkan test mana pun**. Diperiksa langsung
+ke `node:crypto`: `crypto.verify()` sendiri mengembalikan `false` untuk tanda tangan
+kosong, satu-byte, maupun non-hex. Jadi guard itu **short-circuit murah untuk kasus
+yang sudah ditangani verifier** — **tidak ada input yang bisa membedakannya**. Test-nya
+tetap ada sebagai assertion kontrak, dengan komentar yang menyatakan ia **bukan**
+kontrol atas baris itu.
+
+**Artefak instrumentasi, terukur:** 5 baris `getPublicKey` (37-42) dilaporkan belum
+tercakup meski kedua cabang jalan — dibuktikan dari log: `"Failed to load
+LICENSE_SIGNING_PUBLIC_KEY"` muncul 1×, `"is not set"` 2×. Sebabnya `await
+import('./license-client?cachebust')` menghasilkan **instance modul baru** (diverifikasi
+`: same=false`) yang hit-nya **tidak masuk ke SF tanpa query**. Sama keluarganya dengan
+§1.7z, dan alasan lain untuk **tidak** mengejar angka merged sebagai target.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
