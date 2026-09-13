@@ -1,8 +1,8 @@
 {
-  "linePct": 85.87,
-  "linesHit": 17026,
-  "linesFound": 19828,
-  "filesMeasured": 129,
+  "linePct": 85.96,
+  "linesHit": 17167,
+  "linesFound": 19972,
+  "filesMeasured": 131,
   "failedTestFiles": [],
   "files": [
     {
@@ -492,6 +492,12 @@
       "pct": 94.87179487179486
     },
     {
+      "file": "src/lib/mcp-sandbox.ts",
+      "hit": 95,
+      "found": 99,
+      "pct": 95.95959595959596
+    },
+    {
       "file": "src/app/api/billing/orders/route.ts",
       "hit": 48,
       "found": 50,
@@ -528,10 +534,10 @@
       "pct": 97.53086419753086
     },
     {
-      "file": "src/lib/job-processor.ts",
-      "hit": 126,
-      "found": 129,
-      "pct": 97.67441860465115
+      "file": "src/lib/license-revalidation.ts",
+      "hit": 44,
+      "found": 45,
+      "pct": 97.77777777777777
     },
     {
       "file": "src/lib/rag-search-tester.ts",
@@ -556,6 +562,12 @@
       "hit": 109,
       "found": 110,
       "pct": 99.0909090909091
+    },
+    {
+      "file": "src/lib/job-processor.ts",
+      "hit": 128,
+      "found": 129,
+      "pct": 99.2248062015504
     },
     {
       "file": "src/lib/cron-describe.ts",

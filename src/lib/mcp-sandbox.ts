@@ -17,7 +17,19 @@ import { statSync, readdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 
-const BASE_SANDBOX_DIR = '/var/mcp/isolated'
+/**
+ * Root for every per-org sandbox.
+ *
+ * `/var/mcp/isolated` is the production default and stays hardcoded as the shipped behaviour.
+ * `MCP_SANDBOX_DIR` exists so the isolation can be EXERCISED (its permissions asserted on a
+ * real filesystem) without writing to a host path — mocking `node:fs` instead would make the
+ * "0o700 on disk" test assert its own mock, which is the whole security claim.
+ *
+ * Read at CALL time, not at module load, so a test can point it at a temp dir after import.
+ */
+function baseSandboxDir(): string {
+  return process.env.MCP_SANDBOX_DIR || '/var/mcp/isolated'
+}
 
 export interface OrganizationalSandbox {
   orgId: string
@@ -34,7 +46,7 @@ export interface OrganizationalSandbox {
 export async function ensureOrganizationalSandbox(
   organizationId: string
 ): Promise<OrganizationalSandbox> {
-  const sandboxPath = join(BASE_SANDBOX_DIR, `org-${organizationId}`)
+  const sandboxPath = join(baseSandboxDir(), `org-${organizationId}`)
   const npxCachePath = join(sandboxPath, 'npx-cache')
   const runtimePath = join(sandboxPath, 'mcp-runtime')
   const tmpPath = join(sandboxPath, 'tmp')
@@ -44,17 +56,26 @@ export async function ensureOrganizationalSandbox(
     mkdir(sandboxPath, { recursive: true }),
     mkdir(npxCachePath, { recursive: true }),
     mkdir(runtimePath, { recursive: true }),
-    mkdir(tmpPath, { recursive: true, mode: 0o755 }),
+    mkdir(tmpPath, { recursive: true, mode: 0o700 }),
   ])
 
   // Set restrictive permissions on core directories (owner-only access)
-  // This ensures other organizations cannot access this org's data
+  // This ensures other organizations cannot access this org's data.
   await Promise.all([
     chmod(sandboxPath, 0o700),
     chmod(npxCachePath, 0o700),
     chmod(runtimePath, 0o700),
-    chmod(tmpPath, 0o1777), // Sticky bit for /tmp behavior
+    chmod(tmpPath, 0o700),
   ])
+  // ponytail: the tmp dir was chmod(0o1777) "for /tmp behavior", but MEASURED on Bun 1.3.14
+  // that silently drops the sticky bit: chmod(path, 0o1777) and chmod(path, 0o1000 | 0o777)
+  // both yield 0o777 (verified with stat; only the `chmod` SHELL binary produces 0o1777). So
+  // the mode was applied but the sticky bit never was — a comment promising a guarantee the
+  // runtime did not deliver. Rather than shelling out (fragile, and a second way to set
+  // permissions that can drift), the directory is now owner-only like its siblings. That is
+  // STRICTER than 0o1777 for cross-org safety: a 0o700 tmp is unreachable by other orgs
+  // entirely, whereas 0o1777 relies on the sticky bit to stop unlinks. The sandboxed process
+  // runs as the same user, so it keeps full use of the directory.
 
   return {
     orgId: organizationId,
@@ -108,7 +129,7 @@ export function getNpmScopeForOrg(sandbox: OrganizationalSandbox): string {
 export async function cleanupOrganizationalSandbox(
   organizationId: string
 ): Promise<void> {
-  const sandboxPath = join(BASE_SANDBOX_DIR, `org-${organizationId}`)
+  const sandboxPath = join(baseSandboxDir(), `org-${organizationId}`)
   
   try {
     await rm(sandboxPath, { recursive: true, force: true })
@@ -130,7 +151,7 @@ export async function getSandboxMetadata(
   lastActivity?: Date
   totalDirectories: number
 } | null> {
-  const sandboxPath = join(BASE_SANDBOX_DIR, `org-${organizationId}`)
+  const sandboxPath = join(baseSandboxDir(), `org-${organizationId}`)
   
   try {
     const stats = await statSync(sandboxPath)

@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3bc0c85`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `7f3c9e0`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `3bc0c85`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **85,87%** (17.026/19.828 baris, 129 file) | terukur, **belum 95%** |
-| Test suite | 167 file · **3.935 lulus · 0 gagal** | terukur |
+| Test coverage | **85,96%** (17.167/19.972 baris, 131 file) | terukur, **belum 95%** |
+| Test suite | 169 file · **3.975 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**557 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**566 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4143,6 +4143,56 @@ eksekutabelnya **94,44% (51/54)**.
 
 **Sisa 1 baris tak tercakup, dideklarasikan:** `.catch` pada `ensureOrderReconcileRepeatable`,
 hanya aktif kalau **Redis mati saat boot**.
+
+### 1.7cc Dua modul dengan **NOL test** — satunya menyimpan bug sticky bit yang tak pernah ada
+
+**`license-revalidation.ts` (63 baris) dan `mcp-sandbox.ts` (186 baris) sebelumnya TIDAK punya satu
+pun test**, dan tidak diimpor test mana pun bahkan secara transitif. Keduanya modul **permukaan
+tinggi**: yang pertama adalah pekerjaan lisensi (revenue, dua arah), yang kedua adalah isolasi
+filesystem antar-organisasi. Repo **85,87% → 85,96%**. Gate **101 → 103 modul**.
+
+**BUG PRODUK: jaminan sticky bit yang tidak pernah terpasang.** `mcp-sandbox.ts` membuat direktori
+`tmp` per-org dengan `chmod(tmpPath, 0o1777)` dan komentarnya berbunyi *"Sticky bit for /tmp
+behavior"*. **Terukur: Bun 1.3.14 membuang sticky bit.** `chmod(p, 0o1777)` → `0o40777`,
+`chmod(p, 0o1000 | 0o777)` → sama, **hanya binari shell `chmod`** yang menghasilkan `0o1777`. Jadi
+mode-nya diterapkan tapi **sticky bit-nya tidak pernah ada** — komentar menjanjikan jaminan yang
+runtime tidak berikan. Perbaikannya **tidak** menambah `execSync` (rapuh, dan jadi cara kedua
+menyetel permission yang bisa menyimpang): direktori `tmp` kini **0o700 seperti saudara-saudaranya**,
+yang untuk isolasi antar-tenant justru **lebih ketat** — tak terjangkau organisasi lain sama sekali,
+bukan "terjangkau tapi sticky".
+
+**`license-revalidation.ts` diuji lewat invarian yang komentarnya sendiri sebut load-bearing.**
+`licenseUpdateFromResult` diekstrak setelah **empat** call site hasil salin-tempel sudah menyimpang,
+dan dua invariannya dinyatakan eksplisit: (1) `licenseValidatedAt` hanya maju pada jawaban
+**terverifikasi-dan-valid** — menulisnya saat validator mati akan **menyetel ulang jendela grace
+7 hari**, sehingga pemadaman tampak seperti lisensi sehat selamanya; (2) `licenseExpiresAt` hanya
+ditulis bila jawaban bertanda tangan membawanya — menulisnya saat jaringan tersendat akan
+**menghapus metadata kedaluwarsa** yang justru dipakai pemeriksaan grace berikutnya. Keduanya kini
+punya test sendiri, plus `planFallback` (drift yang memotivasi ekstraksi itu: `license-issue`
+menulis `?? 'flat'` sementara tiga situs lain menulis `result.plan`, sehingga pembelian yang
+memvalidasi tanpa field plan **kehilangan plan berbayarnya**).
+
+**Kesalahan saya, empat kali, semuanya tertangkap:**
+1. **Mock logger yang menyesatkan.** Dua test saya mengklaim "assert logging" tapi sebenarnya
+   **meng-assert mock**: modul mencapai `scopedLogger` NYATA, jadi mock tidak pernah melihat
+   panggilannya. Saya menulis ulang keduanya menjadi **assert perilaku** (sweep tak berhenti
+   setelah satu org error; starter tidak memvalidasi inline).
+2. **`require()` dilarang eslint** — diganti import statis di luar factory, dan komentar usang
+   tentang `require()` ikut dibersihkan.
+3. **Prefix path `org-` ganda.** Test "FILE di path sandbox" saya menulis file ke `org-as-file`
+   padahal kode mencari `org-org-as-file` — jadi test itu **lulus lewat cabang yang SALAH**
+   (miss/catch, bukan guard `isDirectory()`). Persis mode kegagalan yang paling sering saya ulangi.
+4. **Test seam yang salah tempat.** Draf pertama saya mencoba menunggu `setTimeout(30_000)`;
+   saya ganti dengan seam `__runRevalidationForTest`, sehingga kegagalan berarti **sweep-nya**
+   salah, bukan timer-nya lambat.
+
+**9 kontrol negatif, semuanya menggigit:** `planFallback` dihapus (1 merah), `try/catch` per-org
+diganti rethrow (2), guard `licenseKey` null dihapus (1), filter query dihapus (1), `chmod` 0o700 →
+0o755 (1), escaping kutip tunggal dihapus (1), `HOME` tidak di-pin (1), cleanup memakai path bersama
+→ menghapus SEMUA org (1), `countDirectories` jadi dangkal (1).
+
+**Tidak ada `/var/mcp` yang dibuat** di mesin ini — seam `MCP_SANDBOX_DIR` dipakai, dibaca saat
+**panggil** bukan saat muat modul.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

@@ -9,6 +9,17 @@ import { scopedLogger } from '@/lib/logger'
 
 const log = scopedLogger('license-reval')
 
+/**
+ * Test seam: run one sweep on demand.
+ *
+ * `runRevalidation` is deliberately private, and the only ways to reach it are a 24h interval
+ * and a 30s startup delay — neither is drivable in a unit test without waiting. Exposing the
+ * sweep itself keeps the timer wiring (which IS testable) separate from the sweep logic
+ * (which is the part that decides a paying customer's license status). Mirrors
+ * `resetJwksCache` / `resetEnsuredCollections`.
+ */
+export const __runRevalidationForTest = runRevalidation
+
 export function startLicenseRevalidation(): () => void {
   const timer = setInterval(runRevalidation, REVALIDATION_INTERVAL_MS)
   // ponytail: run once on startup after 30s delay (let app boot first)

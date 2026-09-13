@@ -53,6 +53,14 @@ const FLOORS: Record<string, number> = {
   'src/app/api/billing/pricing/route.ts': 100, // measured 100.00% (11/11)
   // The MCP connection pool: LRU eviction, transport-close eviction, SSRF guards,
   // env/header decryption and the tool-result error shapes.
+  // Had NO test at all. Isolates each org's MCP filesystem namespace and pins the wrapper
+  // script's HOME/npm/TMPDIR/PATH away from the host. 95/99 executable (95.96%). Remaining
+  // uncovered lines are cleanup/metadata failure branches needing a real filesystem error.
+  'src/lib/mcp-sandbox.ts': 95, // measured 95.96% merged
+  // Had NO test at all. Sweeps every org's license and is revenue-critical in BOTH directions:
+  // too eager locks out a paying customer, too lax keeps a dead license alive. 44/45
+  // executable (97.78%). The uncovered line is the outer cycle catch.
+  'src/lib/license-revalidation.ts': 97, // measured 97.78% merged
   'src/lib/mcp-client.ts': 91, // measured 91.01% (243/267); 243/243 executable
   // SQL-injection guardrail: dangerous-function masking, the string-literal walker
   // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
