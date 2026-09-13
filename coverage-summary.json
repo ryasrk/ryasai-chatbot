@@ -1,6 +1,6 @@
 {
-  "linePct": 86.39,
-  "linesHit": 17433,
+  "linePct": 86.43,
+  "linesHit": 17442,
   "linesFound": 20180,
   "filesMeasured": 132,
   "failedTestFiles": [],
@@ -240,12 +240,6 @@
       "pct": 85.09316770186336
     },
     {
-      "file": "src/lib/db-provider-presets.ts",
-      "hit": 29,
-      "found": 34,
-      "pct": 85.29411764705883
-    },
-    {
       "file": "src/lib/errors.ts",
       "hit": 53,
       "found": 62,
@@ -456,12 +450,6 @@
       "pct": 95.91078066914498
     },
     {
-      "file": "src/lib/mcp-sandbox.ts",
-      "hit": 95,
-      "found": 99,
-      "pct": 95.95959595959596
-    },
-    {
       "file": "src/app/api/billing/orders/route.ts",
       "hit": 48,
       "found": 50,
@@ -612,6 +600,12 @@
       "pct": 100
     },
     {
+      "file": "src/lib/db-provider-presets.ts",
+      "hit": 34,
+      "found": 34,
+      "pct": 100
+    },
+    {
       "file": "src/lib/db-provider.ts",
       "hit": 3,
       "found": 3,
@@ -723,6 +717,12 @@
       "file": "src/lib/llm-budget.ts",
       "hit": 57,
       "found": 57,
+      "pct": 100
+    },
+    {
+      "file": "src/lib/mcp-sandbox.ts",
+      "hit": 99,
+      "found": 99,
       "pct": 100
     },
     {

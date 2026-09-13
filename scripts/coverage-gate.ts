@@ -56,7 +56,7 @@ const FLOORS: Record<string, number> = {
   // Had NO test at all. Isolates each org's MCP filesystem namespace and pins the wrapper
   // script's HOME/npm/TMPDIR/PATH away from the host. 95/99 executable (95.96%). Remaining
   // uncovered lines are cleanup/metadata failure branches needing a real filesystem error.
-  'src/lib/mcp-sandbox.ts': 95, // measured 95.96% merged
+  'src/lib/mcp-sandbox.ts': 100, // measured 100.00% (99/99); cleanup-rethrow and the readdir-denied path were uncovered
   // Had NO test at all. Sweeps every org's license and is revenue-critical in BOTH directions:
   // too eager locks out a paying customer, too lax keeps a dead license alive. 44/45
   // executable (97.78%). The uncovered line is the outer cycle catch.
@@ -96,7 +96,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
   'src/lib/cron.ts': 90, // measured 99.09% (109/110)
-  'src/lib/db-provider-presets.ts': 80, // measured 85.29% (29/34)
+  'src/lib/db-provider-presets.ts': 100, // measured 100.00% (34/34); the driver-selection function was never run
   'src/lib/db-provider.ts': 95, // measured 100.00% (3/3)
   'src/lib/db.ts': 85, // measured 91.67% (11/12)
   'src/lib/doc-versioning.ts': 98, // merged 100.00% (81/81); failed-restore path was uncovered

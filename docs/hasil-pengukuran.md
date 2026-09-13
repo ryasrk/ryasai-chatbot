@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2ef0453`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `5164b67`.
 
 ---
 
@@ -12,8 +12,8 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `2ef0453`.
 | Akurasi fleet trial | **518/518 = 100,00%** | terukur |
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage | **86,39%** (17.433/20.180 baris, 132 file) | terukur, **belum 95%** |
-| Test suite | 172 file · **4.082 lulus · 0 gagal** | terukur |
+| Test coverage | **86,43%** (17.442/20.180 baris, 132 file) | terukur, **belum 95%** |
+| Test suite | 172 file · **4.098 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -397,7 +397,7 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | Fetch URL tidak ditunda ke eksekusi | `admin-tools.ts:472` | 17 |
 | Endpoint `/sse` langsung ikut di-fetch | `admin-tools.ts:416` | 2 |
 
-**628 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
+**635 kontrol + 3 kontrol gate. Lima di atas menggigit; satu perilaku dinyatakan TIDAK
 terkontrol (§1.7aj).**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
@@ -4521,6 +4521,42 @@ sessions dihapus (**crash**), `catch` POST sessions dihapus (**crash**).
 **Non-kontrol yang tetap saya deklarasikan:** `passwords.ts` 34-35 butuh nilai tersimpan
 ~5,7 miliar karakter; `plan-gating.ts` dan `tool-rate-limit.ts` **sudah 100,00% eksekutabel**
 (merged 94,87% dan 92,86% adalah artefak union).
+
+### 1.7cl Fungsi pemilih DRIVER yang selalu di-mock, dan dua celah yang mustahil dijangkau sebagai root
+
+**`getDbProtocolFamily` memilih DRIVER DATABASE, dan tidak ada test yang pernah menjalankannya.**
+`connectors.ts:67` memanggilnya lalu `switch (family)` untuk membangun `PostgresConnector`,
+`MysqlConnector`, `MssqlConnector` atau `ClickHouseConnector`. Satu-satunya test yang menyentuh
+`connectors.ts` **meng-mock-nya habis-habisan** (`getDbProtocolFamily: () => 'sql'`), dan test di file
+ini hanya memeriksa **data** preset, bukan fungsinya. Ini juga mengapa fungsi itu ada sama sekali:
+`SUPABASE`, `NEON`, `COCKROACHDB`, `PLANETSCALE` dan `TIDB` **bukan literal** di union
+`DbProtocolFamily`, jadi pass-through id→family akan mengembalikan `'SUPABASE'` dan `switch` jatuh ke
+arm default. Kelimanya kini dipatok ke engine sebenarnya. **78,12% → 100,00% (34/34).**
+
+**Temuan tambahan — `getVectorStoreBackend` adalah KODE MATI.** Nol konsumen di `src/`,
+`mini-services/` dan `scripts/`; satu-satunya rujukan adalah definisinya sendiri. Saya **tidak**
+menghapusnya (keputusan produk, dan saya laporkan di sini), tapi saya patok perilakunya — termasuk
+bahwa fallback-nya mengembalikan id **apa adanya**, bukan `'INTERNAL'`, berbeda sengaja dari
+`getDbProtocolFamily` yang punya default aman.
+
+**`mcp-sandbox.ts` — dua celah yang "terlihat tertutup" padahal tidak.** Test lama untuk
+`totalDirectories: 0` memakai **symlink dangling**, tapi `readdirSync` tetap **berhasil melisting** symlink
+itu, sehingga yang menjawab adalah guard `statSync` di luar — **catch di dalam `countDirectories` tidak
+pernah jalan**. Saya buktikan dengan probe langsung bahwa sebagai **non-root**: `statSync` sukses dan
+`readdirSync` gagal `EACCES` pada `chmod 0o000` — itulah bentuk sebenarnya dari penolakan izin di
+tengah pohon. Test baru memakai bentuk itu dan **melewati diri sendiri saat uid 0**, karena sebagai root
+`chmod 0o000` dilewati dan cabangnya memang tak terjangkau — sama seperti temuan sticky bit ronde 73.
+
+**Celah kedua adalah kontrak yang penting:** `cleanupOrganizationalSandbox` **rethrow** saat `rm` gagal.
+Fungsi ini dipanggil saat organisasi dihapus, dan sukses palsu di sini berarti **melaporkan penghapusan
+bersih sementara cache paket dan file temp penyewa lain masih di disk**. Test-nya membuat direktori
+induk `0o500` sehingga `rm --recursive` tidak bisa unlink, lalu memastikan **throw terjadi DAN file
+masih ada**. **95,96% → 100,00% (99/99).**
+
+**7 kontrol, semuanya menggigit:** id→family pass-through (3 merah), fallback unknown → `MYSQL` (1),
+`SUPABASE` → `MSSQL` (1), `getVectorStoreBackend` fallback → `'INTERNAL'` (1), `QDRANT_CLOUD` →
+`MILVUS` (1), rethrow cleanup dihapus (1), catch `countDirectories` diganti throw (1).
+Repo **86,39% → 86,43%**; suite **4.082 → 4.098 lulus**.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 

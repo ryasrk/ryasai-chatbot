@@ -14,7 +14,7 @@
  * The suite uses a throwaway directory under the system temp dir.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test'
-import { mkdtemp, rm, stat, readdir, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, stat, readdir, mkdir, writeFile, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -204,6 +204,37 @@ describe('cleanupOrganizationalSandbox', () => {
     // `force: true` makes this idempotent, so a retried org deletion does not error out.
     await expect(cleanupOrganizationalSandbox('org-never-existed')).resolves.toBeUndefined()
   })
+
+  test('a cleanup that FAILS rethrows so the caller learns the sandbox SURVIVED', async () => {
+    // The catch logs and RETHROWS. That rethrow is the contract: this function is called when an org
+    // is deleted, and a silent success here would report a clean deletion while another tenant's
+    // package cache and temp files are still on disk. Reached by making the PARENT directory 0o500
+    // (read+execute, no write) so `rm --recursive` cannot unlink the child. Requires a non-root uid;
+    // as root the unlink would succeed and this test would be meaningless, so it skips there.
+    if (process.getuid?.() === 0) return
+
+    const parent = join(SANDBOX_ROOT, '..', `mcp-ro-${Date.now()}`)
+    await mkdir(parent, { recursive: true })
+    const orgId = 'org-undeletable'
+    const target = join(parent, `org-${orgId}`)
+    await mkdir(join(target, 'npx-cache'), { recursive: true })
+    await writeFile(join(target, 'npx-cache', 'pkg.bin'), 'x')
+
+    // Point the module at `parent` by overriding the env var it reads at CALL time.
+    const previousRoot = process.env.MCP_SANDBOX_DIR
+    process.env.MCP_SANDBOX_DIR = parent
+    await chmod(parent, 0o500)
+    try {
+      await expect(cleanupOrganizationalSandbox(orgId)).rejects.toThrow()
+      // The sandbox is still there -- which is exactly why the throw matters.
+      await chmod(parent, 0o700)
+      expect(await Bun.file(join(target, 'npx-cache', 'pkg.bin')).text()).toBe('x')
+    } finally {
+      await chmod(parent, 0o700).catch(() => {})
+      process.env.MCP_SANDBOX_DIR = previousRoot
+      await rm(parent, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('getSandboxMetadata', () => {
@@ -242,6 +273,35 @@ describe('getSandboxMetadata', () => {
     const meta = await getSandboxMetadata('broken-link')
     // A dangling symlink cannot be a valid sandbox, so the outer guard reports absent.
     expect(meta).toEqual({ exists: false, totalDirectories: 0 })
+  })
+
+  test('countDirectories degrades to 0 when readdir is DENIED but the path is a real directory', async () => {
+    // The catch in countDirectories. The existing dangling-symlink tests never reach it: readdirSync
+    // still LISTED a dangling link, so the outer statSync guard answered instead. Here statSync
+    // succeeds (the path IS a directory) and readdirSync fails with EACCES, which is the real shape of
+    // a permission denial partway down the tree. requires a non-root uid; as root chmod 0o000 is
+    // bypassed and the branch is unreachable, so it skips there.
+    if (process.getuid?.() === 0) return
+
+    const parent = join(SANDBOX_ROOT, '..', `mcp-noread-${Date.now()}`)
+    await mkdir(parent, { recursive: true })
+    const orgId = 'org-no-read'
+    const target = join(parent, `org-${orgId}`)
+    await mkdir(join(target, 'npx-cache', 'deep'), { recursive: true })
+    await chmod(target, 0o000)
+
+    const previousRoot = process.env.MCP_SANDBOX_DIR
+    process.env.MCP_SANDBOX_DIR = parent
+    try {
+      const meta = await getSandboxMetadata(orgId)
+      // The sandbox EXISTS -- statSync saw a directory. Only the counter degrades.
+      expect(meta?.exists).toBe(true)
+      expect(meta!.totalDirectories).toBe(0)
+    } finally {
+      await chmod(target, 0o700).catch(() => {})
+      process.env.MCP_SANDBOX_DIR = previousRoot
+      await rm(parent, { recursive: true, force: true })
+    }
   })
 
   test('metadata survives an unreadable nested directory (count degrades, exists stays true)', async () => {
