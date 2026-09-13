@@ -1,10 +1,13 @@
 {
-  "linePct": 88.08,
-  "linesHit": 21599,
-  "linesFound": 24521,
-  "fnPct": 94.35,
-  "fnsHit": 1970,
-  "fnsFound": 2088,
+  "linePct": 88.18,
+  "linesHit": 21602,
+  "linesFound": 24497,
+  "reachableLinePct": 96.2,
+  "reachableLinesHit": 18718,
+  "reachableLinesFound": 19457,
+  "fnPct": 94.61,
+  "fnsHit": 1985,
+  "fnsFound": 2098,
   "filesMeasured": 198,
   "failedTestFiles": [],
   "files": [
@@ -49,9 +52,9 @@
       "hit": 239,
       "found": 338,
       "pct": 70.71005917159763,
-      "fHit": 22,
-      "fFound": 31,
-      "fPct": 70.96774193548387
+      "fHit": 33,
+      "fFound": 39,
+      "fPct": 84.61538461538461
     },
     {
       "file": "src/lib/rag-fts.ts",
@@ -61,15 +64,6 @@
       "fHit": 15,
       "fFound": 15,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/llm-config.ts",
-      "hit": 239,
-      "found": 335,
-      "pct": 71.34328358208955,
-      "fHit": 22,
-      "fFound": 24,
-      "fPct": 91.66666666666666
     },
     {
       "file": "src/lib/real-connectors.ts",
@@ -108,6 +102,15 @@
       "fPct": 94.11764705882352
     },
     {
+      "file": "src/lib/ai.ts",
+      "hit": 416,
+      "found": 563,
+      "pct": 73.8898756660746,
+      "fHit": 44,
+      "fFound": 44,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/cognee.ts",
       "hit": 34,
       "found": 46,
@@ -117,22 +120,13 @@
       "fPct": 44.44444444444444
     },
     {
-      "file": "src/lib/ai.ts",
-      "hit": 416,
-      "found": 559,
-      "pct": 74.4186046511628,
-      "fHit": 44,
-      "fFound": 44,
-      "fPct": 100
-    },
-    {
       "file": "src/lib/rag-retrieval.ts",
       "hit": 342,
       "found": 453,
       "pct": 75.49668874172185,
-      "fHit": 51,
+      "fHit": 52,
       "fFound": 52,
-      "fPct": 98.07692307692307
+      "fPct": 100
     },
     {
       "file": "src/lib/agentic-budget.ts",
@@ -189,13 +183,22 @@
       "fPct": 96.7741935483871
     },
     {
+      "file": "src/lib/llm-config.ts",
+      "hit": 236,
+      "found": 299,
+      "pct": 78.92976588628763,
+      "fHit": 22,
+      "fFound": 24,
+      "fPct": 91.66666666666666
+    },
+    {
       "file": "src/lib/planner.ts",
       "hit": 540,
       "found": 681,
       "pct": 79.29515418502203,
-      "fHit": 46,
-      "fFound": 47,
-      "fPct": 97.87234042553192
+      "fHit": 48,
+      "fFound": 48,
+      "fPct": 100
     },
     {
       "file": "src/lib/connectors.ts",
@@ -468,6 +471,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/llm-client-utils.ts",
+      "hit": 173,
+      "found": 197,
+      "pct": 87.81725888324873,
+      "fHit": 14,
+      "fFound": 14,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/observability.ts",
       "hit": 131,
       "found": 149,
@@ -492,15 +504,6 @@
       "pct": 88.09523809523809,
       "fHit": 8,
       "fFound": 8,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/llm-client-utils.ts",
-      "hit": 167,
-      "found": 189,
-      "pct": 88.35978835978835,
-      "fHit": 13,
-      "fFound": 13,
       "fPct": 100
     },
     {
