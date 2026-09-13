@@ -1245,3 +1245,105 @@ describe('PostgresConnector.executeQuery — the read-only transaction', () => {
     expect(client.statements).toEqual([])
   })
 })
+
+// ---------------------------------------------------------------------------
+// MssqlConnector.fetchSchema — catalog reflection
+//
+// Lines 928-982 had a coverage count of exactly ZERO: the schema reflection for
+// SQL Server had never executed once. The pool stub below answers the two catalog
+// queries (sys.partitions for row counts, INFORMATION_SCHEMA for columns/PK/FK)
+// plus the enrichment query, so the assembly path is exercised as written.
+// ---------------------------------------------------------------------------
+
+describe('MssqlConnector.fetchSchema', () => {
+  interface Rec { recordset?: unknown[]; rows?: unknown[] }
+
+  function stubMssqlPool(respond: (sql: string) => Rec) {
+    const calls: string[] = []
+    const request = () => ({
+      input: () => ({ query: async (sql: string) => { calls.push(sql); return respond(sql) } }),
+      query: async (sql: string) => { calls.push(sql); return respond(sql) },
+    })
+    return {
+      calls,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      request: request as any,
+      async connect() { return this },
+      async close() {},
+    }
+  }
+
+  function withPool(pool: ReturnType<typeof stubMssqlPool>) {
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    ;(c as unknown as { _pool: unknown })._pool = pool
+    return c
+  }
+
+  test('a reflected table gets its columns, PK, FK target and row count', async () => {
+    const pool = stubMssqlPool((sql) => {
+      if (sql.includes('sys.partitions')) {
+        return { recordset: [{ table_name: 'orders', row_count: 7 }] }
+      }
+      if (sql.includes('INFORMATION_SCHEMA.COLUMNS')) {
+        return {
+          recordset: [
+            { table_name: 'orders', column_name: 'id', data_type: 'int', is_nullable: 'NO', is_pk: 1, fk_ref_table: null, fk_ref_column: null },
+            { table_name: 'orders', column_name: 'customer_id', data_type: 'int', is_nullable: 'YES', is_pk: 0, fk_ref_table: 'customers', fk_ref_column: 'id' },
+          ],
+        }
+      }
+      return { recordset: [] }
+    })
+
+    const tables = await withPool(pool).fetchSchema()
+    const orders = tables.find((t) => t.tableName === 'orders')
+    expect(orders?.rowCount).toBe(7)
+    expect(orders?.columns[0]).toMatchObject({ name: 'id', primaryKey: true, notNull: true })
+    expect(orders?.columns[1]).toMatchObject({ name: 'customer_id', notNull: false })
+    // MEASURED: foreignKey is the dotted STRING 'customers.id', not an object.
+    // The FK target is what lets the planner JOIN across tables; dropping it here
+    // silently costs relationship awareness rather than erroring.
+    expect(orders?.columns[1].foreignKey).toBe('customers.id')
+  })
+
+  test('the catalog queries are schema-scoped and use the sys.partitions estimate', async () => {
+    const pool = stubMssqlPool(() => ({ recordset: [] }))
+    await withPool(pool).fetchSchema()
+    const rowCountSql = pool.calls.find((s) => s.includes('sys.partitions'))
+    expect(rowCountSql).toBeDefined()
+    // Counting rows with COUNT(*) on every table would be a full scan per table.
+    expect(rowCountSql).not.toContain('COUNT(*)')
+    expect(pool.calls.every((s) => !s.includes('SELECT 1'))).toBe(true)
+  })
+
+  test('the schema defaults to dbo when the config omits it', async () => {
+    const seen: string[][] = []
+    const pool = stubMssqlPool(() => ({ recordset: [] }))
+    const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
+    ;(c as unknown as { _pool: unknown })._pool = {
+      request: () => ({
+        input(name: string, value: unknown) { seen.push([name, String(value)]); return { query: async () => ({ recordset: [] }) } },
+      }),
+      async connect() { return this },
+      async close() {},
+    }
+    await c.fetchSchema()
+    // SQL Server's default schema is dbo, not public — querying for the wrong one
+    // returns an empty schema that looks like an empty database.
+    expect(seen.some(([n, v]) => n === 'schema' && v === 'dbo')).toBe(true)
+  })
+
+  test('an empty catalog yields no tables rather than throwing', async () => {
+    const pool = stubMssqlPool(() => ({ recordset: [] }))
+    await expect(withPool(pool).fetchSchema()).resolves.toEqual([])
+  })
+
+  test('a non-zero index_id filter is applied so row counts do not double-count', async () => {
+    const pool = stubMssqlPool(() => ({ recordset: [] }))
+    await withPool(pool).fetchSchema()
+    const rowCountSql = pool.calls.find((s) => s.includes('sys.partitions'))!
+    // index_id IN (0, 1) is heap + clustered index; without it every non-clustered
+    // index contributes its own copy of the row count and the estimate multiplies.
+    expect(rowCountSql).toMatch(/index_id\s+IN\s*\(0,\s*1\)/)
+  })
+})

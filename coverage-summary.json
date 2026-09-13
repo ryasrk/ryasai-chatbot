@@ -1,6 +1,6 @@
 {
-  "linePct": 80.43,
-  "linesHit": 15824,
+  "linePct": 80.55,
+  "linesHit": 15847,
   "linesFound": 19674,
   "filesMeasured": 128,
   "failedTestFiles": [],
@@ -126,16 +126,16 @@
       "pct": 69.86301369863014
     },
     {
-      "file": "src/lib/real-connectors.ts",
-      "hit": 662,
-      "found": 937,
-      "pct": 70.65101387406617
-    },
-    {
       "file": "src/lib/otel.ts",
       "hit": 35,
       "found": 49,
       "pct": 71.42857142857143
+    },
+    {
+      "file": "src/lib/real-connectors.ts",
+      "hit": 685,
+      "found": 937,
+      "pct": 73.10565635005337
     },
     {
       "file": "src/lib/rag-retrieval.ts",

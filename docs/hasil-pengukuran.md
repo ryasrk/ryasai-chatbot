@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f92b289`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `6d28e34`.
 
 ---
 
@@ -13,7 +13,7 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `f92b289`.
 | Token speed (loopback) | **403,2 tok/s**, TTFT 1.841 ms | terukur |
 | Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
 | Test coverage | **80,37%** (15.812/19.674 baris, 128 file) | terukur, **belum 95%** |
-| Test suite | 158 file · **3.284 lulus · 0 gagal** | terukur |
+| Test suite | 158 file · **3.296 lulus · 0 gagal** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Target 95% coverage TIDAK tercapai dan masih jauh.** Itu dicatat apa adanya di
@@ -76,7 +76,8 @@ berasal dari kolom fungsi kini ditandai eksplisit, sehingga tidak ada klaim
 | `src/lib/tool-branches.ts` | 50,58% (75,00% fungsi) | **99,84% per-file / 83,88% merged** (baris), 100,00% (fungsi) | 47 |
 | `src/lib/admin-tools.ts` | 81,78% merged | **96,49%** (3 file, satu proses) / **97,01%** (5 file) — lihat §1.7w | 39 |
 | `src/lib/planner.ts` | 75,77% → **77,53%** merged | 77,53% (union 5 file) | 28 |
-| **Total repo** | **62,44%** | **80,43%** | — |
+| `src/lib/real-connectors.ts` | 70,65% → **73,11%** merged | 73,89% (union 4 file) | 99 |
+| **Total repo** | **62,44%** | **80,55%** | — |
 
 Delapan modul dengan garis belum tertutup terbanyak (target berikutnya):
 `real-connectors.ts` (327 baris, butuh DB hidup untuk jalur MySQL/MSSQL/ClickHouse
@@ -233,8 +234,14 @@ alasan yang salah. Sejak itu setiap kontrol selalu diverifikasi lewat grep dulu.
 | `confirmationRequired` diperlakukan sebagai error | `planner.ts:554` | 1 |
 | Alasan error dikosongkan pada kegagalan | `planner.ts:568` | 1 |
 | `isStepConfirmed` di-hardcode `true` | `planner.ts:485` | seluruh file |
+| `SET TRANSACTION READ ONLY` dihapus | `real-connectors.ts:663` | 1 |
+| `COMMIT` dihapus | `real-connectors.ts:678` | 1 |
+| `ROLLBACK` dihapus | `real-connectors.ts:685` | 1 |
+| `foreignKey` selalu `undefined` (relasi antar tabel hilang) | `real-connectors.ts:425` | 2 |
+| Default schema MSSQL `dbo` → `public` | `real-connectors.ts:933` | 1 |
+| Filter `index_id IN (0,1)` dilonggarkan | `real-connectors.ts:942` | 1 |
 
-**134 kontrol + 3 kontrol gate, semuanya sah.**
+**140 kontrol + 3 kontrol gate, semuanya sah.**
 
 ### 1.2a Ringkasan kontrol negatif per kategori
 
@@ -1194,6 +1201,54 @@ penyebutnya akan **menghapus 125 baris nyata** dari laporan dan membuat gate **l
 longgar secara palsu**. Perbaikan itu **dibatalkan**, dan cara ukur yang saya pakai
 sekarang (union `DA:` dari semua file test terkait) **harus** dipakai untuk memilih
 target — ia menghasilkan **77,53%** untuk `planner.ts`, **cocok persis** dengan merged.
+
+### 1.7x `real-connectors.ts`: 70,65% → 73,11% merged (685/937)
+
+**Dua temuan berbeda dari satu modul, dan yang pertama bukan tentang angka.**
+
+**(a) Cakupan tinggi, kontrol NOL — `SET TRANSACTION READ ONLY`.** Komentar sumber
+mengklaim *"Read-only is enforced by the DATABASE, not by the scanner: `SET TRANSACTION
+READ ONLY` makes the server itself reject writes and DDL"*. Itu **klaim keamanan**, dan
+**tidak ada test di belakangnya**. Baris `BEGIN` / `SET TRANSACTION READ ONLY` /
+`SET LOCAL statement_timeout` / `COMMIT` / `ROLLBACK` **sudah dieksekusi** — baris 675
+sendirian `hit=156` — tapi `grep` tidak menemukan **satu pun** assertion tentang
+`BEGIN`, `READ ONLY`, `COMMIT`, atau `ROLLBACK` di luar fixture string. Baris itu
+tercapai **sebagai efek samping** test lain.
+
+**Diukur, dan inilah intinya:** dengan file test lama saja, menghapus
+`SET TRANSACTION READ ONLY`, menghapus `COMMIT`, atau menghapus `ROLLBACK`
+masing-masing menyisakan **87 lulus / 0 gagal** — **tidak terdeteksi sama sekali**.
+Dengan assertion baru, ketiga suntingan yang sama **masing-masing menggagalkan test
+yang dituju**. Yang sekarang dipin: **urutan** statement (BEGIN → READ ONLY → query →
+COMMIT), bukan hanya hasil akhirnya, karena COMMIT sebelum query atau SET yang hilang
+akan membuat **semua** assertion berbasis hasil **tetap lulus**; plus
+`statement_timeout`, `release()` pada sukses **dan** gagal, `ROLLBACK` dengan error
+**asli** di-rethrow dan **tanpa** `COMMIT`, fallback `rowCount`, normalisasi `Date`
+(Date tidak selamat dari `JSON.stringify` ke prompt LLM), dan bahwa query yang ditolak
+guard **tidak mengirim SQL sama sekali**.
+
+Commit ini menambah **NOL baris cakupan** untuk bagian ini dan pesan commitnya
+mengatakan demikian. **Total repo tidak bergerak** karena bagian ini. Nilainya adalah
+**kontrol**, bukan persentase — dan membiarkannya tak teruji berarti klaim keamanan itu
+**tidak bisa dibuktikan**.
+
+**(b) `MssqlConnector.fetchSchema` benar-benar nol — 23 baris baru.** Baris **928-982**
+punya hit **tepat nol**: refleksi katalog SQL Server belum pernah dijalankan sekali pun.
+Diuji: tabel tercermin dengan kolom/PK/**target FK**/row count; query katalog
+**schema-scoped**; default schema **`dbo`** (bukan `public` — SQL Server tidak punya
+`public`, dan salah schema mengembalikan katalog **kosong** yang terlihat seperti
+**database kosong**); katalog kosong → `[]` tanpa throw; dan filter
+**`index_id IN (0, 1)`** (heap + clustered index) — tanpanya **setiap** indeks
+non-clustered menyumbang salinan row count-nya sendiri dan estimasi **berlipat**.
+
+**Satu asumsi saya yang salah, dikoreksi oleh data:** `foreignKey` adalah **string
+bertitik** `'customers.id'`, **bukan** objek `{table, column}`. Saya menulis
+`toMatchObject({table, column})` dan test gagal; dump hasilnya menunjukkan bentuk
+sebenarnya. Assertion kini memakai bentuk yang **terukur**.
+
+Kontrol negatif: **3** untuk bagian (b), masing-masing menggagalkan test yang dituju
+(kontrol FK menggagalkan **dua** test — Postgres dan MSSQL — jadi FK kini dijaga di
+dua jalur), dan **3** untuk bagian (a) yang **tidak menggigit sebelum** perubahan ini.
 
 ### 1.8 Pelajaran metodologi: kontrol negatif yang "lulus" karena salah sasaran
 
