@@ -1,13 +1,13 @@
 {
-  "linePct": 88.18,
-  "linesHit": 21602,
-  "linesFound": 24497,
-  "reachableLinePct": 96.2,
-  "reachableLinesHit": 18718,
-  "reachableLinesFound": 19457,
-  "fnPct": 94.61,
-  "fnsHit": 1985,
-  "fnsFound": 2098,
+  "linePct": 88.17,
+  "linesHit": 21633,
+  "linesFound": 24536,
+  "reachableLinePct": 96.19,
+  "reachableLinesHit": 18745,
+  "reachableLinesFound": 19487,
+  "fnPct": 94.66,
+  "fnsHit": 1987,
+  "fnsFound": 2099,
   "filesMeasured": 198,
   "failedTestFiles": [],
   "files": [
@@ -48,15 +48,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/tool-router.ts",
-      "hit": 239,
-      "found": 338,
-      "pct": 70.71005917159763,
-      "fHit": 33,
-      "fFound": 39,
-      "fPct": 84.61538461538461
-    },
-    {
       "file": "src/lib/rag-fts.ts",
       "hit": 109,
       "found": 154,
@@ -66,13 +57,22 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/tool-router.ts",
+      "hit": 253,
+      "found": 355,
+      "pct": 71.26760563380282,
+      "fHit": 34,
+      "fFound": 39,
+      "fPct": 87.17948717948718
+    },
+    {
       "file": "src/lib/real-connectors.ts",
-      "hit": 685,
-      "found": 942,
-      "pct": 72.7176220806794,
-      "fHit": 97,
-      "fFound": 102,
-      "fPct": 95.09803921568627
+      "hit": 700,
+      "found": 962,
+      "pct": 72.76507276507277,
+      "fHit": 98,
+      "fFound": 103,
+      "fPct": 95.14563106796116
     },
     {
       "file": "src/lib/doc-versioning.ts",
@@ -1345,8 +1345,8 @@
     },
     {
       "file": "src/app/api/routing/scores/route.ts",
-      "hit": 10,
-      "found": 10,
+      "hit": 12,
+      "found": 12,
       "pct": 100,
       "fHit": 2,
       "fFound": 2,

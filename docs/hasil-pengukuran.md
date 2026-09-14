@@ -6759,7 +6759,17 @@ indeksnya diuji tepat, sehingga memindahkannya ke sisi mana pun gagal.
    "satu statement tidak bisa mengkonfigurasi ulang sesi" belum diuji pada
    ClickHouse/SQLite/MySQL. Yang diuji adalah penolakan di sisi scanner, yang
    berlaku untuk semua dialek, tapi jalur eksekusinya hanya Postgres.
-8. **Perbaikan D2 memperketat akses, dan bisa mematahkan integrasi yang ada.**
+8. **Ada flake yang jarang di runner coverage.** Dari tiga run
+   `bun scripts/coverage.ts` berturut-turut, satu melaporkan
+   `src/lib/mcp-installer.test.ts` gagal (41/41 lulus saat dijalankan sendiri,
+   3/3 lulus dengan instrumentasi lcov, dan lulus lagi di run berikutnya).
+   Penyebabnya belum ditentukan; `Bun.spawn` di runner mengabaikan stderr
+   (`stderr: 'ignore'`), jadi pesan aslinya tidak tersimpan. Yang penting untuk
+   angka: **hits-nya identik** di ketiga run (96,19% reachable), sehingga flake ini
+   tidak mengubah hasil pengukuran — ia hanya menandai file sebagai "gagal" di log.
+   Belum diperbaiki: menyimpan stderr akan membuat penyebabnya terlihat, dan itu
+   perubahan pada runner, bukan pada kode.
+9. **Perbaikan D2 memperketat akses, dan bisa mematahkan integrasi yang ada.**
    Siapa pun yang memanggil `GET /api/routing/scores` dengan peran `viewer` atau
    `analyst` kini menerima **403**. Itu memang tujuannya, tapi bila ada dashboard
    atau skrip operator yang bergantung padanya, ia perlu dinaikkan ke `admin`.
