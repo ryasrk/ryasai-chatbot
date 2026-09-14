@@ -405,12 +405,41 @@ describe('assertSelectOnly', () => {
   })
 
   test('the rejection message never echoes the offending SQL back', () => {
-    try {
-      assertSelectOnly("SELECT 1; DROP TABLE users -- secret")
-      throw new Error('should have thrown')
-    } catch (e) {
-      expect((e as Error).message).toBe('Only SELECT/WITH queries are permitted.')
-      expect((e as Error).message).not.toContain('DROP')
+    // The MESSAGE may be either refusal now (a batch is caught by the single-statement guard, which
+    // runs first), so this asserts the SET of allowed messages rather than one exact string. What
+    // must not change is the security property: the refusal never quotes the input.
+    const allowed = new Set([
+      'Only SELECT/WITH queries are permitted.',
+      'Only a single SQL statement is permitted.',
+    ])
+    // Only inputs that `assertSelectOnly` ITSELF refuses. `SELECT pg_read_file(chr(47))` was
+    // originally in this list and made the test red for the wrong reason: that call is legal for this
+    // scanner and is refused by `assertNoDangerousFunctions`, a different layer. Asserting it here
+    // would have pinned a false claim about which guard catches what.
+    const inputs = [
+      "SELECT 1; DROP TABLE users -- secret",
+      'DROP TABLE users',
+      'SELECT 1; SELECT 2',
+      'UPDATE t SET x = 1',
+    ]
+    // Collect OUTSIDE any try/catch: a `throw new Error('should have thrown')` inside the try would
+    // be caught by the same catch and its message -- which quotes the SQL -- inspected as though it
+    // were the guard's, which is a self-referential trap that reads as a leak.
+    const results: Array<[string, boolean, string]> = inputs.map((sql) => {
+      try {
+        assertSelectOnly(sql)
+        return [sql, false, '']
+      } catch (e) {
+        return [sql, true, (e as Error).message]
+      }
+    })
+    for (const [sql, threw, msg] of results) {
+      expect([sql, threw, msg ? 'refused' : 'allowed']).toEqual([sql, true, 'refused'])
+      expect([msg, allowed.has(msg)]).toEqual([msg, true])
+      // Nothing from the query may ride along: not a keyword, not an identifier, not a literal.
+      for (const leak of ['DROP', 'users', 'secret', 'SELECT 1', 'UPDATE', 't SET']) {
+        expect([msg, msg.includes(leak)]).toEqual([msg, false])
+      }
     }
   })
 
