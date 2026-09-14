@@ -73,7 +73,11 @@ function salesCases(): CrossCase[] {
     ['Berapa pesanan yang berstatus selesai?', SALES.selesai, ['Hitung pesanan selesai.', 'Ada berapa order selesai?', 'Pesanan dengan status selesai jumlahnya berapa?', 'Berapa yang sudah selesai diproses?']],
     ['Berapa pesanan dengan status diproses?', SALES.diproses, ['Ada berapa pesanan yang sedang diproses?', 'Hitung order berstatus diproses.', 'Jumlah pesanan diproses berapa?']],
     ['Berapa pesanan berstatus dibatalkan?', SALES.dibatalkan, ['Ada berapa order yang dibatalkan?', 'Hitung pesanan batal.', 'Jumlah pesanan dibatalkan berapa?']],
-    ['Berapa jumlah produk yang dijual?', SALES.produk, ['Ada berapa produk di data penjualan?', 'Hitung total produk.', 'Berapa banyak barang yang dijual?']],
+    // 'jumlah produk yang dijual' was ambiguous: the table holds 7 product ROWS but 71
+    // UNITS sold (SUM(qty)), and the model answered 71 -- a defensible reading of a
+    // question with two correct answers. Measured across 3 trials it failed every time.
+    // Phrased to name the row count unambiguously.
+    ['Berapa banyak jenis produk yang terdaftar di database penjualan?', SALES.produk, ['Ada berapa produk di data penjualan?', 'Hitung total baris tabel produk.', 'Berapa jumlah produk yang terdaftar?']],
     ['Berapa baris item pesanan yang tercatat?', SALES.item, ['Ada berapa item pesanan?', 'Hitung pesanan_item.', 'Jumlah baris pesanan_item berapa?']],
   ]
   const out: CrossCase[] = []
@@ -85,7 +89,11 @@ function salesCases(): CrossCase[] {
       id: `S${String(out.length + 1).padStart(3, '0')}`,
       family: 'SQL_SALES',
       source: 'SQL',
-      question: i < specs.length ? q : `${q} (bagian ${i + 1})`,
+      // The '(bagian N)' suffix was appended to distinguish repeated questions, but the
+      // model read it as conversation history: 'bagian 27 ini melanjutkan pembahasan'
+      // then refused, inventing a prior turn that never happened. Three variants are
+      // already distinct, and the id carries the index, so the suffix is dropped.
+      question: q,
       accept: n(value),
       reject: DEMO_NUMBERS,
     })
