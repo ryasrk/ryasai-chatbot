@@ -213,13 +213,57 @@ export async function readCompletionBody(res: Response): Promise<unknown> {
       try { chunks.push(JSON.parse(payload) as Record<string, unknown>) } catch { /* skip malformed line */ }
     }
     if (chunks.length === 0) throw parseError
-    // Prefer the last chunk that actually carries assistant content; fall back to the
-    // last chunk seen so a usage-only trailer still yields a body the caller can read.
-    const withContent = [...chunks].reverse().find((c) => {
+    // CONCATENATE every content-bearing chunk. Returning only the last one was wrong:
+    // a streamed reply is delivered in FRAGMENTS, so keeping the final content chunk
+    // yields a TRUNCATED tail, not the message. MEASURED after fixing the
+    // message-vs-delta field mismatch: a 66-character reply came back as the final
+    // fragment ``daftar memerlukan query agregasi data terstruktur dari database."}``,
+    // which parsed as neither JSON nor a usable answer. Joining the fragments rebuilds
+    // the complete message.
+    const pieces: string[] = []
+    let lastChunk: Record<string, unknown> | null = null
+    let sawContent = false
+    for (const c of chunks) {
       const choice = (c.choices as Array<{ delta?: { content?: unknown }; message?: { content?: unknown } }> | undefined)?.[0]
-      return typeof choice?.delta?.content === 'string' || typeof choice?.message?.content === 'string'
-    })
-    return withContent ?? chunks[chunks.length - 1]
+      const delta = choice?.delta?.content
+      const message = choice?.message?.content
+      // `message.content` on a NON-streamed body is the whole answer, so it wins over
+      // any accumulated fragments and must not be concatenated with them.
+      if (typeof message === 'string') {
+        pieces.length = 0
+        pieces.push(message)
+        sawContent = true
+        lastChunk = c
+        break
+      }
+      if (typeof delta === 'string') {
+        pieces.push(delta)
+        sawContent = true
+        lastChunk = c
+      }
+    }
+    if (!sawContent) return chunks[chunks.length - 1]
+    // Rebuild a body shaped like a non-streamed reply so every caller reads one shape:
+    // `choices[0].message.content` holds the joined text, and the trailing metadata of
+    // the last chunk (usage, finish_reason, model) is preserved.
+    // Metadata comes from the LAST chunk seen, not the last CONTENT chunk: a streamed
+    // reply puts `usage` and the terminal `finish_reason` on a trailer that carries no
+    // text. Using the last content chunk instead silently dropped BOTH, which would
+    // zero out token accounting -- `chatOnce` reads `data.usage` for promptTokens and
+    // completionTokens. Verified by test rather than assumed.
+    const base = (chunks[chunks.length - 1] ?? lastChunk) as Record<string, unknown>
+    const baseChoices = (base.choices as Array<Record<string, unknown>> | undefined) ?? [{}]
+    const contentChoice = (lastChunk?.choices as Array<Record<string, unknown>> | undefined)?.[0] ?? {}
+    return {
+      ...base,
+      choices: [
+        {
+          ...baseChoices[0],
+          ...contentChoice,
+          message: { content: pieces.join('') },
+        },
+      ],
+    }
   }
 }
 

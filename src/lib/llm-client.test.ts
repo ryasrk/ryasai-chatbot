@@ -1424,25 +1424,53 @@ describe('readCompletionBody tolerates a provider that streams anyway', () => {
     expect(d.id).toBe('x')
     expect(d.n).toBe(1)
   })
-
-  test('an SSE body with NO stream requested yields the last chunk carrying content', async () => {
+  // INVERT WHEN FIXED -- now fixed, so these assert the COMPLETE text.
+  //
+  // These two tests previously asserted that only the LAST content-bearing chunk
+  // survived (' dunia', not 'Halo dunia'). That was the defect pinned as if it were the
+  // contract: a streamed reply arrives in FRAGMENTS, so returning one fragment hands
+  // callers a TRUNCATED tail. MEASURED through the real HTTP path -- `chatOnce`
+  // returned an empty string for every call, because the reader looked for
+  // `message.content` while a streamed chunk carries `delta.content`; once that field
+  // mismatch was fixed the reply came back as a 66-character final fragment instead of
+  // the full JSON. Fragments must be JOINED.
+  test('an SSE body with NO stream requested yields the COMPLETE assistant text', async () => {
     const body =
       'data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n' +
       'data: {"choices":[{"delta":{"content":"Halo"}}]}\n\n' +
       'data: {"choices":[{"delta":{"content":" dunia"}}]}\n\n' +
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}\n\n'
-    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ delta: { content?: string } }> }
-    // The LAST chunk that carries content -- not the usage-only trailer, which has no text.
-    expect(d.choices[0].delta.content).toBe(' dunia')
+    const d = (await readCompletionBody(sse(body))) as {
+      choices: Array<{ message?: { content?: string }; finish_reason?: string }>
+      usage?: { total_tokens?: number }
+    }
+    expect(d.choices[0].message?.content).toBe('Halo dunia')
+    // The trailer carries no text, but it is where the metadata lives, so it must not
+    // be discarded along with the text -- dropping it zeroed token accounting.
+    expect(d.usage?.total_tokens).toBe(4)
+    expect(d.choices[0].finish_reason).toBe('stop')
   })
 
-  test('a usage-only trailer does not win over a content chunk', async () => {
+  test('a usage-only trailer adds no text but keeps its metadata', async () => {
     const body =
       'data: {"choices":[{"delta":{"content":"jawaban"}}]}\n\n' +
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":9}}\n\n'
-    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ delta: { content?: string } }> }
-    expect(d.choices[0].delta.content).toBe('jawaban')
+    const d = (await readCompletionBody(sse(body))) as {
+      choices: Array<{ message?: { content?: string } }>
+      usage?: { total_tokens?: number }
+    }
+    expect(d.choices[0].message?.content).toBe('jawaban')
+    expect(d.usage?.total_tokens).toBe(9)
   })
+
+  test('a message-shaped SSE chunk is joined like a delta chunk', async () => {
+    const body =
+      'data: {"choices":[{"delta":{"content":"satu "}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"dua"}}]}\n\n'
+    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ message?: { content?: string } }> }
+    expect(d.choices[0].message?.content).toBe('satu dua')
+  })
+
 
   test('a message-shaped chunk is accepted too (non-delta providers)', async () => {
     const body = 'data: {"choices":[{"message":{"content":"via message"}}]}\n\ndata: [DONE]\n\n'

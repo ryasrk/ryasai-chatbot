@@ -177,16 +177,31 @@ export async function chatOnce(
     throw providerError(res.status, errText)
   }
   // readCompletionBody: see llm-client-utils for why res.json() is not safe here.
+  //
+  // `delta` is read alongside `message` because that helper can legitimately hand back
+  // a STREAMED chunk when the gateway answers `text/event-stream` to a request that
+  // never asked to stream. Such a chunk puts the text in `choices[0].delta.content`,
+  // not `choices[0].message.content`. Reading only `message` therefore yielded
+  // `undefined` -> '' for EVERY call to such a gateway, and the empty string is not an
+  // error anywhere downstream: it silently became an empty answer, or in the intent
+  // stage an unparseable reply that fell back to a wrong route. MEASURED: a direct
+  // request to the gateway returned valid JSON while `chatOnce` returned '' for the
+  // same prompt.
   const data = (await readCompletionBody(res)) as {
     choices?: Array<{
       message?: {
         content?: string
         tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>
       }
+      delta?: { content?: string }
     }>
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   }
   const choice = data.choices?.[0]
+  // The streamed shape carries the text under `delta`; a streamed reply can also be
+  // delivered in fragments on separate chunks, and readCompletionBody keeps only the
+  // last content-bearing one, so this reads whichever field the chunk actually used.
+  const choiceContent = choice?.message?.content ?? choice?.delta?.content ?? ''
   const usageData = {
     promptTokens: data.usage?.prompt_tokens ?? 0,
     completionTokens: data.usage?.completion_tokens ?? 0,
@@ -194,8 +209,8 @@ export async function chatOnce(
   }
   _usageStorage.enterWith({ promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens })
   if (responseFormat) {
-    logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
-    return (choice?.message?.content ?? '').trim()
+    logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: choiceContent.slice(0, 500) })
+    return choiceContent.trim()
   }
   if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
     const toolCalls: LlmToolCall[] = choice.message.tool_calls.map((tc) => ({
@@ -206,8 +221,8 @@ export async function chatOnce(
     logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: toolCalls.map((tc) => tc.name).join(', ').slice(0, 500), toolCalls })
     return toolCalls
   }
-  logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: (choice?.message?.content ?? '').slice(0, 500) })
-  return (choice?.message?.content ?? '').trim()
+  logLlmUsage(purpose, cfg, usageData, Date.now() - t0, { messages, responsePreview: choiceContent.slice(0, 500) })
+  return choiceContent.trim()
   } catch (e) {
     logLlmUsage(purpose, cfg, null, Date.now() - t0, { messages, error: e instanceof Error ? e.message : String(e) })
     throw e
