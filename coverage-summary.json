@@ -1,10 +1,10 @@
 {
-  "linePct": 88.11,
-  "linesHit": 21654,
-  "linesFound": 24577,
+  "linePct": 88.09,
+  "linesHit": 21672,
+  "linesFound": 24601,
   "reachableLinePct": 96.2,
-  "reachableLinesHit": 18763,
-  "reachableLinesFound": 19505,
+  "reachableLinesHit": 18779,
+  "reachableLinesFound": 19521,
   "fnPct": 94.67,
   "fnsHit": 1990,
   "fnsFound": 2102,
@@ -516,6 +516,15 @@
       "fPct": 83.33333333333334
     },
     {
+      "file": "src/lib/llm-client.ts",
+      "hit": 274,
+      "found": 309,
+      "pct": 88.67313915857605,
+      "fHit": 22,
+      "fFound": 23,
+      "fPct": 95.65217391304348
+    },
+    {
       "file": "src/lib/plugin-selector.ts",
       "hit": 181,
       "found": 204,
@@ -541,15 +550,6 @@
       "fHit": 5,
       "fFound": 6,
       "fPct": 83.33333333333334
-    },
-    {
-      "file": "src/lib/llm-client.ts",
-      "hit": 269,
-      "found": 298,
-      "pct": 90.26845637583892,
-      "fHit": 22,
-      "fFound": 23,
-      "fPct": 95.65217391304348
     },
     {
       "file": "src/lib/citation-trail.ts",
@@ -841,8 +841,8 @@
     },
     {
       "file": "src/lib/constants.ts",
-      "hit": 21,
-      "found": 21,
+      "hit": 34,
+      "found": 34,
       "pct": 100,
       "fHit": 1,
       "fFound": 1,

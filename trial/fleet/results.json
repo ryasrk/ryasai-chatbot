@@ -8,7 +8,7 @@
     "note": "DDL",
     "pass": true,
     "reason": "blocked (Only SELECT/WITH is allowed. Found: DROP)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-gb-1",
@@ -41,7 +41,7 @@
     "note": "insert",
     "pass": true,
     "reason": "blocked (Only SELECT/WITH is allowed. Found: INSE)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-gb-4",
@@ -283,7 +283,7 @@
     "note": "plain select",
     "pass": true,
     "reason": "allowed",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-ga-1",
@@ -547,7 +547,7 @@
     "note": "literal",
     "pass": true,
     "reason": "allowed",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-0",
@@ -558,7 +558,7 @@
     "note": "empty",
     "pass": true,
     "reason": "ok (0 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-1",
@@ -624,7 +624,7 @@
     "note": "ampersand",
     "pass": true,
     "reason": "ok (4 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-7",
@@ -668,7 +668,7 @@
     "note": "emoji",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-11",
@@ -701,7 +701,7 @@
     "note": "very long",
     "pass": true,
     "reason": "ok (1 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-14",
@@ -767,7 +767,7 @@
     "note": "chinese",
     "pass": true,
     "reason": "ok (1 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-20",
@@ -1119,7 +1119,7 @@
     "note": "empty prompt",
     "pass": true,
     "reason": "ok (empty input -> empty output)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D2-p-1",
@@ -1163,7 +1163,7 @@
     "note": "100k chars",
     "pass": true,
     "reason": "ok (100322 chars, fence balanced)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D2-p-5",
@@ -2043,7 +2043,7 @@
     "note": "safe fn array_agg",
     "pass": true,
     "reason": "allowed",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-fn-a-17",
@@ -2615,7 +2615,7 @@
     "note": "table order_items",
     "pass": true,
     "reason": "allowed",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-tbl-14",
@@ -2670,7 +2670,7 @@
     "note": "shared tokenizer",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 0
+    "ms": 3
   },
   {
     "id": "D1-tok-3",
@@ -2846,7 +2846,7 @@
     "note": "shared tokenizer",
     "pass": true,
     "reason": "ok (3 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-tok-19",
@@ -4199,7 +4199,7 @@
     "note": "1/**/or/**/1=1 via carrier 6",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-inj-6-7",
@@ -4243,7 +4243,7 @@
     "note": "0x27 or 1=1 via carrier 2",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-inj-7-3",
@@ -5486,7 +5486,7 @@
     "note": "realistic bilingual question",
     "pass": true,
     "reason": "ok (4 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-q-13",
@@ -5618,7 +5618,7 @@
     "note": "fence matrix",
     "pass": true,
     "reason": "ok (339 chars, fence balanced)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D2-fence2-9",
