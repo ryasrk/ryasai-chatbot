@@ -1,0 +1,2089 @@
+{
+  "summary": {
+    "full": {
+      "total": 100,
+      "pass": 96,
+      "accuracy": "96.00%",
+      "dataQuestions": 40,
+      "dataPass": 37,
+      "dataAccuracy": "92.50%",
+      "latencyP50": 6302,
+      "latencyP90": 11879,
+      "ttftP50": 4789,
+      "byFamily": {
+        "DB": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "DOC": {
+          "n": 20,
+          "pass": 17,
+          "acc": "85.00%"
+        },
+        "GREET": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "GENERAL": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "TRAP": {
+          "n": 20,
+          "pass": 19,
+          "acc": "95.00%"
+        }
+      }
+    },
+    "simple": {
+      "total": 100,
+      "pass": 97,
+      "accuracy": "97.00%",
+      "dataQuestions": 40,
+      "dataPass": 39,
+      "dataAccuracy": "97.50%",
+      "latencyP50": 4728,
+      "latencyP90": 9389,
+      "ttftP50": 3554,
+      "byFamily": {
+        "DB": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "DOC": {
+          "n": 20,
+          "pass": 19,
+          "acc": "95.00%"
+        },
+        "GREET": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "GENERAL": {
+          "n": 20,
+          "pass": 20,
+          "acc": "100.00%"
+        },
+        "TRAP": {
+          "n": 20,
+          "pass": 18,
+          "acc": "90.00%"
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "B01",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7223,
+      "ttftMs": 5686,
+      "answer": "Jumlah pelanggan yang terdaftar di database adalah **5 orang**."
+    },
+    {
+      "id": "B01",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4792,
+      "ttftMs": 3691,
+      "answer": "Jumlah pelanggan yang terdaftar di database adalah **5**."
+    },
+    {
+      "id": "B02",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6834,
+      "ttftMs": 6144,
+      "answer": "Ada **12 pesanan** seluruhnya, berdasarkan nilai `total` pada metadata, yaitu 12."
+    },
+    {
+      "id": "B02",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6448,
+      "ttftMs": 5243,
+      "answer": "Total pesanan seluruhnya adalah **12**."
+    },
+    {
+      "id": "B03",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7937,
+      "ttftMs": 6091,
+      "answer": "Berdasarkan data yang tersedia, jumlah produk yang tercatat adalah **6 produk**."
+    },
+    {
+      "id": "B03",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5530,
+      "ttftMs": 4259,
+      "answer": "Tercatat **6 produk**."
+    },
+    {
+      "id": "B04",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6756,
+      "ttftMs": 5377,
+      "answer": "Jumlah cabang yang ada adalah **4**."
+    },
+    {
+      "id": "B04",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3583,
+      "ttftMs": 3587,
+      "answer": "Berdasarkan data yang tersedia, jumlah cabang yang ada adalah **4**."
+    },
+    {
+      "id": "B05",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6414,
+      "ttftMs": 4899,
+      "answer": "Berdasarkan data yang diberikan, terdapat **10 pesanan** dengan status **selesai**."
+    },
+    {
+      "id": "B05",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6095,
+      "ttftMs": 3721,
+      "answer": "Berdasarkan data pesanan pada konteks, jumlah pesanan dengan status **selesai** ada **10 pesanan**, yaitu: | No | Nomor | Pelanggan | Kota | Total | Tanggal | |"
+    },
+    {
+      "id": "B06",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7405,
+      "ttftMs": 6528,
+      "answer": "Total baris di tabel pelanggan ada **5**."
+    },
+    {
+      "id": "B06",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5540,
+      "ttftMs": 3263,
+      "answer": "Tabel pelanggan memiliki **5 baris**."
+    },
+    {
+      "id": "B07",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5685,
+      "ttftMs": 3970,
+      "answer": "Jumlah pesanan di sistem adalah **12 pesanan**. Sumber: `meta.total = 12` (jumlah seluruh data dalam sistem, bukan hanya halaman ini). Rincian status: - Selesai"
+    },
+    {
+      "id": "B07",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5823,
+      "ttftMs": 4556,
+      "answer": "Jumlah pesanan di sistem adalah **12**."
+    },
+    {
+      "id": "B08",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8110,
+      "ttftMs": 6336,
+      "answer": "Berdasarkan database, tersedia **6 produk**."
+    },
+    {
+      "id": "B08",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 7281,
+      "ttftMs": 5808,
+      "answer": "Berdasarkan data yang tersedia, jumlah produk yang ada di database adalah **6 produk**."
+    },
+    {
+      "id": "B09",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6063,
+      "ttftMs": 4730,
+      "answer": "Berdasarkan data yang tersedia, perusahaan ini memiliki **4 cabang**."
+    },
+    {
+      "id": "B09",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4221,
+      "ttftMs": 3741,
+      "answer": "Perusahaan ini memiliki **4 cabang**."
+    },
+    {
+      "id": "B10",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6601,
+      "ttftMs": 4849,
+      "answer": "Berdasarkan data pesanan pada konteks, terdapat **10 pesanan** berstatus **selesai**, yaitu ORD-0001, ORD-0002, ORD-0003, ORD-0004, ORD-0005, ORD-0006, ORD-0008"
+    },
+    {
+      "id": "B10",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6011,
+      "ttftMs": 3904,
+      "answer": "Berdasarkan data dari API, terdapat **10 pesanan** dengan status **selesai**. Berikut rinciannya: | No. | Nomor Pesanan | Pelanggan | Kota | Total | Tanggal | |"
+    },
+    {
+      "id": "C01",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6114,
+      "ttftMs": 4830,
+      "answer": "5"
+    },
+    {
+      "id": "C01",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5254,
+      "ttftMs": 3679,
+      "answer": "5"
+    },
+    {
+      "id": "C02",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5527,
+      "ttftMs": 5153,
+      "answer": "12"
+    },
+    {
+      "id": "C02",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4738,
+      "ttftMs": 3554,
+      "answer": "12"
+    },
+    {
+      "id": "C03",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6449,
+      "ttftMs": 5171,
+      "answer": "6"
+    },
+    {
+      "id": "C03",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5836,
+      "ttftMs": 4702,
+      "answer": "6"
+    },
+    {
+      "id": "C04",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4391,
+      "ttftMs": 3266,
+      "answer": "4"
+    },
+    {
+      "id": "C04",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5856,
+      "ttftMs": 4437,
+      "answer": "4"
+    },
+    {
+      "id": "C05",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4797,
+      "ttftMs": 4594,
+      "answer": "10"
+    },
+    {
+      "id": "C05",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5375,
+      "ttftMs": 4273,
+      "answer": "10"
+    },
+    {
+      "id": "C06",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4762,
+      "ttftMs": 3938,
+      "answer": "5"
+    },
+    {
+      "id": "C06",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6536,
+      "ttftMs": 3816,
+      "answer": "5"
+    },
+    {
+      "id": "C07",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5770,
+      "ttftMs": 4467,
+      "answer": "12"
+    },
+    {
+      "id": "C07",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5172,
+      "ttftMs": 3716,
+      "answer": "12"
+    },
+    {
+      "id": "C08",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5755,
+      "ttftMs": 4575,
+      "answer": "6"
+    },
+    {
+      "id": "C08",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5597,
+      "ttftMs": 4402,
+      "answer": "6"
+    },
+    {
+      "id": "C09",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6956,
+      "ttftMs": 4947,
+      "answer": "4"
+    },
+    {
+      "id": "C09",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4944,
+      "ttftMs": 3433,
+      "answer": "4"
+    },
+    {
+      "id": "C10",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6235,
+      "ttftMs": 4398,
+      "answer": "10"
+    },
+    {
+      "id": "C10",
+      "family": "DB",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3164,
+      "ttftMs": 3326,
+      "answer": "10"
+    },
+    {
+      "id": "D01",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": false,
+      "latencyMs": 10191,
+      "ttftMs": 7658,
+      "answer": "Berdasarkan konteks yang tersedia, **jumlah hari jatah cuti tahunan tidak tercantum** dalam potongan dokumen yang diberikan. Potongan dari *01-kebijakan-cuti.md",
+      "reason": "missing /\\b12\\b|dua belas/i"
+    },
+    {
+      "id": "D01",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": false,
+      "latencyMs": 9802,
+      "ttftMs": 7249,
+      "answer": "Berdasarkan dokumen kebijakan cuti yang tersedia, saya hanya menemukan ketentuan **tambahan** cuti berdasarkan masa kerja: - Masa kerja 5 tahun: tambahan **3 ha",
+      "reason": "missing /\\b12\\b|dua belas/i"
+    },
+    {
+      "id": "D02",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8382,
+      "ttftMs": 6787,
+      "answer": "Berdasarkan kebijakan cuti yang berlaku: **Masa kerja minimal untuk mengajukan cuti tahunan adalah 12 bulan.** Setiap karyawan tetap berhak atas **12 hari cuti "
+    },
+    {
+      "id": "D02",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8329,
+      "ttftMs": 6191,
+      "answer": "Berdasarkan kebijakan cuti perusahaan: **Masa kerja minimal untuk mengajukan cuti tahunan adalah 12 bulan.** Setelah masa kerja mencapai 12 bulan, karyawan teta"
+    },
+    {
+      "id": "D03",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 12273,
+      "ttftMs": 9934,
+      "answer": "Berdasarkan konteks yang tersedia, informasi mengenai siapa yang harus menyetujui pengajuan cuti tahunan **tidak ditemukan**. Konteks hanya memuat judul-judul b"
+    },
+    {
+      "id": "D03",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6463,
+      "ttftMs": 4792,
+      "answer": "Berdasarkan kebijakan cuti yang berlaku: **Persetujuan cuti tahunan diberikan oleh atasan langsung**, dan pengajuannya dicatat oleh HRD. Poin penting lainnya: -"
+    },
+    {
+      "id": "D04",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": false,
+      "latencyMs": 6302,
+      "ttftMs": 5380,
+      "answer": "Berdasarkan konteks yang tersedia, saya tidak dapat menemukan informasi spesifik mengenai panjang minimal kata sandi. Dokumen *Panduan Keamanan dan Klasifikasi ",
+      "reason": "missing /14|empat belas/i"
+    },
+    {
+      "id": "D04",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 7397,
+      "ttftMs": 5649,
+      "answer": "Menurut panduan keamanan data, panjang minimal kata sandi adalah **14 karakter**. Selain itu, kata sandi juga harus memenuhi ketentuan berikut: - Memuat huruf b"
+    },
+    {
+      "id": "D05",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 11025,
+      "ttftMs": 9208,
+      "answer": "Kata sandi wajib diganti setiap **90 hari**. Sumber: *04-panduan-keamanan-data.md* juga menyebutkan panjang minimal kata sandi adalah **14 karakter** (memuat hu"
+    },
+    {
+      "id": "D05",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6985,
+      "ttftMs": 5478,
+      "answer": "Kata sandi wajib diganti setiap **90 hari**. Sebagai tambahan, berdasarkan panduan keamanan data yang sama: - Panjang minimal kata sandi adalah **14 karakter**,"
+    },
+    {
+      "id": "D06",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6644,
+      "ttftMs": 6339,
+      "answer": "Berdasarkan panduan keamanan data, kata sandi **tidak boleh mengulang 10 kata sandi terakhir**. Sebagai tambahan konteks dari sumber yang sama: - Panjang minima"
+    },
+    {
+      "id": "D06",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8273,
+      "ttftMs": 6679,
+      "answer": "Berdasarkan panduan keamanan data, kata sandi **tidak boleh mengulang 10 kata sandi terakhir**. Sebagai tambahan konteks, panduan tersebut juga menetapkan: - Pa"
+    },
+    {
+      "id": "D07",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 9547,
+      "ttftMs": 8009,
+      "answer": "Berdasarkan panduan onboarding, pada hari pertama karyawan baru wajib: - **Melapor ke HRD pukul 09.00 WIB** untuk: - Pengambilan kartu identitas - Penyerahan la"
+    },
+    {
+      "id": "D07",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8914,
+      "ttftMs": 6540,
+      "answer": "Berdasarkan dokumen yang tersedia (Panduan Onboarding Karyawan Baru), konteks yang terambil hanya memuat judul dokumen dan subjudul **“Hari Pertama”** — tidak a"
+    },
+    {
+      "id": "D08",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 9387,
+      "ttftMs": 7236,
+      "answer": "Berdasarkan SOP Layanan Pelanggan dan Penanganan Keluhan (dokumen `02-sop-layanan-pelanggan.md`), prosedur penanganan keluhan pelanggan mencakup hal-hal berikut"
+    },
+    {
+      "id": "D08",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 11262,
+      "ttftMs": 8934,
+      "answer": "Berdasarkan dokumen yang tersedia dalam konteks, saya **tidak dapat memberikan prosedur penanganan keluhan pelanggan secara rinci**. Yang ada dalam konteks hany"
+    },
+    {
+      "id": "D09",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 12731,
+      "ttftMs": 11273,
+      "answer": "Berdasarkan Panduan Keamanan Data (04-panduan-keamanan-data.md), aturan yang berlaku untuk data pelanggan adalah: **Masa penyimpanan:** Data pelanggan disimpan "
+    },
+    {
+      "id": "D09",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 11074,
+      "ttftMs": 8772,
+      "answer": "Berdasarkan dokumen *04-panduan-keamanan-data.md*, aturan yang berlaku untuk data pribadi pelanggan adalah: **Klasifikasi: Sangat Rahasia** Data pribadi pelangg"
+    },
+    {
+      "id": "D10",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8517,
+      "ttftMs": 6578,
+      "answer": "Berdasarkan dokumen kebijakan cuti yang tersedia, isi kebijakan tentang **Cuti Sakit** adalah sebagai berikut: 1. **Tidak mengurangi jatah cuti tahunan** — Cuti"
+    },
+    {
+      "id": "D10",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9063,
+      "ttftMs": 6660,
+      "answer": "Berdasarkan dokumen kebijakan cuti yang tersedia, berikut isi ketentuan tersebut: - Pengajuan cuti dilakukan melalui sistem HRIS minimal **14 hari sebelum** tan"
+    },
+    {
+      "id": "D11",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 10072,
+      "ttftMs": 8077,
+      "answer": "Berdasarkan dokumen panduan keamanan data yang tersedia, aturan penggunaan perangkat untuk mengakses data internal adalah sebagai berikut: - **Perangkat pribadi"
+    },
+    {
+      "id": "D11",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9484,
+      "ttftMs": 7539,
+      "answer": "Berdasarkan dokumen yang tersedia, saya **tidak dapat menjawab** pertanyaan Anda tentang aturan memakai perangkat perusahaan. Sumber yang relevan (dokumen *04-p"
+    },
+    {
+      "id": "D12",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": false,
+      "latencyMs": 9884,
+      "ttftMs": 7816,
+      "answer": "Berdasarkan konteks yang tersedia, saya **tidak dapat menyebutkan langkah-langkah rinci** dalam SOP Layanan Pelanggan. Sumber yang tersedia hanya memuat judul d",
+      "reason": "missing /salam|sapa|identifikasi|catat|solusi|tindak/i"
+    },
+    {
+      "id": "D12",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9440,
+      "ttftMs": 6190,
+      "answer": "Berdasarkan konteks yang tersedia, saya tidak dapat mencantumkan langkah-langkah (steps) yang tercantum dalam SOP Layanan Pelanggan. Konteks yang ada hanya memu"
+    },
+    {
+      "id": "D13",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 14689,
+      "ttftMs": 11568,
+      "answer": "Berdasarkan konteks yang tersedia, **tidak ada informasi mengenai aturan bekerja dari rumah (work from home)**. Dokumen yang tersedia hanya membahas topik berik"
+    },
+    {
+      "id": "D13",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 10601,
+      "ttftMs": 8117,
+      "answer": "Berdasarkan dokumen yang tersedia, **tidak ditemukan aturan mengenai bekerja dari rumah (work from home/WFH)**. Konteks yang ada hanya memuat dua topik, dan ked"
+    },
+    {
+      "id": "D14",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 10438,
+      "ttftMs": 8090,
+      "answer": "Berdasarkan dokumen **Panduan Onboarding Karyawan Baru** yang tersedia, kewajiban karyawan terkait kerahasiaan informasi adalah: - **Menandatangani perjanjian k"
+    },
+    {
+      "id": "D14",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9174,
+      "ttftMs": 6751,
+      "answer": "Berdasarkan dokumen panduan onboarding yang tersedia, kewajiban karyawan terkait kerahasiaan informasi adalah: - **Menandatangani perjanjian kerahasiaan (NDA)**"
+    },
+    {
+      "id": "D15",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 11427,
+      "ttftMs": 8518,
+      "answer": "Berdasarkan konteks yang tersedia, saya **tidak dapat menjawab** pertanyaan Anda secara spesifik. Konteks yang saya terima hanya memuat **judul-judul bagian** d"
+    },
+    {
+      "id": "D15",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9009,
+      "ttftMs": 6881,
+      "answer": "Menurut kebijakan cuti, tata cara pengajuan cuti tahunan adalah sebagai berikut: 1. **Ajukan melalui sistem HRIS** — Pengajuan cuti dilakukan melalui sistem HRI"
+    },
+    {
+      "id": "D16",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 12721,
+      "ttftMs": 8022,
+      "answer": "Berdasarkan dokumen **Panduan Onboarding Karyawan Baru**, hal-hal yang diatur meliputi: 1. **Pelaporan hari pertama** Karyawan baru wajib melapor ke HRD pukul *"
+    },
+    {
+      "id": "D16",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 10203,
+      "ttftMs": 8399,
+      "answer": "Berdasarkan dokumen **Panduan Onboarding Karyawan Baru** (03-panduan-onboarding.md), panduan tersebut mengatur hal-hal berikut: **Kewajiban hari pertama:** - Ka"
+    },
+    {
+      "id": "D17",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 14054,
+      "ttftMs": 11871,
+      "answer": "Berdasarkan dokumen yang tersedia dalam konteks, **tidak ditemukan aturan spesifik mengenai penanganan kebocoran data**. Konteks yang ada hanya memuat ketentuan"
+    },
+    {
+      "id": "D17",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 10981,
+      "ttftMs": 8433,
+      "answer": "Berdasarkan dokumen yang tersedia dalam konteks, **tidak ditemukan aturan spesifik mengenai prosedur penanganan kebocoran data**. Konteks yang tersedia hanya me"
+    },
+    {
+      "id": "D18",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6299,
+      "ttftMs": 4924,
+      "answer": "Ya, kebijakan cuti mengatur cuti melahirkan. Berdasarkan dokumen **01-kebijakan-cuti.md**, ketentuannya adalah: - **Karyawan perempuan** berhak atas cuti melahi"
+    },
+    {
+      "id": "D18",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6821,
+      "ttftMs": 5077,
+      "answer": "Ya, kebijakan cuti mengatur cuti melahirkan. Berdasarkan dokumen **01-kebijakan-cuti.md**: - Karyawan perempuan berhak atas cuti melahirkan **90 hari kalender**"
+    },
+    {
+      "id": "D19",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 10768,
+      "ttftMs": 8095,
+      "answer": "Berdasarkan konteks yang tersedia, saya tidak dapat menemukan informasi spesifik tentang **siapa** yang berhak mengakses data pelanggan menurut kebijakan. Yang "
+    },
+    {
+      "id": "D19",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8544,
+      "ttftMs": 6276,
+      "answer": "Berdasarkan konteks yang tersedia, saya tidak menemukan informasi mengenai siapa saja yang berhak mengakses data pelanggan menurut kebijakan. Konteks yang ada h"
+    },
+    {
+      "id": "D20",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 9215,
+      "ttftMs": 7111,
+      "answer": "Berdasarkan panduan keamanan data, prosedur pelaporan insiden adalah sebagai berikut: - **Batas waktu pelaporan:** Insiden keamanan wajib dilaporkan dalam **1 j"
+    },
+    {
+      "id": "D20",
+      "family": "DOC",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9389,
+      "ttftMs": 7170,
+      "answer": "Berdasarkan dokumen yang tersedia dalam konteks, saya tidak dapat memberikan prosedur pelaporan insiden keamanan data secara rinci. Konteks hanya memuat judul b"
+    },
+    {
+      "id": "G01",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4366,
+      "ttftMs": 2810,
+      "answer": "Halo! Ada yang bisa saya bantu hari ini? Silakan tanyakan apa saja, mulai dari query database, pencarian dokumen, panggilan API, atau sekadar ngobrol."
+    },
+    {
+      "id": "G01",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4330,
+      "ttftMs": 2865,
+      "answer": "Halo! 👋 Ada yang bisa saya bantu hari ini? Saya bisa membantu Anda dengan: - **Query database (SQL)** — cari atau olah data - **Pencarian dokumen (RAG)** — tem"
+    },
+    {
+      "id": "G02",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7290,
+      "ttftMs": 4456,
+      "answer": "Halo! Kabar baik, terima kasih sudah bertanya. 😊 Saya siap membantu Anda. Ada yang bisa saya bantu hari ini? Misalnya: - **Query database (SQL)** – untuk menga"
+    },
+    {
+      "id": "G02",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3137,
+      "ttftMs": 857,
+      "answer": "Halo! Kabar baik, terima kasih sudah bertanya. 😊 Saya siap membantu Anda. Ada yang bisa saya bantu hari ini? Misalnya: - **Query database (SQL)** — mengambil a"
+    },
+    {
+      "id": "G03",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4701,
+      "ttftMs": 3586,
+      "answer": "Selamat pagi! Ada yang bisa saya bantu hari ini?"
+    },
+    {
+      "id": "G03",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3766,
+      "ttftMs": 1835,
+      "answer": "Selamat pagi! Ada yang bisa saya bantu hari ini? Saya dapat membantu Anda dengan: - **Query database (SQL)** — mengambil atau menganalisis data - **Pencarian do"
+    },
+    {
+      "id": "G04",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4141,
+      "ttftMs": 2442,
+      "answer": "Sama-sama! 😊 Ada lagi yang bisa saya bantu? Saya siap membantu Anda dengan: - **Query database (SQL)** — untuk mengambil atau menganalisis data - **Pencarian d"
+    },
+    {
+      "id": "G04",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3690,
+      "ttftMs": 2022,
+      "answer": "Sama-sama! 😊 Ada yang bisa saya bantu hari ini? Saya dapat membantu Anda dengan: - **Query database** (SQL) - **Pencarian dokumen** (RAG) - **Panggilan REST AP"
+    },
+    {
+      "id": "G05",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6605,
+      "ttftMs": 3932,
+      "answer": "Halo! 👋 Ada yang bisa saya bantu? Saya bisa membantu Anda dengan: - **Query database (SQL)** – misalnya mengambil, memfilter, atau mengolah data - **Pencarian "
+    },
+    {
+      "id": "G05",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3794,
+      "ttftMs": 2063,
+      "answer": "Hello! 👋 Welcome to ryasai. I'm your enterprise AI assistant, and I can help you with: - **Database queries** — SQL to pull data from connected databases - **D"
+    },
+    {
+      "id": "G06",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4686,
+      "ttftMs": 2884,
+      "answer": "Kabar baik! Saya siap membantu Anda. Ada yang bisa saya bantu hari ini?"
+    },
+    {
+      "id": "G06",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 2996,
+      "ttftMs": 1835,
+      "answer": "Kabar baik! Saya siap membantu Anda. Ada yang bisa saya bantu hari ini?"
+    },
+    {
+      "id": "G07",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5085,
+      "ttftMs": 3071,
+      "answer": "Sama-sama! 😊 Kalau ada yang bisa saya bantu lagi — entah itu query database, pencarian dokumen, panggil REST API, atau sekadar ngobrol — tinggal bilang aja ya."
+    },
+    {
+      "id": "G07",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4345,
+      "ttftMs": 2535,
+      "answer": "Sama-sama! 😊 Ada lagi yang bisa saya bantu? Misalnya: - **Query database (SQL)** — ambil, filter, atau olah data - **Pencarian dokumen (RAG)** — cari informasi"
+    },
+    {
+      "id": "G08",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4047,
+      "ttftMs": 1885,
+      "answer": "Halo! 👋 Ada yang bisa saya bantu hari ini? Saya bisa membantu dengan: - **Query database (SQL)** — misalnya ambil data penjualan, inventaris, dll. - **Pencaria"
+    },
+    {
+      "id": "G08",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3550,
+      "ttftMs": 2157,
+      "answer": "Halo! 👋 Cara saya bisa membantu Anda hari ini?"
+    },
+    {
+      "id": "G09",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5709,
+      "ttftMs": 4138,
+      "answer": "Selamat malam! Ada yang bisa saya bantu malam ini? Saya bisa membantu dengan: - **Query database (SQL)** — cek atau olah data - **Pencarian dokumen (RAG)** — ca"
+    },
+    {
+      "id": "G09",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 1933,
+      "ttftMs": 805,
+      "answer": "Selamat malam! Ada yang bisa saya bantu malam ini?"
+    },
+    {
+      "id": "G10",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4546,
+      "ttftMs": 2982,
+      "answer": "Halo! Sama-sama. 😊 Ada yang bisa saya bantu hari ini? Saya bisa membantu untuk: - **Query database (SQL)** — membuat atau menjalankan query - **Pencarian dokum"
+    },
+    {
+      "id": "G10",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4452,
+      "ttftMs": 2564,
+      "answer": "Halo! Sama-sama. 😊 Ada yang bisa saya bantu hari ini? Saya bisa membantu untuk: - **Query database (SQL)** — menarik atau menganalisis data - **Pencarian dokum"
+    },
+    {
+      "id": "G11",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4834,
+      "ttftMs": 3125,
+      "answer": "Hello! How can I help you today?"
+    },
+    {
+      "id": "G11",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3623,
+      "ttftMs": 2548,
+      "answer": "Hey! How can I help you today?"
+    },
+    {
+      "id": "G12",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5340,
+      "ttftMs": 3500,
+      "answer": "Selamat siang! 👋 Ada yang bisa saya bantu hari ini? Saya bisa membantu Anda dengan: - **Query database (SQL)** — mencari atau mengolah data - **Pencarian dokum"
+    },
+    {
+      "id": "G12",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4159,
+      "ttftMs": 2213,
+      "answer": "Selamat siang! Ada yang bisa saya bantu hari ini? Saya bisa membantu Anda dengan: - **Query database (SQL)** — mencari atau menganalisis data - **Pencarian doku"
+    },
+    {
+      "id": "G13",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4276,
+      "ttftMs": 2795,
+      "answer": "Siap! Ada yang bisa saya bantu hari ini? 😊"
+    },
+    {
+      "id": "G13",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3578,
+      "ttftMs": 1740,
+      "answer": "Halo! Siap membantu. Ada yang bisa saya bantu hari ini? 😊 Saya bisa membantu Anda dengan: - **Query database (SQL)** — menarik atau menganalisis data - **Penca"
+    },
+    {
+      "id": "G14",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4292,
+      "ttftMs": 2743,
+      "answer": "Hai hai! 👋 Apa yang bisa saya bantu hari ini? Saya bisa bantu untuk: - **Query database** (SQL) - **Pencarian dokumen** (RAG) - **Panggilan REST API** - **Obro"
+    },
+    {
+      "id": "G14",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4300,
+      "ttftMs": 2122,
+      "answer": "Halo! Ada yang bisa saya bantu hari ini? Saya bisa membantu dengan: - **Query database (SQL)** — ambil atau olah data dari database - **Pencarian dokumen (RAG)*"
+    },
+    {
+      "id": "G15",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5398,
+      "ttftMs": 3780,
+      "answer": "Sama-sama! 😊 Senang bisa membantu. Kalau ada yang perlu ditanyakan lagi—soal database, pencarian dokumen, API, atau hal lain—tinggal bilang saja ya. Semoga har"
+    },
+    {
+      "id": "G15",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3599,
+      "ttftMs": 1797,
+      "answer": "Sama-sama! 😊 Ada yang bisa saya bantu lagi hari ini? Saya bisa membantu untuk: - **Query database (SQL)** – ambil, filter, atau analisis data - **Pencarian dok"
+    },
+    {
+      "id": "G16",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5039,
+      "ttftMs": 3766,
+      "answer": "Selamat sore! Ada yang bisa saya bantu hari ini?"
+    },
+    {
+      "id": "G16",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3420,
+      "ttftMs": 1801,
+      "answer": "Selamat sore! 😊 Ada yang bisa saya bantu hari ini?"
+    },
+    {
+      "id": "G17",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 3452,
+      "ttftMs": 1473,
+      "answer": "Halo! Saya **ryasai**, asisten AI enterprise yang siap membantu Anda. Saya bisa membantu dalam beberapa hal: - **Query database (SQL)** – mengambil atau mengola"
+    },
+    {
+      "id": "G17",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3803,
+      "ttftMs": 2070,
+      "answer": "Halo! Saya **ryasai**, asisten AI enterprise yang siap membantu Anda. 👋 Saya bisa membantu dalam beberapa hal: - 🗄️ **Query database (SQL)** — mengambil dan m"
+    },
+    {
+      "id": "G18",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5846,
+      "ttftMs": 4433,
+      "answer": "You're welcome! Let me know if there's anything else I can help with — database queries, document search, API calls, or just a question."
+    },
+    {
+      "id": "G18",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4069,
+      "ttftMs": 2753,
+      "answer": "You're welcome! How can I help you today?"
+    },
+    {
+      "id": "G19",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4724,
+      "ttftMs": 2478,
+      "answer": "Halo! Saya ryasai, asisten AI perusahaan Anda. Ada yang bisa saya bantu? Saya dapat membantu dengan: - **Query database (SQL)** — mencari atau mengelola data - "
+    },
+    {
+      "id": "G19",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3899,
+      "ttftMs": 2029,
+      "answer": "Halo! 👋 Selamat datang! Saya ryasai, asisten AI enterprise Anda. Ada yang bisa saya bantu hari ini? Saya bisa membantu Anda dengan: - 📊 **Database queries (SQ"
+    },
+    {
+      "id": "G20",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4540,
+      "ttftMs": 4239,
+      "answer": "Halo! Ada yang bisa saya bantu hari ini? Saya bisa membantu Anda dengan: - **Query database (SQL)** — pencarian atau pengolahan data - **Pencarian dokumen (RAG)"
+    },
+    {
+      "id": "G20",
+      "family": "GREET",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4187,
+      "ttftMs": 2368,
+      "answer": "Halo! Ada yang bisa saya bantu hari ini? 😊 Saya bisa membantu Anda dengan: - **Query database (SQL)** – mencari atau mengolah data - **Pencarian dokumen (RAG)*"
+    },
+    {
+      "id": "N01",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4700,
+      "ttftMs": 3191,
+      "answer": "4"
+    },
+    {
+      "id": "N01",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3397,
+      "ttftMs": 2104,
+      "answer": "4"
+    },
+    {
+      "id": "N02",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4210,
+      "ttftMs": 2883,
+      "answer": "45"
+    },
+    {
+      "id": "N02",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4589,
+      "ttftMs": 3312,
+      "answer": "45"
+    },
+    {
+      "id": "N03",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5613,
+      "ttftMs": 4405,
+      "answer": "Jakarta"
+    },
+    {
+      "id": "N03",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3444,
+      "ttftMs": 2105,
+      "answer": "Jakarta"
+    },
+    {
+      "id": "N04",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 2102,
+      "ttftMs": 1035,
+      "answer": "Saya ryasai, asisten AI enterprise yang bisa membantu query database (SQL), pencarian dokumen (RAG), panggilan REST API, dan obrolan umum."
+    },
+    {
+      "id": "N04",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3902,
+      "ttftMs": 2026,
+      "answer": "Saya ryasai, asisten AI enterprise. Saya bisa membantu query database (SQL), pencarian dokumen (RAG), pemanggilan REST API, dan chat umum."
+    },
+    {
+      "id": "N05",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4683,
+      "ttftMs": 3232,
+      "answer": "Biru."
+    },
+    {
+      "id": "N05",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4271,
+      "ttftMs": 2077,
+      "answer": "Biru"
+    },
+    {
+      "id": "N06",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4135,
+      "ttftMs": 3100,
+      "answer": "7"
+    },
+    {
+      "id": "N06",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3794,
+      "ttftMs": 2262,
+      "answer": "7"
+    },
+    {
+      "id": "N07",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5048,
+      "ttftMs": 3578,
+      "answer": "Singa."
+    },
+    {
+      "id": "N07",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 2920,
+      "ttftMs": 2818,
+      "answer": "Singa."
+    },
+    {
+      "id": "N08",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 3948,
+      "ttftMs": 2435,
+      "answer": "dingin"
+    },
+    {
+      "id": "N08",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3203,
+      "ttftMs": 2024,
+      "answer": "Dingin."
+    },
+    {
+      "id": "N09",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5105,
+      "ttftMs": 3537,
+      "answer": "3"
+    },
+    {
+      "id": "N09",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3271,
+      "ttftMs": 2056,
+      "answer": "3"
+    },
+    {
+      "id": "N10",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 3773,
+      "ttftMs": 2649,
+      "answer": "Pisang."
+    },
+    {
+      "id": "N10",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4007,
+      "ttftMs": 1670,
+      "answer": "Pisang. 🍌 Pisang identik dengan warna kuning dan bentuknya yang melengkung."
+    },
+    {
+      "id": "N11",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6015,
+      "ttftMs": 5134,
+      "answer": "25"
+    },
+    {
+      "id": "N11",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 2915,
+      "ttftMs": 1304,
+      "answer": "25"
+    },
+    {
+      "id": "N12",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 13484,
+      "ttftMs": 12086,
+      "answer": "Hijau"
+    },
+    {
+      "id": "N12",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6462,
+      "ttftMs": 5132,
+      "answer": "Hijau"
+    },
+    {
+      "id": "N13",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4315,
+      "ttftMs": 3080,
+      "answer": "12"
+    },
+    {
+      "id": "N13",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4274,
+      "ttftMs": 2835,
+      "answer": "12"
+    },
+    {
+      "id": "N14",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4947,
+      "ttftMs": 3219,
+      "answer": "Termometer"
+    },
+    {
+      "id": "N14",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 2765,
+      "ttftMs": 1681,
+      "answer": "Termometer"
+    },
+    {
+      "id": "N15",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6406,
+      "ttftMs": 4278,
+      "answer": "Berdasarkan konteks yang tersedia, terjemahan gagal diproses — respons dari sumber menunjukkan status **FAAILED** (kode 403) dengan alasan: **\"NO QUERY SPECIFIE"
+    },
+    {
+      "id": "N15",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3799,
+      "ttftMs": 2262,
+      "answer": "HTML (HyperText Markup Language) adalah bahasa markup yang menjadi dasar pembuatan halaman web."
+    },
+    {
+      "id": "N16",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5681,
+      "ttftMs": 4450,
+      "answer": "-2"
+    },
+    {
+      "id": "N16",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3565,
+      "ttftMs": 2210,
+      "answer": "-2"
+    },
+    {
+      "id": "N17",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4891,
+      "ttftMs": 3229,
+      "answer": "Asia"
+    },
+    {
+      "id": "N17",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 1831,
+      "ttftMs": 808,
+      "answer": "Asia"
+    },
+    {
+      "id": "N18",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6086,
+      "ttftMs": 4582,
+      "answer": "24"
+    },
+    {
+      "id": "N18",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3063,
+      "ttftMs": 1762,
+      "answer": "24"
+    },
+    {
+      "id": "N19",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 64811,
+      "ttftMs": 3174,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "N19",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3936,
+      "ttftMs": 2450,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "N20",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4286,
+      "ttftMs": 2762,
+      "answer": "Bisa, saya bisa berbahasa Indonesia. Ada yang bisa saya bantu?"
+    },
+    {
+      "id": "N20",
+      "family": "GENERAL",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3708,
+      "ttftMs": 2523,
+      "answer": "Ya, saya bisa berbahasa Indonesia."
+    },
+    {
+      "id": "T01",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4601,
+      "ttftMs": 4777,
+      "answer": "Halo! Jumlah pelanggan saat ini adalah **5**."
+    },
+    {
+      "id": "T01",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4658,
+      "ttftMs": 3125,
+      "answer": "Berdasarkan data yang tersedia, jumlah pelanggan adalah **5**."
+    },
+    {
+      "id": "T02",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5729,
+      "ttftMs": 3925,
+      "answer": "Hai! Berdasarkan data yang tersedia, ada **12 pesanan** totalnya (ORD-0001 sampai ORD-0012). Rincian berdasarkan status: - **Selesai:** 9 pesanan - **Dibatalkan"
+    },
+    {
+      "id": "T02",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4485,
+      "ttftMs": 3214,
+      "answer": "Ada **12 pesanan** total. Berikut rinciannya berdasarkan status: | Status | Jumlah | |---|---| | Selesai | 10 | | Dibatalkan | 1 | | Diproses | 1 | | **Total** "
+    },
+    {
+      "id": "T03",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7785,
+      "ttftMs": 6376,
+      "answer": "Selamat pagi! Jumlah produk adalah **6**."
+    },
+    {
+      "id": "T03",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4112,
+      "ttftMs": 3054,
+      "answer": "Selamat pagi! Jumlah produk saat ini adalah **6**."
+    },
+    {
+      "id": "T04",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8263,
+      "ttftMs": 6537,
+      "answer": "Berdasarkan kebijakan cuti yang berlaku: - **Karyawan tetap** berhak atas **12 hari cuti tahunan** setelah masa kerja mencapai **12 bulan**. - **Karyawan yang b"
+    },
+    {
+      "id": "T04",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": false,
+      "latencyMs": 9024,
+      "ttftMs": 6866,
+      "answer": "Berdasarkan dokumen kebijakan cuti yang tersedia, saya hanya menemukan bagian **\"Hak Cuti Tahunan\"** sebagai judul, serta ketentuan pengajuan cuti (minimal 14 h",
+      "reason": "missing /\\b12\\b|dua belas/i"
+    },
+    {
+      "id": "T05",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8212,
+      "ttftMs": 6670,
+      "answer": "Tidak mengganggu sama sekali! 😊 Panjang minimal kata sandi adalah **14 karakter**. Selain itu, kata sandi juga harus memenuhi ketentuan berikut: - Memuat **hur"
+    },
+    {
+      "id": "T05",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6329,
+      "ttftMs": 5101,
+      "answer": "Panjang minimal kata sandi adalah **14 karakter**, dan harus memuat huruf besar, huruf kecil, angka, serta simbol. Sebagai tambahan: - Kata sandi wajib diganti "
+    },
+    {
+      "id": "T06",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 9957,
+      "ttftMs": 7950,
+      "answer": "Berdasarkan konteks yang tersedia, saya **tidak dapat menentukan jumlah langkah** dalam prosedur penanganan keluhan. Konteks yang tersedia hanya memuat: - **Jud"
+    },
+    {
+      "id": "T06",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9140,
+      "ttftMs": 6091,
+      "answer": "Berdasarkan konteks yang tersedia, saya tidak dapat menentukan jumlah langkah dalam prosedur penanganan keluhan. Dokumen yang disediakan (02-sop-layanan-pelangg"
+    },
+    {
+      "id": "T07",
+      "family": "TRAP",
+      "expect": "CHAT",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 4703,
+      "ttftMs": 2510,
+      "answer": "Sama-sama! 😊 Senang bisa membantu. Ada lagi yang bisa saya bantu? Misalnya: - 📊 **Query database (SQL)** – untuk ambil atau olah data - 📄 **Pencarian dokumen"
+    },
+    {
+      "id": "T07",
+      "family": "TRAP",
+      "expect": "CHAT",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4315,
+      "ttftMs": 2452,
+      "answer": "Sama-sama! Senang bisa membantu. Ada lagi yang bisa saya bantu hari ini? Misalnya: - **Query database (SQL)** – menarik atau menganalisis data - **Pencarian dok"
+    },
+    {
+      "id": "T08",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 5045,
+      "ttftMs": 5299,
+      "answer": "Jumlah cabang yang terdaftar adalah **4**."
+    },
+    {
+      "id": "T08",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5225,
+      "ttftMs": 3891,
+      "answer": "Jumlah cabang yang terdaftar adalah **4**."
+    },
+    {
+      "id": "T09",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6672,
+      "ttftMs": 3945,
+      "answer": "Berdasarkan data yang tersedia, jumlah pesanan dengan status **selesai** adalah **10 pesanan**. Berikut rinciannya: | No. | Nomor | Pelanggan | Kota | Total | T"
+    },
+    {
+      "id": "T09",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4534,
+      "ttftMs": 3417,
+      "answer": "Jumlah pesanan selesai adalah **10**."
+    },
+    {
+      "id": "T10",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7396,
+      "ttftMs": 5759,
+      "answer": "Menurut panduan keamanan data, sandi **wajib diganti setiap 90 hari** (sekitar 3 bulan sekali), dan tidak boleh mengulang 10 kata sandi terakhir. Sebagai tambah"
+    },
+    {
+      "id": "T10",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 6427,
+      "ttftMs": 4810,
+      "answer": "Menurut panduan keamanan data, sandi wajib diganti setiap **90 hari**. Selain itu, panduan juga menetapkan bahwa sandi harus memiliki panjang minimal **14 karak"
+    },
+    {
+      "id": "T11",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6398,
+      "ttftMs": 4900,
+      "answer": "Jumlah pelanggan adalah **5**."
+    },
+    {
+      "id": "T11",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 5703,
+      "ttftMs": 3946,
+      "answer": "Jumlah pelanggan: **5**."
+    },
+    {
+      "id": "T12",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": false,
+      "latencyMs": 12542,
+      "ttftMs": 10374,
+      "answer": "Halo! Berdasarkan dokumen kebijakan cuti yang tersedia, berikut aturan cuti tahunan yang bisa saya sampaikan: **Sisa Cuti Tahunan (Carry Over)** - Sisa cuti tah",
+      "reason": "missing /\\b12\\b|dua belas/i"
+    },
+    {
+      "id": "T12",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": false,
+      "latencyMs": 7619,
+      "ttftMs": 6668,
+      "answer": "Halo! Berdasarkan dokumen kebijakan cuti yang tersedia, berikut aturan pengajuan cuti tahunan: **Pengajuan Cuti:** - Diajukan melalui **sistem HRIS** minimal **",
+      "reason": "missing /\\b12\\b|dua belas/i"
+    },
+    {
+      "id": "T13",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 8043,
+      "ttftMs": 6593,
+      "answer": "Berdasarkan panduan keamanan data, jumlah kata sandi lama yang tidak boleh diulang adalah **10 kata sandi terakhir**."
+    },
+    {
+      "id": "T13",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 7602,
+      "ttftMs": 5852,
+      "answer": "Berdasarkan panduan keamanan data, jumlah kata sandi lama yang tidak boleh diulang adalah **10 kata sandi terakhir**. Aturan terkait kata sandi: - Panjang minim"
+    },
+    {
+      "id": "T14",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 6479,
+      "ttftMs": 4789,
+      "answer": "Selamat siang! Berdasarkan data, jumlah produk ada **6**."
+    },
+    {
+      "id": "T14",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4728,
+      "ttftMs": 3204,
+      "answer": "Selamat siang! Berdasarkan data Anda, jumlah produk saat ini adalah **6**."
+    },
+    {
+      "id": "T15",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 11401,
+      "ttftMs": 9067,
+      "answer": "Berdasarkan dokumen yang tersedia, saya hanya dapat menemukan judul **\"Panduan Onboarding Karyawan Baru\"** dari sumber `03-panduan-onboarding.md`. Isi rinci pro"
+    },
+    {
+      "id": "T15",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 9578,
+      "ttftMs": 6762,
+      "answer": "Berdasarkan dokumen yang tersedia, saya hanya dapat mengonfirmasi judul dokumennya, yaitu **\"Panduan Onboarding Karyawan Baru\"** (sumber: `03-panduan-onboarding"
+    },
+    {
+      "id": "T16",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7379,
+      "ttftMs": 4875,
+      "answer": "Berdasarkan data yang tersedia, total pesanan dengan status **selesai** adalah **10 pesanan**. Rinciannya: | No. | Nomor Pesanan | Pelanggan | Kota | Total | Ta"
+    },
+    {
+      "id": "T16",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 4709,
+      "ttftMs": 3328,
+      "answer": "Berdasarkan data yang tersedia, total pesanan dengan status **selesai** adalah **10 pesanan**, dengan rincian sebagai berikut: | No. | Nomor Pesanan | Pelanggan"
+    },
+    {
+      "id": "T17",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 11879,
+      "ttftMs": 9441,
+      "answer": "Pagi! Terima kasih atas pertanyaannya. Berdasarkan dokumen yang tersedia, saya hanya menemukan judul bagian **\"Tata Cara Pengajuan\"** pada dokumen *01-kebijakan"
+    },
+    {
+      "id": "T17",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8524,
+      "ttftMs": 6121,
+      "answer": "Selamat pagi! Berikut cara mengajukan cuti berdasarkan kebijakan yang berlaku: **Prosedur Pengajuan Cuti:** 1. **Ajukan melalui sistem HRIS** — pengajuan cuti d"
+    },
+    {
+      "id": "T18",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7241,
+      "ttftMs": 5564,
+      "answer": "Berdasarkan database, jumlah cabang yang terdaftar adalah **4**."
+    },
+    {
+      "id": "T18",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3584,
+      "ttftMs": 3589,
+      "answer": "Berdasarkan database, terdapat **4 cabang** yang terdaftar."
+    },
+    {
+      "id": "T19",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 12806,
+      "ttftMs": 9094,
+      "answer": "Halo! Berdasarkan dokumen panduan onboarding yang tersedia, berikut aturan kerahasiaan informasi karyawan yang dapat saya sampaikan: **Perjanjian Kerahasiaan (N"
+    },
+    {
+      "id": "T19",
+      "family": "TRAP",
+      "expect": "RAG",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 8992,
+      "ttftMs": 6471,
+      "answer": "Berdasarkan dokumen yang tersedia, berikut aturan kerahasiaan informasi karyawan yang dapat saya sampaikan: **Perjanjian Kerahasiaan (NDA)** - Setiap karyawan w"
+    },
+    {
+      "id": "T20",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "full",
+      "ok": true,
+      "latencyMs": 7482,
+      "ttftMs": 6175,
+      "answer": "Jumlah pesanan di database saat ini adalah **12**."
+    },
+    {
+      "id": "T20",
+      "family": "TRAP",
+      "expect": "SQL",
+      "pipeline": "simple",
+      "ok": true,
+      "latencyMs": 3271,
+      "ttftMs": 1759,
+      "answer": "Halo! Berikut hasil pengecekan jumlah pesanan di database: **Jumlah pesanan: 12** Ada 12 pesanan yang tercatat saat ini. Ada lagi yang bisa saya bantu?"
+    }
+  ]
+}

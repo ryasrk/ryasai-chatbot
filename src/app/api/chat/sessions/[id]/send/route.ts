@@ -252,7 +252,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // two can be measured on identical questions; set SIMPLE_PIPELINE=0 to go
           // back without a deploy. It returns the same StreamingCompletionResult, so
           // everything below this line is unchanged either way.
-          const useSimple = simplePipelineEnabled()
+          // A per-request override exists ONLY for the A/B harness, and only while the
+          // deployment-wide flag is on: an operator who has not enabled the new
+          // pipeline cannot have a client switch it on. Without this, comparing the two
+          // would need two server processes, which would confound the numbers with a
+          // different warm cache and a different startup state.
+          const override = req.headers.get('x-pipeline')
+          const useSimple = simplePipelineEnabled() && (override === null || override !== 'full')
           streaming = useSimple
             ? await runSimpleStreamingChat({
                 question: contextualizedText,
