@@ -1410,7 +1410,7 @@ mock.module('@/lib/llm-client', () => ({
   getLastLlmUsage: () => undefined,
 }))
 
-const { runStreamingChatCompletion } = await import('./tool-router')
+const { runStreamingChatCompletion, formatSchemaForIntent, formatSchemasForIntent } = await import('./tool-router')
 
 /** Pull every chunk out of a StreamingCompletionResult. */
 async function drainStream(stream: AsyncGenerator<string, void, unknown>): Promise<string[]> {
@@ -1645,36 +1645,52 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     expect(input.restEndpointSummaries).toEqual(['GET /invoices: invoice list'])
   })
 
-  test('a schema row with NO integration row THROWS instead of printing undefined', async () => {
-    // DEFECT PINNED, NOT ENDORSED. `_runStreamingChatCompletion` formats each schema row as
-    // `${s.integration.name}.${s.tableName}: ${s.description}` with no guard. A row whose left-joined
-    // integration is null therefore raises a raw `TypeError: undefined is not an object (evaluating
-    // 's.integration.name')` that escapes the dispatcher, instead of dropping the row or reporting a
-    // sanitized error. The intent prompt is the one place where an `undefined.orders:` line would be
-    // merely ugly, so formatting is the wrong thing to be strict about.
+  test('a schema row with NO integration row is DROPPED instead of crashing', async () => {
+    // INVERTED WHEN FIXED: this was pinned as a DEFECT (the dispatcher threw a raw
+    // `TypeError: undefined is not an object (evaluating 's.integration.name')`), and the fix
+    // landed as `formatSchemasForIntent`. The test now asserts the CORRECT behaviour, so it
+    // fails again if the guard is removed -- the same assertion, pointing the other way.
     //
-    // WHY IT IS NOT EXPLOITABLE TODAY: the production query is
-    // `integrationSchema.findMany({ where: { integration: { status: 'active' }, description: { not: null } } })`,
-    // a Prisma relation filter, so a schema row with no active integration is not returned. The crash
-    // is reachable only if that filter is relaxed or the read is changed to a raw query. Pinned so the
-    // relaxation is loud rather than silent.
-    // FIX: filter non-null integration rows, or use `s.integration?.name ?? 'unknown'` and drop it.
-    // INVERT WHEN FIXED: this test FAILS once the format tolerates a missing integration.
+    // The shape below is off-contract (Prisma types the to-one relation as non-null), which is
+    // precisely why the source never guarded for it. Cast through `unknown` to build it.
     mockIntegrationCount.mockImplementation(async () => 1)
-    // Cast through `unknown` deliberately: the mock's declared row type requires a non-null
-    // `integration`, so tsc REFUSES the row that triggers the crash. That refusal is itself the
-    // evidence -- the shape below is off-contract, which is exactly why the source never guards for it
-    // and why the crash is real rather than a bad fixture.
     mockIntegrationSchemaFindMany.mockImplementation((async () => [
       { tableName: 'orphan_table', description: 'table with no integration row', integration: undefined },
+      { tableName: 'orders', description: 'one row per order', integration: { name: 'Warehouse' } },
+      { tableName: 'no_name', description: 'integration row with an empty name', integration: { name: '' } },
     ]) as unknown as () => Promise<Array<{ tableName: string; description: string | null; integration: { name: string } }>>)
-    await expect(
-      runStreamingChatCompletion({ question: 'q', userId: 'u1' }),
-    ).rejects.toThrow(/integration/)
-    // The formatter itself is what throws, so this is the dispatcher's own behaviour and not a mock
-    // artifact: assert it from source that the unguarded access is still there.
+    await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+    const summaries = (lastIntentArgs as { schemaSummaries: string[] }).schemaSummaries
+    // Only the row with a usable name survives; order is preserved.
+    expect(summaries).toEqual(['Warehouse.orders: one row per order'])
+    // The load-bearing half: nothing renders the literal string "undefined".
+    expect(summaries.join('|')).not.toContain('undefined')
+  })
+
+  test('formatSchemasForIntent keeps order and drops only the unrenderable rows', () => {
+    // Direct unit coverage of the extracted helper, because the dispatcher test above can only
+    // reach it through a mocked DB. The policy under test is "drop, do not throw", so the
+    // assertions name both halves: the survivors AND their order.
+    const rows = [
+      { tableName: 'a', description: 'd-a', integration: { name: 'A' } },
+      { tableName: 'b', description: null, integration: { name: 'B' } },
+      { tableName: 'c', description: 'd-c', integration: null },
+      { tableName: 'd', description: 'd-d', integration: undefined },
+      { tableName: 'e', description: 'd-e', integration: { name: 'E' } },
+    ]
+    expect(formatSchemasForIntent(rows)).toEqual(['A.a: d-a', 'B.b: null', 'E.e: d-e'])
+    // Empty and all-invalid batches yield an empty list rather than throwing -- the dispatcher
+    // relies on this to hand `analyzeIntent` a usable array when the org has no schemas.
+    expect(formatSchemasForIntent([])).toEqual([])
+    expect(formatSchemasForIntent([{ tableName: 'x', description: 'y', integration: null }])).toEqual([])
+    // A row with a blank name is dropped too: the model cannot choose a source it cannot name.
+    expect(formatSchemaForIntent({ tableName: 'x', description: 'y', integration: { name: '' } })).toBeNull()
+    expect(formatSchemaForIntent({ tableName: 'x', description: 'y', integration: { name: 'N' } })).toBe('N.x: y')
+    // The guard is ONE definition now, not two copies -- the shape that let a one-site fix leave
+    // the other path wrong. Asserted from source so a re-inlined copy fails here.
     const src = readFileSync(join(import.meta.dir, 'tool-router.ts'), 'utf8')
-    expect(src).toContain('`${s.integration.name}.${s.tableName}: ${s.description}`')
+    expect(src).not.toContain('${s.integration.name}')
+    expect([...src.matchAll(/formatSchemasForIntent\(schemaRows\)/g)]).toHaveLength(2)
   })
 
   test('SQL decision routes to prepareSqlStream', async () => {

@@ -111,7 +111,7 @@ async function _runNonStreamingChatCompletion(args: {
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
   const [docCount, intCount, docRows, intNames, schemaRows, restEndpoints, promptSettings] = dbData
   const restEndpointCount = restEndpoints.length
-  const schemaSummaries = schemaRows.map((s) => `${s.integration.name}.${s.tableName}: ${s.description}`)
+  const schemaSummaries = formatSchemasForIntent(schemaRows)
 
   args.signal?.throwIfAborted()
 
@@ -192,7 +192,7 @@ async function _runStreamingChatCompletion(args: {
   const [effectiveQuestion, dbData, memoryContext] = await loadIntentPipeline(args)
   const [docCount, intCount, docRows, intNames, schemaRows, restEndpoints, promptSettings] = dbData
   const restEndpointCount = restEndpoints.length
-  const schemaSummaries = schemaRows.map((s) => `${s.integration.name}.${s.tableName}: ${s.description}`)
+  const schemaSummaries = formatSchemasForIntent(schemaRows)
 
   const intent = await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
@@ -295,6 +295,48 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       (error) => { clearTimeout(timer); reject(error) },
     )
   })
+}
+
+/**
+ * Render one schema row for the intent prompt: "integration.table: description".
+ *
+ * Extracted because this string is built in BOTH the streaming and the
+ * non-streaming path, and the two copies had the same unguarded dereference --
+ * exactly the shape that let a one-site fix silently leave the other path wrong
+ * elsewhere in this file.
+ *
+ * The guard is not hypothetical. `integration` is a to-one relation, so Prisma
+ * types it as non-null and the query filters `integration: { status: 'active' }`
+ * to keep it that way. But a raw SQL read, a relaxed filter, or a Prisma version
+ * that returns a null to-one join would make `undefined.name` a raw TypeError
+ * thrown out of the dispatcher BEFORE any LLM call, with no user-facing error.
+ * Dropping the row costs one line of prompt context; crashing costs the request.
+ * A row with no name is also worse than useless in the prompt: the model cannot
+ * choose a source it cannot name.
+ */
+export function formatSchemaForIntent(s: {
+  tableName: string
+  description: string | null
+  integration?: { name: string } | null
+}): string | null {
+  const name = s.integration?.name
+  if (!name) return null
+  return `${name}.${s.tableName}: ${s.description}`
+}
+
+/**
+ * Apply formatSchemaForIntent to a batch, keeping order and dropping the rows it
+ * declines to render. Returned as a helper so both call sites share one policy.
+ */
+export function formatSchemasForIntent(
+  rows: Array<{ tableName: string; description: string | null; integration?: { name: string } | null }>,
+): string[] {
+  const out: string[] = []
+  for (const row of rows) {
+    const rendered = formatSchemaForIntent(row)
+    if (rendered) out.push(rendered)
+  }
+  return out
 }
 
 type DbData = Awaited<ReturnType<typeof loadDbData>>
