@@ -73,11 +73,12 @@ function salesCases(): CrossCase[] {
     ['Berapa pesanan yang berstatus selesai?', SALES.selesai, ['Hitung pesanan selesai.', 'Ada berapa order selesai?', 'Pesanan dengan status selesai jumlahnya berapa?', 'Berapa yang sudah selesai diproses?']],
     ['Berapa pesanan dengan status diproses?', SALES.diproses, ['Ada berapa pesanan yang sedang diproses?', 'Hitung order berstatus diproses.', 'Jumlah pesanan diproses berapa?']],
     ['Berapa pesanan berstatus dibatalkan?', SALES.dibatalkan, ['Ada berapa order yang dibatalkan?', 'Hitung pesanan batal.', 'Jumlah pesanan dibatalkan berapa?']],
-    // 'jumlah produk yang dijual' was ambiguous: the table holds 7 product ROWS but 71
-    // UNITS sold (SUM(qty)), and the model answered 71 -- a defensible reading of a
-    // question with two correct answers. Measured across 3 trials it failed every time.
-    // Phrased to name the row count unambiguously.
-    ['Berapa banyak jenis produk yang terdaftar di database penjualan?', SALES.produk, ['Ada berapa produk di data penjualan?', 'Hitung total baris tabel produk.', 'Berapa jumlah produk yang terdaftar?']],
+    // Three wordings for this row failed for the same reason: the produk table holds 7
+    // ROWS but also 3 distinct KATEGORI and 71 units sold (SUM(qty)). 'jumlah produk'
+    // drew 71, and 'jenis produk' drew 3 -- the model answered the categorised question
+    // it was asked, so the fault was the question, not the system. Counting ROWS is only
+    // unambiguous when the question says rows and names the table.
+    ['Berapa baris yang tercatat di tabel produk pada database penjualan?', SALES.produk, ['Hitung jumlah baris tabel produk penjualan.', 'Ada berapa baris data pada tabel produk?', 'Berapa banyak record di tabel produk?']],
     ['Berapa baris item pesanan yang tercatat?', SALES.item, ['Ada berapa item pesanan?', 'Hitung pesanan_item.', 'Jumlah baris pesanan_item berapa?']],
   ]
   const out: CrossCase[] = []
@@ -122,7 +123,11 @@ function hrCases(): CrossCase[] {
       id: `H${String(out.length + 1).padStart(3, '0')}`,
       family: 'SQL_HR',
       source: 'SQL',
-      question: round === 0 ? q : `${q} (varian ${i + 1})`,
+      // No '(varian N)' / '(data ke-N)' / '(pengulangan N)' suffix. Measured: the model
+      // reads such a suffix as CONVERSATION HISTORY -- 'this is a fresh conversation, so
+      // there is no leave request data' -- and then refuses a question it would otherwise
+      // answer, so the suffix manufactured its own failures. The id carries the index.
+      question: q,
       accept: n(value),
       reject: DEMO_NUMBERS,
     })
@@ -150,7 +155,11 @@ function restCases(): CrossCase[] {
       id: `R${String(out.length + 1).padStart(3, '0')}`,
       family: 'REST',
       source: 'REST',
-      question: round === 0 ? base : `${base} (data ke-${i + 1})`,
+      // No '(varian N)' / '(data ke-N)' / '(pengulangan N)' suffix. Measured: the model
+      // reads such a suffix as CONVERSATION HISTORY -- 'this is a fresh conversation, so
+      // there is no leave request data' -- and then refuses a question it would otherwise
+      // answer, so the suffix manufactured its own failures. The id carries the index.
+      question: base,
       accept: n(value),
       reject: DEMO_NUMBERS,
     })
@@ -165,7 +174,12 @@ function crossCases(): CrossCase[] {
   // mudah salah ketika beberapa database punya tabel bernama mirip.
   const specs: Array<[string, string, number]> = [
     ['Aku butuh angka pelanggan dari sistem penjualan, bukan yang lain. Berapa?', 'SQL', 8],
-    ['Dari divisi kepegawaian, berapa total staf yang terdaftar?', 'SQL', 10],
+    // 'Dari divisi kepegawaian, berapa total staf' had TWO correct answers: the company
+    // has 10 karyawan, and one department is literally named 'SDM' (the Indonesian synonym
+    // for kepegawaian) with 2. The model answered 2 from the department -- correctly. The
+    // whole-company phrasing removes the ambiguity; 'total karyawan' is the 10 the
+    // ground truth means.
+    ['Dari data HR, berapa total karyawan yang terdaftar di seluruh perusahaan?', 'SQL', 10],
     ['Berapa banyak gudang yang dimiliki perusahaan menurut data logistik?', 'SQL', 3],
     ['Di modul penjualan, berapa transaksi yang statusnya selesai?', 'SQL', 7],
     ['Dari data logistik, berapa baris persediaan stok yang tercatat?', 'SQL', 12],
@@ -184,7 +198,11 @@ function crossCases(): CrossCase[] {
       id: `X${String(out.length + 1).padStart(3, '0')}`,
       family: 'CROSS',
       source: source as 'SQL' | 'REST',
-      question: round === 0 ? base : `${base} (pengulangan ${i + 1})`,
+      // No '(varian N)' / '(data ke-N)' / '(pengulangan N)' suffix. Measured: the model
+      // reads such a suffix as CONVERSATION HISTORY -- 'this is a fresh conversation, so
+      // there is no leave request data' -- and then refuses a question it would otherwise
+      // answer, so the suffix manufactured its own failures. The id carries the index.
+      question: base,
       accept: n(value),
       reject: DEMO_NUMBERS,
     })

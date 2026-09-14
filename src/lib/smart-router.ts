@@ -63,17 +63,49 @@ const GENERIC_SCHEMA_TOKENS = new Set([
  * got no source attribution from domain context — the feature silently did
  * nothing for them while working normally in English.
  */
+/**
+ * True when a token is in GENERIC_SCHEMA_TOKENS purely as a SQL keyword, and is therefore
+ * still usable as DOMAIN vocabulary.
+ *
+ * GENERIC_SCHEMA_TOKENS mixes two different kinds of entry: column-name noise, and SQL
+ * keywords. A domain glossary that explicitly names one of the keywords -- 'order' is both
+ * `ORDER BY` and a purchase order -- was having that term silently dropped, which disabled
+ * the glossary fast path for every question phrased with the business word.
+ */
+const SQL_KEYWORDS_THAT_ARE_ALSO_DOMAIN_WORDS = new Set([
+  'order', 'group', 'select', 'where', 'table', 'index', 'key', 'value', 'level',
+  'user', 'users', 'session', 'token', 'tokens', 'file', 'files',
+])
+
+function isSqlKeywordOnly(word: string): boolean {
+  if (!GENERIC_SCHEMA_TOKENS.has(word)) return false
+  return !SQL_KEYWORDS_THAT_ARE_ALSO_DOMAIN_WORDS.has(word)
+}
+
 export function extractDomainGlossaryTerms(ctxLower: string): Set<string> {
   const glossaryTerms = new Set<string>()
   // Match "TERM = definition" patterns in DOMAIN GLOSSARY
   for (const m of ctxLower.matchAll(/(?:^|\n)[-*]\s+\*{0,2}([\p{L}][\p{L}\p{N}_/ -]{2,30})\*{0,2}\s*=/gu)) {
     glossaryTerms.add(m[1].trim())
   }
-  // Match "## DOMAIN" section first paragraph for domain keywords
-  const domainMatch = ctxLower.match(/## domain\n([\s\S]+?)(\n##|\n\n)/)
+  // Match the "## Domain" section up to the NEXT heading, not up to the first blank line.
+  // Stopping at `\n\n` truncated the keyword list: the Sales context lists its domain
+  // words across two wrapped lines, so the section's first paragraph ended mid-list.
+  // Measured on the real context, the old pattern yielded 17 terms and DROPPED 'order';
+  // 'Ada berapa order yang dibatalkan?' therefore matched 0 glossary terms, the fast path
+  // never fired, and the turn refused with 'I could not tell which data source' THREE
+  // times out of three. Narrowed to `(?:\n##|$)` so the whole section is read.
+  const domainMatch = ctxLower.match(/## domain\n([\s\S]+?)(?:\n##|$)/)
   if (domainMatch) {
     for (const word of domainMatch[1].split(/[^\p{L}\p{N}]+/u)) {
-      if (word.length >= 2 && !STOPWORDS.has(word) && !GENERIC_SCHEMA_TOKENS.has(word)) {
+      // GENERIC_SCHEMA_TOKENS exists to drop NOISE (column names like id/status/created),
+      // and it also lists SQL KEYWORDS including 'order'. But 'order' is the ordinary
+      // business word for a purchase order, and the Sales context declares it in its own
+      // ## Domain keyword list. Filtering it made 'Ada berapa order yang dibatalkan?'
+      // match zero glossary terms, so the turn refused instead of answering. A term the
+      // domain context explicitly names is domain vocabulary by definition and outranks
+      // the generic list; STOPWORDS still applies, since those are language noise.
+      if (word.length >= 2 && !STOPWORDS.has(word) && !isSqlKeywordOnly(word)) {
         glossaryTerms.add(word)
       }
     }

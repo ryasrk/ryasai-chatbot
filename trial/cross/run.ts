@@ -56,6 +56,8 @@ interface RunResult {
   ttftMs: number | null
   /** Completion tokens reported by the provider for the whole turn, when available. */
   tokens: number | null
+  /** Prompt tokens for the same turn, so avg tokens/task can be reported whole. */
+  promptTokens: number | null
   error?: string
 }
 
@@ -69,13 +71,14 @@ async function askOnce(token: string, question: string): Promise<Omit<RunResult,
     body: JSON.stringify({ text: question }),
   })
   if (!res.ok || !res.body) {
-    return { question, answer: '', tool: null, latencyMs: Date.now() - started, ttftMs: null, tokens: null, error: `HTTP ${res.status}` }
+    return { question, answer: '', tool: null, latencyMs: Date.now() - started, ttftMs: null, tokens: null, promptTokens: null, error: `HTTP ${res.status}` }
   }
 
   let answer = ''
   let tool: string | null = null
   let ttftMs: number | null = null
   let tokens: number | null = null
+  let promptTokens: number | null = null
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
@@ -103,14 +106,21 @@ async function askOnce(token: string, question: string): Promise<Omit<RunResult,
         // The answer frame is the one carrying a messageId -- the same discriminator
         // the UI uses. `content` alone also appears on unrelated progress frames.
         if (typeof frame.content === 'string' && 'messageId' in frame) answer = frame.content
-        const usage = frame.usage as { completion_tokens?: number } | undefined
-        if (usage && typeof usage.completion_tokens === 'number') tokens = usage.completion_tokens
+        // Usage rides the `done` frame and uses camelCase keys (promptTokens /
+        // completionTokens), not the provider's snake_case. Reading the wrong frame and
+        // the wrong key names silently produced tokenSamples: 0 in every prior run,
+        // which is why avg tokens/task and tokens/sec came back null.
+        const usage = frame.usage as { completionTokens?: number; promptTokens?: number } | undefined
+        if (usage) {
+          if (typeof usage.completionTokens === 'number') tokens = usage.completionTokens
+          if (typeof usage.promptTokens === 'number') promptTokens = usage.promptTokens
+        }
       }
     }
   } catch (e) {
-    return { question, answer: '', tool, latencyMs: Date.now() - started, ttftMs, tokens, error: String(e).slice(0, 120) }
+    return { question, answer: '', tool, latencyMs: Date.now() - started, ttftMs, tokens, promptTokens, error: String(e).slice(0, 120) }
   }
-  return { question, answer, tool, latencyMs: Date.now() - started, ttftMs, tokens }
+  return { question, answer, tool, latencyMs: Date.now() - started, ttftMs, tokens, promptTokens }
 }
 
 const all = casesForFamily(family)

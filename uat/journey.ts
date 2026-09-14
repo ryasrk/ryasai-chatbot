@@ -21,7 +21,13 @@ const PLANE = argv.includes('--plane') ? argv[argv.indexOf('--plane') + 1] : 'al
 const JSON_OUT = argv.includes('--json') ? argv[argv.indexOf('--json') + 1] : null
 
 // Komponen koneksi dipakai terpisah, sesuai kontrak route (bukan connection string).
-const UAT_DB_PARTS = { host: 'localhost', port: 5432, username: 'ryasai', password: 'ryasai_dev', database_name: 'uat_demo' }
+// Pointed at uat_sales rather than the old uat_demo. The demo database had table names
+// that were near-identical to the domain databases (demo_pelanggan/demo_pesanan vs
+// pelanggan/pesanan), which made source selection ambiguous: a question about
+// "database penjualan" was answered with the demo row count because `demo_pesanan`
+// still CONTAINS the token `pesanan`. The demo integration has been removed and this
+// UAT now exercises the sales database instead.
+const UAT_DB_PARTS = { host: 'localhost', port: 5432, username: 'ryasai', password: 'ryasai_dev', database_name: 'uat_sales' }
 // The fixture is bound to loopback, and the connector route runs the SSRF blocklist
 // on create -- correctly, so `127.0.0.1` is REFUSED. A real self-hosted source is
 // reached the way the operator declares it: a NAME in LLM_ALLOWED_HOSTS. The fixture
@@ -249,7 +255,7 @@ if (PLANE === 'all' || PLANE === 'db') {
     // readable message, which is what this UAT is for -- but a UAT that only ever
     // exercises the happy path would never have discovered it.
     body: JSON.stringify({
-      name: 'UAT Demo Company DB', type: 'DATABASE', provider: 'POSTGRESQL',
+      name: 'UAT Sales DB', type: 'DATABASE', provider: 'POSTGRESQL',
       config: UAT_DB_PARTS,
     }),
   })

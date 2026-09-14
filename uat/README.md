@@ -37,8 +37,8 @@ HARAP : 9.366.000      <- hanya pesanan berstatus selesai
 
 ```bash
 # 1. Database demo
-createdb uat_demo 2>/dev/null || true
-psql "postgresql://ryasai:ryasai_dev@localhost:5432/uat_demo" -f uat/fixtures/db-seed.sql
+createdb uat_sales 2>/dev/null || true
+psql "postgresql://ryasai:ryasai_dev@localhost:5432/uat_sales" -f uat/fixtures/db-sales.sql
 
 # 2. Dua layanan pendukung
 bun uat/fixtures/rest-server.ts      &

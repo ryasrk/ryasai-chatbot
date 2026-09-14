@@ -778,9 +778,9 @@ describe('pickBestIntegrationWithAmbiguity — semantic floor 0.25 + margin 0.02
     // would choose Sales. Verified by mutation -- raising the glossary threshold to 999
     // turns this test red.
     //
-    // The context MUST end with a blank line (or a following heading): the extractor
-    // reads the `## Domain` section up to `\n\n` or the next `##`, so a section that
-    // runs to end-of-string with no terminator yields ZERO terms and no match.
+    // The extractor reads the `## Domain` section up to the NEXT HEADING or end-of-string.
+    // It used to stop at the first blank line, which truncated a wrapped keyword list:
+    // the real Sales context spans two lines, so terms after the wrap were invisible.
     state.integrations = [
       {
         ...SALES,
@@ -815,12 +815,33 @@ describe('pickBestIntegrationWithAmbiguity — semantic floor 0.25 + margin 0.02
     expect(picked?.integrationId).toBe('sales-1')
   })
 
-  test('a Domain section that runs to end-of-string with no terminator yields no glossary terms', async () => {
-    // Documents the extractor contract the test above depends on, so a future rewrite
-    // of the regex is caught rather than silently disabling the glossary fast path.
-    const withTerminator = extractDomainGlossaryTerms('## domain\npenjualan, pelanggan.\n\n- a = b')
-    expect(withTerminator.has('penjualan')).toBe(true)
-    expect(extractDomainGlossaryTerms('## domain\npenjualan, pelanggan.').size).toBe(0)
+  test('a Domain section that runs to end-of-string still yields glossary terms', async () => {
+    // The section is read up to the next heading or end-of-string. Stopping at the first
+    // blank line truncated wrapped keyword lists -- the Sales context lists its terms over
+    // two lines, so 'order' sat past the wrap and was never read, and every question phrased
+    // with that business word refused instead of routing.
+    const atEnd = extractDomainGlossaryTerms('## domain\npenjualan, pelanggan, order')
+    expect(atEnd.has('penjualan')).toBe(true)
+    expect(atEnd.has('pelanggan')).toBe(true)
+    expect(atEnd.has('order')).toBe(true)
+    // A following heading still terminates the section.
+    const withHeading = extractDomainGlossaryTerms('## domain\npenjualan.\n## Lain\nkaryawan')
+    expect(withHeading.has('penjualan')).toBe(true)
+    expect(withHeading.has('karyawan')).toBe(false)
+  })
+
+  test('a domain term that is also a SQL keyword survives the generic-token filter', async () => {
+    // GENERIC_SCHEMA_TOKENS drops column-name noise (id, status, created) and it also lists
+    // SQL keywords including 'order'. But 'order' is the ordinary business word for a
+    // purchase order and the Sales context declares it in its own domain list, so filtering
+    // it disabled the glossary fast path for a whole class of questions. A term the domain
+    // names explicitly outranks the generic list; genuine noise is still dropped.
+    const terms = extractDomainGlossaryTerms('## domain\norder, pelanggan, id, status, created')
+    expect(terms.has('order')).toBe(true)
+    expect(terms.has('pelanggan')).toBe(true)
+    expect(terms.has('id')).toBe(false)
+    expect(terms.has('status')).toBe(false)
+    expect(terms.has('created')).toBe(false)
   })
 })
 
@@ -1821,30 +1842,25 @@ describe('smartRoute integration selection', () => {
       hasDocuments: false,
       hasRestApis: false,
     })
-    // FINDING (reported, not fixed): this path does NOT resolve the source here.
-    // `glossaryTerms` is harvested from `ctxLower` with `/[^a-z0-9]+/` — the
-    // SAME Latin-only character class that was deleted from `tokenize` because
-    // it produced zero tokens for non-Latin scripts. `tokenize` DOES extract the
-    // domain words from the question, but the DOMAIN scan below cannot.
+    // This used to be a documented FINDING rather than a passing contract: the DOMAIN
+    // body was harvested with a Latin-only character class AND the section scan stopped at
+    // the first blank line, so domain words near the end of a wrapped list were invisible
+    // and the source did not resolve. Both are fixed, so the pick now happens here.
     expect(tokenize(question)).toContain('haulage')
     expect(tokenize(question)).toContain('inspection')
-    // Raw-prompt diagnostics for the tiebreaker that ran instead of a domain pick.
-    ;(await import('node:fs')).appendFileSync(
-      '/tmp/smart-router-tiebreaker-args.txt',
-      `domain-context question did not resolve a source: ${question}\n`,
-    )
     expect(result.decision).toBe('SQL')
-    expect(result.integrationId).toBeUndefined()
+    expect(result.integrationId).toBe('mining-1')
   })
 
-  test('a 3-character DOMAIN term is dropped by the length >= 4 scan', async () => {
+  test('a single matching glossary term is still NOT enough to pick a source', async () => {
+    // The floor that makes the glossary fast path safe: one passing word must not capture
+    // routing. Here BOTH 'pit' and 'safety' come from the same section, so the contract is
+    // about the COUNT of terms, not their source. Exactly one matching term falls through to
+    // the keyword/semantic scorer, which has no evidence either -- so the source is refused.
     const mining = {
       id: 'mining-1',
       name: 'Zyxwv Corp',
       status: 'active',
-      // "pit" is a valid glossary TERM (matched by the `- **term =` pattern)
-      // but "haulage" in the DOMAIN body is also written as a sub-4-char class:
-      // the DOMAIN paragraph scan keeps words of length >= 4 only.
       businessContext: '## DOMAIN\npit safety\n- **pit = open cast mining site**',
       createdAt: new Date('2025-01-01'),
       schemas: [{ tableName: 'zzz', description: null, columns: '[]' }],
@@ -1859,16 +1875,14 @@ describe('smartRoute integration selection', () => {
     }
     state.integrations = [mining, payroll]
     routeQueryMock.mockImplementation(async (): Promise<RouteDecisionStub> => ({ decision: 'SQL', reason: 'db' }))
-    // "pit safety" are the only DOMAIN words, both under 4 chars → the scan
-    // contributes nothing, leaving the glossary with just the term `pit`, so
-    // `ctxMatches` is 1 < 2 and the router refuses.
-    expect(tokenize('pit safety today')).toEqual(['pit', 'safety', 'today'])
+    expect(tokenize('pit today')).toEqual(['pit', 'today'])
     const result = await smartRoute({
-      question: 'pit safety today',
+      question: 'pit today',
       hasIntegrations: true,
       hasDocuments: false,
       hasRestApis: false,
     })
+    // 'pit' matches the glossary once; 'today' matches nothing. 1 < 2 -> no domain pick.
     expect(result.decision).toBe('SQL')
     expect(result.integrationId).toBeUndefined()
   })
