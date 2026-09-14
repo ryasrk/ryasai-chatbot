@@ -122,6 +122,12 @@ async function _runNonStreamingChatCompletion(args: {
     documentNames: docRows.map((d) => formatDocForIntent(d)),
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
     restEndpointSummaries: restEndpoints.map((e) => `${e.method} ${e.path}: ${e.description ?? ''}`).filter((s) => !s.endsWith(': ')),
+    // Passed so the intent fallbacks agree with applyToolGating: a REST-only org HAS
+    // a data source, and treating it as "nothing to retrieve" skipped the whole
+    // retrieval path. There are exactly TWO call sites of analyzeIntent in this file
+    // (streaming and non-streaming) and BOTH must pass it -- a single-site edit would
+    // leave one path silently broken.
+    hasRestApis: restEndpointCount > 0,
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
@@ -201,6 +207,12 @@ async function _runStreamingChatCompletion(args: {
     documentNames: docRows.map((d) => formatDocForIntent(d)),
     integrationNames: intNames.map((i) => i.name), schemaSummaries,
     restEndpointSummaries: restEndpoints.map((e) => `${e.method} ${e.path}: ${e.description ?? ''}`).filter((s) => !s.endsWith(': ')),
+    // Passed so the intent fallbacks agree with applyToolGating: a REST-only org HAS
+    // a data source, and treating it as "nothing to retrieve" skipped the whole
+    // retrieval path. There are exactly TWO call sites of analyzeIntent in this file
+    // (streaming and non-streaming) and BOTH must pass it -- a single-site edit would
+    // leave one path silently broken.
+    hasRestApis: restEndpointCount > 0,
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {

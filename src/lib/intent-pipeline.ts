@@ -94,6 +94,14 @@ CRITICAL — DEFAULT TO NOT CLARIFYING:
 - If documents are available and the question asks about a procedure, policy,
   rule, guideline, or "what does [document] say", set needsRetrieval=true,
   needsClarification=false.
+- If REST API endpoints are available and the question asks for data that one of
+  them returns (stock levels, orders, prices, anything named in an endpoint
+  description), set needsRetrieval=true, needsClarification=false. The endpoint
+  list IS the data source: never answer that you lack access to an API, and never
+  ask the user for a base URL or an API key, when a matching endpoint is listed.
+  This rule exists because the list was already being sent to the model while the
+  prompt said nothing about it, so the model fell through to needsRetrieval=false
+  and the REST branch was never reached even with a working connector.
 
 Output ONLY valid JSON (no markdown fence):
 {
@@ -115,12 +123,14 @@ export async function analyzeIntent(args: {
   schemaSummaries?: string[]
   /** REST endpoint descriptions — same first-scan rationale as the others. */
   restEndpointSummaries?: string[]
+  /** Whether a REST connector with at least one enabled endpoint exists. */
+  hasRestApis?: boolean
 }): Promise<IntentAnalysis> {
   const cfg = await getRoleLlmConfig('keyword')
   if (!cfg) {
     // ponytail: no LLM configured — skip intent analysis, return default
     return {
-      needsRetrieval: args.hasDocuments || args.hasIntegrations,
+      needsRetrieval: args.hasDocuments || args.hasIntegrations || (args.hasRestApis ?? false),
       needsClarification: false,
       confidence: 0,
     }
@@ -135,6 +145,11 @@ export async function analyzeIntent(args: {
   const contextFlags = [
     args.hasDocuments ? 'Documents available: yes' : 'Documents available: no',
     args.hasIntegrations ? 'Databases available: yes' : 'Databases available: no',
+    // Without this line the model received the endpoint LIST but no statement that a
+    // REST API exists at all, so it answered needsRetrieval=false and the REST branch
+    // was never entered. The two flags above have always been present; REST was the
+    // one source whose availability was never declared.
+    args.hasRestApis ? 'REST APIs available: yes' : 'REST APIs available: no',
     args.documentNames && args.documentNames.length > 0
       ? `Documents (name [category] — what it is about):\n${args.documentNames.slice(0, 20).join('\n')}`
       : '',
@@ -158,13 +173,20 @@ export async function analyzeIntent(args: {
       },
     ], 0, 'intent-analysis')
 
-    const parsed = parseIntentJson(raw)
+  const parsed = parseIntentJson(raw)
     // ponytail: heuristic guard — LLM intent sometimes returns needsClarification=true
     // even when databases are available and the question contains clear domain nouns.
     // This was the root cause of the "chatbot asks endless clarification" bug.
     // When data sources are available and the question looks like a data query
     // (contains domain nouns or count/list words), force needsClarification=false.
-    if (parsed.needsClarification && (args.hasDocuments || args.hasIntegrations)) {
+    // hasRestApis BELONGS in this condition and was missing. This guard exists to
+    // suppress a clarification question the model asks even when a data source could
+    // answer it ("which database?"). A REST-only org has such a source, but with the
+    // flag absent the guard never ran, so the model's needless clarification stood
+    // and the request returned "I do not have access to the stock API" -- with a
+    // working connector, three enabled endpoints, and REST APIs declared to the
+    // model. Measured on the UAT: every REST question failed this way.
+    if (parsed.needsClarification && (args.hasDocuments || args.hasIntegrations || (args.hasRestApis ?? false))) {
       const qLower = args.question.toLowerCase()
       // ponytail: heuristic guard — when data sources are available and the
       // question contains query-oriented words (count, list, how many, show,
@@ -192,7 +214,7 @@ export async function analyzeIntent(args: {
     console.warn('[intent] analyzeIntent LLM call failed:', e instanceof Error ? e.message : String(e))
     // ponytail: on LLM error, fall back to default — don't block the user
     return {
-      needsRetrieval: args.hasDocuments || args.hasIntegrations,
+      needsRetrieval: args.hasDocuments || args.hasIntegrations || (args.hasRestApis ?? false),
       needsClarification: false,
       confidence: 0,
     }
