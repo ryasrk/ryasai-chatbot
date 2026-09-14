@@ -39,6 +39,74 @@ export const RATE_LIMIT_UPLOAD = 20
 // deployment. The DEFAULT stays 30s: most providers are fast, and a long default
 // would let one hung request hold a slot.
 export const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 30_000)
+
+/**
+ * Output ceiling for the OpenAI-compatible path, per PURPOSE.
+ *
+ * MEASURED, and the reason this exists: the app sent no `max_tokens` at all, which
+ * is fine for an ordinary chat model but unbounded for a REASONING model, because
+ * those bill their thinking as completion tokens. Against `cbcn/hy4-preview`:
+ *
+ *   intent-analysis, prompt 273 tokens -> 6,386 completion tokens, 121,992 ms
+ *   a one-word factual answer         ->   364 reasoning tokens,    8,034 ms
+ *
+ * The 273-token input was never the problem; the model simply generated thousands
+ * of tokens of internal reasoning to emit a small JSON object. That single call
+ * blew the 120 s chat deadline, so EVERY RAG question failed with a generic
+ * "Stream timed out" while the documents were indexed and retrievable. The failure
+ * looked like a retrieval bug and was a budget bug.
+ *
+ * Capping is effective, not cosmetic: the same request went from 24,869 ms with no
+ * cap to 5,640 ms with `max_tokens: 200` (finish_reason `length`).
+ *
+ * The caps are per purpose because the purposes genuinely differ. Structured steps
+ * (intent, routing, SQL, titles) emit a small object, so a tight ceiling costs
+ * nothing and bounds the worst case. `chat` is user-facing prose and keeps a
+ * generous ceiling so a real answer is never cut off mid-sentence; a truncated
+ * answer is a worse failure than a slow one.
+ *
+ * Only applied to the OpenAI-compatible path. The Anthropic path has its own
+ * MAX_TOKENS_ANTHROPIC, and the Responses API path has its own.
+ */
+export const LLM_MAX_TOKENS_BY_PURPOSE: Record<string, number> = {
+  // Reasoning models bill their THINKING against this same budget, and they think
+  // before they emit anything. A cap sized for the visible answer therefore
+  // truncates the output to nothing: MEASURED, an intent prompt under
+  // `max_tokens: 512` returned `finish_reason: "length"` with 512 completion
+  // tokens and an EMPTY content, because every token went to reasoning. The caller
+  // then failed to parse the JSON, retried, and stalled to the 120 s chat deadline.
+  //
+  // So the ceilings below are per-purpose HEADROOM, not answer sizes: structured
+  // steps need room for thinking plus a small object. They are still far below the
+  // thousands of tokens an uncapped reasoning model will happily generate, which is
+  // what the cap exists to stop.
+  // MEASURED reasoning-token spread for the SAME intent call, which is why these are
+  // headroom rather than answer sizes: 142, 1,764 and 4,096 tokens across three runs.
+  // At `max_tokens: 4096` one run hit the cap EXACTLY after 109 s and returned no
+  // parseable output, while the 1,764-token run finished in 41 s with valid JSON.
+  // The distribution is long-tailed, so a tight cap does not fail gracefully -- it
+  // fails as unparseable JSON, which surfaces as a generic provider error.
+  //
+  // 16,384 is set well above every observed run so the cap stops a runaway model
+  // without truncating a normal one. It is NOT a guarantee: a reasoning model with
+  // an unusually long chain can still hit it, and the honest failure mode then is a
+  // truncated JSON that the caller retries. The real bound on latency is
+  // LLM_TIMEOUT_MS, not this.
+  'intent-analysis': 16_384,
+  router: 8192,
+  'route-query': 8192,
+  sql: 8192,
+  'generate-sql': 8192,
+  title: 4096,
+  summary: 8192,
+  reflection: 8192,
+  chat: Number(process.env.LLM_MAX_TOKENS_CHAT ?? 8192),
+}
+
+/** The ceiling for a purpose, falling back to the structured-step default. */
+export function maxTokensForPurpose(purpose: string): number {
+  return LLM_MAX_TOKENS_BY_PURPOSE[purpose] ?? 1024
+}
 export const LLM_STREAM_TIMEOUT_MS = 120_000
 export const LLM_MAX_RETRIES = 3
 export const LLM_RETRY_BACKOFF_BASE_MS = 500

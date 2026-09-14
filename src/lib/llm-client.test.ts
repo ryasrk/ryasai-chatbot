@@ -18,6 +18,7 @@ mock.module('@/lib/db', () => ({
 }))
 
 import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig, getLastLlmUsage, withUsageTracking } from './llm-client'
+import { maxTokensForPurpose } from './constants'
 import type { LlmRuntimeConfig } from './llm-config'
 import { LlmProviderError, readCompletionBody } from './llm-client-utils'
 import type { LlmToolDef } from './llm-client-types'
@@ -125,6 +126,43 @@ describe('chatOnce', () => {
       { type: 'text', text: 's1\n\ns2\n\ns3', cache_control: { type: 'ephemeral' } },
     ])
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }])
+  })
+
+  // REGRESSION: the OpenAI-compatible path sent NO max_tokens. That is fine for a
+  // chat model and unbounded for a REASONING model, which bills its thinking as
+  // completion tokens and thinks BEFORE emitting anything. Measured against
+  // cbcn/hy4-preview: a 273-token intent prompt produced 6,386 completion tokens and
+  // 121,992 ms, blowing the 120 s chat deadline so every RAG question failed as a
+  // generic timeout while the documents were indexed and retrievable. The failure
+  // looked like a retrieval bug and was a budget bug.
+  test('OpenAI-compatible → SENDS max_tokens sized for the purpose', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'ok' } }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'intent-analysis')
+
+    const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    const body = JSON.parse(sentInit.body as string)
+    expect(body.max_tokens).toBe(maxTokensForPurpose('intent-analysis'))
+    // The ceiling must leave room for REASONING, not just the visible answer: a cap
+    // sized for the object alone truncated the JSON to an empty string with
+    // finish_reason 'length', which surfaced as a generic provider error.
+    expect(body.max_tokens).toBeGreaterThanOrEqual(8192)
+  })
+
+  test('OpenAI-compatible → a prose reply keeps a generous ceiling so it is not cut off', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'ok' } }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat')
+
+    const sentInit = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    const body = JSON.parse(sentInit.body as string)
+    expect(body.max_tokens).toBeGreaterThanOrEqual(4096)
   })
 
   test('retry on 5xx → first 503 then 200 succeeds', async () => {

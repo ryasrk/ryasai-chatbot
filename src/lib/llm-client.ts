@@ -23,6 +23,7 @@ import { buildAnthropicBody } from './llm-client-anthropic'
 import {
   LLM_TIMEOUT_MS,
   LLM_STREAM_TIMEOUT_MS,
+  maxTokensForPurpose,
 } from '@/lib/constants'
 
 export * from './llm-client-types'
@@ -134,9 +135,20 @@ export async function chatOnce(
     return text.trim()
   }
 
-  // OpenAI-compatible — no max_tokens, let provider default apply
+  // OpenAI-compatible.
   // ponytail: OpenAI prompt caching is automatic, no code change needed.
-  const body: Record<string, unknown> = { model: cfg.model, messages, temperature }
+  //
+  // A ceiling IS sent, contrary to the previous comment. "Let the provider default
+  // apply" is unbounded for a reasoning model, which bills its thinking as
+  // completion tokens: MEASURED, a 273-token intent prompt produced 6,386 completion
+  // tokens and 121,992 ms, blowing the 120 s chat deadline so every RAG question
+  // failed as a generic timeout. See LLM_MAX_TOKENS_BY_PURPOSE for the measurement.
+  const body: Record<string, unknown> = {
+    model: cfg.model,
+    messages,
+    temperature,
+    max_tokens: maxTokensForPurpose(purpose),
+  }
   if (tools && tools.length > 0) {
     body.tools = tools
   }
