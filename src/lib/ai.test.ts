@@ -1041,7 +1041,7 @@ describe('request contract — OpenAI-compatible transport', () => {
     expect(headers['x-api-key']).toBeUndefined()
   })
 
-  test('sends model, temperature and the message array — and no max_tokens', async () => {
+  test('sends model, temperature, the message array and a max_tokens ceiling', async () => {
     await generateChat('hello')
     const body = JSON.parse(lastFetchCall()!.init.body as string)
     expect(body.model).toBe('test-model')
@@ -1049,9 +1049,16 @@ describe('request contract — OpenAI-compatible transport', () => {
     // provider default of 1 would silently make routing and SQL gen nondeterministic.
     expect(body.temperature).toBe(0)
     expect(Array.isArray(body.messages)).toBe(true)
-    // ponytail: intentionally absent — the provider default applies. Asserting
-    // undefined (not a value) is the point: adding max_tokens would truncate answers.
-    expect(body.max_tokens).toBeUndefined()
+    // INVERTED. This assertion used to require max_tokens to be ABSENT, with the
+    // note that "adding max_tokens would truncate answers". That warning was RIGHT,
+    // and sending no ceiling turned out to be worse: uncapped, a REASONING model
+    // billed 6,386 completion tokens and 121,992 ms to a 273-token intent prompt,
+    // which blew the 120 s chat deadline so every RAG question failed as a generic
+    // timeout. Both errors are real, so the assertion is no longer "is it set" but
+    // "is it set HIGH ENOUGH to not truncate" -- which is the part the old note was
+    // protecting. A cap below the model reasoning budget returns empty content with
+    // finish_reason 'length'; measured, that starts below ~1,024 tokens.
+    expect(body.max_tokens).toBeGreaterThanOrEqual(1024)
     expect(body.stream).toBeUndefined()
   })
 
