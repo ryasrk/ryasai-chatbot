@@ -1,0 +1,74 @@
+{
+  "measuredAt": "2026-09-14T01:25:53.777Z",
+  "base": "http://localhost:20128/v1",
+  "model": "ag/gemini-3.8-flash-low",
+  "n": 8,
+  "samples": [
+    {
+      "totalMs": 2269,
+      "ttftMs": 1196,
+      "generationMs": 1073,
+      "completionTokens": 284,
+      "promptTokens": 2022,
+      "tokPerSec": 264.7
+    },
+    {
+      "totalMs": 3279,
+      "ttftMs": 2047,
+      "generationMs": 1232,
+      "completionTokens": 264,
+      "promptTokens": 2022,
+      "tokPerSec": 214.3
+    },
+    {
+      "totalMs": 3290,
+      "ttftMs": 2136,
+      "generationMs": 1154,
+      "completionTokens": 293,
+      "promptTokens": 2022,
+      "tokPerSec": 253.9
+    },
+    {
+      "totalMs": 2261,
+      "ttftMs": 1026,
+      "generationMs": 1235,
+      "completionTokens": 289,
+      "promptTokens": 2022,
+      "tokPerSec": 234
+    },
+    {
+      "totalMs": 2365,
+      "ttftMs": 1131,
+      "generationMs": 1234,
+      "completionTokens": 287,
+      "promptTokens": 2022,
+      "tokPerSec": 232.6
+    },
+    {
+      "totalMs": 2673,
+      "ttftMs": 1439,
+      "generationMs": 1234,
+      "completionTokens": 284,
+      "promptTokens": 2022,
+      "tokPerSec": 230.1
+    },
+    {
+      "totalMs": 2067,
+      "ttftMs": 822,
+      "generationMs": 1245,
+      "completionTokens": 285,
+      "promptTokens": 2022,
+      "tokPerSec": 228.9
+    },
+    {
+      "totalMs": 2146,
+      "ttftMs": 1119,
+      "generationMs": 1027,
+      "completionTokens": 274,
+      "promptTokens": 2022,
+      "tokPerSec": 266.8
+    }
+  ],
+  "medianTokPerSec": 234,
+  "validSamples": 8
+}

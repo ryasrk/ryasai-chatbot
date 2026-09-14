@@ -1,0 +1,33 @@
+{
+  "measuredAt": "2026-09-14T01:27:03.749Z",
+  "rows": [
+    {
+      "question": "Sebutkan ibukota Jepang.",
+      "systemChars": 412,
+      "userChars": 24,
+      "totalChars": 436,
+      "estTokens": 109
+    },
+    {
+      "question": "Berapa 17 kali 23?",
+      "systemChars": 412,
+      "userChars": 18,
+      "totalChars": 430,
+      "estTokens": 108
+    },
+    {
+      "question": "Apa mata uang Indonesia?",
+      "systemChars": 412,
+      "userChars": 24,
+      "totalChars": 436,
+      "estTokens": 109
+    }
+  ],
+  "avgChars": 434,
+  "avgEstTokens": 109,
+  "systemChars": 412,
+  "providerOverheadProbe": {
+    "tinyPromptTokens": 2002,
+    "withSystemPromptTokens": 2094
+  }
+}

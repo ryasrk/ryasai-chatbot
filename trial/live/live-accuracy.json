@@ -1,0 +1,746 @@
+{
+  "measuredAt": "2026-09-14T01:25:18.400Z",
+  "base": "http://localhost:3000",
+  "trials": 3,
+  "cases": 26,
+  "total": 78,
+  "correct": 78,
+  "accuracyPct": 100,
+  "byCategory": {
+    "factual": {
+      "n": 24,
+      "ok": 24
+    },
+    "arithmetic": {
+      "n": 15,
+      "ok": 15
+    },
+    "reasoning": {
+      "n": 12,
+      "ok": 12
+    },
+    "format": {
+      "n": 12,
+      "ok": 12
+    },
+    "indonesian": {
+      "n": 15,
+      "ok": 15
+    }
+  },
+  "latency": {
+    "p50": 5213,
+    "p90": 7398,
+    "p99": 15835,
+    "max": 15835
+  },
+  "ttft": {
+    "p50": 3946,
+    "max": 15062,
+    "n": 78
+  },
+  "rows": [
+    {
+      "id": "F01",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 7777,
+      "ttftMs": 6474,
+      "answer": "Jakarta"
+    },
+    {
+      "id": "F02",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 6333,
+      "ttftMs": 3903,
+      "answer": "38"
+    },
+    {
+      "id": "F03",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 6621,
+      "ttftMs": 5191,
+      "answer": "Merkurius"
+    },
+    {
+      "id": "F04",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4344,
+      "ttftMs": 3543,
+      "answer": "Thomas Alva Edison"
+    },
+    {
+      "id": "F05",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5372,
+      "ttftMs": 4444,
+      "answer": "Au"
+    },
+    {
+      "id": "F06",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4167,
+      "ttftMs": 3319,
+      "answer": "11"
+    },
+    {
+      "id": "F07",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5892,
+      "ttftMs": 3330,
+      "answer": "India"
+    },
+    {
+      "id": "F08",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4062,
+      "ttftMs": 3270,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "A01",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4353,
+      "ttftMs": 3344,
+      "answer": "391"
+    },
+    {
+      "id": "A02",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4406,
+      "ttftMs": 3021,
+      "answer": "12"
+    },
+    {
+      "id": "A03",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4171,
+      "ttftMs": 3024,
+      "answer": "1024"
+    },
+    {
+      "id": "A04",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4136,
+      "ttftMs": 3058,
+      "answer": "36"
+    },
+    {
+      "id": "A05",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4082,
+      "ttftMs": 2987,
+      "answer": "743"
+    },
+    {
+      "id": "R01",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5731,
+      "ttftMs": 5043,
+      "answer": "Ya"
+    },
+    {
+      "id": "R02",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 3783,
+      "ttftMs": 2858,
+      "answer": "Ani"
+    },
+    {
+      "id": "R03",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4004,
+      "ttftMs": 2850,
+      "answer": "8"
+    },
+    {
+      "id": "R04",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4261,
+      "ttftMs": 3308,
+      "answer": "Sabtu"
+    },
+    {
+      "id": "M01",
+      "category": "format",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5517,
+      "ttftMs": 4591,
+      "answer": "OK"
+    },
+    {
+      "id": "M02",
+      "category": "format",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4379,
+      "ttftMs": 3614,
+      "answer": "Apel, Jeruk, Mangga"
+    },
+    {
+      "id": "M03",
+      "category": "format",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4194,
+      "ttftMs": 3344,
+      "answer": "12"
+    },
+    {
+      "id": "M04",
+      "category": "format",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5229,
+      "ttftMs": 3946,
+      "answer": "Saya gemar kopi."
+    },
+    {
+      "id": "I01",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 3861,
+      "ttftMs": 2850,
+      "answer": "\"Gembira\" berarti merasa sangat senang, bahagia, atau suka cita."
+    },
+    {
+      "id": "I02",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 6700,
+      "ttftMs": 5493,
+      "answer": "Bandung"
+    },
+    {
+      "id": "I03",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 5403,
+      "ttftMs": 4211,
+      "answer": "Rupiah"
+    },
+    {
+      "id": "I04",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4783,
+      "ttftMs": 4124,
+      "answer": "Dingin"
+    },
+    {
+      "id": "I05",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 4134,
+      "ttftMs": 3128,
+      "answer": "Mohammad Hatta"
+    },
+    {
+      "id": "F01",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5353,
+      "ttftMs": 4576,
+      "answer": "Jakarta"
+    },
+    {
+      "id": "F02",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 6049,
+      "ttftMs": 5010,
+      "answer": "38"
+    },
+    {
+      "id": "F03",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5390,
+      "ttftMs": 3954,
+      "answer": "Merkurius"
+    },
+    {
+      "id": "F04",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4602,
+      "ttftMs": 3775,
+      "answer": "Thomas Edison"
+    },
+    {
+      "id": "F05",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 15835,
+      "ttftMs": 15062,
+      "answer": "Au"
+    },
+    {
+      "id": "F06",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5415,
+      "ttftMs": 4269,
+      "answer": "11"
+    },
+    {
+      "id": "F07",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5321,
+      "ttftMs": 4346,
+      "answer": "India"
+    },
+    {
+      "id": "F08",
+      "category": "factual",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5052,
+      "ttftMs": 3856,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "A01",
+      "category": "arithmetic",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5065,
+      "ttftMs": 3828,
+      "answer": "391"
+    },
+    {
+      "id": "A02",
+      "category": "arithmetic",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 7773,
+      "ttftMs": 5754,
+      "answer": "12"
+    },
+    {
+      "id": "A03",
+      "category": "arithmetic",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4859,
+      "ttftMs": 3834,
+      "answer": "1024"
+    },
+    {
+      "id": "A04",
+      "category": "arithmetic",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4395,
+      "ttftMs": 3184,
+      "answer": "36"
+    },
+    {
+      "id": "A05",
+      "category": "arithmetic",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 8676,
+      "ttftMs": 3126,
+      "answer": "743"
+    },
+    {
+      "id": "R01",
+      "category": "reasoning",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4791,
+      "ttftMs": 3844,
+      "answer": "Ya"
+    },
+    {
+      "id": "R02",
+      "category": "reasoning",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4457,
+      "ttftMs": 3425,
+      "answer": "Ani"
+    },
+    {
+      "id": "R03",
+      "category": "reasoning",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5713,
+      "ttftMs": 4375,
+      "answer": "8"
+    },
+    {
+      "id": "R04",
+      "category": "reasoning",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5277,
+      "ttftMs": 4476,
+      "answer": "Sabtu"
+    },
+    {
+      "id": "M01",
+      "category": "format",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 7533,
+      "ttftMs": 6498,
+      "answer": "OK"
+    },
+    {
+      "id": "M02",
+      "category": "format",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 5950,
+      "ttftMs": 5232,
+      "answer": "Apel, Jeruk, Mangga"
+    },
+    {
+      "id": "M03",
+      "category": "format",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 6267,
+      "ttftMs": 5364,
+      "answer": "12"
+    },
+    {
+      "id": "M04",
+      "category": "format",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 6238,
+      "ttftMs": 5362,
+      "answer": "Saya gemar minum kopi."
+    },
+    {
+      "id": "I01",
+      "category": "indonesian",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 6147,
+      "ttftMs": 5008,
+      "answer": "\"Gembira\" berarti merasa sangat suka cita, senang, atau bahagia."
+    },
+    {
+      "id": "I02",
+      "category": "indonesian",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 12158,
+      "ttftMs": 11098,
+      "answer": "Bandung"
+    },
+    {
+      "id": "I03",
+      "category": "indonesian",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 4890,
+      "ttftMs": 3778,
+      "answer": "Rupiah"
+    },
+    {
+      "id": "I04",
+      "category": "indonesian",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 8144,
+      "ttftMs": 6923,
+      "answer": "Dingin"
+    },
+    {
+      "id": "I05",
+      "category": "indonesian",
+      "trial": 2,
+      "ok": true,
+      "latencyMs": 7398,
+      "ttftMs": 6667,
+      "answer": "Mohammad Hatta"
+    },
+    {
+      "id": "F01",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5035,
+      "ttftMs": 4265,
+      "answer": "Jakarta"
+    },
+    {
+      "id": "F02",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4275,
+      "ttftMs": 3373,
+      "answer": "38"
+    },
+    {
+      "id": "F03",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 3952,
+      "ttftMs": 3030,
+      "answer": "Merkurius"
+    },
+    {
+      "id": "F04",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4678,
+      "ttftMs": 3847,
+      "answer": "Thomas Edison"
+    },
+    {
+      "id": "F05",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4723,
+      "ttftMs": 3483,
+      "answer": "Au"
+    },
+    {
+      "id": "F06",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4678,
+      "ttftMs": 3762,
+      "answer": "11"
+    },
+    {
+      "id": "F07",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5216,
+      "ttftMs": 4306,
+      "answer": "India"
+    },
+    {
+      "id": "F08",
+      "category": "factual",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4969,
+      "ttftMs": 3836,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "A01",
+      "category": "arithmetic",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4455,
+      "ttftMs": 3543,
+      "answer": "391"
+    },
+    {
+      "id": "A02",
+      "category": "arithmetic",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 6827,
+      "ttftMs": 3696,
+      "answer": "12"
+    },
+    {
+      "id": "A03",
+      "category": "arithmetic",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4353,
+      "ttftMs": 3176,
+      "answer": "1024"
+    },
+    {
+      "id": "A04",
+      "category": "arithmetic",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4596,
+      "ttftMs": 3306,
+      "answer": "36"
+    },
+    {
+      "id": "A05",
+      "category": "arithmetic",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 3955,
+      "ttftMs": 2813,
+      "answer": "743"
+    },
+    {
+      "id": "R01",
+      "category": "reasoning",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5175,
+      "ttftMs": 4240,
+      "answer": "Ya"
+    },
+    {
+      "id": "R02",
+      "category": "reasoning",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 6787,
+      "ttftMs": 5846,
+      "answer": "Ani"
+    },
+    {
+      "id": "R03",
+      "category": "reasoning",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 4961,
+      "ttftMs": 3866,
+      "answer": "8"
+    },
+    {
+      "id": "R04",
+      "category": "reasoning",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5506,
+      "ttftMs": 4530,
+      "answer": "Sabtu"
+    },
+    {
+      "id": "M01",
+      "category": "format",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5954,
+      "ttftMs": 4110,
+      "answer": "OK"
+    },
+    {
+      "id": "M02",
+      "category": "format",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5764,
+      "ttftMs": 4833,
+      "answer": "Apel, Jeruk, Pisang"
+    },
+    {
+      "id": "M03",
+      "category": "format",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5693,
+      "ttftMs": 4144,
+      "answer": "12"
+    },
+    {
+      "id": "M04",
+      "category": "format",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5037,
+      "ttftMs": 3771,
+      "answer": "Saya gemar kopi."
+    },
+    {
+      "id": "I01",
+      "category": "indonesian",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5162,
+      "ttftMs": 4026,
+      "answer": "\"Gembira\" berarti merasa sangat senang, bahagia, atau suka cita."
+    },
+    {
+      "id": "I02",
+      "category": "indonesian",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5213,
+      "ttftMs": 4082,
+      "answer": "Bandung"
+    },
+    {
+      "id": "I03",
+      "category": "indonesian",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5555,
+      "ttftMs": 4601,
+      "answer": "Rupiah"
+    },
+    {
+      "id": "I04",
+      "category": "indonesian",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 6116,
+      "ttftMs": 5184,
+      "answer": "Dingin"
+    },
+    {
+      "id": "I05",
+      "category": "indonesian",
+      "trial": 3,
+      "ok": true,
+      "latencyMs": 5564,
+      "ttftMs": 4802,
+      "answer": "Mohammad Hatta"
+    }
+  ]
+}

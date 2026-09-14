@@ -1,0 +1,7 @@
+{
+  "id": "cmtx3r9j00001h8erlqw2ztpp",
+  "provider": "OPENAI_COMPATIBLE",
+  "baseUrl": "http://localhost:4545/v1",
+  "model": "mock-model",
+  "encryptedApiKey": "cad5e16d3f3a2ed4b694c858a2756ea62b6eb83fe318173c72ea584faa03e4af82a24aaff74dcf729b2812912b5aaccd42"
+}
