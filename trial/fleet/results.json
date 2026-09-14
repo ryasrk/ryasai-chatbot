@@ -8,7 +8,7 @@
     "note": "DDL",
     "pass": true,
     "reason": "blocked (Only SELECT/WITH is allowed. Found: DROP)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-gb-1",
@@ -217,7 +217,7 @@
     "note": "comment hidden",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-gb-20",
@@ -404,7 +404,7 @@
     "note": "table named benchmark",
     "pass": true,
     "reason": "allowed",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-ga-12",
@@ -558,7 +558,7 @@
     "note": "empty",
     "pass": true,
     "reason": "ok (0 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-1",
@@ -602,7 +602,7 @@
     "note": "en question",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-5",
@@ -668,7 +668,7 @@
     "note": "emoji",
     "pass": true,
     "reason": "ok (2 tokens, both impls agree)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-r-11",
@@ -701,7 +701,7 @@
     "note": "very long",
     "pass": true,
     "reason": "ok (1 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-r-14",
@@ -1119,7 +1119,7 @@
     "note": "empty prompt",
     "pass": true,
     "reason": "ok (empty input -> empty output)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D2-p-1",
@@ -1163,7 +1163,7 @@
     "note": "100k chars",
     "pass": true,
     "reason": "ok (100322 chars, fence balanced)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D2-p-5",
@@ -2065,7 +2065,7 @@
     "note": "safe fn rank",
     "pass": true,
     "reason": "allowed",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D3-fn-a-19",
@@ -2417,7 +2417,7 @@
     "note": "mutation VACUUM FULL",
     "pass": true,
     "reason": "blocked (Only SELECT/WITH is allowed. Found: VACU)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-mut-16",
@@ -3187,7 +3187,7 @@
     "note": "evidence fence",
     "pass": true,
     "reason": "ok (5339 chars, fence balanced)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D2-fence-10",
@@ -3913,7 +3913,7 @@
     "note": "and 1=1 via carrier 4",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D3-inj-3-5",
@@ -5343,7 +5343,7 @@
     "note": "server fingerprint probe",
     "pass": true,
     "reason": "blocked (Security violation: dangerous pattern de)",
-    "ms": 1
+    "ms": 0
   },
   {
     "id": "D1-q-0",
@@ -5453,7 +5453,7 @@
     "note": "realistic bilingual question",
     "pass": true,
     "reason": "ok (4 tokens, both impls agree)",
-    "ms": 0
+    "ms": 1
   },
   {
     "id": "D1-q-10",
