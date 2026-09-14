@@ -112,3 +112,9 @@ benchmark/results/*.json
 .github/agents/
 .github/hooks/
 .github/impeccable.json
+
+# Backup of the live LLM config taken by trial/live scripts. Holds an ENCRYPTED api key
+# plus the baseUrl/model; it is machine-local state, not a fixture, so it must never be
+# committed. It was untracked-but-not-ignored, which left it one `git add -A` from landing.
+trial/live/.llmconfig.backup.json
+trial/live/.llmconfig.json

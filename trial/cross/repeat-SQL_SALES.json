@@ -1,0 +1,555 @@
+{
+  "family": "SQL_SALES",
+  "trials": 3,
+  "sampled": 38,
+  "accuracyPerRun": 78.95,
+  "flaky": [
+    "S006",
+    "S018",
+    "S019",
+    "S034",
+    "S041",
+    "S048",
+    "S055",
+    "S062",
+    "S069",
+    "S104",
+    "S125",
+    "S139"
+  ],
+  "alwaysWrong": [
+    {
+      "id": "S027",
+      "sample": "Berdasarkan riwayat percakapan kita, bagian 27 ini melanjutkan pembahasan daftar barang yang dijual. Namun saya tidak me"
+    },
+    {
+      "id": "S174",
+      "sample": "Jumlah produk yang dijual adalah **71**."
+    },
+    {
+      "id": "S188",
+      "sample": "Jumlah produk yang dijual adalah **71**."
+    }
+  ],
+  "alwaysRight": [
+    "S005",
+    "S007",
+    "S014",
+    "S021",
+    "S028",
+    "S035",
+    "S042",
+    "S049",
+    "S052",
+    "S053",
+    "S056",
+    "S060",
+    "S063",
+    "S066",
+    "S067",
+    "S068",
+    "S070",
+    "S073",
+    "S075",
+    "S076",
+    "S077",
+    "S098",
+    "S155"
+  ],
+  "rows": [
+    {
+      "id": "S005",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **2 pesanan** berstatus **dibatalkan**: | ID | Pelanggan ID | Status | Total | |----|--------------|--------|-------",
+        "Ada **2 pesanan** berstatus **dibatalkan**: | ID | Pelanggan ID | Total | |----|--------------|-------| | 5 | 5 | Rp920.",
+        "Ada **2** pesanan berstatus **dibatalkan**: 1. **ID 5** — pelanggan ID 5, total Rp920.000 2. **ID 12** — pelanggan ID 6,"
+      ]
+    },
+    {
+      "id": "S006",
+      "verdicts": [
+        "B",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **71**."
+      ]
+    },
+    {
+      "id": "S007",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "18 baris item pesanan tercatat.",
+        "Tercatat **18 baris item pesanan**.",
+        "Ada **18 baris item pesanan** yang tercatat."
+      ]
+    },
+    {
+      "id": "S014",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **18 item pesanan**.",
+        "Ada **18 item pesanan**.",
+        "Berdasarkan data yang tersedia, jumlah item pesanan adalah **18**."
+      ]
+    },
+    {
+      "id": "S018",
+      "verdicts": [
+        "B",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Ada **2 order** berstatus \"diproses\": | ID Order | Pelanggan ID | Total | |---|---|---| | 3 | 3 | 203.500 | | 8 | 8 | 15",
+        "I could not tell which data source this question refers to, and I do not want to guess and answer from the wrong databas",
+        "I could not tell which data source this question refers to, and I do not want to guess and answer from the wrong databas"
+      ]
+    },
+    {
+      "id": "S019",
+      "verdicts": [
+        "B",
+        "S",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data dari REST API, terdapat **2 pesanan** dengan status \"dibatalkan\": 1. **Pesanan ID 5** — Pelanggan ID 5 ",
+        "Berdasarkan data yang tersedia, jumlah pesanan batal adalah **0**.",
+        "Berdasarkan data yang tersedia, terdapat **2 pesanan dibatalkan**: | ID Pesanan | Pelanggan ID | Status | Total | |---|-"
+      ]
+    },
+    {
+      "id": "S021",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data yang tersedia, jumlah `pesanan_item` adalah **18**.",
+        "Jumlah `pesanan_item` (bagian 21) adalah **18**.",
+        "Jumlah pesanan_item adalah **18**."
+      ]
+    },
+    {
+      "id": "S027",
+      "verdicts": [
+        "S",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Berdasarkan riwayat percakapan kita, bagian 27 ini melanjutkan pembahasan daftar barang yang dijual. Namun saya tidak me",
+        "Tidak ada data yang cocok untuk pertanyaan ini. Kueri berhasil dijalankan, tetapi mengembalikan 0 baris, jadi tidak ada ",
+        "12 barang."
+      ]
+    },
+    {
+      "id": "S028",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah baris pesanan_item adalah **18**.",
+        "Jumlah baris **pesanan_item** adalah **18**.",
+        "Jumlah baris **pesanan_item** adalah **18**."
+      ]
+    },
+    {
+      "id": "S034",
+      "verdicts": [
+        "B",
+        "B",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**.",
+        "Maaf, saya tidak memiliki data atau konteks sebelumnya tentang \"jumlah produk yang dijual\" bagian 34 dalam riwayat perca"
+      ]
+    },
+    {
+      "id": "S035",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "18 baris item pesanan yang tercatat.",
+        "18 baris item pesanan tercatat.",
+        "Tercatat **18 baris** item pesanan."
+      ]
+    },
+    {
+      "id": "S041",
+      "verdicts": [
+        "B",
+        "S",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S042",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **18 baris item pesanan** yang tercatat.",
+        "18 baris item pesanan.",
+        "18 baris item pesanan tercatat."
+      ]
+    },
+    {
+      "id": "S048",
+      "verdicts": [
+        "S",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Berdasarkan data yang tersedia, jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S049",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Tercatat **18** baris item pesanan.",
+        "Ada **18** baris item pesanan yang tercatat.",
+        "18 baris item pesanan yang tercatat."
+      ]
+    },
+    {
+      "id": "S052",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **7 pesanan** yang berstatus selesai.",
+        "Ada **7 pesanan** dengan status **selesai**, dengan total nilai keseluruhan **Rp 3.860.000**. Rinciannya: 1. ID 1 — Rp 3",
+        "Ada **7** pesanan yang berstatus selesai."
+      ]
+    },
+    {
+      "id": "S053",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data yang tersedia, jumlah pesanan dengan status diproses adalah **2** pesanan.",
+        "Berdasarkan data dari REST API, terdapat **2 pesanan** dengan status \"diproses\": | ID | Pelanggan ID | Status | Total | ",
+        "Berdasarkan data yang tersedia, jumlah pesanan dengan status diproses adalah **2**."
+      ]
+    },
+    {
+      "id": "S055",
+      "verdicts": [
+        "B",
+        "B",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang terjual adalah **7**.",
+        "Untuk menjawab pertanyaan \"Berapa jumlah produk yang dijual?\" (bagian 55), saya perlu mengakses data dari sistem/databas"
+      ]
+    },
+    {
+      "id": "S056",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **18 baris item pesanan** yang tercatat.",
+        "18 baris item pesanan yang tercatat.",
+        "Ada **18 baris** item pesanan yang tercatat."
+      ]
+    },
+    {
+      "id": "S060",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data yang tersedia, jumlah pesanan dengan status **diproses** adalah **2**.",
+        "Berdasarkan data yang tersedia, jumlah pesanan dengan status **diproses** adalah **2** pesanan.",
+        "Ada **2 pesanan** dengan status **diproses** (bagian 60). Rinciannya: - ID 3 — pelanggan ID 3 — total **Rp 203.500** - I"
+      ]
+    },
+    {
+      "id": "S062",
+      "verdicts": [
+        "B",
+        "S",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data yang tersedia, jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **18**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S063",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "18 baris item pesanan.",
+        "Ada **18 baris item pesanan** yang tercatat.",
+        "18 baris item pesanan tercatat."
+      ]
+    },
+    {
+      "id": "S066",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data dari REST API, terdapat **7 pesanan** dengan status \"selesai\". Rincian pesanan tersebut: | ID | Pelangg",
+        "Ada **7 pesanan** yang berstatus selesai.",
+        "Berdasarkan data, jumlah pesanan yang berstatus selesai adalah **7**."
+      ]
+    },
+    {
+      "id": "S067",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **2 pesanan** dengan status **diproses**. Detailnya: 1. ID pesanan **3** — pelanggan ID 3 — total **Rp203.500** 2. I",
+        "Berdasarkan data dari API, terdapat **2 pesanan** dengan status \"diproses\": | ID | Pelanggan ID | Status | Total | |----",
+        "Berdasarkan data dari REST API, terdapat **2 pesanan** dengan status **diproses**: | ID Pesanan | Pelanggan ID | Status "
+      ]
+    },
+    {
+      "id": "S068",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah pesanan berstatus dibatalkan adalah **2**.",
+        "Ada **2** pesanan berstatus **dibatalkan**: | ID | Pelanggan ID | Status | Total | |---:|-------------:|--------|------:",
+        "Jumlah pesanan berstatus dibatalkan adalah **2**."
+      ]
+    },
+    {
+      "id": "S069",
+      "verdicts": [
+        "S",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S070",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada 18 baris item pesanan yang tercatat.",
+        "Ada **18** baris item pesanan yang tercatat.",
+        "Ada **18** baris item pesanan yang tercatat."
+      ]
+    },
+    {
+      "id": "S073",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Berdasarkan data dari API, terdapat **7 pesanan** dengan status **\"selesai\"**. Rinciannya: | ID Pesanan | Pelanggan ID |",
+        "Ada **7 pesanan** berstatus **selesai**. Rinciannya: | ID Pesanan | Pelanggan ID | Total | |---|---|---| | 1 | 1 | 370.0",
+        "Ada **7** pesanan yang berstatus **selesai**."
+      ]
+    },
+    {
+      "id": "S075",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **2** pesanan berstatus **dibatalkan**: - ID 5 — pelanggan 5 — total 920.000 - ID 12 — pelanggan 6 — total 185.000",
+        "Ada **2** pesanan berstatus dibatalkan: - ID 5 — pelanggan ID 5 — total 920.000 - ID 12 — pelanggan ID 6 — total 185.000",
+        "Ada **2** pesanan berstatus **dibatalkan**: | ID Pesanan | Pelanggan ID | Total | |---|---|---:| | 5 | 5 | 920.000 | | 1"
+      ]
+    },
+    {
+      "id": "S076",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual: **7**."
+      ]
+    },
+    {
+      "id": "S077",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **18 baris item pesanan** yang tercatat.",
+        "Ada **18 baris** item pesanan yang tercatat.",
+        "Ada **18** baris item pesanan yang tercatat."
+      ]
+    },
+    {
+      "id": "S098",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "18 baris item pesanan.",
+        "Ada **18** baris item pesanan yang tercatat.",
+        "Ada **18** baris item pesanan yang tercatat."
+      ]
+    },
+    {
+      "id": "S104",
+      "verdicts": [
+        "B",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **71**."
+      ]
+    },
+    {
+      "id": "S125",
+      "verdicts": [
+        "S",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S139",
+      "verdicts": [
+        "S",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **7**.",
+        "Jumlah produk yang dijual adalah **7**."
+      ]
+    },
+    {
+      "id": "S155",
+      "verdicts": [
+        "B",
+        "B",
+        "B"
+      ],
+      "answers": [
+        "Ada **8 pelanggan terdaftar** di database penjualan. Rinciannya: - Toko Sinar Jaya (Bandung, retail) - CV Mitra Abadi (J",
+        "Jumlah pelanggan terdaftar di database penjualan adalah **8**.",
+        "Jumlah pelanggan terdaftar di database penjualan adalah **8**."
+      ]
+    },
+    {
+      "id": "S174",
+      "verdicts": [
+        "S",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **71**."
+      ]
+    },
+    {
+      "id": "S188",
+      "verdicts": [
+        "S",
+        "S",
+        "S"
+      ],
+      "answers": [
+        "Jumlah produk yang dijual adalah **71**.",
+        "Jumlah produk yang dijual adalah **18**.",
+        "Jumlah produk yang dijual adalah **71**. Jika Anda memerlukan rincian lebih lanjut (misalnya per produk, kategori, atau "
+      ]
+    }
+  ]
+}

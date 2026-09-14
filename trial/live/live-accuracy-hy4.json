@@ -1,0 +1,288 @@
+{
+  "measuredAt": "2026-09-14T02:25:20.757Z",
+  "base": "http://localhost:3000",
+  "trials": 1,
+  "cases": 26,
+  "total": 26,
+  "correct": 16,
+  "accuracyPct": 61.54,
+  "byCategory": {
+    "factual": {
+      "n": 8,
+      "ok": 6
+    },
+    "arithmetic": {
+      "n": 5,
+      "ok": 5
+    },
+    "reasoning": {
+      "n": 4,
+      "ok": 4
+    },
+    "format": {
+      "n": 4,
+      "ok": 1
+    },
+    "indonesian": {
+      "n": 5,
+      "ok": 0
+    }
+  },
+  "latency": {
+    "p50": 43536,
+    "p90": 75073,
+    "p99": 149496,
+    "max": 149496
+  },
+  "ttft": {
+    "p50": 19918,
+    "max": 64435,
+    "n": 16
+  },
+  "rows": [
+    {
+      "id": "F01",
+      "category": "factual",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: The operation timed out."
+    },
+    {
+      "id": "F02",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 97561,
+      "ttftMs": 64435,
+      "answer": "38"
+    },
+    {
+      "id": "F03",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 68817,
+      "ttftMs": 35637,
+      "answer": "Merkurius"
+    },
+    {
+      "id": "F04",
+      "category": "factual",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 149496,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "provider error: Stream timed out — no response within the time limit. Please try again."
+    },
+    {
+      "id": "F05",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 43536,
+      "ttftMs": 10294,
+      "answer": "Au"
+    },
+    {
+      "id": "F06",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 66678,
+      "ttftMs": 33538,
+      "answer": "11"
+    },
+    {
+      "id": "F07",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 75073,
+      "ttftMs": 41828,
+      "answer": "India"
+    },
+    {
+      "id": "F08",
+      "category": "factual",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 14718,
+      "ttftMs": 9978,
+      "answer": "Tokyo"
+    },
+    {
+      "id": "A01",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 15494,
+      "ttftMs": 9425,
+      "answer": "391"
+    },
+    {
+      "id": "A02",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 49921,
+      "ttftMs": 16666,
+      "answer": "12"
+    },
+    {
+      "id": "A03",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 52974,
+      "ttftMs": 19918,
+      "answer": "1024"
+    },
+    {
+      "id": "A04",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 45652,
+      "ttftMs": 12677,
+      "answer": "36"
+    },
+    {
+      "id": "A05",
+      "category": "arithmetic",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 40792,
+      "ttftMs": 7774,
+      "answer": "743"
+    },
+    {
+      "id": "R01",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 53607,
+      "ttftMs": 20615,
+      "answer": "Ya"
+    },
+    {
+      "id": "R02",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 48728,
+      "ttftMs": 15566,
+      "answer": "Ani"
+    },
+    {
+      "id": "R03",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 55175,
+      "ttftMs": 22010,
+      "answer": "8"
+    },
+    {
+      "id": "R04",
+      "category": "reasoning",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 58385,
+      "ttftMs": 25404,
+      "answer": "Sabtu"
+    },
+    {
+      "id": "M01",
+      "category": "format",
+      "trial": 1,
+      "ok": true,
+      "latencyMs": 42610,
+      "ttftMs": 9367,
+      "answer": "OK"
+    },
+    {
+      "id": "M02",
+      "category": "format",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+    },
+    {
+      "id": "M03",
+      "category": "format",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
+    },
+    {
+      "id": "M04",
+      "category": "format",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    },
+    {
+      "id": "I01",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    },
+    {
+      "id": "I02",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    },
+    {
+      "id": "I03",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    },
+    {
+      "id": "I04",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    },
+    {
+      "id": "I05",
+      "category": "indonesian",
+      "trial": 1,
+      "ok": false,
+      "latencyMs": 0,
+      "ttftMs": null,
+      "answer": "",
+      "reason": "harness: Unable to connect. Is the computer able to access the url?"
+    }
+  ]
+}
