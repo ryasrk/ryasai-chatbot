@@ -1,0 +1,187 @@
+{
+  "measuredAt": "2026-09-14T02:54:31.482Z",
+  "base": "http://localhost:3000",
+  "plane": "all",
+  "total": 22,
+  "passed": 10,
+  "steps": [
+    {
+      "plane": "vector",
+      "step": "unggah \"01-kebijakan-cuti.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0mp971000hh8sqq4q10f3f"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"02-sop-layanan-pelanggan.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0mp99x0011h8sqd0c6qt21"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"03-panduan-onboarding.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0mp9c4001gh8sqnxxilaa9"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"04-panduan-keamanan-data.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0mp9e6001xh8sq3ndt4q4c"
+    },
+    {
+      "plane": "vector",
+      "step": "tunggu dokumen selesai diindeks",
+      "intent": "Saya menunggu sistem selesai memproses dokumen",
+      "ok": true,
+      "detail": "4/4 dokumen siap"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: cuti tahunan",
+      "intent": "Saya ingin tahu jatah cuti tahunan saya",
+      "ok": true,
+      "detail": "105474ms :: 12",
+      "expected": "12",
+      "got": "12"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: cuti melahirkan",
+      "intent": "Saya ingin tahu hak cuti melahirkan",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "90",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: waktu respon kritis",
+      "intent": "Berapa lama saya harus menunggu kalau layanan mati total",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "15",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: masa percobaan",
+      "intent": "Berapa lama masa percobaan karyawan baru",
+      "ok": true,
+      "detail": "47298ms :: 3",
+      "expected": "3",
+      "got": "3"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: panjang kata sandi",
+      "intent": "Berapa panjang minimal kata sandi",
+      "ok": false,
+      "detail": "91105ms :: 8",
+      "expected": "14",
+      "got": "8"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: sisa cuti hangus",
+      "intent": "Kapan sisa cuti saya hangus",
+      "ok": false,
+      "detail": "103185ms :: ",
+      "expected": "31 maret",
+      "got": "tidak mengandung: 31 maret"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya hal yang TIDAK ada di dokumen",
+      "intent": "Saya tidak ingin sistem mengarang jawaban yang tidak ada di dokumen",
+      "ok": true,
+      "detail": "54636ms :: Maaf, saya tidak memiliki akses ke data harga tiket pesawat secara *real-time* karena saya tidak terhubung dengan API pemesanan maskapai penerbangan atau sistem",
+      "expected": "mengaku tidak tahu / mengarahkan ke sumber lain",
+      "got": "tidak mengarang"
+    },
+    {
+      "plane": "db",
+      "step": "hubungkan database perusahaan",
+      "intent": "Saya menghubungkan database penjualan kami",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0n3f2v006ph8sqfeg8gyi6"
+    },
+    {
+      "plane": "db",
+      "step": "uji koneksi",
+      "intent": "Saya memastikan koneksi database benar sebelum dipakai",
+      "ok": true,
+      "detail": "HTTP 200 {\"ok\":true,\"data\":{\"id\":\"cmu0n3f2v006ph8sqfeg8gyi6\",\"lastTestedAt\":\"2026-09-14T02:44:31.907Z\",\"lastTestOk\":true,\"tablesCount\":5},\"tablesCoun"
+    },
+    {
+      "plane": "db",
+      "step": "baca skema (reflection)",
+      "intent": "Saya biarkan sistem membaca tabel yang tersedia",
+      "ok": false,
+      "detail": "HTTP 405 null"
+    },
+    {
+      "plane": "db",
+      "step": "tanya: pendapatan selesai",
+      "intent": "Saya ingin total penjualan yang benar-benar terjadi (bukan yang dibatalkan)",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "9366000",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "db",
+      "step": "tanya: jumlah pesanan dibatalkan",
+      "intent": "Saya ingin tahu berapa pesanan yang batal",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "1",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "db",
+      "step": "tanya: cabang tanpa penjualan",
+      "intent": "Saya ingin tahu cabang mana yang belum menjual",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "1",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "db",
+      "step": "tanya: jumlah pelanggan",
+      "intent": "Saya ingin tahu berapa pelanggan terdaftar",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "5",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "db",
+      "step": "tanya: kota pelanggan tanpa pesanan",
+      "intent": "Saya ingin tahu siapa pelanggan yang belum pernah memesan",
+      "ok": false,
+      "detail": "80646ms :: Saat ini belum ada data pelanggan atau pesanan yang dibagikan dalam percakapan kita, jadi saya belum bisa menyebutkan nama pelanggan yang dimaksud sec",
+      "expected": "sejahtera",
+      "got": "tidak mengandung: sejahtera"
+    },
+    {
+      "plane": "rest",
+      "step": "hubungkan REST API eksternal",
+      "intent": "Saya menghubungkan API pesanan perusahaan kami",
+      "ok": false,
+      "detail": "HTTP 400 {\"ok\":false,\"error\":\"Base URL points to a blocked internal host.\"}"
+    },
+    {
+      "plane": "rest",
+      "step": "lanjutan UAT REST",
+      "intent": "Semua langkah berikutnya bergantung pada langkah ini",
+      "ok": false,
+      "detail": "connector gagal dibuat, sisa langkah dilewati"
+    }
+  ]
+}

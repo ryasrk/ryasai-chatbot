@@ -6921,3 +6921,173 @@ dengan benar dan saya konfirmasi dengan pengukuran langsung.
 
 Partisi tabel per-organisasi: lanjutkan, atau berhenti di upgrade pgvector saja?
 Belum dijawab.
+
+---
+
+## 10. UAT tiga bidang data — dan satu cacat produksi yang hanya UAT bisa menemukannya
+
+Ronde ini menambahkan UAT yang menempuh **perjalanan pengguna sungguhan** pada
+tiga bidang data, bukan unit test. Berkasnya ada di `uat/` (lihat `uat/README.md`).
+Setiap langkah adalah panggilan HTTP sungguhan ke aplikasi yang berjalan, dan
+langkah yang mengembalikan HTTP 200 dengan **angka yang salah dihitung GAGAL**.
+
+### 10.1 Cacat produksi yang ditemukan: jalur OpenAI-compatible tidak mengirim `max_tokens`
+
+**Ini cacat nyata, bukan masalah lingkungan, dan hanya muncul dengan model reasoning.**
+
+`src/lib/llm-client.ts` tidak pernah mengirim `max_tokens` pada jalur
+OpenAI-compatible, dengan komentar "biarkan default provider berlaku". Itu benar
+untuk model obrolan biasa dan **tanpa batas** untuk model reasoning, yang
+menagihkan proses berpikirnya sebagai completion token dan **berpikir sebelum
+menghasilkan apa pun**.
+
+Terukur lewat jalur HTTP produksi dengan `cbcn/hy4-preview`:
+
+| panggilan | prompt | completion | latensi |
+|---|---|---|---|
+| `intent-analysis` | 273 token | **6.386 token** | **121.992 ms** |
+| jawaban faktual satu kata | — | 364 reasoning token | 8.034 ms |
+
+Prompt 273 token bukan masalahnya. Model menghasilkan ribuan token penalaran
+internal hanya untuk mengeluarkan objek JSON kecil; satu panggilan itu
+menembus tenggat obrolan 120 detik, sehingga **SEMUA pertanyaan RAG gagal**
+sebagai timeout generik — padahal dokumen sudah terindeks dengan benar dan bisa
+ditemukan (dibuktikan: `POST /api/documents/search` mengembalikan chunk yang tepat
+dengan `semanticSimilarity` 0,577). **Kegagalan tampak seperti bug retrieval,
+padahal bug anggaran token.**
+
+Perbaikan (`a51db8b`), dua kali pengukuran karena percobaan pertama saya salah:
+
+1. Mengirim plafon itu efektif: permintaan yang sama turun dari **24.869 ms**
+   tanpa plafon menjadi **5.640 ms** pada `max_tokens: 200`.
+2. **Besarnya plafon harus menyisakan ruang untuk penalaran.** Plafon yang
+   seukuran jawaban yang terlihat akan memotong keluaran menjadi kosong, karena
+   penalaran menghabiskan anggaran lebih dulu. Pada `max_tokens: 512`, panggilan
+   intent mengembalikan `finish_reason: "length"`, 512 completion token, dan
+   **konten KOSONG** — JSON gagal di-parse, pemanggil mengulang, lalu macet sampai
+   tenggat.
+3. Panjang penalaran **berekor panjang**: 142, 1.764, dan 4.096 token pada tiga
+   kali panggilan yang SAMA. Pada 4.096 tepat kena plafon setelah 109 detik dan
+   tidak menghasilkan apa pun yang bisa di-parse.
+
+**Koreksi diri yang penting.** Sebuah asersi sudah ada di `src/lib/ai.test.ts`
+sejak sebelumnya yang menuntut `max_tokens` **TIDAK ADA**, dengan catatan
+*"adding max_tokens would truncate answers"*. Catatan itu **BENAR** — dan
+percobaan pertama saya (512) membuktikannya dengan memotong JSON menjadi kosong.
+Alih-alih menghapus asersi itu, ia **dibalik** (`25b3fe4`) dan catatan sejarahnya
+dipertahankan, karena orang berikutnya yang menurunkan angka itu harus tahu
+bahwa hal itu sudah dicoba dan gagal. Asersi barunya bukan "apakah field-nya ada"
+melainkan "apakah plafonnya cukup tinggi untuk tidak memotong".
+
+`chat` sengaja mempertahankan plafon longgar: jawaban pengguna yang terpotong
+lebih buruk daripada jawaban yang lambat.
+
+### 10.2 Dua kesalahan harness saya sendiri, ditemukan karena UAT dijalankan
+
+Keduanya adalah kesalahan **alat ukur**, bukan produk, dan keduanya hanya muncul
+karena UAT benar-benar dijalankan:
+
+1. **REST connector menolak `127.0.0.1`** — dan itu **BENAR**, blokir SSRF memang
+   seharusnya begitu. Harness saya yang salah: sumber data self-hosted yang nyata
+   dialamatkan lewat **nama** yang dideklarasikan operator di `LLM_ALLOWED_HOSTS`.
+   Diperbaiki dengan memakai `127.0.0.1.nip.io` (resolusi ke loopback tanpa perlu
+   mengubah `/etc/hosts`), sehingga jalur yang didukung yang diuji, bukan
+   penjaganya yang dilemahkan.
+2. **Route skema integrasi adalah `GET`, bukan `POST`** — harness mengirim POST dan
+   menerima 405. 405 itu jawaban yang benar.
+
+### 10.3 Dua prasyarat lingkungan yang kegagalannya menyesatkan
+
+1. **Layanan embedding adalah syarat mutlak.** Gateway model tidak menyediakan
+   `/embeddings`, sehingga `embeddingBaseUrl` jatuh ke `baseUrl` (gateway chat)
+   dan seluruh jalur RAG gagal dengan pesan **"Base URL points to a blocked
+   internal host"** — pesan yang terdengar seperti masalah SSRF, padahal masalahnya
+   tidak ada layanan embedding. Diperbaiki dengan `uat/fixtures/embedding-server.ts`
+   (1536 dimensi, deterministik, sehingga retrieval reproducible).
+2. **`prisma/schema.prisma` menyatakan `vector(384)` sedangkan
+   `validateEmbeddingResponse()` menuntut 1536.** Ketidakcocokan ini **tidak
+   memunculkan galat**: aplikasi mendeteksinya dan menurunkan diri dengan
+   peringatan yang sangat jelas di log, menyimpan `embeddingJson` saja, sehingga
+   pencarian jatuh ke lexical-only sementara UI tetap melaporkan
+   `semanticSimilarity`. Ini perilaku defensif yang **bagus** — tetapi
+   konsekuensinya adalah kolom harus diselaraskan ke 1536 agar UAT bisa berjalan.
+
+Satu hal yang **tidak** diukur dan tidak akan saya klaim terukur: antrean
+`POST /api/documents/embeddings/rebuild` mengembalikan 200 dalam ~26 ms tetapi
+tidak menulis vektor apa pun di lingkungan dev ini (`redis-cli llen
+bull:embedding-rebuild:wait` langsung 0). Karena itu `uat/fixtures/embed-all.ts`
+mengisi vektor secara langsung; yang diukur skrip itu adalah chunk, ukuran vektor,
+dan kolom pgvector — **bukan** klien embedding milik aplikasi.
+
+### 10.4 Batas kejujuran
+
+- UAT ini berjalan pada model **reasoning** yang lambat. Satu pertanyaan RAG
+  memerlukan **1–5 menit**, dan UAT penuh tiga bidang memakan puluhan menit.
+  Angka itu pengukuran jujur, bukan lambatnya alat ukur.
+- Karena itu variabel `LLM_TIMEOUT_MS`, `CHAT_OVERALL_DEADLINE_MS`, dan
+  `CHAT_IDLE_TIMEOUT_MS` dinaikkan agar sesuai model reasoning. **Angka default
+  30 s / 120 s tetap tidak diubah** — ia benar untuk mayoritas provider, dan
+  menaikkannya akan membuat satu permintaan macet menahan slot lebih lama.
+  Yang berubah adalah **kode** (mengirim plafon token), bukan default waktu.
+- Embedding fixture adalah fungsi hash deterministik, **bukan model neural**.
+  Ia mengukur apakah unggah → chunk → embed → simpan → retrieve → prompt → jawab
+  bekerja ujung ke ujung. Ia **tidak** mengukur kualitas embedding.
+
+### 10.5 Hasil UAT dan cacat yang tinggal — dinyatakan apa adanya
+
+Hasil satu putaran penuh tiga bidang: **20/28 langkah = 71,43%**
+(vector 11/12, db 5/8, rest 4/8). Rinciannya jujur sebagai berikut.
+
+**Yang bekerja dan terbukti.** Bidang vector mencapai **11/12** setelah perbaikan
+`max_tokens` dan penyediaan layanan embedding: setiap pertanyaan faktual
+mengembalikan angka yang **cocok dengan dokumen** (12, 90, 15, 3, 14) dan
+jawaban menyertakan sitasi ke chunk yang benar. Satu-satunya kegagalan vector
+adalah pertanyaan yang **tidak** ada di dokumen; itu diperiksa secara terpisah
+dan **lulus** (model menolak menjawab alih-alih mengarang).
+
+Bidang database membuktikan pertanyaan tersulitnya dengan benar: total penjualan
+**hanya** pesanan `selesai` = **9.366.000**, bukan 13.944.000 yang akan keluar
+kalau pesanan `dibatalkan` ikut dijumlahkan. Ini membuktikan filter status dan
+JOIN bekerja, bukan sekadar koneksi terbuka.
+
+**Cacat yang DIPERBAIKI ronde ini** (lihat komit `a51db8b`, `25b3fe4`,
+`3b3df85`): plafon `max_tokens` yang tidak pernah dikirim, dan tiga tempat di
+mana REST tidak diperlakukan sebagai sumber data (prompt intent, `contextFlags`,
+guard klarifikasi).
+
+**Cacat yang MASIH TERBUKA dan tidak saya paksakan perbaikannya.** Bahkan setelah
+intent benar, REST **tetap tidak terpilih**. Terukur pada pertanyaan yang tokennya
+cocok dengan endpoint:
+
+| tool | schemaScore | finalScore |
+|---|---|---|
+| **CHAT** | 0,000 | **0,5450** ← menang |
+| SQL | 0,122 | 0,3927 |
+| **REST** | **0,251** | 0,3878 |
+| RAG | 0,000 | 0,3500 |
+
+REST punya **kecocokan kata kunci terbaik dari semua tool**, tetapi kalah karena
+riwayat keberhasilan CHAT sendiri menaikkan `perfScore` dan `latencyScore` di
+atas `NEUTRAL_PERF`, menyumbang **~0,245 tanpa satu pun sinyal schema**.
+Sebuah kecocokan keyword 0,251 hanya menghasilkan 0,088 dari `WEIGHTS.schema`.
+Artinya REST butuh `schemaScore` di atas **~0,70** hanya untuk mengejar CHAT yang
+tidak cocok sama sekali.
+
+Saya **mencoba** memperbaikinya dengan mematikan `perfScore`/`latencyScore` untuk
+CHAT, dan **10 test `smart-router` langsung gagal**. Test itu ternyata
+**menegaskan** suku tersebut dengan sengaja — salah satu komentarnya mencatat
+bahwa CHAT memang dimaksudkan sebagai fallback yang sehat. Karena itu perubahan
+itu **saya batalkan** (`git checkout`), bukan saya paksa dengan mengubah test.
+
+**Mengapa ini penting untuk dikatakan.** Godaan yang jelas di sini adalah
+menurunkan ambang `schemaScore > 0.3` untuk melewati tiebreaker, atau
+menghapus suku performa CHAT lalu menyesuaikan test. Keduanya akan membuat UAT
+terlihat hijau **tanpa** menyelesaikan pertanyaan sebenarnya: apakah sebuah
+sumber data yang cocok harus mengalahkan fallback yang punya riwayat bagus,
+dan pada rasio bobot berapa. Itu keputusan desain, bukan bug yang jelas, jadi
+saya menyerahkannya sebagai pertanyaan terbuka daripada menebak.
+
+Yang **tidak** diklaim: UAT ini tidak membuktikan bidang REST bekerja. Ia
+membuktikan konektor, whitelist endpoint, autentikasi bearer, dan uji koneksi
+bekerja (data nyata kembali dalam 17 ms), dan bahwa **pemilihan tool** untuk REST
+masih salah pada model yang diuji.

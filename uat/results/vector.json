@@ -1,0 +1,107 @@
+{
+  "measuredAt": "2026-09-14T02:22:14.678Z",
+  "base": "http://localhost:3000",
+  "plane": "vector",
+  "total": 12,
+  "passed": 5,
+  "steps": [
+    {
+      "plane": "vector",
+      "step": "unggah \"01-kebijakan-cuti.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0lpark001dh81e500j8nrd"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"02-sop-layanan-pelanggan.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0lpav5001xh81esa2ofz8d"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"03-panduan-onboarding.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0lpaxi002ch81evr8ppzam"
+    },
+    {
+      "plane": "vector",
+      "step": "unggah \"04-panduan-keamanan-data.md\"",
+      "intent": "Saya mengunggah dokumen kebijakan supaya bisa ditanyakan",
+      "ok": true,
+      "detail": "HTTP 201 id=cmu0lpazx002th81etbbzomnx"
+    },
+    {
+      "plane": "vector",
+      "step": "tunggu dokumen selesai diindeks",
+      "intent": "Saya menunggu sistem selesai memproses dokumen",
+      "ok": true,
+      "detail": "4/4 dokumen siap"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: cuti tahunan",
+      "intent": "Saya ingin tahu jatah cuti tahunan saya",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "12",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: cuti melahirkan",
+      "intent": "Saya ingin tahu hak cuti melahirkan",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "90",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: waktu respon kritis",
+      "intent": "Berapa lama saya harus menunggu kalau layanan mati total",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "15",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: masa percobaan",
+      "intent": "Berapa lama masa percobaan karyawan baru",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "3",
+      "got": "(tidak ada angka)"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: panjang kata sandi",
+      "intent": "Berapa panjang minimal kata sandi",
+      "ok": false,
+      "detail": "109864ms :: 8",
+      "expected": "14",
+      "got": "8"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya: sisa cuti hangus",
+      "intent": "Kapan sisa cuti saya hangus",
+      "ok": false,
+      "detail": "ERROR: Stream timed out — no response within the time limit. Please try again.",
+      "expected": "31 maret",
+      "got": "tidak mengandung: 31 maret"
+    },
+    {
+      "plane": "vector",
+      "step": "tanya hal yang TIDAK ada di dokumen",
+      "intent": "Saya tidak ingin sistem mengarang jawaban yang tidak ada di dokumen",
+      "ok": false,
+      "detail": "88769ms :: Untuk mendapatkan informasi harga tiket pesawat dari Jakarta ke Bali hari ini, saya perlu melakukan pencarian data penerbangan. Berikut adalah informasi yang be",
+      "expected": "mengaku tidak tahu / mengarahkan ke sumber lain",
+      "got": "mengarang angka"
+    }
+  ]
+}
