@@ -205,7 +205,8 @@ const FLOORS: Record<string, number> = {
   'src/lib/llm-client-openai.ts': 80, // measured 85.57% (172/201)
   // Raised 85 -> 87 after this round added redactProviderBody() and its tests. The merged figure moved
   // 85.x -> 87.82% (173/197), so the floor follows the measurement rather than the old estimate.
-  'src/lib/llm-client-utils.ts': 87,
+  'src/lib/llm-client-utils.ts': 88, // raised 87 -> 88: readCompletionBody added and covered by 6 tests
+
   // Every provider-failure test used openaiCfg, so the Anthropic non-streaming !res.ok branch
   // never ran -- a dropped status there would hit real BYOK customers while unit tests stayed
   // green. Also covered: tools in the STREAMING OpenAI body (a separate assignment) and the

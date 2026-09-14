@@ -1,13 +1,13 @@
 {
-  "linePct": 88.17,
-  "linesHit": 21633,
-  "linesFound": 24536,
-  "reachableLinePct": 96.19,
-  "reachableLinesHit": 18745,
-  "reachableLinesFound": 19487,
-  "fnPct": 94.66,
-  "fnsHit": 1987,
-  "fnsFound": 2099,
+  "linePct": 88.11,
+  "linesHit": 21654,
+  "linesFound": 24577,
+  "reachableLinePct": 96.2,
+  "reachableLinesHit": 18763,
+  "reachableLinesFound": 19505,
+  "fnPct": 94.67,
+  "fnsHit": 1990,
+  "fnsFound": 2102,
   "filesMeasured": 198,
   "failedTestFiles": [],
   "files": [
@@ -129,6 +129,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/llm-config.ts",
+      "hit": 238,
+      "found": 315,
+      "pct": 75.55555555555556,
+      "fHit": 22,
+      "fFound": 24,
+      "fPct": 91.66666666666666
+    },
+    {
       "file": "src/lib/agentic-budget.ts",
       "hit": 13,
       "found": 17,
@@ -181,15 +190,6 @@
       "fHit": 30,
       "fFound": 31,
       "fPct": 96.7741935483871
-    },
-    {
-      "file": "src/lib/llm-config.ts",
-      "hit": 236,
-      "found": 299,
-      "pct": 78.92976588628763,
-      "fHit": 22,
-      "fFound": 24,
-      "fPct": 91.66666666666666
     },
     {
       "file": "src/lib/planner.ts",
@@ -363,6 +363,15 @@
       "fPct": 96.55172413793103
     },
     {
+      "file": "src/lib/llm-client-openai.ts",
+      "hit": 172,
+      "found": 203,
+      "pct": 84.72906403940887,
+      "fHit": 9,
+      "fFound": 10,
+      "fPct": 90
+    },
+    {
       "file": "src/lib/api-keys.ts",
       "hit": 78,
       "found": 92,
@@ -397,15 +406,6 @@
       "fHit": 4,
       "fFound": 4,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/llm-client-openai.ts",
-      "hit": 172,
-      "found": 201,
-      "pct": 85.57213930348259,
-      "fHit": 9,
-      "fFound": 10,
-      "fPct": 90
     },
     {
       "file": "src/app/api/documents/search/route.ts",
@@ -471,15 +471,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/llm-client-utils.ts",
-      "hit": 173,
-      "found": 197,
-      "pct": 87.81725888324873,
-      "fHit": 14,
-      "fFound": 14,
-      "fPct": 100
-    },
-    {
       "file": "src/lib/observability.ts",
       "hit": 131,
       "found": 149,
@@ -496,6 +487,15 @@
       "fHit": 37,
       "fFound": 38,
       "fPct": 97.36842105263158
+    },
+    {
+      "file": "src/lib/llm-client-utils.ts",
+      "hit": 192,
+      "found": 218,
+      "pct": 88.07339449541286,
+      "fHit": 17,
+      "fFound": 17,
+      "fPct": 100
     },
     {
       "file": "src/app/api/integrations/route.ts",
@@ -543,6 +543,15 @@
       "fPct": 83.33333333333334
     },
     {
+      "file": "src/lib/llm-client.ts",
+      "hit": 269,
+      "found": 298,
+      "pct": 90.26845637583892,
+      "fHit": 22,
+      "fFound": 23,
+      "fPct": 95.65217391304348
+    },
+    {
       "file": "src/lib/citation-trail.ts",
       "hit": 57,
       "found": 63,
@@ -559,15 +568,6 @@
       "fHit": 14,
       "fFound": 15,
       "fPct": 93.33333333333333
-    },
-    {
-      "file": "src/lib/llm-client.ts",
-      "hit": 269,
-      "found": 296,
-      "pct": 90.87837837837837,
-      "fHit": 22,
-      "fFound": 23,
-      "fPct": 95.65217391304348
     },
     {
       "file": "src/lib/mcp-client.ts",
