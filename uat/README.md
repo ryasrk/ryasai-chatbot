@@ -26,23 +26,38 @@ HARAP : 9.366.000      <- hanya pesanan berstatus selesai
 | Berkas | Isi |
 |---|---|
 | `journey.ts` | Runner UAT utama — 22 langkah di tiga bidang |
-| `fixtures/db-seed.sql` | Data demo PostgreSQL: 4 cabang, 5 pelanggan, 6 produk, 12 pesanan |
-| `fixtures/knowledge/*.md` | 4 dokumen kebijakan untuk pengetahuan vector |
-| `fixtures/rest-server.ts` | REST API nyata (Bun server, port 4501) |
-| `fixtures/embedding-server.ts` | Layanan embedding lokal (port 4502) |
+| `fixtures/db-sales.sql` | Basis data Sales (8 pelanggan, 12 pesanan, 7 produk) |
+| `fixtures/db-hr.sql` | Basis data HR (10 karyawan, 4 departemen, 9 cuti, 13 absensi) |
+| `fixtures/db-logistics.sql` | Basis data Logistics (3 gudang, 12 stok, 8 pengiriman) |
+| `fixtures/knowledge/*.md` | 9 dokumen kebijakan untuk pengetahuan vector |
+| `fixtures/rest-sales.ts` | REST Sales (port 4511) |
+| `fixtures/rest-hr.ts` | REST HR (port 4512) |
+| `fixtures/rest-logistics.ts` | REST Logistics (port 4513) |
+| `fixtures/embedding-server-real.py` | Embedding nyata (`paraphrase-multilingual-MiniLM-L12-v2`, port 4503) |
 | `fixtures/embed-all.ts` | Mengisi kolom `embedding` untuk seluruh chunk |
 | `results/*.json` | Hasil mentah setiap langkah, per bidang |
+
+`db-seed.sql`, `rest-server.ts` dan `embedding-server.ts` adalah fixture UAT lama dan
+**tidak lagi dipakai** `journey.ts`. Ketiganya dipertahankan sebagai catatan sejarah:
+`db-seed.sql` memakai tabel `demo_*` yang namanya nyaris identik dengan skema Sales, dan
+`rest-server.ts` menyajikan `/stok` serta `/orders` yang sama dengan Logistics tetapi
+dengan data berbeda — keduanya membuat pemilihan sumber ambigu. Jangan dipakai untuk
+pengukuran baru.
 
 ## Menyalakan lingkungan
 
 ```bash
-# 1. Database demo
-createdb uat_sales 2>/dev/null || true
-psql "postgresql://ryasai:ryasai_dev@localhost:5432/uat_sales" -f uat/fixtures/db-sales.sql
+# 1. Tiga basis data + tiga layanan REST
+for D in sales hr logistics; do
+  createdb uat_$D 2>/dev/null || true
+  psql "postgresql://ryasai:ryasai_dev@localhost:5432/uat_$D" -f uat/fixtures/db-$D.sql
+done
 
-# 2. Dua layanan pendukung
-bun uat/fixtures/rest-server.ts      &
-bun uat/fixtures/embedding-server.ts &
+# 2. Layanan pendukung (port 4511/4512/4513/4503)
+bun uat/fixtures/rest-sales.ts     &
+bun uat/fixtures/rest-hr.ts        &
+bun uat/fixtures/rest-logistics.ts &
+python3 uat/fixtures/embedding-server-real.py &
 
 # 3. Aplikasi, dengan anggaran waktu untuk model REASONING (lihat di bawah)
 LLM_TIMEOUT_MS=300000 \

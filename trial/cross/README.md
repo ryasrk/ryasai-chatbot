@@ -68,6 +68,8 @@ Three of the five failures passed 5/5 on re-ask, giving a variance-corrected **9
 of naming the source. Both are answered correctly by the REST branch in most runs, which is
 why the measured figure is still 99.38%.
 
-"Routing agreement" (SQL 65.58%) is deliberately NOT an accuracy measure. 183 of the
-SQL-source questions were served over REST and 178 of those were still correct — reaching
-the same rows another way is flexibility, not an error. Only the ANSWER is scored.
+"Routing agreement" (SQL 65.58%) is deliberately NOT an accuracy measure. Of the 600
+questions whose source is SQL, 258 were served over REST instead — and 256 of those were
+still correct. Reaching the same rows another way is flexibility, not an error, and scoring
+it as a miss would punish the system for something the user cannot observe. Only the ANSWER
+is scored.

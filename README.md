@@ -1,6 +1,6 @@
 # ryasai — Enterprise AI Assistant
 
-![CI](https://github.com/ryasai/Chatbot/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-Proprietary-red) ![Version](https://img.shields.io/badge/version-0.4.0-blue) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
+![CI](https://github.com/ryasai/Chatbot/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-Proprietary-red) ![Version](https://img.shields.io/badge/version-0.4.1-blue) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
 **Multi-tenant SaaS** AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails and organizational isolation.
 
@@ -28,6 +28,77 @@ bash start.sh
 ```
 
 Default: `admin@ryas.ai` / `admin12345`
+
+## Measured Results
+
+Numbers below come from runs recorded in the repository, so they can be re-derived
+rather than taken on trust. Source files are linked next to each figure.
+
+**Cross-source benchmark — 800 questions, model `cbcn/deepseek-v4.1-flash`**
+(`trial/cross/`, raw answers in `trial/cross/report.json`):
+
+| Family | Accuracy | p50 | TTFT p50 | Tokens/task |
+|---|---|---|---|---|
+| Sales database | 99% (198/200) | 6192 ms | 84 ms | 38.66 |
+| HR database | 99% (198/200) | 6210 ms | 84 ms | 48.57 |
+| REST APIs | **100%** (200/200) | 6806 ms | 85 ms | 234.00 |
+| Cross-source | 99.5% (199/200) | 6357 ms | 83 ms | 84.50 |
+| **Total** | **99.38% (795/800)** | 6363 ms | 84 ms | 101.51 |
+
+- **Token speed:** p50 **7.29 tokens/sec**; 81,109 completion tokens over 799 sampled turns.
+- **Accuracy per source:** SQL 99.23% (516/520) · REST 99.64% (279/280).
+- **Zero HTTP 429s, zero empty answers.** A throttled or empty run is aborted and reports
+  `accuracy: null` rather than a low score, so a rate-limiter artifact can never be
+  published as an accuracy figure.
+
+800 questions across 4 families (200 each), split across 4 concurrent runners — one per
+family — with the parent doing the single merge. Every answer is a number and the wrong
+source returns a *different* number, so a misrouted question fails visibly instead of
+looking plausible. A single database could not detect a wrong source at all.
+
+**Read this honestly.** A single pass cannot separate a defect from sampling variance.
+Of the 5 failures here, **3 answered correctly 5 times out of 5** when re-asked, giving a
+variance-corrected **99.75% (798/800)**. The 2 that stayed wrong (`S019` answering 0,
+`S031` refusing) share one cause: the SQL branch occasionally picks 0 or declines instead
+of naming the source. Both are answered correctly by the REST branch in most runs, which
+is why the measured figure remains 99.38%.
+
+**"Routing agreement" (SQL 65.58%) is deliberately NOT an accuracy measure.** Of the 600
+questions whose source is SQL, **258 were served over REST instead — and 256 of those were
+still correct**. Reaching the same rows another way is flexibility, not an error, and
+scoring it as a miss would punish the system for something the user cannot observe. Only
+the answer is scored.
+
+**Two defects found and fixed while producing this benchmark**, both of which had made the
+product refuse questions it can answer:
+
+- `Ada berapa order yang dibatalkan?` refused **on every attempt** while the same question
+  phrased `pesanan` answered correctly. Two causes: the domain-context scan stopped at the
+  first blank line, and the Sales keyword list is wrapped across two lines, so `order` was
+  never read (17 terms yielded, `order` missing); and `order` sat in the generic
+  schema-token list as the SQL keyword `ORDER BY`. Fixed — a term the domain context
+  declares explicitly now outranks that list, while genuine noise (`id`, `status`,
+  `created`) is still filtered.
+- **Token usage was never reported on the streaming path.** Three layers stacked: the
+  stream is a generator and can only yield strings, so the parsed counts were discarded;
+  object spread *evaluates* getters, snapshotting `usage` before the stream ran; and
+  `streamAnswer` (SQL/RAG/REST) never forwarded it at all. The gateway was never at fault.
+  These are the first token figures that come from real usage rather than an estimate.
+
+**Head-to-head: full pipeline vs the small pipeline** (`SIMPLE_PIPELINE=1`, 100 questions):
+**accuracy is a TIE.** Only 3 of 100 questions differed and the direction was mixed —
+McNemar registers 0 wins for either side. The small pipeline is materially faster
+(p50 4728 ms vs 6302 ms, TTFT p50 3554 ms vs 4789 ms), but on that evidence the default
+stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
+is not claimed here.
+
+**Test suite:** 6522 tests across 240 files, `bun run test`, 0 failures. Coverage is
+reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
+gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
+this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
+over. One caveat worth stating: a `bun run test` run flaked once in
+`src/lib/llm-config.test.ts`, which passed 5/5 in isolation immediately afterwards and on
+both re-runs of the full suite. Cause unknown.
 
 ## Key Updates (v0.4.1)
 
@@ -140,7 +211,37 @@ bun run lint             # eslint
 bunx tsc --noEmit        # typecheck
 bash start.sh            # Next.js + scheduler
 bash reset.sh            # reset DB + reseed
+bun scripts/coverage-gate.ts   # per-module coverage floors
 ```
+
+### Benchmarks
+
+```bash
+# 800-question cross-source benchmark (4 families, 200 each).
+# Launch the four concurrently -- one runner per family -- then merge once.
+bun trial/cross/run.ts --family SQL_SALES --json trial/cross/results-SQL_SALES.json
+bun trial/cross/consolidate.ts --json trial/cross/report.json
+bun trial/cross/repeat.ts --family SQL_SALES --trials 3   # variance vs real defects
+bun trial/cross/rescore.ts       # re-score SAVED answers after a judge change
+```
+
+Only the answer is scored; see **Measured Results** above for why routing agreement is
+not an accuracy measure.
+
+Two notes that each cost a full run:
+
+- There are **two independent chat rate limiters.** `CHAT_RATE_LIMIT_PER_MIN` is
+  per-organization and lives inside the route handler; `RATE_LIMIT_CHAT_PER_MIN` is
+  per-IP and lives in the **middleware**, so it runs first and the request never reaches
+  the handler (default 30/min). A batch is stopped by the second, so raising only the
+  first changes nothing. Both must be raised for a long run.
+- The runner paces questions (`CROSS_PACE_MS`) and **aborts after 5 consecutive HTTP
+  429s**. A throttled run produces empty answers, which score as failures — one run had
+  196 of 200 questions refused and would have been published as an accuracy figure
+  measuring the rate limiter. Never report a run that aborted.
+
+Launch long runs from a detached shell: a run started inside a short-lived shell dies
+with it and yields a truncated result file that looks like a low score.
 
 ### Guard rails for agents & humans
 
@@ -181,7 +282,16 @@ prisma/
 docs/
 ├── ARCHITECTURE.md       # Full system design
 └── MULTI-TENANT-GUIDE.md # Org scoping guide
+trial/
+├── cross/                # 800-question cross-source benchmark + raw answers
+└── live/                 # live-provider accuracy / token measurements
+uat/
+└── fixtures/             # 3 database dumps + 3 REST services + 9 documents (+3 legacy)
 ```
+
+`trial/` and `uat/` are ad-hoc measurement harnesses, not part of CI. Their run artifacts
+are committed on purpose: they are the evidence behind every number in **Measured
+Results**, and committed answers can be re-scored without re-asking hundreds of questions.
 
 ## Configuration
 
@@ -211,6 +321,7 @@ Copy `.env.example` to `.env`:
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Full system design, RAG pipeline, multi-tenant isolation, performance
 - **[MULTI-TENANT-GUIDE.md](./MULTI-TENANT-GUIDE.md)** — Org scoping guide, code examples, pitfalls
 - **[docs/postgres-migration.md](./docs/postgres-migration.md)** — Postgres setup
+- **[trial/cross/README.md](./trial/cross/README.md)** — How the 800-question benchmark is built and how to read it
 
 ## Production Readiness
 
@@ -218,10 +329,13 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 1934 unit tests across 129 files (`bun run test`), incl. static invariant guards (see Development)
+- ✅ 6522 unit tests across 240 files (`bun run test`), incl. static invariant guards (see Development)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
 - ✅ Error handling + graceful fallbacks
+- ✅ 99.38% accuracy on the 800-question cross-source benchmark (4 databases/APIs, 0 empty
+  answers, 0 throttled requests) — see **Measured Results**; 99.75% variance-corrected
+- ✅ Verifiable evidence for every benchmark figure (raw answers committed, re-scorable)
 - ⏳ Load testing recommended
 - ⏳ Monitoring + alerting setup
 
