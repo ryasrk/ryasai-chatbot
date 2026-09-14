@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
 import { runStreamingChatCompletion, type ChatHistoryEntry, type StreamingCompletionResult } from '@/lib/tool-router'
+import { runSimpleStreamingChat, simplePipelineEnabled } from '@/lib/simple-pipeline'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 import { rememberChatTurn } from '@/lib/cognee'
 import { generateSessionTitle, generateSessionSummary } from '@/lib/ai'
@@ -247,15 +248,29 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // rewrite → routing) can take 5-15s; a single static "Analyzing..."
           // made the bot feel dead. Emit stage labels as the pipeline moves.
           send('thinking', { content: 'Understanding your question in context...' })
-          streaming = await runStreamingChatCompletion({
-            question: contextualizedText,
-            userId: user.userId,
-            integrationId,
-            sessionId: session.id,
-            chatHistory,
-            allowMultiStepDag: true,
-            systemPromptPrefix,
-          })
+          // Feature-flagged alternative pipeline. Kept BESIDE the existing one so the
+          // two can be measured on identical questions; set SIMPLE_PIPELINE=0 to go
+          // back without a deploy. It returns the same StreamingCompletionResult, so
+          // everything below this line is unchanged either way.
+          const useSimple = simplePipelineEnabled()
+          streaming = useSimple
+            ? await runSimpleStreamingChat({
+                question: contextualizedText,
+                userId: user.userId,
+                integrationId,
+                sessionId: session.id,
+                chatHistory,
+                systemPromptPrefix,
+              })
+            : await runStreamingChatCompletion({
+                question: contextualizedText,
+                userId: user.userId,
+                integrationId,
+                sessionId: session.id,
+                chatHistory,
+                allowMultiStepDag: true,
+                systemPromptPrefix,
+              })
           send('thinking', { content: 'Preparing answer...' })
 
           // 4. Emit tool execution events (skip for pure CHAT — no tool to show).
