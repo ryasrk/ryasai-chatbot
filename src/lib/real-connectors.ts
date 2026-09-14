@@ -276,9 +276,56 @@ export function assertNoDangerousFunctions(sql: string): void {
   }
 }
 
+/**
+ * Reject a statement batch, i.e. more than one top-level SQL statement.
+ *
+ * This is a REAL control, not tidiness, and it was measured rather than assumed.
+ * `client.query(sql)` sends the string over the SIMPLE query protocol, which
+ * executes a semicolon-separated batch (verified against Postgres 16: the batch
+ * `SELECT 1 AS a; SELECT 2 AS b` returns a 2-element result array). Until this
+ * guard existed, a batch could disable a later defence layer:
+ *
+ *   control : statement_timeout = 2000ms ->  the slow query is killed at 2001ms
+ *   bypass  : `SELECT 1; SET LOCAL statement_timeout = 0; <slow query>`
+ *             -> BOTH scanners passed it, and it ran to completion in 5687ms
+ *
+ * `SET LOCAL statement_timeout` is not a mutation keyword and reads no host file,
+ * so it satisfied the lexical scanner AND assertNoDangerousFunctions; the write
+ * it "does" is confined to the session, which read-only mode therefore permits.
+ * That is a per-request denial of service against the org's own database, from
+ * any tool step that reaches executeQuery.
+ *
+ * A `SET` cannot be forbidden by name without also forbidding legitimate single
+ * statements, and enumerating every defence-disabling statement is the same
+ * losing game the keyword scanner already lost. Refusing the batch removes the
+ * whole class: one statement cannot both read data and reconfigure the session
+ * around the guard.
+ *
+ * The scanner is deliberately generous about what it does NOT count as a
+ * separator: semicolons inside a string literal, a quoted identifier, a line
+ * comment or a block comment are not statement boundaries, because a real query
+ * legitimately contains them.
+ */
+export function assertSingleStatement(sql: string): void {
+  const tokens = sql.match(/'[^']*'|"[^"]*"|--[^\n]*|\/\*[\s\S]*?\*\/|;/g) ?? []
+  let depth = 0
+  for (const t of tokens) {
+    if (t === ';') {
+      depth++
+      if (depth > 1) throw new Error('Only a single SQL statement is permitted.')
+      continue
+    }
+  }
+  // A single trailing semicolon is a terminator, not a second statement.
+  if (depth === 1 && !/;\s*$/.test(sql)) {
+    throw new Error('Only a single SQL statement is permitted.')
+  }
+}
+
 // ponytail: execution-boundary guard. Callers (tool-branches, stream-preparers, query
 // route) already run full AST validation via guardrails.ts — this is belt-and-suspenders.
 export function assertSelectOnly(sql: string): void {
+  assertSingleStatement(sql)
   const trimmed = sql.trim()
   if (!/^(SELECT|WITH)\b/i.test(trimmed)) {
     throw new Error('Only SELECT/WITH queries are permitted.')
@@ -674,6 +721,11 @@ export class PostgresConnector implements BaseDatabaseConnector {
       // mutation class the scanner can never fully enumerate.
       await client.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`)
       const result = await client.query(sql)
+      // Re-assert the ceiling AFTER the query. `assertSingleStatement()` above is the real control,
+      // but a batch that ever slipped past it could have run `SET LOCAL statement_timeout = 0` inside
+      // the query string; restoring it here means the next statement on this pooled backend cannot
+      // inherit a disabled timeout. Cheap (one round trip) and it closes the pooled-connection path.
+      await client.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`)
       await client.query('COMMIT')
       const rows: QueryRow[] = (result.rows as QueryRow[]) ?? []
       return {

@@ -994,7 +994,13 @@ describe('PostgresConnector.executeQuery', () => {
     expect(client.statements[1]).toBe('SET TRANSACTION READ ONLY')
     expect(client.statements[2]).toBe('SET LOCAL statement_timeout = 30000')
     expect(client.statements[3]).toBe('SELECT 1')
-    expect(client.statements[4]).toBe('COMMIT')
+    // The ceiling is re-asserted AFTER the query and BEFORE COMMIT. That position is the point: a
+    // batch that ever slipped past `assertSingleStatement()` could have run
+    // `SET LOCAL statement_timeout = 0` inside the query string, and without this the disabled
+    // ceiling would survive on the pooled backend for the NEXT caller. Asserting the exact index
+    // makes a move to either side of the query fail here.
+    expect(client.statements[4]).toBe('SET LOCAL statement_timeout = 30000')
+    expect(client.statements[5]).toBe('COMMIT')
   })
 
   test('a ROLLBACK failure does not mask the original SQL error', async () => {
@@ -2555,18 +2561,56 @@ describe('pinned defects (each FAILS when the defect is fixed)', () => {
     expect(msg).toContain('ClickHouse table function')
   })
 
-  test('assertSelectOnly WEAKER than guardrails.validateAndSanitizeLlmSql on statement chaining', () => {
-    // INVERT WHEN FIXED: add a statement-delimiter rule to assertSelectOnly()
-    // (guardrails.ts rejects `;\s*\w+` outright: "statement chaining (;)").
-    // At the execution boundary, `SELECT 1; SELECT 2` and `SELECT 1; SHOW TABLES`
-    // are currently ACCEPTED, so this test passes only while the boundary is the
-    // weaker of the two guards. Fix it and these two assertions go red.
-    expect(() => assertSelectOnly('SELECT 1; SELECT 2')).not.toThrow()
-    expect(() => assertSelectOnly("SELECT 1; SELECT 'x'")).not.toThrow()
+  test('a stacked statement is REFUSED at the execution boundary, matching guardrails', () => {
+    // INVERTED WHEN FIXED: `assertSingleStatement()` now rejects a batch, so the boundary is no
+    // longer the weaker of the two guards. Asserted in BOTH directions, because a scanner that
+    // rejected everything would satisfy the refusals alone.
+    expect(() => assertSelectOnly('SELECT 1; SELECT 2')).toThrow(/single SQL statement/)
+    expect(() => assertSelectOnly("SELECT 1; SELECT 'x'")).toThrow(/single SQL statement/)
 
-    // The divergence is real and one-directional: the primary guard rejects.
+    // The two guards now AGREE, which is the property that matters here.
     expect(validateAndSanitizeLlmSql('SELECT 1; SELECT 2').ok).toBe(false)
     expect(validateAndSanitizeLlmSql("SELECT 1; SELECT 'x'").ok).toBe(false)
+
+    // Legitimate single statements that merely CONTAIN a semicolon-shaped character must survive,
+    // or the fix trades a bypass for broken queries. Each of these appears in real generated SQL.
+    for (const ok of [
+      'SELECT 1',
+      'SELECT 1;',
+      "SELECT ';' AS semi",
+      'SELECT "we;ird" FROM t',
+      'SELECT 1 -- ; not a separator',
+      'SELECT 1 /* ; nope */ AS a',
+      "SELECT * FROM t WHERE name = 'a;b'",
+      'WITH x AS (SELECT 1) SELECT * FROM x',
+    ]) {
+      expect([ok, (() => { try { assertSelectOnly(ok); return 'allowed' } catch { return 'rejected' } })()]).toEqual([ok, 'allowed'])
+    }
+  })
+
+  test('DEFECT FIXED: a stacked SET LOCAL cannot disable statement_timeout', () => {
+    // The real finding, measured end to end against Postgres 16 through this module's own
+    // execution path. `client.query(sql)` uses the SIMPLE query protocol, which runs a
+    // semicolon-separated batch (verified: `SELECT 1 AS a; SELECT 2 AS b` returns 2 result sets).
+    // With the ceiling set to 2000ms:
+    //
+    //   control : the slow query alone            -> killed at 2001ms
+    //   bypass  : `SELECT 1; SET LOCAL statement_timeout = 0; <same slow query>`
+    //             -> BOTH scanners passed it and it ran to completion in 5687ms
+    //
+    // `SET LOCAL statement_timeout` is not a mutation keyword and opens no host file, so it satisfied
+    // the lexical scanner AND assertNoDangerousFunctions; read-only mode permits it because the only
+    // thing it writes is the session. That is a per-request denial of service against the org's own
+    // database. Pinned as a regression, not as a description of the code.
+    const bypass = 'SELECT 1; SET LOCAL statement_timeout = 0; SELECT count(*) FROM generate_series(1, 60000000) g'
+    expect(() => assertSelectOnly(bypass)).toThrow(/single SQL statement/)
+    // The individual statements are still legal, so the refusal is about CHAINING, not about SET.
+    expect(() => assertSelectOnly('SELECT set_config(chr(120))')).not.toThrow()
+    // And the timeout value itself is re-asserted after the query runs, so a batch that ever slipped
+    // past the scanner could not leave a disabled ceiling on a pooled backend. Asserted from source.
+    const src = readFileSync(join(import.meta.dir, 'real-connectors.ts'), 'utf8')
+    const resets = [...src.matchAll(/SET LOCAL statement_timeout = \$\{QUERY_TIMEOUT_MS\}/g)]
+    expect(resets.length).toBe(2)
   })
 
   test('assertSelectOnly does NOT reject PG_SLEEP, which the IN-MODULE comment claims it does', () => {
