@@ -19,6 +19,10 @@ const args = process.argv.slice(2)
 const family = (args[args.indexOf('--family') + 1] ?? 'SQL_SALES') as Family
 const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : `/tmp/cross-${family}.json`
 const BASE = process.env.CROSS_BASE ?? 'http://localhost:3000'
+/** Milliseconds to wait between questions. CROSS_PACE_MS=0 disables pacing. */
+const PACE_MS = Number(process.env.CROSS_PACE_MS ?? '1200')
+/** Consecutive HTTP 429 responses that abort the run instead of wasting the budget. */
+const MAX_CONSECUTIVE_429 = 5
 
 function jsonResponse(res: Response): Promise<unknown> {
   // `res.text()` consumes the body, so a later `res.json()` throws
@@ -112,13 +116,38 @@ async function askOnce(token: string, question: string): Promise<Omit<RunResult,
 const all = casesForFamily(family)
 const token = await mintToken()
 const results: RunResult[] = []
+let consecutive429 = 0
 console.log(`[${family}] ${all.length} soal dimulai`)
 
 for (let i = 0; i < all.length; i++) {
   const c: CrossCase = all[i]
+  // Optional pacing. Four families run concurrently against one gateway; without a
+  // delay they all fire at once and the GATEWAY throttles the burst (HTTP 429), which
+  // invalidated an earlier 800-question run -- 196/200 questions were refused after the
+  // first few. The server-side chat limiter was raised separately; this is the
+  // deliberate client-side throttle so the gateway sees a steady rate.
+  if (i > 0 && PACE_MS > 0) await Bun.sleep(PACE_MS)
   const r = await askOnce(token, c.question)
   const verdict = r.error ? { ok: false, reason: `error: ${r.error}` } : judgeAnswer(c, r.answer)
   results.push({ id: c.id, ok: verdict.ok, reason: verdict.reason, ...r })
+
+  // A throttled run produces empty answers, which score as failures and would be
+  // reported as an accuracy figure. Abort loudly instead of publishing a number that
+  // measures the rate limiter.
+  if (r.error?.includes('429')) {
+    consecutive429++
+    if (consecutive429 >= MAX_CONSECUTIVE_429) {
+      writeFileSync(jsonOut, JSON.stringify({
+        summary: { family, total: results.length, passed: results.filter((x) => x.ok).length, accuracy: null,
+          aborted: true, abortReason: `gateway rate-limited: ${consecutive429} consecutive HTTP 429` },
+        results,
+      }, null, 2))
+      console.error(`[${family}] DIBATALKAN: ${consecutive429} kali HTTP 429 berturut-turut. Hasil TIDAK sah.`)
+      process.exit(2)
+    }
+  } else {
+    consecutive429 = 0
+  }
   if ((i + 1) % 20 === 0) {
     const pass = results.filter((x) => x.ok).length
     console.log(`[${family}] ${i + 1}/${all.length} benar=${pass} (${((pass / (i + 1)) * 100).toFixed(1)}%)`)
