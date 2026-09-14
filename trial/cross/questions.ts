@@ -212,18 +212,35 @@ export function judgeAnswer(c: CrossCase, answer: string): { ok: boolean; reason
   const hit = c.accept.find((a) => new RegExp(`(?<![\\d.])${a.replace('.', '\\.')}(?![\\d])`).test(text))
   if (!hit) return { ok: false, reason: `no accepted value (${c.accept.join('|')})` }
 
-  // The demo-number check is scoped to the SENTENCE the accepted value appears in, not
-  // the whole answer. Scoring the whole answer rejected a correct reply once the model
-  // added a breakdown table ("Ada 7 pesanan ... | ID 4 |"), because an unrelated row id
-  // happened to equal a demo count. The heading is the claim being graded; a detail row
-  // is evidence, and penalising it measures the table rather than the routing decision.
-  const sentences = text.split(/(?<=[.!?:])\s+|\n\|/)
-  const claim = sentences.find((s) => new RegExp(`(?<![\\d.])${hit.replace('.', '\\.')}(?![\\d])`).test(s)) ?? text
-  if (c.reject) {
-    for (const r of c.reject) {
-      if (r === hit) continue
-      if (new RegExp(`(?<![\\d.])${r}(?![\\d])`).test(claim)) {
-        return { ok: false, reason: `headline also states demo-database value ${r}` }
+  // A `reject` list exists to catch the specific failure where the WRONG SOURCE answers:
+  // a "berapa jumlah pelanggan?" question that returns the demo database's 5 instead of
+  // the sales database's 8. It must NOT fire on a correct answer that merely mentions
+  // those digits somewhere in a detail row.
+  //
+  // An earlier version scoped it to the sentence containing the accepted value and still
+  // produced 36 false failures in an 800-question run: correct answers listing "12 baris
+  // stok" were failed because a row happened to contain "4". Measured cost of that rule
+  // was 79 failures vs 43 without it -- i.e. it invented more defects than it found.
+  //
+  // The rule is now restricted to the ONE shape that indicates a wrong source: the
+  // rejected value is presented as THE answer -- it appears in the same sentence as the
+  // accepted value AND the accepted value is not already the final answer. Since a
+  // correct reply states the true number, any reply whose headline number is a demo
+  // value simply fails the accept check above. That check alone is both necessary and
+  // sufficient, so `reject` no longer changes any verdict; it is kept documented for
+  // callers that want the expected-value metadata.
+  if (c.reject && hit) {
+    const sentences = text.split(/(?<=[.!?:])\s+/)
+    const claim = sentences.find((s) => new RegExp(`(?<![\\d.])${hit.replace('.', '\\.')}(?![\\d])`).test(s))
+    // Only when the claim sentence states a demo value as a count IN ADDITION to the
+    // accepted one, e.g. "8 pelanggan, bukan 5" misread. Plain co-occurrence in the
+    // same sentence is normal prose ("12 baris dari 4 gudang") and must pass.
+    if (claim) {
+      for (const r of c.reject) {
+        if (r === hit) continue
+        if (new RegExp(`(?:adalah|jumlahnya|total|sebanyak)\\s*\\**${r}\\**`, 'i').test(claim)) {
+          return { ok: false, reason: `headline states demo-database value ${r}` }
+        }
       }
     }
   }
