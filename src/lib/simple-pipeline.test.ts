@@ -138,3 +138,102 @@ describe('decideRoute — the deterministic fast paths cost ZERO LLM calls', () 
     expect(['RAG', 'SQL', 'REST']).toContain(d.route)
   })
 })
+
+// ===========================================================================
+// Source-preselection contract.
+//
+// `runSimpleStreamingChat` used to hand the SQL branch the OLDEST active
+// integration whenever the route was SQL. `prepareSqlStream` skips its own
+// schema-aware resolution when it receives an `integrationId`, so that shortcut
+// silently bypassed the picker: on a four-database install EVERY SQL question was
+// answered from whichever database was created first. "Berapa jumlah karyawan?"
+// ran against the sales schema, and because the Text-to-SQL prompt forbids using
+// tables that do not exist, the model correctly emitted `SELECT 1 WHERE FALSE`
+// and reported no data -- an answer that looks like a knowledge gap but was a
+// routing bug.
+//
+// The rule these tests pin: preselection is only valid when there is exactly ONE
+// candidate. With several, the argument must be left undefined so the branch
+// scores the schemas itself.
+// ===========================================================================
+
+describe('runSimpleStreamingChat — source preselection', () => {
+  test('with several databases the SQL branch is NOT handed a preselected integration', async () => {
+    const seen: Array<{ hasIntegrationId: boolean }> = []
+    mock.module('./db', () => ({
+      db: {
+        document: { count: async () => 0, findMany: async () => [] },
+        integration: { count: async () => 3, findMany: async () => [], findFirst: async () => ({ id: 'oldest-db' }) },
+        restApiEndpoint: { count: async () => 0, findMany: async () => [] },
+        llmConfig: { findFirst: async () => null },
+      },
+    }))
+    mock.module('./stream-preparers', () => ({
+      prepareChatStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareRagStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareSqlStream: async (args: { integrationId?: string }) => {
+        seen.push({ hasIntegrationId: args.integrationId !== undefined })
+        return { stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }
+      },
+      prepareRestStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+    }))
+    const { runSimpleStreamingChat } = await import('./simple-pipeline')
+    const { enterWithOrg } = await import('./prisma-tenant')
+    enterWithOrg('test-org')
+    await runSimpleStreamingChat({ question: 'Berapa jumlah karyawan di database HR?', userId: 'u1' })
+    // The decisive assertion: no id, so prepareSqlStream does its own selection.
+    expect(seen).toEqual([{ hasIntegrationId: false }])
+  })
+
+  test('with exactly one database the shortcut IS used — it saves a redundant lookup', async () => {
+    const seen: Array<string | undefined> = []
+    mock.module('./db', () => ({
+      db: {
+        document: { count: async () => 0, findMany: async () => [] },
+        integration: { count: async () => 1, findMany: async () => [], findFirst: async () => ({ id: 'only-db' }) },
+        restApiEndpoint: { count: async () => 0, findMany: async () => [] },
+        llmConfig: { findFirst: async () => null },
+      },
+    }))
+    mock.module('./stream-preparers', () => ({
+      prepareChatStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareRagStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareSqlStream: async (args: { integrationId?: string }) => {
+        seen.push(args.integrationId)
+        return { stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }
+      },
+      prepareRestStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+    }))
+    const { runSimpleStreamingChat } = await import('./simple-pipeline')
+    const { enterWithOrg } = await import('./prisma-tenant')
+    enterWithOrg('test-org')
+    await runSimpleStreamingChat({ question: 'Berapa jumlah karyawan di database HR?', userId: 'u1' })
+    expect(seen).toEqual(['only-db'])
+  })
+
+  test('an explicitly supplied integrationId is always respected', async () => {
+    const seen: Array<string | undefined> = []
+    mock.module('./db', () => ({
+      db: {
+        document: { count: async () => 0, findMany: async () => [] },
+        integration: { count: async () => 4, findMany: async () => [], findFirst: async () => ({ id: 'oldest-db' }) },
+        restApiEndpoint: { count: async () => 0, findMany: async () => [] },
+        llmConfig: { findFirst: async () => null },
+      },
+    }))
+    mock.module('./stream-preparers', () => ({
+      prepareChatStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareRagStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+      prepareSqlStream: async (args: { integrationId?: string }) => {
+        seen.push(args.integrationId)
+        return { stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }
+      },
+      prepareRestStream: async () => ({ stream: (async function* () {})(), toolRuns: [], citations: [], chartData: null }),
+    }))
+    const { runSimpleStreamingChat } = await import('./simple-pipeline')
+    const { enterWithOrg } = await import('./prisma-tenant')
+    enterWithOrg('test-org')
+    await runSimpleStreamingChat({ question: 'Berapa jumlah karyawan?', userId: 'u1', integrationId: 'caller-chosen' })
+    expect(seen).toEqual(['caller-chosen'])
+  })
+})

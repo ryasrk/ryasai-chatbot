@@ -267,10 +267,25 @@ export async function runSimpleStreamingChat(args: {
   const sources = await countSimpleSources()
   const catalog = await buildSourceCatalog(sources)
   const decision = await decideRoute({ question: args.question, sources, catalog })
-  // The integration that a single-database org implies, so the SQL branch does not
-  // have to search for it again.
+  // Preselect an integration ONLY when there is exactly one to choose from.
+  //
+  // This previously preselected the OLDEST active integration whenever the route was
+  // SQL, which SILENTLY BYPASSED the schema-aware picker: `prepareSqlStream` skips its
+  // own resolution when handed an `integrationId`. With one database that is a free
+  // saving; with several it is a routing bug, and it was measured as one -- on a
+  // four-database setup every SQL question went to whichever database was created
+  // first. "Berapa jumlah karyawan?" was answered from the SALES schema, and because
+  // the model is told to use only tables that exist, it correctly emitted
+  // `SELECT 1 WHERE FALSE` and reported no data rather than inventing a table. The
+  // answer looked like a knowledge gap; the defect was here.
+  //
+  // With more than one candidate the argument is left UNDEFINED so the branch's own
+  // picker scores the schemas and chooses on evidence.
   const integrationId =
-    args.integrationId ?? (decision.route === 'SQL' ? await firstActiveIntegrationId() : undefined)
+    args.integrationId ??
+    (decision.route === 'SQL' && sources.integrations === 1
+      ? await firstActiveIntegrationId()
+      : undefined)
 
   const branchArgs = {
     question: args.question,

@@ -336,13 +336,46 @@ export async function pickBestIntegrationWithAmbiguity(
 ): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
-    include: { schemas: { select: { tableName: true, columns: true, description: true } } },
+    // `businessContext` is REQUIRED here because it carries the domain glossary. It was
+    // not loaded, so the glossary path existed in `detectMentionedIntegration` but not
+    // in THIS picker -- and this picker is the one the SQL branch calls.
+    select: {
+      id: true,
+      name: true,
+      businessContext: true,
+      schemas: { select: { tableName: true, columns: true, description: true } },
+    },
   })
   if (integrations.length === 0) return undefined
   if (integrations.length === 1) return { integrationId: integrations[0].id }
 
+  // DOMAIN GLOSSARY, checked BEFORE any scoring.
+  //
+  // Why this is a separate step and not part of the weighted score: a glossary hit is
+  // categorical evidence, not a similarity. Measured on "berapa jumlah pelanggan di
+  // database penjualan?" with four databases connected, keyword scoring TIES at 0.250
+  // because `demo_pelanggan` merely CONTAINS "pelanggan", and the tie was then broken
+  // by a 0.6-weight embedding score -- so the question was answered from the demo
+  // database and returned 5 instead of 8. The glossary separates them cleanly (Sales
+  // matched 2 domain terms, every other integration 0), and mixing it into the same
+  // weights would let 0.6 of semantic noise cancel it out again.
+  for (const integ of integrations) {
+    if (!integ.businessContext) continue
+    const terms = extractDomainGlossaryTerms(integ.businessContext.toLowerCase())
+    let ctxMatches = 0
+    for (const term of terms) {
+      if (term.length >= 2 && question.toLowerCase().includes(term)) ctxMatches++
+    }
+    if (ctxMatches >= 2) return { integrationId: integ.id }
+  }
+
   const integTexts = integrations.map((integ) => {
-    const parts: string[] = [integ.name]
+    // `businessContext` is prepended only when present. Pushing it unconditionally
+    // makes the joined text start with ". " for integrations that have no context,
+    // changing their vector for no reason.
+    const parts: string[] = []
+    if (integ.businessContext) parts.push(integ.businessContext)
+    parts.push(integ.name)
     for (const s of integ.schemas) {
       parts.push(`table ${s.tableName}: ${s.description ?? ''}`)
     }

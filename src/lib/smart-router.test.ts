@@ -173,6 +173,7 @@ const {
   resolveIntegrationForQuestion,
   getRoutingScores,
   invalidateSourceEmbeddingCache,
+  extractDomainGlossaryTerms,
 } = await import('./smart-router')
 
 // ---------------------------------------------------------------------------
@@ -748,6 +749,78 @@ describe('pickBestIntegrationWithAmbiguity — semantic floor 0.25 + margin 0.02
     await pickBestIntegrationWithAmbiguity(['unmatched_token'], 'desc check')
     expect(embedding.calls[1][0]).toBe('Sales Database. table orders: customer purchase orders')
     expect(embedding.calls[1][1]).toBe('HR Database. table employees: staff records')
+  })
+
+  test('a businessContext is prepended to the embedded text only when present', async () => {
+    enableEmbeddings()
+    state.integrations = [
+      { ...SALES, businessContext: '## Domain\nPenjualan, pelanggan.', schemas: [{ tableName: 'orders', description: null, columns: '[]' }] },
+      { ...HR, businessContext: null, schemas: [{ tableName: 'employees', description: null, columns: '[]' }] },
+    ]
+    queueQuestionVector(UNIT)
+    queueCandidateVectors(unitAt2D(0), unitAt2D(0.9))
+    await pickBestIntegrationWithAmbiguity(['unmatched_token'], 'context check')
+    // The context leads; a null context must NOT leave a leading '. ' behind.
+    expect(embedding.calls[1][0]).toBe('## Domain\nPenjualan, pelanggan.. Sales Database. table orders: ')
+    expect(embedding.calls[1][1]).toBe('HR Database. table employees: ')
+  })
+
+  test('a domain glossary match beats a STRICTLY better keyword score from a table name that merely CONTAINS the word', async () => {
+    // The measured defect, made falsifiable. "demo_pelanggan" CONTAINS "pelanggan", so
+    // a sales question scored a hit for BOTH databases. In the original fixture that
+    // produced a 1/4 tie which the embedding score broke -- and the demo database won,
+    // so "berapa jumlah pelanggan di database penjualan?" was answered as 5 (the demo
+    // table) instead of 8.
+    //
+    // The demo schema here is deliberately given a SECOND matching table so its keyword
+    // score is strictly HIGHER (2/4 vs 1/4), not merely tied. That removes the tie-break
+    // escape hatch: with the glossary disabled this test MUST fail, because nothing else
+    // would choose Sales. Verified by mutation -- raising the glossary threshold to 999
+    // turns this test red.
+    //
+    // The context MUST end with a blank line (or a following heading): the extractor
+    // reads the `## Domain` section up to `\n\n` or the next `##`, so a section that
+    // runs to end-of-string with no terminator yields ZERO terms and no match.
+    state.integrations = [
+      {
+        ...SALES,
+        businessContext: '## Domain\nPenjualan, sales, pelanggan, pesanan, produk.\n\n- Penjualan = transaksi penjualan',
+        schemas: [{ tableName: 'pelanggan', description: null, columns: '[]' }],
+      },
+      {
+        ...HR,
+        businessContext: '## Domain\nDemo, contoh, sampel, dummy.\n\n- Demo = data contoh',
+        schemas: [
+          { tableName: 'demo_pelanggan', description: null, columns: '[]' },
+          { tableName: 'database_demo', description: null, columns: '[]' },
+        ],
+      },
+    ]
+    const picked = await pickBestIntegrationWithAmbiguity(
+      ['jumlah', 'pelanggan', 'database', 'penjualan'],
+      'berapa jumlah pelanggan di database penjualan?',
+    )
+    expect(picked?.integrationId).toBe('sales-1')
+  })
+
+  test('a single glossary term is NOT enough — two are required', async () => {
+    // The floor exists so a passing mention cannot capture routing. One match keeps
+    // the question with the keyword/embedding scorer instead.
+    state.integrations = [
+      { ...SALES, businessContext: '## Domain\nPenjualan saja.\n\n- X = y', schemas: [{ tableName: 'orders', description: null, columns: '[]' }] },
+      { ...HR, businessContext: '## Domain\nKepegawaian dan karyawan.\n\n- X = y', schemas: [{ tableName: 'employees', description: null, columns: '[]' }] },
+    ]
+    const picked = await pickBestIntegrationWithAmbiguity(['orders'], 'total orders')
+    // Falls through to normal scoring, so the schema keyword still wins.
+    expect(picked?.integrationId).toBe('sales-1')
+  })
+
+  test('a Domain section that runs to end-of-string with no terminator yields no glossary terms', async () => {
+    // Documents the extractor contract the test above depends on, so a future rewrite
+    // of the regex is caught rather than silently disabling the glossary fast path.
+    const withTerminator = extractDomainGlossaryTerms('## domain\npenjualan, pelanggan.\n\n- a = b')
+    expect(withTerminator.has('penjualan')).toBe(true)
+    expect(extractDomainGlossaryTerms('## domain\npenjualan, pelanggan.').size).toBe(0)
   })
 })
 
