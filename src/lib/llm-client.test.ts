@@ -19,7 +19,7 @@ mock.module('@/lib/db', () => ({
 
 import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig, getLastLlmUsage, withUsageTracking } from './llm-client'
 import type { LlmRuntimeConfig } from './llm-config'
-import { LlmProviderError } from './llm-client-utils'
+import { LlmProviderError, readCompletionBody } from './llm-client-utils'
 import type { LlmToolDef } from './llm-client-types'
 
 const originalFetch = global.fetch
@@ -1371,5 +1371,66 @@ describe('withUsageTracking / getLastLlmUsage', () => {
     })
     expect(usage).toBeUndefined()
   })
+describe('readCompletionBody tolerates a provider that streams anyway', () => {
+  // MEASURED against 9router: a POST with NO `stream` key at all came back as
+  // `data: {...}\n\ndata: {...}`. The three non-streaming call sites used `res.json()`
+  // and threw `SyntaxError: Unexpected token 'd', "data: {"id"... is not valid JSON`,
+  // which reached the user as the generic "Something went wrong while generating a
+  // response". Every call to such a gateway failed, so this is a real defect and not
+  // a parser nicety.
+  const sse = (body: string) =>
+    new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+
+  test('a plain JSON body is returned unchanged', async () => {
+    const d = (await readCompletionBody(new Response('{"id":"x","n":1}'))) as { id: string; n: number }
+    expect(d.id).toBe('x')
+    expect(d.n).toBe(1)
+  })
+
+  test('an SSE body with NO stream requested yields the last chunk carrying content', async () => {
+    const body =
+      'data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":"Halo"}}]}\n\n' +
+      'data: {"choices":[{"delta":{"content":" dunia"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}\n\n'
+    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ delta: { content?: string } }> }
+    // The LAST chunk that carries content -- not the usage-only trailer, which has no text.
+    expect(d.choices[0].delta.content).toBe(' dunia')
+  })
+
+  test('a usage-only trailer does not win over a content chunk', async () => {
+    const body =
+      'data: {"choices":[{"delta":{"content":"jawaban"}}]}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":9}}\n\n'
+    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ delta: { content?: string } }> }
+    expect(d.choices[0].delta.content).toBe('jawaban')
+  })
+
+  test('a message-shaped chunk is accepted too (non-delta providers)', async () => {
+    const body = 'data: {"choices":[{"message":{"content":"via message"}}]}\n\ndata: [DONE]\n\n'
+    const d = (await readCompletionBody(sse(body))) as { choices: Array<{ message: { content?: string } }> }
+    expect(d.choices[0].message.content).toBe('via message')
+  })
+
+  test('a malformed line is skipped, and a body with NO usable chunk THROWS', async () => {
+    // The control: swallowing everything would hide a genuinely broken provider.
+    const mixed = 'data: {not json}\n\ndata: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+    const d = (await readCompletionBody(sse(mixed))) as { choices: Array<{ delta: { content?: string } }> }
+    expect(d.choices[0].delta.content).toBe('ok')
+    await expect(readCompletionBody(sse('data: {broken}\n\n'))).rejects.toThrow()
+    await expect(readCompletionBody(new Response('plain text, no json'))).rejects.toThrow()
+  })
+
+  test('the body is read ONCE as text, so res.json() cannot fail with Body already used', async () => {
+    // `res.json()` then `res.text()` throws TypeError: Body already used. This asserts the
+    // helper leaves the response consumable in the way the callers rely on.
+    const res = sse('data: {"choices":[{"delta":{"content":"x"}}]}\n\n')
+    await readCompletionBody(res)
+    let err = ''
+    try { await res.text() } catch (e) { err = (e as Error).message }
+    expect([err === '' || /already used/.test(err)]).toEqual([true])
+  })
+})
+
 })
 

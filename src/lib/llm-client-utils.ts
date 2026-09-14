@@ -177,6 +177,53 @@ export function readErrorBody(res: Response): Promise<string> {
 }
 
 /**
+ * Read a chat-completion body even when the provider answered with an SSE stream
+ * despite `stream` not being requested.
+ *
+ * This is not a hypothetical. OpenAI-compatible gateways routinely ignore the
+ * `stream` field, or default it ON, and reply with `text/event-stream` to a plain
+ * request. MEASURED against 9router: a POST with NO `stream` key at all comes back
+ * as `data: {...}\n\ndata: {...}`. The old code called `res.json()` on that body and
+ * threw `SyntaxError: Unexpected token 'd', "data: {"id"... is not valid JSON`,
+ * which surfaced to the user as a generic "Something went wrong while generating a
+ * response" and made every call to such a gateway fail.
+ *
+ * Strategy, in order:
+ *   1. a real JSON body -> return it (the normal case, unchanged);
+ *   2. otherwise, if the text looks like SSE, take the LAST chunk that carries
+ *      content, because a streamed completion's final content-bearing chunk is the
+ *      completed message for the non-streaming view of the same call;
+ *   3. otherwise rethrow the original parse error, so a genuinely malformed body
+ *      still fails loudly rather than being silently coerced.
+ *
+ * The body is read as TEXT once and then parsed: `res.json()` would consume the
+ * stream, and calling it after `res.text()` throws `Body already used`.
+ */
+export async function readCompletionBody(res: Response): Promise<unknown> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text)
+  } catch (parseError) {
+    const chunks: Array<Record<string, unknown>> = []
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data: ')) continue
+      const payload = trimmed.slice(6)
+      if (payload === '[DONE]') continue
+      try { chunks.push(JSON.parse(payload) as Record<string, unknown>) } catch { /* skip malformed line */ }
+    }
+    if (chunks.length === 0) throw parseError
+    // Prefer the last chunk that actually carries assistant content; fall back to the
+    // last chunk seen so a usage-only trailer still yields a body the caller can read.
+    const withContent = [...chunks].reverse().find((c) => {
+      const choice = (c.choices as Array<{ delta?: { content?: unknown }; message?: { content?: unknown } }> | undefined)?.[0]
+      return typeof choice?.delta?.content === 'string' || typeof choice?.message?.content === 'string'
+    })
+    return withContent ?? chunks[chunks.length - 1]
+  }
+}
+
+/**
  * Strip credential-shaped substrings out of an upstream provider body before it goes into an Error
  * message. The message is NOT user-facing (the typed error deliberately carries only a category +
  * hint), but it IS persisted: `logLlmUsage` stores `e.message` in `LlmUsageLog`, the observability

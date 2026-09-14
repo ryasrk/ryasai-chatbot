@@ -12,7 +12,7 @@
 import type { LlmMessage, LlmToolDef, LlmResponseFormat, LlmToolCall, LlmUsage, AgentChatMessage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { getLlmRuntimeConfig, getAgentLlmConfig } from '@/lib/llm-config'
-import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, LlmProviderError } from './llm-client-utils'
+import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, readCompletionBody, LlmProviderError } from './llm-client-utils'
 
 // Single construction point for provider failures so every transport throws the
 // same classified error shape.
@@ -102,7 +102,8 @@ export async function chatOnce(
       const errText = await readErrorBody(res)
       throw providerError(res.status, errText)
     }
-    const data = (await res.json()) as {
+    // readCompletionBody: a gateway may reply with SSE to a non-streaming request.
+    const data = (await readCompletionBody(res)) as {
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>
       usage?: { input_tokens?: number; output_tokens?: number }
     }
@@ -163,7 +164,8 @@ export async function chatOnce(
     const errText = await readErrorBody(res)
     throw providerError(res.status, errText)
   }
-  const data = (await res.json()) as {
+  // readCompletionBody: see llm-client-utils for why res.json() is not safe here.
+  const data = (await readCompletionBody(res)) as {
     choices?: Array<{
       message?: {
         content?: string

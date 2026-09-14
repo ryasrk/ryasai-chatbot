@@ -12,7 +12,7 @@ import type {
   LlmMultiAgentCall,
 } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
-import { logLlmUsage, fetchWithRetry, readErrorBody } from './llm-client-utils'
+import { logLlmUsage, fetchWithRetry, readErrorBody, readCompletionBody } from './llm-client-utils'
 import { LLM_TIMEOUT_MS } from '@/lib/constants'
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,9 @@ export async function chatOnceResponses(
     const errText = await readErrorBody(res)
     throw new Error(`LLM Responses API error (HTTP ${res.status}): ${errText.slice(0, 200)}`)
   }
-  const data = (await res.json()) as {
+  // readCompletionBody, not res.json(): an OpenAI-compatible gateway may answer with
+  // SSE even though this call did not ask to stream. See its doc comment.
+  const data = (await readCompletionBody(res)) as {
     id?: string
     output_text?: string
     output?: Array<{
