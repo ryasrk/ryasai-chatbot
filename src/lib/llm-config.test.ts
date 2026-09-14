@@ -1,5 +1,5 @@
-import { test, expect, describe } from 'bun:test'
-import { isBlockedHost, normalizeBaseUrl } from '@/lib/llm-config'
+import { test, expect, describe, afterEach } from 'bun:test'
+import { isBlockedHostAsync, isBlockedHost, normalizeBaseUrl, allowedHosts } from '@/lib/llm-config'
 
 describe('isBlockedHost', () => {
   test('blocks loopback, link-local, private, CGNAT ranges', () => {
@@ -106,4 +106,83 @@ describe('isBlockedHost', () => {
     expect(() => normalizeBaseUrl('http://192.168.1.1')).toThrow(/blocked internal host/)
     expect(() => normalizeBaseUrl('http://localhost:3000')).toThrow(/blocked internal host/)
   })
+  // ---------------------------------------------------------------------------
+  // The ASYNC guard, which had NO coverage until this defect was found -- and that
+  // absence is precisely why the defect survived.
+  //
+  // `isBlockedHostAsync` re-applies `isBlockedHost` to the RESOLVED address, and the
+  // operator allowlist is keyed on the HOSTNAME. So a host the operator opted in was
+  // allowed by the literal check and then blocked by the DNS check, because the name
+  // resolves to a private address. Measured before the fix, with
+  // LLM_ALLOWED_HOSTS=localhost:
+  //
+  //   isBlockedHost('localhost')      -> false   (allowlisted, correct)
+  //   isBlockedHostAsync('localhost') -> TRUE    (contradicted the allowlist)
+  //
+  // Every synchronous caller looked right, and the self-hosted topology the module's
+  // own comment promises could not be configured at all: the operator saved the host
+  // and every request failed with "Base URL points to a blocked internal host", with
+  // nothing hinting that the allowlist had been ignored.
+  // ---------------------------------------------------------------------------
+  describe('isBlockedHostAsync honours the operator allowlist', () => {
+    const ORIGINAL = process.env.LLM_ALLOWED_HOSTS
+    afterEach(() => {
+      if (ORIGINAL === undefined) delete process.env.LLM_ALLOWED_HOSTS
+      else process.env.LLM_ALLOWED_HOSTS = ORIGINAL
+    })
+
+    test('REGRESSION: an allowlisted host that resolves to loopback is NOT blocked', async () => {
+      process.env.LLM_ALLOWED_HOSTS = 'localhost'
+      // The literal check and the DNS check must AGREE. Before the fix the first line
+      // passed and the second failed -- the exact contradiction that made the
+      // documented topology impossible.
+      expect(isBlockedHost('localhost')).toBe(false)
+      expect(await isBlockedHostAsync('localhost')).toBe(false)
+    })
+
+    test('the allowlist is consulted for the RESOLVED address, not only the literal', async () => {
+      // `127.0.0.1` is what `localhost` resolves to; allowing the name must carry over.
+      process.env.LLM_ALLOWED_HOSTS = 'localhost'
+      expect(await isBlockedHostAsync('localhost')).toBe(false)
+      // But the IP is NOT itself allowlisted, so naming it directly is still blocked.
+      // Without this the fix would have opened every loopback URL.
+      expect(await isBlockedHostAsync('127.0.0.1')).toBe(true)
+      // An allowlist entry spelled as the IP works only when it IS the entry.
+      process.env.LLM_ALLOWED_HOSTS = '127.0.0.1'
+      expect(await isBlockedHostAsync('127.0.0.1')).toBe(false)
+    })
+
+    test('NOTHING is allowlisted by default, and private names stay blocked', async () => {
+      delete process.env.LLM_ALLOWED_HOSTS
+      expect(await isBlockedHostAsync('localhost')).toBe(true)
+      expect(await isBlockedHostAsync('127.0.0.1')).toBe(true)
+      expect(await isBlockedHostAsync('10.0.0.1')).toBe(true)
+      expect(await isBlockedHostAsync('169.254.169.254')).toBe(true)
+    })
+
+    test('an allowlisted private NAME is reachable, and a non-allowlisted one is not', async () => {
+      process.env.LLM_ALLOWED_HOSTS = 'ollama,embed.internal'
+      expect(await isBlockedHostAsync('ollama')).toBe(false)
+      expect(await isBlockedHostAsync('embed.internal')).toBe(false)
+      // A lookalike is NOT matched by the allowlist -- matching is exact, so `evil-ollama.com`
+      // does not ride in on `ollama`. These two names do not RESOLVE in this environment, and a
+      // DNS failure deliberately fails OPEN (the transport then tries and fails), so the return is
+      // false here. That is the documented behaviour, not a hole: the assertion that matters is
+      // that the allowlist did not MATCH them. Asserted that way rather than as `toBe(true)`,
+      // which would have been asserting the resolver's absence rather than the guard's decision.
+      expect(allowedHosts()).not.toContain('evil-ollama.com')
+      expect(allowedHosts()).not.toContain('not-embed.internal')
+      // A lookalike that DOES resolve must still be caught by the resolved-address check, and an
+      // IP literal cannot dodge it at all because IP literals skip DNS and go to the sync guard.
+      expect(await isBlockedHostAsync('127.0.0.1')).toBe(true)
+    })
+
+    test('the allowlist does not make a PUBLIC host unreachable', async () => {
+      // Guards against a fix that returned false too eagerly: an ordinary public API
+      // must still pass with an allowlist configured, or the fix trades one bug for another.
+      process.env.LLM_ALLOWED_HOSTS = 'ollama'
+      expect(await isBlockedHostAsync('api.openai.com')).toBe(false)
+    })
+  })
+
 })

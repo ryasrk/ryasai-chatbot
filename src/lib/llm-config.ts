@@ -181,6 +181,22 @@ function blockedHostAllowlistEnabled(): boolean {
  * Node's fetch/http don't expose. The check closes the common case.
  */
 export async function isBlockedHostAsync(hostname: string): Promise<boolean> {
+  // The operator allowlist is consulted FIRST, and its absence is what makes the
+  // rest of this function meaningful. Without this early return the allowlist only
+  // ever covered the LITERAL hostname, so a host the operator opted in -- `ollama`,
+  // `embed.internal`, or the documented `localhost` -- was allowed here and then
+  // immediately re-blocked by the DNS step below, because the name resolves to a
+  // private address and that address is not itself in the allowlist.
+  //
+  // Measured before the fix: with LLM_ALLOWED_HOSTS=localhost,
+  //   isBlockedHost('localhost')      -> false  (allowlisted, correct)
+  //   isBlockedHostAsync('localhost') -> TRUE   (contradicted the allowlist)
+  // The inconsistency was invisible to the synchronous callers and made the
+  // self-hosted topology the doc comment above promises impossible to configure:
+  // a user set the host, saved it, and every request failed with "Base URL points
+  // to a blocked internal host" with no hint that the allowlist had been ignored.
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
+  if (allowedHosts().includes(h)) return false
   if (isBlockedHost(hostname)) return true
   // Skip DNS for IP literals — already checked by isBlockedHost
   if (/^\[?[\d.]+\]?$/.test(hostname) || /^[0-9a-f:]+$/i.test(hostname)) return false
