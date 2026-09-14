@@ -6679,6 +6679,67 @@ dan `ifPresent=1`, sehingga guard lama **LULUS** sementara kedua konfigurasi
 sudah tidak sepakat. Sekarang guard menghitung situs: wajib tepat dua, keduanya
 `ifPresent`.
 
+#### 1.7dz Ronde lanjutan: TIGA defek yang dipin sekarang DIPERBAIKI, satu di antaranya DoS yang bisa dieksploitasi
+
+Ketiga defek yang ronde lalu hanya dipin dengan `// INVERT WHEN FIXED:` sudah
+diperbaiki, dan setiap perbaikan **diverifikasi dengan mutasi** (menghapus
+perbaikannya membuat test merah lagi), bukan hanya dengan test yang hijau.
+
+**D1 — `tool-router.ts`: baris schema tanpa relasi integration membuat CRASH.**
+Formatter `` `${s.integration.name}.${s.tableName}: ${s.description}` `` ada di
+**dua** tempat tanpa guard. Diganti satu helper bersama `formatSchemasForIntent`
+yang **membuang** baris tanpa nama alih-alih melempar `TypeError`. Dua salinan
+identik dari satu kebijakan adalah bentuk yang sudah dua kali mencelakakan di repo
+ini (`tool-router` sendiri, dan `sso-saml`), jadi test-nya menuntut helper itu
+dipanggil dari **tepat dua** situs. Mutasi: hapus guard helper → 2 merah; loloskan
+null lewat filter → 2 merah.
+
+**D2 — `/api/routing/scores`: TIDAK ada gerbang otorisasi.** Payload-nya bukan
+sekadar skor: `schemaKeywords`, `endpointKeywords` dan `documentKeywords` berasal
+dari nama kolom, path REST, dan nama dokumen yang nyata, ditambah `perfMetrics`
+berisi latensi dan tingkat gagal per tool. Itu **peta permukaan data organisasi**
+— tepat yang dibutuhkan penyerang sebelum menyusun injeksi. Sekarang
+`requireRole(user, 'admin')`, sama seperti `org`, `vector-store`, dan
+`rag/evaluate`. Posisi gerbang diuji, bukan diasumsikan: nol event `read:` boleh
+mendahuluinya. Mutasi: hapus gate → 4 merah; turunkan ke `'viewer'` → 4 merah;
+pindahkan ke **setelah** query → 1 merah.
+
+**D3 — `real-connectors.ts`: batch statement melemahkan batas waktu query — dan
+ini DoS yang bisa dieksploitasi.** Temuan paling serius di ronde ini, dibuktikan
+**end-to-end terhadap Postgres 16** lewat jalur eksekusi modul itu sendiri:
+
+```
+ceiling = 2000 ms
+  kontrol : query lambat sendirian                              -> dibunuh di 2001 ms
+  bypass  : SELECT 1; SET LOCAL statement_timeout = 0; <query>  -> LOLOS, selesai 5687 ms
+```
+
+Sebabnya: `client.query(sql)` memakai protokol **simple query**, yang
+**menjalankan batch** yang dipisah titik-koma (terukur: `SELECT 1 AS a; SELECT 2
+AS b` mengembalikan array hasil berisi 2 elemen). `SET LOCAL statement_timeout = 0`
+bukan kata kunci mutasi dan tidak membuka berkas host apa pun, sehingga ia **lolos
+scanner leksikal DAN `assertNoDangerousFunctions`**; mode read-only mengizinkannya
+karena satu-satunya yang ditulisnya adalah sesi. Artinya: setiap langkah tool yang
+mencapai `executeQuery` bisa mencabut satu-satunya batas durasi query dan membakar
+database organisasi itu sendiri selama waktu sembarang.
+
+**Koreksi klaim saya sendiri.** Di ronde sebelumnya saya mencatat bahwa `pg_sleep`
+lolos scanner. **Itu salah.** `pg_sleep` ADA di daftar fungsi berbahaya bersama dan
+`assertNoDangerousFunctions` menolaknya, termasuk `pg_catalog.pg_sleep`. Pertahanan
+berlapisnya benar di jalur itu; yang bolong adalah **pemisah statement**. Ini
+contoh kenapa angka dan klaim harus diukur, bukan diingat.
+
+Perbaikannya **menolak batch**, bukan memblokir `SET` berdasarkan nama: menghitung
+setiap statement yang bisa melumpuhkan pertahanan adalah permainan yang sama yang
+sudah kalah oleh keyword scanner, dan melarang `SET` berdasarkan nama akan
+mematahkan statement tunggal yang sah. Deteksi pemisahnya sengaja **murah hati**
+soal apa yang **bukan** batas: titik-koma di dalam string literal, identifier
+ter-kutip, komentar baris, dan komentar blok tidak dihitung — diuji pada 14 kasus
+(6 harus ditolak, 8 harus diloloskan) dengan **nol** kesalahan di kedua arah.
+Lapisan kedua: ceiling **di-assert ulang setelah query** sebelum `COMMIT`, supaya
+batch yang lolos tidak meninggalkan batas waktu mati pada backend yang dipool;
+indeksnya diuji tepat, sehingga memindahkannya ke sisi mana pun gagal.
+
 #### 1.7dy.6 Batas kejujuran yang tetap berlaku
 
 1. **Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini.** BYOK:
@@ -6693,6 +6754,17 @@ sudah tidak sepakat. Sekarang guard menghitung situs: wajib tepat dua, keduanya
 6. **`rag-retrieval.test.ts` butuh >300 detik** di mesin ini, sehingga timeout
    per-file yang terlalu ketat menghasilkan SIGKILL yang *terlihat* seperti hang.
    Ini bahaya pengukuran, bukan cacat kode.
+7. **Urutan lapisan pertahanan D3 diuji pada Postgres 16 lokal, bukan pada ketiga
+   dialek.** Batch statement dan `SET LOCAL` adalah perilaku Postgres/MySQL; klaim
+   "satu statement tidak bisa mengkonfigurasi ulang sesi" belum diuji pada
+   ClickHouse/SQLite/MySQL. Yang diuji adalah penolakan di sisi scanner, yang
+   berlaku untuk semua dialek, tapi jalur eksekusinya hanya Postgres.
+8. **Perbaikan D2 memperketat akses, dan bisa mematahkan integrasi yang ada.**
+   Siapa pun yang memanggil `GET /api/routing/scores` dengan peran `viewer` atau
+   `analyst` kini menerima **403**. Itu memang tujuannya, tapi bila ada dashboard
+   atau skrip operator yang bergantung padanya, ia perlu dinaikkan ke `admin`.
+   Tidak ada test yang bisa membuktikan tidak ada pemanggil seperti itu — hanya
+   pencarian di repo ini, yang menemukan tidak ada selain testnya sendiri.
 
 
 #### 1.7dy.7 Angka performa diukur ULANG, dan klaim "403,2 tok/s" dikoreksi turun
