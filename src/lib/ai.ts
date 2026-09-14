@@ -11,7 +11,7 @@
  *   - streamAnswer(): token-by-token streaming for the HTTP SSE pipeline.
  */
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
-import { chatOnce as llmChatOnce, chatStream as llmChatStream } from '@/lib/llm-client'
+import { chatOnce as llmChatOnce, chatStream as llmChatStream, type LlmUsage } from '@/lib/llm-client'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
 import { LlmNotConfiguredError } from '@/lib/errors'
@@ -29,6 +29,8 @@ interface ChatMessage {
 interface ChatOpts {
   temperature?: number
   purpose?: string
+  /** Forwarded to chatStream so the caller can report token usage. */
+  onUsage?: (usage: LlmUsage) => void
 }
 
 async function resolveBackend(): Promise<{ cfg: LlmRuntimeConfig }> {
@@ -51,7 +53,7 @@ async function* chatStream(
 ): AsyncGenerator<string, void, unknown> {
   const { cfg } = await resolveBackend()
   const temperature = opts.temperature ?? 0
-  yield* llmChatStream(cfg, messages, temperature, opts.purpose ?? 'chat')
+  yield* llmChatStream(cfg, messages, temperature, opts.purpose ?? 'chat', undefined, opts.onUsage)
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +629,8 @@ export async function* streamAnswer(args: {
   rowCount?: number
   /** True when the result was cut off by the LIMIT clamp (resultLimit reached). */
   truncated?: boolean
+  /** Receives token counts when the stream ends; see chatStream. */
+  onUsage?: (usage: LlmUsage) => void
 }): AsyncGenerator<string, void, unknown> {
   const messages: ChatMessage[] = []
   if (args.systemPromptPrefix) {
@@ -666,7 +670,7 @@ export async function* streamAnswer(args: {
       content: `Question: ${args.question}\n\nCONTEXT (${answerContextLabel(args.source)}):\n${args.context}\n\nAnswer:`,
     },
   )
-  yield* chatStream(messages, { purpose: 'synthesis' })
+  yield* chatStream(messages, { purpose: 'synthesis', onUsage: args.onUsage })
 }
 
 export async function* streamChat(
@@ -674,6 +678,8 @@ export async function* streamChat(
   memoryContext?: string,
   systemPromptPrefix?: string,
   chatHistory?: ChatMessage[],
+  /** Receives token counts when the stream ends; see chatStream. */
+  onUsage?: (usage: LlmUsage) => void,
 ): AsyncGenerator<string, void, unknown> {
   const messages: ChatMessage[] = []
   if (systemPromptPrefix) {
@@ -697,7 +703,7 @@ export async function* streamChat(
     },
     { role: 'user', content: question },
   )
-  yield* chatStream(messages, { purpose: 'chat' })
+  yield* chatStream(messages, { purpose: 'chat', onUsage })
 }
 
 /**

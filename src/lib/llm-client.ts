@@ -237,6 +237,16 @@ export async function* chatStream(
   temperature: number = 0,
   purpose: string = 'chat',
   tools?: LlmToolDef[],
+  /**
+   * Receives the provider's token counts once the stream ends.
+   *
+   * A generator cannot return a value alongside its yields, and this one is typed
+   * AsyncGenerator<string, void>, so the counts were computed, passed to
+   * logLlmUsage, and then dropped -- every streamed turn reported `usage: undefined`
+   * and the chat route's `done` frame always omitted usage. Callers that care pass a
+   * sink; the parameter is optional so existing callers are unaffected.
+   */
+  onUsage?: (usage: LlmUsage) => void,
 ): AsyncGenerator<string, void, unknown> {
   const t0 = Date.now()
   try {
@@ -280,11 +290,13 @@ export async function* chatStream(
         }
       } catch (e) { console.warn('[llm] malformed SSE chunk:', e) }
     }
-    logLlmUsage(purpose, cfg, {
+    const anthropicUsage: LlmUsage = {
       promptTokens: inputTokens,
       completionTokens: outputTokens,
       totalTokens: inputTokens + outputTokens,
-    }, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
+    }
+    logLlmUsage(purpose, cfg, anthropicUsage, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
+    onUsage?.(anthropicUsage)
     return
   }
 
@@ -335,6 +347,11 @@ export async function* chatStream(
     } catch (e) { console.warn('[llm] malformed SSE chunk:', e) }
   }
   logLlmUsage(purpose, cfg, usage, Date.now() - t0, { messages, responsePreview: streamOutput.slice(0, 500) })
+  // The gateway emits `usage` on EVERY chat.completion.chunk when include_usage is set,
+  // so the loop above overwrites `usage` with the latest (last) chunk's totals -- which
+  // is the whole-turn figure. Surfacing it here is what makes avg tokens/task and
+  // tokens/sec measurable at all.
+  if (usage) onUsage?.(usage)
   } catch (e) {
     logLlmUsage(purpose, cfg, null, Date.now() - t0, { messages, error: e instanceof Error ? e.message : String(e) })
     throw e

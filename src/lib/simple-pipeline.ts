@@ -301,7 +301,19 @@ export async function runSimpleStreamingChat(args: {
   else result = await prepareChatStream(branchArgs)
 
   if (integrationId) result.integrationId = integrationId
-  return { ...result, decision }
+  // `usage` is a GETTER on the preparer's result (it is populated only once the stream
+  // drains), and object spread evaluates getters -- so `{ ...result }` would freeze a
+  // snapshot of `undefined` and the route's `done` frame would never carry token counts.
+  // Measured: the preparer held {promptTokens:2132, completionTokens:121} while the client
+  // still received usage=null. Copy the data keys explicitly and re-attach the stream and
+  // the usage getter, so the live value is read at the moment the route asks for it.
+  const { stream, ...rest } = result
+  return {
+    ...rest,
+    decision,
+    stream,
+    get usage() { return (result as { usage?: { promptTokens: number; completionTokens: number } }).usage },
+  }
 }
 
 /** Short, human-readable description of each connected source, for the classifier. */

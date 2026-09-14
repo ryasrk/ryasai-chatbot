@@ -331,6 +331,62 @@ describe('chatOnce', () => {
   })
 })
 
+describe('chatStream — token usage reporting', () => {
+  // Regression: the token counts were parsed, handed to logLlmUsage, and then dropped,
+  // because an AsyncGenerator<string, void> cannot also RETURN a value. Every streamed
+  // turn therefore reported usage undefined, the chat route's done frame omitted usage,
+  // and avg tokens/task was unmeasurable for the whole project lifetime. The gateway was
+  // never at fault: it emits usage on each chunk when include_usage is set.
+  test('onUsage receives the counts from the final chunk', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: {"choices":[{"delta":{"content":"He"}}],"usage":{"prompt_tokens":11,"completion_tokens":2,"total_tokens":13}}\n',
+          'data: {"choices":[{"delta":{"content":"llo"}}],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    const seen: Array<{ promptTokens: number; completionTokens: number; totalTokens: number }> = []
+    let text = ''
+    for await (const t of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat', undefined, (u) => {
+      seen.push(u)
+    })) {
+      text += t
+    }
+
+    expect(text).toBe('Hello')
+    expect(seen).toHaveLength(1)
+    // The LAST chunk's totals win — they are the whole-turn figure, not the first chunk's
+    // running subtotal.
+    expect(seen[0].completionTokens).toBe(7)
+    expect(seen[0].promptTokens).toBe(11)
+    expect(seen[0].totalTokens).toBe(18)
+  })
+
+  test('onUsage is not called when the provider reports no usage', async () => {
+    global.fetch = mock(() =>
+      Promise.resolve(
+        sseResponse([
+          'data: {"choices":[{"delta":{"content":"hi"}}]}\n',
+          'data: [DONE]\n',
+        ]),
+      ),
+    ) as unknown as typeof fetch
+
+    let calls = 0
+    for await (const _ of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat', undefined, () => {
+      calls++
+    })) {
+      /* drain */
+    }
+    // Omitted rather than reported as zeros: a tool-only or cached turn must not claim
+    // it consumed no tokens.
+    expect(calls).toBe(0)
+  })
+})
+
 describe('chatStream', () => {
   test('OpenAI → yields tokens from SSE data lines', async () => {
     global.fetch = mock(() =>

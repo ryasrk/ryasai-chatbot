@@ -49,6 +49,7 @@ export async function prepareContextualChatStream(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
+  let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context: args.context,
@@ -56,6 +57,7 @@ export async function prepareContextualChatStream(args: {
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
+    onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
   })
   return {
     toolRuns: [{
@@ -78,7 +80,13 @@ export async function prepareChatStream(args: {
   chatHistory?: ChatHistoryEntry[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  const stream = streamChat(args.question, args.memoryContext, args.systemPromptPrefix, args.chatHistory)
+  // `usage` arrives only after the stream ends, so it is captured here and read by the
+  // route once the stream drains. Exposed as a getter, never a value: object spread
+  // evaluates getters, and a snapshot taken at return time is always undefined.
+  let usage: { promptTokens: number; completionTokens: number } | undefined
+  const stream = streamChat(args.question, args.memoryContext, args.systemPromptPrefix, args.chatHistory, (u) => {
+    usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens }
+  })
   return {
     toolRuns: [{
       type: 'CHAT',
@@ -89,6 +97,7 @@ export async function prepareChatStream(args: {
     citations: [],
     chartData: null,
     stream,
+    get usage() { return usage },
   }
 }
 
@@ -121,6 +130,7 @@ export async function prepareRagStream(args: {
     ? `${wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)}\n\n${wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):', retrieval.graphContext)}`
     : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
 
+  let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context,
@@ -128,6 +138,7 @@ export async function prepareRagStream(args: {
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
+    onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
   })
 
   const citations = topChunks.map((item) =>
@@ -166,6 +177,7 @@ export async function prepareRagStream(args: {
     citations,
     chartData: null,
     stream,
+    get usage() { return usage },
     citationTrail: retrieval.citationTrail,
   }
 }
@@ -365,6 +377,7 @@ export async function prepareSqlStream(args: {
   const result = executed
   const context = wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
   const chartData = buildChartDataFromRows(result.rows)
+  let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context,
@@ -374,6 +387,7 @@ export async function prepareSqlStream(args: {
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,
     truncated: result.rowCount >= SQL_MAX_LIMIT,
+    onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
   })
 
   const citations: Citation[] = [
@@ -396,6 +410,7 @@ export async function prepareSqlStream(args: {
     chartData,
     integrationId: integration.id,
     stream,
+    get usage() { return usage },
   }
 }
 
@@ -487,6 +502,7 @@ export async function prepareRestStream(args: {
     }
   }
 
+  let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context: result.bodyText,
@@ -494,6 +510,7 @@ export async function prepareRestStream(args: {
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
+    onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
   })
 
   const citations: Citation[] = [
@@ -516,6 +533,7 @@ export async function prepareRestStream(args: {
     citations,
     chartData: jsonRowsToChart(result.body),
     stream,
+    get usage() { return usage },
   }
 }
 
@@ -558,6 +576,7 @@ export async function preparePluginStream(args: {
 
   // Plugin output is third-party and therefore untrusted too.
   const context = `${wrapUntrusted(`CONTEXT (PLUGIN ${plugin.name}):`, result.output)}\n\nUser question: ${args.question}`
+  let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context,
@@ -565,6 +584,7 @@ export async function preparePluginStream(args: {
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
+    onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
   })
 
   return {
@@ -578,5 +598,6 @@ export async function preparePluginStream(args: {
     citations: [],
     chartData: null,
     stream,
+    get usage() { return usage },
   }
 }
