@@ -1,7 +1,7 @@
 # Hasil Pengukuran — Sesi UAT & Perbaikan
 
 Dokumen ini berisi **angka yang benar-benar diukur**, bukan klaim. Setiap bagian
-menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `603a148`.
+menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `95106a7`.
 
 ---
 
@@ -9,13 +9,15 @@ menyebutkan batas kejujurannya. Tanggal pengukuran: sesi ini, HEAD `603a148`.
 
 | Metrik | Nilai | Status |
 |---|---|---|
-| Akurasi fleet trial | **518/518 = 100,00%** (dijalankan ulang ronde ini) | terukur |
-| Token speed (loopback, 9router) | **278,9 tok/s**, TTFT 1.856 ms | terukur, tapi lihat catatan §1.7dy.7 |
-| Tokens/task (prompt) | **~379 token** per pertanyaan | **estimasi**, bukan usage provider |
-| Test coverage (baris yang BISA dieksekusi) | **96,20%** (18.718/19.457 baris) | terukur, **target 95% terlampaui** |
-| Test coverage (merge mentah) | **88,18%** (21.602/24.497 baris, 198 file) | terukur, denominator menggelembung |
-| Cakupan fungsi | **94,61%** (1985/2098 fungsi, per-file FNF/FNH) | terukur |
-| Test suite | 239 file · **6.472 lulus · 0 gagal · 0 skip** | terukur |
+| **Akurasi LLM NYATA** | **78/78 = 100,00%** (3 trial × 26 soal, via HTTP produksi) | **terukur — §1.7e** |
+| **Token speed LLM NYATA** | **median 234 tok/s** (214–267, 8/8 sampel layak) | **terukur — §1.7e** |
+| **Latensi LLM nyata** | p50 **5,2 s**, p90 7,4 s end-to-end | **terukur — §1.7e** |
+| **Tokens/task** | **92 token milik prompt KAMI** (+2.002 preamble gateway) | **terukur — §1.7e** |
+| Akurasi fleet trial (offline) | **518/518 = 100,00%** | terukur |
+| Test coverage (baris yang BISA dieksekusi) | **96,19%** (18.745/19.487 baris) | terukur, **target 95% terlampaui** |
+| Test coverage (merge mentah) | **88,17%** (21.633/24.536 baris, 198 file) | terukur, denominator menggelembung |
+| Cakupan fungsi | **94,66%** (1987/2099 fungsi, per-file FNF/FNH) | terukur |
+| Test suite | 239 file · **6.494 lulus · 0 gagal · 0 skip** | terukur |
 | tsc / lint | 0 error | terukur |
 
 **Ada DUA angka coverage, dan keduanya dilaporkan.** Rasionya sama-sama sah,
@@ -6529,7 +6531,8 @@ sehingga penyebutnya membengkak sementara hit-nya utuh.
 
 #### 1.7dx.5 Batas kejujuran yang tetap berlaku
 
-1. **Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini** — tidak ada
+1. ~~**Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini**~~ — sudah
+   terukur pada ronde lanjutan; lihat §1.7e. Teks aslinya berbunyi: tidak ada
    provider LLM (BYOK: pelanggan membawa kuncinya sendiri), jadi angka trial
    sebelumnya berasal dari mock loopback, bukan model sungguhan.
 2. **Gate coverage belum pernah berjalan di CI sungguhan** — ia dijalankan manual.
@@ -6742,8 +6745,18 @@ indeksnya diuji tepat, sehingga memindahkannya ke sisi mana pun gagal.
 
 #### 1.7dy.6 Batas kejujuran yang tetap berlaku
 
-1. **Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini.** BYOK:
-   tidak ada provider LLM. Angka trial mana pun berasal dari mock loopback.
+0. **PENGUKURAN LLM NYATA SUDAH ADA — §1.7e.** Angka di bawah ini adalah daftar
+   batas yang **masih** berlaku setelah pengukuran itu. Butir 1 (akurasi, token
+   speed, tokens/task tidak terukur) sudah **selesai** dan tidak lagi berlaku;
+   butir 9–12 adalah batas **baru** yang muncul justru karena pengukuran itu
+   dijalankan.
+
+1. ~~Akurasi, token speed, dan avg tokens/task TIDAK terukur di sini.~~
+   **SUDAH TERUKUR — lihat §1.7e.** Kesimpulan lama itu benar saat ditulis, tetapi
+   ternyata ada gateway OpenAI-compatible nyata yang bisa dijangkau dari mesin ini,
+   jadi ketiga angka itu sekarang diukur lewat jalur HTTP produksi. Yang **belum**
+   terukur tetap sama dan tetap tidak diklaim: kebenaran retrieval/SQL (butuh data
+   organisasi), perilaku di bawah beban, dan perilaku gateway spesifik pelanggan.
 2. **Coverage gate belum pernah dijalankan di CI nyata.**
 3. **Branch coverage tidak terukur** dengan Bun 1.3.14 — `BRF: 0`, `BRH: 0`.
 4. **DB dev hanya punya SATU `Organization`**, jadi klaim isolasi lintas-tenant
@@ -6769,13 +6782,88 @@ indeksnya diuji tepat, sehingga memindahkannya ke sisi mana pun gagal.
    tidak mengubah hasil pengukuran — ia hanya menandai file sebagai "gagal" di log.
    Belum diperbaiki: menyimpan stderr akan membuat penyebabnya terlihat, dan itu
    perubahan pada runner, bukan pada kode.
-9. **Perbaikan D2 memperketat akses, dan bisa mematahkan integrasi yang ada.**
+9. **Akurasi 100% diukur pada 26 soal yang jawabannya bisa diperiksa mesin, dan
+   itu dipilih dengan sengaja** supaya penilaiannya otomatis. Ia membuktikan pipa
+   kami **menyampaikan** jawaban yang benar (intent, routing, transport SSE, persist),
+   **bukan** bahwa modelnya cerdas. Kebenaran retrieval/SQL **tidak** terukur: keduanya
+   butuh data organisasi yang tidak ada di DB dev.
+10. **Token speed diukur dengan satu klien berurutan.** Perilaku di bawah beban, dan
+   pengaruh konkurensi permintaan, tidak diukur. Angka 234 tok/s menggambarkan satu
+   model di satu gateway, bukan plafon produk.
+11. **Bug `res.json()` pada body SSE hanya ketahuan karena provider ini berperilaku
+   begitu.** Gateway yang menghormati `stream` sepenuhnya tidak akan pernah
+   memicunya. Perbaikannya (`readCompletionBody`) diuji terhadap body SSE nyata yang
+   saya rekam, tapi **tidak** diuji terhadap matriks provider yang lebih luas.
+12. **Perbaikan D2 memperketat akses, dan bisa mematahkan integrasi yang ada.**
    Siapa pun yang memanggil `GET /api/routing/scores` dengan peran `viewer` atau
    `analyst` kini menerima **403**. Itu memang tujuannya, tapi bila ada dashboard
    atau skrip operator yang bergantung padanya, ia perlu dinaikkan ke `admin`.
    Tidak ada test yang bisa membuktikan tidak ada pemanggil seperti itu — hanya
    pencarian di repo ini, yang menemukan tidak ada selain testnya sendiri.
 
+
+#### 1.7e PENGUKURAN TERHADAP PROVIDER LLM NYATA — akurasi, token speed, tokens/task
+
+Ini menutup batas kejujuran yang ronde-ronde sebelumnya selalu diulang. Selama ini
+saya menulis "akurasi, token speed, dan avg tokens/task TIDAK terukur di sini" karena
+BYOK berarti tidak ada provider yang ikut produk. Kalimat itu **benar saat ditulis**,
+tapi ternyata ada gateway OpenAI-compatible nyata yang bisa dijangkau, jadi ketiga
+angka itu sekarang **diukur**, bukan diperkirakan.
+
+**Jalurnya jalur produksi, bukan panggilan buatan.** Semua angka diambil dengan
+mengirim `POST /api/chat/sessions/[id]/send` ke dev server yang berjalan, memakai
+sesi yang ditandatangani `signSession()` — fungsi yang sama yang dipakai route login.
+Jadi cakupannya meliputi resolusi tenant, intent pipeline, routing, transport SSE,
+dan model itu sendiri.
+
+| Besaran | Hasil | Berkas |
+|---|---|---|
+| **Akurasi** | **78/78 = 100,00%** (3 trial × 26 soal, 5 kategori) | `measure.ts` |
+| **Token speed** | **median 234 tok/s** (rentang 214–267, 8/8 sampel layak) | `token-speed.ts` |
+| **Latensi** | p50 **5,2 detik**, p90 7,4 detik (end-to-end) | `measure.ts` |
+| **Tokens/task** | **92 token milik prompt KAMI**; 2.002 token adalah preamble gateway | `prompt-size.ts` |
+
+**Pemisahan 92 vs 2.002 itu bagian yang paling penting.** `LlmUsageLog.promptTokens`
+melaporkan ~2.090 token per task. Tetapi diukur langsung ke provider: prompt **1
+KARAKTER** pun sudah melaporkan **2.002 prompt token**, dan prompt system+user yang
+benar-benar kami kirim (438 karakter) melaporkan **2.094** — selisihnya **92**. Jadi
+~96% dari angka itu adalah preamble milik gateway, yang **tidak pernah dikirim kode
+kami**. Melaporkan 2.090 sebagai biaya per task kami akan melebihkan sekitar 20 kali.
+Karena itu `prompt-size.ts` melaporkan karakterisasi **milik kami** (434 karakter/task,
+~109 token pada 4 karakter/token, dan itu dilabeli sebagai estimasi) beserta
+pemisahannya secara eksplisit.
+
+**Token speed diturunkan ulang, bukan diulang.** Angka 403,2 lalu 278,9 tok/s dari
+ronde sebelumnya saya tandai tidak bisa dipercaya karena keduanya membagi dengan
+`total − TTFT`, dan **5 dari 6 run punya jendela itu di bawah 50 ms** — penyebut yang
+degenerat, yang menghasilkan 0 dan 34.000 tok/s dalam satu seri. Skrip baru membagi
+dengan jendela generasi tetapi **hanya mencatat laju bila jendela itu ≥ 500 ms**, dan
+mencetak **setiap sampel mentah** supaya pembaca bisa memeriksa penyebutnya alih-alih
+mempercayai ringkasan. Kedelapan sampel lolos syarat, jendelanya 1,0–1,2 detik, dan
+rentangnya rapat (214–267). Artinya angka lama itu bukan salah karena kebetulan
+sampel; **aritmetikanya sendiri memang tidak bisa diselamatkan**.
+
+**Tiga bug nyata ditemukan justru karena pengukuran ini dilakukan.** Mengukur
+lewat jalur produksi memaksa ketiganya muncul; semuanya tidak akan terlihat dari test
+yang memakai mock:
+
+1. **`llm-config.ts` — allowlist operator diabaikan di jalur DNS.** Diperbaiki di
+   `284d23c`. Lihat §1.7dz butir 10.
+2. **`llm-client` — `res.json()` pada body yang provider kirim sebagai SSE.**
+   Diperbaiki di `7a7be2e`. Inilah yang membuat **setiap** panggilan LLM gagal.
+3. **SSRF guard memblokir host self-hosted yang sudah di-allowlist operator**, yang
+   membuat topologi yang didokumentasikan modulnya sendiri mustahil dikonfigurasi.
+
+**Yang TIDAK diukur, dan tidak diklaim:**
+- **Kebenaran retrieval atau SQL.** Keduanya butuh data organisasi yang tidak ada di
+  DB dev. Himpunan soalnya sengaja bersifat faktual/aritmetika/penalaran/format, yang
+  bisa dijawab model polos tanpa data organisasi.
+- **Perilaku di bawah beban.** Satu klien, permintaan berurutan.
+- **Performa gateway spesifik pelanggan.** Angka ini menggambarkan model yang dijangkau
+  di sini, bukan plafon atau lantai produk.
+- **Akurasi 100% bukan klaim kualitas jawaban umum.** 26 soal dengan jawaban yang bisa
+  diperiksa mesin memang dipilih supaya bisa dinilai otomatis; itu mengukur apakah
+  pipa kami menyampaikan jawaban yang benar, bukan apakah modelnya cerdas.
 
 #### 1.7dy.7 Angka performa diukur ULANG, dan klaim "403,2 tok/s" dikoreksi turun
 
