@@ -211,7 +211,17 @@ const FLOORS: Record<string, number> = {
   // never ran -- a dropped status there would hit real BYOK customers while unit tests stayed
   // green. Also covered: tools in the STREAMING OpenAI body (a separate assignment) and the
   // `System context:` push in agentChatStream (a separate copy from agentChat's).
-  'src/lib/llm-client.ts': 90, // measured 90.88% merged; 266/270 executable
+  // LOWERED 90 -> 88. The old floor came from a 266/270 measurement; the file is now
+  // 309 records merged, not 270, and the extra records are NOT uncovered code.
+  // Proven two-way: standalone this file is 274/274 = 100.00%, and the merged figure
+  // is also 274 HITS over 309 records -- the HIT count is identical, so every extra
+  // record is a 0-hit phantom. Bun's instrumenter emits per-bytecode-offset DA:
+  // records and maps unrelated offsets onto arbitrary lines of modules that another
+  // test file mocks; those lines cannot execute and no test can ever cover them, so
+  // `Math.max` across runs never marks them. Writing more tests cannot raise this
+  // number, and a floor above the measurement would make the gate fail on a file
+  // that is fully covered.
+  'src/lib/llm-client.ts': 88, // measured 88.67% merged (274 hits / 309 records); 274/274 = 100% standalone
   'src/lib/logger.ts': 85, // measured 94.44% (34/36)
   'src/lib/metrics.ts': 90, // measured 96.13% (149/155)
   'src/lib/midtrans.ts': 85, // measured 94.03% (63/67)
