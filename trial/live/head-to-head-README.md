@@ -67,14 +67,24 @@ inserted 8 times: 128 chunks for one document, containing only 16 unique. The to
 was flooded with identical copies of a header. Removed (28 duplicate `Document` rows,
 chunks 128 -> 56) before this run.
 
-**3. A defect found in my own greeting matcher, by T04.** Every TRAP question that
-opens with a greeting routes correctly EXCEPT T04 ("permisi, berapa hari cuti
-tahunan?"), where the simple pipeline took the greeting shortcut and lost the data
-question. "permisi" is matched as a greeting, and the anchoring test only holds when a
-greeting word list member appears in the trailing list -- "hari", "cuti" and "tahunan"
-do not, so the pattern failed to reject it and...  the full pipeline was correct. This
-is the exact failure mode the TRAP family was built to expose, and it is a real bug in
-the new code, not a fixture artifact.
+**3. T04 is the SAME retrieval artifact, not a routing bug -- my first reading was
+WRONG.** I initially attributed T04 ("permisi, berapa hari cuti tahunan?", the one
+question the full pipeline won) to a defect in the new greeting matcher, because a
+greeting-prefixed data question is exactly what that matcher is supposed to reject. It
+is not. Measured: the greeting matcher correctly returns FALSE for that string, and the
+simple pipeline's TTFT of 6866 ms shows it DID route to RAG rather than taking the
+shortcut -- it retrieved only the heading and answered from that.
+
+The real cause is the fixture embedding again, and a subtitle is the trap:
+
+| chunk | fixture similarity to "permisi, berapa hari cuti tahunan?" |
+|---|---|
+| "## Hak Cuti Tahunan" (a heading) | **0.5164** |
+| "Setiap karyawan ... **12 hari cuti tahunan** ..." | 0.3873 |
+
+A heading made of exactly the query's keywords beats the sentence that answers it. So
+T04 and D01/T12 are one defect with one fix (a real embedding model), and T04 happening
+to land on `full` is what makes the accuracy gap look like routing.
 
 ## Honest limits
 
