@@ -284,9 +284,13 @@ describe('the session and the org context', () => {
     await GET()
     // Measured, not guessed: `Promise.all` issues all four loaders, so every read
     // follows the context entry rather than only the first one.
+    // `requireRole:admin` now sits between the context entry and the reads. It belongs AFTER
+    // `enterWithOrg` because the role check is cheap and the tenant context is what the reads depend
+    // on, and BEFORE them because a refused caller must not cause four org-scoped queries to run.
     expect(events).toEqual([
       'getActiveUser',
       'enterWithOrg:org-1',
+      'requireRole:admin',
       'read:loadSchemaMetadata',
       'read:loadEndpointMetadata',
       'read:loadDocumentMetadata',
@@ -296,6 +300,10 @@ describe('the session and the org context', () => {
     // that is not instrumented cannot silently invalidate the sequence assertion.
     expect(events.indexOf('enterWithOrg:org-1')).toBeLessThan(events.indexOf('read:loadSchemaMetadata'))
     expect(events.indexOf('getActiveUser')).toBeLessThan(events.indexOf('enterWithOrg:org-1'))
+    // And NO read may precede the gate: a refused caller must not make the org do the work.
+    const gateAt = events.indexOf('requireRole:admin')
+    expect(gateAt).toBeGreaterThan(-1)
+    expect(events.filter((e, i) => e.startsWith('read:') && i < gateAt)).toEqual([])
   })
 
   test('the org taken is the SESSION org, not a constant', async () => {
@@ -416,37 +424,47 @@ describe('what the payload exposes', () => {
     }
   })
 
-  test('there is NO role gate: a viewer receives the full routing table', async () => {
-    // INVERT WHEN FIXED: when a `requireRole(user, 'admin')` (or a plan gate) is added
-    // to GET /api/routing/scores, this test must fail. The fix is a single line after
-    // `enterWithOrg(...)`, matching the sibling spend endpoint rag/evaluate.
-    // Current behaviour, proven: a viewer gets 200 with the org schema keywords.
+  test('a viewer is REFUSED — the payload is a map of the org data surface', async () => {
+    // INVERTED WHEN FIXED: this was pinned as a missing gate; `requireRole(user, 'admin')` has now
+    // landed, so the test asserts the CORRECT behaviour and fails again if the gate is removed.
     //
-    // This IS the inversion guard for the missing gate -- it is not green-because-buggy:
-    // the reference fix below makes it red, asserted both on the status and on the fact
-    // that no role check was consulted at all.
-    //
-    //   const u = await getActiveUser(); enterWithOrg(u.organizationId)
-    //   requireRole(u, 'admin')   // <- the fix; makes this test fail
+    // The gate matters because the payload is not merely a score: `schemaKeywords`, `endpointKeywords`
+    // and `documentKeywords` are derived from real column names, REST paths and document names, and
+    // `perfMetrics` exposes per-tool latency and failure rates. That is reconnaissance a viewer has no
+    // reason to hold -- and it is 403, not an empty body, so the refusal itself is not a disclosure.
     user = { ...adminUser, role: 'viewer' }
+    schemaMetadata = ['customers', 'invoice_total']
+    const res = await GET()
+    expect(res.status).toBe(403)
+    // The gate WAS consulted, and with the admin floor.
+    expect(events).toContain('requireRole:admin')
+    // The org data surface must not ride along in the error body either.
+    const raw = await res.text()
+    expect(raw).not.toContain('customers')
+    expect(raw).not.toContain('invoice_total')
+  })
+
+  test('an analyst is refused too — the gate is admin, not analyst', async () => {
+    // INVERTED WHEN FIXED, same fix as above. Analyst outranks viewer but still does not get the
+    // data-surface map, which is why the boundary is asserted at BOTH roles rather than only the
+    // lowest one: a gate that merely excluded viewers would pass a single-role test.
+    user = { ...adminUser, role: 'analyst' }
+    const res = await GET()
+    expect(res.status).toBe(403)
+    expect(events).toContain('requireRole:admin')
+  })
+
+  test('an admin still receives the routing table', async () => {
+    // The counterweight, and the reason the two refusals above are meaningful: without this, a
+    // `requireRole` that rejected EVERYONE would satisfy them and the feature would be dead.
+    user = { ...adminUser, role: 'admin' }
     schemaMetadata = ['customers', 'invoice_total']
     const res = await GET()
     expect(res.status).toBe(200)
     const body = await bodyOf(res)
     expect(body.ok).toBe(true)
     expect(body.schemaKeywords).toEqual(['customers', 'invoice_total'])
-    // No gate was consulted. Once one exists this line is the second red flag.
-    expect(events.filter((e) => e.startsWith('requireRole'))).toHaveLength(0)
-  })
-
-  test('and an analyst receives it too, with no audit trail of the read', async () => {
-    // INVERT WHEN FIXED: same fix as above. The route writes no audit row either, so
-    // an admin-only gate would be the ONLY record that this disclosure happened.
-    user = { ...adminUser, role: 'analyst' }
-    const res = await GET()
-    expect(res.status).toBe(200)
-    expect((await bodyOf(res)).ok).toBe(true)
-    expect(events.filter((e) => e.startsWith('requireRole'))).toHaveLength(0)
+    expect(events).toContain('requireRole:admin')
   })
 })
 
