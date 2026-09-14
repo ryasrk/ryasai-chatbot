@@ -14,9 +14,25 @@ Measured against a live OpenAI-compatible gateway:
 | Quantity | Result | How |
 |---|---|---|
 | Accuracy | **78/78 = 100.00%** (3 trials x 26 questions) | `measure.ts` |
+| Accuracy, model 2 | **26/26 = 100.00%** (independent model, same stack) | `measure.ts` |
 | Token speed | **median 234 tok/s** (range 214–267, 8/8 samples) | `token-speed.ts` |
 | Tokens/task | **92 tokens of OUR prompt**; 2,002 are the gateway's preamble | `prompt-size.ts` |
 | Latency | p50 5.2 s, p90 7.4 s end-to-end | `measure.ts` |
+
+### Reproducibility, and what a failure looked like
+
+Re-running after every fix reproduced 26/26 on the original model, and a second,
+independent model also scored **26/26**. So the result does not depend on one model
+being lucky.
+
+A third model (`lim/kimi-k3`) returned a provider error on every case. That is worth
+recording for two reasons. First, it is not a product defect: the gateway refused the
+request, and the app surfaced it as an actionable message -- "Your AI provider refused
+the request... Check your provider dashboard" -- with **no credential or raw provider
+body in the text**, which is the redaction work from an earlier round holding up on a
+live failure rather than a fixture. Second, it is exactly why the accuracy figure is
+stated as 78/78 on the models measured here and not as a product-wide claim: a BYOK
+product cannot promise what a customer's gateway will do.
 
 NOT measured, and not claimed:
 - **Retrieval or SQL correctness.** Those need org data the dev database does not
