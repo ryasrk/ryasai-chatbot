@@ -23,7 +23,14 @@ export const RAG_MAX_CHUNKS_PER_UPLOAD = 500
 // Rate limiting
 export const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMIT_DEFAULT = 60
-export const RATE_LIMIT_CHAT = 30
+// ponytail: env-overridable so batch/benchmark runs can lift the ceiling. This is a
+// SECOND limiter, independent of CHAT_RATE_LIMIT_PER_MIN in llm-budget.ts: that one is
+// per-ORGANIZATION and lives in the route handler; this one is per-IP in the middleware.
+// So raising only the handler's limit does nothing for a batched run -- measured on an
+// 800-question benchmark: CHAT_RATE_LIMIT_PER_MIN was raised and requests still came
+// back HTTP 429 with EMPTY answers, because they never reached the handler. That run
+// produced 196/200 "failures" that were pure throttling. Defaults to 30 (unchanged).
+export const RATE_LIMIT_CHAT = Number(process.env.RATE_LIMIT_CHAT_PER_MIN ?? '') || 30
 export const RATE_LIMIT_LOGIN = 10
 export const RATE_LIMIT_AGENT = 20
 export const RATE_LIMIT_UPLOAD = 20
