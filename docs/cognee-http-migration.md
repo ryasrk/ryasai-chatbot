@@ -171,5 +171,48 @@ For a second write, assert BOTH tokens are visible via `CHUNKS` (not via
 - We have not measured this service's memory footprint on a customer-sized
   corpus; upstream's compose reserves 8 GB, and this file deliberately sets no
   cap.
-- Multi-hop graph *quality* is unverified. What is proven is the mechanism:
-  write, persist, and recall across sessions.
+- Multi-hop graph *quality* is now measured on a SMALL corpus (below), but not at
+  customer scale, and what was measured is RETRIEVAL, not answer quality.
+
+## Measured: multi-hop retrieval quality on a small corpus
+
+`scripts/cognee-quality-probe.ts` plants two facts per scenario that connect only
+through a shared entity, then asks a question whose answer requires following that
+link. Run against a fresh cognee 1.5.4 server, dataset `probe:quality`:
+
+| scenario | traversal required | result |
+|---|---|---|
+| two-hop vendor chain | approver → purchase → vendor | **rank #1** |
+| org-chart hop | report → manager → approval | **rank #1** |
+| shared-vendor hop | supplier → audit finding → *other* project | **rank #1** |
+
+**3/3 answer chunks ranked FIRST**, every hit labelled `source: "graph"`, recall
+2.7–3.1 s. Three controls make that number mean something:
+
+1. **"Return everything" is ruled out.** The dataset holds 16 items with `topK` 8,
+   so a retriever dumping the store could not score 100%. This was NOT true of the
+   first run: with only 6 items stored, every recall returned all 6 chunks and the
+   100% was *uninterpretable*. The filler corpus exists specifically to make the
+   probe falsifiable — the naive version reported a meaningless perfect score.
+2. **A decoy is present per scenario** — wording that shares vocabulary with the
+   question but is the wrong answer (e.g. asking about "project Alpha" when the
+   answer is "Beta"). The answer outranked its decoy every time. The decoy still
+   appears *inside* the top-8 window; on a corpus this small that is expected, and
+   ranking is the claim — not exclusivity.
+3. **An unanswerable control MISSES.** The same question asked against an empty
+   dataset returns 0 chunks in ~55 ms, so recall is dataset-scoped and hits are not
+   leaking across namespaces.
+
+**Paraphrase robustness (no shared vocabulary).** Re-asking with the stored words
+deliberately avoided — "Who is the manager that Clara Handayani oversees?" (the
+reverse of the stored edge), "PT Cahaya Timur was late on which projects?" — still
+surfaced the correct chunk at rank #1 (2 of 3) and rank #2 (1 of 3). Ranking is
+therefore semantic/structural, not JSON keyword overlap.
+
+**Do not overstate this.** It is:
+- **not** answer accuracy — a hit means the joined evidence was *retrievable*, not
+  that the final reply used it correctly;
+- **not** customer scale — 16 items, 3 scenarios, one run each; a real corpus has
+  thousands of chunks and far more collisions;
+- **not** a faithfulness measure — no LLM-judged scoring was applied.
+

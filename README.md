@@ -63,6 +63,13 @@ cross-session recall. Memory is verified separately and end-to-end (see the cogn
 integrity pass above): a fact stated in one session is answered by a brand-new session with
 no history. Do not cite the 99.38% as evidence that memory works.
 
+Memory quality is measured separately, and only to a limited depth: `scripts/cognee-quality-probe.ts`
+plants two facts that connect only through a shared entity, then asks a question requiring that
+link — 3/3 answer chunks ranked **#1** (every hit `source: "graph"`), and it still holds when the
+question shares no vocabulary with the stored text. That is **retrieval** on a 16-item corpus,
+checked against an unanswerable control and a per-question decoy. It is **not** answer accuracy,
+not faithfulness, and not a customer-scale result. See `docs/cognee-http-migration.md`.
+
 **Read this honestly.** A single pass cannot separate a defect from sampling variance.
 Of the 5 failures here, **3 answered correctly 5 times out of 5** when re-asked, giving a
 variance-corrected **99.75% (798/800)**. The 2 that stayed wrong (`S019` answering 0,
