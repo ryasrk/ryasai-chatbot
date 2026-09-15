@@ -90,15 +90,24 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const ids = (r: { chunks: Array<{ chunkId: string }> }) => r.chunks.map((c) => c.chunkId)
 
-beforeEach(async () => {
-  enterWithOrg('org-fusion-test')
+// INCIDENT (see invariants.test.ts): `AsyncLocalStorage.enterWith()` inside a hook does
+// not reach the test body on Bun 1.4.2, so the org context was silently absent and the
+// org-scoped retrieval guard returned nothing. The hook now only resets state; the org is
+// entered by `withOrg` inside each test body, which works on every Bun version.
+beforeEach(() => {
   vectorRows = []
   ftsIds = []
   kgChunkIds = []
 })
 
+function withOrg<T>(fn: () => Promise<T> | T): Promise<T> {
+  enterWithOrg('org-fusion-test')
+  return Promise.resolve().then(fn)
+}
+
 describe('hybrid retrieval — both legs always run', () => {
   test('a chunk only the lexical leg found is still retrieved', async () => {
+    return withOrg(async () => {
     // THE structural fix. Candidates used to be
     //   vectorScores.size > 0 ? vectorCandidates : lexicalCandidates
     // so once pgvector returned anything, FTS never ran and an exact keyword
@@ -110,27 +119,33 @@ describe('hybrid retrieval — both legs always run', () => {
 
     expect(ids(result)).toContain('exact')
     expect(ids(result)).toContain('v1')
+    })
   })
 
   test('a chunk only the vector leg found is still retrieved', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'v1', similarity: 0.95 }]
     ftsIds = ['exact']
 
     const result = await retrieveRelevantChunks({ query: 'corporate tax', topK: 5 })
     expect(ids(result)).toContain('v1')
+    })
   })
 
   test('candidatesScanned reflects the union, not one leg', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'v1', similarity: 0.9 }]
     ftsIds = ['exact', 'shared']
 
     const result = await retrieveRelevantChunks({ query: 'npwp tax', topK: 5 })
     expect(result.candidatesScanned).toBe(3)
+    })
   })
 })
 
 describe('hybrid retrieval — RRF fusion', () => {
   test('a chunk both legs agree on outranks a chunk only one leg found', async () => {
+    return withOrg(async () => {
     vectorRows = [
       { id: 'v1', similarity: 0.99 }, // vector's own #1
       { id: 'shared', similarity: 0.7 },
@@ -143,9 +158,11 @@ describe('hybrid retrieval — RRF fusion', () => {
     // vector and absent from lexical. Consensus wins — under the old additive
     // scoring, whichever leg produced the larger raw number simply took over.
     expect(ids(result)[0]).toBe('shared')
+    })
   })
 
   test('scores are RRF-scale, never raw counts', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'shared', similarity: 0.9 }]
     ftsIds = ['shared']
 
@@ -153,9 +170,11 @@ describe('hybrid retrieval — RRF fusion', () => {
     // Two retrievers both at rank 1 => 2/(60+1) ≈ 0.0328. The old scale was 0-30.
     expect(result.chunks[0].score).toBeGreaterThan(0)
     expect(result.chunks[0].score).toBeLessThan(0.1)
+    })
   })
 
   test('the breakdown still reports lexical + semantic detail for the UI', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'shared', similarity: 0.8 }]
     ftsIds = ['shared']
 
@@ -164,20 +183,24 @@ describe('hybrid retrieval — RRF fusion', () => {
     expect(breakdown.semanticSimilarity).toBeCloseTo(0.8, 5)
     expect(typeof breakdown.bm25).toBe('number')
     expect(breakdown.total).toBe(result.chunks[0].score)
+    })
   })
 })
 
 describe('hybrid retrieval — knowledge graph as a third retriever', () => {
   test('KG-only chunks enter the pool and are ranked, not bolted on', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'v1', similarity: 0.9 }]
     ftsIds = ['exact']
     kgChunkIds = ['kgonly']
 
     const result = await retrieveRelevantChunks({ query: 'npwp billing', topK: 5 })
     expect(ids(result)).toContain('kgonly')
+    })
   })
 
   test('KG agreement lifts a chunk without a hand-tuned multiplier', async () => {
+    return withOrg(async () => {
     // Previously: KG-local hits were multiplied by 1.3 and KG-only chunks scored
     // at lexical*0.8 — constants that only made sense on the old additive scale.
     vectorRows = [
@@ -195,21 +218,26 @@ describe('hybrid retrieval — knowledge graph as a third retriever', () => {
     const sharedBaseline = withoutKg.chunks.find((c) => c.chunkId === 'shared')!.score
 
     expect(sharedScore).toBeGreaterThan(sharedBaseline)
+    })
   })
 })
 
 describe('hybrid retrieval — degenerate inputs', () => {
   test('stopword-only query returns nothing and scans nothing', async () => {
+    return withOrg(async () => {
     vectorRows = [{ id: 'v1', similarity: 0.9 }]
     ftsIds = ['exact']
 
     const result = await retrieveRelevantChunks({ query: 'what is the', topK: 5 })
     expect(result.chunks).toEqual([])
     expect(result.candidatesScanned).toBe(0)
+    })
   })
 
   test('neither leg returns anything → empty, no crash', async () => {
+    return withOrg(async () => {
     const result = await retrieveRelevantChunks({ query: 'nonexistent terminology', topK: 5 })
     expect(result.chunks).toEqual([])
+    })
   })
 })

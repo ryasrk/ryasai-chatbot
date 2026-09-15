@@ -909,3 +909,74 @@ describe('invariant: streaming preparers never leak an LLM failure', () => {
     expect(src).toContain('continue')
   })
 })
+
+describe('AsyncLocalStorage::enterWith is never relied on from a test hook', () => {
+  // INCIDENT: nine tests in knowledge-graph.test.ts failed on Bun 1.4.2 while passing on
+  // 1.3.14, and the tests were not at fault. A minimal probe on 1.4.2 showed that
+  // `AsyncLocalStorage.enterWith()` called inside `beforeEach` does not reach the test
+  // body at all -- not even a synchronous one, and not across `await`:
+  //
+  //   beforeEach(() => { als.enterWith('HOOK') })
+  //   test('A', () => als.getStore())   // undefined on 1.4.2
+  //
+  // The same call made INSIDE the test works on both versions. Because the org context
+  // is what makes every org-scoped guard do any work, the failure surfaced far from the
+  // cause: getOrgContext() returned undefined, the guard bailed out early, and the
+  // assertion reported `Expected: 1, Received: 0` as though the product were broken.
+  //
+  // This is a RUNTIME behaviour we depend on, so it is not enough to fix the two files
+  // that happened to fail: any new test that enters an org from a hook reintroduces the
+  // same silent breakage. CI pins `bun-version: latest`, so the version that breaks it is
+  // the one CI runs.
+  //
+  // The rule enforced here: a file that enters an org context must do it inside a test
+  // body (directly, or through a helper the body calls), not from a hook.
+  const ORG_FILES = new Bun.Glob('src/**/*.test.ts')
+  // Anchored to the hook header and stopped at the FIRST matching close brace, so a hook
+  // that does NOT call enterWith (job-processor's state reset) cannot be dragged in by a
+  // later hook's body. Comments are stripped first: this guard's own explanation quotes
+  // the pattern it forbids, and matching that would make the guard fail on itself.
+  // The body group may not contain another hook header: without that, a hook that does NOT
+  // call enterWith is matched across a LATER hook's body (job-processor's state reset was
+  // dragged in exactly that way), reporting a file that is doing nothing wrong.
+  const HOOK_RE = /before(?:Each|All)\s*\(\s*(?:async\s*)?\(\s*\)\s*=>\s*\{((?:(?!before(?:Each|All)\s*\()[\s\S])*?)^\s*\}\)/gm
+
+  test('no hook calls enterWithOrg (or enterWith) directly', async () => {
+    const offenders: string[] = []
+    for await (const f of ORG_FILES.scan()) {
+      if (f.endsWith('invariants.test.ts')) continue
+      const src = (await Bun.file(f).text())
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+      if (!src.includes('enterWith')) continue
+      for (const m of src.matchAll(HOOK_RE)) {
+        // Entering a REAL org from a hook is the bug. Clearing the context is the opposite
+        // and is legitimate: job-processor.test.ts passes an explicit NO_ORG sentinel
+        // (documented there) so "no org" is a genuine undefined rather than an empty string.
+        const body = m[1]
+        const calls = [...body.matchAll(/\benterWith\w*\s*\(([^)]*)\)/g)]
+        for (const c of calls) {
+          const arg = c[1].trim()
+          if (arg === '') continue
+          if (/^(NO_ORG|undefined|null)$/.test(arg)) continue
+          offenders.push(f)
+        }
+      }
+    }
+    expect(
+      offenders,
+      'enterWith() in a test hook does nothing on Bun 1.4.2 — call it inside the test body',
+    ).toEqual([])
+  })
+
+  test('the org-context helper used by knowledge-graph tests is called from bodies', () => {
+    const src = readRepo('src/lib/knowledge-graph.test.ts')
+    // The guard is only meaningful if the helper actually exists and the tests use it.
+    expect(src).toContain('function withOrg')
+    // Every test body must route through it; counting is enough to catch a rewrite that
+    // drops the wrapper from a single test.
+    const tests = [...src.matchAll(/\n\s*test\(/g)].length
+    const wrapped = [...src.matchAll(/return withOrg\(async \(\) => \{/g)].length
+    expect(wrapped).toBe(tests)
+  })
+})
