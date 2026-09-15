@@ -1,13 +1,13 @@
 {
   "linePct": 87.24,
-  "linesHit": 21927,
-  "linesFound": 25134,
+  "linesHit": 21933,
+  "linesFound": 25141,
   "reachableLinePct": 95.93,
-  "reachableLinesHit": 18999,
-  "reachableLinesFound": 19805,
-  "fnPct": 93.88,
+  "reachableLinesHit": 19004,
+  "reachableLinesFound": 19810,
+  "fnPct": 93.83,
   "fnsHit": 2009,
-  "fnsFound": 2140,
+  "fnsFound": 2141,
   "filesMeasured": 199,
   "failedTestFiles": [],
   "files": [
@@ -210,15 +210,6 @@
       "fPct": 96.7741935483871
     },
     {
-      "file": "src/lib/cognee-core.ts",
-      "hit": 255,
-      "found": 322,
-      "pct": 79.19254658385093,
-      "fHit": 26,
-      "fFound": 29,
-      "fPct": 89.65517241379311
-    },
-    {
       "file": "src/lib/planner.ts",
       "hit": 540,
       "found": 681,
@@ -226,6 +217,15 @@
       "fHit": 48,
       "fFound": 48,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/cognee-core.ts",
+      "hit": 261,
+      "found": 329,
+      "pct": 79.33130699088146,
+      "fHit": 26,
+      "fFound": 30,
+      "fPct": 86.66666666666667
     },
     {
       "file": "src/lib/connectors.ts",

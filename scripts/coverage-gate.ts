@@ -178,7 +178,7 @@ const FLOORS: Record<string, number> = {
   // MEASURED: of the 188 records tool-router.test.ts alone contributes for cognee-memory, 52 are
   // comment/blank lines. No test can ever cover those, so the merged value is denominator-inflated
   // by construction. Executable coverage is 100%. Floor set from the fresh merged measurement.
-  'src/lib/cognee-core.ts': 79, // merged 79.81% (257/322); executable 100% before self-heal lines were added
+  'src/lib/cognee-core.ts': 79, // merged 79.33% (261/329); hits ROSE 215 -> 261 across the memory work
   'src/lib/rag-chunking.ts': 84, // merged 84.30%; measured 100.00% (188/188)
   // Re-anchored with cognee-core.ts above, same cause: hits ROSE 129 -> 139 while the merged
   // denominator grew 158 -> 195 on phantom records from transitive loaders.

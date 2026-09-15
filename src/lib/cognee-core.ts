@@ -201,6 +201,25 @@ function isStoreCorruption(err: unknown): boolean {
 }
 
 /**
+ * A quarantine directory name that cannot collide with an existing one.
+ *
+ * A millisecond timestamp is not unique (measured: five consecutive `toISOString()`
+ * calls gave two distinct strings) and `mkdirSync(recursive)` accepts an existing
+ * directory, so two quarantines in one millisecond used to merge — renaming the second
+ * store's bytes in beside the first's. That loses the distinction between two corrupted
+ * stores and breaks the caller's promise that the bytes are preserved.
+ *
+ * Pure and exported so the rule is testable without racing the clock.
+ */
+export function uniqueQuarantineDir(systemDir: string, stamp: string): string {
+  let candidate = `${systemDir}.corrupt-${stamp}`
+  for (let n = 1; existsSync(candidate); n += 1) {
+    candidate = `${systemDir}.corrupt-${stamp}-${n}`
+  }
+  return candidate
+}
+
+/**
  * Move an org's local cognee store aside so a fresh one can be built, and return where it went.
  *
  * Quarantine, never delete: the bytes may be the tenant's only copy of their graph, and a
@@ -209,7 +228,8 @@ function isStoreCorruption(err: unknown): boolean {
  */
 function quarantineStore(orgId: string, dirs: { dataDir: string; systemDir: string }): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const quarantineDir = `${dirs.systemDir}.corrupt-${stamp}`
+  // Never reuse a name: see uniqueQuarantineDir for why milliseconds are not unique.
+  const quarantineDir = uniqueQuarantineDir(dirs.systemDir, stamp)
   mkdirSync(quarantineDir, { recursive: true })
   for (const dir of [dirs.systemDir, dirs.dataDir]) {
     if (!existsSync(dir)) continue

@@ -192,7 +192,7 @@ mock.module('@/lib/embeddings', () => ({
 }))
 
 // ------------------------------------------------------- the module under test
-const { withDeadline, getCogneeClient, getCogneeOwnerId, invalidateCogneeSettings, resetClientCache, isCogneeEnabled } =
+const { withDeadline, getCogneeClient, getCogneeOwnerId, invalidateCogneeSettings, resetClientCache, isCogneeEnabled, uniqueQuarantineDir } =
   await import('@/lib/cognee-core')
 const { enterWithOrg, bypassOrg } = await import('@/lib/prisma-tenant')
 
@@ -282,10 +282,13 @@ function damagedWalUnder(root: string): boolean {
  * orgs and `orgSeq` has moved on by the time it asserts.
  */
 function quarantinesHolding(orgId: string): string[] {
-  if (!existsSync(SYSTEM_ROOT)) return []
-  return readdirSync(SYSTEM_ROOT)
+  // Live env, same reason as dirsFor: a test may repoint COGNEE_SYSTEM_DIR, and scanning
+  // a stale constant would then look in a directory production never used.
+  const systemRoot = process.env.COGNEE_SYSTEM_DIR ?? SYSTEM_ROOT
+  if (!existsSync(systemRoot)) return []
+  return readdirSync(systemRoot)
     .filter((n) => n.startsWith(`${orgId}.corrupt-`))
-    .map((n) => join(SYSTEM_ROOT, n))
+    .map((n) => join(systemRoot, n))
 }
 
 /** The quarantine dirs for the org the CURRENT body entered. */
@@ -495,6 +498,35 @@ describe('getCogneeClient self-heal — a corrupt store is quarantined and rebui
       expect(quarantines.every(damagedWalUnder)).toBe(true)
     })
   }, 5000)
+
+  test('uniqueQuarantineDir never returns a name that already exists', () => {
+    // DETERMINISTIC regression guard for the CI-only failure — no clock race involved.
+    // The quarantine dir was named from a millisecond timestamp, and milliseconds are NOT
+    // unique (MEASURED: five consecutive `toISOString()` calls produced only TWO distinct
+    // strings). Since mkdirSync(recursive) succeeds on an existing directory, two
+    // quarantines in one millisecond merged into a SINGLE directory: the second store's
+    // graph.wal was renamed in beside the first's, so one of two distinct corrupted stores
+    // silently lost its own copy. That breaks the promise that quarantined bytes are
+    // preserved because they may be the tenant's only copy.
+    //
+    // Testing the pure naming rule is the only reliable way to pin a millisecond-granularity
+    // bug: forcing a real collision through the heal path depends on real time slipping
+    // between two `await`s, which cannot be made deterministic (two earlier attempts proved
+    // that — the Observed stamps differed by 1ms under a frozen Date).
+    const root = mkdtempSync(join(tmpdir(), 'qdir-'))
+    const stamp = '2026-01-01T00-00-00-000Z'
+    const first = uniqueQuarantineDir(root, stamp)
+    mkdirSync(first, { recursive: true })
+    const second = uniqueQuarantineDir(root, stamp)
+    expect(second).not.toBe(first)
+    // A third call must also stay distinct, so a loop of collisions keeps advancing.
+    mkdirSync(second, { recursive: true })
+    const third = uniqueQuarantineDir(root, stamp)
+    expect(new Set([first, second, third]).size).toBe(3)
+    // Every candidate stays under the org's own store prefix, so an operator can find them.
+    for (const dir of [first, second, third]) expect(dir.startsWith(root)).toBe(true)
+    rmSync(root, { recursive: true, force: true })
+  })
 
   test('the rebuilt client is usable and carries the rebuilt ownerId', async () => {
     return withOrg(async () => {
