@@ -15,10 +15,41 @@ import {
 // ponytail: integration tests need live Redis (BullMQ repeatable jobs live in
 // Redis). Probe the port and skip the integration block when Redis is down so
 // `bun test` still passes in bare environments.
+//
+// INCIDENT: this probe hung the whole file in CI and cost a red build. It probed
+// a HARDCODED 127.0.0.1:6379 while BullMQ connects to REDIS_URL (redis.ts). When
+// the two disagree -- a local Redis on 6379 but REDIS_URL pointing elsewhere, or a
+// timeout that never fires -- the probe reported "up", the integration block ran,
+// and every `await` against an unreachable server never settled. The suite reported
+// "a beforeEach/afterEach hook timed out" rather than skipping, and because the
+// failure was a hang, not an assertion, nothing pointed at the real cause.
+//
+// Two properties are load-bearing: it must probe the SAME address BullMQ will use,
+// and it must ALWAYS settle. A probe that can hang forever cannot protect anything.
+const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+const parsed = new URL(redisUrl)
+const redisHost = parsed.hostname || '127.0.0.1'
+const redisPort = Number(parsed.port || 6379)
+
 const redisUp = await new Promise<boolean>((resolve) => {
-  const sock = createConnection(6379, '127.0.0.1')
-  sock.on('connect', () => { sock.destroy(); resolve(true) })
-  sock.on('error', () => resolve(false))
+  const sock = createConnection({ host: redisHost, port: redisPort })
+  // A refused connection errors fast, but a filtered/firewalled port can hang
+  // indefinitely. Without this timer the promise below never settles and the whole
+  // file stalls instead of skipping.
+  const timer = setTimeout(() => {
+    sock.destroy()
+    resolve(false)
+  }, 2000)
+  let settled = false
+  const done = (value: boolean) => {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    sock.destroy()
+    resolve(value)
+  }
+  sock.on('connect', () => done(true))
+  sock.on('error', () => done(false))
 })
 const it = redisUp ? test : test.skip
 
@@ -135,6 +166,11 @@ describe('scheduler-queue — the license reminder and the bootstrap sweep', () 
   let savedReminder: Awaited<ReturnType<typeof scheduleQueue.getRepeatableJobs>> = []
 
   beforeAll(async () => {
+    // Same guard as the tests: BullMQ retries forever when Redis is unreachable, so an
+    // UNGUARDED hook here does not fail, it HANGS -- the suite then reports
+    // "a beforeEach/afterEach hook timed out" with no mention of Redis. The tests in this
+    // describe are already skipped when Redis is down; the hook must match them.
+    if (!redisUp) return
     dbState.runs = []
     savedReminder = (await scheduleQueue.getRepeatableJobs()).filter(
       (j) => j.name === LICENSE_REMINDER_JOB_NAME,
@@ -195,6 +231,7 @@ describe('scheduler-queue — the license reminder and the bootstrap sweep', () 
   })
 
   afterAll(async () => {
+    if (!redisUp) return
     // Restore whatever the environment had, so this file leaves no trace.
     const now = (await scheduleQueue.getRepeatableJobs()).filter(
       (j) => j.name === LICENSE_REMINDER_JOB_NAME,

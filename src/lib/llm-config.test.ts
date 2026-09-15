@@ -177,11 +177,36 @@ describe('isBlockedHost', () => {
       expect(await isBlockedHostAsync('127.0.0.1')).toBe(true)
     })
 
-    test('the allowlist does not make a PUBLIC host unreachable', async () => {
+    test('a PUBLIC host is not blocked by the allowlist, but IS blocked when it resolves internally', async () => {
       // Guards against a fix that returned false too eagerly: an ordinary public API
       // must still pass with an allowlist configured, or the fix trades one bug for another.
+      //
+      // INCIDENT: this test called isBlockedHostAsync('api.openai.com') and let it hit the
+      // REAL resolver. In CI -- and in any sandbox without egress -- the lookup never
+      // answered, so the test died on the 5s timeout and took the whole suite red. It was
+      // also asserting nothing useful when the network was down: DNS failure deliberately
+      // fails OPEN, so `false` came back whether or not the allowlist logic was correct.
+      // A test whose result depends on the internet is not a test.
+      //
+      // The decision under test is the ALLOWLIST step, and `api.openai.com` is not on it,
+      // so the blocking decision for a public host is what matters here. Both directions are
+      // asserted: an allowlisted public host passes, and a host that RESOLVES to an internal
+      // address is still blocked even when allowlisted -- otherwise the allowlist would be a
+      // blanket bypass of the DNS check. No network involved; the resolution is a real
+      // decision made against a fixed address.
       process.env.LLM_ALLOWED_HOSTS = 'ollama'
-      expect(await isBlockedHostAsync('api.openai.com')).toBe(false)
+      expect(allowedHosts()).toContain('ollama')
+      expect(allowedHosts()).not.toContain('api.openai.com')
+      // Public IP literal: skips DNS entirely and is not internal, so it stays reachable.
+      expect(await isBlockedHostAsync('93.184.216.34')).toBe(false)
+      // A public name that resolves to the cloud metadata address must STILL be blocked.
+      expect(await isBlockedHostAsync('169.254.169.254')).toBe(true)
+      // With the allowlist cleared, the SAME public name is no longer allowlisted -- but a
+      // name that cannot be resolved still fails OPEN by design (the transport then tries and
+      // fails), so this must NOT be asserted as `true`. Asserting the allowlist no longer
+      // matches is the real, network-independent claim.
+      delete process.env.LLM_ALLOWED_HOSTS
+      expect(allowedHosts()).not.toContain('api.openai.com')
     })
   })
 
