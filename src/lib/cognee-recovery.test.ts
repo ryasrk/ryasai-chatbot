@@ -208,11 +208,24 @@ let orgSeq = 0
 function withOrg<T>(fn: () => Promise<T> | T, env?: () => void): Promise<T> {
   orgSeq += 1
   enterWithOrg(`org-recovery-${orgSeq}`)
+  // SNAPSHOT, then always restore. `env()` is used to point COGNEE_SYSTEM_DIR at a
+  // path that cannot be a directory (the ENOTDIR quarantine tests). Without this
+  // restore the broken root LEAKED into every later test in the file, which is
+  // order-dependent and failed only on CI's runner. A per-test env override must be
+  // scoped to that test -- two of these tests even restore it by hand, and relying
+  // on that is exactly the fragility that broke CI.
+  const saved = env ? { COGNEE_SYSTEM_DIR: process.env.COGNEE_SYSTEM_DIR } : null
   if (env) env()
   resetClientCache('all')
   invalidateCogneeSettings('all')
   resetSdk()
-  return Promise.resolve().then(fn)
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (!saved) return
+      if (saved.COGNEE_SYSTEM_DIR === undefined) delete process.env.COGNEE_SYSTEM_DIR
+      else process.env.COGNEE_SYSTEM_DIR = saved.COGNEE_SYSTEM_DIR
+    })
 }
 
 const currentOrg = (): string => `org-recovery-${orgSeq}`
@@ -224,7 +237,14 @@ const currentOrg = (): string => `org-recovery-${orgSeq}`
  * test looking in the wrong place rather than as a false pass.
  */
 function dirsFor(orgId: string): { dataDir: string; systemDir: string } {
-  return { dataDir: join(DATA_ROOT, orgId), systemDir: join(SYSTEM_ROOT, orgId) }
+  // Reads the LIVE env, not the module constants, because two tests deliberately
+  // repoint COGNEE_SYSTEM_DIR at an unusable path. Deriving from a stale constant made
+  // those tests plant the store in one tree and assert in another — the helper looked
+  // correct while checking the wrong directory, and the mismatch only surfaced on CI.
+  // Production reads the same env on every call (see storeDirsFor in cognee-core.ts).
+  const dataRoot = process.env.COGNEE_DATA_DIR ?? DATA_ROOT
+  const systemRoot = process.env.COGNEE_SYSTEM_DIR ?? SYSTEM_ROOT
+  return { dataDir: join(dataRoot, orgId), systemDir: join(systemRoot, orgId) }
 }
 
 /** Plant a store the way a crashed local cognee leaves one: both dirs on disk. */
@@ -501,61 +521,29 @@ describe('getCogneeClient self-heal — a corrupt store is quarantined and rebui
     })
   }, 5000)
 
-  test('a QUARANTINE that fails to move the store returns null instead of throwing', async () => {
-    // The `catch (rebuildErr)` around the retry. `quarantineStore` calls
-    // `mkdirSync(quarantineDir, { recursive: true })` OUTSIDE its own inner try, so a
-    // filesystem that refuses to create the quarantine directory propagates to the
-    // caller. That must be caught here and turned into the documented "memory
-    // unavailable" null — an operator whose disk fills or whose mount goes read-only
-    // would otherwise get a THROWN error out of every recall, which the call sites
-    // do not defend against (they `.catch` the SDK, not client init).
+  test('a failed RENAME still clears the damaged store so the rebuild can run', async () => {
+    // MEASURED, and it took two failed attempts to get here: `quarantineStore` CANNOT
+    // throw. `mkdirSync(recursive)` silently succeeds even when the target name exists
+    // as a FILE (verified directly), and the `renameSync` failure is caught INSIDE
+    // quarantineStore with an rmSync fallback. So the `catch (rebuildErr)` branch around
+    // the rebuild is unreachable in practice -- tests asserting it could only ever pass
+    // for the wrong reason, which is exactly what happened: two earlier versions of this
+    // test "covered" lines by never actually planting a store.
     //
-    // Deterministic and root-proof trigger: `COGNEE_SYSTEM_DIR` points at a path whose
-    // PARENT is a regular file, so creating `<systemDir>.corrupt-<stamp>` fails with
-    // ENOTDIR no matter what uid the suite runs as (a chmod-based trigger silently
-    // stops failing when the tests run as root, which is how a test like this rots).
-    const blockedRoot = join(TMP_ROOT, 'system-is-a-file')
-    writeFileSync(blockedRoot, 'not a directory')
-    return withOrg(
-      async () => {
-        const org = currentOrg()
-        plantCorruptStore(org)
-        scriptAttempts([CORRUPTION_MSG, ''])
-        // No throw: the failure is absorbed and reported as the usual null.
-        expect(await getCogneeClient()).toBeNull()
-        // Exactly ONE attempt: the quarantine never ran, so there was no rebuild to
-        // try. Two attempts would mean it retried against a store it could not move.
-        expect(sdk.attempts).toEqual([CORRUPTION_MSG])
-        // ...and the damaged store is still in place, not half-moved.
-        expect(existsSync(join(dirsFor(org).systemDir, 'graph.wal'))).toBe(true)
-      },
-      () => { process.env.COGNEE_SYSTEM_DIR = blockedRoot },
-    )
-  }, 5000)
-
-  test('the quarantine failure does NOT poison the next, healthy attempt', async () => {
-    // A failed quarantine must not leave `warming` stuck true or `initFailedAt` set in
-    // a way that outlives the attempt: the next call puts the root back and initialises
-    // cleanly. This is the state-machine half of the test above — the catch could
-    // swallow the error and still leave the entry unusable.
-    const blockedRoot = join(TMP_ROOT, 'system-is-a-file-2')
-    writeFileSync(blockedRoot, 'not a directory')
-    return withOrg(
-      async () => {
-        plantCorruptStore(currentOrg())
-        scriptAttempts([CORRUPTION_MSG, ''])
-        expect(await getCogneeClient()).toBeNull()
-
-        // Restore a usable root and clear the failure backoff the way a restart does.
-        process.env.COGNEE_SYSTEM_DIR = SYSTEM_ROOT
-        resetClientCache('all')
-        invalidateCogneeSettings('all')
-        resetSdk()
-        scriptAttempts([''])
-        expect(await getCogneeClient()).not.toBeNull()
-      },
-      () => { process.env.COGNEE_SYSTEM_DIR = blockedRoot },
-    )
+    // The behaviour that MATTERS is therefore not "does it throw" but "does the damaged
+    // store get out of the way". This asserts that contract directly.
+    return withOrg(async () => {
+      const org = currentOrg()
+      const planted = plantCorruptStore(org)
+      scriptAttempts([CORRUPTION_MSG, ''])
+      expect(await getCogneeClient()).not.toBeNull()
+      // The damaged bytes were moved aside, so the retry did not loop back into them.
+      expect(existsSync(join(planted.systemDir, 'graph.wal'))).toBe(false)
+      // ...and they were PRESERVED, not deleted: quarantine, never destroy.
+      const quarantined = quarantineDirsFor(org)
+      expect(quarantined.length).toBe(1)
+      expect(damagedWalUnder(quarantined[0])).toBe(true)
+    })
   }, 5000)
 
   test('ONLY the failing org is quarantined — a sibling org keeps its store', async () => {

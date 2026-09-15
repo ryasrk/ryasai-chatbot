@@ -1,9 +1,9 @@
 {
-  "linePct": 87.25,
-  "linesHit": 21929,
+  "linePct": 87.24,
+  "linesHit": 21927,
   "linesFound": 25134,
-  "reachableLinePct": 95.94,
-  "reachableLinesHit": 19001,
+  "reachableLinePct": 95.93,
+  "reachableLinesHit": 18999,
   "reachableLinesFound": 19805,
   "fnPct": 93.88,
   "fnsHit": 2009,
@@ -210,6 +210,15 @@
       "fPct": 96.7741935483871
     },
     {
+      "file": "src/lib/cognee-core.ts",
+      "hit": 255,
+      "found": 322,
+      "pct": 79.19254658385093,
+      "fHit": 26,
+      "fFound": 29,
+      "fPct": 89.65517241379311
+    },
+    {
       "file": "src/lib/planner.ts",
       "hit": 540,
       "found": 681,
@@ -226,15 +235,6 @@
       "fHit": 12,
       "fFound": 16,
       "fPct": 75
-    },
-    {
-      "file": "src/lib/cognee-core.ts",
-      "hit": 257,
-      "found": 322,
-      "pct": 79.8136645962733,
-      "fHit": 26,
-      "fFound": 29,
-      "fPct": 89.65517241379311
     },
     {
       "file": "src/app/api/traces/stats/route.ts",
