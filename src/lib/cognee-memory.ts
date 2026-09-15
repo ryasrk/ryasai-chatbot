@@ -5,10 +5,44 @@
 import type { ChatTurnMemory } from './cognee-types'
 import { datasetFor } from './cognee-types'
 import { MEMORY_CONTEXT_MAX_CHARS } from '@/lib/constants'
-import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline, getCogneeGraphProvider, supportsNaturalLanguageSearch } from './cognee-core'
+import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline, getCogneeGraphProvider, supportsNaturalLanguageSearch, getCogneeServerOptions } from './cognee-core'
+import { cogneeRemember, cogneeRecall } from './cognee-http'
 
 export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (!(await isCogneeEnabled())) return
+
+  // Server backend: one HTTP call, and the SERVER decides when the pipeline has
+  // run. `runInBackground: false` is deliberate — a backgrounded write returns
+  // before the data is searchable, which would make the very next turn's recall
+  // miss a fact we just "stored".
+  const serverOpts = await getCogneeServerOptions()
+  if (serverOpts) {
+    // ponytail: graceful degradation — fire-and-forget, memory loss is never fatal
+    try {
+      const text = JSON.stringify({
+        type: 'chat_turn',
+        user: args.userMessage,
+        assistant: args.aiMessage,
+        tools: args.toolRuns,
+        sessionId: args.sessionId,
+        ts: Date.now(),
+      })
+      const res = await cogneeRemember(serverOpts, {
+        texts: [text],
+        datasetName: datasetFor(),
+        runInBackground: false,
+      })
+      if (!res) {
+        console.warn('[cognee] remember failed: server unreachable or rejected the write')
+      } else if (res.error) {
+        console.warn('[cognee] remember failed:', res.error)
+      }
+    } catch (err) {
+      console.warn('[cognee] remember failed:', err)
+    }
+    return
+  }
+
   const c = await getCogneeClient()
   if (!c) return
   // ponytail: graceful degradation — fire-and-forget, swallows errors when cognee SDK fails
@@ -92,14 +126,22 @@ export async function recallContext(args: {
   sessionId?: string
 }): Promise<string> {
   if (!(await isCogneeEnabled())) return ''
-  const c = await getCogneeClient()
-  if (!c) return ''
 
   // ponytail: check session cache first — avoids cognee round-trip for repeat questions
   if (args.sessionId) {
     const cached = getCachedRecall(args.sessionId, args.query)
     if (cached !== null) return cached
   }
+
+  const serverOpts = await getCogneeServerOptions()
+  if (serverOpts) {
+    const merged = capMemory(await recallFromServer(serverOpts, args.query, args.sessionId))
+    if (args.sessionId && merged) setCachedRecall(args.sessionId, args.query, merged)
+    return merged
+  }
+
+  const c = await getCogneeClient()
+  if (!c) return ''
 
   const graphResult = await recallFromGraph(c, args.query)
   const sessionResult = args.sessionId
@@ -113,6 +155,52 @@ export async function recallContext(args: {
   }
 
   return merged
+}
+
+/**
+ * Recall through a cognee 1.5.4 server.
+ *
+ * MEASURED on two stored facts: `CHUNKS` and `SUMMARIES` each return the stored
+ * items as separate hits, while `HYBRID_COMPLETION` (the server default) returns
+ * ONE LLM-synthesized answer with a single `text` field. Both facts were present
+ * inside that one answer, so its `results.length` is NOT a recall count.
+ *
+ * That matters for this caller: the output is injected as MEMORY CONTEXT for the
+ * router/SQL/answer prompts, where losing an individual fact is worse than a
+ * slightly less fluent blob. So CHUNKS + SUMMARIES are the strategies here, and
+ * HYBRID_COMPLETION is deliberately not used — it would spend an LLM call to
+ * re-word facts we then paste into a second LLM prompt.
+ */
+async function recallFromServer(
+  opts: import('./cognee-http').CogneeHttpOptions,
+  query: string,
+  sessionId?: string,
+): Promise<string> {
+  const dataset = datasetFor()
+  const strategies: Array<{ searchType: string; topK: number }> = [
+    { searchType: 'SUMMARIES', topK: 5 },
+    { searchType: 'CHUNKS', topK: 5 },
+  ]
+
+  const parts: string[] = []
+  for (const strategy of strategies) {
+    try {
+      const hits = await cogneeRecall(opts, {
+        query,
+        datasets: [dataset],
+        searchType: strategy.searchType,
+        topK: strategy.topK,
+        sessionId,
+      })
+      if (!hits?.length) continue
+      const text = hits.map((h) => h.text ?? '').filter(Boolean).join('\n')
+      if (text) parts.push(text)
+    } catch (e) {
+      console.warn('[cognee] server recall strategy failed:', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return parts.length > 0 ? dedupeJoin(parts) : ''
 }
 
 /**

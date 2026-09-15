@@ -135,6 +135,15 @@ WS_CORS_ORIGIN=http://localhost:3000
 # COGNEE_ENABLED is a kill switch: leave it unset so the AI Memory toggle in
 # Settings decides, set it to false to force cognee off regardless of Settings.
 # COGNEE_ENABLED=
+#
+# Memory backend. COGNEE_SERVER_URL makes the app talk HTTP to the `cognee`
+# sidecar service in docker-compose.yml (cognee 1.5.4) — the shipped default for
+# compose installs. Clearing it falls back to the in-process @cognee/cognee-ts SDK.
+# The sidecar needs real LLM + embedding credentials (BYOK — the customer's own
+# provider, not ours) or every memory write fails; see .env.example for the
+# COGNEE_LLM_* / COGNEE_EMBEDDING_* pairs the sidecar reads.
+COGNEE_SERVER_URL=http://cognee:8000
+# COGNEE_SERVER_API_KEY=
 CONTEXTUAL_RETRIEVAL=true
 NEXT_PUBLIC_APP_VERSION=0.5.0
 NEXT_PUBLIC_WS_PORT=3003

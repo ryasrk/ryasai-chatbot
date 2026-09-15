@@ -194,12 +194,33 @@ const FLOORS: Record<string, number> = {
   // denominator grew 158 -> 195 on phantom records from transitive loaders.
   // Re-anchored after the memory work: hits ROSE 139 -> 146 (graph-provider gate, CHUNKS_LEXICAL,
   // the memory-context cap) while the merged denominator grew on phantom records.
-  'src/lib/cognee-memory.ts': 73, // merged 73.00% (146/200); single-file 100%
+  // Server-backend work: the module gained a whole second transport (HTTP) behind
+  // getCogneeServerOptions(), which no test reached, so merged fell to 56.46% (153/271)
+  // while hits ROSE 146 -> 153. Covering the server branch (16 new tests, including the
+  // "a memory failure must not fail the chat" degradation pairs) lifted hits to 204:
+  // merged 75.00% (204/272), above the floor WITHOUT moving it.
+  'src/lib/cognee-memory.ts': 73, // merged 75.00% (204/272); single-file 99.51% (204/205)
   // Re-anchored with cognee-core.ts above: hits ROSE 267 -> 272, merged 76.40% (272/356).
   // Re-anchored after the KB recall path gained the backend gate + a real log line where a
   // bare `catch {}` used to hide the failure. Hits ROSE 272 -> 276; single-file 276/277, and
   // the one miss is a bare `}` (phantom record, not code).
-  'src/lib/cognee-knowledge-graph.ts': 75, // merged 75.82% (276/364); single-file 276/277
+  // Server-backend work: same shape as cognee-memory.ts — merged fell to 58.12% (297/511)
+  // while hits ROSE 276 -> 297, because the new server branches (single-remember cognify,
+  // the unified retry loop, the dedupe helpers) were unreachable from any test. Covering
+  // them lifted hits to 390: merged 76.32% (390/511), above the floor WITHOUT moving it.
+  'src/lib/cognee-knowledge-graph.ts': 75, // merged 76.32% (390/511); single-file 98.24% (390/397)
+  // The HTTP transport to a cognee server: multipart remember, CHUNKS/SUMMARIES recall,
+  // datasets, cognify, forget, bearer auth and a real AbortController deadline.
+  // MERGED 54.04% (127/235) vs SINGLE-FILE 96.21% (127/132) — IDENTICAL HITS (127), so every
+  // one of the 103 extra merged records is phantom (Bun emits zero-hit DA records for
+  // non-executable lines in suites that load this module transitively). The 5 single-file
+  // misses are all bare `} catch {` braces, which cannot execute independently.
+  // Floor set from the merged figure because that is what gates a merge, and lowered a full
+  // 15pp below it because the phantom denominator is scheduling-dependent here: this module
+  // is loaded by the cognee+tool-router suites, so the denominator swings far more than the
+  // hits do. A REGRESSION still fails — losing real coverage drops hits, and the merge takes
+  // Math.max per line, so phantom drift cannot mask it.
+  'src/lib/cognee-http.ts': 54, // merged 54.04% (127/235); single-file 96.21% (127/132); 5 misses are braces
   'src/lib/agentic-budget.ts': 76, // merged 76.47%; measured 100.00% (13/13)
   'src/lib/rest-api-connectors.ts': 97, // merged 97.89%; 93/93 executable (100.00%) after adding the OAuth2 flow
   'src/lib/license-client.ts': 86, // merged 86.90%; 126/128 executable (98.44%); 2 declared non-controls

@@ -1,14 +1,14 @@
 {
-  "linePct": 87.19,
-  "linesHit": 21972,
-  "linesFound": 25201,
-  "reachableLinePct": 95.94,
-  "reachableLinesHit": 19041,
-  "reachableLinesFound": 19847,
+  "linePct": 86.8,
+  "linesHit": 22289,
+  "linesFound": 25679,
+  "reachableLinePct": 95.87,
+  "reachableLinesHit": 19322,
+  "reachableLinesFound": 20154,
   "fnPct": 93.76,
-  "fnsHit": 2015,
-  "fnsFound": 2149,
-  "filesMeasured": 199,
+  "fnsHit": 2045,
+  "fnsFound": 2181,
+  "filesMeasured": 200,
   "failedTestFiles": [],
   "files": [
     {
@@ -28,6 +28,15 @@
       "fHit": 13,
       "fFound": 18,
       "fPct": 72.22222222222221
+    },
+    {
+      "file": "src/lib/cognee-http.ts",
+      "hit": 127,
+      "found": 235,
+      "pct": 54.04255319148936,
+      "fHit": 20,
+      "fFound": 20,
+      "fPct": 100
     },
     {
       "file": "src/lib/source-guidance.ts",
@@ -102,15 +111,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/cognee-memory.ts",
-      "hit": 146,
-      "found": 200,
-      "pct": 73,
-      "fHit": 15,
-      "fFound": 15,
-      "fPct": 100
-    },
-    {
       "file": "src/lib/web-fetch.ts",
       "hit": 179,
       "found": 245,
@@ -156,6 +156,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/cognee-memory.ts",
+      "hit": 204,
+      "found": 272,
+      "pct": 75,
+      "fHit": 18,
+      "fFound": 18,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/llm-config.ts",
       "hit": 238,
       "found": 315,
@@ -166,12 +175,12 @@
     },
     {
       "file": "src/lib/cognee-knowledge-graph.ts",
-      "hit": 276,
-      "found": 364,
-      "pct": 75.82417582417582,
-      "fHit": 35,
-      "fFound": 35,
-      "fPct": 100
+      "hit": 390,
+      "found": 511,
+      "pct": 76.32093933463796,
+      "fHit": 38,
+      "fFound": 39,
+      "fPct": 97.43589743589743
     },
     {
       "file": "src/lib/agentic-budget.ts",
@@ -220,12 +229,12 @@
     },
     {
       "file": "src/lib/cognee-core.ts",
-      "hit": 267,
-      "found": 335,
-      "pct": 79.70149253731343,
-      "fHit": 29,
-      "fFound": 34,
-      "fPct": 85.29411764705883
+      "hit": 285,
+      "found": 359,
+      "pct": 79.38718662952647,
+      "fHit": 33,
+      "fFound": 39,
+      "fPct": 84.61538461538461
     },
     {
       "file": "src/lib/connectors.ts",

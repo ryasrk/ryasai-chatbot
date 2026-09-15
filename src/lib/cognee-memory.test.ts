@@ -18,12 +18,26 @@ const state = {
   // Which graph backend the client reports. Defaults to 'kuzu' because that is the local
   // default and the case where NATURAL_LANGUAGE must be skipped.
   graphProvider: 'kuzu' as string | null,
+  // The backend switch. `null` (the default here) keeps EVERY pre-existing test on the
+  // in-process SDK path, so adding the server tests below cannot change their behavior;
+  // an object switches cognee-memory.ts to the HTTP transport.
+  serverOptions: null as any,
+  // The HTTP transport's own call log. Separate from `rememberCalls`/`searchCalls` so a
+  // test can assert "the SDK was NEVER touched" by checking these are the only ones filled.
+  httpRememberCalls: [] as any[],
+  httpRecallCalls: [] as any[],
+  httpRememberImpl: null as any,
+  httpRecallImpl: null as any,
 }
 
 mock.module('./cognee-core', () => ({
   isCogneeEnabled: async () => state.enabled,
   getCogneeClient: async () => state.client,
   getCogneeOwnerId: () => state.owner,
+  // The second backend. This export was simply MISSING from this mock, which made the
+  // server branch below unreachable and is why the file's measured coverage fell from
+  // 73.0% (146/200) to 56.5% (153/271) when the branch landed.
+  getCogneeServerOptions: async () => state.serverOptions,
   // The graph-backend gate. Driven by `state.graphProvider` so BOTH branches are reachable
   // in-process; the real predicate is unit-tested in cognee-core.test.ts.
   getCogneeGraphProvider: async () => state.graphProvider,
@@ -39,6 +53,21 @@ mock.module('./cognee-core', () => ({
 mock.module('./cognee-types', () => ({
   datasetFor: () => 'org:acme',
   kbDatasetFor: () => 'org:acme:kb',
+}))
+// The HTTP transport. Spied rather than faked at the `fetch` layer so a test can assert
+// on the ACTUAL arguments cognee-memory.ts builds (dataset, runInBackground, the text
+// payload) — a fetch-level stub would only show the serialized form.
+mock.module('./cognee-http', () => ({
+  cogneeRemember: async (opts: any, args: any) => {
+    state.httpRememberCalls.push({ opts, args })
+    if (state.httpRememberImpl) return state.httpRememberImpl(opts, args)
+    return null
+  },
+  cogneeRecall: async (opts: any, args: any) => {
+    state.httpRecallCalls.push({ opts, args })
+    if (state.httpRecallImpl) return state.httpRecallImpl(opts, args)
+    return null
+  },
 }))
 
 import {
@@ -63,9 +92,20 @@ beforeEach(() => {
   state.enabled = true
   state.client = null
   state.owner = 'owner-1'
+  // `graphProvider` is reset too: it was left mutable across tests until the server block
+  // below, where a stale 'postgres' silently changes which SDK strategies the
+  // "SDK path is still used" guard observes. Each SDK-path test that cares sets it itself.
+  state.graphProvider = 'kuzu'
   state.rememberCalls = []
   state.searchCalls = []
   state.searchImpl = null
+  // Back to the SDK backend between tests: the server tests opt in per test, so a stale
+  // object cannot silently move an SDK-path test onto the HTTP path.
+  state.serverOptions = null
+  state.httpRememberCalls = []
+  state.httpRecallCalls = []
+  state.httpRememberImpl = null
+  state.httpRecallImpl = null
 })
 
 describe('rememberChatTurn', () => {
@@ -585,5 +625,253 @@ describe('recallFromSession — degradation', () => {
       },
     })
     expect(await recallContext({ query: 'q', sessionId: 's-unexpected' })).toBe('graph content')
+  })
+})
+
+// ===========================================================================
+// The HTTP server backend (`getCogneeServerOptions()` returning an object)
+// ===========================================================================
+//
+// cognee-memory.ts gained a SECOND backend: with COGNEE_SERVER_URL set, memory goes over
+// HTTP (cognee-http.ts) to a cognee 1.5.4 server instead of through the in-process SDK,
+// and the server is the SHIPPED default for compose installs (AGENTS.md: "Two backends,
+// one switch"). None of that was reachable from this file: the cognee-core mock predates
+// the branch and never exported `getCogneeServerOptions`, which is exactly why the file's
+// merged coverage dropped from 73.0% (146/200 lines) to 56.5% (153/271) when it landed.
+// The branch carries its own copy of the write payload and its own degradation contract,
+// so it needed its own tests rather than inheriting the SDK ones. The strategy pair is
+// also DIFFERENT here: the server path asks SUMMARIES then CHUNKS and nothing else, so the
+// graph-backend gate and the last-resort unscoped search do not apply to it.
+const SERVER_OPTS = { baseUrl: 'http://cognee:8000', timeoutMs: 30000 }
+
+describe('rememberChatTurn — server backend', () => {
+  test('writes over HTTP with the server options, and NEVER through the SDK client', async () => {
+    // What this pins is that the switch is EXCLUSIVE. A regression that fell through to
+    // the SDK as well would double-write every turn (and, on the 0.2.0 binding, take the
+    // whole store down — scripts/cognee-upgrade-check.md), so `state.client` is installed
+    // here purely to prove nothing touches it.
+    state.serverOptions = SERVER_OPTS
+    state.client = fakeClient()
+    state.httpRememberImpl = () => ({ status: 'ok' })
+
+    await rememberChatTurn({
+      userMessage: 'what is the revenue',
+      aiMessage: 'Rp 5m',
+      sessionId: 's1',
+      toolRuns: [{ type: 'SQL', status: 'success', latencyMs: 12 }],
+    })
+
+    expect(state.httpRememberCalls).toHaveLength(1)
+    const { opts, args } = state.httpRememberCalls[0]
+    expect(opts).toBe(SERVER_OPTS)
+    expect(args.datasetName).toBe('org:acme')
+    // `false`, not undefined: a backgrounded server write returns before the data is
+    // searchable, so the very next turn's recall would miss the fact just "stored".
+    expect(args.runInBackground).toBe(false)
+    expect(args.texts).toHaveLength(1)
+    const payload = JSON.parse(args.texts[0])
+    expect(payload.type).toBe('chat_turn')
+    expect(payload.user).toBe('what is the revenue')
+    expect(payload.assistant).toBe('Rp 5m')
+    expect(payload.sessionId).toBe('s1')
+    expect(payload.tools).toHaveLength(1)
+    expect(typeof payload.ts).toBe('number')
+    expect(state.rememberCalls).toHaveLength(0)
+  })
+
+  test('a null HTTP result still returns without throwing', async () => {
+    // cognee-http.ts returns null (not an error object) when the server is unreachable and
+    // does not throw, so this is the shape a server outage actually takes. The branch must
+    // still warn rather than blow up: `res.error` is read only after `!res` is excluded.
+    state.serverOptions = SERVER_OPTS
+    state.httpRememberImpl = () => null
+    await expect(
+      rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] }),
+    ).resolves.toBeUndefined()
+    expect(state.httpRememberCalls).toHaveLength(1)
+  })
+
+  test('a THROWING server remember is swallowed — a memory failure must not fail the chat', async () => {
+    // The guarantee this whole module carries, asserted on the server path too: whatever
+    // the transport does (DNS failure, TLS error, a bug in the transport itself), the
+    // caller's response is already computed and memory loss must stay non-fatal.
+    state.serverOptions = SERVER_OPTS
+    state.httpRememberImpl = () => { throw new Error('cognee server down') }
+    await expect(
+      rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] }),
+    ).resolves.toBeUndefined()
+    expect(state.httpRememberCalls).toHaveLength(1)
+  })
+
+  test('a REJECTED server remember is swallowed as well (async failure, not a sync throw)', async () => {
+    // `cogneeRemember` is `async`, so a real transport failure (a rejected fetch) arrives as
+    // a rejected promise rather than a synchronous throw. This is the shape the live path
+    // actually produces; the same try/catch must cover both.
+    state.serverOptions = SERVER_OPTS
+    state.httpRememberImpl = () => Promise.reject(new Error('ECONNREFUSED'))
+    await expect(
+      rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] }),
+    ).resolves.toBeUndefined()
+    expect(state.httpRememberCalls).toHaveLength(1)
+  })
+})
+
+describe('recallContext — server backend', () => {
+  test('merges the recall hits of both strategies, with the head deduped', async () => {
+    // recallFromServer asks SUMMARIES then CHUNKS, maps each hit to `h.text` and joins.
+    // MEASURED fact behind the strategy pair: HYBRID_COMPLETION (the server default)
+    // returns ONE LLM-synthesized answer, so `hits.length` is not a recall count and an
+    // individual fact can be lost inside the re-wording. Both strategies are given text
+    // with a DIFFERENT head here, because dedupeJoin keys on the first 100 chars: two
+    // outputs sharing a head collapse to one (the session-cache test below pins that).
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = (_opts: any, args: any) =>
+      args.searchType === 'SUMMARIES' ? [{ text: `summary fact ${'s'.repeat(120)}` }] : [{ text: 'chunk fact' }]
+
+    const out = await recallContext({ query: 'sales' })
+    expect(out).toBe(`summary fact ${'s'.repeat(120)}\nchunk fact`)
+    expect(state.httpRecallCalls).toHaveLength(2)
+    expect(state.httpRecallCalls.map((c) => c.args.searchType)).toEqual(['SUMMARIES', 'CHUNKS'])
+    const { opts, args } = state.httpRecallCalls[0]
+    expect(opts).toBe(SERVER_OPTS)
+    expect(args.query).toBe('sales')
+    expect(args.datasets).toEqual(['org:acme'])
+    expect(args.topK).toBe(5)
+  })
+
+  test('identical strategy outputs are deduped on the server path too', async () => {
+    // dedupeJoin runs AFTER recallFromServer, not before it, so a server that answers both
+    // strategies with the same text must contribute it ONCE. Injecting it twice inflates
+    // the memory block and pushes the user's real question out of the prompt window.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'the identical answer text' }]
+    expect(await recallContext({ query: 'sales' })).toBe('the identical answer text')
+    // Both strategies were still tried — the dedupe is not a skipped request.
+    expect(state.httpRecallCalls).toHaveLength(2)
+  })
+
+  test('two hits from ONE strategy are joined into that strategy\'s block', async () => {
+    // CHUNKS is the strategy that returns the stored items as SEPARATE hits (the whole
+    // reason it is used instead of HYBRID_COMPLETION), so both must survive.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'fact one' }, { text: 'fact two' }]
+    expect(await recallContext({ query: 'sales' })).toBe('fact one\nfact two')
+  })
+
+  test('a null from every strategy is an empty string, not a throw', async () => {
+    // `cogneeRecall` answers null both for an unreachable server and for a non-ok response;
+    // `hits?.length` skips both, so a memory outage degrades to "no memory context" rather
+    // than reaching the prompt as the string "undefined".
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => null
+    expect(await recallContext({ query: 'sales' })).toBe('')
+  })
+
+  test('an EMPTY hit list is an empty string too', async () => {
+    // A reachable server with nothing stored answers [] — a different shape from null,
+    // and one that must not become a phantom "memory" line in the prompt.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => []
+    expect(await recallContext({ query: 'sales' })).toBe('')
+  })
+
+  test('a hit with no text is not injected as an empty line', async () => {
+    // The hit shape is `{ text?: string }`, so a metadata-only hit must not contribute a
+    // blank line: `hits.map((h) => h.text ?? '').filter(Boolean)` drops it, and a
+    // strategy left with nothing is skipped entirely.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = (_opts: any, args: any) =>
+      args.searchType === 'SUMMARIES' ? [{ score: 0.9 }] : [{ text: 'chunk fact' }]
+    expect(await recallContext({ query: 'sales' })).toBe('chunk fact')
+  })
+
+  test('one dead strategy does not lose the other', async () => {
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = (_opts: any, args: any) => {
+      if (args.searchType === 'SUMMARIES') throw new Error('SUMMARIES unsupported')
+      return [{ text: 'chunk fact' }]
+    }
+    expect(await recallContext({ query: 'sales' })).toBe('chunk fact')
+  })
+
+  test('the server path caps an oversized result before it reaches a prompt', async () => {
+    // capMemory bounds BOTH backends. Memory is interpolated into up to six prompts per
+    // turn, so an unbounded server answer could push the user's question out of the window.
+    const { MEMORY_CONTEXT_MAX_CHARS } = await import('@/lib/constants')
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'M'.repeat(20_000) }]
+    const out = await recallContext({ query: 'sales' })
+    expect(out.length).toBeLessThan(MEMORY_CONTEXT_MAX_CHARS + 40)
+    expect(out).toContain('[memory truncated]')
+  })
+
+  test('an identical repeat question in the same session does NOT recall twice', async () => {
+    // The session cache sits ABOVE the backend switch in recallContext, so it must cover
+    // the server path too — otherwise every repeat question pays a fresh HTTP round-trip
+    // to a server whose recall is measured at ~4.3s.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'remembered fact' }]
+    const first = await recallContext({ query: 'revenue', sessionId: 's-server-cache' })
+    // MEASURED from the source, not assumed: both strategies returned the same head, and
+    // dedupeJoin collapses them, so the cached string is the text ONCE (not twice).
+    expect(first).toBe('remembered fact')
+    const afterFirst = state.httpRecallCalls.length
+    const second = await recallContext({ query: 'revenue', sessionId: 's-server-cache' })
+    expect(second).toBe(first)
+    expect(state.httpRecallCalls.length).toBe(afterFirst)
+  })
+
+  test('the sessionId reaches the server recall (3rd position in recallFromServer)', async () => {
+    // recallFromServer(opts, query, sessionId) forwards the id into cogneeRecall's args as
+    // `sessionId`. Dropping it would silently degrade every server recall to global-scope
+    // memory: still "working", just no longer session-aware.
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'from session' }]
+    await recallContext({ query: 'sales', sessionId: 'sess-77' })
+    expect(state.httpRecallCalls.length).toBeGreaterThan(0)
+    for (const call of state.httpRecallCalls) {
+      expect(call.args.sessionId).toBe('sess-77')
+    }
+  })
+
+  test('without a sessionId nothing is cached and the server still supplies the answer', async () => {
+    state.serverOptions = SERVER_OPTS
+    state.httpRecallImpl = () => [{ text: 'answer' }]
+    expect(await recallContext({ query: 'revenue' })).toBe('answer')
+    const before = state.httpRecallCalls.length
+    await recallContext({ query: 'revenue' })
+    expect(state.httpRecallCalls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('the SDK path is still what runs when there is no server', () => {
+  test('serverOptions === null calls the SDK and NEVER the HTTP transport', async () => {
+    // The inverse of the exclusivity assertion above. A stale server option (or a switch
+    // that responded to the wrong predicate) would move every install onto a transport it
+    // has no address for; this is the guard that keeps the fallback honest.
+    state.serverOptions = null
+    state.graphProvider = 'postgres'
+    state.client = fakeClient()
+    state.searchImpl = () => 'graph answer'
+
+    await rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] })
+    expect(state.rememberCalls).toHaveLength(1)
+    expect(state.rememberCalls[0].ds).toBe('org:acme')
+    expect(state.httpRememberCalls).toHaveLength(0)
+
+    expect(await recallContext({ query: 'sales' })).toBe('graph answer')
+    expect(state.searchCalls.length).toBeGreaterThan(0)
+    expect(state.httpRecallCalls).toHaveLength(0)
+  })
+
+  test('a null serverOptions survives a client that cannot be built — no HTTP call as a fallback', async () => {
+    // `getCogneeClient()` returning null is a dead end, not a reason to try the server:
+    // falling back would send memory to an address nothing configured.
+    state.serverOptions = null
+    state.client = null
+    await rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] })
+    expect(await recallContext({ query: 'sales' })).toBe('')
+    expect(state.httpRememberCalls).toHaveLength(0)
+    expect(state.httpRecallCalls).toHaveLength(0)
   })
 })

@@ -19,11 +19,19 @@ const core = {
   // Graph backend reported by the client. Defaults to kuzu (the local default) because that
   // is the case where NATURAL_LANGUAGE must be skipped.
   graphProvider: 'kuzu' as string | null,
+  // HTTP-server backend seam. `null` keeps every pre-existing test on the SDK path — the
+  // factory below did not export getCogneeServerOptions at all, so `await
+  // getCogneeServerOptions()` resolved `undefined`, every `if (serverOpts)` branch was
+  // dead code, and the whole server backend (all of cognifyDocument/cognifyBatch/recall/
+  // forget) was unreachable from this file.
+  serverOptions: null as any,
 }
 
 mock.module('@/lib/cognee-core', () => ({
   isCogneeEnabled: async () => core.enabled,
   getCogneeClient: async () => core.client,
+  // Same shape as the real one: null unless a server URL is configured.
+  getCogneeServerOptions: async () => core.serverOptions,
   // Backend gate: both branches must be reachable in-process.
   getCogneeGraphProvider: async () => core.graphProvider,
   supportsNaturalLanguageSearch: (p: string | null) => p !== 'kuzu',
@@ -91,6 +99,83 @@ import {
 } from '@/lib/cognee-knowledge-graph'
 import { COGNEE_SEARCH_TYPES } from '@/lib/cognee-types'
 
+// ---------------------------------------------------------------------------
+// cognee-http stub — the transport for the HTTP-server backend.
+//
+// The real module (cognee-http.ts) is deliberately a thin layer that degrades to
+// null/[] rather than throwing, and it has its own test file. What is under test
+// HERE is what cognee-knowledge-graph.ts does with those answers: one `remember`
+// instead of add+cognify, the retry loop, the dataset it names, and the "a
+// failed write never throws" contract. So the stub records the arguments and
+// returns whatever httpState says, failures included.
+//
+// Every return is state-driven and reset per test: a hardcoded return value is
+// how a test ends up asserting on what the PREVIOUS test configured.
+// ---------------------------------------------------------------------------
+const httpState = {
+  rememberCalls: [] as Array<{ opts: any; args: any }>,
+  recallCalls: [] as Array<{ opts: any; args: any }>,
+  forgetCalls: [] as Array<{ opts: any; args: any }>,
+  cognifyCalls: [] as Array<{ opts: any; args: any }>,
+  rememberResult: { status: 'PipelineRunCompleted' } as any,
+  /** When set, remember REJECTS with this instead of returning a value. */
+  rememberThrows: null as Error | null,
+  /**
+   * Per-CALL override keyed by 1-based call number, for the retry loop: "the
+   * first attempt failed, the second succeeded" is only testable if attempt 2 can
+   * answer differently from attempt 1. A value of `{ throw }` rejects that call;
+   * anything else is returned as the result.
+   */
+  rememberScript: {} as Record<number, any>,
+  recallResult: null as any,
+  /**
+   * Per-CALL recall results, 1-based. Two strategies are always issued in order
+   * (SUMMARIES then CHUNKS), so a scripted answer is the only way to exercise
+   * "the first strategy fails and the second answers".
+   */
+  recallScript: [] as any[],
+  forgetResult: true as any,
+  forgetThrows: null as Error | null,
+}
+
+mock.module('@/lib/cognee-http', () => ({
+  cogneeRemember: async (opts: any, args: any) => {
+    httpState.rememberCalls.push({ opts, args })
+    const call = httpState.rememberCalls.length
+    if (httpState.rememberScript[call] !== undefined) {
+      const scripted = httpState.rememberScript[call]
+      if (scripted && typeof scripted === 'object' && 'throw' in scripted) throw scripted.throw
+      return scripted
+    }
+    if (httpState.rememberThrows) throw httpState.rememberThrows
+    return httpState.rememberResult
+  },
+  cogneeRecall: async (opts: any, args: any) => {
+    httpState.recallCalls.push({ opts, args })
+    const call = httpState.recallCalls.length
+    // A script entry is authoritative even when it is falsy (null = "server
+    // unreachable"), so the check is on the ARRAY being non-empty, never on
+    // `scripted !== undefined` — otherwise a scripted null silently falls through
+    // to recallResult and the test asserts on the value it did not configure.
+    if (httpState.recallScript.length > 0) {
+      return httpState.recallScript[call - 1] ?? null
+    }
+    return httpState.recallResult
+  },
+  cogneeForget: async (opts: any, args: any) => {
+    httpState.forgetCalls.push({ opts, args })
+    if (httpState.forgetThrows) throw httpState.forgetThrows
+    return httpState.forgetResult
+  },
+  // Imported by the module under test but never called: `remember` already runs
+  // the cognify pipeline server-side, which is the whole point of the server
+  // branch. Stubbed so the import resolves; a call would be a regression.
+  cogneeCognify: async (opts: any, args: any) => {
+    httpState.cognifyCalls.push({ opts, args })
+    return true
+  },
+}))
+
 /** A client whose add/cognify succeed unless overridden. */
 function client(over: Record<string, unknown> = {}) {
   return {
@@ -98,6 +183,7 @@ function client(over: Record<string, unknown> = {}) {
     cognify: async () => undefined,
     search: async () => ({ ok: true }),
     forget: async () => undefined,
+    datasets: { has: async () => true },
     ...over,
   }
 }
@@ -111,11 +197,28 @@ beforeEach(() => {
   core.updateCalls = []
   core.resets = 0
   core.resetClientCacheThrows = false
+  // SDK path unless a test opts into the server: a leaked serverOptions would
+  // silently move every other test off the branch it exists to cover.
+  core.serverOptions = null
   dbState.documents = []
   dbState.updateManyCalls = []
   dbState.findManyCalls = []
   dbState.findManyThrow = false
+  httpState.rememberCalls = []
+  httpState.recallCalls = []
+  httpState.forgetCalls = []
+  httpState.cognifyCalls = []
+  httpState.rememberResult = { status: 'PipelineRunCompleted' }
+  httpState.rememberThrows = null
+  httpState.rememberScript = {}
+  httpState.recallResult = null
+  httpState.recallScript = []
+  httpState.forgetResult = true
+  httpState.forgetThrows = null
 })
+
+/** The options object getCogneeServerOptions() hands the HTTP transport. */
+const SERVER_OPTS = { baseUrl: 'http://cognee:8000', timeoutMs: 30000 }
 
 const docs = [{ documentId: 'd1', documentName: 'a.pdf', chunks: [{ content: 'x', chunkIndex: 0 }] }]
 
@@ -643,5 +746,528 @@ describe('resetCognee — a failure returns false so the caller can report it', 
     expect(sweep).toContain(".catch(logSwallowed('cognee: document.updateMany (resetCognee)'))")
     const res = await resetCognee()
     expect(res).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The HTTP-server backend — the path this file could not reach at all
+//
+// `cognee-knowledge-graph.ts` grew a SECOND backend: when
+// `getCogneeServerOptions()` returns an object it talks HTTP to a cognee server
+// (`cogneeRemember`/`cogneeRecall`/`cogneeForget`) instead of the in-process
+// `@cognee/cognee-ts` client. The mock.module factory above did not export
+// `getCogneeServerOptions` at all, so the call resolved `undefined`, every
+// `if (serverOpts)` branch was unreachable, and the file's merged coverage fell
+// from 75.8% to 58.1% when the branch landed. Nothing here had ever run.
+//
+// The shape of the branch is not "the same thing over HTTP": a server
+// `remember` STORES AND COGNIFIES in ONE call, so the add→cognify handshake —
+// and the added-but-not-graphed state it can be interrupted in — does not exist.
+// These tests pin that difference, because re-adding a second cognify call is
+// how the two transports would drift back apart.
+// ---------------------------------------------------------------------------
+
+describe('server backend — cognifyDocument issues ONE remember call', () => {
+  test('a single remember replaces the add+cognify pair and reports success', async () => {
+    core.serverOptions = SERVER_OPTS
+    let added = 0
+    let cognified = 0
+    core.client = client({
+      add: async () => { added++ },
+      cognify: async () => { cognified++ },
+    })
+    const ok = await cognifyDocument({
+      documentId: 'd1',
+      documentName: 'a.pdf',
+      chunks: [
+        { content: 'THIRD', chunkIndex: 2 },
+        { content: 'FIRST', chunkIndex: 0 },
+        { content: 'SECOND', chunkIndex: 1 },
+      ],
+    })
+    expect(ok).toBe(true)
+    // EXACTLY one remember. Two would mean the document was stored twice and the
+    // graph rebuilt twice for every upload.
+    expect(httpState.rememberCalls).toHaveLength(1)
+    // Dataset name AND text are asserted because they are the two arguments a
+    // refactor can silently swap (the real code passes {texts, datasetName,
+    // runInBackground}) — and a wrong dataset name is a cross-org leak, not a
+    // cosmetic bug.
+    expect(httpState.rememberCalls[0].args.datasetName).toContain('kb')
+    // Chunks are joined in chunkIndex order on this path too, or the server
+    // builds a graph out of a scrambled document.
+    expect(httpState.rememberCalls[0].args.texts).toEqual(['FIRST\n\nSECOND\n\nTHIRD'])
+    // runInBackground MUST be false: the caller needs to know when the write is
+    // searchable, and a background write reports success before it has happened.
+    expect(httpState.rememberCalls[0].args.runInBackground).toBe(false)
+    expect(httpState.rememberCalls[0].opts).toBe(SERVER_OPTS)
+    // The SDK client is not touched on this path — mixing transports would write
+    // the document into the in-process store while recall reads the server.
+    expect(added).toBe(0)
+    expect(cognified).toBe(0)
+    expect(core.updateCalls.map((c) => c.status)).toEqual(['processing', 'completed'])
+  })
+
+  test('a null remember result reports failure without throwing', async () => {
+    core.serverOptions = SERVER_OPTS
+    // cognee-http returns null for "unreachable / non-OK / unparseable body" —
+    // the graceful-degradation contract. This branch must translate that into a
+    // failed status, NOT into an exception that 500s the upload route.
+    httpState.rememberResult = null
+    expect(await cognifyDocument(docs[0])).toBe(false)
+    const last = core.updateCalls[core.updateCalls.length - 1]
+    expect(last.status).toBe('failed')
+    expect(last.error).toBe('cognee server rejected the write')
+  })
+
+  test('a rejected remember is caught and recorded, not propagated', async () => {
+    core.serverOptions = SERVER_OPTS
+    httpState.rememberThrows = new Error('socket hang up')
+    expect(await cognifyDocument(docs[0])).toBe(false)
+    const last = core.updateCalls[core.updateCalls.length - 1]
+    expect(last.status).toBe('failed')
+    expect(last.error).toContain('socket hang up')
+  })
+
+  test('a result carrying an error reports that error, not a generic one', async () => {
+    core.serverOptions = SERVER_OPTS
+    // A 200 with an error field is the server saying no inside a success
+    // response — `res && !res.error` is the contract, and the operator needs the
+    // server's own reason rather than "cognee server rejected the write".
+    httpState.rememberResult = { status: 'failed', error: 'embedding dimension mismatch' }
+    expect(await cognifyDocument(docs[0])).toBe(false)
+    const last = core.updateCalls[core.updateCalls.length - 1]
+    expect(last.status).toBe('failed')
+    expect(last.error).toBe('embedding dimension mismatch')
+  })
+})
+
+describe('server backend — recall', () => {
+  test('recallKnowledgeGraph returns the server hits', async () => {
+    core.serverOptions = SERVER_OPTS
+    // Both strategies (SUMMARIES, CHUNKS) answer with the same text, which is
+    // the realistic overlap dedupeByPrefix exists for.
+    httpState.recallResult = [{ text: 'graph fact' }]
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('graph fact')
+    // One HTTP call per strategy, not one per hit: that is a latency contract.
+    expect(httpState.recallCalls.map((c) => c.args.searchType).sort()).toEqual(['CHUNKS', 'SUMMARIES'])
+    expect(httpState.recallCalls[0].args.query).toBe('q')
+    expect(httpState.recallCalls[0].args.topK).toBe(5)
+    expect(httpState.recallCalls[0].args.datasets[0]).toContain('kb')
+  })
+
+  test('only SearchType values the SDK/server knows are sent', async () => {
+    core.serverOptions = SERVER_OPTS
+    // Same AGENTS.md invariant the SDK path is held to, and the same incident:
+    // GRAPH_ENTITIES/GRAPH_RELATIONSHIPS were invented from the Python docs and
+    // rejected remotely, wasting the whole strategy. The server branch must not
+    // become a second place invented names can enter.
+    httpState.recallResult = []
+    await recallKnowledgeGraph({ query: 'q' })
+    await recallKnowledgeGraphStructured({ query: 'q' })
+    const used = httpState.recallCalls.map((c) => c.args.searchType)
+    expect(used.length).toBeGreaterThan(0)
+    for (const t of used) expect(COGNEE_SEARCH_TYPES.has(t)).toBe(true)
+  })
+
+  test('a null recall yields an empty result instead of throwing', async () => {
+    core.serverOptions = SERVER_OPTS
+    httpState.recallResult = null
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('')
+    expect(await recallKnowledgeGraphStructured({ query: 'q' })).toEqual([])
+  })
+
+  test('an empty hit array yields an empty result', async () => {
+    core.serverOptions = SERVER_OPTS
+    httpState.recallResult = []
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('')
+    expect(await recallKnowledgeGraphStructured({ query: 'q' })).toEqual([])
+  })
+
+  test('hits without text are dropped, not rendered as "undefined"', async () => {
+    core.serverOptions = SERVER_OPTS
+    // The server's search hit type has every field optional; a blank hit reaching
+    // the answer prompt as the string "undefined" is a real, seen failure mode.
+    httpState.recallResult = [{ text: 'only this one' }, {}, { text: undefined }, { text: '' }]
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('only this one')
+  })
+
+  test('structured recall tags each hit with its strategy source and score', async () => {
+    core.serverOptions = SERVER_OPTS
+    // Shape contract for RAG: recallKnowledgeGraphStructured feeds citations, so
+    // a missing `source` silently degrades every graph citation to a bare chunk.
+    httpState.recallResult = [{ text: 'entity one', score: 0.9 }]
+    const res = await recallKnowledgeGraphStructured({ query: 'q', topK: 3 })
+    expect(res.length).toBeGreaterThan(0)
+    expect(res[0].text).toBe('entity one')
+    expect(res[0].score).toBe(0.9)
+    expect(['summary', 'chunk']).toContain(res[0].source)
+    // topK is passed through unchanged on this path — there is no NATURAL_LANGUAGE
+    // leg to double it for.
+    for (const c of httpState.recallCalls) expect(c.args.topK).toBe(3)
+  })
+
+  test('a null score becomes undefined rather than staying null', async () => {
+    core.serverOptions = SERVER_OPTS
+    // `hit.score ?? undefined`: a null score must not reach consumers as null.
+    httpState.recallResult = [{ text: 'no score', score: null }]
+    const res = await recallKnowledgeGraphStructured({ query: 'q' })
+    expect(res).toHaveLength(1)
+    expect(res[0].score).toBeUndefined()
+  })
+
+  test('a failed strategy does not lose the other strategy’s hits', async () => {
+    core.serverOptions = SERVER_OPTS
+    // The per-strategy try/catch is the same isolation the SDK path relies on:
+    // one broken strategy must cost only its own contribution.
+    // The script is keyed by RECALL CALL INDEX across the whole function, so a
+    // test that calls BOTH recall entry points must script every call the two
+    // of them make (each issues SUMMARIES then CHUNKS) — an under-length script
+    // silently answers `null` for the extra calls, which reads as "the server
+    // returned nothing" and hides whatever the test meant to assert.
+    httpState.recallScript = [null, [{ text: 'survivor' }]]
+    const res = await recallKnowledgeGraph({ query: 'q' })
+    expect(res).toBe('survivor')
+    // Both strategies were attempted; the first answered null (the degraded
+    // "unreachable" shape cognee-http uses).
+    expect(httpState.recallCalls).toHaveLength(2)
+  })
+
+  test('duplicate hits across strategies are collapsed', async () => {
+    core.serverOptions = SERVER_OPTS
+    // SUMMARIES and CHUNKS both answer with the same fact. Without dedupe the
+    // same sentence is appended twice to the RAG context of every question.
+    // Two batches of hits (not one hit per call) because the loop iterates
+    // `for (const hit of hits ?? [])` — a single-object stub would make the
+    // assertion below vacuous.
+    httpState.recallScript = [
+      [{ text: 'SAME' }, { text: 'also here' }],
+      [{ text: 'SAME' }, { text: 'also here' }],
+      [{ text: 'SAME' }, { text: 'also here' }],
+      [{ text: 'SAME' }, { text: 'also here' }],
+    ]
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('SAME\nalso here')
+    const structured = await recallKnowledgeGraphStructured({ query: 'q' })
+    expect(structured.map((r) => r.text)).toEqual(['SAME', 'also here'])
+  })
+})
+
+describe('server backend — dedupe helpers', () => {
+  test('recall results sharing their first 100 chars collapse to one', async () => {
+    core.serverOptions = SERVER_OPTS
+    // dedupeByPrefix keys on `r.slice(0, 100)`, NOT on the whole string. Two
+    // results that share a 100-char prefix are treated as the same hit even when
+    // their tails differ — asserted here as the REAL behaviour, so a change to
+    // the key length has to be a deliberate one.
+    const shared = 'P'.repeat(100)
+    httpState.recallResult = [{ text: shared + ' different tail' }]
+    const out = await recallKnowledgeGraph({ query: 'q' })
+    expect(out).toBe(shared + ' different tail')
+    // Two strategies × one identical hit = one line, not two.
+    expect(out.split('\n')).toHaveLength(1)
+  })
+
+  test('results shorter than 100 chars are compared whole', async () => {
+    core.serverOptions = SERVER_OPTS
+    // The other half of the slice(0,100) key: two short texts that differ at all
+    // are distinct, so neither is dropped. Length 9 is well under 100, so the
+    // keys are the full strings and both survive.
+    httpState.recallScript = [[{ text: 'short one' }], [{ text: 'short two' }]]
+    const out = await recallKnowledgeGraph({ query: 'q' })
+    expect(out.split('\n').sort()).toEqual(['short one', 'short two'])
+  })
+
+  test('structured dedupe keeps the first hit of each distinct text', async () => {
+    core.serverOptions = SERVER_OPTS
+    // dedupeByText, exercised through the function that uses it. Both strategies
+    // return two hits with the same first 100 chars; only the first survives.
+    httpState.recallResult = [
+      { text: 'Q'.repeat(100) + ' tail A', score: 0.9 },
+      { text: 'Q'.repeat(100) + ' tail B', score: 0.5 },
+    ]
+    const res = await recallKnowledgeGraphStructured({ query: 'q' })
+    expect(res).toHaveLength(1)
+    // The FIRST is kept, with its score — not the second, and not a merge.
+    expect(res[0].text).toBe('Q'.repeat(100) + ' tail A')
+    expect(res[0].score).toBe(0.9)
+  })
+
+  test('structured dedupe keeps hits that differ within the key', async () => {
+    core.serverOptions = SERVER_OPTS
+    httpState.recallResult = [{ text: 'alpha' }, { text: 'beta' }]
+    const res = await recallKnowledgeGraphStructured({ query: 'q' })
+    // Two genuinely different hits must survive: this is the no-duplicate case,
+    // and a dedupe that collapsed everything would look identical to a bug that
+    // silently drops evidence.
+    expect(res).toHaveLength(2)
+    expect(res.map((r) => r.text).sort()).toEqual(['alpha', 'beta'])
+  })
+})
+
+describe('server backend — forget / reset', () => {
+  test('forgetKnowledgeGraph forgets the KB dataset and clears statuses', async () => {
+    core.serverOptions = SERVER_OPTS
+    expect(await forgetKnowledgeGraph()).toBe(true)
+    expect(httpState.forgetCalls).toHaveLength(1)
+    // The dataset name is the org isolation boundary — `everything: true` here
+    // would wipe every other org's graph in a shared cognee server.
+    expect(httpState.forgetCalls[0].args.dataset).toContain('kb')
+    expect(httpState.forgetCalls[0].args.everything).toBeUndefined()
+    expect(httpState.forgetCalls[0].opts).toBe(SERVER_OPTS)
+    expect(dbState.updateManyCalls).toHaveLength(1)
+    // Scoped sweep: only rows that still carry a status are reset.
+    expect(dbState.updateManyCalls[0].where).toEqual({ cognifyStatus: { not: null } })
+  })
+
+  test('forgetAll forgets everything', async () => {
+    core.serverOptions = SERVER_OPTS
+    expect(await forgetAll()).toBe(true)
+    expect(httpState.forgetCalls).toHaveLength(1)
+    expect(httpState.forgetCalls[0].args.everything).toBe(true)
+    expect(httpState.forgetCalls[0].args.dataset).toBeUndefined()
+    expect(dbState.updateManyCalls[0].data).toEqual({ cognifyStatus: null })
+  })
+
+  test('a rejected forget returns false and leaves statuses alone', async () => {
+    core.serverOptions = SERVER_OPTS
+    httpState.forgetThrows = new Error('forget down')
+    // A failed forget must NOT report success: the UI tells the user their data
+    // is gone, and a false `true` here is a lie about a deletion.
+    expect(await forgetAll()).toBe(false)
+    expect(await forgetKnowledgeGraph()).toBe(false)
+    expect(dbState.updateManyCalls).toHaveLength(0)
+  })
+
+  test('a false forget result returns false without touching statuses', async () => {
+    core.serverOptions = SERVER_OPTS
+    // cognee-http degrades to `false` (rather than throwing) when the server is
+    // unreachable — the different failure SHAPE must reach the same conclusion.
+    httpState.forgetResult = false
+    expect(await forgetKnowledgeGraph()).toBe(false)
+    expect(await forgetAll()).toBe(false)
+    expect(dbState.updateManyCalls).toHaveLength(0)
+  })
+
+  test('resetCognee forgets everything and never touches the SDK client cache', async () => {
+    core.serverOptions = SERVER_OPTS
+    expect(await resetCognee()).toBe(true)
+    expect(httpState.forgetCalls).toHaveLength(1)
+    expect(httpState.forgetCalls[0].args.everything).toBe(true)
+    // The local store does not belong to this process on the server backend, so
+    // there is nothing to re-initialize: caching is an in-process concern only.
+    expect(core.resets).toBe(0)
+    expect(dbState.updateManyCalls).toHaveLength(1)
+  })
+
+  test('resetCognee still reports done when the forget rejects', async () => {
+    core.serverOptions = SERVER_OPTS
+    // `await cogneeForget(...)` inside the server branch has no `.catch`, and the
+    // surrounding try/catch there swallows it — the reset is a local-state
+    // operation and must succeed regardless of the remote store's health.
+    httpState.forgetThrows = new Error('forget down')
+    expect(await resetCognee()).toBe(true)
+    expect(dbState.updateManyCalls).toHaveLength(1)
+  })
+
+  test('forgetAll still clears statuses when the sweep fails', async () => {
+    core.serverOptions = SERVER_OPTS
+    expect(await forgetAll()).toBe(true)
+    expect(httpState.forgetCalls).toHaveLength(1)
+  })
+})
+
+describe('server backend — cognifyBatch retry loop', () => {
+  test('a batch of two documents rides ONE remember call', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 2, cognifyMaxRetries: 2 }
+    const res = await cognifyBatch({
+      documents: [
+        { documentId: 'd1', documentName: 'a', chunks: [{ content: 'a', chunkIndex: 0 }] },
+        { documentId: 'd2', documentName: 'b', chunks: [{ content: 'b', chunkIndex: 0 }] },
+      ],
+    })
+    expect(res).toEqual({ processed: 2, failed: 0, skipped: 0 })
+    // One remember per BATCH, not per document — batching is the scalability
+    // path, and one call per doc on the server path would be a silent cost
+    // regression with the same shape as the SDK path's per-doc add.
+    expect(httpState.rememberCalls).toHaveLength(1)
+    expect(httpState.rememberCalls[0].args.texts).toEqual(['a', 'b'])
+    expect(httpState.rememberCalls[0].args.datasetName).toContain('kb')
+  })
+
+  test('multiple batches each get their own remember call', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 2, cognifyMaxRetries: 1 }
+    const many = ['a', 'b', 'c', 'd', 'e'].map((n) => ({
+      documentId: n, documentName: n, chunks: [{ content: n, chunkIndex: 0 }],
+    }))
+    const res = await cognifyBatch({ documents: many })
+    expect(res.processed).toBe(5)
+    // 5 docs at batch size 2 → 3 calls, matching the SDK path's batching.
+    expect(httpState.rememberCalls).toHaveLength(3)
+    expect(httpState.rememberCalls[2].args.texts).toEqual(['e'])
+  })
+
+  test('a TRANSIENT failure on attempt 1 retries and succeeds on attempt 2', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    // The server branch converts a null/error result into a thrown Error so the
+    // SHARED retry loop below it can handle both transports — the error STRING is
+    // what the transient check sees. First attempt answers transiently, second
+    // answers cleanly: the batch must end up processed, not failed.
+    httpState.rememberScript = {
+      1: { error: 'FOREIGN KEY constraint failed' },
+      2: { error: null, status: 'PipelineRunCompleted' },
+    }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(2)
+    expect(res).toEqual({ processed: 1, failed: 0, skipped: 0 })
+    expect(core.updateCalls.map((c) => c.status)).toEqual(['processing', 'completed'])
+  }, 15000)
+
+  test('a NON-transient failure is not retried (attempt count is 1)', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    // MEASURED from the source: the retry loop only `continue`s when the error
+    // string contains FOREIGN KEY / constraint / locked. Any other message hits
+    // `break` on the FIRST attempt — so a permanent rejection costs exactly one
+    // HTTP call, and each of those calls is 5-35s of server-side pipeline work.
+    httpState.rememberResult = { status: 'failed', error: 'cognee server rejected the write' }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(1)
+    expect(res.failed).toBe(1)
+    expect(res.processed).toBe(0)
+    const failed = core.updateCalls.filter((c) => c.status === 'failed')
+    // Every document in the batch is marked failed with the batched error text.
+    expect(failed.map((c) => c.id)).toEqual(['d1'])
+    expect(failed[0].error).toContain('cognee server rejected the write')
+    // The statuses were set to processing BEFORE the attempt and then failed —
+    // never left dangling.
+    expect(core.updateCalls.map((c) => c.status)).toEqual(['processing', 'failed'])
+  })
+
+  test('a transient error retries up to maxRetries, then fails the batch', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    // Same transient message on EVERY attempt, so the loop must exhaust its cap.
+    // This is the ACTUAL contract: `attempt < maxRetries && isTransient` gates the
+    // retry, so the LAST attempt never retries again — 3 attempts, not 4, with a
+    // sleep of 1000ms * attempt in between (hence the raised per-test timeout).
+    httpState.rememberResult = { error: 'database is locked' }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(3)
+    expect(res.failed).toBe(1)
+    expect(res.processed).toBe(0)
+    const failed = core.updateCalls.find((c) => c.status === 'failed')
+    expect(failed!.error).toContain('database is locked')
+  }, 15000)
+
+  test('a thrown transient error retries too, and a later success is recorded', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    // A REJECTION (not a returned error) is what a dead socket looks like. The
+    // message decides, and the loop must reuse the SDK path's retry shape rather
+    // than a second copy of it: attempt 1 rejects transiently, attempt 2 answers
+    // cleanly, so the batch is processed and not failed.
+    httpState.rememberScript = {
+      1: { throw: new Error('FOREIGN KEY constraint failed') },
+      2: { status: 'PipelineRunCompleted' },
+    }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(2)
+    expect(res).toEqual({ processed: 1, failed: 0, skipped: 0 })
+  }, 15000)
+
+  test('a rejected remember is retried only for transient messages', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    // A REJECTION (not a returned error) is what a dead socket looks like. The
+    // message decides: "socket hang up" is not transient, so it breaks out —
+    // this is the difference between one 30s timeout and three of them.
+    httpState.rememberThrows = new Error('socket hang up')
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(1)
+    expect(res.failed).toBe(1)
+  })
+
+  test('one failed batch does not stop the batches after it', async () => {
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 1, cognifyMaxRetries: 1 }
+    const many = ['d1', 'd2'].map((n) => ({
+      documentId: n, documentName: n, chunks: [{ content: n, chunkIndex: 0 }],
+    }))
+    // Two batches of one, with a per-call script so the FIRST batch fails
+    // permanently and the SECOND succeeds. The `continue` after a failed batch is
+    // what keeps one bad document from cancelling the whole upload — so the
+    // outcome must be one failed, one processed, and TWO remember calls.
+    httpState.rememberScript = {
+      1: { error: 'bad document' },
+      2: { status: 'PipelineRunCompleted' },
+    }
+    const res = await cognifyBatch({ documents: many })
+    expect(res.failed).toBe(1)
+    expect(res.processed).toBe(1)
+    expect(httpState.rememberCalls).toHaveLength(2)
+    // d1 never reached 'completed'; d2 did.
+    expect(core.updateCalls.filter((c) => c.status === 'completed').map((c) => c.id)).toEqual(['d2'])
+  })
+
+  test('already-completed documents are still skipped on the server path', async () => {
+    core.serverOptions = SERVER_OPTS
+    dbState.documents = [{ id: 'd1', cognifyStatus: 'completed' }]
+    const res = await cognifyBatch({
+      documents: [docs[0], { documentId: 'd2', documentName: 'b', chunks: [{ content: 'y', chunkIndex: 0 }] }],
+    })
+    // The skip happens before any transport is chosen, so a server install gets
+    // the incremental behaviour too — and the completed doc is never re-sent.
+    expect(res.skipped).toBe(1)
+    expect(res.processed).toBe(1)
+    expect(httpState.rememberCalls[0].args.texts).toEqual(['y'])
+    expect(core.updateCalls.some((c) => c.id === 'd1')).toBe(false)
+  })
+
+  test('a server configured without an SDK client still processes', async () => {
+    core.serverOptions = SERVER_OPTS
+    // cognifyBatch picks ONE transport: `const c = serverOpts ? null : await
+    // getCogneeClient()`. A null client on the server path must not be read as
+    // "cognee unavailable" and return the zeroes.
+    core.client = null
+    const res = await cognifyBatch({ documents: docs })
+    expect(res.processed).toBe(1)
+    expect(httpState.rememberCalls).toHaveLength(1)
+  })
+})
+
+describe('server backend — the SDK path is still used when no server is configured', () => {
+  test('with serverOptions null the HTTP helpers are never called', async () => {
+    // The regression this guards: exporting getCogneeServerOptions from the
+    // module mock makes it trivially easy to make it return something truthy by
+    // accident (a shared default, a leaked state field), which would move the
+    // entire file onto the server path and leave the SDK behaviour untested
+    // while every test still passed.
+    core.serverOptions = null
+    let added = 0
+    core.client = client({ add: async () => { added++ } })
+    expect(await cognifyDocument(docs[0])).toBe(true)
+    await cognifyBatch({ documents: docs })
+    await recallKnowledgeGraph({ query: 'q' })
+    await recallKnowledgeGraphStructured({ query: 'q' })
+    await forgetAll()
+    await forgetKnowledgeGraph()
+    await resetCognee()
+    expect(added).toBe(2)
+    expect(httpState.rememberCalls).toHaveLength(0)
+    expect(httpState.recallCalls).toHaveLength(0)
+    expect(httpState.forgetCalls).toHaveLength(0)
+    expect(httpState.cognifyCalls).toHaveLength(0)
+  })
+
+  test('a null server option is not mistaken for a configured server', async () => {
+    // `if (serverOpts)` — an empty object is a configured server, `null` is not.
+    // An `undefined` return (the old, missing export) must also stay on the SDK
+    // path, which is exactly what the pre-existing tests exercise.
+    core.serverOptions = undefined as any
+    expect(await cognifyDocument(docs[0])).toBe(true)
+    expect(httpState.rememberCalls).toHaveLength(0)
   })
 })

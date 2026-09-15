@@ -46,6 +46,10 @@ services:
       - NODE_ENV=production
       - LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
       - LICENSE_PRODUCT=ryasai-chatbot
+      # All memory calls go to the sidecar over the compose network. Set here
+      # rather than only in .env so an existing .env cannot silently keep the
+      # app on the weaker in-process SDK after this upgrade.
+      - COGNEE_SERVER_URL=http://cognee:8000
     depends_on:
       db:
         condition: service_healthy
@@ -53,6 +57,12 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      # service_started, NOT service_healthy: memory is optional (every cognee
+      # call degrades gracefully), so the chat UI must come up even if the graph
+      # is still warming. Blocking startup on it would turn a memory outage into
+      # a total outage, which is the opposite of the intended degradation.
+      cognee:
+        condition: service_started
     # ponytail: liveness probe against /api/v1/health (no DB hit — dependency
     # status lives at /api/health). bun is the runtime image, so no curl needed.
     healthcheck:
@@ -77,6 +87,7 @@ services:
       - NODE_ENV=production
       - LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
       - LICENSE_PRODUCT=ryasai-chatbot
+      - COGNEE_SERVER_URL=http://cognee:8000
     depends_on:
       db:
         condition: service_healthy
@@ -84,6 +95,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      cognee:
+        condition: service_started
     # ponytail: NO HTTP healthcheck — the scheduler is a BullMQ worker with no
     # listening port. Liveness = restart: unless-stopped + Redis stalled-job
     # detection (BullMQ re-queues a dead worker's jobs automatically).
@@ -103,6 +116,77 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    restart: unless-stopped
+    networks:
+      - ryasai-net
+
+  # Cognee memory + knowledge-graph API server (v1.5.4).
+  #
+  # WHY A SEPARATE SERVICE: the in-process @cognee/cognee-ts SDK's write path is
+  # not trustworthy — its newest release (0.2.0) reports success while storing
+  # nothing, then poisons the store. The Python server is the project's primary
+  # artifact and its write path is real (measured: 19.9s write, then a 4.3s recall
+  # that returned the stored token). See docs/cognee-http-migration.md.
+  #
+  # PINNED, never :latest — a memory store whose format the app must read should
+  # not change under a `docker compose pull`.
+  cognee:
+    image: cognee/cognee:1.5.4.dev20260914
+    # ponytail: the image's entrypoint already runs the API server on :8000; we
+    # only say where to keep data and which backends to use. Local mode (sqlite +
+    # kuzu + lancedb) means ZERO extra services — no second Postgres, no Neo4j —
+    # which is what keeps this viable on an on-prem box.
+    environment:
+      # Storage: named volume below, so the graph survives a container recreate.
+      - SYSTEM_ROOT_DIRECTORY=/cognee-storage/system
+      - DATA_ROOT_DIRECTORY=/cognee-storage/data
+      - DB_PROVIDER=sqlite
+      - GRAPH_DATABASE_PROVIDER=kuzu
+      - VECTOR_DB_PROVIDER=lancedb
+      # The app reaches this over the private compose network with no auth. The
+      # port is NOT published to the host (see below), so it is not exposed.
+      - ENABLE_BACKEND_ACCESS_CONTROL=false
+      # LLM + embeddings come from the customer's own provider (BYOK). These MUST
+      # be set for the WRITE path (cognify makes its own LLM calls); the read path
+      # tolerates empty values.
+      - LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${COGNEE_LLM_API_KEY:-}
+      - LLM_ENDPOINT=${COGNEE_LLM_ENDPOINT:-}
+      - LLM_MODEL=${COGNEE_LLM_MODEL:-}
+      - EMBEDDING_PROVIDER=${COGNEE_EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_API_KEY=${COGNEE_EMBEDDING_API_KEY:-}
+      - EMBEDDING_ENDPOINT=${COGNEE_EMBEDDING_ENDPOINT:-}
+      - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-}
+      # MEASURED GOTCHA: the embedding dimension must MATCH what the endpoint
+      # really returns, or every write fails with a pydantic LanceDataPoint
+      # "List should have at least 3072 items" error that names the wrong cause.
+      - EMBEDDING_DIMENSIONS=${COGNEE_EMBEDDING_DIMENSIONS:-1536}
+      # Skips a 30s startup probe that fails the whole request when the embedding
+      # endpoint is slow to warm up (it usually is).
+      - COGNEE_SKIP_CONNECTION_TEST=true
+      # litellm rejects params a provider does not support instead of dropping
+      # them (e.g. `dimensions` on some embedding models).
+      - LITELLM_DROP_PARAMS=true
+      # BYOK: this customer's own LLM endpoint, which may be an internal host.
+      - LLM_ALLOWED_HOSTS=${COGNEE_LLM_ALLOWED_HOSTS:-*}
+    volumes:
+      - cogneedata:/cognee-storage
+    # NOTE: deliberately NO `ports:` — the app reaches this over the compose
+    # network by name, so publishing would expose an unauthenticated memory API
+    # to the host. Uncomment only for local debugging.
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+    healthcheck:
+      # The image ships curl (upstream's own compose probes this same path).
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Long start period: first boot initialises the sqlite/kuzu/lancedb stores.
+      start_period: 90s
+    # ponytail: no memory cap. Upstream's compose reserves 8GB; this is a graph
+    # build over the customer's documents, and a hard cap turns a slow cognify
+    # into an OOM kill that loses the work. Bound the box, not the service.
     restart: unless-stopped
     networks:
       - ryasai-net
@@ -133,3 +217,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  cogneedata:

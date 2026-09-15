@@ -62,6 +62,8 @@ import {
   updateDocumentCognifyStatus,
   supportsNaturalLanguageSearch,
   getCogneeGraphProvider,
+  getCogneeBackend,
+  getCogneeServerOptions,
 } from '@/lib/cognee-core'
 import { enterWithOrg, bypassOrg } from '@/lib/prisma-tenant'
 
@@ -473,6 +475,98 @@ describe('getCogneeGraphProvider — the backend the recall gate reads', () => {
     invalidateCogneeSettings('all')
     cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres' }
     expect(await getCogneeGraphProvider()).toBe('postgres')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Backend selection: the cognee 1.5.4 server vs the in-process TS SDK.
+//
+// This is the switch that decides which transport a REMEMBER and its matching
+// RECALL both use. If a write went to the server and the read to the SDK, the
+// fact would be stored and never found — silent, permanent memory loss, which is
+// the exact failure mode this migration exists to remove. So the tests below pin
+// the selection AND the matching options, not just the flag.
+// ---------------------------------------------------------------------------
+describe('getCogneeBackend — which transport memory calls use', () => {
+  beforeEach(() => {
+    invalidateCogneeSettings('all')
+    delete process.env.COGNEE_SERVER_URL
+    delete process.env.COGNEE_SERVER_API_KEY
+  })
+
+  test('an unset COGNEE_SERVER_URL keeps the in-process SDK', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    const backend = await getCogneeBackend()
+    expect(backend?.kind).toBe('inprocess')
+    expect(backend?.serverUrl).toBeNull()
+  })
+
+  test('COGNEE_SERVER_URL selects the server transport', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    process.env.COGNEE_SERVER_URL = 'http://cognee:8000'
+    invalidateCogneeSettings('all')
+    const backend = await getCogneeBackend()
+    expect(backend?.kind).toBe('server')
+    expect(backend?.serverUrl).toBe('http://cognee:8000')
+  })
+
+  test('whitespace-only COGNEE_SERVER_URL is treated as unset, not as a bad URL', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    process.env.COGNEE_SERVER_URL = '   '
+    invalidateCogneeSettings('all')
+    expect((await getCogneeBackend())?.kind).toBe('inprocess')
+  })
+
+  test('the server URL is NOT read from the org row — it is a deployment fact', async () => {
+    // A per-org server address would let one org point memory at another org's
+    // server. The config row deliberately has no such field; assert the env is
+    // the only source even when an AppConfig row exists.
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres', cogneeDbUrl: 'postgres://x' }
+    invalidateCogneeSettings('all')
+    expect((await getCogneeBackend())?.kind).toBe('inprocess')
+  })
+
+  test('server options carry the URL, the bounded deadline and the optional key', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    process.env.COGNEE_SERVER_URL = 'http://cognee:8000'
+    process.env.COGNEE_SERVER_API_KEY = 'secret'
+    invalidateCogneeSettings('all')
+
+    const opts = await getCogneeServerOptions()
+    expect(opts?.baseUrl).toBe('http://cognee:8000')
+    expect(opts?.apiKey).toBe('secret')
+    // Bounded: a wedged server must not hold a chat turn open forever.
+    expect(typeof opts?.timeoutMs).toBe('number')
+    expect(opts!.timeoutMs!).toBeGreaterThan(0)
+  })
+
+  test('server options omit the key header when no key is configured', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    process.env.COGNEE_SERVER_URL = 'http://cognee:8000'
+    invalidateCogneeSettings('all')
+    expect((await getCogneeServerOptions())?.apiKey).toBeUndefined()
+  })
+
+  test('no server options are produced when the server is not configured', async () => {
+    enterWithOrg('org-backend')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    invalidateCogneeSettings('all')
+    expect(await getCogneeServerOptions()).toBeNull()
+  })
+
+  test('without org context no server options leak out, so memory fails closed', async () => {
+    // The tenancy contract: a background job that forgets enterWithOrg must get
+    // nothing rather than the server's shared store.
+    process.env.COGNEE_SERVER_URL = 'http://cognee:8000'
+    invalidateCogneeSettings('all')
+    const opts = await withoutOrg(async () => getCogneeServerOptions())
+    expect(opts).toBeNull()
   })
 })
 })

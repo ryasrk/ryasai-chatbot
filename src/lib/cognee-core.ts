@@ -18,6 +18,7 @@ import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { getEmbeddingRuntimeConfig } from '@/lib/embeddings'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { db } from '@/lib/db'
+import type { CogneeHttpOptions } from './cognee-http'
 
 interface CogneeSettings {
   enabled: boolean
@@ -25,7 +26,22 @@ interface CogneeSettings {
   dbUrl: string | null
   batchSize: number
   maxRetries: number
+  /**
+   * Origin of a cognee API server (v1.5.4) when one is configured, else null.
+   *
+   * Two backends exist and they are NOT interchangeable at runtime:
+   *   - 'server'  — HTTP to cognee 1.5.4 (docs/cognee-http-migration.md)
+   *   - 'inprocess' — the @cognee/cognee-ts SDK, kept as the fallback
+   *
+   * The server wins when COGNEE_SERVER_URL is set, because its write path is the
+   * one that actually works: measured 19.9s write / 4.3s recall returning the
+   * token, against the TS binding's 0.2.0 false-success and the local kuzu
+   * backend's unusable graph search.
+   */
+  serverUrl: string | null
 }
+
+export type CogneeBackend = 'server' | 'inprocess'
 
 const DISABLED_SETTINGS: CogneeSettings = {
   enabled: false,
@@ -33,6 +49,7 @@ const DISABLED_SETTINGS: CogneeSettings = {
   dbUrl: null,
   batchSize: 50,
   maxRetries: 3,
+  serverUrl: null,
 }
 
 const _settingsCache = new Map<string, { settings: CogneeSettings; at: number }>()
@@ -69,25 +86,56 @@ export function supportsNaturalLanguageSearch(provider: 'kuzu' | 'postgres' | nu
   return provider !== 'kuzu'
 }
 
-// VERSION FENCE for @cognee/cognee-ts. Do NOT bump this dependency without reading
-// scripts/cognee-upgrade-check.md — MEASURED on 0.2.0 (2026-09-15):
+/**
+ * Which backend memory calls go through, and the HTTP options when it is a server.
+ *
+ * One place decides, so `cognee-memory.ts` and `cognee-knowledge-graph.ts` cannot
+ * drift into using different backends for a write and its matching read.
+ */
+export async function getCogneeBackend(): Promise<{
+  kind: CogneeBackend
+  serverUrl: string | null
+} | null> {
+  const settings = await getCogneeSettings().catch(() => null)
+  if (!settings) return null
+  return settings.serverUrl
+    ? { kind: 'server', serverUrl: settings.serverUrl }
+    : { kind: 'inprocess', serverUrl: null }
+}
+
+/** HTTP options for the configured server, or null when there is none. */
+export async function getCogneeServerOptions(): Promise<CogneeHttpOptions | null> {
+  const backend = await getCogneeBackend()
+  if (!backend?.serverUrl) return null
+  return {
+    baseUrl: backend.serverUrl,
+    timeoutMs: COGNEE_CALL_TIMEOUT_MS,
+    apiKey: process.env.COGNEE_SERVER_API_KEY?.trim() || undefined,
+  }
+}
+
+// BACKEND CHOICE for cognee. Two paths exist and the server wins when configured.
 //
-//   - `remember()` returns {"status":"PipelineRunCompleted"} in ~25ms and writes NOTHING to
-//     the graph. Only add_pipeline runs (confirmed in pipeline_runs); no cognify. Memory is
-//     silently lost while the API reports success — worse than the `has()` bug, which at
-//     least returned a wrong boolean instead of a false success.
-//   - It ALSO marks the dataset completed, and that mark PERSISTS in cognee.db. So downgrading
-//     back to 0.1.3 does not recover: cognify then logs "dataset already completed;
-//     short-circuiting" and refuses to process new data. The only recovery is deleting the
-//     store. Measured: same store after revert gave write_ms=416 / no recall;
-//     a clean store gave write_ms=15142 / recall OK.
-//   - It fixes NEITHER problem that motivated the look: `datasets.has()` still reports a
-//     present dataset as missing, and NATURAL_LANGUAGE still fails on kuzu (~7s).
+// `COGNEE_SERVER_URL` set  -> HTTP to a cognee 1.5.4 API server (the DEFAULT path
+//                             we now ship — see docs/cognee-http-migration.md)
+// `COGNEE_SERVER_URL` unset -> the @cognee/cognee-ts SDK in-process (fallback)
 //
-// The one real gain was HYBRID_COMPLETION (measured OK, 1303ms, 4542 chars — ~2.6x richer
-// than CHUNKS), which is worthless while writes do not land. Revisit when upstream's remember
-// path demonstrably populates the graph; verify with a WRITE-then-RECALL probe, never by
-// checking that `remember()` returned status-completed.
+// Why the server is the primary path, all MEASURED:
+//   - Server 1.5.4: `remember` 19.9s then a recall 4.3s that RETURNED the token.
+//     Real work, verifiable result.
+//   - TS binding 0.2.0: `remember()` returns {"status":"PipelineRunCompleted"} in
+//     ~25ms and writes NOTHING, then marks the dataset completed — a mark that
+//     PERSISTS in cognee.db, so downgrading does not recover. Only deleting the
+//     store did. A false success is worse than the `has()` bug, which at least
+//     returned a wrong boolean instead of losing data silently.
+//   - TS binding on kuzu: NATURAL_LANGUAGE fails on every attempt (~7s plus its
+//     own LLM call) and GRAPH_COMPLETION was measured failing after 193341ms, so
+//     the graph — the reason cognee is here at all — barely worked in-process.
+//
+// Do NOT bump `@cognee/cognee-ts` without reading scripts/cognee-upgrade-check.md.
+// The fence exists to force evidence, not to forbid upgrades: if a future binding
+// demonstrably populates the graph, verify it with a WRITE-then-RECALL probe and
+// let that evidence supersede this comment.
 export async function getCogneeSettings(): Promise<CogneeSettings> {
   const orgId = getOrgContext()
   if (!orgId) return DISABLED_SETTINGS
@@ -117,6 +165,7 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
     dbUrl: process.env.COGNEE_DB_URL ?? null,
     batchSize: parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
     maxRetries: parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
+    serverUrl: process.env.COGNEE_SERVER_URL?.trim() || null,
   })
 
   let settings: CogneeSettings
@@ -130,6 +179,11 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
           dbUrl: config.cogneeDbUrl ?? process.env.COGNEE_DB_URL ?? null,
           batchSize: config.cogneeBatchSize || parseInt(process.env.COGNEE_BATCH_SIZE ?? '50', 10),
           maxRetries: config.cogneeMaxRetries || parseInt(process.env.COGNEE_MAX_RETRIES ?? '3', 10),
+          // Deliberately NOT org-settable: the server address is a deployment
+          // fact (the sidecar's hostname), not a per-tenant preference. One
+          // org pointing memory at a different server would be a cross-tenant
+          // leak of exactly the kind this module already had to fix.
+          serverUrl: process.env.COGNEE_SERVER_URL?.trim() || null,
         }
       : envFallback()
   } catch {
