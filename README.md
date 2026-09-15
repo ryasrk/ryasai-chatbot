@@ -56,6 +56,13 @@ family — with the parent doing the single merge. Every answer is a number and 
 source returns a *different* number, so a misrouted question fails visibly instead of
 looking plausible. A single database could not detect a wrong source at all.
 
+**This benchmark does NOT exercise memory — read the caveat before quoting it.** The run
+used `SIMPLE_PIPELINE=1`, which **bypasses cognee entirely**. It is therefore a measure of
+routing + SQL/REST execution, not of the memory layer, and it says nothing about
+cross-session recall. Memory is verified separately and end-to-end (see the cognee
+integrity pass above): a fact stated in one session is answered by a brand-new session with
+no history. Do not cite the 99.38% as evidence that memory works.
+
 **Read this honestly.** A single pass cannot separate a defect from sampling variance.
 Of the 5 failures here, **3 answered correctly 5 times out of 5** when re-asked, giving a
 variance-corrected **99.75% (798/800)**. The 2 that stayed wrong (`S019` answering 0,
@@ -350,7 +357,10 @@ Copy `.env.example` to `.env`:
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
 - ✅ Error handling + graceful fallbacks
 - ✅ 99.38% accuracy on the 800-question cross-source benchmark (4 databases/APIs, 0 empty
-  answers, 0 throttled requests) — see **Measured Results**; 99.75% variance-corrected
+  answers, 0 throttled requests) — see **Measured Results**; 99.75% variance-corrected.
+  **Scope:** this run used `SIMPLE_PIPELINE=1` and therefore does NOT cover the memory layer
+- ✅ Cross-session memory verified end-to-end separately (a fact from one session answered by
+  a brand-new session with no history) — see the cognee integrity pass
 - ✅ Verifiable evidence for every benchmark figure (raw answers committed, re-scorable)
 - ⏳ Load testing recommended
 - ⏳ Monitoring + alerting setup
