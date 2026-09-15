@@ -12,6 +12,30 @@ jobs:
   lint-typecheck-test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Redis is REQUIRED by this job, not optional. The unit suite has integration
+    # tests that skip themselves when Redis is unreachable (scheduler-queue,
+    # rag-fts-postgres, rag-retrieval-fusion, job-processor). Skipped tests execute
+    # no code, so measured coverage COLLAPSES -- scheduler-queue.ts went 100%
+    # (119/119) locally to 15.49% here, and six other modules drifted down with it.
+    # `bun run coverage:gate` then failed on seven floors it had never breached,
+    # because the gate compares measured coverage and the environment had quietly
+    # removed the tests that produce it. This job had no services block at all, so
+    # the gate could not pass on ANY commit, whatever the code said.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # redis.ts reads REDIS_URL; the default already points at localhost:6379, but
+      # set it explicitly so the intent is visible and a future default change
+      # cannot silently disable the integration tests again.
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
 
