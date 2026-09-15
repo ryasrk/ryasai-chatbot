@@ -11,6 +11,12 @@ upload/
 download/
 test-data/
 test-results/
-e2e/
 playwright-report/
+
+# e2e/ MUST stay in the build context. tsconfig.json includes `**/*.ts`, so
+# `next build` type-checks e2e/global-setup.ts, which imports ./mock-llm,
+# ./mock-license-validator and ./mock-midtrans. Excluding the directory made the
+# build fail with "Cannot find module './mock-midtrans'" even though the file was
+# present in git. Playwright RUN ARTIFACTS are still excluded above, which is what
+# this rule was originally for. Only 72K; the app itself never imports e2e/.
 bun-debug.log*
