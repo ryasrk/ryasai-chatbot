@@ -38,6 +38,37 @@ const DISABLED_SETTINGS: CogneeSettings = {
 const _settingsCache = new Map<string, { settings: CogneeSettings; at: number }>()
 const SETTINGS_TTL = 10000 // 10s cache
 
+/**
+ * The graph backend this deployment will actually use.
+ *
+ * `getCogneeClientWithRetry` sets exactly these two names (`kuzu` in local mode, `postgres`
+ * otherwise), and callers need to know which one BEFORE paying for a search that the backend
+ * cannot serve.
+ */
+export async function getCogneeGraphProvider(): Promise<'kuzu' | 'postgres' | null> {
+  const settings = await getCogneeSettings().catch(() => null)
+  if (!settings) return null
+  return settings.dbProvider === 'postgres' ? 'postgres' : 'kuzu'
+}
+
+/**
+ * Can this graph backend serve `NATURAL_LANGUAGE` (LLM-generated Cypher)?
+ *
+ * MEASURED: no, on kuzu. The SDK accepts the name but the search fails every time with
+ * "NATURAL_LANGUAGE search generated Cypher that this graph backend rejected on all 3
+ * attempt(s)" — and it is the ONLY strategy that fails, so the cost is paid on every turn
+ * for nothing (recorded 6039ms for the doomed attempt, plus its LLM call). It is skipped on
+ * kuzu now; `null` (settings unreadable) keeps it OPTIMISTIC, because an unknown backend must
+ * not silently lose a strategy that might work.
+ *
+ * GRAPH_COMPLETION was measured as a replacement and is WORSE: it failed after 193341ms with
+ * an embedding HTTP error, so it is not swapped in. CHUNKS_LEXICAL was measured WORKING (41ms)
+ * and is added where NATURAL_LANGUAGE is dropped.
+ */
+export function supportsNaturalLanguageSearch(provider: 'kuzu' | 'postgres' | null): boolean {
+  return provider !== 'kuzu'
+}
+
 export async function getCogneeSettings(): Promise<CogneeSettings> {
   const orgId = getOrgContext()
   if (!orgId) return DISABLED_SETTINGS

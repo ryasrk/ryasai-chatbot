@@ -15,12 +15,20 @@ const state = {
   rememberCalls: [] as any[],
   searchCalls: [] as any[],
   searchImpl: null as any,
+  // Which graph backend the client reports. Defaults to 'kuzu' because that is the local
+  // default and the case where NATURAL_LANGUAGE must be skipped.
+  graphProvider: 'kuzu' as string | null,
 }
 
 mock.module('./cognee-core', () => ({
   isCogneeEnabled: async () => state.enabled,
   getCogneeClient: async () => state.client,
   getCogneeOwnerId: () => state.owner,
+  // The graph-backend gate. Driven by `state.graphProvider` so BOTH branches are reachable
+  // in-process; the real predicate is unit-tested in cognee-core.test.ts.
+  getCogneeGraphProvider: async () => state.graphProvider,
+  supportsNaturalLanguageSearch: (p: string | null) => p !== 'kuzu',
+  withDeadline: (promise: Promise<unknown>) => promise,
   formatSearchResponse: (r: any) => {
     if (r === null || r === undefined) return ''
     if (typeof r === 'string') return r
@@ -187,8 +195,47 @@ describe('recallContext', () => {
     // GRAPH_ENTITIES / GRAPH_RELATIONSHIPS are rejected by the Rust side with an
     // "unknown SearchType" error — they must never be sent.
     for (const t of used) {
-      expect(['SUMMARIES', 'CHUNKS', 'NATURAL_LANGUAGE']).toContain(t)
+      expect(['SUMMARIES', 'CHUNKS', 'NATURAL_LANGUAGE', 'CHUNKS_LEXICAL']).toContain(t)
     }
+  })
+
+  test('on kuzu NATURAL_LANGUAGE is SKIPPED, not attempted and failed', async () => {
+    // MEASURED: it cannot succeed there ("generated Cypher that this graph backend rejected
+    // on all 3 attempt(s)"), so before the gate every turn paid the attempt — 6039ms plus its
+    // own LLM call — for a strategy with a zero success rate. CHUNKS_LEXICAL was measured
+    // WORKING on kuzu (41ms) and takes its place.
+    state.graphProvider = 'kuzu'
+    state.client = fakeClient()
+    state.searchImpl = () => 'x'
+    await recallContext({ query: 'sales' })
+    const used = state.searchCalls.map((c) => c.opts.searchType).filter(Boolean)
+    expect(used).not.toContain('NATURAL_LANGUAGE')
+    expect(used).toContain('CHUNKS_LEXICAL')
+    expect(used).toContain('SUMMARIES')
+    expect(used).toContain('CHUNKS')
+  })
+
+  test('on postgres NATURAL_LANGUAGE IS attempted (the gate is backend-specific)', async () => {
+    // The gate must not delete a strategy that a different backend may serve. On postgres the
+    // Cypher path is the backend's own language, so the attempt is kept.
+    state.graphProvider = 'postgres'
+    state.client = fakeClient()
+    state.searchImpl = () => 'x'
+    await recallContext({ query: 'sales' })
+    const used = state.searchCalls.map((c) => c.opts.searchType).filter(Boolean)
+    expect(used).toContain('NATURAL_LANGUAGE')
+    expect(used).not.toContain('CHUNKS_LEXICAL')
+  })
+
+  test('an UNREADABLE backend stays optimistic — it must not silently drop a strategy', async () => {
+    // `null` means the settings could not be read. Dropping NATURAL_LANGUAGE on an unknown
+    // backend would lose a strategy that might have worked, so the gate only skips on kuzu.
+    state.graphProvider = null
+    state.client = fakeClient()
+    state.searchImpl = () => 'x'
+    await recallContext({ query: 'sales' })
+    const used = state.searchCalls.map((c) => c.opts.searchType).filter(Boolean)
+    expect(used).toContain('NATURAL_LANGUAGE')
   })
 
   test('NATURAL_LANGUAGE failing does NOT lose SUMMARIES/CHUNKS', async () => {
@@ -198,6 +245,10 @@ describe('recallContext', () => {
     // from the LAST, which is the order the live pipeline actually hits — and it is
     // the order where a naive `for … await` without a per-iteration catch would throw
     // away the two answers already collected.
+    // Forced onto postgres so the broken strategy is actually attempted: on kuzu the gate now
+    // skips it entirely, which is the subject of the test above. This one remains valuable
+    // because a backend where it IS attempted can still reject it at runtime.
+    state.graphProvider = 'postgres'
     const tried: string[] = []
     state.client = fakeClient()
     state.searchImpl = (_q: any, opts: any) => {
@@ -215,6 +266,21 @@ describe('recallContext', () => {
     // ...and the broken one must not have triggered the unscoped last-resort search,
     // which would mean the loop treated "one strategy died" as "all strategies died".
     expect(state.searchCalls.some((c) => c.opts.datasets === undefined && !c.opts.sessionId)).toBe(false)
+  })
+
+  test('an OVERSIZED memory result is capped before it reaches a prompt', async () => {
+    // Memory was the only uncapped context-injection path: the merge is an unbounded join and
+    // the result is interpolated into up to six prompts per turn, so a large dataset could push
+    // the user's real question out of the window. Sibling context (buildSourceGuidance) was
+    // already capped at 2000, so this asserts memory now matches.
+    const { MEMORY_CONTEXT_MAX_CHARS } = await import('@/lib/constants')
+    state.client = fakeClient()
+    state.searchImpl = () => 'M'.repeat(20_000)
+    const out = await recallContext({ query: 'sales' })
+    // Truncated to the budget, plus the marker that makes the loss visible to the model.
+    expect(out.length).toBeLessThan(MEMORY_CONTEXT_MAX_CHARS + 40)
+    expect(out).toContain('[memory truncated]')
+    expect(out.slice(0, 50)).toBe('M'.repeat(50))
   })
 
   test('a THROWING session leg still leaves the graph answer intact', async () => {

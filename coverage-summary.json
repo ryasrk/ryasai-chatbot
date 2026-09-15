@@ -1,13 +1,13 @@
 {
-  "linePct": 87.24,
-  "linesHit": 21933,
-  "linesFound": 25141,
-  "reachableLinePct": 95.93,
-  "reachableLinesHit": 19004,
-  "reachableLinesFound": 19810,
-  "fnPct": 93.83,
-  "fnsHit": 2009,
-  "fnsFound": 2141,
+  "linePct": 87.19,
+  "linesHit": 21972,
+  "linesFound": 25201,
+  "reachableLinePct": 95.94,
+  "reachableLinesHit": 19041,
+  "reachableLinesFound": 19847,
+  "fnPct": 93.72,
+  "fnsHit": 2013,
+  "fnsFound": 2148,
   "filesMeasured": 199,
   "failedTestFiles": [],
   "files": [
@@ -48,6 +48,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/rag-fts.ts",
+      "hit": 109,
+      "found": 157,
+      "pct": 69.42675159235668,
+      "fHit": 15,
+      "fFound": 15,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/tool-router.ts",
       "hit": 255,
       "found": 367,
@@ -63,24 +72,6 @@
       "pct": 70.3125,
       "fHit": 15,
       "fFound": 15,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/rag-fts.ts",
-      "hit": 109,
-      "found": 154,
-      "pct": 70.77922077922078,
-      "fHit": 15,
-      "fFound": 15,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/cognee-memory.ts",
-      "hit": 139,
-      "found": 195,
-      "pct": 71.28205128205128,
-      "fHit": 14,
-      "fFound": 14,
       "fPct": 100
     },
     {
@@ -111,13 +102,22 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/web-fetch.ts",
-      "hit": 161,
-      "found": 219,
-      "pct": 73.51598173515981,
-      "fHit": 11,
-      "fFound": 11,
+      "file": "src/lib/cognee-memory.ts",
+      "hit": 146,
+      "found": 200,
+      "pct": 73,
+      "fHit": 15,
+      "fFound": 15,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/web-fetch.ts",
+      "hit": 179,
+      "found": 245,
+      "pct": 73.06122448979592,
+      "fHit": 13,
+      "fFound": 14,
+      "fPct": 92.85714285714286
     },
     {
       "file": "src/lib/ai.ts",
@@ -148,9 +148,9 @@
     },
     {
       "file": "src/lib/rag-retrieval.ts",
-      "hit": 342,
-      "found": 453,
-      "pct": 75.49668874172185,
+      "hit": 345,
+      "found": 464,
+      "pct": 74.35344827586206,
       "fHit": 52,
       "fFound": 52,
       "fPct": 100
@@ -166,9 +166,9 @@
     },
     {
       "file": "src/lib/cognee-knowledge-graph.ts",
-      "hit": 272,
-      "found": 356,
-      "pct": 76.40449438202246,
+      "hit": 276,
+      "found": 364,
+      "pct": 75.82417582417582,
       "fHit": 35,
       "fFound": 35,
       "fPct": 100
@@ -220,12 +220,12 @@
     },
     {
       "file": "src/lib/cognee-core.ts",
-      "hit": 261,
-      "found": 329,
-      "pct": 79.33130699088146,
-      "fHit": 26,
-      "fFound": 30,
-      "fPct": 86.66666666666667
+      "hit": 267,
+      "found": 335,
+      "pct": 79.70149253731343,
+      "fHit": 27,
+      "fFound": 33,
+      "fPct": 81.81818181818183
     },
     {
       "file": "src/lib/connectors.ts",
@@ -850,8 +850,8 @@
     },
     {
       "file": "src/lib/constants.ts",
-      "hit": 34,
-      "found": 34,
+      "hit": 35,
+      "found": 35,
       "pct": 100,
       "fHit": 1,
       "fFound": 1,

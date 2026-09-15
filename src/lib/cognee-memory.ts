@@ -4,7 +4,8 @@
  */
 import type { ChatTurnMemory } from './cognee-types'
 import { datasetFor } from './cognee-types'
-import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline } from './cognee-core'
+import { MEMORY_CONTEXT_MAX_CHARS } from '@/lib/constants'
+import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline, getCogneeGraphProvider, supportsNaturalLanguageSearch } from './cognee-core'
 
 export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (!(await isCogneeEnabled())) return
@@ -105,13 +106,28 @@ export async function recallContext(args: {
     ? await recallFromSession(c, args.query, args.sessionId)
     : ''
 
-  const merged = [sessionResult, graphResult].filter(Boolean).join('\n')
+  const merged = capMemory([sessionResult, graphResult].filter(Boolean).join('\n'))
 
   if (args.sessionId && merged) {
     setCachedRecall(args.sessionId, args.query, merged)
   }
 
   return merged
+}
+
+/**
+ * Bound the memory block before it reaches a prompt.
+ *
+ * Both recall strategies are merged with an unbounded `join`, and the result is interpolated
+ * into up to six prompts per turn — so a large dataset could push the user's actual question
+ * out of the window. Sibling context sources are already capped (`buildSourceGuidance`, 2000),
+ * which made memory the only unbounded injection path. Truncation keeps the HEAD: results are
+ * appended in relevance order, so the most relevant memory survives and the marker makes the
+ * loss visible to the model rather than silently dropping context.
+ */
+function capMemory(text: string): string {
+  if (text.length <= MEMORY_CONTEXT_MAX_CHARS) return text
+  return `${text.slice(0, MEMORY_CONTEXT_MAX_CHARS)}\n[memory truncated]`
 }
 
 async function recallFromGraph(c: any, query: string): Promise<string> {
@@ -155,19 +171,20 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
   // them with "unknown SearchType" validation errors (they came from a Python
   // cognee version we never shipped). SUMMARIES→CHUNKS is the graph-grounded
   // pair; NATURAL_LANGUAGE (graph→Cypher) covers entity/relationship questions.
+  // MEASURED: NATURAL_LANGUAGE failed on EVERY attempt in the live pipeline — the SDK accepts
+  // the name but emits Cypher the local kuzu backend rejects ("invalid input: NATURAL_LANGUAGE
+  // search generated Cypher that this graph backend rejected on all 3 attempt(s)", 6039ms plus
+  // its own LLM call). It is a valid SearchType, so it is not deleted; it is GATED on the graph
+  // backend, which the client already knows. On kuzu it is replaced by CHUNKS_LEXICAL, measured
+  // WORKING there at 41ms. GRAPH_COMPLETION was measured as an alternative and rejected: it
+  // failed after 193341ms (embedding HTTP error), far worse than the strategy it would replace.
+  const provider = await getCogneeGraphProvider()
   const strategies = [
     { searchType: 'SUMMARIES', topK: 5 },
     { searchType: 'CHUNKS', topK: 5 },
-    // MEASURED: NATURAL_LANGUAGE failed 2 of 2 attempts in the live pipeline. The SDK
-    // accepts the name, but it emits Cypher that the LOCAL kuzu backend rejects on every
-    // retry ("invalid input: NATURAL_LANGUAGE search generated Cypher that this graph
-    // backend rejected"). It is kept rather than deleted because it is a valid SearchType
-    // (invariants #2 reads the SDK union, and both other backends — postgres/neptune —
-    // MAY support it), and because the loop isolates each strategy: the failure costs one
-    // wasted LLM call and a warning, never a lost answer. SUMMARIES and CHUNKS are the
-    // pair that actually returns data here. If a future deployment only ever runs kuzu,
-    // dropping this entry is the right cleanup — with a measurement, not a guess.
-    { searchType: 'NATURAL_LANGUAGE', topK: 10 },
+    ...(supportsNaturalLanguageSearch(provider)
+      ? [{ searchType: 'NATURAL_LANGUAGE', topK: 10 }]
+      : [{ searchType: 'CHUNKS_LEXICAL', topK: 10 }]),
   ]
   const results: string[] = []
   for (const strategy of strategies) {

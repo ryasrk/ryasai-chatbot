@@ -32,10 +32,18 @@ export function getRagCacheStats(): { hits: number; misses: number; hitRate: num
   return { hits: _cacheHits, misses: _cacheMisses, hitRate: total === 0 ? 0 : _cacheHits / total }
 }
 
-function ragCacheKey(query: string, topK: number): string {
+function ragCacheKey(query: string, topK: number): string | null {
   // ponytail: org-scoped cache key — prevents cross-tenant data disclosure
   // (org A reading org B's cached retrieved chunks for the same query string).
-  const orgId = getOrgContext() ?? 'global'
+  //
+  // The no-context case gets an UNUSABLE key, never a shared one. This used to fall back to
+  // the literal 'global', which is exactly the leak the org segment exists to prevent: every
+  // context-less caller shared one cache entry. That is reachable — MEASURED, `getOrgContext()`
+  // returns `undefined` (not an org) on the far side of `bypassOrg()`, so a bypassed path would
+  // have read and WRITTEN the shared 'global' entry. Returning null makes the caller skip the
+  // cache entirely, so a missing context costs a retrieval, not a cross-tenant disclosure.
+  const orgId = getOrgContext()
+  if (!orgId) return null
   return `rag:${orgId}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
 }
 
@@ -53,12 +61,15 @@ export async function retrieveRelevantChunks(args: {
     return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
   }
 
+  // null when there is no org context: skip the cache rather than share an entry.
   const cacheKey = ragCacheKey(args.query, args.topK)
-  const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
-  if (cached) {
-    _cacheHits += 1
-    log.debug('RAG cache hit', { query: args.query.slice(0, 50), topK: args.topK })
-    return cached
+  if (cacheKey) {
+    const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
+    if (cached) {
+      _cacheHits += 1
+      log.debug('RAG cache hit', { query: args.query.slice(0, 50), topK: args.topK })
+      return cached
+    }
   }
 
   // Sub-query decomposition: complex multi-part questions → parallel retrieval + merge.
@@ -71,7 +82,7 @@ export async function retrieveRelevantChunks(args: {
       )
       const merged = mergeRetrievedResults(subResults)
       _cacheMisses += 1
-      await cacheSet(cacheKey, merged, Math.floor(RAG_CACHE_TTL_MS / 1000))
+      if (cacheKey) await cacheSet(cacheKey, merged, Math.floor(RAG_CACHE_TTL_MS / 1000))
       return merged
     }
   }
@@ -125,7 +136,7 @@ export async function retrieveRelevantChunks(args: {
 
   _cacheMisses += 1
   log.debug('RAG cache miss', { query: args.query.slice(0, 50), topK: args.topK, candidatesScanned: retrievalResult.candidatesScanned })
-  await cacheSet(cacheKey, result, Math.floor(RAG_CACHE_TTL_MS / 1000))
+  if (cacheKey) await cacheSet(cacheKey, result, Math.floor(RAG_CACHE_TTL_MS / 1000))
 
   return result
 }

@@ -1006,14 +1006,12 @@ describe('web-fetch — content handling, cap and timeout', () => {
       expect(r.ok).toBe(true)
       expect(r.content).toBe(body)
       expect(r.title).toBeUndefined()
-      // MEASURED DEFECT, pinned as-is: `title` is a PRESENT key holding
-      // `undefined`. The return type declares `title?: string`, which promises
-      // omission, and code that tests `'title' in result` or
-      // `Object.keys(result).includes('title')` gets the wrong answer.
-      // INVERT WHEN FIXED: return `title ? { ok: true, content, title } : { ok: true, content }`
-      // (or delete the key before returning) so the key is absent here; then
-      // assert `expect(Object.keys(r)).toEqual(['ok', 'content'])`.
-      expect(Object.keys(r)).toEqual(['ok', 'content', 'title'])
+      // FIXED (this replaced a "MEASURED DEFECT, pinned as-is" block): `title` used to be a
+      // PRESENT key holding `undefined`, while the type declares `title?: string`. An optional
+      // key that is always present is not optional, so `'title' in result` returned true for a
+      // JSON body with no title at all. The key is now OMITTED when there is none.
+      expect(Object.keys(r)).toEqual(['ok', 'content'])
+      expect('title' in r).toBe(false)
     } finally {
       globalThis.fetch = original
     }
@@ -1082,9 +1080,9 @@ describe('web-fetch — content handling, cap and timeout', () => {
       const r = await fetchUrlForPlanner('https://example.com/empty')
       expect(r.ok).toBe(true)
       expect(r.content).toBe('')
-      // Present-but-undefined `title`, exactly as in the non-HTML case above.
+      // The key is OMITTED rather than present-but-undefined, as in the non-HTML case above.
       expect(r.title).toBeUndefined()
-      expect(Object.keys(r)).toEqual(['ok', 'content', 'title'])
+      expect(Object.keys(r)).toEqual(['ok', 'content'])
     } finally {
       globalThis.fetch = original
     }
@@ -1124,18 +1122,16 @@ describe('web-fetch — content handling, cap and timeout', () => {
     }
   })
 
-  it('MEASURED: the cap is applied AFTER the whole body is downloaded — the read is NOT aborted', async () => {
-    // The task asked whether the cap aborts the read or truncates after
-    // download. It truncates after download: `await res.text()` drains the
-    // entire stream, then `.slice(0, 10_000)` runs on the decoded string.
+  it('FIXED: the cap ABORTS the read mid-stream instead of draining the whole body', async () => {
+    // This test used to assert the opposite -- that all 40 chunks were pulled -- and its own
+    // comment said a bounded reader would turn it RED "which is the signal to invert it".
+    // That is exactly what happened: `await res.text()` drained the entire response before
+    // `.slice(0, 10_000)` clamped the RETURN VALUE, so the cap bounded what we handed back
+    // and not what we buffered. A large page was fully transferred into memory against a URL
+    // the caller chose (planner `web_fetch`, `POST /api/fetch-url`).
     //
-    // This test asserts the MEASURED behaviour directly, via the number of
-    // stream chunks the transport actually pulled. 40 x 1_000 chars = 40_000
-    // bytes > the 10_000 cap, and ALL 40 chunks are pulled. If the cap is ever
-    // made to abort mid-stream (fix: read the body through a bounded reader,
-    // e.g. `Content-Length` short-circuit plus a `ReadableStream` reader that
-    // cancels after 10_000 bytes), the chunk count drops and this test turns
-    // RED — which is the signal to invert it.
+    // The body is now read through `readBounded`, which stops at the budget and CANCELS. So
+    // the assertions are inverted: fewer chunks are pulled, and the stream is cancelled.
     let chunksPulled = 0
     let cancelled = false
     const TOTAL_CHUNKS = 40
@@ -1155,23 +1151,24 @@ describe('web-fetch — content handling, cap and timeout', () => {
       const r = await fetchUrlForPlanner('https://example.com/huge')
       expect(r.ok).toBe(true)
       expect(r.content).toHaveLength(10_000)
-      // Measured: the transport was drained in full. The cap is a return-value
-      // clamp, not a download fence, so a 1 GB page still lands in memory
-      // (bounded only by the runtime's own buffering).
-      expect(chunksPulled).toBe(TOTAL_CHUNKS)
-      expect(cancelled).toBe(false)
+      // The read stopped at the cap: 10 chunks of 1_000 bytes are enough to exceed it, so the
+      // remaining 30 are never pulled. The old behaviour pulled all 40.
+      expect(chunksPulled).toBeLessThan(TOTAL_CHUNKS)
+      // ...and the transfer was explicitly cancelled rather than left to drain.
+      expect(cancelled).toBe(true)
     } finally {
       globalThis.fetch = original
     }
   })
 
   it('the source REALLY slices after reading the whole body (static proof of the same fact)', async () => {
-    // The chunk-count assertion above depends on the runtime's stream
-    // semantics. This one is independent of them: the module reads `text`
-    // first and slices it afterwards, in that textual order. A refactor to a
-    // bounded reader would have to move the slice before the read.
+    // The chunk-count assertion above depends on the runtime's stream semantics. This one is
+    // static, so it survives a runtime change. It used to prove the OPPOSITE -- that the
+    // module read the whole body and sliced afterwards -- by asserting `text = await
+    // res.text()` appeared before the slice. That read is gone, so the assertion is inverted:
+    // the read is now bounded and the slice remains as a final clamp.
     const src = readFileSync(join(import.meta.dir, 'web-fetch.ts'), 'utf8')
-    const readAt = src.indexOf('text = await res.text()')
+    const readAt = src.indexOf('text = await readBounded(res)')
     const sliceAt = src.indexOf('text.trim().slice(0, MAX_CONTENT_LENGTH)')
     expect(readAt).toBeGreaterThan(-1)
     expect(sliceAt).toBeGreaterThan(-1)
@@ -1185,8 +1182,8 @@ describe('web-fetch — content handling, cap and timeout', () => {
       const r = await fetchUrlForPlanner('https://example.com/blank-title')
       // `|| undefined` on the match: a whitespace-only title must not become ''.
       expect(r.title).toBeUndefined()
-      // ...but the key is still PRESENT (see the non-HTML test above).
-      expect(Object.keys(r)).toEqual(['ok', 'content', 'title'])
+      // ...and the key is OMITTED, consistent with the non-HTML case above.
+      expect(Object.keys(r)).toEqual(['ok', 'content'])
     } finally {
       globalThis.fetch = original
     }
@@ -1605,6 +1602,27 @@ describe('web-fetch — the unreachable trailing return (declared non-control, e
       const MAX_CONTENT_LENGTH = 10000;
       const MAX_REDIRECT_HOPS = globalThis.__scratchMaxHops ?? shippedHops;
       function stripHtml(html) { return html.replace(/<script[\\s\\S]*?<\\/script>/gi, '').replace(/<style[\\s\\S]*?<\\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\\s+/g, ' ').trim() }
+      // readBounded lives OUTSIDE fetchUrlForPlanner, so the harness must supply it too;
+      // without it the extracted copy throws ReferenceError and this positive control stops
+      // proving that the extracted body agrees with the real export.
+      async function readBounded(res, limit = MAX_CONTENT_LENGTH) {
+        if (!res.body) return await res.text()
+        const decoder = new TextDecoder()
+        const reader = res.body.getReader()
+        let out = ''
+        let bytes = 0
+        try {
+          while (bytes < limit) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (!value) continue
+            bytes += value.byteLength
+            out += decoder.decode(value, { stream: true })
+          }
+        } finally { await reader.cancel().catch(() => {}) }
+        out += decoder.decode()
+        return out
+      }
       function isBlockedHost() { return false }
       async function isBlockedHostAsync() { return false }
       const fetch = (...a) => globalThis.fetch(...a);
@@ -1720,14 +1738,36 @@ describe('web-fetch — the unreachable trailing return (declared non-control, e
     }
   })
 
-  it.skip('the text body is read through a download-bounded reader (not implemented)', () => {
-    // NEEDS: a change in web-fetch.ts to read the response incrementally (a
-    // ReadableStream reader that cancels after MAX_CONTENT_LENGTH bytes, or a
-    // Content-Length pre-check). Today `await res.text()` drains the whole
-    // body and `.slice()` clamps afterwards, which the chunk-count test above
-    // measures. Skipped rather than faked: there is no in-process way to make
-    // the browser/Bun Response API stop buffering an unbounded body on the
-    // module's behalf.
+  it('the text body IS read through a bounded reader now (was it.skip: not implemented)', async () => {
+    // This was skipped as unimplemented, with a note that there was no in-process way to
+    // observe the buffering. `readBounded` now stops at the budget and cancels the stream,
+    // which IS observable from a stream we control -- the same technique the chunk-count
+    // test above uses. Kept as a separate case because it asserts the SKIPPED test's claim
+    // directly: the reader stops pulling instead of draining everything.
+    let chunksPulled = 0
+    let cancelled = false
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => {
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (chunksPulled >= 100) { controller.close(); return }
+          chunksPulled += 1
+          controller.enqueue(new TextEncoder().encode('y'.repeat(500)))
+        },
+        cancel() { cancelled = true },
+      })
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/plain' } })
+    }) as unknown as typeof fetch
+    try {
+      const r = await fetchUrlForPlanner('https://example.com/bounded')
+      expect(r.ok).toBe(true)
+      expect(r.content.length).toBeGreaterThan(0)
+      // 100 chunks x 500 bytes = 50_000 bytes available; the 10_000 cap needs only 20.
+      expect(chunksPulled).toBeLessThan(100)
+      expect(cancelled).toBe(true)
+    } finally {
+      globalThis.fetch = original
+    }
   })
 
   it.skip('the "Too many redirects" trailing return is reachable with MAX_REDIRECT_HOPS = 5 (unreachable by construction)', () => {

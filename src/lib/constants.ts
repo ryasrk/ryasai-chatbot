@@ -20,6 +20,18 @@ export const RAG_MAX_PER_DOCUMENT = 3
 export const RAG_CACHE_TTL_MS = 60_000
 export const RAG_MAX_CHUNKS_PER_UPLOAD = 500
 
+/**
+ * Character budget for the memory block injected into prompts.
+ *
+ * Memory was the ONLY uncapped context-injection path: `recallContext` merges up to three
+ * strategies (topK 5/5/10) with an unbounded `join('\n')`, and that string is interpolated
+ * into as many as six prompts per turn (LLM router, SQL gen, REST gen, answer, chat, and
+ * their streaming variants). A rich dataset could therefore crowd out the actual question.
+ * Matches `buildSourceGuidance()`'s 2000-char default so the two context sources are
+ * budgeted alike.
+ */
+export const MEMORY_CONTEXT_MAX_CHARS = 2000
+
 // Rate limiting
 export const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMIT_DEFAULT = 60

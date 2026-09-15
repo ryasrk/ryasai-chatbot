@@ -471,6 +471,11 @@ describe('retrieveRelevantChunks', () => {
   })
 
   test('cache hit on second identical query', async () => {
+    // Entered IN THE BODY, not a hook: `enterWith()` inside a test hook does not reach the test
+    // body on Bun 1.4.2 (the codebase's invariants.test.ts documents this). The cache is
+    // context-gated, so without this the key is null and nothing is cached at all.
+    const { enterWithOrg } = await import('@/lib/prisma-tenant')
+    enterWithOrg('org-rag-test')
     mockSearchFtsChunkIds.mockImplementation(async () => ['chunk-1'])
     mockDocChunkFindMany.mockImplementation(async () => [
       {
@@ -496,6 +501,10 @@ describe('retrieveRelevantChunks', () => {
   })
 
   test('different topK values produce separate cache entries', async () => {
+    // Context so the cache path is genuinely exercised (a keyless call would report a miss
+    // for the wrong reason, making these assertions vacuous).
+    const { enterWithOrg: enter } = await import('@/lib/prisma-tenant')
+    enter('org-rag-test')
     mockSearchFtsChunkIds.mockImplementation(async () => ['chunk-1'])
     mockDocChunkFindMany.mockImplementation(async () => [
       {
@@ -523,6 +532,10 @@ describe('retrieveRelevantChunks', () => {
 
 describe('invalidateRagCache', () => {
   test('clears cache so next call is a miss', async () => {
+    // Context so the cache path is genuinely exercised (a keyless call would report a miss
+    // for the wrong reason, making these assertions vacuous).
+    const { enterWithOrg: enter } = await import('@/lib/prisma-tenant')
+    enter('org-rag-test')
     mockSearchFtsChunkIds.mockImplementation(async () => ['chunk-1'])
     mockDocChunkFindMany.mockImplementation(async () => [
       {

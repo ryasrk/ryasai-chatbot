@@ -16,11 +16,17 @@ const core = {
   updateCalls: [] as Array<{ id: string; status: string; error?: string }>,
   resets: 0,
   resetClientCacheThrows: false,
+  // Graph backend reported by the client. Defaults to kuzu (the local default) because that
+  // is the case where NATURAL_LANGUAGE must be skipped.
+  graphProvider: 'kuzu' as string | null,
 }
 
 mock.module('@/lib/cognee-core', () => ({
   isCogneeEnabled: async () => core.enabled,
   getCogneeClient: async () => core.client,
+  // Backend gate: both branches must be reachable in-process.
+  getCogneeGraphProvider: async () => core.graphProvider,
+  supportsNaturalLanguageSearch: (p: string | null) => p !== 'kuzu',
   getCogneeSettings: async () => core.settings,
   cogneeBatchSize: () => core.settings.cognifyBatchSize,
   cognifyMaxRetries: () => core.settings.cognifyMaxRetries,
@@ -411,6 +417,9 @@ describe('recall — search strategies', () => {
     // per-strategy try/catch isolates it. Without that isolation one broken strategy
     // (and it IS broken on kuzu) would throw away two good answers per question, so
     // this pins the property the comment above the loop claims.
+    // Forced onto postgres: on kuzu the gate now SKIPS the strategy entirely, so a backend
+    // where the attempt still happens is the only way to exercise the isolation this pins.
+    core.graphProvider = 'postgres'
     const tried: string[] = []
     core.formatted = 'good answer'
     core.client = client({

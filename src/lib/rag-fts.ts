@@ -127,13 +127,16 @@ export async function searchFtsChunkIds(args: {
     if (!query) return []
     try {
       await ensureRagFtsTable()
+      // `rank` ties are common (equal ts_rank for repeated terms), and SQL gives no defined
+      // order among them, so the same query could return ties in a different order run to run
+      // and the fused result would drift. The id tie-break makes the order total and stable.
       const rows = await db.$queryRawUnsafe<Array<{ chunkId: string; rank: number }>>(
         `
           SELECT id AS "chunkId", -ts_rank(tsv, plainto_tsquery('simple', $1)) AS rank
           FROM "DocumentChunk"
           WHERE tsv @@ plainto_tsquery('simple', $1)
             AND "organizationId" = $2
-          ORDER BY rank ASC
+          ORDER BY rank ASC, id ASC
           LIMIT $3
         `,
         query,
@@ -157,7 +160,7 @@ export async function searchFtsChunkIds(args: {
         FROM DocumentChunkFts f
         JOIN DocumentChunk c ON c.id = f.chunkId
         WHERE DocumentChunkFts MATCH ? AND c."organizationId" = ?
-        ORDER BY rank ASC
+        ORDER BY rank ASC, f.chunkId ASC
         LIMIT ?
       `,
       match,

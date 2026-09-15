@@ -60,6 +60,7 @@ import {
   formatSearchResponse,
   extractSearchItems,
   updateDocumentCognifyStatus,
+  supportsNaturalLanguageSearch,
 } from '@/lib/cognee-core'
 import { enterWithOrg, bypassOrg } from '@/lib/prisma-tenant'
 
@@ -406,4 +407,20 @@ describe('cognee-core — pure helpers', () => {
     expect(cogneeBatchSize({ batchSize: 12 } as any)).toBe(12)
     expect(cognifyMaxRetries({ maxRetries: 4 } as any)).toBe(4)
   })
+
+describe('supportsNaturalLanguageSearch — the graph-backend gate', () => {
+  test('kuzu cannot serve it (MEASURED: rejected on every attempt)', () => {
+    expect(supportsNaturalLanguageSearch('kuzu')).toBe(false)
+  })
+
+  test('postgres is allowed to try it', () => {
+    expect(supportsNaturalLanguageSearch('postgres')).toBe(true)
+  })
+
+  test('an UNKNOWN backend stays optimistic rather than dropping a strategy', () => {
+    // null means the settings could not be read. Skipping here would silently lose a strategy
+    // that might have worked, so only a positively-identified kuzu turns it off.
+    expect(supportsNaturalLanguageSearch(null)).toBe(true)
+  })
+})
 })

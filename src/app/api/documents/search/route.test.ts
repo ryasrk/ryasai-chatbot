@@ -1165,6 +1165,11 @@ describe('PINNED (b): the RAG cache is served after a re-index and NOTHING this 
   test('a cached retrieval result is returned on the second identical search without re-running', async () => {
     const { retrieveRelevantChunks, getRagCacheStats } = await import('@/lib/rag-retrieval')
 
+    // Enter the REAL org context: caching is context-gated, so without it both calls would
+    // correctly skip the cache and this would assert nothing.
+    const { enterWithOrg } = await import('@/lib/prisma-tenant')
+    enterWithOrg('org-1')
+
     const first = await retrieveRelevantChunks({ query: 'annual leave', topK: 4 })
     const afterFirst = getRagCacheStats().misses
 
@@ -1179,6 +1184,10 @@ describe('PINNED (b): the RAG cache is served after a re-index and NOTHING this 
 
   test('the cache key is org-scoped AND topK-scoped, but has NO corpus version', async () => {
     const { retrieveRelevantChunks } = await import('@/lib/rag-retrieval')
+
+    // Same reason as the test above: the org segment must exist for anything to be cached.
+    const { enterWithOrg } = await import('@/lib/prisma-tenant')
+    enterWithOrg('org-1')
 
     await retrieveRelevantChunks({ query: 'annual leave', topK: 4 })
     // A different topK is a different key (so a re-index that changes nothing else is

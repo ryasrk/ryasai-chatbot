@@ -15,6 +15,8 @@ import {
   extractSearchItems,
   updateDocumentCognifyStatus,
   resetClientCache,
+  getCogneeGraphProvider,
+  supportsNaturalLanguageSearch,
 } from './cognee-core'
 import { db } from '@/lib/db'
 import { logSwallowed } from '@/lib/logger'
@@ -271,10 +273,16 @@ export async function recallKnowledgeGraph(args: {
   // them with "unknown SearchType" validation errors. The 15 valid names are in
   // @cognee/cognee-ts/lib/types.d.ts (SearchTypeString).
   const topK = args.topK ?? 5
+  // Same backend gate as chat recall: NATURAL_LANGUAGE cannot run on kuzu (measured), so it is
+  // replaced by CHUNKS_LEXICAL there (measured working). This leg used to pay the doomed
+  // attempt too, and — unlike the chat leg — swallowed the failure in a bare `catch {}`.
+  const provider = await getCogneeGraphProvider()
   const strategies = [
     { searchType: 'SUMMARIES', topK },
     { searchType: 'CHUNKS', topK },
-    { searchType: 'NATURAL_LANGUAGE', topK: topK * 2 },
+    ...(supportsNaturalLanguageSearch(provider)
+      ? [{ searchType: 'NATURAL_LANGUAGE', topK: topK * 2 }]
+      : [{ searchType: 'CHUNKS_LEXICAL', topK: topK * 2 }]),
   ]
 
   const results: string[] = []
@@ -288,8 +296,10 @@ export async function recallKnowledgeGraph(args: {
       })
       const formatted = formatSearchResponse(result)
       if (formatted) results.push(formatted)
-    } catch {
-      // try next strategy
+    } catch (e) {
+      // Logged, not swallowed: a bare catch here hid a strategy that failed on EVERY call, so
+      // no log ever showed it. Each strategy is independent, so this still falls through.
+      console.warn('[cognee] knowledge-graph recall strategy failed:', e instanceof Error ? e.message : String(e))
     }
   }
 

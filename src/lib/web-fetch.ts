@@ -33,6 +33,41 @@ const FETCH_TIMEOUT_MS = 15_000
 // redirect vector entirely. Revisit if Bun gains undici-compatible dispatchers.
 const MAX_REDIRECT_HOPS = 5
 
+/**
+ * Read at most `MAX_CONTENT_LENGTH` bytes from the body, then CANCEL the rest.
+ *
+ * `await res.text()` drained the entire response before the truncation at the return
+ * statement, so the cap bounded only the value we handed back -- a large page was fully
+ * buffered in memory first (and fully transferred). Reachable from the planner's
+ * `web_fetch` tool and `POST /api/fetch-url`, i.e. against URLs the caller chooses.
+ *
+ * We read chunk by chunk and cancel the stream once the budget is spent, so the transfer
+ * actually stops instead of being drained into memory.
+ */
+async function readBounded(res: Response, limit = MAX_CONTENT_LENGTH): Promise<string> {
+  if (!res.body) return await res.text()
+
+  const decoder = new TextDecoder()
+  const reader = res.body.getReader()
+  let out = ''
+  let bytes = 0
+  try {
+    while (bytes < limit) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      bytes += value.byteLength
+      // `stream: true` keeps multi-byte characters intact across chunk boundaries.
+      out += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    // Stop the transfer rather than draining a body we will not use.
+    await reader.cancel().catch(() => {})
+  }
+  out += decoder.decode()
+  return out
+}
+
 export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; content: string; title?: string; error?: string }> {
   let current: URL
   try {
@@ -103,7 +138,7 @@ export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; co
     const contentType = res.headers.get('content-type') ?? ''
     let text: string
     try {
-      text = await res.text()
+      text = await readBounded(res)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return { ok: false, content: '', error: `Fetch error: ${msg}` }
@@ -119,7 +154,11 @@ export async function fetchUrlForPlanner(url: string): Promise<{ ok: boolean; co
     }
 
     const content = text.trim().slice(0, MAX_CONTENT_LENGTH)
-    return { ok: true, content, title }
+    // Omit `title` entirely when there is none. It used to be emitted unconditionally, so a
+    // non-HTML response returned `{ title: undefined }` while the type advertises
+    // `title?: string` -- an optional key that is always present is not optional, and callers
+    // doing `'title' in result` got the wrong answer.
+    return title ? { ok: true, content, title } : { ok: true, content }
   }
 
   // Unreachable: every loop iteration either continues (bounded by hop cap),

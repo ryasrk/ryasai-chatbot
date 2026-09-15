@@ -309,7 +309,11 @@ beforeEach(() => {
   ftsCalls.length = 0
   kgCalls.length = 0
   vectorStoreCalls.length = 0
-  orgContextHolder.value = undefined
+  // A default org context, because caching is now CONTEXT-GATED: a request without one
+  // skips the cache entirely (see ragCacheKey). Tests that are about the no-context case
+  // set this to undefined explicitly, and they now assert the cache is SKIPPED rather than
+  // shared under a global key.
+  orgContextHolder.value = 'org-test'
   embedConfigValue = { id: 'e1' }
   embedResult = []
   originalEmbedTexts = null
@@ -416,15 +420,25 @@ describe('retrieveRelevantChunks — the tenant-scoped cache', () => {
     expect(orgBKey).toContain('org-B')
   })
 
-  test('no org context falls back to a global key rather than crashing', async () => {
+  test('no org context SKIPS the cache instead of sharing a global entry', async () => {
+    // Previously this wrote to the literal `rag:global:...` key, which every context-less
+    // caller shared. That is reachable — `getOrgContext()` returns undefined on the far side
+    // of `bypassOrg()` — so a bypassed path could read AND write an entry another org's
+    // request had populated. No context now means no cache: the request pays a retrieval
+    // instead of risking a cross-tenant disclosure.
     orgContextHolder.value = undefined
+    const before = cacheSets.length
     await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
-    expect(cacheSets[0].key).toContain('global')
+    expect(cacheSets.length).toBe(before)
+    // ...and it still returns real results rather than crashing.
+    expect(ftsCalls.length).toBeGreaterThan(0)
   })
 
   test('a cache HIT returns the stored value and skips every retriever', async () => {
     const stored = { chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 9, graphContext: '' }
-    cacheStore.set('rag:global:5:invoices', stored)
+    // Read under the org the caller actually has context for.
+    orgContextHolder.value = 'org-A'
+    cacheStore.set('rag:org-A:5:invoices', stored)
     const r = await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
     expect(r.candidatesScanned).toBe(9)
     expect(ftsCalls).toHaveLength(0)
@@ -1799,14 +1813,16 @@ describe('tenant isolation — the org reaches every retriever AND the cache key
     expect(aKey).not.toBe(bKey)
   })
 
-  test('with NO org context the cache falls back to a SHARED global key (declared, not hidden)', async () => {
-    // This is a deliberate fallback, not a bug: worker/cron paths have no org. It
-    // is safe only because those paths hold one org for the whole process. It IS a
-    // cross-tenant hazard if a request-scoped caller ever loses its context, so it
-    // is pinned explicitly rather than left implicit.
+  test('with NO org context nothing is cached — no SHARED global entry can exist', async () => {
+    // The old behaviour pinned a shared `rag:global:` key here. It was declared safe only
+    // because worker paths hold one org per process, but a request-scoped caller that lost
+    // its context would then share an entry with every other org. Nothing is cached without
+    // a context now, so this asserts the absence of the hazard rather than documenting it.
     const { retrieveRelevantChunks: retrieve } = await import('./rag-retrieval')
     orgContextHolder.value = undefined
+    const before = cacheSets.length
     await retrieve({ query: 'invoices', topK: 5 })
-    expect(cacheSets.at(-1)!.key).toContain('rag:global:')
+    expect(cacheSets.length).toBe(before)
+    expect(cacheSets.every((s) => !s.key.includes('global'))).toBe(true)
   })
 })
