@@ -77,6 +77,10 @@ server.log
 
 # local data + secrets
 .cognee/
+# Quarantined stores are renamed to `.cognee.contaminated-<reason>` when a bad build
+# (or a bad cognee version) has written into them — see scripts/cognee-upgrade-check.md.
+# They are 10s of MB and must never be committed.
+.cognee.*/
 cognee.db
 .anon_id
 .opencode/

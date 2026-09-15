@@ -85,6 +85,25 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
   // It used to be ANDed with the DB flag, so an admin who enabled cognee in
   // Settings on a server whose env var was merely *unset* got a silent no-op
   // plus a UI telling them to ask an administrator — who was themselves.
+  // VERSION FENCE for @cognee/cognee-ts. Do NOT bump this dependency without reading
+  // scripts/cognee-upgrade-check.md — MEASURED on 0.2.0 (2026-09-15):
+  //
+  //   - `remember()` returns {"status":"PipelineRunCompleted"} in ~25ms and writes NOTHING to
+  //     the graph. Only add_pipeline runs (confirmed in pipeline_runs); no cognify. Memory is
+  //     silently lost while the API reports success — worse than the `has()` bug, which at
+  //     least returned a wrong boolean instead of a false success.
+  //   - It ALSO marks the dataset completed, and that mark PERSISTS in cognee.db. So downgrading
+  //     back to 0.1.3 does not recover: cognify then logs "dataset already completed;
+  //     short-circuiting" and refuses to process new data. The only recovery is deleting the
+  //     store. Measured: same store after revert gave write_ms=416 / no recall;
+  //     a clean store gave write_ms=15142 / recall OK.
+  //   - It fixes NEITHER problem that motivated the look: `datasets.has()` still reports a
+  //     present dataset as missing, and NATURAL_LANGUAGE still fails on kuzu (~7s).
+  //
+  // The one real gain was HYBRID_COMPLETION (measured OK, 1303ms, 4542 chars — ~2.6x richer
+  // than CHUNKS), which is worthless while writes do not land. Revisit when upstream's remember
+  // path demonstrably populates the graph; verify with a WRITE-then-RECALL probe, never by
+  // checking that `remember()` returned status-completed.
   const envKilled = process.env.COGNEE_ENABLED === 'false'
 
   // No AppConfig row = nothing configured yet (pre-setup). Nobody has opted in,
