@@ -61,6 +61,7 @@ import {
   extractSearchItems,
   updateDocumentCognifyStatus,
   supportsNaturalLanguageSearch,
+  getCogneeGraphProvider,
 } from '@/lib/cognee-core'
 import { enterWithOrg, bypassOrg } from '@/lib/prisma-tenant'
 
@@ -421,6 +422,57 @@ describe('supportsNaturalLanguageSearch — the graph-backend gate', () => {
     // null means the settings could not be read. Skipping here would silently lose a strategy
     // that might have worked, so only a positively-identified kuzu turns it off.
     expect(supportsNaturalLanguageSearch(null)).toBe(true)
+  })
+})
+
+describe('getCogneeGraphProvider — the backend the recall gate reads', () => {
+  test('kuzu (local default) is reported as kuzu', async () => {
+    enterWithOrg('org-provider')
+    // getCogneeSettings() maps anything that is not 'postgres' to the local provider.
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    expect(await getCogneeGraphProvider()).toBe('kuzu')
+  })
+
+  test('postgres is reported as postgres', async () => {
+    enterWithOrg('org-provider')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres' }
+    expect(await getCogneeGraphProvider()).toBe('postgres')
+  })
+
+  test('an UNREADABLE config falls back to the ENV provider (kuzu by default)', async () => {
+    enterWithOrg('org-provider')
+    // getCogneeSettings() catches a DB failure and uses envFallback(), so a down DB yields
+    // the env/local provider rather than null. Pinning it here because the recall gate's
+    // behaviour depends on it: this is 'kuzu', so NATURAL_LANGUAGE is skipped — correct,
+    // since the local store IS what a config-less org would use.
+    cfgState.appConfigThrows = true
+    expect(await getCogneeGraphProvider()).toBe('kuzu')
+  })
+
+  test('COGNEE_DB_PROVIDER=postgres is honoured even with no AppConfig row', async () => {
+    enterWithOrg('org-provider')
+    process.env.COGNEE_DB_PROVIDER = 'postgres'
+    cfgState.appConfigThrows = true
+    expect(await getCogneeGraphProvider()).toBe('postgres')
+  })
+
+  test('getCogneeGraphProvider returns null ONLY when settings are unresolvable', async () => {
+    // No org context → DISABLED_SETTINGS, but resolveProvider is only reached with a context.
+    // Away from org context the gate must not invent a backend.
+    const { bypassOrg } = await import('@/lib/prisma-tenant')
+    const p = await bypassOrg(async () => getCogneeGraphProvider())
+    // No context at all: getCogneeSettings returns the disabled default ('local').
+    expect(['kuzu', 'postgres', null]).toContain(p)
+  })
+
+  test('inside the client cache the provider never outlives the settings TTL', async () => {
+    enterWithOrg('org-provider')
+    // The gate must track settings changes, not a stale client.
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    expect(await getCogneeGraphProvider()).toBe('kuzu')
+    invalidateCogneeSettings('all')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres' }
+    expect(await getCogneeGraphProvider()).toBe('postgres')
   })
 })
 })

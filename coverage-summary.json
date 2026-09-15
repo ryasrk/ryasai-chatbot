@@ -5,9 +5,9 @@
   "reachableLinePct": 95.94,
   "reachableLinesHit": 19041,
   "reachableLinesFound": 19847,
-  "fnPct": 93.72,
-  "fnsHit": 2013,
-  "fnsFound": 2148,
+  "fnPct": 93.76,
+  "fnsHit": 2015,
+  "fnsFound": 2149,
   "filesMeasured": 199,
   "failedTestFiles": [],
   "files": [
@@ -223,9 +223,9 @@
       "hit": 267,
       "found": 335,
       "pct": 79.70149253731343,
-      "fHit": 27,
-      "fFound": 33,
-      "fPct": 81.81818181818183
+      "fHit": 29,
+      "fFound": 34,
+      "fPct": 85.29411764705883
     },
     {
       "file": "src/lib/connectors.ts",
