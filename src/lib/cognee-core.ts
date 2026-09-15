@@ -13,6 +13,7 @@
  * No org context => cognee is a no-op. Fail closed: a background worker that
  * forgets to enterWithOrg gets nothing rather than everyone's data.
  */
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { getEmbeddingRuntimeConfig } from '@/lib/embeddings'
 import { getOrgContext } from '@/lib/prisma-tenant'
@@ -143,7 +144,99 @@ function storeDirsFor(orgId: string): { dataDir: string; systemDir: string } {
   return { dataDir: `${dataRoot}/${safe}`, systemDir: `${systemRoot}/${safe}` }
 }
 
+/**
+ * How long to wait for cognee's SDK before giving up on a single call.
+ *
+ * WHY this exists: there was NO bound anywhere in this module (verified — the only
+ * `timeout` in the whole cognee layer was a `setTimeout` sleep). A native call that
+ * never settles hangs the caller forever, and the call sites do not defend themselves:
+ * `recallContext` is wrapped in `.catch(() => '')`, which catches a THROW and not a
+ * HANG, while `tool-router.ts` `await`s `rememberChatTurn` *after* computing the answer,
+ * so one stuck SDK call stalls the user's response with nothing to show for it.
+ * A deadline is the only thing that turns a hang back into the documented
+ * "memory is unavailable" state the rest of the system already handles.
+ *
+ * 240s, not 20s — MEASURED, and the first value was wrong in a way that silently
+ * destroyed memory writes. `remember()` runs cognee's cognify pipeline, which makes
+ * its own LLM calls; one ordinary fact took **192s** end to end. A 20s deadline
+ * therefore aborted real writes mid-flight, and the aborted pipeline kept running
+ * server-side, so the NEXT write failed with "cognify for dataset ... is already
+ * running" — a timeout that produced a permanent-looking breakage. The deadline must
+ * sit above the slowest legitimate call, or it converts slow work into corruption.
+ */
+const COGNEE_CALL_TIMEOUT_MS = Number(process.env.COGNEE_CALL_TIMEOUT_MS ?? 240000)
+
+export function withDeadline<T>(promise: Promise<T>, op: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`cognee ${op} exceeded ${COGNEE_CALL_TIMEOUT_MS}ms`)),
+      COGNEE_CALL_TIMEOUT_MS,
+    )
+  })
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
+/**
+ * Does this init error look like a damaged on-disk store rather than a config problem?
+ *
+ * INCIDENT, measured end to end: on Bun 1.3.14, importing the native Neon binding while an
+ * AsyncLocalStorage context was active SEGFAULTED the process. The crash left a torn
+ * `graph.wal` in `.cognee/system/<org>/`, and from then on EVERY init failed with
+ * `Graph database error: initialization failed: Failed to create database: std::bad_alloc`
+ * — permanently, on every Bun version, for that org only. Removing the torn WAL made the
+ * identical init succeed. So a single crash used to disable memory for that tenant forever,
+ * and the only diagnostic was an allocation error that points at nothing on disk.
+ *
+ * The match is deliberately narrow: these two strings are kuzu/lancedb store-init failures.
+ * A config error (missing key, unreachable embedding endpoint) must NOT be treated as store
+ * damage — quarantining on a config problem would delete a healthy graph on every bad deploy.
+ */
+function isStoreCorruption(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message ?? err)
+  return (
+    /Graph database error: initialization failed/i.test(msg) ||
+    /Failed to create database/i.test(msg)
+  )
+}
+
+/**
+ * Move an org's local cognee store aside so a fresh one can be built, and return where it went.
+ *
+ * Quarantine, never delete: the bytes may be the tenant's only copy of their graph, and a
+ * false positive here would be unrecoverable. The caller rebuilds, and an operator can
+ * inspect or restore the directory afterwards.
+ */
+function quarantineStore(orgId: string, dirs: { dataDir: string; systemDir: string }): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const quarantineDir = `${dirs.systemDir}.corrupt-${stamp}`
+  mkdirSync(quarantineDir, { recursive: true })
+  for (const dir of [dirs.systemDir, dirs.dataDir]) {
+    if (!existsSync(dir)) continue
+    const dest = `${quarantineDir}/${dir.split('/').pop()}`
+    try {
+      renameSync(dir, dest)
+    } catch {
+      // A cross-device rename cannot work; fall back to a copy-free removal only if the
+      // rename truly failed, because leaving the bad store in place would loop the retry.
+      try {
+        rmSync(dir, { recursive: true, force: true })
+      } catch {}
+    }
+  }
+  console.warn(`[cognee] quarantined a damaged store for org ${orgId} -> ${quarantineDir}`)
+  return quarantineDir
+}
+
 export async function getCogneeClient(): Promise<any> {
+  return getCogneeClientWithRetry(false)
+}
+
+/**
+ * @param retriedAfterQuarantine internal — set only by the self-heal path so the rebuild
+ *   gets exactly one attempt. Callers use `getCogneeClient()`.
+ */
+async function getCogneeClientWithRetry(retriedAfterQuarantine: boolean): Promise<any> {
   // ponytail: graceful degradation — returns null when cognee SDK init fails, callers fall back to no-op
   const orgId = getOrgContext()
   if (!orgId) return null
@@ -151,7 +244,11 @@ export async function getCogneeClient(): Promise<any> {
   const entry = entryFor(orgId)
   if (entry.client) return entry.client
   if (entry.initFailedAt && Date.now() - entry.initFailedAt < INIT_RETRY_MS) return null
-  if (entry.warming) return null
+  // A rebuild is a fresh attempt that deliberately runs while `warming` is already true
+  // (the first attempt set it). Without this exemption the self-heal recursed straight
+  // into this guard and returned null -- the retry looked present in code but never ran,
+  // which is how the recovery tests caught a real defect in the recovery itself.
+  if (entry.warming && !retriedAfterQuarantine) return null
 
   try {
     entry.warming = true
@@ -196,12 +293,35 @@ export async function getCogneeClient(): Promise<any> {
     }
 
     const c = new Cognee(settingsObj)
-    await c.warm()
-    entry.ownerId = await c.ownerId()
+    // Bounded: a native warm() that never returns must not hang the caller forever.
+    await withDeadline(c.warm(), 'warm')
+    entry.ownerId = await withDeadline(c.ownerId(), 'ownerId')
     entry.client = c
     entry.initFailedAt = 0
     return c
   } catch (err) {
+    // SELF-HEAL, local mode only. A torn store (see isStoreCorruption) fails every init
+    // forever, so retrying alone never recovers; quarantining the store and rebuilding
+    // does. Deliberately ONE retry: if the fresh store fails too, the problem is not the
+    // store and looping would destroy data on each attempt.
+    // `usePostgres` lives inside the try block and is not visible here. Recomputing the
+    // provider from settings is the honest equivalent: store quarantine only applies to the
+    // LOCAL file-backed store, and a postgres deployment has no `.cognee` directory to move.
+    const localStore = (await getCogneeSettings().catch(() => null))?.dbProvider !== 'postgres'
+    // `!retriedAfterQuarantine` is the ONE-retry guard. It was accidentally dropped during
+    // an edit and the recovery test caught it as an infinite quarantine loop: the rebuild's
+    // own failure carries the same corruption signature, so without this the retry recurses
+    // and quarantines a fresh store on every pass.
+    if (localStore && isStoreCorruption(err) && !retriedAfterQuarantine) {
+      try {
+        quarantineStore(orgId, storeDirsFor(orgId))
+        // retriedAfterQuarantine=true bypasses the warming guard; `warming` stays true so a
+        // concurrent caller still sees an in-flight init rather than starting a second one.
+        return await getCogneeClientWithRetry(true)
+      } catch (rebuildErr) {
+        console.warn('[cognee] rebuild after quarantine also failed:', rebuildErr)
+      }
+    }
     console.warn('[cognee] init failed:', err)
     entry.initFailedAt = Date.now()
     return null

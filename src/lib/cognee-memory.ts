@@ -4,7 +4,7 @@
  */
 import type { ChatTurnMemory } from './cognee-types'
 import { datasetFor } from './cognee-types'
-import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse } from './cognee-core'
+import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline } from './cognee-core'
 
 export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (!(await isCogneeEnabled())) return
@@ -21,10 +21,9 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
       ts: Date.now(),
     })
 
-    await c.remember(
-      [{ type: 'text', text }],
-      datasetFor(),
-    )
+    // Bounded: this runs AFTER the answer is computed, so an SDK that never settles would
+    // hold the user's response open with nothing left to do. See withDeadline's comment.
+    await withDeadline(c.remember([{ type: 'text', text }], datasetFor()), 'remember')
   } catch (err) {
     console.warn('[cognee] remember failed:', err)
   }
@@ -120,12 +119,35 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
   // whose cognify jobs are still queued) has no dataset yet, and every search
   // against a missing dataset throws a runtime error that used to spam the log
   // twice per chat turn. has() is a cheap metadata lookup.
+  // INCIDENT (measured on @cognee/cognee-ts 0.1.3): `datasets.has()` is NOT trustworthy.
+  // A store that provably contained the fact — `datasets.list()` showed
+  // `{name: 'org:<id>'}` and a raw `search()` returned the stored text — still answered
+  // has('org:<id>') === false. Because this guard treated `false` as authoritative and
+  // returned '' before searching, recall was silently and PERMANENTLY dead for that org:
+  // the memory was written, stored, and retrievable, and the chatbot never saw it. That is
+  // the worst possible failure for a layer we are making the core of memory — no error, no
+  // log, just a bot that forgot everything.
+  //
+  // The guard's original purpose was only to suppress "dataset not found" log noise for a
+  // genuinely fresh org, and a wasted search already degrades gracefully (each strategy is
+  // isolated and the catch below returns ''). So `false` is now ADVISORY: it logs a warning
+  // and every strategy still runs. Suppressing the graph strategies but keeping only the
+  // session leg was the first attempt and was still wrong — the stored fact was reachable
+  // through SUMMARIES/CHUNKS (measured: 113 and 187 chars), so the graph legs ARE the ones
+  // that answer these questions. Only a search can tell you whether a dataset is usable.
   const ds = datasetFor()
+  let datasetReportedMissing = false
   try {
     const exists = await c.datasets?.has?.(ds)
-    if (exists === false) return ''
+    if (exists === false) datasetReportedMissing = true
   } catch {
     // datasets.has unavailable in older SDK — fall through and let search decide
+  }
+  if (datasetReportedMissing) {
+    console.warn(
+      '[cognee] datasets.has() reported the org dataset as missing, but recall will still try ' +
+        '(has() is unreliable in cognee-ts 0.1.3 — see the note above). dataset=' + ds,
+    )
   }
 
   // ponytail: only SearchType values the cognee-ts SDK actually serializes.
@@ -136,17 +158,29 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
   const strategies = [
     { searchType: 'SUMMARIES', topK: 5 },
     { searchType: 'CHUNKS', topK: 5 },
+    // MEASURED: NATURAL_LANGUAGE failed 2 of 2 attempts in the live pipeline. The SDK
+    // accepts the name, but it emits Cypher that the LOCAL kuzu backend rejects on every
+    // retry ("invalid input: NATURAL_LANGUAGE search generated Cypher that this graph
+    // backend rejected"). It is kept rather than deleted because it is a valid SearchType
+    // (invariants #2 reads the SDK union, and both other backends — postgres/neptune —
+    // MAY support it), and because the loop isolates each strategy: the failure costs one
+    // wasted LLM call and a warning, never a lost answer. SUMMARIES and CHUNKS are the
+    // pair that actually returns data here. If a future deployment only ever runs kuzu,
+    // dropping this entry is the right cleanup — with a measurement, not a guess.
     { searchType: 'NATURAL_LANGUAGE', topK: 10 },
   ]
   const results: string[] = []
   for (const strategy of strategies) {
     try {
-      const result = await c.search(query, {
-        datasets: [datasetFor()],
-        topK: strategy.topK,
-        searchType: strategy.searchType,
-        userId: getCogneeOwnerId(),
-      })
+      const result = await withDeadline(
+        c.search(query, {
+          datasets: [datasetFor()],
+          topK: strategy.topK,
+          searchType: strategy.searchType,
+          userId: getCogneeOwnerId(),
+        }),
+        'recall-search',
+      )
       const formatted = formatSearchResponse(result)
       if (formatted) results.push(formatted)
     } catch (e) {
@@ -156,7 +190,7 @@ async function recallFromGraph(c: any, query: string): Promise<string> {
   if (results.length > 0) return dedupeJoin(results)
   // Last resort: no dataset filter
   try {
-    const result = await c.search(query, { topK: 5, userId: getCogneeOwnerId() })
+    const result = await withDeadline(c.search(query, { topK: 5, userId: getCogneeOwnerId() }), 'recall-fallback')
     return formatSearchResponse(result)
   } catch (e) {
     console.warn('[cognee] graph recall failed:', e instanceof Error ? e.message : String(e))
@@ -181,11 +215,14 @@ function dedupeJoin(results: string[]): string {
 async function recallFromSession(c: any, query: string, sessionId: string): Promise<string> {
   // ponytail: graceful degradation — falls back to empty string when cognee session search fails
   try {
-    const result = await c.search(query, {
-      sessionId,
-      topK: 3,
-      userId: getCogneeOwnerId(),
-    })
+    const result = await withDeadline(
+      c.search(query, {
+        sessionId,
+        topK: 3,
+        userId: getCogneeOwnerId(),
+      }),
+      'recall-session',
+    )
     return formatSearchResponse(result)
   } catch (e) {
     // Session search without any session history is expected pre-first-cognify;

@@ -122,13 +122,29 @@ describe('recallContext', () => {
     expect(out).toBe('graph answer')
   })
 
-  test('the dataset-missing guard short-circuits BEFORE any search', async () => {
+  test('datasets.has() === false does NOT disable recall (cognee-ts 0.1.3 lies)', async () => {
+    // INCIDENT this pins, measured against a real store: `datasets.has('org:<id>')`
+    // returned false for a dataset that `datasets.list()` listed AND whose fact a raw
+    // search returned. The old guard trusted that false and returned '' before
+    // searching, so memory was written, stored, retrievable — and never surfaced. A
+    // silent permanent amnesia, with no error and no log, is the worst possible failure
+    // for the layer the product treats as core memory.
     state.client = fakeClient({ datasets: { has: async () => false } })
-    const out = await recallContext({ query: 'sales' })
-    expect(out).toBe('')
-    // A fresh org has no dataset; searching anyway threw and logged twice per
-    // turn. has() is the cheap metadata check that avoids that noise.
-    expect(state.searchCalls).toHaveLength(0)
+    state.searchImpl = () => 'stored fact'
+    expect(await recallContext({ query: 'sales' })).toBe('stored fact')
+    // It must genuinely SEARCH rather than return early on the flag.
+    expect(state.searchCalls.length).toBeGreaterThan(0)
+  })
+
+  test('a false has() is ADVISORY: it must not stop the session leg either', async () => {
+    // The session leg is the one that answers "what did I tell you earlier?" across
+    // sessions, so a lying has() must not be allowed to suppress it. Both legs are
+    // asserted here because the original bug silenced BOTH at once.
+    state.client = fakeClient({ datasets: { has: async () => false } })
+    state.searchImpl = () => 'from session'
+    const out = await recallContext({ query: 'sales', sessionId: 'sess-1' })
+    expect(out).toContain('from session')
+    expect(state.searchCalls.length).toBeGreaterThan(0)
   })
 
   test('an UNKNOWN dataset state still tries the search', async () => {
@@ -173,6 +189,56 @@ describe('recallContext', () => {
     for (const t of used) {
       expect(['SUMMARIES', 'CHUNKS', 'NATURAL_LANGUAGE']).toContain(t)
     }
+  })
+
+  test('NATURAL_LANGUAGE failing does NOT lose SUMMARIES/CHUNKS', async () => {
+    // The strategy is known-broken on the local kuzu backend (it emits Cypher the
+    // backend rejects on every retry) and is kept ONLY because the loop isolates each
+    // strategy. The sibling test above throws from the FIRST strategy; this throws
+    // from the LAST, which is the order the live pipeline actually hits — and it is
+    // the order where a naive `for … await` without a per-iteration catch would throw
+    // away the two answers already collected.
+    const tried: string[] = []
+    state.client = fakeClient()
+    state.searchImpl = (_q: any, opts: any) => {
+      tried.push(opts.searchType)
+      if (opts.searchType === 'NATURAL_LANGUAGE') {
+        throw new Error('invalid input: NATURAL_LANGUAGE search generated Cypher that this graph backend rejected')
+      }
+      return opts.searchType === 'SUMMARIES' ? 'from summaries' : 'from chunks'
+    }
+    const out = await recallContext({ query: 'sales' })
+    // Both surviving strategies must reach the caller.
+    expect(out).toContain('from summaries')
+    expect(out).toContain('from chunks')
+    expect(tried).toContain('NATURAL_LANGUAGE')
+    // ...and the broken one must not have triggered the unscoped last-resort search,
+    // which would mean the loop treated "one strategy died" as "all strategies died".
+    expect(state.searchCalls.some((c) => c.opts.datasets === undefined && !c.opts.sessionId)).toBe(false)
+  })
+
+  test('a THROWING session leg still leaves the graph answer intact', async () => {
+    // recallContext merges [sessionResult, graphResult] and filters falsy entries. A
+    // session leg that throws must contribute '' (not abort), so a user whose session
+    // has no history yet still gets their graph memory.
+    state.client = fakeClient()
+    state.searchImpl = (_q: any, opts: any) => {
+      if (opts.sessionId) throw new Error('no session history')
+      return opts.searchType === 'SUMMARIES' ? 'graph fact' : null
+    }
+    const out = await recallContext({ query: 'sales', sessionId: 's1' })
+    expect(out).toBe('graph fact')
+  })
+
+  test('a false has() is advisory on the session leg too — memory is still searched', async () => {
+    // The measured incident silenced BOTH legs at once. This pins the session leg
+    // specifically when a sessionId IS present, because that is the shape the chat
+    // route uses and the one the original guard killed first.
+    state.client = fakeClient({ datasets: { has: async () => false } })
+    state.searchImpl = (_q: any, opts: any) => (opts.sessionId ? 'earlier turn' : null)
+    const out = await recallContext({ query: 'sales', sessionId: 'sess-false' })
+    expect(out).toBe('earlier turn')
+    expect(state.searchCalls.length).toBeGreaterThan(0)
   })
 
   test('the search is scoped to the org dataset and owner', async () => {

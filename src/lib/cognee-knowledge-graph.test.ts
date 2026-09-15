@@ -342,16 +342,42 @@ describe('recall — search strategies', () => {
     expect(await recallKnowledgeGraphStructured({ query: 'q' })).toEqual([])
   })
 
-  test('a missing dataset short-circuits BEFORE searching', async () => {
+  test("a dataset reporting 'missing' still SEARCHES — has() is advisory, not authoritative", async () => {
+    // This test used to assert searched === 0, and that assertion WAS the bug.
+    // MEASURED on cognee-ts 0.1.3: has() returned false for a dataset that
+    // `datasets.list()` listed and that a raw search answered, so trusting it turned
+    // document recall off for a healthy org — documents indexed, embeddings written,
+    // and the chatbot acting like it had never ingested them.
     let searched = 0
     core.client = client({
       datasets: { has: async () => false },
       search: async () => { searched++; return {} },
     })
-    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('')
-    // Searching a dataset that does not exist is a guaranteed runtime error;
-    // the guard exists to avoid it.
-    expect(searched).toBe(0)
+    // The harness's search double yields a formatted result, so recall now RETURNS it:
+    // that is the whole point — the fact was reachable all along and the guard was
+    // hiding it. Asserting '' here (as the old test did) would re-encode the bug.
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('FORMATTED')
+    expect(searched).toBeGreaterThan(0)
+  })
+
+  test("the STRUCTURED path also treats a 'missing' dataset as advisory", async () => {
+    // The other warnUnreliableHas() call site. The sibling test above only drives
+    // recallKnowledgeGraph(), so a regression that reverted the STRUCTURED guard to
+    // `return []` would leave this path silently dead while the string path stayed
+    // green — exactly the asymmetry that made the original incident hard to see.
+    // RAG consumes the structured output, so silencing it hides documents from the
+    // answer prompt without any error.
+    let searched = 0
+    core.client = client({
+      datasets: { has: async () => false },
+      search: async () => { searched++; return {} },
+    })
+    core.items = [{ text: 'from the graph', score: 0.4 }]
+    const res = await recallKnowledgeGraphStructured({ query: 'q' })
+    // The indexed entity must come back: has() lied, the search answers.
+    expect(res.length).toBeGreaterThan(0)
+    expect(res[0].text).toBe('from the graph')
+    expect(searched).toBeGreaterThan(0)
   })
 
   test('a client without datasets.has still searches (guard is best-effort)', async () => {
@@ -362,6 +388,62 @@ describe('recall — search strategies', () => {
     })
     await recallKnowledgeGraph({ query: 'q' })
     expect(searched).toBeGreaterThan(0)
+  })
+
+  test('a datasets.has that THROWS does not abort the search (older SDK)', async () => {
+    // `c.datasets?.has?.(...)` is optional-chained, and an older client may have the
+    // method but not support the call. The try/catch around it must fall THROUGH to
+    // the strategies, not propagate — a guard that can switch recall off by throwing
+    // is the same failure as one that returns false.
+    let searched = 0
+    core.client = client({
+      datasets: { has: async () => { throw new Error('has() unsupported') } },
+      search: async () => { searched++; return {} },
+    })
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('FORMATTED')
+    expect(await recallKnowledgeGraphStructured({ query: 'q' })).not.toBeUndefined()
+    expect(searched).toBeGreaterThan(0)
+  })
+
+  test('NATURAL_LANGUAGE failing does not lose the SUMMARIES/CHUNKS results', async () => {
+    // MEASURED: NATURAL_LANGUAGE failed 2/2 in the live pipeline — the local kuzu
+    // backend rejects the Cypher it emits. The strategy is kept precisely because the
+    // per-strategy try/catch isolates it. Without that isolation one broken strategy
+    // (and it IS broken on kuzu) would throw away two good answers per question, so
+    // this pins the property the comment above the loop claims.
+    const tried: string[] = []
+    core.formatted = 'good answer'
+    core.client = client({
+      search: async (_q: string, o: any) => {
+        tried.push(o.searchType)
+        if (o.searchType === 'NATURAL_LANGUAGE') {
+          throw new Error('NATURAL_LANGUAGE search generated Cypher that this graph backend rejected')
+        }
+        return {}
+      },
+    })
+    // The answer survives even though the LAST strategy throws.
+    expect(await recallKnowledgeGraph({ query: 'q' })).toBe('good answer')
+    expect(tried).toContain('NATURAL_LANGUAGE')
+    expect(core.items).toEqual([])
+  })
+
+  test('an error thrown by ONE structured strategy keeps the others’ items', async () => {
+    // Same isolation on the structured path: RAG gets the SUMMARIES/CHUNKS entities
+    // plus the NATURAL_LANGUAGE entity/relationship text; a rejected Cypher call must
+    // cost only its own contribution.
+    let call = 0
+    core.items = [{ text: 'entity from a good strategy', score: 0.8 }]
+    core.client = client({
+      search: async () => {
+        call++
+        if (call === 2) throw new Error('CHUNKS rejected')
+        return {}
+      },
+    })
+    const res = await recallKnowledgeGraphStructured({ query: 'q' })
+    expect(res.length).toBeGreaterThan(0)
+    expect(res[0].text).toBe('entity from a good strategy')
   })
 
   test('duplicate results are collapsed', async () => {

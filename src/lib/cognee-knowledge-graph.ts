@@ -226,6 +226,22 @@ export async function autoCognifyAll(): Promise<{ processed: number; failed: num
  * Recall knowledge graph — graph-grounded retrieval for RAG outer ring.
  * Returns entity summaries + relationship context for multi-hop reasoning.
  */
+/**
+ * A `false` from `datasets.has()` is NOT proof the dataset is absent.
+ *
+ * MEASURED on @cognee/cognee-ts 0.1.3: `has('org:<id>')` returned false for a dataset
+ * that `datasets.list()` listed and whose stored fact a raw `search()` returned. Chat
+ * memory and document recall both used to `return ''` on that false, so a healthy org's
+ * memory and knowledge graph were silently unreachable — nothing threw, nothing logged,
+ * the bot simply claimed it had never been told. Both call sites now only warn.
+ */
+function warnUnreliableHas(dataset: string): void {
+  console.warn(
+    '[cognee] datasets.has() reported a dataset as missing, but the search will still run ' +
+      '(has() is unreliable in cognee-ts 0.1.3). dataset=' + dataset,
+  )
+}
+
 export async function recallKnowledgeGraph(args: {
   query: string
   topK?: number
@@ -237,10 +253,15 @@ export async function recallKnowledgeGraph(args: {
   // ponytail: guard against "dataset not found" — see recallFromGraph. The KB
   // dataset only exists after the first document cognify succeeds; searching
   // before that is a guaranteed runtime error per strategy.
+  // SAME UNRELIABLE has() AS CHAT MEMORY — see the long note in cognee-memory.ts.
+  // MEASURED on cognee-ts 0.1.3: has() returned false for a dataset that
+  // `datasets.list()` listed and that a raw search answered. Trusting it here
+  // disabled knowledge-graph recall for a healthy org, i.e. documents were indexed
+  // and the chatbot acted like it had never seen them. Advisory, never blocking.
   const kb = kbDatasetFor()
   try {
     const exists = await c.datasets?.has?.(kb)
-    if (exists === false) return ''
+    if (exists === false) warnUnreliableHas(kb)
   } catch {
     // datasets.has unavailable — fall through
   }
@@ -299,9 +320,11 @@ export async function recallKnowledgeGraphStructured(args: {
   if (!c) return []
 
   // ponytail: guard against "dataset not found" — see recallKnowledgeGraph.
+  // Advisory only, for the measured reason documented there: a lying has() must not
+  // be able to switch document recall off.
   try {
     const exists = await c.datasets?.has?.(kbDatasetFor())
-    if (exists === false) return []
+    if (exists === false) warnUnreliableHas(kbDatasetFor())
   } catch {
     // datasets.has unavailable — fall through
   }
