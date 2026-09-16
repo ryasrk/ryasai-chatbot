@@ -20,7 +20,7 @@ mock.module('@/lib/db', () => ({
 import { chatOnce, chatStream, chatOnceResponses, runMultiAgentLoop, agentChatOnce, agentChat, agentChatStream, getChatConfig, getAgentConfig, getLastLlmUsage, withUsageTracking } from './llm-client'
 import { maxTokensForPurpose } from './constants'
 import type { LlmRuntimeConfig } from './llm-config'
-import { LlmProviderError, readCompletionBody } from './llm-client-utils'
+import { LlmProviderError, readCompletionBody, toOpenAiMessages } from './llm-client-utils'
 import type { LlmToolDef } from './llm-client-types'
 
 const originalFetch = global.fetch
@@ -1556,3 +1556,135 @@ describe('readCompletionBody tolerates a provider that streams anyway', () => {
 
 })
 
+
+describe('toOpenAiMessages — the outgoing tool_call wire shape', () => {
+  // INCIDENT (2026-09): a ReAct loop completed round 1 (the model requests a
+  // tool) and then threw on EVERY round 2 — the moment the assistant's
+  // tool_calls had to go back on the wire. Our internal LlmToolCall is
+  // `{ id, name, arguments }`; the OpenAI spec requires
+  // `{ id, type: "function", function: { name, arguments } }`. MEASURED against
+  // 9router: the flat shape made the gateway answer `text/event-stream` with a
+  // single `data: [DONE]` frame instead of JSON, so readCompletionBody found no
+  // content chunk and rethrew `SyntaxError: Unexpected identifier "data"`.
+  // Adding type/function flipped the SAME request back to application/json.
+  // No unit test caught this because every one of them mocks the LLM.
+
+  test('an assistant tool_call is re-shaped to the OpenAI wire format', () => {
+    const out = toOpenAiMessages([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', name: 'web_search', arguments: '{"query":"x"}' }],
+      },
+    ])
+    expect(out[0].tool_calls).toEqual([
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'web_search', arguments: '{"query":"x"}' },
+      },
+    ])
+  })
+
+  test('every tool_call carries type=function (the field whose absence broke round 2)', () => {
+    const out = toOpenAiMessages([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'a', name: 'one', arguments: '{}' },
+          { id: 'b', name: 'two', arguments: '{}' },
+        ],
+      },
+    ])
+    const calls = out[0].tool_calls as Array<{ type?: string; function?: unknown }>
+    expect(calls).toHaveLength(2)
+    for (const c of calls) {
+      expect(c.type).toBe('function')
+      expect(c.function).toBeDefined()
+    }
+  })
+
+  test('messages WITHOUT tool_calls pass through untouched', () => {
+    const input = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'hi' },
+      { role: 'tool', tool_call_id: 'call_1', name: 'web_search', content: 'observed' },
+    ]
+    const out = toOpenAiMessages(input as never)
+    expect(out).toEqual(input)
+    // The tool-result message keeps its flat tool_call_id — that IS the OpenAI
+    // shape for role:"tool", and re-shaping it would break the binding.
+    expect(out[2].tool_call_id).toBe('call_1')
+  })
+
+  test('an empty tool_calls array is left alone rather than given a bogus entry', () => {
+    const out = toOpenAiMessages([{ role: 'assistant', content: 'text', tool_calls: [] }])
+    expect(out[0].tool_calls).toEqual([])
+  })
+})
+
+describe('agent-purpose token ceiling', () => {
+  // The ReAct orchestrator and the JSON planner both pass purpose 'agent'. It
+  // fell through to the 1024 structured-step default, which is too small for a
+  // turn that must reason AND emit tool calls.
+  test('agent and planner no longer fall back to the 1024 default', () => {
+    expect(maxTokensForPurpose('agent')).toBeGreaterThan(1024)
+    expect(maxTokensForPurpose('planner')).toBeGreaterThan(1024)
+  })
+
+  test('an UNKNOWN purpose still falls back to the documented 1024 default', () => {
+    // The fallback itself must stay — it bounds a provider that would otherwise
+    // run unbounded on a reasoning model.
+    expect(maxTokensForPurpose('not-a-real-purpose')).toBe(1024)
+  })
+})
+
+describe('chatOnce puts the tool_call wire shape on the REQUEST (wiring, not just the helper)', () => {
+  // The helper test above passes even when `chatOnce` forgets to call it, so a
+  // revert of the CALL SITE would slip through. This one captures the real
+  // outgoing body, which is the only thing that proves the fix is wired.
+  test('a round-2 request serializes tool_calls with type=function', async () => {
+    const cfg = {
+      provider: 'OPENAI_COMPATIBLE',
+      baseUrl: 'https://gw.test/v1',
+      apiKey: 'k',
+      model: 'm',
+    } as unknown as LlmRuntimeConfig
+
+    let sent: Record<string, unknown> | null = null
+    global.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body))
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'done' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+
+    await chatOnce(
+      cfg,
+      [
+        { role: 'user', content: 'q' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'c1', name: 'web_search', arguments: '{"query":"x"}' }],
+        },
+        { role: 'tool', tool_call_id: 'c1', name: 'web_search', content: 'obs' },
+      ],
+      0,
+      'agent',
+      [{ type: 'function', function: { name: 'web_search', description: 'd', parameters: { type: 'object' } } }] as never,
+    )
+
+    const messages = (sent as unknown as { messages: Array<Record<string, unknown>> }).messages
+    const assistant = messages.find((m) => m.role === 'assistant')!
+    const calls = assistant.tool_calls as Array<Record<string, unknown>>
+    expect(calls).toHaveLength(1)
+    expect(calls[0].type).toBe('function')
+    expect(calls[0].function).toEqual({ name: 'web_search', arguments: '{"query":"x"}' })
+  })
+})

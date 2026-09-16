@@ -168,6 +168,28 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
     })
 
     expect(result.iterations).toBe(3)
-    expect(result.answer).toContain('reached the round limit')
+    // The fallback must REPORT what the tools returned, not discard it. A bare
+    // "reached the round limit" apology throws away work the user paid tokens
+    // for — the same defect class as the empty-evidence disclaimer this repo
+    // already fixed once.
+    expect(result.answer).toContain('what the tools returned')
+    expect(result.toolRuns.length).toBeGreaterThan(0)
+  })
+
+  test('round limit with ZERO successful tools says so plainly, without inventing content', async () => {
+    // Every tool call targets a name that does not exist, so all runs fail.
+    llmResponses = Array.from({ length: 4 }, (_, i) => [
+      { id: `c${i}`, name: 'no_such_tool', arguments: '{}' },
+    ])
+
+    const result = await runAgentOrchestrator({
+      question: 'Impossible',
+      userId: 'u1',
+      maxRounds: 2,
+    })
+
+    expect(result.answer).toContain('every tool I tried failed')
+    // Must not fabricate an answer from nothing.
+    expect(result.answer).not.toContain('what the tools returned')
   })
 })

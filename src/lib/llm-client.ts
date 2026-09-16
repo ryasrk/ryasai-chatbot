@@ -12,7 +12,7 @@
 import type { LlmMessage, LlmToolDef, LlmResponseFormat, LlmToolCall, LlmUsage, AgentChatMessage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { getLlmRuntimeConfig, getAgentLlmConfig } from '@/lib/llm-config'
-import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, readCompletionBody, LlmProviderError } from './llm-client-utils'
+import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, readCompletionBody, toOpenAiMessages, LlmProviderError } from './llm-client-utils'
 
 // Single construction point for provider failures so every transport throws the
 // same classified error shape.
@@ -145,7 +145,7 @@ export async function chatOnce(
   // failed as a generic timeout. See LLM_MAX_TOKENS_BY_PURPOSE for the measurement.
   const body: Record<string, unknown> = {
     model: cfg.model,
-    messages,
+    messages: toOpenAiMessages(messages),
     temperature,
     max_tokens: maxTokensForPurpose(purpose),
   }

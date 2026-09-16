@@ -70,6 +70,47 @@ export function logLlmUsage(
 }
 
 // ---------------------------------------------------------------------------
+// Wire-format adapter: internal LlmMessage[] -> OpenAI's chat-completions shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-shape an assistant message's `tool_calls` into the wire format.
+ *
+ * WHY THIS EXISTS (MEASURED, not theoretical). Our internal `LlmToolCall` is
+ * `{ id, name, arguments }`, but the OpenAI spec — and every gateway that
+ * validates against it — requires
+ * `{ id, type: "function", function: { name, arguments } }`. Sending the flat
+ * shape does not produce a clean 400: MEASURED against 9router with a
+ * two-round tool conversation, the gateway answered `text/event-stream` with a
+ * single `data: [DONE]` frame instead of JSON. `readCompletionBody` then found
+ * no content-bearing chunk and rethrew `SyntaxError: Unexpected identifier
+ * "data"`.
+ *
+ * The practical effect was that a ReAct loop could complete round 1 (a tool
+ * request) but NEVER round 2 — the moment the assistant's tool_calls had to go
+ * back on the wire, every subsequent call threw. A single-round tool call
+ * looked fine, which is exactly why the unit tests (LLM mocked) never saw it.
+ *
+ * Verified both directions: with `type: "function"` present the same body
+ * returns `application/json`; without it, `text/event-stream`.
+ */
+export function toOpenAiMessages(messages: LlmMessage[]): Array<Record<string, unknown>> {
+  return messages.map((m) => {
+    if (!m.tool_calls || m.tool_calls.length === 0) {
+      return m as unknown as Record<string, unknown>
+    }
+    return {
+      ...m,
+      tool_calls: m.tool_calls.map((tc) => ({
+        id: tc.id,
+        type: 'function',
+        function: { name: tc.name, arguments: tc.arguments },
+      })),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // SSE parser — splits a byte stream into raw `data:` payload strings.
 // Handles both ReadableStream<Uint8Array> (fetch body) and AsyncIterable<Uint8Array>.
 // ---------------------------------------------------------------------------

@@ -119,6 +119,12 @@ export const LLM_MAX_TOKENS_BY_PURPOSE: Record<string, number> = {
   title: 4096,
   summary: 8192,
   reflection: 8192,
+  // The ReAct orchestrator and the JSON planner both pass purpose 'agent'.
+  // Without these entries their calls fell through to the 1024 default, which is
+  // a structured-step ceiling — too small for a turn that must reason AND emit
+  // tool calls, and the reason an agent round could truncate mid-call.
+  agent: 8192,
+  planner: 8192,
   chat: Number(process.env.LLM_MAX_TOKENS_CHAT ?? 8192),
 }
 

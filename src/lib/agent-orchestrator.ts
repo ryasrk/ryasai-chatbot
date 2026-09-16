@@ -297,8 +297,21 @@ export async function runAgentOrchestrator(
     }
   }
 
-  // If maxRounds reached without clean text exit, synthesize based on evidence gathered
-  const fallbackAnswer = 'I have gathered information from the available tools but reached the round limit. Please review the tool outputs above.'
+  // Round limit reached without the model returning prose. Synthesize from the
+  // observations actually gathered rather than discarding them.
+  //
+  // A bare "reached the round limit" apology throws away work the user paid
+  // tokens for: MEASURED on a live turn where the first tool kept failing, the
+  // agent had already collected successful results from two fallback tools and
+  // the answer still came back as the apology. Reporting what landed is strictly
+  // more useful, and it keeps the "answer from evidence, never from imagination"
+  // property because only real tool output is included.
+  const successful = allToolRuns.filter((r) => r.status === 'success' && r.outputSummary)
+  const fallbackAnswer = successful.length > 0
+    ? `I reached my step limit before finishing, but here is what the tools returned:\n\n` +
+      successful.map((r) => `- [${r.type}] ${r.outputSummary}`).join('\n\n') +
+      `\n\nSome steps did not complete, so treat this as partial.`
+    : 'I could not complete the request: every tool I tried failed. Please check the tool configuration or try rephrasing.'
   return {
     answer: fallbackAnswer,
     toolRuns: allToolRuns,
