@@ -13,162 +13,277 @@ const PLUGINS: PluginSeed[] = [
   {
     toolId: 'weather',
     name: 'Weather Forecast',
-    description: 'Get current weather and forecast for any location worldwide. Free, no API key.',
+    description: 'Current weather and forecast for any coordinates worldwide. Free, no API key.',
     category: 'utility',
     subcategory: 'weather',
     keywords: 'cuaca,weather,suhu,temperature,hujan,rain,forecast,prakiraan,wind,angin,humidity,lembab,jakarta,indonesia',
     manifest: {
-      paramDescription: 'Query params: latitude=<lat>, longitude=<lon>, current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m, daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum, timezone=auto',
       executorType: 'webhook',
       endpoint: 'https://api.open-meteo.com/v1/forecast',
       method: 'GET',
       authType: 'NONE',
-      timeoutMs: 5000,
-      description: 'Free weather forecast for any location. No API key needed.',
+      timeoutMs: 8000,
+      description: 'Current weather and forecast for any coordinates. Free, no API key.',
+      // Open-Meteo takes COORDINATES, not a place name. The old prose param
+      // told the model to "query latitude, longitude, current, daily, timezone"
+      // with no types, so it guessed. Coordinates are required because there is
+      // no geocoding here: without them the call cannot succeed at all, and a
+      // required field is what makes that visible instead of returning 400.
+      parameters: {
+        type: 'object',
+        properties: {
+          latitude: { type: 'number', description: 'Latitude in decimal degrees, e.g. -6.2 for Jakarta.' },
+          longitude: { type: 'number', description: 'Longitude in decimal degrees, e.g. 106.8 for Jakarta.' },
+          current: {
+            type: 'string',
+            description: 'Comma-separated current variables, e.g. "temperature_2m,wind_speed_10m,weather_code". Defaults to temperature_2m.',
+          },
+          daily: {
+            type: 'string',
+            description: 'Comma-separated daily variables, e.g. "temperature_2m_max,temperature_2m_min,precipitation_sum".',
+          },
+          forecast_days: { type: 'integer', description: 'Number of forecast days, 1-16. Defaults to 7.' },
+        },
+        required: ['latitude', 'longitude'],
+      },
     },
     enabled: true,
   },
   {
     toolId: 'datetime',
     name: 'Current Date & Time',
-    description: 'Get current date and time for any timezone. Free, no API key.',
+    description: 'Current date and time for any IANA timezone, including DST status. Free, no API key.',
     category: 'utility',
     subcategory: 'datetime',
-    keywords: 'tanggal,date,time,waktu,jam,hari,bulan,tahun,now,sekarang,current,datetime',
+    keywords: 'tanggal,date,time,waktu,jam,hari,bulan,tahun,now,sekarang,current,datetime,timezone,zona,utc,offset,dst,daylight',
     manifest: {
-      paramDescription: 'Query param: timeZone=<IANA timezone e.g. Asia/Jakarta, America/New_York, Europe/London, UTC>. Returns dateTime, dayOfWeek, hasDayLightSaving.',
       executorType: 'webhook',
       endpoint: 'https://timeapi.io/api/time/current/zone',
       method: 'GET',
       authType: 'NONE',
-      timeoutMs: 5000,
-      description: 'Get current date and time for any timezone. Free, no API key.',
+      timeoutMs: 8000,
+      description: 'Current date and time for any IANA timezone, with UTC offset and DST status.',
+      // This REPLACES the old `timezone` plugin, whose endpoint
+      // (timeapi.io/api/time/zone) returns 404 — measured. It could never have
+      // worked. The live endpoint already returns everything that plugin
+      // advertised (timeZone, dayOfWeek, dstActive), so a second plugin added a
+      // broken duplicate rather than a capability.
+      parameters: {
+        type: 'object',
+        properties: {
+          timeZone: {
+            type: 'string',
+            description: 'IANA timezone name, e.g. "Asia/Jakarta", "America/New_York", "Europe/London", "UTC".',
+          },
+        },
+        required: ['timeZone'],
+      },
     },
     enabled: true,
   },
   {
-    toolId: 'timezone',
-    name: 'Timezone Info & Conversion',
-    description: 'Get timezone details including UTC offset, DST status, and country. Free, no API key.',
+    toolId: 'timezone_by_location',
+    name: 'Timezone by Coordinates',
+    description: 'Resolve the local time and DST status at a latitude/longitude. Free, no API key.',
     category: 'utility',
     subcategory: 'timezone',
-    keywords: 'timezone,waktu,zona,utc,offset,dst,daylight,country,convert,konversi,Asia,Jakarta,EST,PST',
+    keywords: 'timezone,zona,waktu,location,lokasi,koordinat,coordinates,utc,offset,dst,daylight',
     manifest: {
-      paramDescription: 'Query param: timeZone=<IANA timezone e.g. Asia/Jakarta>. Returns utcOffset, currentLocalTime, hasDayLightSaving, country, displayName.',
       executorType: 'webhook',
-      endpoint: 'https://timeapi.io/api/time/zone',
+      endpoint: 'https://timeapi.io/api/time/current/coordinate',
       method: 'GET',
       authType: 'NONE',
-      timeoutMs: 5000,
-      description: 'Get timezone details and UTC offset. Free, no API key.',
+      timeoutMs: 8000,
+      description: 'Local time at a latitude/longitude, for when the timezone NAME is not known.',
+      // Replaces the broken `timezone` plugin with something it never actually
+      // offered: resolving a timezone from POSITION rather than from a name the
+      // model would have to already know. Verified live (HTTP 200) — and unlike
+      // the endpoint it replaces, it is a real capability rather than a second
+      // copy of `datetime`.
+      parameters: {
+        type: 'object',
+        properties: {
+          latitude: { type: 'number', description: 'Latitude in decimal degrees.' },
+          longitude: { type: 'number', description: 'Longitude in decimal degrees.' },
+        },
+        required: ['latitude', 'longitude'],
+      },
     },
     enabled: true,
   },
   {
     toolId: 'translate',
-    name: 'Translation',
-    description: 'Translate text between any languages. Free, no API key (1000 words/day).',
+    name: 'Translate Text',
+    description: 'Translate text between languages using MyMemory. Free, no API key.',
     category: 'utility',
-    subcategory: 'translation',
-    keywords: 'translate,terjemah,translation,bahasa,language,english,indonesia,en,id,convert',
+    subcategory: 'language',
+    keywords: 'translate,terjemah,terjemahkan,bahasa,language,inggris,indonesia,english,indonesian,spanish,japanese,arabic',
     manifest: {
-      paramDescription: 'Query params: q=<text to translate>, langpair=<source|target e.g. en|id, id|en, en|ja>. Returns translatedText.',
       executorType: 'webhook',
       endpoint: 'https://api.mymemory.translated.net/get',
       method: 'GET',
       authType: 'NONE',
       timeoutMs: 10000,
-      description: 'Free translation between any languages. No API key.',
+      description: 'Translate text between languages. Free, no API key.',
+      parameters: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', description: 'The text to translate. Keep it under 500 characters (free tier limit).' },
+          langpair: {
+            type: 'string',
+            description: 'Source and target as "source|target" using ISO 639-1 codes, e.g. "en|id", "id|en", "en|ja".',
+          },
+        },
+        required: ['q', 'langpair'],
+      },
     },
     enabled: true,
   },
   {
     toolId: 'calculator',
-    name: 'Math Calculator',
-    description: 'Evaluate mathematical expressions. Supports arithmetic, trigonometry, statistics, calculus. Free, no API key.',
+    name: 'Calculator',
+    description: 'Evaluate a mathematical expression exactly. Free, no API key.',
     category: 'utility',
-    subcategory: 'calculator',
-    keywords: 'calculate,calculator,hitung,kalkulator,math,matematika,arithmetic,sum,add,subtract,multiply,divide,sqrt,power,percentage,persentase',
+    subcategory: 'math',
+    keywords: 'calculator,kalkulator,hitung,math,matematika,arithmetic,expression,rumus,compute,persen,percent,sqrt',
     manifest: {
-      paramDescription: 'Query param: expr=<math expression e.g. 2+2, sqrt(16), sin(pi/4), 15% of 200, 2^10>. Returns result. Supports +, -, *, /, ^, sqrt, sin, cos, tan, log, exp, abs, round, etc.',
       executorType: 'webhook',
       endpoint: 'https://api.mathjs.org/v4/',
       method: 'GET',
       authType: 'NONE',
-      timeoutMs: 5000,
-      description: 'Evaluate math expressions. Free, no API key.',
-    },
-    enabled: true,
-  },
-  {
-    toolId: 'news',
-    name: 'News Aggregation',
-    description: 'Get latest news headlines from Google News. Supports Indonesian and global news. Free, no API key.',
-    category: 'utility',
-    subcategory: 'news',
-    keywords: 'news,berita,headline,artikel,indonesia,world,dunia,terkini,latest,google,rss',
-    manifest: {
-      paramDescription: 'RSS endpoint. Path/search?q=<search keyword or empty for top news>&hl=<language e.g. id or en>&gl=<country e.g. ID or US>&ceid=<country:language e.g. ID:id>. Returns RSS XML with title, link, pubDate, description for each article.',
-      executorType: 'webhook',
-      endpoint: 'https://news.google.com/rss',
-      method: 'GET',
-      authType: 'NONE',
-      timeoutMs: 10000,
-      description: 'Get latest news from Google News RSS. Supports Indonesian news.',
-    },
-    enabled: true,
-  },
-  {
-    toolId: 'docsearch',
-    name: 'Documentation & Code Search',
-    description: 'Search StackOverflow for code solutions, syntax examples, and programming documentation. Free, no API key.',
-    category: 'utility',
-    subcategory: 'documentation',
-    keywords: 'documentation,doc,syntax,code,programming,stackoverflow,search,example,contoh,snippet,function,method,error,debug,api,library,framework,react,vue,python,javascript,typescript,useEffect,hook,css,html,node,docker,how,to,cara,implementasi,implement',
-    manifest: {
-      paramDescription: 'Query params: q=<search query e.g. react useEffect cleanup>, site=stackoverflow, order=desc, sort=activity, pagesize=5. Returns questions with title, link, score, tags, body_excerpt.',
-      executorType: 'webhook',
-      endpoint: 'https://api.stackexchange.com/2.3/search/advanced',
-      method: 'GET',
-      authType: 'NONE',
-      timeoutMs: 10000,
-      description: 'Search StackOverflow for code solutions and documentation. Free, no API key.',
+      timeoutMs: 8000,
+      description: 'Evaluate a mathematical expression written in MathJS syntax.',
+      parameters: {
+        type: 'object',
+        properties: {
+          expr: {
+            type: 'string',
+            description: 'MathJS expression, e.g. "2+2", "sqrt(16)", "(1500*0.15)/12", "sin(pi/4)".',
+          },
+        },
+        required: ['expr'],
+      },
     },
     enabled: true,
   },
   {
     toolId: 'web_search',
-    name: 'Web Search',
-    description: 'Search Wikipedia for encyclopedic information about any topic, person, place, or concept. Supports Indonesian and English. Free, no API key.',
-    category: 'utility',
-    subcategory: 'web_search',
-    keywords: 'search,cari,web,internet,wikipedia,definition,definisi,what,is,apa,itu,meaning,artinya,topic,topik,concept,konsep,tech,article,berita,prabowo,jokowi,presiden',
+    name: 'Wikipedia Search',
+    description: 'Search the Indonesian or English Wikipedia for articles. Free, no API key.',
+    category: 'knowledge',
+    subcategory: 'search',
+    keywords: 'wikipedia,search,cari,pencarian,artikel,article,ensiklopedia,encyclopedia,informasi,information',
     manifest: {
-      paramDescription: 'Query params: action=query, list=search, srsearch=<search query>, format=json, srlimit=5. Returns search results with title, snippet, pageid for each match. Use srsearch for the search term.',
       executorType: 'webhook',
       endpoint: 'https://id.wikipedia.org/w/api.php',
       method: 'GET',
       authType: 'NONE',
       timeoutMs: 10000,
-      description: 'Search Indonesian Wikipedia for encyclopedic information. Free, no API key.',
+      description: 'Search Wikipedia for articles matching a query.',
+      // The API needs `action`, `list` and `format` to return JSON at all; a
+      // model that omits them gets HTML and a parse failure. Listing them as
+      // required with enum/default values is what makes the call well-formed
+      // instead of a guess — the old prose left all three to chance.
+      parameters: {
+        type: 'object',
+        properties: {
+          srsearch: { type: 'string', description: 'The search query.' },
+          action: { type: 'string', enum: ['query'], description: 'Fixed API action.' },
+          list: { type: 'string', enum: ['search'], description: 'Fixed list mode.' },
+          format: { type: 'string', enum: ['json'], description: 'Response format. Must be json.' },
+          srlimit: { type: 'integer', description: 'Number of results, 1-20. Defaults to 10.' },
+        },
+        required: ['srsearch', 'action', 'list', 'format'],
+      },
     },
     enabled: true,
   },
   {
-    toolId: 'url_fetch',
-    name: 'Article Reader',
-    description: 'Get the full introductory text of any Wikipedia article. Use for detailed biographies, topic explanations, and encyclopedic definitions. Free, no API key.',
-    category: 'utility',
-    subcategory: 'web_fetch',
-    keywords: 'fetch,read,baca,article,artikel,wikipedia,detail,bio,biography,biografi,who,siapa,what,apa,extract,intro,person,person',
+    toolId: 'article_fetch',
+    name: 'Wikipedia Article',
+    description: 'Read the plain-text extract of a Wikipedia article by title. Free, no API key.',
+    category: 'knowledge',
+    subcategory: 'search',
+    keywords: 'wikipedia,artikel,article,read,baca,isi,content,extract,ringkasan,summary,halaman,page',
     manifest: {
-      paramDescription: 'Query params: action=query, titles=<article title with underscores e.g. Prabowo_Subianto>, prop=extracts, exintro=1, format=json, explaintext=1. Returns plain text extract of the article introduction. Use underscores for spaces in titles.',
       executorType: 'webhook',
       endpoint: 'https://id.wikipedia.org/w/api.php',
       method: 'GET',
       authType: 'NONE',
       timeoutMs: 10000,
-      description: 'Get Wikipedia article introductions in plain text. Free, no API key.',
+      description: 'Fetch the plain-text introduction of a Wikipedia article by exact title.',
+      // Distinct from `web_search`: that one FINDS articles, this one READS one.
+      // The previous `url_fetch` plugin pointed at the same Wikipedia endpoint as
+      // `web_search` despite its name implying arbitrary URLs, so the model was
+      // told it could fetch any page when it could only ever reach Wikipedia.
+      parameters: {
+        type: 'object',
+        properties: {
+          titles: { type: 'string', description: 'Exact article title, e.g. "Jakarta" or "Soekarno".' },
+          action: { type: 'string', enum: ['query'], description: 'Fixed API action.' },
+          prop: { type: 'string', enum: ['extracts'], description: 'Fetch the plain-text extract.' },
+          explaintext: { type: 'string', enum: ['1'], description: 'Return plain text rather than HTML.' },
+          format: { type: 'string', enum: ['json'], description: 'Response format. Must be json.' },
+        },
+        required: ['titles', 'action', 'prop', 'explaintext', 'format'],
+      },
+    },
+    enabled: true,
+  },
+  {
+    toolId: 'docsearch',
+    name: 'Stack Overflow Search',
+    description: 'Search Stack Overflow for programming questions and answers. Free, no API key.',
+    category: 'knowledge',
+    subcategory: 'developer',
+    keywords: 'stackoverflow,programming,kode,code,error,bug,developer,api,library,framework,python,javascript,sql',
+    manifest: {
+      executorType: 'webhook',
+      endpoint: 'https://api.stackexchange.com/2.3/search/advanced',
+      method: 'GET',
+      authType: 'NONE',
+      timeoutMs: 10000,
+      description: 'Search Stack Overflow questions, ranked by relevance.',
+      parameters: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', description: 'The search query, e.g. "postgres upsert conflict".' },
+          site: { type: 'string', enum: ['stackoverflow'], description: 'Which Stack Exchange site.' },
+          order: { type: 'string', enum: ['desc', 'asc'], description: 'Sort direction. Defaults to desc.' },
+          sort: { type: 'string', enum: ['relevance', 'votes', 'creation', 'activity'], description: 'Sort key. Defaults to relevance.' },
+          pagesize: { type: 'integer', description: 'Results per page, 1-100. Defaults to 10.' },
+        },
+        required: ['q', 'site'],
+      },
+    },
+    enabled: true,
+  },
+  {
+    toolId: 'news',
+    name: 'News Headlines',
+    description: 'Read current news headlines from Google News RSS. Free, no API key.',
+    category: 'knowledge',
+    subcategory: 'news',
+    keywords: 'news,berita,headline,headlines,terkini,terbaru,latest,today,hari ini,google news,rss',
+    manifest: {
+      executorType: 'webhook',
+      endpoint: 'https://news.google.com/rss',
+      method: 'GET',
+      authType: 'NONE',
+      timeoutMs: 10000,
+      description: 'Current news headlines from Google News, as RSS XML.',
+      parameters: {
+        type: 'object',
+        properties: {
+          hl: { type: 'string', description: 'Interface language, e.g. "en-US", "id". Defaults to en-US.' },
+          gl: { type: 'string', description: 'Country code, e.g. "US", "ID". Defaults to US.' },
+          ceid: { type: 'string', description: 'Country and language, e.g. "US:en", "ID:id". Defaults to US:en.' },
+          q: { type: 'string', description: 'Optional topic to search for. Omit for top headlines.' },
+        },
+        // No required fields: Google News returns top headlines with defaults.
+        // Marking anything required would force the model to invent a value for
+        // a parameter the API is happy without.
+      },
     },
     enabled: true,
   },
