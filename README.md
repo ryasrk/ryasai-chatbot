@@ -124,7 +124,7 @@ McNemar registers 0 wins for either side. The small pipeline is materially faste
 stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
 is not claimed here.
 
-**Test suite:** 6,710 tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
+**Test suite:** 6,723 tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
 reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
 gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
 this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
@@ -272,9 +272,31 @@ data arrived.
 **MCP tools keep their own JSON Schema.** A server's `inputSchema` is passed to the
 model verbatim rather than flattened into a prose description, so boolean, array,
 and nested-object parameters survive the round trip instead of being re-guessed.
+Verified against a real MCP server: the schema the model receives is byte-identical
+to the one the server advertises.
+
+**Step inputs are coerced by declared type, never by guesswork.** The planner
+normalises step inputs to strings, so they must be converted back before a typed
+tool is called. Conversion reads the tool's own JSON Schema and converts only on a
+type match, because parsing every value blindly corrupts any string that merely
+looks like JSON — a legitimate `path: "12345"` would otherwise arrive as the
+number `12345`.
 
 **The legacy static planner** (`src/lib/planner.ts`) still backs the in-chat
-multi-step DAG path; both it and the orchestrator share the circuit breaker.
+multi-step DAG path; both it and the orchestrator share the circuit breaker and the
+same tool catalogue. A drift check in `trial/70-agentic-e2e.ts` fails if the two
+catalogues ever disagree, so a tool cannot silently exist on one surface only.
+
+### Agentic test coverage
+
+The agent surface is covered at three levels, because a unit test with a mocked
+provider cannot show that the transport and the tool round-trip actually cooperate:
+
+| Level | Where | What it proves |
+|---|---|---|
+| Unit | `agent-orchestrator.test.ts`, `unified-tools.test.ts`, `tool-circuit-breaker.test.ts`, `llm-client.test.ts` | Round limits, parallel execution with partial failure, circuit-breaker trips, tool-name legality, and the outgoing `tool_calls` wire shape. |
+| Browser, mocked provider | `e2e/07-agentic.spec.ts` | SSE framing over real HTTP, the frame-ordering contract, and a complete tool-calling turn. The mock LLM rejects a malformed `tool_call`, so a wire-shape regression fails the suite. |
+| Live harness | `trial/70-agentic-e2e.ts`, `trial/95-mcp-live.ts` | A real provider and a real MCP server: tool discovery, lossless schema passthrough, a grounded answer, and catalogue parity. Not in CI (requires a provider). |
 
 ## Production Hardware Specifications
 
@@ -450,7 +472,7 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 6,710 unit tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
+- ✅ 6,723 unit tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
 - ✅ 48 static invariant guards (`bun test src/lib/invariants.test.ts`)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
