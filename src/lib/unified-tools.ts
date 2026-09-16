@@ -675,8 +675,17 @@ export async function getUnifiedTools(args: {
     tools.push(...buildAdminUnifiedTools())
   }
 
-  const [pluginTools, mcpTools, mcpSurfaceTools] = await Promise.all([
-    buildPluginUnifiedTools({ query: args.query, context: args.context }),
+  // PLUGINS ARE AGENTIC-ONLY. MEASURED: on the chat path 7 of 8 ordinary
+  // questions pulled in irrelevant plugins, and the damage was not just noise —
+  // "berapa penjualan bulan lalu" selected `datetime` because of the word
+  // "bulan", and "berapa 15% dari 2 juta" failed to select `calculator` at all.
+  // Chat's real tools are SQL, RAG and REST; a web-search or timezone plugin
+  // has no business in that decision, and every irrelevant tool is both tokens
+  // and a chance to mis-route. Agentic is where open-ended tool use belongs.
+  const pluginTools = args.context === 'agentic'
+    ? await buildPluginUnifiedTools({ query: args.query, context: 'agentic' })
+    : []
+  const [mcpTools, mcpSurfaceTools] = await Promise.all([
     buildMcpUnifiedTools(),
     // Resources and prompts are a SEPARATE surface: a server may expose them and
     // no tools at all, so they cannot be folded into buildMcpUnifiedTools.

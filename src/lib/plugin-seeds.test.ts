@@ -23,9 +23,13 @@ function manifestFor(toolId: string): Record<string, unknown> {
 const IDS = [...src.matchAll(/toolId: '([^']+)'/g)].map((m) => m[1])
 
 describe('built-in plugin seeds', () => {
-  test('there are 9 built-ins and every id is unique', () => {
-    expect(IDS.length).toBe(9)
-    expect(new Set(IDS).size).toBe(9)
+  test('there are 5 built-ins and every id is unique', () => {
+    // Trimmed from 9: timezone_by_location (needed coordinates nobody supplies),
+    // article_fetch (web_search already covered it), docsearch, and news (RSS XML
+    // rather than JSON) were overlapping or awkward for their cost.
+    expect(IDS.length).toBe(5)
+    expect(new Set(IDS).size).toBe(5)
+    expect(IDS.sort()).toEqual(['calculator', 'datetime', 'translate', 'weather', 'web_search'])
   })
 
   test('EVERY built-in declares a JSON Schema for its arguments', () => {
@@ -68,6 +72,13 @@ describe('built-in plugin seeds', () => {
         if (prop.enum) expect(prop.enum.length, `${id}.${name} has an empty enum`).toBeGreaterThan(0)
       }
     }
+  })
+
+  test('the plugin list contains no duplicate endpoint', () => {
+    // Two plugins hitting the SAME endpoint is how a broken duplicate shipped:
+    // `timezone` pointed at a 404 and merely repeated `datetime`.
+    const endpoints = IDS.map((id) => String(manifestFor(id).endpoint))
+    expect(new Set(endpoints).size).toBe(endpoints.length)
   })
 
   test('NO plugin points at the known-dead timeapi zone endpoint', () => {

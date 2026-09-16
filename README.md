@@ -124,7 +124,7 @@ McNemar registers 0 wins for either side. The small pipeline is materially faste
 stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
 is not claimed here.
 
-**Test suite:** 6,737 tests across 248 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
+**Test suite:** 6,741 tests across 248 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
 reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
 gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
 this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
@@ -314,13 +314,24 @@ against a careless plugin, not a boundary against a kernel-level adversary. The
 level degrades explicitly and says so in the log; an operator can pin it with
 `MCP_PLUGIN_ISOLATION`.
 
-### Built-in plugins
+### Built-in plugins — agentic-only
 
-Nine plugins ship with every install: weather, date/time, timezone-by-coordinates,
-translate, calculator, Wikipedia search, Wikipedia article, Stack Overflow search,
-and news headlines. Each declares a **JSON Schema** for its arguments, so the model
-is told the real parameter names and types instead of a prose hint it has to
-interpret — a contract, not a description.
+Five plugins ship with every install: **weather**, **date/time**, **translate**,
+**calculator**, and **Wikipedia search**. Each declares a **JSON Schema** for its
+arguments, so the model is told the real parameter names and types instead of a
+prose hint it has to interpret — a contract, not a description.
+
+**Plugins run on the agentic path only, never in chat.** This is a measured
+decision, not a preference: on the chat path, 7 of 8 ordinary questions pulled in
+irrelevant plugins. `datetime` was selected for *"berapa penjualan bulan lalu"*
+because of the word "bulan", and `calculator` was missed entirely for *"berapa 15%
+dari 2 juta"*. Chat's tools are SQL, RAG and REST; an open-ended tool like a web
+search has no business in that routing decision, and every irrelevant tool is both
+tokens and a chance to mis-route.
+
+Four more were built and then removed for overlapping or being awkward:
+`timezone_by_location` (needed coordinates nobody supplies), `article_fetch`
+(`web_search` already covered it), `docsearch`, and `news` (RSS XML, not JSON).
 
 All nine are exercised against their live endpoints by the tests below, and each
 one's schema is asserted to be complete: a `required` name with no matching
@@ -518,7 +529,7 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 6,737 unit tests across 248 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
+- ✅ 6,741 unit tests across 248 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
 - ✅ 48 static invariant guards (`bun test src/lib/invariants.test.ts`)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)

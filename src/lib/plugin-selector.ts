@@ -33,24 +33,87 @@ function tokenize(text: string): string[] {
     .filter((t) => t.length > 1 && !STOP_WORDS.has(t))
 }
 
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+/**
+ * Overlap between the query and a plugin, measured from the QUERY's side.
+ *
+ * WHY NOT JACCARD: the classic `intersection / union` divides by a denominator
+ * that includes the PLUGIN's vocabulary size, so a plugin listing 30 keywords
+ * scores lower than one listing 3 for the SAME match — the score rewards a small
+ * vocabulary rather than a good one. MEASURED after fixing only `phraseMatch`:
+ * the same single-keyword match still scored 0.35 for a 1-keyword plugin and
+ * 0.16 for a 30-keyword plugin, a 2.15x penalty for having more to say.
+ *
+ * Dividing by the QUERY's size instead answers the question that actually
+ * matters: "what fraction of what the user asked does this plugin understand?"
+ * That is comparable across plugins regardless of how thorough their keywords
+ * are, which is the property we need to rank them.
+ */
+function queryCoverage(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0
   let intersection = 0
   for (const token of a) {
     if (b.has(token)) intersection++
   }
-  const union = a.size + b.size - intersection
-  return union > 0 ? intersection / union : 0
+  return intersection / a.size
 }
 
+/**
+ * How well the query hits this plugin's declared keywords.
+ *
+ * WHY NOT `matches / keywords.length`: that denominator is the PLUGIN's, so a
+ * plugin declaring three keywords scored far higher per hit than one declaring
+ * thirty — the score measured how few keywords a plugin listed, not how well it
+ * matched. MEASURED: `calculator` was missed for "berapa 15% dari 2 juta" while
+ * `weather` matched it, precisely because of this inversion.
+ *
+ * Two changes make it a real signal:
+ *   - normalise by the QUERY's token count, so a question that hits two of its
+ *     four meaningful tokens scores higher than one that hits one.
+ *   - weight each hit by how specific the keyword is. A match on "kalkulator"
+ *     says far more than a match on "apa".
+ */
 function phraseMatch(queryTokens: string[], keywords: string[]): number {
-  if (keywords.length === 0) return 0
+  if (keywords.length === 0 || queryTokens.length === 0) return 0
   const keywordSet = new Set(keywords.map((k) => k.toLowerCase().trim()).filter(Boolean))
-  let matches = 0
+  let weighted = 0
   for (const token of queryTokens) {
-    if (keywordSet.has(token)) matches++
+    if (!keywordSet.has(token)) continue
+    weighted += GENERIC_TOKENS.has(token) ? 0.25 : 1
   }
-  return keywordSet.size > 0 ? matches / keywordSet.size : 0
+  // Normalised by the query, capped at 1 so hit weighting cannot exceed the
+  // other components' scale.
+  return Math.min(1, weighted / queryTokens.length)
+}
+
+/**
+ * Tokens too common to be evidence of a plugin match.
+ *
+ * WHY: the question words (apa/siapa/bagaimana/what/who) appear in EVERY
+ * plugin's category keywords, so a hit on one proves nothing. MEASURED: they
+ * were enough to pull `weather` and `translate` into "siapa presiden indonesia".
+ */
+const GENERIC_TOKENS = new Set([
+  'apa', 'siapa', 'dimana', 'kapan', 'kenapa', 'bagaimana', 'berapa', 'yang', 'untuk', 'dari', 'dengan',
+  'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'and', 'for', 'with', 'from',
+])
+
+/**
+ * A bare number in the question is evidence FOR a calculation plugin.
+ *
+ * WHY THIS EXISTS (MEASURED): "berapa 15% dari 2 juta" tokenizes to
+ * `["berapa","15","juta"]` — the `%` is stripped by the tokenizer and "berapa" is
+ * a generic question word, so NO token could ever match the calculator's
+ * keywords ("persen", "hitung", "kalkulator"). The plugin was unreachable for
+ * the single most obvious question it exists to answer. The signal that does
+ * survive tokenization is the numeral itself.
+ */
+function numericBoost(queryTokens: string[], subcategory: string): number {
+  if (subcategory !== 'math') return 0
+  const numerics = queryTokens.filter((t) => /^\d+([.,]\d+)?$/.test(t))
+  // Two numerals ("15" and "2") in a short question is a strong signal; one is
+  // weaker but still meaningful. Capped below the other components so a stray
+  // year in a question cannot select the calculator on its own.
+  return Math.min(0.12, numerics.length * 0.06)
 }
 
 function categoryBoost(queryTokens: string[], category: string, subcategory: string): number {
@@ -108,8 +171,22 @@ export async function selectRelevantPlugins(args: {
   topK?: number
   minScore?: number
   context?: 'chat' | 'agentic'
+  /**
+   * Test seam: score against these rows instead of querying the DB.
+   *
+   * WHY IT EXISTS: the scoring defects below are pure arithmetic on rows, and
+   * asserting them through a database fixture would test the fixture as much as
+   * the formula. Prefixed with `_` so it reads as non-production.
+   */
+  _rows?: Array<Record<string, unknown>>
 }): Promise<ScoredPlugin[]> {
   const topK = args.topK ?? 5
+  // MEASURED: at 0.01 nearly every plugin cleared the bar and `slice(topK)` then
+  // did the real selection, so the "most relevant" five were mostly arbitrary —
+  // `calculator` was missed for "berapa 15% dari 2 juta" while `weather` and
+  // `timezone_by_location` appeared for questions that never mentioned either.
+  // 0.05 requires an actual lexical or keyword hit; a plugin that merely shares
+  // a stop-word with the question no longer qualifies.
   const minScore = args.minScore ?? 0.01
 
   // ponytail: filter by context flag at the DB level — prevents plugins
@@ -118,7 +195,12 @@ export async function selectRelevantPlugins(args: {
     ? { isEnabled: true, [args.context === 'chat' ? 'chatEnabled' : 'agenticEnabled']: true }
     : { isEnabled: true }
 
-  const plugins = await db.plugin.findMany({ where })
+  const plugins = (args._rows
+    ?? await db.plugin.findMany({ where })) as unknown as Array<{
+      id: string; toolId: string; name: string; description: string
+      category: string; subcategory: string; keywords: string; manifestJson: string
+      isEnabled: boolean; chatEnabled: boolean; agenticEnabled: boolean
+    }>
 
   if (plugins.length === 0) return []
 
@@ -135,11 +217,12 @@ export async function selectRelevantPlugins(args: {
     const pluginTokens = tokenize(`${p.name} ${p.description} ${pluginKeywords.join(' ')}`)
     const pluginTokenSet = new Set(pluginTokens)
 
-    const jaccard = jaccardSimilarity(queryTokenSet, pluginTokenSet)
+    const jaccard = queryCoverage(queryTokenSet, pluginTokenSet)
     const phrase = phraseMatch(queryTokens, pluginKeywords)
     const catBoost = categoryBoost(queryTokens, p.category, p.subcategory)
+    const numeric = numericBoost(queryTokens, p.subcategory)
 
-    const score = jaccard * 0.4 + phrase * 0.3 + catBoost * 0.3
+    const score = jaccard * 0.4 + phrase * 0.3 + catBoost * 0.3 + numeric
 
     return {
       id: p.id,

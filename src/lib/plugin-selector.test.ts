@@ -1,5 +1,16 @@
 import { describe, expect, test, mock } from 'bun:test'
 
+/** Minimal Plugin row for selector scoring tests. */
+function pluginRow(over: Record<string, unknown> = {}) {
+  return {
+    id: 'id-' + String(over.toolId ?? 'x'),
+    toolId: 'x', name: 'X', description: 'x',
+    category: 'utility', subcategory: 'general', keywords: '', manifestJson: '{}',
+    isEnabled: true, chatEnabled: true, agenticEnabled: true,
+    ...over,
+  } as never
+}
+
 const TEST_PLUGINS = [
   { id: 'p1', toolId: 'weather', name: 'Weather', description: 'Get weather forecast for a city', keywords: 'cuaca,weather,suhu,temperature,hujan,rain,forecast,prakiraan,wind,angin,humidity,lembab,jakarta', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'weather', manifestJson: '{}' },
   { id: 'p2', toolId: 'translate', name: 'Translate', description: 'Translate text between languages', keywords: 'translate,terjemah,translation,bahasa,language,english,indonesia', isEnabled: true, chatEnabled: true, agenticEnabled: true, category: 'external', subcategory: 'translation', manifestJson: '{}' },
@@ -154,5 +165,52 @@ describe('getAllPluginsGrouped', () => {
     } finally {
       pluginsOverride = null
     }
+  })
+})
+
+describe('plugin-selector — scoring defects fixed by measurement', () => {
+  // INCIDENT: phraseMatch divided by the PLUGIN's keyword count, so a plugin
+  // listing 3 keywords outscored one listing 30 for the same single hit. The
+  // score measured how few keywords a plugin declared, not how well it matched.
+  // MEASURED: `calculator` was never selected for "berapa 15% dari 2 juta".
+  test('a plugin with MANY keywords is not penalised against one with few', async () => {
+    // The old formula divided by the PLUGIN's keyword count, so 1 hit out of 3
+    // keywords scored ~0.33 while 1 hit out of 31 scored ~0.03 — the score
+    // measured brevity, not relevance. Asserting membership was not enough: both
+    // plugins cleared minScore, so the buggy formula passed. This compares SCORES.
+    const many = pluginRow({
+      toolId: 'many', keywords: Array.from({ length: 30 }, (_, i) => `kw${i}`).join(',') + ',emas',
+    })
+    const few = pluginRow({ toolId: 'few', keywords: 'emas' })
+    const picked = await selectRelevantPlugins({
+      query: 'harga emas', context: 'agentic', _rows: [many, few],
+    } as never)
+    const scoreOf = (id: string) => picked.find((p) => p.toolId === id)?.score ?? 0
+    // Both matched the same single keyword, so their scores must be close —
+    // within 20%. Under the old formula `few` outscored `many` by ~10x.
+    const ratio = scoreOf('many') / Math.max(scoreOf('few'), 1e-9)
+    expect(ratio, `many=${scoreOf('many')} few=${scoreOf('few')}`).toBeGreaterThan(0.8)
+  })
+
+  // INCIDENT: `%` is stripped by the tokenizer, so "berapa 15% dari 2 juta"
+  // produced no token that could ever match calculator's keywords — the plugin
+  // was unreachable for the most obvious question it exists to answer.
+  test('a bare numeral reaches the calculator', async () => {
+    const calc = pluginRow({ toolId: 'calculator', category: 'utility', subcategory: 'math' })
+    const picked = await selectRelevantPlugins({
+      query: 'berapa 15% dari 2 juta', context: 'agentic', _rows: [calc],
+    } as never)
+    expect(picked.map((p) => p.toolId)).toContain('calculator')
+  })
+
+  // INCIDENT: question words appear in every plugin's category keywords, so a
+  // hit on one proved nothing — they pulled `weather` and `translate` into
+  // "siapa presiden indonesia".
+  test('generic question words alone do not select a plugin', async () => {
+    const weather = pluginRow({ toolId: 'weather', keywords: 'apa,siapa,bagaimana,cuaca' })
+    const picked = await selectRelevantPlugins({
+      query: 'siapa presiden indonesia', context: 'agentic', _rows: [weather],
+    } as never)
+    expect(picked.map((p) => p.toolId)).not.toContain('weather')
   })
 })
