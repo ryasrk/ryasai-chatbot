@@ -96,3 +96,21 @@ check('an answer was produced', c.res.answer.trim().length > 20, `${c.res.answer
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`)
 process.exit(failures === 0 ? 0 : 1)
+
+// --- E. catalogue parity ---------------------------------------------------
+// TWO tool catalogues exist: tool-registry.ts (the legacy multi-step DAG, still
+// live on the chat path) and unified-tools.ts (the ReAct orchestrator). Nothing
+// structurally forces them to agree, so a tool added to one but not the other
+// silently disappears for whichever surface the user is on. This check requires
+// a real database, which is why it lives here and not in the unit suite.
+console.log('\nE. catalogue parity (needs a populated DB)')
+{
+  const { getAvailableTools } = await import('@/lib/tool-registry')
+  const unifiedChat = await getUnifiedTools({ query: 'database query knowledge search', context: 'chat', isAdmin: false })
+  const legacyChat = await getAvailableTools('database query knowledge search', 'chat')
+  const uniIds = unifiedChat.map((t) => t.id).sort()
+  const legIds = legacyChat.map((t) => t.id).sort()
+  check(`both catalogues expose the same ids (n=${uniIds.length})`, JSON.stringify(uniIds) === JSON.stringify(legIds),
+    JSON.stringify({ onlyUnified: uniIds.filter((i) => !legIds.includes(i)), onlyLegacy: legIds.filter((i) => !uniIds.includes(i)) }))
+  check('the catalogue is not empty', uniIds.length > 0)
+}
