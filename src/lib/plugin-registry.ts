@@ -13,6 +13,23 @@ import { z } from 'zod'
 
 export interface PluginManifest {
   paramDescription: string
+  /**
+   * Optional JSON Schema for this plugin's arguments.
+   *
+   * WHY IT EXISTS: without it, every plugin's arguments collapse into ONE string
+   * field called `input`, and the model has to guess the shape — it must emit a
+   * stringified JSON object and hope the plugin parses it the way it meant. That
+   * is the same defect class as blind MCP argument coercion, and it blocks
+   * boolean/array/nested parameters outright (the GET serializer in
+   * `executePlugin` still documents that nested objects stringify to
+   * "[object Object]").
+   *
+   * A manifest that declares `parameters` gets that schema passed to the model
+   * verbatim — the same lossless passthrough MCP tools already enjoy — so typed
+   * arguments survive. Manifests without it keep the legacy single-`input`
+   * contract, so existing plugins are unaffected.
+   */
+  parameters?: Record<string, unknown>
   executorType: 'webhook'
   endpoint: string
   method: string
@@ -26,6 +43,16 @@ export interface PluginManifest {
 // Reused by parsePluginManifest (loose, for execution) and normalizeManifest (strict, for registration).
 const PluginManifestSchema = z.object({
   paramDescription: z.string().default(''),
+  // A malformed schema must NOT invalidate the manifest: one bad plugin would
+  // otherwise be dropped from the catalogue entirely, which is a worse failure
+  // than ignoring a schema we could not read. A non-object value falls back to
+  // `undefined`, i.e. the legacy single-`input` contract.
+  parameters: z
+    .preprocess(
+      (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : undefined),
+      z.record(z.string(), z.unknown()).optional(),
+    )
+    .optional(),
   executorType: z.literal('webhook'),
   endpoint: z.string().url(),
   method: z.enum(['GET', 'POST']).transform((s) => s.toUpperCase()),
@@ -107,7 +134,14 @@ export function maskPluginManifest(manifest: PluginManifest): PluginManifest {
 
 export async function executePlugin(args: {
   plugin: { manifestJson: string; toolId: string }
-  input: string
+  /** Legacy contract: a single stringified argument blob. */
+  input?: string
+  /**
+   * Structured arguments, used when the manifest declares a `parameters` schema.
+   * Preferred over `input` because it preserves real types (numbers, booleans,
+   * arrays, nested objects) that a stringified blob would flatten or corrupt.
+   */
+  args?: Record<string, unknown>
 }): Promise<{ ok: boolean; output: string; error?: string; latencyMs: number }> {
   const manifest = parsePluginManifest(args.plugin.manifestJson)
   if (!manifest) {
@@ -130,24 +164,40 @@ export async function executePlugin(args: {
   const hasBody = manifest.method !== 'GET' && manifest.method !== 'HEAD'
   if (hasBody) headers['Content-Type'] = 'application/json'
 
-  // ponytail: GET plugins carry input as query params (no body channel);
-  // ceiling — nested object values stringify to [object Object], upgrade to
-  // URLSearchParams manual serialization if a plugin needs structured values.
+  // Resolve the effective arguments ONCE, preferring the structured form when
+  // the caller supplied it (a manifest with a `parameters` schema). Falling back
+  // to the legacy stringified blob keeps every existing plugin working.
+  const effectiveArgs: Record<string, unknown> | undefined = args.args
+    ?? (() => {
+      if (!args.input) return undefined
+      try {
+        const parsed = JSON.parse(args.input)
+        return typeof parsed === 'object' && parsed !== null
+          ? (parsed as Record<string, unknown>)
+          : { input: args.input }
+      } catch {
+        return { input: args.input }
+      }
+    })()
+
+  /**
+   * Serialize a value for a query string.
+   *
+   * The previous implementation used `String(v)`, so a nested object became the
+   * literal text "[object Object]" and an array became "a,b" — both silently
+   * wrong. JSON-encoding non-primitives keeps the value recoverable server-side.
+   */
+  const queryValue = (v: unknown): string =>
+    v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v)
+
+  // GET plugins carry arguments as query params (there is no body channel).
   let url = manifest.endpoint
-  if (manifest.method === 'GET' && args.input) {
+  if (manifest.method === 'GET' && effectiveArgs) {
     try {
       const parsedUrl = new URL(manifest.endpoint)
-      try {
-        const params = JSON.parse(args.input)
-        if (typeof params === 'object' && params !== null) {
-          for (const [k, v] of Object.entries(params)) {
-            parsedUrl.searchParams.append(k, String(v))
-          }
-        } else {
-          parsedUrl.searchParams.append('input', String(args.input))
-        }
-      } catch {
-        parsedUrl.searchParams.append('input', String(args.input))
+      for (const [k, v] of Object.entries(effectiveArgs)) {
+        if (v === undefined) continue
+        parsedUrl.searchParams.append(k, queryValue(v))
       }
       url = parsedUrl.toString()
     } catch {
@@ -163,14 +213,8 @@ export async function executePlugin(args: {
       return { ok: false, output: '', error: 'Endpoint points to a blocked internal host.', latencyMs: 0 }
     }
     let bodyStr: string | undefined
-    if (hasBody && args.input) {
-      try {
-        bodyStr = JSON.stringify(JSON.parse(args.input))
-      } catch {
-        bodyStr = JSON.stringify({ input: args.input })
-      }
-    } else if (hasBody) {
-      bodyStr = JSON.stringify({})
+    if (hasBody) {
+      bodyStr = JSON.stringify(effectiveArgs ?? {})
     }
     const response = await fetch(url, {
       method: manifest.method,

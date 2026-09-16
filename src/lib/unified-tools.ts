@@ -576,7 +576,10 @@ export async function buildPluginUnifiedTools(args: { query: string; context?: '
         name: fnName,
         description: `[Plugin] ${plugin.description}`,
         category: 'plugin' as const,
-        parameters: {
+        // A manifest that declares a JSON Schema gets it passed through verbatim,
+        // exactly like an MCP tool's `inputSchema`. Without one, fall back to the
+        // legacy single-string `input` contract so existing plugins keep working.
+        parameters: manifest?.parameters ?? {
           type: 'object',
           properties: {
             input: {
@@ -594,8 +597,17 @@ export async function buildPluginUnifiedTools(args: { query: string; context?: '
 
           const orgId = context.organizationId || getOrgContext()
           try {
-            const inputStr = typeof params.input === 'string' ? params.input : JSON.stringify(params)
-            const res = await withToolSandbox(toolId, () => executePlugin({ plugin, input: inputStr }))
+            // A manifest WITH a schema takes the structured path (real types
+            // preserved); without one, keep the legacy stringified blob exactly
+            // as before so existing plugins behave identically.
+            const res = await withToolSandbox(toolId, () =>
+              manifest?.parameters
+                ? executePlugin({ plugin, args: params })
+                : executePlugin({
+                    plugin,
+                    input: typeof params.input === 'string' ? params.input : JSON.stringify(params),
+                  }),
+            )
 
             if (res.ok) {
               toolCircuitBreaker.recordSuccess(toolId)

@@ -21,6 +21,7 @@
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -75,6 +76,47 @@ const CALL_TOOL_TIMEOUT_MS = Number(process.env.MCP_CALL_TOOL_TIMEOUT_MS ?? 30_0
 interface McpCallResult {
   content?: Array<{ type: string; text?: string; [k: string]: unknown }>
   isError?: boolean
+}
+
+/**
+ * Build a client that reacts to the server changing its tool list at runtime.
+ *
+ * WHY THIS EXISTS (MEASURED, not theoretical). MCP lets a server advertise
+ * `capabilities.tools.listChanged` and then push
+ * `notifications/tools/list_changed` whenever its tools change — the standard
+ * pattern for servers whose tool set is dynamic (auth-dependent tools, tools
+ * enabled by server-side config, tools registered by a plugin load). We cached
+ * the tool list for TOOLS_TTL_MS and registered NO notification handler, so a
+ * newly announced tool stayed invisible until the TTL expired.
+ *
+ * Verified against a real server that adds a tool 2s after connect and emits the
+ * notification: the client reported 1 tool where the server had 2, until the
+ * cache was reset by hand. `invalidateMcpToolsCache()` on the notification
+ * closes that gap, so the next `listMcpTools()` re-reads from the server.
+ *
+ * The handler is deliberately tolerant: a notification that cannot be handled
+ * must never tear down a working connection.
+ */
+function createClient(): Client {
+  const client = new Client(
+    { name: 'ryasai-chatbot', version: '1.0.0' },
+    // NOTE: `tools` is a SERVER capability, not a client one — declaring it here
+    // is a type error and enables nothing. A client opts in simply by
+    // registering the notification handler below, which is what a spec-compliant
+    // server checks before emitting `notifications/tools/list_changed`.
+    { capabilities: {} },
+  )
+  try {
+    client.setNotificationHandler(
+      ToolListChangedNotificationSchema,
+      () => { invalidateMcpToolsCache() },
+    )
+  } catch (e) {
+    // An older SDK without this schema must not break MCP support entirely;
+    // the TTL cache still bounds staleness.
+    console.warn('[mcp] tools/list_changed handler not registered:', e instanceof Error ? e.message : e)
+  }
+  return client
 }
 
 export async function listMcpTools(): Promise<McpTool[]> {
@@ -150,10 +192,7 @@ export async function testMcpServer(
   const transport = await buildTransport(row)
   if (!transport) return { ok: false, error: `Invalid transport config (command: ${row.command || 'empty'}, url: ${row.url || 'empty'}).` }
 
-  const client = new Client(
-    { name: 'ryasai-chatbot', version: '1.0.0' },
-    { capabilities: {} },
-  )
+  const client = createClient()
 
   try {
     await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
@@ -235,10 +274,7 @@ async function getConnection(
     if (c) c.failed = true
   }
 
-  const client = new Client(
-    { name: 'ryasai-chatbot', version: '1.0.0' },
-    { capabilities: {} },
-  )
+  const client = createClient()
 
   try {
     await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })

@@ -94,8 +94,6 @@ check('more than one round', c.res.iterations > 1, `${c.res.iterations} rounds`)
 check('at least two tool runs', c.res.toolRuns.length >= 2, `${c.res.toolRuns.length}`)
 check('an answer was produced', c.res.answer.trim().length > 20, `${c.res.answer.slice(0, 80).replace(/\n/g, ' ')}`)
 
-console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`)
-process.exit(failures === 0 ? 0 : 1)
 
 // --- E. catalogue parity ---------------------------------------------------
 // TWO tool catalogues exist: tool-registry.ts (the legacy multi-step DAG, still
@@ -114,3 +112,49 @@ console.log('\nE. catalogue parity (needs a populated DB)')
     JSON.stringify({ onlyUnified: uniIds.filter((i) => !legIds.includes(i)), onlyLegacy: legIds.filter((i) => !uniIds.includes(i)) }))
   check('the catalogue is not empty', uniIds.length > 0)
 }
+
+// --- F. MCP runtime tool changes -------------------------------------------
+// A spec-compliant server may add or remove tools at runtime and announce it
+// with `notifications/tools/list_changed`. A client that caches the tool list
+// and ignores that notification serves a STALE catalogue — the model cannot call
+// a tool the server has just enabled. Measured before the fix: the client
+// reported 1 tool where the server had 2, until the cache was reset by hand.
+console.log('\nF. MCP runtime tool changes (needs the dynamic fixture)')
+{
+  const { listMcpTools, invalidateMcpToolsCache } = await import('@/lib/mcp-client')
+  const fixture = new URL('./fixtures/mcp-dynamic-server.mjs', import.meta.url).pathname
+
+  await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-dynamic-fixture' } }))
+  await bypassOrg(() =>
+    db.mcpServer.create({
+      data: {
+        organizationId: orgRow!.organizationId, name: 'mcp-dynamic-fixture',
+        description: 'adds a tool at runtime and announces list_changed',
+        transport: 'stdio', command: 'node', args: JSON.stringify([fixture]),
+        url: '', envJson: '{}', headersJson: '{}', isEnabled: true,
+      },
+    }),
+  )
+  invalidateMcpToolsCache()
+
+  try {
+    const before = (await listMcpTools()).filter((t) => t.serverName === 'mcp-dynamic-fixture')
+    check('the fixture starts with exactly one tool', before.length === 1, `${before.length}`)
+
+    // Give the server time to add tool 2 and emit the notification.
+    await new Promise((r) => setTimeout(r, 6000))
+
+    const after = (await listMcpTools()).filter((t) => t.serverName === 'mcp-dynamic-fixture')
+    // NO manual invalidation here — honouring the notification is the thing under test.
+    check('the runtime-added tool is visible WITHOUT a manual cache reset', after.length === 2,
+      `saw ${after.length}: ${after.map((t) => t.toolName).join(',')}`)
+  } finally {
+    await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-dynamic-fixture' } }))
+    invalidateMcpToolsCache()
+  }
+}
+
+// Summary LAST — an earlier exit here silently skipped the sections below it,
+// so the harness reported success while never running them.
+console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`)
+process.exit(failures === 0 ? 0 : 1)

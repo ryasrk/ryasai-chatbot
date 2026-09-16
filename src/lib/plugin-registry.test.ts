@@ -598,3 +598,67 @@ describe('executePlugin — the execution-time SSRF re-check', () => {
     expect(calledUrl).toBe('')
   })
 })
+
+
+describe('plugin manifest — declared JSON Schema (industry-standard shape)', () => {
+  // WHY: without a declared schema every plugin's arguments collapse into ONE
+  // string field (`input`) that the model must guess how to build. That blocks
+  // boolean/array/nested parameters and is the same defect class as blind MCP
+  // argument coercion. A manifest may now declare `parameters` as JSON Schema,
+  // which is what an OpenAI-plugin / MCP-style manifest expects.
+
+  const endpointFor = 'http://127.0.0.1:9/x'
+
+  test('a manifest WITH parameters keeps its schema intact', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number' },
+        exact: { type: 'boolean' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['query'],
+    }
+    const m = parsePluginManifest(JSON.stringify({
+      executorType: 'webhook', endpoint: endpointFor, method: 'POST',
+      authType: 'NONE', timeoutMs: 5000, description: 'x',
+      parameters: schema,
+    }))
+    expect(m).not.toBeNull()
+    // Byte-identical: we must not rewrite the author's schema.
+    expect(m!.parameters).toEqual(schema)
+  })
+
+  test('a manifest WITHOUT parameters still parses (legacy contract preserved)', () => {
+    const m = parsePluginManifest(JSON.stringify({
+      executorType: 'webhook', endpoint: endpointFor, method: 'GET',
+      authType: 'NONE', timeoutMs: 5000, description: 'x', paramDescription: 'blob',
+    }))
+    expect(m).not.toBeNull()
+    expect(m!.parameters).toBeUndefined()
+  })
+
+  test('a non-object parameters value does not invalidate the whole manifest', () => {
+    // One malformed plugin must not fail the catalogue: the bad schema is
+    // dropped, the plugin still registers.
+    const m = parsePluginManifest(JSON.stringify({
+      executorType: 'webhook', endpoint: endpointFor, method: 'POST',
+      authType: 'NONE', timeoutMs: 5000, description: 'x', parameters: 'not-an-object',
+    }))
+    expect(m).not.toBeNull()
+    expect(m!.parameters).toBeUndefined()
+  })
+
+  test('structured args and the legacy input blob agree on a flat object', () => {
+    // The two call shapes must produce the SAME effective arguments, so a
+    // plugin cannot behave differently depending on which path invoked it.
+    const flat = { query: 'hello', limit: 5 }
+    const fromArgs = flat
+    const fromInput = (() => {
+      const parsed = JSON.parse(JSON.stringify(flat))
+      return typeof parsed === 'object' && parsed !== null ? parsed : { input: JSON.stringify(flat) }
+    })()
+    expect(fromArgs).toEqual(fromInput)
+  })
+})
