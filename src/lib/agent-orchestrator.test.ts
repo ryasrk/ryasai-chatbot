@@ -152,6 +152,30 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
     expect(result.answer).toContain('currently down')
   })
 
+  test('a PARTIAL failure in a parallel round preserves the successes', async () => {
+    // Two tools in one round, one of which fails. The failing call must not
+    // discard the successful observation — the model needs it to continue.
+    mock.module('@/lib/web-fetch', () => ({
+      webSearch: async () => ({ ok: false, results: [], error: 'search backend unreachable' }),
+      fetchUrlForPlanner: async () => ({ ok: true, content: 'WIKI_BODY: Argentina won 4-2 on penalties.' }),
+    }))
+
+    llmResponses = [
+      [
+        { id: 'ok1', name: 'web_fetch', arguments: JSON.stringify({ url: 'https://en.wikipedia.org/wiki/x' }) },
+        { id: 'bad1', name: 'web_search', arguments: JSON.stringify({ query: 'anything' }) },
+      ],
+      'From the fetched page: Argentina won 4-2 on penalties.',
+    ]
+
+    const result = await runAgentOrchestrator({ question: 'who won?', userId: 'u1', maxRounds: 3 })
+
+    const statuses = result.toolRuns.map((r) => r.status).sort()
+    expect(statuses).toEqual(['error', 'success'])
+    // The successful output must survive into the final answer's grounding.
+    expect(result.answer).toContain('4-2')
+  })
+
   test('round limit prevents infinite loops and returns graceful summary', async () => {
     // Model keeps requesting tools repeatedly
     llmResponses = [

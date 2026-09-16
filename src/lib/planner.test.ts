@@ -12,7 +12,15 @@ const mockGenerateAnswer = mock(async (_args: { question: string; context: strin
 const mockGenerateChat = mock(async () => 'fixed-question')
 const mockPluginFindFirst = mock(async () => null) as unknown as ReturnType<typeof mock>
 const mockExecutePlugin = mock(async (): Promise<{ ok: boolean; output: string; error?: string; latencyMs: number }> => ({ ok: true, output: 'plugin-output', latencyMs: 10 }))
-const mockCallMcpTool = mock(async (): Promise<{ ok: boolean; output: string; error?: string }> => ({ ok: true, output: 'mcp-output' }))
+// Typed with its full argument list so `mock.calls` is a real tuple and the
+// assertions below can index [0]/[1]/[2] without a cast.
+const mockCallMcpTool = mock(
+  async (
+    _serverId: string,
+    _toolName: string,
+    _args: Record<string, unknown>,
+  ): Promise<{ ok: boolean; output: string; error?: string }> => ({ ok: true, output: 'mcp-output' }),
+)
 
 mock.module('@/lib/tool-router', () => ({
   runNonStreamingChatCompletion: mockRunNonStreaming,
@@ -59,7 +67,18 @@ mock.module('@/lib/plugin-registry', () => ({
 }))
 mock.module('@/lib/mcp-client', () => ({
   callMcpTool: mockCallMcpTool,
+  // planner.ts reads the server's JSON Schema to type-coerce step inputs. An
+  // empty catalogue leaves every value as a string, which is the safe default.
+  //
+  // Reaches through a mutable holder, NOT `mockListMcpTools` directly: Bun
+  // hoists `import` above top-level statements, so planner.ts binds this export
+  // before this factory runs, and a direct capture would hand the module a
+  // different function identity (MEASURED: call count stayed 0 and every
+  // mockImplementation was silently ignored).
+  listMcpTools: async () => mcpCatalogue.tools,
 }))
+
+const mcpCatalogue: { tools: Array<{ serverId: string; toolName: string; inputSchema: Record<string, unknown> }> } = { tools: [] }
 
 // ---------------------------------------------------------------------------
 // Org-context + MCP rate-limit seams.
@@ -1039,6 +1058,77 @@ describe('executePlan — MCP branch', () => {
     expect(r[0].ok).toBe(true)
   })
 
+  // INCIDENT (2026-09): coerceMcpInput JSON.parsed EVERY string value, so a
+  // legitimate string that merely looked like JSON was retyped. MEASURED: a
+  // `path: "12345"` became the NUMBER 12345, and `path: '"quoted"'` lost its
+  // quotes. A server validating its own schema then either rejects the call or
+  // acts on a different path than the model asked for.
+  //
+  // Fix: read the server's declared JSON Schema and convert ONLY on a type
+  // match; a declared string is never retyped.
+  test('a declared STRING is never retyped, even when it looks like JSON', async () => {
+    mcpCatalogue.tools = [
+      {
+        serverId: 'fs',
+        toolName: 'read_file',
+        inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      },
+    ]
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcp({ tool: 'mcp:fs:read_file', input: { path: '12345' } })
+    // The corruption case: must arrive as the STRING "12345", not the number.
+    expect(mockCallMcpTool.mock.calls[0][2]).toEqual({ path: '12345' })
+  })
+
+  test('a declared NUMBER is converted from its string form', async () => {
+    mcpCatalogue.tools = [
+      {
+        serverId: 'fs',
+        toolName: 'read_file',
+        inputSchema: { type: 'object', properties: { path: { type: 'string' }, tail: { type: 'number' } } },
+      },
+    ]
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcp({ tool: 'mcp:fs:read_file', input: { path: '/tmp/a', tail: '5' } })
+    expect(mockCallMcpTool.mock.calls[0][2]).toEqual({ path: '/tmp/a', tail: 5 })
+  })
+
+  test('a declared BOOLEAN and ARRAY are converted; a mismatched value stays a string', async () => {
+    mcpCatalogue.tools = [
+      {
+        serverId: 'fs',
+        toolName: 'list_dir',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            recursive: { type: 'boolean' },
+            paths: { type: 'array' },
+            limit: { type: 'number' },
+          },
+        },
+      },
+    ]
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcp({
+      tool: 'mcp:fs:list_dir',
+      // `limit: "abc"` is NOT a JSON number, so it must stay the string "abc"
+      // rather than being dropped or coerced to NaN.
+      input: { recursive: 'true', paths: '["a","b"]', limit: 'abc' },
+    })
+    expect(mockCallMcpTool.mock.calls[0][2]).toEqual({
+      recursive: true,
+      paths: ['a', 'b'],
+      limit: 'abc',
+    })
+  })
+
+  test('with NO schema available every value stays a string (safe default)', async () => {
+    mcpCatalogue.tools = []
+    mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
+    await runMcp({ tool: 'mcp:fs:read_file', input: { path: '12345', tail: '5' } })
+    expect(mockCallMcpTool.mock.calls[0][2]).toEqual({ path: '12345', tail: '5' })
+  })
+
   test('an MCP step does not fall through to a chat completion', async () => {
     await runMcp({ tool: 'mcp:filesystem.read_file' })
     expect(mockRunNonStreaming).not.toHaveBeenCalled()
@@ -1497,16 +1587,30 @@ describe('executePlan — MCP rate limiting and ToolRun persistence', () => {
     expect(r[0].output).toBe('GOOD_OUTPUT')
   })
 
-  test('MCP inputs are coerced from strings back to JSON types before the call', async () => {
+  test('MCP inputs are coerced to JSON types ONLY where the schema declares them', async () => {
     // The planner normalises every step input to a string, but MCP tools expect
-    // typed JSON (a number here). Without coercion the server receives "5".
+    // typed JSON. Coercion is now driven by the server's OWN schema, so this
+    // test must supply one. Before the 2026-09 fix it coerced blindly, which
+    // retyped legitimate strings — see the "never retyped" cases above.
+    mcpCatalogue.tools = [
+      {
+        // Matches the id `runMcpWithOrg` builds: `mcp:srv1.read_file` splits to
+        // serverId `srv1.read_file` and an EMPTY tool name (two segments).
+        serverId: 'srv1.read_file',
+        toolName: '',
+        inputSchema: {
+          type: 'object',
+          properties: { limit: { type: 'number' }, flag: { type: 'boolean' }, plain: { type: 'string' } },
+        },
+      },
+    ]
     mockCallMcpTool.mockImplementation(async () => ({ ok: true, output: 'ok' }))
     await runMcpWithOrg({ input: { limit: '5', flag: 'true', plain: 'hello' } }, 'org-42')
     const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string, Record<string, unknown>]
     const passed = mcpArgs[2]
     expect(passed.limit).toBe(5)
     expect(passed.flag).toBe(true)
-    // A value that is not valid JSON stays a string rather than becoming null.
+    // A declared string stays a string rather than becoming a number or null.
     expect(passed.plain).toBe('hello')
   })
 

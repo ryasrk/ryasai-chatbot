@@ -12,7 +12,7 @@ import { generateAnswer, generateChat } from '@/lib/ai'
 import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
-import { callMcpTool } from '@/lib/mcp-client'
+import { callMcpTool, listMcpTools } from '@/lib/mcp-client'
 import { checkToolRateLimit } from '@/lib/tool-rate-limit'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { executeAdminTool } from '@/lib/admin-tools'
@@ -312,16 +312,48 @@ function stringifyEntries(record: Record<string, unknown>): Record<string, strin
   return result
 }
 
-// MCP tools expect typed JSON values (numbers, booleans, arrays) but the
-// planner normalizes all step inputs to strings. Parse each value back to its
-// JSON type where possible; leave as string when it isn't valid JSON.
-function coerceMcpInput(input: Record<string, string>): Record<string, unknown> {
+/**
+ * Restore the JSON type of each step input value before calling an MCP tool.
+ *
+ * The planner normalizes every step input to a STRING, but an MCP server's
+ * JSON Schema declares real types (`tail: number`, `recursive: boolean`,
+ * `paths: string[]`). Blindly `JSON.parse`-ing each value corrupts any string
+ * that merely LOOKS like JSON — MEASURED: a legitimate `path: "12345"` became
+ * the number `12345`, and `path: "\"quoted\""` lost its quotes. A server
+ * validating its own schema then rejects the call, or worse, acts on a
+ * different path than the model asked for.
+ *
+ * Fix: consult the tool's declared schema. Only convert when the JSON-parsed
+ * value's TYPE MATCHES the declared type; otherwise keep the original string.
+ * A string parameter can therefore never be silently retyped.
+ */
+function coerceMcpInput(
+  input: Record<string, string>,
+  schema?: Record<string, unknown>,
+): Record<string, unknown> {
+  const declared = ((schema?.properties ?? {}) as Record<string, { type?: string }>)
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(input)) {
+    const declaredType = declared[k]?.type
+    // No declared schema for this key: keep the raw string. Passing a string to
+    // a server that expected a number fails loudly and legibly; guessing risks
+    // acting on the wrong value, which fails silently.
+    if (!declaredType || declaredType === 'string') {
+      out[k] = v
+      continue
+    }
     try {
-      out[k] = JSON.parse(v)
-    } catch (e) {
-      console.warn(`[planner] coerceMcpInput: failed to parse key "${k}" as JSON, using string:`, e)
+      const parsed = JSON.parse(v)
+      const matches =
+        (declaredType === 'number' || declaredType === 'integer') && typeof parsed === 'number' ||
+        declaredType === 'boolean' && typeof parsed === 'boolean' ||
+        declaredType === 'array' && Array.isArray(parsed) ||
+        declaredType === 'object' && parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      // Type mismatch means the string was not a JSON literal of the declared
+      // type (e.g. "5" for a number is fine; "abc" is not). Keep it as a string
+      // and let the server report the validation error.
+      out[k] = matches ? parsed : v
+    } catch {
       out[k] = v
     }
   }
@@ -586,6 +618,13 @@ async function executeStep(
       const parts = step.tool.split(':')
       const serverId = parts[1]
       const toolName = parts.slice(2).join(':')
+
+      // The server's OWN JSON Schema, so input coercion can honour the declared
+      // types instead of guessing (see coerceMcpInput). A lookup failure leaves
+      // it undefined, which keeps every value as a string — the safe default.
+      const mcpSchema = (await listMcpTools()).find(
+        (t) => t.serverId === serverId && t.toolName === toolName,
+      )?.inputSchema
       // Per-org rate limit on MCP tool invocations.
       const orgId = getOrgContext()
       if (orgId) {
@@ -599,7 +638,7 @@ async function executeStep(
           }
         }
       }
-      const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
+      const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input, mcpSchema))
       if (result.ok) {
         toolCircuitBreaker.recordSuccess(step.tool)
       } else {

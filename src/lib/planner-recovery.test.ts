@@ -14,7 +14,15 @@ const mockRunNonStreaming = mock(async (): Promise<unknown> => ({
   answer: 'mock-answer', citations: [], chartData: null, toolRuns: [] as Array<{ status: string; errorMessage?: string }>,
 }))
 const mockGenerateChat = mock(async (): Promise<string> => 'reformulated question')
-const mockCallMcpTool = mock(async (): Promise<{ ok: boolean; output: string; error?: string }> => ({ ok: true, output: 'mcp-output' }))
+// Typed with its full argument list so `mock.calls` is a real tuple and the
+// assertions below can index [0]/[1]/[2] without a cast.
+const mockCallMcpTool = mock(
+  async (
+    _serverId: string,
+    _toolName: string,
+    _args: Record<string, unknown>,
+  ): Promise<{ ok: boolean; output: string; error?: string }> => ({ ok: true, output: 'mcp-output' }),
+)
 const mockPluginFindFirst = mock(async (): Promise<unknown> => null)
 const mockExecutePlugin = mock(async (): Promise<{ ok: boolean; output: string; error?: string; latencyMs: number }> => ({ ok: true, output: 'plugin-output', latencyMs: 10 }))
 const mockToolRunCreate = mock(async (_a: unknown): Promise<unknown> => ({}))
@@ -47,7 +55,20 @@ mock.module('@/lib/db', () => ({
   },
 }))
 mock.module('@/lib/plugin-registry', () => ({ executePlugin: mockExecutePlugin }))
-mock.module('@/lib/mcp-client', () => ({ callMcpTool: mockCallMcpTool }))
+// NOTE (measured): Bun HOISTS `import` above top-level statements, so planner.ts
+// binds `listMcpTools` before this factory is registered. A direct capture of
+// `mockListMcpTools` therefore handed the module a DIFFERENT function identity
+// and the mock never fired (call count stayed 0). Reading through a mutable
+// holder that the factory closes over works, because the holder object exists
+// from the start of the module body and only its CONTENTS change per test.
+const mcpCatalogue: { tools: Array<{ serverId: string; toolName: string; inputSchema: Record<string, unknown> }> } = { tools: [] }
+
+mock.module('@/lib/mcp-client', () => ({
+  callMcpTool: mockCallMcpTool,
+  // planner.ts reads each MCP tool's JSON schema to type-coerce step inputs.
+  // An empty catalogue leaves every value as a string (the safe default).
+  listMcpTools: async () => mcpCatalogue.tools,
+}))
 mock.module('@/lib/web-fetch', () => ({
   fetchUrlForPlanner: async () => ({ ok: true, content: 'page' }),
   webSearch: async () => ({ ok: true, results: [] }),
@@ -70,6 +91,7 @@ async function runStep(step: Partial<PlanStep>, opts: { isAdmin?: boolean } = {}
 
 beforeEach(() => {
   org.id = undefined
+  mcpCatalogue.tools = []
   mockRunNonStreaming.mockReset()
   mockRunNonStreaming.mockImplementation(async () => ({ answer: 'mock-answer', citations: [], chartData: null, toolRuns: [] }))
   mockGenerateChat.mockReset()
@@ -427,13 +449,30 @@ describe('executeStep — the MCP tool name is everything after the server id', 
 
   test('MCP inputs are re-typed from JSON so numbers and booleans reach the server typed', async () => {
     // The planner normalises all step inputs to STRINGS (stringifyEntries).
-    // coerceMcpInput parses them back; without it a tool expecting
-    // {"max_results": 5} receives the string "5" and the MCP server rejects it.
+    // coerceMcpInput converts them back — but now ONLY for keys whose DECLARED
+    // JSON Schema type matches, so a legitimate string can never be retyped.
+    // A schema is therefore required for coercion to happen at all.
+    mcpCatalogue.tools = [
+      {
+        // Matches the id this test passes: `mcp:srv1:search` → serverId `srv1`,
+        // toolName `search` (the step override below replaces runStep's default).
+        serverId: 'srv1',
+        toolName: 'search',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            max_results: { type: 'number' },
+            exact: { type: 'boolean' },
+            q: { type: 'string' },
+          },
+        },
+      },
+    ]
     await runStep({ tool: 'mcp:srv1:search', input: { max_results: '5', exact: 'true', q: 'plain text' } })
     const [, , args] = mockCallMcpTool.mock.calls.at(-1) as unknown as [string, string, Record<string, unknown>]
     expect(args.max_results).toBe(5)
     expect(args.exact).toBe(true)
-    // A non-JSON value stays a string rather than being coerced to NaN/undefined.
+    // A declared string stays a string rather than being coerced to NaN/undefined.
     expect(args.q).toBe('plain text')
   })
 })
