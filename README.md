@@ -124,7 +124,7 @@ McNemar registers 0 wins for either side. The small pipeline is materially faste
 stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
 is not claimed here.
 
-**Test suite:** 6,723 tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
+**Test suite:** 6,760 tests across 249 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
 reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
 gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
 this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
@@ -287,6 +287,39 @@ multi-step DAG path; both it and the orchestrator share the circuit breaker and 
 same tool catalogue. A drift check in `trial/70-agentic-e2e.ts` fails if the two
 catalogues ever disagree, so a tool cannot silently exist on one surface only.
 
+### MCP client capabilities
+
+We declare only what we actually implement, because declaring a capability we
+cannot serve makes a server wait on a request that never answers:
+
+| Capability | Declared | What it does here |
+|---|---|---|
+| `roots` | yes | Answers `roots/list` with the directories this install grants, and emits `roots/list_changed`. The grant is an explicit opt-in via `MCP_ROOTS` (colon-separated, PATH convention); with nothing set we report **zero** roots rather than guessing at the host filesystem. |
+| `tools` · `resources` · `prompts` | server-side | Handled, including all four `*_list_changed`/`updated` notifications, and resource **subscriptions** (`resources/subscribe`) so a conforming server actually sends us content changes instead of keeping them for subscribers only. |
+| `sampling` · `elicitation` | **no** | Deliberately absent — there is no handler for either, so declaring them would strand a server on a request we never answer. |
+
+### Plugin execution and packaging
+
+A plugin runs either as a webhook or as a local **MCP server** (`executorType:
+mcp-stdio`). The command is checked against the same allowlist the MCP installer
+uses, and the process runs under Linux namespaces — network, pid, mount and user
+— so it has **no route off the box** and cannot see other processes. Verified: a
+baseline process reaches the network while a sandboxed one fails with
+`ENETUNREACH`.
+
+Two limits are stated rather than glossed: this is **not** a filesystem sandbox
+(the mount namespace is not populated with a read-only root, so the process still
+reads what the app user can), and it caps no CPU or memory. It is containment
+against a careless plugin, not a boundary against a kernel-level adversary. The
+level degrades explicitly and says so in the log; an operator can pin it with
+`MCP_PLUGIN_ISOLATION`.
+
+Plugins travel as **portable packages** (`GET /api/tools/[id]/package`) and are
+installed in two steps: `POST /api/tools/install` validates and *describes* what
+would happen — which endpoint, which process, which credential — and writes
+nothing, so the operator approves something they have actually seen.
+Credentials are stripped on export and refused on import.
+
 ### Agentic test coverage
 
 The agent surface is covered at three levels, because a unit test with a mocked
@@ -294,9 +327,9 @@ provider cannot show that the transport and the tool round-trip actually coopera
 
 | Level | Where | What it proves |
 |---|---|---|
-| Unit | `agent-orchestrator.test.ts`, `unified-tools.test.ts`, `tool-circuit-breaker.test.ts`, `llm-client.test.ts` | Round limits, parallel execution with partial failure, circuit-breaker trips, tool-name legality, and the outgoing `tool_calls` wire shape. |
+| Unit | `agent-orchestrator.test.ts`, `unified-tools.test.ts`, `tool-circuit-breaker.test.ts`, `llm-client.test.ts`, `plugin-sandbox.test.ts`, `plugin-package.test.ts`, `mcp-client-transport.test.ts` | Round limits, parallel execution with partial failure, circuit-breaker trips, tool-name legality, the outgoing `tool_calls` wire shape, sandbox argv composition, the package lifecycle with four attack cases, and that an unknown tool name fails instead of returning empty success. |
 | Browser, mocked provider | `e2e/07-agentic.spec.ts` | SSE framing over real HTTP, the frame-ordering contract, and a complete tool-calling turn. The mock LLM rejects a malformed `tool_call`, so a wire-shape regression fails the suite. |
-| Live harness | `trial/70-agentic-e2e.ts`, `trial/95-mcp-live.ts` | A real provider and a real MCP server: tool discovery, lossless schema passthrough, a grounded answer, and catalogue parity. Not in CI (requires a provider). |
+| Live harness | `trial/70-agentic-e2e.ts` (11 sections), `trial/95-mcp-live.ts` | A real provider and real MCP servers: tool discovery, lossless schema passthrough, catalogue parity, runtime tool changes, resource/prompt surfaces, resource content updates, the roots round trip, subscriptions against a subscribers-only server, and sandboxed plugin execution. Not in CI (requires a provider). |
 
 ## Production Hardware Specifications
 
@@ -472,7 +505,7 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 6,723 unit tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
+- ✅ 6,760 unit tests across 249 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
 - ✅ 48 static invariant guards (`bun test src/lib/invariants.test.ts`)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
