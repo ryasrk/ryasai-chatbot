@@ -24,6 +24,7 @@ import { Client } from '@modelcontextprotocol/sdk/client'
 import {
   ToolListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
   PromptListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -104,6 +105,17 @@ let toolsCachePromise: Promise<McpTool[]> | null = null
 // change notification.
 let resourcesCache: { resources: McpResource[]; templates: McpResourceTemplate[]; at: number } | null = null
 let promptsCache: { prompts: McpPrompt[]; at: number } | null = null
+// Content read by `readMcpResource`, keyed by serverId + uri.
+//
+// WHY A CONTENT CACHE AT ALL: a resource read is a round trip to a foreign
+// process, and an agent commonly reads the same resource across several rounds.
+// Unlike the LIST caches this one has no TTL: a resource's CONTENT is not
+// expected to change on its own, so a short TTL would either be useless (too
+// long) or defeat the point (too short). It is invalidated by the server's own
+// `notifications/resources/updated`, which is the spec's signal that the content
+// changed — the same contract the list caches already honour.
+const RESOURCE_CONTENT_MAX = Number(process.env.MCP_RESOURCE_CACHE_MAX ?? 100)
+const resourceContentCache = new Map<string, { output: string; mimeType: string; at: number }>()
 const TOOLS_TTL_MS = 60_000
 
 const CONNECT_TIMEOUT_MS = Number(process.env.MCP_CONNECT_TIMEOUT_MS ?? 15_000)
@@ -148,16 +160,24 @@ function createClient(): Client {
   // Each registration is guarded independently: an older SDK missing one schema
   // must not cost us the others, and a notification we cannot handle must never
   // tear down a working connection.
-  const handlers: Array<[unknown, () => void, string]> = [
+  const handlers: Array<[unknown, (n: unknown) => void, string]> = [
     [ToolListChangedNotificationSchema, () => { invalidateMcpToolsCache() }, 'tools'],
     [ResourceListChangedNotificationSchema, () => { invalidateMcpResourcesCache() }, 'resources'],
     [PromptListChangedNotificationSchema, () => { invalidateMcpPromptsCache() }, 'prompts'],
+    // A resource's CONTENT changed (not the list). The notification carries only
+    // a uri, so we drop that one entry. Ignoring it served stale content for the
+    // life of the process, which is worse than a stale list: the model would
+    // answer from a document the server had already replaced.
+    [ResourceUpdatedNotificationSchema, (n: unknown) => {
+      const uri = (n as { params?: { uri?: unknown } } | null)?.params?.uri
+      invalidateMcpResourceContent(typeof uri === 'string' ? uri : undefined)
+    }, 'resources/updated'],
   ]
   for (const [schema, handler, label] of handlers) {
     try {
       client.setNotificationHandler(schema as Parameters<typeof client.setNotificationHandler>[0], handler as Parameters<typeof client.setNotificationHandler>[1])
     } catch (e) {
-      console.warn(`[mcp] ${label}/list_changed handler not registered:`, e instanceof Error ? e.message : e)
+      console.warn(`[mcp] ${label} handler not registered:`, e instanceof Error ? e.message : e)
     }
   }
   return client
@@ -317,6 +337,25 @@ export function invalidateMcpResourcesCache(): void {
   resourcesCache = null
 }
 
+/**
+ * Drop cached content for one resource uri, or ALL content when no uri is given.
+ *
+ * Called when a server announces `notifications/resources/updated`. Passing no
+ * uri (a malformed notification) clears everything — the conservative direction,
+ * because serving stale content is the failure we are avoiding.
+ */
+export function invalidateMcpResourceContent(uri?: string): void {
+  if (!uri) {
+    resourceContentCache.clear()
+    return
+  }
+  // The cache is keyed per server, and the notification does not say which
+  // server sent it, so drop every server's entry for this uri.
+  for (const key of [...resourceContentCache.keys()]) {
+    if (key.endsWith(`|${uri}`)) resourceContentCache.delete(key)
+  }
+}
+
 export function invalidateMcpPromptsCache(): void {
   promptsCache = null
 }
@@ -399,6 +438,10 @@ export async function readMcpResource(
   serverId: string,
   uri: string,
 ): Promise<{ ok: boolean; output: string; mimeType: string; error?: string }> {
+  const cacheKey = `${serverId}|${uri}`
+  const cached = resourceContentCache.get(cacheKey)
+  if (cached) return { ok: true, output: cached.output, mimeType: cached.mimeType }
+
   const conn = await getConnection(serverId)
   if (!conn) return { ok: false, output: '', mimeType: '', error: 'MCP server unavailable or inactive.' }
   try {
@@ -414,9 +457,19 @@ export async function readMcpResource(
     }
     const mimeType = (res.contents[0] as { mimeType?: string } | undefined)?.mimeType ?? ''
     if (textParts.length === 0 && binaryOnly) {
+      // Binary is NOT cached: it is a stable "we cannot serve this" answer, and
+      // caching it would outlive a server that later starts returning text.
       return { ok: false, output: '', mimeType, error: 'Resource is binary; this client can only surface text resources.' }
     }
-    return { ok: true, output: textParts.join('\n'), mimeType }
+    const output = textParts.join('\n')
+    // Bounded LRU: Map preserves insertion order, so the first key is oldest.
+    // A resource that changes on every read cannot grow the cache without limit.
+    if (resourceContentCache.size >= RESOURCE_CONTENT_MAX) {
+      const oldest = resourceContentCache.keys().next().value
+      if (oldest !== undefined) resourceContentCache.delete(oldest)
+    }
+    resourceContentCache.set(cacheKey, { output, mimeType, at: Date.now() })
+    return { ok: true, output, mimeType }
   } catch (e) {
     return { ok: false, output: '', mimeType: '', error: e instanceof Error ? e.message : String(e) }
   }

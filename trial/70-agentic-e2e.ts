@@ -226,6 +226,55 @@ console.log('\nG. MCP resources and prompts (needs the resources fixture)')
   }
 }
 
+
+// --- H. MCP resource CONTENT updates ---------------------------------------
+// A resource's list entry can stay identical while its CONTENT is replaced, and
+// `resources/list_changed` does NOT cover that. Only
+// `notifications/resources/updated` does. Ignoring it served stale content for
+// the life of the process, so the model answered from a document the server had
+// already replaced. Negative-controlled: neutering the handler makes this
+// section report "version 1" while the server has "version 2".
+console.log('\nH. MCP resource content updates (needs the updated fixture)')
+{
+  const {
+    listMcpResources, readMcpResource, invalidateMcpResourcesCache, invalidateMcpToolsCache,
+  } = await import('@/lib/mcp-client')
+  const fixture = new URL('./fixtures/mcp-updated-server.mjs', import.meta.url).pathname
+
+  await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-updated-fixture' } }))
+  await bypassOrg(() =>
+    db.mcpServer.create({
+      data: {
+        organizationId: orgRow!.organizationId, name: 'mcp-updated-fixture',
+        description: 'content changes at runtime', transport: 'stdio', command: 'node',
+        args: JSON.stringify([fixture]), url: '', envJson: '{}', headersJson: '{}', isEnabled: true,
+      },
+    }),
+  )
+  invalidateMcpToolsCache(); invalidateMcpResourcesCache()
+
+  try {
+    const { resources } = await listMcpResources()
+    const mine = resources.find((r) => r.serverName === 'mcp-updated-fixture')
+    check('the fixture resource is listed', mine !== undefined)
+    if (mine) {
+      const first = await readMcpResource(mine.serverId, 'note://live')
+      check('the first read returns version 1', first.output === 'version 1', first.output)
+      const again = await readMcpResource(mine.serverId, 'note://live')
+      check('a repeat read is served from cache', again.output === 'version 1', again.output)
+
+      // The server flips to version 2 and emits resources/updated.
+      await new Promise((r) => setTimeout(r, 6000))
+      const after = await readMcpResource(mine.serverId, 'note://live')
+      check('after resources/updated the NEW content is served (no manual reset)',
+        after.output === 'version 2', after.output)
+    }
+  } finally {
+    await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-updated-fixture' } }))
+    invalidateMcpToolsCache(); invalidateMcpResourcesCache()
+  }
+}
+
 // Summary LAST — an earlier exit here silently skipped the sections below it,
 // so the harness reported success while never running them.
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`)
