@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { checkRedisHealth } from '@/lib/redis'
 import { publicConfig } from '@/lib/public-config'
 import { aggregateHealth, sanitizeHealthError, type CheckStatus } from '@/lib/health-status'
+import { validatorUrl } from '@/lib/license-client'
 
 /**
  * GET /api/health — detailed health check for orchestrators (k8s, Docker, Caddy).
@@ -70,9 +71,9 @@ export async function GET() {
  * as a sanitized non-ok status — never thrown.
  */
 async function probeLicenseValidator(): Promise<CheckStatus> {
-  const base = process.env.LICENSE_VALIDATOR_URL?.replace(/\/$/, '')
+  const base = validatorUrl()
   if (!base) {
-    return { ok: false, error: 'LICENSE_VALIDATOR_URL not configured (license validation disabled)' }
+    return { ok: false, error: 'License validator not configured (license validation disabled)' }
   }
   const start = Date.now()
   for (const path of ['/health', '/']) {

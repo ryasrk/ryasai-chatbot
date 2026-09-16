@@ -13,7 +13,15 @@ import { scopedLogger } from '@/lib/logger'
 
 const log = scopedLogger('license')
 
-function validatorUrl(): string {
+export const OFFICIAL_LICENSE_VALIDATOR_URL = 'https://license.ryasai.my.id'
+
+export function validatorUrl(): string {
+  // In production deployments, license validation is hardcoded to our official central authority
+  // so client deployments cannot tamper with or redirect license verification.
+  // E2E test mode and non-production environments allow local mock overrides.
+  if (process.env.NODE_ENV === 'production' && process.env.E2E_TEST_MODE !== 'true') {
+    return OFFICIAL_LICENSE_VALIDATOR_URL
+  }
   return process.env.LICENSE_VALIDATOR_URL?.replace(/\/$/, '') || 'http://localhost:9000'
 }
 

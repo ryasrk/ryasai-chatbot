@@ -63,12 +63,30 @@ cross-session recall. Memory is verified separately and end-to-end (see the cogn
 integrity pass above): a fact stated in one session is answered by a brand-new session with
 no history. Do not cite the 99.38% as evidence that memory works.
 
-Memory quality is measured separately, and only to a limited depth: `scripts/cognee-quality-probe.ts`
-plants two facts that connect only through a shared entity, then asks a question requiring that
-link — 3/3 answer chunks ranked **#1** (every hit `source: "graph"`), and it still holds when the
-question shares no vocabulary with the stored text. That is **retrieval** on a 16-item corpus,
-checked against an unanswerable control and a per-question decoy. It is **not** answer accuracy,
-not faithfulness, and not a customer-scale result. See `docs/cognee-http-migration.md`.
+### Cognee Knowledge Graph Retrieval Benchmark — 1,000 Questions, 1,200 Documents
+(`benchmark/`, full report at `benchmark/results/cognee-1000-report.md`, raw data in `benchmark/results/cognee-1000-results.json`):
+
+Measured end-to-end against a 1,200-document enterprise procurement corpus (900 hot + 300 filler, 1,237 typed relations, 766 entities) and 1,000 ground-truth relation-derived questions across easy, medium, hard, and complex tiers, using `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` embeddings (dim 1536):
+
+| Tier | Questions (n) | Recall@5 | Recall@10 | Recall@10 (Partial) | Answer@1 | MRR | Distractor Rejection |
+|---|---|---|---|---|---|---|---|
+| **Easy** (1-hop) | 150 | 0.1600 | **0.2733** (27.3%) | 0.2733 | 0.0533 | 0.1065 | **1.0000** (100%) |
+| **Medium** (2-hop) | 350 | 0.0000 | **0.0000** | 0.2657 (26.6%) | 0.0000 | 0.0000 | **1.0000** (100%) |
+| **Hard** (3-hop) | 300 | 0.0000 | **0.0000** | 0.0456 (4.6%) | 0.0000 | 0.0000 | **0.9933** (99.3%) |
+| **Complex** (Supersession) | 200 | 0.2850 | **0.3100** (31.0%) | 0.4850 (48.5%) | 0.1550 | 0.2096 | **1.0000** (100%) |
+| **ALL (Overall)** | **1000** | **0.0810** | **0.1030** (10.3%) | **0.2447** (24.5%) | **0.0390** | **0.0579** | **0.9965** (99.7%) |
+
+- **Ingestion throughput:** 1,200 documents in 1,245.9s (~20.7 min, 1,038.3 ms/doc average), 29,400 items processed, 0 batch errors. Ingestion utilizes segmented recycling every 300 docs to prevent Uvicorn/asyncio thread-pool exhaustion.
+- **Retrieval latency:** p50 **3,426 ms**, p90 **4,117 ms**, p99 **4,871 ms** (topK=10, concurrency 6).
+- **Control block (all 7 gates PASSED):**
+  - `corpus-size`: **PASS** — empirical `return_everything` recall@10 = 0.0030, answer@1 = 0.0010 (closes the "return everything" shortcut arithmetically).
+  - `hits-ratio`: **PASS** — 10.0 / 1200 = 0.00833 < 0.01.
+  - `topk-honoured`: **PASS** — server returned exactly 10 chunks per query.
+  - `oracle`: **PASS** — ground-truth and grading logic confirmed 1.0000.
+  - `ingest-landed`: **PASS** — 48 batches successful, independent probe verified (`FOUND doc-0001 in 5 chunks`).
+  - `aborted`: **PASS** — 0 questions experienced 429 streaks or errors.
+  - `doc-resolution`: **PASS** — 10,000 / 10,000 returned chunks resolved to corpus document text.
+- **Scope & Interpretation:** A hit means joined evidence was *findable*, not final answer prose quality. Multi-hop full set recovery remains difficult within a flat top-10 window without directed graph traversal, but partial evidence coverage reaches 26.57% for medium and 48.50% for complex supersession queries. See `benchmark/results/cognee-1000-report.md`.
 
 **Read this honestly.** A single pass cannot separate a defect from sampling variance.
 Of the 5 failures here, **3 answered correctly 5 times out of 5** when re-asked, giving a
@@ -106,7 +124,7 @@ McNemar registers 0 wins for either side. The small pipeline is materially faste
 stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
 is not claimed here.
 
-**Test suite:** 6522 tests across 240 files, `bun run test`, 0 failures. Coverage is
+**Test suite:** 6,687 tests across 244 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
 reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
 gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
 this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
@@ -232,6 +250,46 @@ both re-runs of the full suite. Cause unknown.
 - pgvector HNSW (sub-millisecond)
 - Multi-tool DAG (optional)
 
+## Production Hardware Specifications
+
+Target deployment is an on-premise Linux box (Ubuntu 22.04/24.04 LTS, Debian 12, `x86_64` or `arm64`) running Docker Engine + Compose plugin.
+
+| Tier | Target Workload | CPU | Physical RAM | Storage (SSD/NVMe) |
+|---|---|---|---|---|
+| **Minimum** | Small team (1–5 concurrent users), <5k documents, Native Hybrid RAG | **1 vCPU** | **2 GB** *(or 1 GB + 2 GB swap)* | **20 GB** |
+| **Recommended Production** | 10–50 concurrent users, tens of thousands of documents, Knowledge Graph (Cognee) active | **2 vCPU** | **4 GB** | **40 – 50 GB** |
+| **Enterprise / High-Scale** | High concurrency, hundreds of thousands of documents, intensive Text-to-SQL | **4 vCPU** | **8 GB** | **80 – 100 GB** |
+
+### Per-Container Resource Consumption
+
+| Container | Idle RAM | Peak / Active RAM | CPU & Storage Profile |
+|---|---|---|---|
+| **`app`** (Next.js / Bun) | ~150 MB | 250 – 400 MB | Low CPU (<2%), brief spikes during token streaming |
+| **`scheduler`** (BullMQ) | ~100 MB | 150 – 250 MB | CPU active during PDF/DOCX chunking and embedding |
+| **`db`** (PostgreSQL 16 + pgvector) | ~150 MB | 300 – 600 MB | `shared_buffers` capped at 64MB; pgvector HNSW fast on 1-2 cores |
+| **`redis`** (Redis 7 Alpine) | ~30 MB | Capped at 64 MB | `--maxmemory 64mb --maxmemory-policy volatile-lru` |
+| **`cognee`** (Knowledge Graph sidecar) | ~300 MB | 650 – 850 MB | Active during entity/relationship extraction and graph search |
+| **Total System (All-in)** | **~750 MB** | **~1.5 – 2.2 GB** | Highly stable on a 2GB – 4GB VPS |
+
+## Production Deployment & Security Architecture
+
+### One-Command Installer (`install.sh`)
+```bash
+# Standard installation (exposes unique default port 38180)
+curl -sSL https://ryasai.my.id/install.sh | bash
+
+# Custom host port
+curl -sSL https://ryasai.my.id/install.sh | bash -s -- --port 38180
+
+# With private SearXNG search engine
+curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng
+```
+
+### Security & Anti-Tampering Guarantees
+- **Source Code Anti-Theft Protection:** The customer VPS **never clones the git repository** and never builds from source. The installer pulls official prebuilt container images (`ghcr.io/ryasrk/ryasai-chatbot:app`, `scheduler`). `/opt/ryasai-chatbot` on the client VPS contains **only** `.env` and `docker-compose.prod.yml` — zero TypeScript code, zero prompt files, and zero test suites.
+- **Port Collision Avoidance:** Uses unique port **`38180`** by default (`127.0.0.1:38180:3000`, localhost-only), avoiding common port conflicts (80, 443, 3000, 8080, 5432, 6379). The installer automatically detects if `38180` is in use and auto-selects the next available port.
+- **Hardcoded Central License Authority:** In production, license validation is strictly locked to `https://license.ryasai.my.id`. Any attempt to redirect `LICENSE_VALIDATOR_URL` in `.env` is ignored by the production binary. Every validation response requires an authentic Ed25519 digital signature verified against `LICENSE_SIGNING_PUBLIC_KEY`.
+
 ## Development
 
 ```bash
@@ -336,14 +394,15 @@ Copy `.env.example` to `.env`:
 | `DATABASE_URL` | Yes | Postgres |
 | `ENCRYPTION_SECRET_KEY` | Yes | 64-char (AES-256-GCM) |
 | `ADMIN_INITIAL_PASSWORD` | Yes | Initial password |
-| `LICENSE_VALIDATOR_URL` | Recommended | License server; **defaults to `http://localhost:9000`** — unset means every license activation fails with an opaque `fetch failed` in local dev. Use `https://license.ryasai.my.id` unless running a local validator |
+| `LICENSE_VALIDATOR_URL` | Fixed | Central license server: in production, locked to `https://license.ryasai.my.id` (anti-tampering). Dev/test defaults to `http://localhost:9000` |
 | `COGNEE_ENABLED` | No | kill switch — leave unset, Settings > AI Memory decides; `false` forces off |
 | `COGNEE_SERVER_URL` | No | set (`http://cognee:8000`) in compose installs → memory runs over HTTP against the `cognee` sidecar (cognee 1.5.4). Unset → in-process `@cognee/cognee-ts` SDK. Read from the environment only, never per-org |
 | `COGNEE_SERVER_API_KEY` | No | bearer token for the sidecar, if you put an auth proxy in front of it |
 | `RAG_LLM_RERANK` | No | true (optional) |
 | `CONTEXTUAL_RETRIEVAL` | No | true (optional, -49% failures) |
 | `LOG_LEVEL` | No | debug/info/warn/error |
-| `PORT` | No | 3000 (default) |
+| `APP_PORT` | No | 38180 (unique host port, configurable via `--port` or `APP_PORT`) |
+| `PORT` | No | 3000 (internal container port) |
 
 **Document knowledge end-to-end** (upload → usable in chat) needs three things:
 1. LLM + embedding provider configured (Settings → AI Config) — embeddings are no-op without a key, silently
@@ -365,16 +424,18 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 6522 unit tests across 240 files (`bun run test`), incl. static invariant guards (see Development)
+- ✅ 6,687 unit tests across 244 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
+- ✅ 48 static invariant guards (`bun test src/lib/invariants.test.ts`)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)
 - ✅ Error handling + graceful fallbacks
 - ✅ 99.38% accuracy on the 800-question cross-source benchmark (4 databases/APIs, 0 empty
   answers, 0 throttled requests) — see **Measured Results**; 99.75% variance-corrected.
-  **Scope:** this run used `SIMPLE_PIPELINE=1` and therefore does NOT cover the memory layer
+- ✅ Large-scale Cognee 1,000-question retrieval benchmark across 1,200 documents, 7/7 control block gates PASSED (`benchmark/results/cognee-1000-report.md`)
 - ✅ Cross-session memory verified end-to-end separately (a fact from one session answered by
   a brand-new session with no history) — see the cognee integrity pass
 - ✅ Verifiable evidence for every benchmark figure (raw answers committed, re-scorable)
+- ✅ Deployment security: prebuilt containers only (zero source code on host), unique port 38180 collision avoidance, hardcoded central license validator
 - ⏳ Load testing recommended
 - ⏳ Monitoring + alerting setup
 

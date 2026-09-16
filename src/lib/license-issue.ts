@@ -26,6 +26,9 @@ import { scopedLogger } from '@/lib/logger'
 const log = scopedLogger('license-issue')
 
 function validatorUrl(): string {
+  if (process.env.NODE_ENV === 'production' && process.env.E2E_TEST_MODE !== 'true') {
+    return 'https://license.ryasai.my.id'
+  }
   return process.env.LICENSE_VALIDATOR_URL?.replace(/\/$/, '') || 'http://localhost:9000'
 }
 

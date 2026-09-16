@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { clearSessionCache } from '@/lib/cognee'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -96,6 +97,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
     }
 
     await db.chatSession.delete({ where: { id: session.id } })
+    clearSessionCache(session.id)
 
     await writeAudit({
       userId: user.userId,

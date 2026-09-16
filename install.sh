@@ -1,27 +1,26 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ryasai Chatbot — One-command installer
+# ryasai Chatbot — One-command installer (Prebuilt Images Only)
 # Usage:  curl -sSL https://ryasai.my.id/install.sh | bash
+#         curl -sSL https://ryasai.my.id/install.sh | bash -s -- --port 38180
 #         curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng
 # Target: Ubuntu/Debian, 1 vCPU / 1GB+ RAM VPS
 # -----------------------------------------------------------------------------
 # Installs:
 #   1. Docker Engine + Compose plugin
-#   2. Clones ryasai/Chatbot to /opt/ryasai-chatbot
-#   3. Generates .env (secrets auto-created, license pointed at ryasai server)
-#   4. docker compose pull + up  (app + redis + postgres; images are prebuilt
-#      in CI on GitHub — NO compile on the VPS, License-Validator is external)
+#   2. Sets up /opt/ryasai-chatbot (.env + docker-compose.prod.yml ONLY)
+#      NOTE: Never clones source code. Only pulls prebuilt official images.
+#   3. Generates .env (secrets auto-created, unique ports configured)
+#   4. docker compose pull + up (app + scheduler + redis + postgres + cognee)
 #
 # Options:
-#   --with-searxng   Also run a private SearXNG instance and point web_search at
-#                    it instead of scraping DuckDuckGo. Costs ~256MB RAM, so it
-#                    is OFF by default — a 1GB box is already tight.
+#   --port <number>                  Unique host port to expose (default: 38180).
+#                                    Avoids collisions with 80, 443, 3000, 8080.
+#   --with-searxng                   Run a private SearXNG for web_search (~256MB RAM).
 #   --license-signing-public-key <hex>
-#                    Ed25519 public key (DER hex) used to VERIFY License-Validator
-#                    responses. Also accepted via the LICENSE_SIGNING_PUBLIC_KEY
-#                    env var (flag wins). NEVER a built-in default: every install
-#                    shipping the same verification key would mean one leaked
-#                    private key forges licenses for ALL customers.
+#                                    Ed25519 public key (DER hex) used to VERIFY
+#                                    License-Validator responses. Also accepted via
+#                                    LICENSE_SIGNING_PUBLIC_KEY env var.
 # =============================================================================
 set -euo pipefail
 
@@ -34,20 +33,27 @@ fail()  { echo -e "${C_RED}ERROR:${C_NC} $*" >&2; exit 1; }
 # --- Options ---------------------------------------------------------------
 WITH_SEARXNG=false
 LICENSE_PUBKEY_ARG="${LICENSE_SIGNING_PUBLIC_KEY:-}"
-ARGS=()
+APP_PORT_ARG=""
+DEFAULT_APP_PORT=38180
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --with-searxng) WITH_SEARXNG=true; shift ;;
+    --port)
+      [ $# -ge 2 ] || fail "--port requires a port number (e.g. 38180)"
+      APP_PORT_ARG="$2"; shift 2 ;;
     --license-signing-public-key)
       [ $# -ge 2 ] || fail "--license-signing-public-key requires a value (DER hex)"
       LICENSE_PUBKEY_ARG="$2"; shift 2 ;;
     # $0 is "bash" when piped from curl, so print help inline rather than self-read.
     -h|--help)
-      echo "ryasai Chatbot installer"
+      echo "ryasai Chatbot installer (Prebuilt Images Only)"
       echo "  curl -sSL https://ryasai.my.id/install.sh | bash"
+      echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --port 38180"
       echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --with-searxng"
       echo "  curl -sSL https://ryasai.my.id/install.sh | bash -s -- --license-signing-public-key <hex>"
       echo
+      echo "  --port <number>                 Unique host port for the web app (default: 38180)."
       echo "  --with-searxng                  Run a private SearXNG for web_search (~256MB RAM)."
       echo "  --license-signing-public-key <hex>"
       echo "                                  Ed25519 public key (DER hex) for verifying license"
@@ -55,7 +61,7 @@ while [ $# -gt 0 ]; do
       echo "                                  If neither is given, license verification stays"
       echo "                                  DISABLED and the app fails closed on licensing."
       exit 0 ;;
-    *) fail "Unknown option: $1 (supported: --with-searxng, --license-signing-public-key <hex>)" ;;
+    *) fail "Unknown option: $1 (supported: --port <number>, --with-searxng, --license-signing-public-key <hex>)" ;;
   esac
 done
 
@@ -71,7 +77,7 @@ docker compose version >/dev/null 2>&1 || { info "Installing Docker Compose plug
 # --- Swap safety net (1 vCPU / 1GB RAM builds can OOM) ----------------------
 TOTAL_MB=$(free -m | awk '/^Mem:/{print $2}')
 if [ "$TOTAL_MB" -lt 2000 ] && ! swapon --show 2>/dev/null | grep -q '/swapfile'; then
-  warn "RAM < 2GB — creating swap so the Docker build won't OOM..."
+  warn "RAM < 2GB — creating swap to ensure stable container runtime..."
   SWAP_MB=2048
   DISK_KB=$(df -k / | awk 'NR==2{print $4}')
   [ "$DISK_KB" -lt $((SWAP_MB * 1024)) ] && SWAP_MB=$(( DISK_KB / 2048 ))
@@ -80,84 +86,105 @@ if [ "$TOTAL_MB" -lt 2000 ] && ! swapon --show 2>/dev/null | grep -q '/swapfile'
     chmod 600 /swapfile && mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile >/dev/null 2>&1 \
       && { grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; }
   else
-    warn "swapfile creation failed (fallocate+dd) — on 1GB RAM you'll want swap: add one manually or install will likely OOM."
+    warn "swapfile creation failed — on 1GB RAM you'll want swap: add one manually if needed."
   fi
 fi
 
-# --- Deploy dir ------------------------------------------------------------
+# --- Port collision avoidance ---------------------------------------------
+is_port_in_use() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -tlnH "sport = :$p" 2>/dev/null | grep -q ":$p" && return 0 || return 1
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -tln 2>/dev/null | grep -q ":$p " && return 0 || return 1
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:"$p" -sTCP:LISTEN -P -n >/dev/null 2>&1 && return 0 || return 1
+  fi
+  return 1
+}
+
+APP_PORT="${APP_PORT_ARG:-${APP_PORT:-$DEFAULT_APP_PORT}}"
+
+if is_port_in_use "$APP_PORT"; then
+  warn "Port $APP_PORT is already in use by another service on this host."
+  if [ -z "$APP_PORT_ARG" ]; then
+    for candidate in $(seq 38181 38220); do
+      if ! is_port_in_use "$candidate"; then
+        info "Automatically selected free unique port: $candidate"
+        APP_PORT="$candidate"
+        break
+      fi
+    done
+  else
+    fail "Specified port $APP_PORT is in use. Please choose an available port with --port <number>."
+  fi
+fi
+
+WS_PORT=$(( APP_PORT + 3 ))
+CADDY_PORT=$(( APP_PORT + 1 ))
+
+# --- Deploy dir (NO SOURCE CODE CLONING) -----------------------------------
 APP_DIR=/opt/ryasai-chatbot
-REPO_URL=https://github.com/ryasrk/ryasai-chatbot.git
 BACKUP_DIR="$APP_DIR/backups"
 IS_UPDATE=false
 
-if [ -d "$APP_DIR/.git" ] || [ -f "$APP_DIR/.env" ]; then
+if [ -f "$APP_DIR/.env" ]; then
   IS_UPDATE=true
-  info "Existing install detected — running UPDATE (data preserved, no rebuild)..."
-  git -C "$APP_DIR" pull --ff-only >/dev/null 2>&1 || {
-    # local working tree may be dirty (e.g. a prior failed install) — reset
-    # tracked files but keep .env untouched (git reset never touches it)
-    git -C "$APP_DIR" fetch --depth 1 origin >/dev/null 2>&1 && \
-      git -C "$APP_DIR" reset --hard origin/HEAD >/dev/null 2>&1 || true
-  }
+  info "Existing install detected in $APP_DIR — running UPDATE (data preserved)..."
+  # Preserve existing APP_PORT if previously set in .env
+  EXISTING_PORT=$(grep -E '^APP_PORT=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d ' ' || true)
+  if [ -n "$EXISTING_PORT" ] && [ -z "$APP_PORT_ARG" ]; then
+    APP_PORT="$EXISTING_PORT"
+  fi
 else
-  info "Cloning ryasai Chatbot -> $APP_DIR"
+  info "Setting up deployment directory -> $APP_DIR"
   mkdir -p "$APP_DIR"
-  git clone --depth 1 "$REPO_URL" "$APP_DIR"
 fi
+
+# Clean up any legacy source code files from earlier versions if present
+if [ -d "$APP_DIR/.git" ] || [ -d "$APP_DIR/src" ]; then
+  warn "Cleaning up legacy source code tree in $APP_DIR (prebuilt images used exclusively)..."
+  rm -rf "$APP_DIR/.git" "$APP_DIR/src" "$APP_DIR/benchmark" "$APP_DIR/docs" "$APP_DIR/tests" "$APP_DIR/Dockerfile"* "$APP_DIR/tsconfig"* 2>/dev/null || true
+fi
+
 cd "$APP_DIR"
 
 # --- .env ------------------------------------------------------------------
 if [ ! -f .env ]; then
-  info "Generating .env..."
+  info "Generating .env with unique port configuration..."
   ENC_KEY=$(openssl rand -hex 32)
   ADMIN_PASS=$(openssl rand -hex 8)
-  # ponytail: the license signing key is NEVER defaulted. It is operator-
-  # provisioned (--license-signing-public-key or LICENSE_SIGNING_PUBLIC_KEY env);
-  # when absent we write an empty value and warn loudly post-install. A shared
-  # baked-in key meant every customer install verified licenses against the same
-  # public key — one leaked signing private key would forge licenses everywhere.
   cat > .env <<EOF
 # Database — change to an external host if you already run PostgreSQL elsewhere
 DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
 
-# App listens on 3000 inside the container (matches Dockerfile)
+# Internal container port matches standard Next.js (3000)
 PORT=3000
-WS_PORT=3003
-CADDY_PORT=81
-WEB_PORT=3000
+
+# Unique host ports (avoids collisions with 80, 443, 3000, 8080, etc.)
+APP_PORT=$APP_PORT
+WS_PORT=$WS_PORT
+CADDY_PORT=$CADDY_PORT
+WEB_PORT=$APP_PORT
 
 # Security
 ENCRYPTION_SECRET_KEY=$ENC_KEY
+AUTH_DEMO_FALLBACK=false
 DB_QUERY_LOG=false
-WS_CORS_ORIGIN=http://localhost:3000
+WS_CORS_ORIGIN=http://localhost:$APP_PORT
 
 # Toggles
-# COGNEE_ENABLED is a kill switch: leave it unset so the AI Memory toggle in
-# Settings decides, set it to false to force cognee off regardless of Settings.
-# COGNEE_ENABLED=
-#
-# Memory backend. COGNEE_SERVER_URL makes the app talk HTTP to the `cognee`
-# sidecar service in docker-compose.yml (cognee 1.5.4) — the shipped default for
-# compose installs. Clearing it falls back to the in-process @cognee/cognee-ts SDK.
-# The sidecar needs real LLM + embedding credentials (BYOK — the customer's own
-# provider, not ours) or every memory write fails; see .env.example for the
-# COGNEE_LLM_* / COGNEE_EMBEDDING_* pairs the sidecar reads.
+# COGNEE_SERVER_URL connects to the internal compose cognee sidecar
 COGNEE_SERVER_URL=http://cognee:8000
-# COGNEE_SERVER_API_KEY=
 CONTEXTUAL_RETRIEVAL=true
 NEXT_PUBLIC_APP_VERSION=0.5.0
-NEXT_PUBLIC_WS_PORT=3003
+NEXT_PUBLIC_WS_PORT=$WS_PORT
 
-# Bootstrap admin (sign up with these after install)
+# Bootstrap admin (sign up with these credentials after install)
 ADMIN_EMAIL=admin@ryasai.local
 ADMIN_INITIAL_PASSWORD=$ADMIN_PASS
 
-# Email notifications (Resend). Leave blank to use webhook/telegram only.
-# RESEND_API_KEY=
-# EMAIL_FROM=ryasai@yourdomain.com
-
 # License validation — central ryasai license server.
-# LICENSE_SIGNING_PUBLIC_KEY must be provisioned by the operator (flag or env).
 LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
 LICENSE_PRODUCT=ryasai-chatbot
 LICENSE_SIGNING_PUBLIC_KEY=${LICENSE_PUBKEY_ARG}
@@ -168,27 +195,26 @@ LICENSE_REVALIDATION_INTERVAL_HOURS=24
 RELATIONAL_DB_URL=
 
 # Private SearXNG for web_search. Empty = fall back to scraping DuckDuckGo.
-# Set by --with-searxng; points at the internal compose service.
 SEARXNG_URL=
 EOF
   chmod 600 .env
   warn "Generated admin password: $ADMIN_PASS  (save this NOW, or run: grep ADMIN_INITIAL_PASSWORD .env)"
 else
   info ".env already exists — keeping it."
+  # Ensure APP_PORT line is set
+  if ! grep -q '^APP_PORT=' .env 2>/dev/null; then
+    printf '\nAPP_PORT=%s\n' "$APP_PORT" >> .env
+  fi
 fi
 
-# ponytail: track whether a signing key ended up configured (fresh OR existing
-# install) so the final summary can fail-loud about licensing before exit.
+# Track license signing key
 LICENSE_KEY_CONFIGURED=false
 if [ -n "$LICENSE_PUBKEY_ARG" ] && grep -qE '^LICENSE_SIGNING_PUBLIC_KEY=..+' .env 2>/dev/null; then
   LICENSE_KEY_CONFIGURED=true
 elif ! grep -q '^LICENSE_SIGNING_PUBLIC_KEY=' .env 2>/dev/null; then
-  # Existing .env from an older installer without the key line at all — add it empty
   printf '\n# License response verification key (Ed25519 DER hex) — see install.sh --help\nLICENSE_SIGNING_PUBLIC_KEY=\n' >> .env
 fi
 if [ -n "$LICENSE_PUBKEY_ARG" ]; then
-  # Soft format sanity check — Ed25519 SPKI DER is 88 hex chars; accept any
-  # even-length hex >= 60 to tolerate alternate encodings, warn otherwise.
   if ! printf '%s' "$LICENSE_PUBKEY_ARG" | grep -qE '^[0-9a-fA-F]{60,}$'; then
     warn "LICENSE_SIGNING_PUBLIC_KEY does not look like a DER hex key (expected ~88 hex chars) — license verification may fail closed."
   fi
@@ -196,8 +222,7 @@ if [ -n "$LICENSE_PUBKEY_ARG" ]; then
   LICENSE_KEY_CONFIGURED=true
 fi
 
-# SEARXNG_URL is set/cleared on every run so the flag stays authoritative across
-# updates — an existing .env from a pre-SearXNG install has no such key at all.
+# SEARXNG_URL flag management
 SEARXNG_TARGET=""
 [ "$WITH_SEARXNG" = true ] && SEARXNG_TARGET="http://searxng:8080"
 if grep -q '^SEARXNG_URL=' .env 2>/dev/null; then
@@ -207,26 +232,18 @@ else
 fi
 
 # --- Pre-update backup (UPDATE only) ---------------------------------------
-# Before touching the DB schema/images, dump Postgres + Redis to $BACKUP_DIR and
-# keep the last N. Fresh installs skip this (no data yet). Failure is non-fatal.
 if [ "$IS_UPDATE" = true ]; then
   mkdir -p "$BACKUP_DIR"
   STAMP=$(date +%Y%m%d-%H%M%S)
   if docker compose -f docker-compose.prod.yml ps --status running --services db >/dev/null 2>&1 \
      && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U ryasai -d ryasai > "$BACKUP_DIR/ryasai-$STAMP.sql" 2>/dev/null; then
     info "DB backup saved -> $BACKUP_DIR/ryasai-$STAMP.sql"
-  else
-    warn "DB backup skipped (db not running yet — first update or fresh install)."
   fi
   # Keep newest 5 dumps
-  ls -1t "$BACKUP_DIR"/ryasai-*.sql 2>/dev/null | tail -n +6 | xargs -r rm -f
+  ls -1t "$BACKUP_DIR"/ryasai-*.sql 2>/dev/null | tail -n +6 | xargs -r rm -f || true
 fi
 
-# --- Compose (app + redis + pg, NO license-server; that runs on ryasai) -----
-# Images are PREBUILT in GitHub Actions and pushed to GHCR — the VPS never
-# compiles the app (a Next build is ~15min on 1 vCPU and OOMs at 1GB).
-# Schema is applied by the `migrate` one-shot job (reuses the scheduler image,
-# which ships the full prisma CLI) before app/scheduler start.
+# --- Compose (Pure Prebuilt Images, NO source code build directives) --------
 cat > docker-compose.prod.yml <<'EOF'
 services:
   migrate:
@@ -237,18 +254,14 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-    # ponytail: NO --accept-data-loss — schema drift must fail loudly so an
-    # operator intervenes (pre-update pg_dump above is the rollback path; see
-    # docs/operations.md). Silent data loss on `up` is never acceptable.
     entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
     restart: "no"
     networks: [ryasai-net]
 
   app:
     image: ghcr.io/ryasrk/ryasai-chatbot:app
-    build: .
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${APP_PORT:-38180}:3000"
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -260,8 +273,6 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    # Liveness probe (no DB hit; dependency detail at /api/health). bun is the
-    # runtime image, so no curl needed.
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://127.0.0.1:3000/api/v1/health'); process.exit(r.ok ? 0 : 1)\""]
       interval: 30s
@@ -273,9 +284,6 @@ services:
 
   scheduler:
     image: ghcr.io/ryasrk/ryasai-chatbot:scheduler
-    build:
-      context: .
-      dockerfile: Dockerfile.scheduler
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
@@ -292,13 +300,44 @@ services:
 
   redis:
     image: redis:7-alpine
-    # ponytail: cap RAM on a 1GB box; volatile-lru evicts only TTL'd keys,
-    # so BullMQ job data (no TTL) is kept. Tradeoff documented in compose.
     command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-lru"]
     volumes: [redisdata:/data]
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 3 }
     restart: unless-stopped
     networks: [ryasai-net]
+
+  cognee:
+    image: cognee/cognee:1.5.4.dev20260914
+    environment:
+      - SYSTEM_ROOT_DIRECTORY=/cognee-storage/system
+      - DATA_ROOT_DIRECTORY=/cognee-storage/data
+      - DB_PROVIDER=sqlite
+      - GRAPH_DATABASE_PROVIDER=kuzu
+      - VECTOR_DB_PROVIDER=lancedb
+      - ENABLE_BACKEND_ACCESS_CONTROL=false
+      - LLM_PROVIDER=${COGNEE_LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${COGNEE_LLM_API_KEY:-}
+      - LLM_ENDPOINT=${COGNEE_LLM_ENDPOINT:-}
+      - LLM_MODEL=${COGNEE_LLM_MODEL:-}
+      - EMBEDDING_PROVIDER=${COGNEE_EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_API_KEY=${COGNEE_EMBEDDING_API_KEY:-}
+      - EMBEDDING_ENDPOINT=${COGNEE_EMBEDDING_ENDPOINT:-}
+      - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-}
+      - EMBEDDING_DIMENSIONS=${COGNEE_EMBEDDING_DIMENSIONS:-1536}
+      - COGNEE_SKIP_CONNECTION_TEST=true
+      - LITELLM_DROP_PARAMS=true
+      - LLM_ALLOWED_HOSTS=${COGNEE_LLM_ALLOWED_HOSTS:-*}
+    volumes:
+      - cogneedata:/cognee-storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - ryasai-net
 
   db:
     image: pgvector/pgvector:pg16
@@ -306,8 +345,6 @@ services:
       - POSTGRES_USER=ryasai
       - POSTGRES_PASSWORD=ryasai
       - POSTGRES_DB=ryasai
-    # ponytail: recipe-size Postgres — defaults assume 2GB+; these caps keep
-    # it under ~200MB so app+redis+pg fit in 1GB RAM.
     command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40", "-c", "effective_cache_size=128MB", "-c", "maintenance_work_mem=32MB"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U ryasai -d ryasai"], interval: 10s, timeout: 5s, retries: 5 }
@@ -316,21 +353,13 @@ services:
 EOF
 
 # --- Optional: private SearXNG (--with-searxng) -----------------------------
-# Off by default: ~256MB RSS is a lot next to app+redis+pg on a 1GB box.
-# Internal-only — no published port, reachable solely at http://searxng:8080
-# over ryasai-net. The app's SSRF guard blocks private IPs, so web-fetch.ts
-# allows exactly this one configured origin and nothing else.
 if [ "$WITH_SEARXNG" = true ]; then
   if [ "$TOTAL_MB" -lt 1800 ]; then
-    warn "--with-searxng on a ${TOTAL_MB}MB box: SearXNG wants ~256MB. Swap is on, but expect it to be tight."
+    warn "--with-searxng on a ${TOTAL_MB}MB box: SearXNG wants ~256MB."
   fi
-  # Generated, not tracked in git — it holds a secret, and a locally-seded
-  # tracked file would break the `git pull --ff-only` on the next update.
-  # Kept if it already exists so the secret survives updates.
   mkdir -p searxng
   if [ ! -f searxng/settings.yml ]; then
     info "Writing searxng/settings.yml..."
-    # json format is NOT enabled by default — without it every query 403s.
     cat > searxng/settings.yml <<EOF
 use_default_settings: true
 server:
@@ -351,7 +380,6 @@ EOF
     volumes: ["./searxng:/etc/searxng:rw"]
     environment:
       - SEARXNG_BASE_URL=http://searxng:8080/
-    # Capped so it can never starve app/pg on a small box.
     mem_limit: 256m
     restart: unless-stopped
     networks: [ryasai-net]
@@ -365,70 +393,48 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  cogneedata:
 EOF
 
-# --- Disk guard: never let the disk fill up ----------------------------------
-# Before pulling, check free space. If low, prune unused Docker data FIRST
-# (containers/images/build-cache) so the pull never dies mid-extract. Named
-# volumes (pgdata/redisdata = user data) are NEVER touched.
+# --- Disk guard ------------------------------------------------------------
 MIN_FREE_MB=2000
 MB_FREE=$(df -m / | awk 'NR==2{print $4}')
 if [ "$MB_FREE" -lt "$MIN_FREE_MB" ]; then
-  warn "Low disk (${MB_FREE}MB free, need $MIN_FREE_MB) — pruning unused Docker data (volumes kept)..."
+  warn "Low disk (${MB_FREE}MB free, need $MIN_FREE_MB) — pruning unused Docker images..."
   docker container prune -f >/dev/null 2>&1 || true
   docker image prune -af >/dev/null 2>&1 || true
   docker builder prune -af >/dev/null 2>&1 || true
-  MB_FREE=$(df -m / | awk 'NR==2{print $4}')
-  info "Free after prune: ${MB_FREE}MB"
 fi
 
-# --- Pull & run (no build on the VPS — images are prebuilt in CI) -----------
-info "Pulling prebuilt images..."
-if docker compose -f docker-compose.prod.yml pull; then
-  info "Starting services (migrate -> app + scheduler)..."
-  docker compose -f docker-compose.prod.yml up -d --remove-orphans
-else
+# --- Pull & run (PREBUILT IMAGES ONLY, NO BUILD FALLBACK) ------------------
+info "Pulling official prebuilt images..."
+if ! docker compose -f docker-compose.prod.yml pull; then
   if [ "$IS_UPDATE" = true ]; then
-    # ponytail: on UPDATE never fall back to building — the pull failed for a
-    # runtime reason (e.g. disk full/network), and a source build on 1 vCPU can
-    # OOM + fills the disk that blocked the pull. The stack stays on the old
-    # image, which is already running. Retry `bash install.sh` after freeing space.
-    warn "Image pull failed — KEEPING current install (data untouched). Free disk space and re-run install.sh."
-    info "Current services:"
-    docker compose -f docker-compose.prod.yml ps || true
+    warn "Image pull failed — keeping existing running containers. Check network connection and re-run."
+    exit 1
   else
-    # fresh install: GHCR images may not be published yet — build locally so
-    # installs never hard-fail.
-    warn "Prebuilt images not found — building from source (slow on 1 vCPU)..."
-    docker compose -f docker-compose.prod.yml up -d --remove-orphans --build
+    fail "Failed to pull prebuilt images from registry. Check network connection or registry access."
   fi
 fi
 
-# --- Prune stale data (every run) — drop old app/scheduler layers so the -------
-# disk never fills up. -af removes ALL images not referenced by a running/stopped
-# container (old versions of app/scheduler/pgvector/redis after each bump) plus
-# build cache. This is a dedicated VPS — nothing else needs those images. Very
-# important: `--volumes` is NEVER used, so pgdata/redisdata (user data) survive.
-docker container prune -f >/dev/null 2>&1 || true
-docker image prune -af >/dev/null 2>&1 || true
-docker builder prune -af >/dev/null 2>&1 || true
+info "Starting services (db + redis + cognee -> migrate -> app + scheduler)..."
+docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 # --- Health ----------------------------------------------------------------
-info "Waiting for app to come up..."
+info "Waiting for app to come up on 127.0.0.1:${APP_PORT}..."
 for i in $(seq 1 60); do
-  curl -sf http://localhost:3000/api/v1/health >/dev/null 2>&1 && break || sleep 3
+  curl -sf "http://127.0.0.1:${APP_PORT}/api/v1/health" >/dev/null 2>&1 && break || sleep 3
 done
 
 echo
 echo "=============================================================="
-echo "  ryasai Chatbot installed."
+echo "  ryasai Chatbot installed (Prebuilt Images Only)."
 echo "=============================================================="
 echo
-echo "  Access (local):   http://localhost:3000"
+echo "  Access (local):   http://127.0.0.1:${APP_PORT}"
 echo "  Admin email:      $(grep -E '^ADMIN_EMAIL=' .env | cut -d= -f2)"
 echo "  Admin password:   $(grep -E '^ADMIN_INITIAL_PASSWORD=' .env | cut -d= -f2)"
 echo
-
 if [ "$LICENSE_KEY_CONFIGURED" != true ]; then
   echo "**************************************************************"
   echo "*  ⚠️  LICENSING NOT OPERATIONAL — ACTION REQUIRED            *"
@@ -444,11 +450,24 @@ if [ "$LICENSE_KEY_CONFIGURED" != true ]; then
   echo "**************************************************************"
   echo
 fi
-
 echo "  Put behind Caddy/Nginx on this server with your domain, e.g.:"
 echo ""
-echo "    license-side:   license.ryasai.my.id  -> License-Validator (already deployed)"
-echo "    app-side:       yourdomain.com        -> 127.0.0.1:3000"
+echo "    license-side:   license.ryasai.my.id  -> License-Validator (central)"
+echo "    app-side:       yourdomain.com        -> 127.0.0.1:${APP_PORT}"
+echo ""
+echo "  Example Nginx reverse proxy configuration:"
+echo "    server {"
+echo "        server_name yourdomain.com;"
+echo "        location / {"
+echo "            proxy_pass http://127.0.0.1:${APP_PORT};"
+echo "            proxy_set_header Host \$host;"
+echo "            proxy_set_header X-Real-IP \$remote_addr;"
+echo "            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;"
+echo "            proxy_set_header X-Forwarded-Proto \$scheme;"
+echo "            proxy_set_header Upgrade \$http_upgrade;"
+echo "            proxy_set_header Connection \"upgrade\";"
+echo "        }"
+echo "    }"
 echo ""
 echo "  Logs:     docker compose -f docker-compose.prod.yml logs -f app"
 echo "  Restart:  docker compose -f docker-compose.prod.yml restart"
