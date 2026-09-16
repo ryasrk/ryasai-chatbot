@@ -57,7 +57,7 @@ const MCP_PACKAGES: Record<string, { pkg: string; runner: 'npx' | 'uvx'; extraAr
 // because resolveStdioCommand already spawns npx installs through it, and READMEs
 // increasingly write `bunx` directly — rejecting it while we run it internally
 // made no sense. It grants nothing npx didn't: both fetch and execute a package.
-const ALLOWED_MCP_CMDS = new Set(['npx', 'bunx', 'uvx', 'node', 'python'])
+export const ALLOWED_MCP_CMDS = new Set(['npx', 'bunx', 'uvx', 'node', 'python'])
 
 export interface AdminToolResult {
   ok: boolean

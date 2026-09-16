@@ -26,7 +26,7 @@ import { enterWithOrg, bypassOrg } from '@/lib/prisma-tenant'
 import { db } from '@/lib/db'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { runAgentOrchestrator } from '@/lib/agent-orchestrator'
-import { getUnifiedTools } from '@/lib/unified-tools'
+import { getUnifiedTools, type UnifiedTool } from '@/lib/unified-tools'
 
 const orgRow = await bypassOrg(() => db.appConfig.findFirst({ select: { organizationId: true } }))
 if (!orgRow) {
@@ -151,6 +151,78 @@ console.log('\nF. MCP runtime tool changes (needs the dynamic fixture)')
   } finally {
     await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-dynamic-fixture' } }))
     invalidateMcpToolsCache()
+  }
+}
+
+
+// --- G. MCP resources and prompts ------------------------------------------
+// A server may expose resources/prompts and NO tools at all. Without handling
+// that surface it contributes nothing to the catalogue even though it has usable
+// capability. Verified against a fixture that declares exactly that shape.
+console.log('\nG. MCP resources and prompts (needs the resources fixture)')
+{
+  const {
+    listMcpResources, readMcpResource, listMcpPrompts, getMcpPrompt, listMcpTools,
+    invalidateMcpToolsCache, invalidateMcpResourcesCache, invalidateMcpPromptsCache,
+  } = await import('@/lib/mcp-client')
+  const fixture = new URL('./fixtures/mcp-resources-server.mjs', import.meta.url).pathname
+
+  await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-res-fixture' } }))
+  await bypassOrg(() =>
+    db.mcpServer.create({
+      data: {
+        organizationId: orgRow!.organizationId, name: 'mcp-res-fixture',
+        description: 'resources + prompts, no tools', transport: 'stdio', command: 'node',
+        args: JSON.stringify([fixture]), url: '', envJson: '{}', headersJson: '{}', isEnabled: true,
+      },
+    }),
+  )
+  invalidateMcpToolsCache(); invalidateMcpResourcesCache(); invalidateMcpPromptsCache()
+
+  try {
+    const tools = (await listMcpTools()).filter((t) => t.serverName === 'mcp-res-fixture')
+    check('a resources-only server lists ZERO tools without erroring', tools.length === 0, `${tools.length}`)
+
+    const { resources } = await listMcpResources()
+    const mine = resources.filter((r) => r.serverName === 'mcp-res-fixture')
+    check('resources are listed', mine.length === 2, mine.map((r) => r.uri).join(','))
+
+    const serverId = mine[0]?.serverId ?? ''
+    const text = await readMcpResource(serverId, 'note://handbook')
+    check('a text resource reads back', text.ok && text.output.includes('12 per year'), text.error ?? '')
+    check('the mime type survives', text.mimeType === 'text/plain', text.mimeType)
+
+    const bin = await readMcpResource(serverId, 'note://binary')
+    check('a binary resource says so instead of returning base64', !bin.ok && /binary/i.test(bin.error ?? ''), bin.error ?? '')
+
+    const prompts = (await listMcpPrompts()).filter((p) => p.serverName === 'mcp-res-fixture')
+    check('prompts are listed with their arguments', prompts.length === 1 && prompts[0].arguments.length === 2)
+
+    const rendered = await getMcpPrompt(prompts[0].serverId, 'summarize_resource', { uri: 'note://handbook', style: 'terse' })
+    check('a prompt renders with its arguments', rendered.ok && rendered.output.includes('terse'), rendered.error ?? '')
+
+    // The catalogue must offer them, not just the low-level client.
+    const offered = await getUnifiedTools({ query: 'read the handbook', context: 'agentic', isAdmin: false })
+    check('the catalogue offers a resource-read tool', offered.some((t) => t.id.startsWith('mcp-resource:')),
+      offered.filter((t) => t.id.startsWith('mcp-resource:')).length + ' found')
+    check('the catalogue offers a prompt tool', offered.some((t) => t.id.startsWith('mcp-prompt:')),
+      offered.filter((t) => t.id.startsWith('mcp-prompt:')).length + ' found')
+
+    const found: UnifiedTool | undefined = offered.find((t) => t.id.startsWith('mcp-resource:'))
+    check('a resource-read tool is present to exercise', found !== undefined)
+    if (found === undefined) {
+      check('resource tool checks ran', false, 'no mcp-resource tool in the catalogue')
+    } else {
+      const resTool = found as UnifiedTool
+      const props = resTool.parameters as { properties?: { uri?: { enum?: string[] } } }
+      const uris = props.properties?.uri?.enum ?? []
+      check('the resource tool constrains uri with an enum of KNOWN uris', uris.length === 2, uris.join(','))
+      const bad = await resTool.execute({ uri: 'note://made-up' }, { userId: 'e2e', organizationId: orgRow!.organizationId })
+      check('an unknown uri is rejected by the tool', !bad.ok, String(bad.error).slice(0, 60))
+    }
+  } finally {
+    await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-res-fixture' } }))
+    invalidateMcpToolsCache(); invalidateMcpResourcesCache(); invalidateMcpPromptsCache()
   }
 }
 

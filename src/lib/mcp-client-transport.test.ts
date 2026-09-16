@@ -142,7 +142,18 @@ beforeEach(async () => {
   sdk.connectThrows = false
   sdk.listToolsThrows = false
   sdk.callToolThrows = false
-  sdk.tools = []
+  // callMcpTool now verifies the tool EXISTS before calling it, because an
+  // unknown name used to return a silent `ok:true` with empty output. These
+  // specs exist to exercise the RESULT path, not the catalogue, so the fixture
+  // advertises a permissive list: any name the spec uses resolves. The
+  // "unknown tool" behaviour has its own dedicated coverage.
+  sdk.tools = new Proxy([], {
+    get(target, prop, recv) {
+      // `.some((t) => t.name === x)` must answer true for any requested name.
+      if (prop === 'some') return () => true
+      return Reflect.get(target, prop, recv)
+    },
+  }) as any[]
   sdk.callResult = null
   sdk.builtTransport = null
   sdk.connectSignal = null
@@ -767,5 +778,37 @@ describe('mcp-client — buildTransport rejections surface through testMcpServer
     const unknown = await testMcpServer('srv-t3')
     expect(unknown.ok).toBe(false)
     expect(unknown.error).toContain('Invalid transport config')
+  })
+})
+
+describe('callMcpTool refuses a tool the server does not expose', () => {
+  // MEASURED against a real server: calling an unknown tool name returned
+  // `{ok: true, output: ""}` — a SILENT FALSE SUCCESS, because the transport
+  // does not fail and the response simply carries no content. An agent would be
+  // told its action worked when nothing ran at all. The guard is what makes the
+  // failure visible; without it an mcp-stdio plugin with a mistyped toolId
+  // reports success forever.
+  // NOTE: the assignment lives inside each test, not a nested beforeEach — the
+  // outer hook seeds a permissive tool list and runs AFTER any inner one, so a
+  // nested setup was silently overwritten and both specs failed.
+  test('an unknown tool name fails instead of returning empty success', async () => {
+    findUniqueResults = [serverRow()]
+    sdk.tools = [{ name: 'read_file' }] as any[]
+    sdk.callResult = { content: [{ type: 'text', text: 'should never be reached' }] }
+    const r = await callMcpTool('srv-1', 'no_such_tool', {})
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('no_such_tool')
+    expect(r.error).toContain('read_file')   // names what IS available
+    // The call must not have been attempted at all.
+    expect(sdk.callToolCalls).toHaveLength(0)
+  })
+
+  test('a KNOWN tool name still goes through', async () => {
+    findUniqueResults = [serverRow()]
+    sdk.tools = [{ name: 'read_file' }] as any[]
+    sdk.callResult = { content: [{ type: 'text', text: 'file contents' }] }
+    const r = await callMcpTool('srv-1', 'read_file', {})
+    expect(r.ok).toBe(true)
+    expect(sdk.callToolCalls).toHaveLength(1)
   })
 })

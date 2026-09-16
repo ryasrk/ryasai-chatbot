@@ -9,7 +9,9 @@
 import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig } from '@/lib/crypto'
 import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
+import { ALLOWED_MCP_CMDS } from '@/lib/admin-tools'
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 
 export interface PluginManifest {
   paramDescription: string
@@ -29,8 +31,29 @@ export interface PluginManifest {
    * arguments survive. Manifests without it keep the legacy single-`input`
    * contract, so existing plugins are unaffected.
    */
+  /**
+   * Manifest format version. Absent means 1 (the original webhook-only format),
+   * so every previously-registered plugin keeps parsing unchanged. Present and
+   * unrecognised is REJECTED rather than ignored: a manifest written for a newer
+   * format may rely on fields we would silently drop, and running a partially
+   * understood executor is worse than refusing it.
+   */
+  manifestVersion?: number
   parameters?: Record<string, unknown>
-  executorType: 'webhook'
+  /**
+   * `webhook` posts to an HTTP endpoint (the original and still the default).
+   *
+   * `mcp-stdio` runs a LOCAL MCP SERVER process — the industry-standard way to
+   * package a tool (the same shape MCP servers and ChatGPT-style connectors use),
+   * as opposed to a bespoke webhook contract. It is deliberately restricted to
+   * the same interpreter allowlist the MCP installer uses, so a plugin cannot
+   * nominate an arbitrary executable.
+   */
+  executorType: 'webhook' | 'mcp-stdio'
+  /** `executorType: 'mcp-stdio'` only: the executable (must be allowlisted). */
+  command?: string
+  /** `executorType: 'mcp-stdio'` only: arguments, including the script path. */
+  args?: string[]
   endpoint: string
   method: string
   authType: 'NONE' | 'BEARER' | 'API_KEY_HEADER'
@@ -53,9 +76,18 @@ const PluginManifestSchema = z.object({
       z.record(z.string(), z.unknown()).optional(),
     )
     .optional(),
-  executorType: z.literal('webhook'),
-  endpoint: z.string().url(),
-  method: z.enum(['GET', 'POST']).transform((s) => s.toUpperCase()),
+  manifestVersion: z.number().int().min(1).max(2).optional(),
+  executorType: z.enum(['webhook', 'mcp-stdio']).default('webhook'),
+  command: z.string().min(1).optional(),
+  args: z.array(z.string()).optional(),
+  // Optional at the schema level: an mcp-stdio manifest has no endpoint. The
+  // webhook requirement is enforced in normalizeManifest below, where the
+  // executorType is known, so the error message can say WHY it is required.
+  endpoint: z.string().url().optional(),
+  // Defaulted rather than required: an mcp-stdio manifest has no HTTP method at
+  // all, and making it required rejected every valid stdio manifest (caught by
+  // trial/zz-plugin2.ts). For webhooks the default keeps the historical POST.
+  method: z.enum(['GET', 'POST', 'HEAD']).transform((s) => s.toUpperCase()).default('POST'),
   authType: z.enum(['NONE', 'BEARER', 'API_KEY_HEADER']),
   authCredentials: z.string().optional(),
   timeoutMs: z.number().finite().int().min(1000).max(120000).default(15000),
@@ -81,9 +113,18 @@ export function parsePluginManifest(json: string): PluginManifest | null {
  * Returns { error } on invalid, or a clean PluginManifest on valid.
  */
 export function normalizeManifest(input: unknown): PluginManifest | { error: string } {
-  // Method comes in as arbitrary string — coerce to uppercase before enum check.
+  // Method arrives as an arbitrary string — upper-case it before the enum check.
+  // Only inject a value when the caller SUPPLIED one: writing `''` for an absent
+  // method defeated the schema default and rejected every mcp-stdio manifest,
+  // which has no HTTP method at all (caught by trial/zz-plugin2.ts).
+  const src = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const coerced = input && typeof input === 'object'
-    ? { ...(input as Record<string, unknown>), method: String((input as Record<string, unknown>).method ?? '').trim().toUpperCase() }
+    ? {
+        ...src,
+        ...(src.method === undefined || src.method === null
+          ? {}
+          : { method: String(src.method).trim().toUpperCase() }),
+      }
     : input
   const result = PluginManifestSchema.safeParse(coerced)
   if (!result.success) {
@@ -91,6 +132,22 @@ export function normalizeManifest(input: unknown): PluginManifest | { error: str
     return { error: first ? `Invalid manifest: ${first.path.join('.')} — ${first.message}` : 'Invalid manifest.' }
   }
   const m = result.data as PluginManifest
+
+  // Per-executor requirements, checked here rather than in the Zod schema so the
+  // error can name the executor and say what is actually missing.
+  if (m.executorType === 'mcp-stdio') {
+    if (!m.command) return { error: 'An mcp-stdio manifest requires a command.' }
+    // Reuse the SAME allowlist the MCP installer enforces. A second copy is
+    // exactly how the two paths drift and one of them ends up permitting an
+    // arbitrary executable.
+    if (!ALLOWED_MCP_CMDS.has(m.command)) {
+      return { error: `Command "${m.command}" is not allowed. Permitted: ${[...ALLOWED_MCP_CMDS].join(', ')}.` }
+    }
+    return m
+  }
+
+  // webhook (the default, and the original format)
+  if (!m.endpoint) return { error: 'A webhook manifest requires an endpoint.' }
 
   // SSRF + protocol check (Zod's z.string().url() allows http/https only, but double-check host)
   try {
@@ -133,7 +190,7 @@ export function maskPluginManifest(manifest: PluginManifest): PluginManifest {
 }
 
 export async function executePlugin(args: {
-  plugin: { manifestJson: string; toolId: string }
+  plugin: { manifestJson: string; toolId: string; manifestDigest?: string | null }
   /** Legacy contract: a single stringified argument blob. */
   input?: string
   /**
@@ -146,6 +203,24 @@ export async function executePlugin(args: {
   const manifest = parsePluginManifest(args.plugin.manifestJson)
   if (!manifest) {
     return { ok: false, output: '', error: 'Invalid plugin manifest.', latencyMs: 0 }
+  }
+
+  // Integrity gate: refuse to run a manifest that changed after it was approved.
+  // This matters most for an executor that spawns a process or calls an
+  // endpoint — the approval was given for the definition we hashed, not for
+  // whatever the row holds now. `recordedDigest` is optional on Plugin rows
+  // registered before digests existed.
+  const integrity = verifyManifestIntegrity(args.plugin.manifestJson, args.plugin.manifestDigest ?? null)
+  if (!integrity.ok) {
+    return { ok: false, output: '', error: integrity.error, latencyMs: 0 }
+  }
+
+  // `mcp-stdio` runs a LOCAL MCP SERVER as the plugin's implementation — the
+  // industry-standard packaging, so a tool can be shipped as an MCP server
+  // instead of a bespoke webhook. It borrows the MCP client wholesale, which
+  // means it inherits the same transport, timeouts, SSRF posture and lifecycle.
+  if (manifest.executorType === 'mcp-stdio') {
+    return executeMcpStdioPlugin(args, manifest)
   }
 
   // Decrypt credentials (stored encrypted at rest via encryptPluginCredentials)
@@ -249,4 +324,113 @@ export async function listEnabledPlugins(
     where: { isEnabled: true },
     select: { id: true, toolId: true, name: true, description: true },
   })
+}
+
+/**
+ * Run an `mcp-stdio` plugin: spawn the manifest's command, call the named tool.
+ *
+ * The plugin's `toolId` selects the MCP TOOL on that server (a stdio server
+ * commonly exposes several), so one manifest can surface a whole server. The
+ * command is re-checked against the allowlist here even though
+ * `normalizeManifest` already did: a manifest could have been stored before the
+ * allowlist changed, and the check at the execution boundary is the one that
+ * actually protects a running system.
+ */
+async function executeMcpStdioPlugin(
+  args: {
+    plugin: { manifestJson: string; toolId: string; manifestDigest?: string | null }
+    input?: string
+    args?: Record<string, unknown>
+  },
+  manifest: PluginManifest,
+): Promise<{ ok: boolean; output: string; error?: string; latencyMs: number }> {
+  const started = Date.now()
+  if (!manifest.command || !ALLOWED_MCP_CMDS.has(manifest.command)) {
+    return {
+      ok: false, output: '', latencyMs: Date.now() - started,
+      error: `Refusing to run "${manifest.command ?? ''}": not in the permitted command set (${[...ALLOWED_MCP_CMDS].join(', ')}).`,
+    }
+  }
+
+  const effectiveArgs: Record<string, unknown> = args.args
+    ?? (() => {
+      if (!args.input) return {}
+      try {
+        const parsed = JSON.parse(args.input)
+        return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : { input: args.input }
+      } catch {
+        return { input: args.input }
+      }
+    })()
+
+  try {
+    const { callStdioMcpTool } = await import('@/lib/mcp-client')
+    const res = await callStdioMcpTool(
+      { command: manifest.command, args: manifest.args ?? [], label: args.plugin.toolId },
+      args.plugin.toolId,
+      effectiveArgs,
+    )
+    return { ok: res.ok, output: res.output, error: res.error, latencyMs: Date.now() - started }
+  } catch (e) {
+    return {
+      ok: false, output: '', latencyMs: Date.now() - started,
+      error: e instanceof Error ? e.message : String(e),
+    }
+  }
+}
+
+/**
+ * Content digest of a manifest, used to detect a manifest that changed after it
+ * was reviewed.
+ *
+ * WHY A DIGEST AND NOT A SIGNATURE: a manifest is authored by the customer's own
+ * admin inside this install, not published by a remote third party, so there is
+ * no external key we could verify against. A keyed signature would add ceremony
+ * without adding a trust anchor. What we CAN catch — and what actually matters
+ * for an executor that spawns processes or calls endpoints — is the manifest
+ * being swapped underneath a reviewed approval, which a digest detects exactly.
+ *
+ * The digest deliberately covers the SECURITY-RELEVANT fields rather than the
+ * raw JSON: key order and whitespace in `manifestJson` are not stable across an
+ * edit round-trip, so hashing the raw text would report spurious changes.
+ */
+export function computeManifestDigest(manifest: PluginManifest): string {
+  const material = JSON.stringify({
+    manifestVersion: manifest.manifestVersion ?? 1,
+    executorType: manifest.executorType,
+    endpoint: manifest.endpoint ?? '',
+    method: manifest.method,
+    command: manifest.command ?? '',
+    args: manifest.args ?? [],
+    authType: manifest.authType,
+    hasCredentials: Boolean(manifest.authCredentials),
+    parameters: manifest.parameters ?? null,
+  })
+  return createHash('sha256').update(material).digest('hex')
+}
+
+/**
+ * Verify a stored manifest still matches the digest recorded when it was
+ * approved. Returns a reason when it does not.
+ *
+ * An ABSENT digest is not a failure: plugins registered before digests existed
+ * have none, and refusing them would break every existing install. In that case
+ * the caller records the digest for next time.
+ */
+export function verifyManifestIntegrity(
+  manifestJson: string,
+  recordedDigest: string | null,
+): { ok: true; digest: string } | { ok: false; error: string; digest: string } {
+  const manifest = parsePluginManifest(manifestJson)
+  if (!manifest) return { ok: false, error: 'Invalid plugin manifest.', digest: '' }
+  const digest = computeManifestDigest(manifest)
+  if (!recordedDigest) return { ok: true, digest }
+  if (digest === recordedDigest) return { ok: true, digest }
+  return {
+    ok: false,
+    digest,
+    error:
+      'This plugin\'s manifest changed after it was approved, so it was not executed. '
+      + 'Re-approve the plugin to accept the new definition.',
+  }
 }

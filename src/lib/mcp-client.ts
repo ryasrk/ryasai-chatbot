@@ -21,7 +21,11 @@
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  ToolListChangedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  PromptListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -29,6 +33,35 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { db } from '@/lib/db'
 import { decryptConfig } from '@/lib/crypto'
 import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
+
+/** A resource advertised by an MCP server (a readable artifact — file, record, page). */
+export interface McpResource {
+  serverId: string
+  serverName: string
+  uri: string
+  name: string
+  description: string
+  mimeType: string
+}
+
+/** A URI TEMPLATE a server accepts, e.g. `file:///{path}` — parameterised resources. */
+export interface McpResourceTemplate {
+  serverId: string
+  serverName: string
+  uriTemplate: string
+  name: string
+  description: string
+  mimeType: string
+}
+
+/** A prompt a server exposes — a server-authored, parameterised prompt template. */
+export interface McpPrompt {
+  serverId: string
+  serverName: string
+  name: string
+  description: string
+  arguments: Array<{ name: string; description: string; required: boolean }>
+}
 
 export interface McpTool {
   serverId: string
@@ -65,6 +98,12 @@ const connections = new Map<string, CachedConnection>()
 
 let toolsCache: { tools: McpTool[]; at: number } | null = null
 let toolsCachePromise: Promise<McpTool[]> | null = null
+// Resources and prompts are cached on the SAME terms as tools: a short TTL plus
+// invalidation when the server announces a change. They are separate caches
+// because a server may support one and not the others, and each has its own
+// change notification.
+let resourcesCache: { resources: McpResource[]; templates: McpResourceTemplate[]; at: number } | null = null
+let promptsCache: { prompts: McpPrompt[]; at: number } | null = null
 const TOOLS_TTL_MS = 60_000
 
 const CONNECT_TIMEOUT_MS = Number(process.env.MCP_CONNECT_TIMEOUT_MS ?? 15_000)
@@ -100,21 +139,26 @@ interface McpCallResult {
 function createClient(): Client {
   const client = new Client(
     { name: 'ryasai-chatbot', version: '1.0.0' },
-    // NOTE: `tools` is a SERVER capability, not a client one — declaring it here
-    // is a type error and enables nothing. A client opts in simply by
-    // registering the notification handler below, which is what a spec-compliant
-    // server checks before emitting `notifications/tools/list_changed`.
+    // NOTE: `tools`/`resources`/`prompts` are SERVER capabilities, not client
+    // ones — declaring them here is a type error and enables nothing. A client
+    // opts in by registering the handlers below, which is what a spec-compliant
+    // server checks before emitting the corresponding `*_list_changed`.
     { capabilities: {} },
   )
-  try {
-    client.setNotificationHandler(
-      ToolListChangedNotificationSchema,
-      () => { invalidateMcpToolsCache() },
-    )
-  } catch (e) {
-    // An older SDK without this schema must not break MCP support entirely;
-    // the TTL cache still bounds staleness.
-    console.warn('[mcp] tools/list_changed handler not registered:', e instanceof Error ? e.message : e)
+  // Each registration is guarded independently: an older SDK missing one schema
+  // must not cost us the others, and a notification we cannot handle must never
+  // tear down a working connection.
+  const handlers: Array<[unknown, () => void, string]> = [
+    [ToolListChangedNotificationSchema, () => { invalidateMcpToolsCache() }, 'tools'],
+    [ResourceListChangedNotificationSchema, () => { invalidateMcpResourcesCache() }, 'resources'],
+    [PromptListChangedNotificationSchema, () => { invalidateMcpPromptsCache() }, 'prompts'],
+  ]
+  for (const [schema, handler, label] of handlers) {
+    try {
+      client.setNotificationHandler(schema as Parameters<typeof client.setNotificationHandler>[0], handler as Parameters<typeof client.setNotificationHandler>[1])
+    } catch (e) {
+      console.warn(`[mcp] ${label}/list_changed handler not registered:`, e instanceof Error ? e.message : e)
+    }
   }
   return client
 }
@@ -157,6 +201,42 @@ async function listMcpToolsUncached(): Promise<McpTool[]> {
   return all
 }
 
+
+/**
+ * Reject a call to a tool the server does not actually expose.
+ *
+ * WHY (MEASURED): calling an unknown tool name returned `{ok: true, output: ""}`
+ * against a real server — a SILENT FALSE SUCCESS. The transport does not fail;
+ * the SDK reports a valid response with empty content, so an empty answer looked
+ * like a tool that legitimately returned nothing. An mcp-stdio plugin whose
+ * `toolId` did not match a real tool therefore reported success while doing
+ * nothing at all, which is the worst possible failure mode for an agent: the
+ * model is told its action worked.
+ */
+async function assertToolExists(
+  client: Client,
+  serverLabel: string,
+  toolName: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    // Always pass a signal and timeout: every other listTools call does, and a
+    // server that hangs on tools/list must not stall the call it is guarding.
+    const { tools } = await client.listTools(undefined, { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) })
+    if (tools.some((t) => t.name === toolName)) return { ok: true }
+    const known = tools.map((t) => t.name)
+    return {
+      ok: false,
+      error: `MCP server "${serverLabel}" has no tool "${toolName}". Available: ${known.length ? known.join(', ') : '(none)'}`,
+    }
+  } catch (e) {
+    // If we cannot enumerate, do NOT block the call: the server may permit
+    // tools/list to fail while callTool still works. The empty-output check
+    // below remains the backstop.
+    void e
+    return { ok: true }
+  }
+}
+
 export async function callMcpTool(
   serverId: string,
   toolName: string,
@@ -164,6 +244,8 @@ export async function callMcpTool(
 ): Promise<{ ok: boolean; output: string; error?: string }> {
   const conn = await getConnection(serverId)
   if (!conn) return { ok: false, output: '', error: 'MCP server unavailable or inactive.' }
+  const exists = await assertToolExists(conn.client, serverId, toolName)
+  if (!exists.ok) return { ok: false, output: '', error: exists.error }
   try {
     const result = (await conn.client.callTool(
       { name: toolName, arguments: args },
@@ -231,9 +313,196 @@ export async function disconnectAllMcp(): Promise<void> {
   invalidateMcpToolsCache()
 }
 
+export function invalidateMcpResourcesCache(): void {
+  resourcesCache = null
+}
+
+export function invalidateMcpPromptsCache(): void {
+  promptsCache = null
+}
+
 export function invalidateMcpToolsCache(): void {
   toolsCache = null
   toolsCachePromise = null
+}
+
+/**
+ * List the resources (and URI templates) the configured servers expose.
+ *
+ * MCP servers commonly expose readable artifacts — files, DB records, pages —
+ * as resources, SEPARATE from tools. A server may support resources and no
+ * tools, or vice versa, so this never assumes the tool path succeeded and each
+ * failure is isolated per server: one broken server must not empty the list.
+ *
+ * Servers that do not implement resources answer with a JSON-RPC error
+ * (-32601 Method not found). That is a NORMAL outcome, not a fault, so it is
+ * skipped quietly rather than warned about on every call.
+ */
+export async function listMcpResources(): Promise<{
+  resources: McpResource[]
+  templates: McpResourceTemplate[]
+}> {
+  if (resourcesCache && Date.now() - resourcesCache.at < TOOLS_TTL_MS) {
+    return { resources: resourcesCache.resources, templates: resourcesCache.templates }
+  }
+  const servers = await db.mcpServer.findMany({ where: { isEnabled: true } })
+  const resources: McpResource[] = []
+  const templates: McpResourceTemplate[] = []
+  for (const s of servers) {
+    const conn = await getConnection(s.id, s)
+    if (!conn) continue
+    try {
+      const listed = await conn.client.listResources(undefined, {
+        signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS),
+      })
+      for (const r of listed.resources) {
+        resources.push({
+          serverId: s.id, serverName: s.name,
+          uri: r.uri, name: r.name,
+          description: r.description ?? '',
+          mimeType: r.mimeType ?? '',
+        })
+      }
+      // Templates are a SEPARATE request and may fail on their own; a server can
+      // support concrete resources without supporting templates.
+      try {
+        const t = await conn.client.listResourceTemplates(undefined, {
+          signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS),
+        })
+        for (const rt of t.resourceTemplates) {
+          templates.push({
+            serverId: s.id, serverName: s.name,
+            uriTemplate: rt.uriTemplate, name: rt.name,
+            description: rt.description ?? '',
+            mimeType: rt.mimeType ?? '',
+          })
+        }
+      } catch {
+        /* templates unsupported on this server — not an error */
+      }
+    } catch (e) {
+      if (!isMethodNotFound(e)) console.warn(`[mcp] listResources failed for "${s.name}":`, e)
+    }
+  }
+  resourcesCache = { resources, templates, at: Date.now() }
+  return { resources, templates }
+}
+
+/**
+ * Read one resource by URI.
+ *
+ * Returns TEXT only. A resource may be binary (image, PDF), and we have no
+ * channel that can carry a blob to the model, so a binary resource reports that
+ * plainly instead of handing back base64 the model would misread as content.
+ */
+export async function readMcpResource(
+  serverId: string,
+  uri: string,
+): Promise<{ ok: boolean; output: string; mimeType: string; error?: string }> {
+  const conn = await getConnection(serverId)
+  if (!conn) return { ok: false, output: '', mimeType: '', error: 'MCP server unavailable or inactive.' }
+  try {
+    const res = await conn.client.readResource({ uri }, { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) })
+    const textParts: string[] = []
+    let binaryOnly = false
+    for (const c of res.contents) {
+      if (typeof (c as { text?: unknown }).text === 'string') {
+        textParts.push((c as { text: string }).text)
+      } else if (typeof (c as { blob?: unknown }).blob === 'string') {
+        binaryOnly = true
+      }
+    }
+    const mimeType = (res.contents[0] as { mimeType?: string } | undefined)?.mimeType ?? ''
+    if (textParts.length === 0 && binaryOnly) {
+      return { ok: false, output: '', mimeType, error: 'Resource is binary; this client can only surface text resources.' }
+    }
+    return { ok: true, output: textParts.join('\n'), mimeType }
+  } catch (e) {
+    return { ok: false, output: '', mimeType: '', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * List the prompts the configured servers expose.
+ *
+ * A server prompt is a PARAMETERISED TEMPLATE authored by the server (not by
+ * us). We surface it as a tool so the model can invoke it, but the prompt body
+ * stays the server's own — we never rewrite it.
+ */
+export async function listMcpPrompts(): Promise<McpPrompt[]> {
+  if (promptsCache && Date.now() - promptsCache.at < TOOLS_TTL_MS) return promptsCache.prompts
+  const servers = await db.mcpServer.findMany({ where: { isEnabled: true } })
+  const all: McpPrompt[] = []
+  for (const s of servers) {
+    const conn = await getConnection(s.id, s)
+    if (!conn) continue
+    try {
+      const listed = await conn.client.listPrompts(undefined, {
+        signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS),
+      })
+      for (const p of listed.prompts) {
+        all.push({
+          serverId: s.id, serverName: s.name,
+          name: p.name,
+          description: p.description ?? '',
+          arguments: (p.arguments ?? []).map((a) => ({
+            name: a.name, description: a.description ?? '', required: a.required ?? false,
+          })),
+        })
+      }
+    } catch (e) {
+      if (!isMethodNotFound(e)) console.warn(`[mcp] listPrompts failed for "${s.name}":`, e)
+    }
+  }
+  promptsCache = { prompts: all, at: Date.now() }
+  return all
+}
+
+/**
+ * Resolve a server prompt with arguments.
+ *
+ * Returns the rendered TEXT. The prompt's messages may include images, which we
+ * cannot forward, so any non-text part is noted rather than silently dropped —
+ * a silently short prompt is worse than one that says a part was omitted.
+ */
+export async function getMcpPrompt(
+  serverId: string,
+  name: string,
+  args: Record<string, string>,
+): Promise<{ ok: boolean; output: string; error?: string }> {
+  const conn = await getConnection(serverId)
+  if (!conn) return { ok: false, output: '', error: 'MCP server unavailable or inactive.' }
+  try {
+    const res = await conn.client.getPrompt(
+      { name, arguments: args },
+      { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) },
+    )
+    const parts: string[] = []
+    let nonText = 0
+    for (const m of res.messages) {
+      const content = m.content as { type?: string; text?: string }
+      if (content?.type === 'text' && typeof content.text === 'string') parts.push(content.text)
+      else nonText += 1
+    }
+    if (nonText > 0) parts.push(`[${nonText} non-text part(s) omitted]`)
+    return { ok: true, output: parts.join('\n') }
+  } catch (e) {
+    return { ok: false, output: '', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/**
+ * Is this the JSON-RPC "method not found" error?
+ *
+ * Servers legitimately omit capabilities, and the spec's answer for an
+ * unsupported method is -32601. Treating that as a failure would log a warning
+ * on every single call to every tools-only server.
+ */
+function isMethodNotFound(e: unknown): boolean {
+  const code = (e as { code?: number } | null)?.code
+  if (code === -32601) return true
+  const msg = e instanceof Error ? e.message : String(e)
+  return /method not found/i.test(msg)
 }
 
 // ---------------------------------------------------------------------------
@@ -426,5 +695,53 @@ async function safeClose(client: Client): Promise<void> {
     await client.close()
   } catch {
     // best-effort — the connection may already be dead
+  }
+}
+
+/**
+ * Call a tool on an EPHEMERAL stdio MCP server identified by a command, not by a
+ * database row.
+ *
+ * WHY EPHEMERAL: a plugin owns its server process via its own manifest, so there
+ * is no `McpServer` row to key the connection cache on, and caching by raw
+ * command string would let two different plugins collide on one process. The
+ * connection is therefore opened per call and closed immediately — the sandbox
+ * in the caller still bounds the work, and a plugin's server cannot outlive the
+ * single invocation that needed it.
+ *
+ * The command MUST already have been checked against ALLOWED_MCP_CMDS by the
+ * caller; this function does not re-validate, so that the allowlist lives in one
+ * place rather than being re-implemented per entry point.
+ */
+export async function callStdioMcpTool(
+  spec: { command: string; args: string[]; label: string },
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<{ ok: boolean; output: string; error?: string }> {
+  const client = createClient()
+  let transport: StdioClientTransport | null = null
+  try {
+    transport = new StdioClientTransport({
+      command: resolveStdioCommand(spec.command),
+      args: spec.args,
+    })
+    await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+    const exists = await assertToolExists(client, spec.label, toolName)
+    if (!exists.ok) return { ok: false, output: '', error: exists.error }
+    const result = (await client.callTool(
+      { name: toolName, arguments: args },
+      undefined,
+      { signal: AbortSignal.timeout(CALL_TOOL_TIMEOUT_MS) },
+    )) as unknown as McpCallResult
+    const output = extractText(result.content)
+    if (result.isError) {
+      return { ok: false, output: '', error: output || 'MCP tool returned an error.' }
+    }
+    return { ok: true, output }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, output: '', error: `MCP stdio plugin "${spec.label}" (${toolName}): ${msg}` }
+  } finally {
+    await safeClose(client).catch(() => undefined)
   }
 }

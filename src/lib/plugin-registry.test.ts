@@ -6,6 +6,8 @@ import {
   maskPluginManifest,
   encryptPluginCredentials,
   decryptPluginCredentials,
+  computeManifestDigest,
+  verifyManifestIntegrity,
 } from '@/lib/plugin-registry'
 
 const VALID_MANIFEST = {
@@ -660,5 +662,105 @@ describe('plugin manifest — declared JSON Schema (industry-standard shape)', (
       return typeof parsed === 'object' && parsed !== null ? parsed : { input: JSON.stringify(flat) }
     })()
     expect(fromArgs).toEqual(fromInput)
+  })
+})
+
+describe('manifest versioning, executor kinds, and integrity', () => {
+  const webhook = { endpoint: 'https://example.com/hook', method: 'POST', authType: 'NONE' as const }
+
+  test('a manifest with no executorType defaults to webhook (format v1 unchanged)', () => {
+    const m = normalizeManifest(webhook)
+    expect('error' in m).toBe(false)
+    if ('error' in m) return
+    expect(m.executorType).toBe('webhook')
+  })
+
+  test('an omitted method defaults rather than failing', () => {
+    // The pre-Zod coercion used to write '' for an absent method, which defeated
+    // the schema default and rejected every mcp-stdio manifest.
+    const m = normalizeManifest({ endpoint: 'https://example.com/hook', authType: 'NONE' })
+    expect('error' in m).toBe(false)
+    if ('error' in m) return
+    expect(m.method).toBe('POST')
+  })
+
+  test('an mcp-stdio manifest needs no endpoint and no method', () => {
+    const m = normalizeManifest({
+      manifestVersion: 2, executorType: 'mcp-stdio', command: 'node', args: ['/tmp/x.mjs'], authType: 'NONE',
+    })
+    expect('error' in m).toBe(false)
+  })
+
+  test('an mcp-stdio command outside the shared allowlist is refused', () => {
+    // The allowlist is ALLOWED_MCP_CMDS from admin-tools — reusing it is what
+    // stops this path and the MCP installer from drifting apart.
+    const m = normalizeManifest({ manifestVersion: 2, executorType: 'mcp-stdio', command: 'rm', authType: 'NONE' })
+    expect('error' in m).toBe(true)
+    if (!('error' in m)) return
+    expect(m.error).toContain('not allowed')
+  })
+
+  test('a webhook manifest without an endpoint is refused with a reason', () => {
+    const m = normalizeManifest({ executorType: 'webhook', authType: 'NONE' })
+    expect('error' in m).toBe(true)
+    if (!('error' in m)) return
+    expect(m.error).toContain('endpoint')
+  })
+
+  test('a tampered manifest is refused; an unchanged one still runs', () => {
+    const base = normalizeManifest({
+      manifestVersion: 2, executorType: 'mcp-stdio', command: 'node', args: ['/tmp/x.mjs'], authType: 'NONE',
+    })
+    expect('error' in base).toBe(false)
+    if ('error' in base) return
+
+    const digest = computeManifestDigest(base)
+    expect(verifyManifestIntegrity(JSON.stringify(base), digest).ok).toBe(true)
+
+    // Swapping the executable while keeping the approved digest must fail.
+    const tampered = { ...base, command: 'python' }
+    const v = verifyManifestIntegrity(JSON.stringify(tampered), digest)
+    expect(v.ok).toBe(false)
+  })
+
+  test('a plugin with NO recorded digest is accepted (registered before digests)', () => {
+    const m = normalizeManifest(webhook)
+    expect('error' in m).toBe(false)
+    if ('error' in m) return
+    expect(verifyManifestIntegrity(JSON.stringify(m), null).ok).toBe(true)
+  })
+
+  test('the digest ignores JSON key order (an edit round-trip reorders keys)', () => {
+    const m = normalizeManifest(webhook)
+    expect('error' in m).toBe(false)
+    if ('error' in m) return
+    const digest = computeManifestDigest(m)
+    const reordered = JSON.stringify(Object.fromEntries(Object.entries(m).reverse()))
+    expect(verifyManifestIntegrity(reordered, digest).ok).toBe(true)
+  })
+})
+
+describe('executePlugin honours the integrity gate (wiring, not just the helper)', () => {
+  // The helper tests above pass even when executePlugin forgets to CALL the
+  // gate, so disabling the gate at the call site slipped past them entirely
+  // (verified by negative control). This one drives executePlugin and asserts on
+  // what it actually does.
+  test('a manifest whose digest no longer matches is NOT executed', async () => {
+    const base = normalizeManifest({
+      manifestVersion: 2, executorType: 'mcp-stdio', command: 'node', args: ['/tmp/x.mjs'], authType: 'NONE',
+    })
+    expect('error' in base).toBe(false)
+    if ('error' in base) return
+
+    const approved = computeManifestDigest(base)
+    // Swap the executable out from under the approved digest.
+    const tampered = JSON.stringify({ ...base, command: 'python' })
+
+    const res = await executePlugin({
+      plugin: { manifestJson: tampered, toolId: 'anything', manifestDigest: approved },
+      args: { text: 'x' },
+    })
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('changed after it was approved')
   })
 })
