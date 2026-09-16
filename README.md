@@ -124,7 +124,7 @@ McNemar registers 0 wins for either side. The small pipeline is materially faste
 stays as it is. An earlier 1-point gap was reported as a finding; it is sampling noise and
 is not claimed here.
 
-**Test suite:** 6,687 tests across 244 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
+**Test suite:** 6,710 tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate. 48 static invariant guards (`bun test src/lib/invariants.test.ts`). Coverage is
 reported two ways on purpose: **96.20% of reachable lines** and 88.09% merged across 198
 gated modules (`bun scripts/coverage-gate.ts`). Branch coverage is **not measurable** in
 this toolchain — Bun emits `BRF: 0` — and that limitation is recorded rather than papered
@@ -197,17 +197,22 @@ both re-runs of the full suite. Cause unknown.
 - Query Expansion (synonym + multilingual)
 - Multi-pass Retrieval with Reflection
 - GraphRAG (Cognee extraction in parallel)
-- Agentic Loop (route → execute → evaluate → repeat)
+- **ReAct Agent Orchestrator** (dynamic Reason→Act→Observe loop, parallel tool calls, per-round adaptation)
+- **Unified Tool Interface** (SQL/RAG/REST/Web/Plugin/MCP/Admin behind one strict-JSON-Schema contract)
+- **Tool Circuit Breaker** (closed → open → half-open, prevents cascading failures)
 - Smart Router (semantic + performance scoring)
 - Text-to-SQL (AST guardrails)
 - Real DB Connectors (Postgres, MySQL, MSSQL)
 - REST Connector (whitelisted endpoints)
-- MCP Client (external servers with hardening)
+- MCP Client (external servers, **lossless JSON Schema passthrough**)
 
 ### Super-App
-- Agentic Planner (multi-step DAG)
+- ReAct Agent Orchestrator (dynamic multi-tool reasoning loop)
+- Unified Tool Registry (one contract across every tool family)
+- Tool Circuit Breaker (health-aware tool routing)
 - Schema Enrichment (LLM descriptions)
 - Plugin Registry (9 prebuilt + custom webhooks)
+- MCP Client (lossless JSON Schema passthrough, circuit-broken)
 - Cognee Memory (chat recall + KG)
 - Scheduler (cron automation)
 - Execution History (full audit trail)
@@ -249,6 +254,27 @@ both re-runs of the full suite. Cause unknown.
 - RAG LLM reranker (optional)
 - pgvector HNSW (sub-millisecond)
 - Multi-tool DAG (optional)
+
+## Agentic Architecture
+
+The agent surface runs a **dynamic ReAct loop**, not a pre-committed plan. Each
+round the model reasons, calls one or more tools through native function calling,
+observes the real results, and decides the next action from them — so a tool that
+returns nothing can be adapted around instead of failing a plan fixed before any
+data arrived.
+
+| Module | Role |
+|---|---|
+| `src/lib/unified-tools.ts` | One `UnifiedTool` contract (id, strict JSON Schema, executor) across SQL, RAG, REST, web_search, web_fetch, chat, admin, plugin, and MCP tools. Encodes ids into LLM-legal function names and back. |
+| `src/lib/tool-circuit-breaker.ts` | Closed → open → half-open state machine per tool. Trips after 3 consecutive failures, re-probes after a cooldown, and prevents one dead tool from consuming the whole turn's budget. |
+| `src/lib/agent-orchestrator.ts` | The ReAct engine. Parallel tool execution per round, bounded rounds, observation feedback, and human-in-the-loop confirmation gates. |
+
+**MCP tools keep their own JSON Schema.** A server's `inputSchema` is passed to the
+model verbatim rather than flattened into a prose description, so boolean, array,
+and nested-object parameters survive the round trip instead of being re-guessed.
+
+**The legacy static planner** (`src/lib/planner.ts`) still backs the in-chat
+multi-step DAG path; both it and the orchestrator share the circuit breaker.
 
 ## Production Hardware Specifications
 
@@ -424,7 +450,7 @@ Copy `.env.example` to `.env`:
 - ✅ Authentication + RBAC (admin, analyst, viewer)
 - ✅ BM25 + RRF hybrid retrieval (+ KG leg)
 - ✅ Eval framework with golden test set
-- ✅ 6,687 unit tests across 244 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
+- ✅ 6,710 unit tests across 247 files (`bun scripts/test.ts`), 0 failures, 100% pass rate
 - ✅ 48 static invariant guards (`bun test src/lib/invariants.test.ts`)
 - ✅ PDF/DOCX/XLSX extraction verified against real files (FlateDecode streams, hex strings)
 - ✅ Data-source drivers verified in dev AND standalone build (static loader map + tracing)

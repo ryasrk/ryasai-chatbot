@@ -20,17 +20,12 @@ const mockUserFindFirst = mock(async () => ({ id: 'admin1' }))
 const mockAgentRunCreate = mock(async () => ({ id: 'run1' }))
 const mockAgentRunUpdate = mock(async () => ({}))
 const mockApiRequestLogCreate = mock(async () => ({}))
-const mockGetAvailableTools = mock(async () => [
-  { id: 'chat', description: 'General chat', paramDescription: '{}', requiresDataSource: 'none' as const },
-])
-const mockPlanQuery = mock(async () => ({
-  steps: [{ id: 's1', tool: 'chat', input: { message: 'hi' } }],
-  needsSynthesis: false,
+const mockRunAgentOrchestrator = mock(async () => ({
+  answer: 'final answer',
+  toolRuns: [{ type: 'CHAT' as const, status: 'success' as const, latencyMs: 10 }],
+  iterations: 1,
+  citations: [],
 }))
-const mockExecutePlan = mock(async () => [
-  { stepId: 's1', tool: 'chat', ok: true, output: 'result', latencyMs: 10 },
-])
-const mockSynthesizeAnswer = mock(async () => 'final answer')
 const mockRememberChatTurn = mock(async () => undefined)
 
 mock.module('@/lib/api-keys', () => ({
@@ -54,13 +49,8 @@ mock.module('@/lib/db', () => ({
     apiRequestLog: { create: mockApiRequestLogCreate },
   },
 }))
-mock.module('@/lib/tool-registry', () => ({
-  getAvailableTools: mockGetAvailableTools,
-}))
-mock.module('@/lib/planner', () => ({
-  planQuery: mockPlanQuery,
-  executePlan: mockExecutePlan,
-  synthesizeAnswer: mockSynthesizeAnswer,
+mock.module('@/lib/agent-orchestrator', () => ({
+  runAgentOrchestrator: mockRunAgentOrchestrator,
 }))
 mock.module('@/lib/cognee', () => ({
   rememberChatTurn: mockRememberChatTurn,
@@ -76,10 +66,7 @@ beforeEach(() => {
   mockAgentRunCreate.mockClear()
   mockAgentRunUpdate.mockClear()
   mockApiRequestLogCreate.mockClear()
-  mockGetAvailableTools.mockClear()
-  mockPlanQuery.mockClear()
-  mockExecutePlan.mockClear()
-  mockSynthesizeAnswer.mockClear()
+  mockRunAgentOrchestrator.mockClear()
   mockRememberChatTurn.mockClear()
   mockWriteAudit.mockImplementation(async () => undefined)
   mockAgentRunUpdate.mockImplementation(async () => ({}))
@@ -98,14 +85,15 @@ function makeReq(body: unknown, withAuth = true) {
 }
 
 describe('POST /api/v1/agent/run', () => {
-  test('valid request → 200 with answer and plan', async () => {
+  test('valid request → 200 with answer and iterations', async () => {
     const res = await POST(makeReq({ question: 'What is the weather?' }) as any)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.answer).toBe('final answer')
     expect(body.agentRunId).toBe('run1')
-    expect(body.plan.steps).toHaveLength(1)
+    expect(body.iterations).toBe(1)
+    expect(body.stepResults).toHaveLength(1)
   })
 
   test('missing question → 400', async () => {

@@ -22,6 +22,7 @@ import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { extractJson } from '@/lib/constrained-output'
 import { withToolSandbox } from '@/lib/tool-sandbox'
+import { toolCircuitBreaker } from '@/lib/tool-circuit-breaker'
 import { logSwallowed } from '@/lib/logger'
 import type { ToolDef } from '@/lib/tool-registry'
 
@@ -571,6 +572,15 @@ async function executeStep(
     }
 
     if (step.tool.startsWith('mcp:')) {
+      const cb = toolCircuitBreaker.isExecutionAllowed(step.tool)
+      if (!cb.allowed) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: cb.reason, latencyMs: Date.now() - started,
+        }
+      }
+
       // mcp:<serverId>:<toolName> — serverId is a cuid (no colons); toolName
       // may theoretically contain colons, so rejoin the remainder.
       const parts = step.tool.split(':')
@@ -590,6 +600,11 @@ async function executeStep(
         }
       }
       const result = await callMcpTool(serverId, toolName, coerceMcpInput(step.input))
+      if (result.ok) {
+        toolCircuitBreaker.recordSuccess(step.tool)
+      } else {
+        toolCircuitBreaker.recordFailure(step.tool, result.error)
+      }
       args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
       // ponytail: persist a ToolRun row at invocation time for MCP observability.
       // chatMessageId is null here — the planner runs before the AI message is
@@ -665,6 +680,15 @@ async function executeStep(
     }
 
     if (step.tool.startsWith('plugin:')) {
+      const cb = toolCircuitBreaker.isExecutionAllowed(step.tool)
+      if (!cb.allowed) {
+        args.onStatus?.(step.id, step.tool, 'error')
+        return {
+          stepId: step.id, tool: step.tool, ok: false, output: '',
+          error: cb.reason, latencyMs: Date.now() - started,
+        }
+      }
+
       const toolId = step.tool.slice('plugin:'.length)
       // ponytail: context filtering already happened in getAvailableTools when
       // building the tool list offered to the planner. Here we only check
@@ -682,6 +706,11 @@ async function executeStep(
       }
       const input = JSON.stringify(step.input)
       const result = await executePlugin({ plugin, input })
+      if (result.ok) {
+        toolCircuitBreaker.recordSuccess(step.tool)
+      } else {
+        toolCircuitBreaker.recordFailure(step.tool, result.error)
+      }
       args.onStatus?.(step.id, step.tool, result.ok ? 'done' : 'error')
       return {
         stepId: step.id, tool: step.tool, ok: result.ok, output: result.output,

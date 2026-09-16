@@ -3,9 +3,8 @@ import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/se
 import { hasPlan } from '@/lib/plan-gating'
 import { rememberChatTurn } from '@/lib/cognee'
 import { db } from '@/lib/db'
-import { planQuery, executePlan, formatStepContext, type PlanStepResult } from '@/lib/planner'
-import { getAvailableTools } from '@/lib/tool-registry'
-import { streamAnswer } from '@/lib/ai'
+import { runAgentOrchestrator } from '@/lib/agent-orchestrator'
+import { getUnifiedTools } from '@/lib/unified-tools'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export async function POST(req: NextRequest) {
@@ -77,48 +76,64 @@ export async function POST(req: NextRequest) {
         try {
           send('thinking', { content: 'Analyzing request...' })
 
-          // ponytail: all actions — including MCP install/credentials/list/test/remove —
-          // are handled by the LLM planner via admin:* tools. The planner sees the
-          // conversation history and decides which tool to invoke based on context.
-          // Confirmation flows through the planner: when the user says "confirm yes",
-          // the planner emits confirm:"yes" in the tool input, and executePlan passes
-          // isConfirmed=true to the admin tool. No regex pre-checks, no pending state.
-          const availableTools = await getAvailableTools(message, 'agentic', { isAdmin: user.role === 'admin' })
+          // ponytail: the ReAct orchestrator replaces the static upfront DAG. It calls
+          // tools through the LLM's native function-calling protocol, observes the real
+          // results, and decides the NEXT action from them — so a step that returns
+          // nothing can be adapted around instead of failing a pre-committed plan.
+          // Admin/MCP/plugin actions still flow through the same tool ids, and the
+          // confirmation gate is preserved (a gated tool halts the loop and the prompt
+          // is relayed to the user; "confirm yes" re-enters with the gate satisfied).
           const fmtOpts: Intl.DateTimeFormatOptions = { timeZone: tz, year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }
           const sessionStart = sessionCreatedAt.toLocaleString('en-US', fmtOpts)
           const currentTime = new Date().toLocaleString('en-US', fmtOpts)
           const contextualizedMessage = `[Session started: ${sessionStart} ${tz}]\n[Current time: ${currentTime} ${tz}]\n\n${message}`
 
-          const plan = await planQuery({ question: contextualizedMessage, availableTools, sessionId: conversationId, chatHistory })
-
+          // The announced tool list is emitted once up front so the UI keeps its
+          // "Plan" affordance: the orchestrator has no fixed plan, so the tool ids
+          // it CAN reach is the honest equivalent of a plan preview.
+          const announcedTools = await getUnifiedTools({
+            query: message,
+            context: 'agentic',
+            isAdmin: user.role === 'admin',
+          })
           send('plan', {
-            steps: plan.steps.map((s) => ({ id: s.id, tool: s.tool, input: s.input, dependsOn: s.dependsOn ?? [] })),
+            steps: announcedTools.map((t, i) => ({ id: `tool${i + 1}`, tool: t.id, input: {} })),
           })
 
-          const stepStartTimes = new Map<string, number>()
-          const results: PlanStepResult[] = await executePlan({
-            plan,
+          const orchestratorResult = await runAgentOrchestrator({
+            question: contextualizedMessage,
             userId: user.userId,
+            organizationId: user.organizationId,
             sessionId: conversationId,
+            context: 'agentic',
             isAdmin: user.role === 'admin',
-            onStatus: (stepId, tool, status) => {
-              if (status === 'running') {
-                stepStartTimes.set(stepId, Date.now())
-                send('tool_start', { stepId, tool })
-              } else {
-                const latencyMs = Date.now() - (stepStartTimes.get(stepId) ?? Date.now())
-                send('tool_end', { stepId, tool, status: status === 'done' ? 'success' : 'error', latencyMs })
+            chatHistory,
+            onEvent: (ev) => {
+              if (ev.type === 'thinking') {
+                send('thinking', { content: ev.data.content ?? 'Thinking...' })
+              } else if (ev.type === 'tool_start') {
+                send('tool_start', {
+                  stepId: ev.data.stepId,
+                  tool: ev.data.toolId,
+                  input: ev.data.arguments ?? {},
+                })
+              } else if (ev.type === 'tool_end') {
+                send('tool_end', {
+                  stepId: ev.data.stepId,
+                  tool: ev.data.toolId,
+                  status: ev.data.status === 'success' ? 'success' : 'error',
+                  output: ev.data.output,
+                  error: ev.data.error,
+                  latencyMs: ev.data.latencyMs,
+                })
               }
             },
           })
 
-          const synthesisContext = formatStepContext(results)
-          let fullAnswer = ''
-          // ponytail: streamAnswer routes to configured LLM endpoint (fail-closed if unconfigured).
-          // source 'SQL' is a neutral generic label for multi-source synthesis context.
-          for await (const token of streamAnswer({ question: contextualizedMessage, context: synthesisContext, source: 'SQL', chatHistory })) {
-            fullAnswer += token
-            send('token', { content: token })
+          const fullAnswer = orchestratorResult.answer
+
+          if (orchestratorResult.confirmationRequired) {
+            send('confirmation_required', { message: orchestratorResult.confirmationRequired.message })
           }
 
           send('answer', { content: fullAnswer })
@@ -133,14 +148,14 @@ export async function POST(req: NextRequest) {
             userId: user.userId,
             action: 'AGENT_DASHBOARD',
             severity: 'info',
-            detail: { message, conversationId, steps: plan.steps.length },
+            detail: { message, conversationId, iterations: orchestratorResult.iterations, toolRuns: orchestratorResult.toolRuns.length },
           })
 
           await rememberChatTurn({
             sessionId: conversationId,
             userMessage: message,
             aiMessage: fullAnswer,
-            toolRuns: results.map((r) => ({ type: r.tool, status: r.ok ? 'success' : 'error', latencyMs: r.latencyMs })),
+            toolRuns: orchestratorResult.toolRuns.map((r) => ({ type: r.type, status: r.status, latencyMs: r.latencyMs ?? 0 })),
           })
         } catch (e) {
           send('error', { message: e instanceof Error ? e.message : 'An internal error occurred.' })

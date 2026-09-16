@@ -42,17 +42,13 @@ let sessionRow: Record<string, unknown> | null = null
 let createdSession = { id: 's-new', createdAt: new Date('2026-03-01T00:00:00Z') }
 let historyRows: Array<Record<string, unknown>> = []
 let steps: Array<Record<string, unknown>> = []
-let planSteps: Array<Record<string, unknown>> = []
-let stepResults: Array<Record<string, unknown>> = []
+let unifiedTools: Array<{ id: string; name: string; description: string; category: string }> = []
+let orchestratorResult: Record<string, unknown> = {}
 let tokens: string[] = []
-let planThrows: Error | null = null
-let streamThrows: Error | null = null
-let executeThrows: Error | null = null
+let orchestratorThrows: Error | null = null
 let messageCreateThrows: Error | null = null
 let historyThrows: Error | null = null
-let capturedPlanArgs: Record<string, unknown> | null = null
-let capturedExecuteArgs: Record<string, unknown> | null = null
-let capturedStreamArgs: Record<string, unknown> | null = null
+let capturedOrchestratorArgs: Record<string, unknown> | null = null
 let capturedHistoryQuery: Record<string, unknown> | null = null
 let capturedSessionCreate: Record<string, unknown> | null = null
 const messageCreates: Array<Record<string, unknown>> = []
@@ -94,6 +90,10 @@ mock.module('@/lib/prisma-tenant', () => ({
   enterWithOrg: (o: string) => {
     events.push(`enterWithOrg:${o}`)
   },
+  // The ReAct orchestrator reaches the org through this on the far side of a
+  // tool call, so the mock must expose it too. It mirrors what `enterWithOrg`
+  // just recorded, which is exactly the production contract.
+  getOrgContext: () => 'org-1',
 }))
 
 mock.module('@/lib/plan-gating', () => ({
@@ -111,46 +111,39 @@ mock.module('@/lib/cognee', () => ({
   },
 }))
 
-mock.module('@/lib/tool-registry', () => ({
-  getAvailableTools: async (question: string, surface: string, opts: Record<string, unknown>) => {
-    events.push(`getAvailableTools:${surface}:${String(opts.isAdmin)}`)
-    return [{ id: 'sql', description: 'SQL' }]
+mock.module('@/lib/unified-tools', () => ({
+  getUnifiedTools: async (args: Record<string, unknown>) => {
+    events.push(`getUnifiedTools:${String(args.context)}:${String(args.isAdmin)}`)
+    return unifiedTools
   },
 }))
 
-mock.module('@/lib/planner', () => ({
-  planQuery: async (args: Record<string, unknown>) => {
-    capturedPlanArgs = args
-    events.push('planQuery')
-    if (planThrows) throw planThrows
-    return { steps: planSteps }
-  },
-  executePlan: async (args: Record<string, unknown>) => {
-    capturedExecuteArgs = args
-    events.push('executePlan')
-    if (executeThrows) throw executeThrows
-    // Drive the status callback exactly as the real runner does, so the SSE tool frames are exercised.
-    const onStatus = args.onStatus as (id: string, tool: string, status: string) => void
-    for (const s of steps) onStatus(String(s.stepId), String(s.tool), 'running')
-    for (const s of steps) onStatus(String(s.stepId), String(s.tool), String(s.endStatus))
-    return stepResults
-  },
-  formatStepContext: (results: unknown[]) => {
-    events.push(`formatStepContext:${results.length}`)
-    return 'SYNTHESIS CONTEXT'
-  },
-}))
-
-mock.module('@/lib/ai', () => ({
-  streamAnswer: (args: Record<string, unknown>) => {
-    capturedStreamArgs = args
-    events.push('streamAnswer')
-    return {
-      async *[Symbol.asyncIterator]() {
-        if (streamThrows) throw streamThrows
-        for (const t of tokens) yield t
-      },
+// The ReAct orchestrator is mocked as ONE unit on purpose: its internals
+// (rounds, parallel calls, circuit breaker) are covered by
+// `src/lib/agent-orchestrator.test.ts`, and what THIS file measures is the
+// route's own contract — SSE framing, guards, persistence ordering, error
+// frames. The mock drives `onEvent` exactly as the real orchestrator does, so
+// the frame shapes are exercised rather than assumed.
+mock.module('@/lib/agent-orchestrator', () => ({
+  runAgentOrchestrator: async (args: Record<string, unknown>) => {
+    capturedOrchestratorArgs = args
+    events.push('runAgentOrchestrator')
+    if (orchestratorThrows) throw orchestratorThrows
+    const onEvent = args.onEvent as (e: { type: string; data: Record<string, unknown> }) => void
+    for (const s of steps) {
+      onEvent({ type: 'tool_start', data: { stepId: s.stepId, toolId: s.tool, arguments: { q: 'x' } } })
+      onEvent({
+        type: 'tool_end',
+        data: {
+          stepId: s.stepId,
+          toolId: s.tool,
+          status: s.endStatus === 'done' ? 'success' : 'error',
+          output: 'OUT',
+          latencyMs: 12,
+        },
+      })
     }
+    return orchestratorResult
   },
 }))
 
@@ -227,17 +220,21 @@ beforeEach(() => {
   createdSession = { id: 's-new', createdAt: new Date('2026-03-01T00:00:00Z') }
   historyRows = []
   steps = []
-  planSteps = [{ id: 's1', tool: 'sql', input: { q: 'x' } }]
-  stepResults = [{ tool: 'sql', ok: true, latencyMs: 12 }]
+  unifiedTools = [
+    { id: 'sql', name: 'query_database', description: 'SQL', category: 'database' },
+    { id: 'rag', name: 'search_knowledge_base', description: 'RAG', category: 'knowledge' },
+  ]
+  orchestratorResult = {
+    answer: 'Hello',
+    toolRuns: [{ type: 'SQL', status: 'success', latencyMs: 12 }],
+    iterations: 1,
+    citations: [],
+  }
   tokens = ['Hel', 'lo']
-  planThrows = null
-  streamThrows = null
-  executeThrows = null
+  orchestratorThrows = null
   messageCreateThrows = null
   historyThrows = null
-  capturedPlanArgs = null
-  capturedExecuteArgs = null
-  capturedStreamArgs = null
+  capturedOrchestratorArgs = null
   capturedHistoryQuery = null
   capturedSessionCreate = null
   messageCreates.length = 0
@@ -313,8 +310,6 @@ describe('the SSE frame format', () => {
       'plan',
       'tool_start',
       'tool_end',
-      'token',
-      'token',
       'answer',
       'done',
     ])
@@ -325,13 +320,12 @@ describe('the SSE frame format', () => {
     expect(find(f, 'thinking')!.data).toEqual({ content: 'Analyzing request...' })
   })
 
-  test('the plan frame exposes steps with dependsOn DEFAULTED to an empty array', async () => {
-    planSteps = [{ id: 's1', tool: 'sql', input: { q: 'x' } }, { id: 's2', tool: 'rag', input: {}, dependsOn: ['s1'] }]
+  test('the plan frame exposes the tool ids the agent can reach', async () => {
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'plan')!.data).toEqual({
       steps: [
-        { id: 's1', tool: 'sql', input: { q: 'x' }, dependsOn: [] },
-        { id: 's2', tool: 'rag', input: {}, dependsOn: ['s1'] },
+        { id: 'tool1', tool: 'sql', input: {} },
+        { id: 'tool2', tool: 'rag', input: {} },
       ],
     })
   })
@@ -339,7 +333,7 @@ describe('the SSE frame format', () => {
   test('the tool frames carry a LATENCY for the completed step', async () => {
     steps = [{ stepId: 's1', tool: 'sql', endStatus: 'done' }]
     const f = await frames(await post({ message: 'hi' }))
-    expect(find(f, 'tool_start')!.data).toEqual({ stepId: 's1', tool: 'sql' })
+    expect(find(f, 'tool_start')!.data).toEqual({ stepId: 's1', tool: 'sql', input: { q: 'x' } })
     const end = find(f, 'tool_end')!.data
     expect(end.stepId).toBe('s1')
     expect(end.status).toBe('success')
@@ -353,14 +347,8 @@ describe('the SSE frame format', () => {
     expect(find(f, 'tool_end')!.data.status).toBe('error')
   })
 
-  test('every token is emitted separately for real streaming', async () => {
-    tokens = ['a', 'b', 'c']
-    const f = await frames(await post({ message: 'hi' }))
-    expect(f.filter((x) => x.event === 'token').map((x) => x.data.content)).toEqual(['a', 'b', 'c'])
-  })
-
-  test('the answer frame repeats the CONCATENATED text, which the client may use instead of tokens', async () => {
-    tokens = ['Hel', 'lo']
+  test('the answer frame carries the orchestrator answer', async () => {
+    orchestratorResult = { answer: 'Hello', toolRuns: [], iterations: 1, citations: [] }
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'answer')!.data).toEqual({ content: 'Hello' })
   })
@@ -370,10 +358,24 @@ describe('the SSE frame format', () => {
     expect(find(f, 'done')!.data).toEqual({ conversationId: 's-new' })
   })
 
-  test('an empty token stream still produces an answer frame with an empty string', async () => {
-    tokens = []
+  test('an EMPTY answer still produces an answer frame', async () => {
+    orchestratorResult = { answer: '', toolRuns: [], iterations: 1, citations: [] }
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'answer')!.data).toEqual({ content: '' })
+  })
+
+  test('a confirmationRequired result emits a confirmation_required frame', async () => {
+    orchestratorResult = {
+      answer: 'Please confirm creating the API key.',
+      toolRuns: [],
+      iterations: 1,
+      citations: [],
+      confirmationRequired: { action: 'generate_api_key', message: 'Please confirm creating the API key.' },
+    }
+    const f = await frames(await post({ message: 'hi' }))
+    expect(find(f, 'confirmation_required')!.data).toEqual({
+      message: 'Please confirm creating the API key.',
+    })
   })
 })
 
@@ -438,10 +440,10 @@ describe('the user turn is persisted before the plan runs', () => {
     })
   })
 
-  test('the insert happens BEFORE planQuery', async () => {
+  test('the user turn is persisted before the orchestrator runs', async () => {
     // The turn being answered is part of its own history window, which only holds if the write lands first.
     await frames(await post({ message: 'hi' }))
-    expect(events.indexOf('chatMessage.create:user')).toBeLessThan(events.indexOf('planQuery'))
+    expect(events.indexOf('chatMessage.create:user')).toBeLessThan(events.indexOf('runAgentOrchestrator'))
   })
 
   test('history is loaded AFTER the insert and excludes the AGENT sender', async () => {
@@ -470,7 +472,7 @@ describe('the user turn is persisted before the plan runs', () => {
     historyThrows = new Error('db down')
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'error')).toBeUndefined()
-    expect(capturedPlanArgs!.chatHistory).toEqual([])
+    expect(capturedOrchestratorArgs!.chatHistory).toEqual([])
   })
 })
 
@@ -481,7 +483,7 @@ describe('history formatting and the session wrapper', () => {
       { sender: 'user', text: 'first', createdAt: new Date('2026-03-01T10:00:00Z') },
     ]
     await frames(await post({ message: 'hi', timezone: 'Asia/Jakarta' }))
-    const hist = capturedPlanArgs!.chatHistory as Array<{ role: string; content: string }>
+    const hist = capturedOrchestratorArgs!.chatHistory as Array<{ role: string; content: string }>
     expect(hist.map((h) => h.role)).toEqual(['user', 'assistant'])
     expect(hist[0]!.content).toContain('first')
     expect(hist[1]!.content).toContain('second')
@@ -492,7 +494,7 @@ describe('history formatting and the session wrapper', () => {
     // [Session started: …] wrapper -- conflating them loses the date the wrapper exists to provide.
     historyRows = [{ sender: 'user', text: 'x', createdAt: new Date('2026-03-01T10:00:00Z') }]
     await frames(await post({ message: 'hi', timezone: 'Asia/Jakarta' }))
-    const content = (capturedPlanArgs!.chatHistory as Array<{ content: string }>)[0]!.content
+    const content = (capturedOrchestratorArgs!.chatHistory as Array<{ content: string }>)[0]!.content
     expect(content).toMatch(/^\[\d{2}:\d{2} Asia\/Jakarta\] x$/)
   })
 
@@ -503,12 +505,12 @@ describe('history formatting and the session wrapper', () => {
       { sender: 'user', text: 'kept', createdAt: new Date('2026-03-01T10:02:00Z') },
     ]
     await frames(await post({ message: 'hi' }))
-    expect(capturedPlanArgs!.chatHistory).toHaveLength(1)
+    expect(capturedOrchestratorArgs!.chatHistory).toHaveLength(1)
   })
 
   test('the planner sees the [Session started: …] and [Current time: …] wrapper, with the DATE', async () => {
     await frames(await post({ message: 'hello there', timezone: 'Asia/Jakarta' }))
-    const question = capturedPlanArgs!.question as string
+    const question = capturedOrchestratorArgs!.question as string
     expect(question).toContain('[Session started: ')
     expect(question).toContain('[Current time: ')
     expect(question).toContain('Asia/Jakarta]')
@@ -525,7 +527,7 @@ describe('history formatting and the session wrapper', () => {
   test('the timezone defaults to UTC when omitted', async () => {
     historyRows = [{ sender: 'user', text: 'x', createdAt: new Date('2026-03-01T10:00:00Z') }]
     await frames(await post({ message: 'hi' }))
-    const content = (capturedPlanArgs!.chatHistory as Array<{ content: string }>)[0]!.content
+    const content = (capturedOrchestratorArgs!.chatHistory as Array<{ content: string }>)[0]!.content
     expect(content).toContain('UTC]')
   })
 })
@@ -533,48 +535,57 @@ describe('history formatting and the session wrapper', () => {
 describe('tool selection and planning inputs', () => {
   test('tools are requested for the agentic surface with the admin flag from the ROLE', async () => {
     await frames(await post({ message: 'hi' }))
-    expect(events).toContain('getAvailableTools:agentic:false')
+    expect(events).toContain('getUnifiedTools:agentic:false')
   })
 
   test('an ADMIN session asks for admin tools', async () => {
     user = { ...analystUser, role: 'admin' }
     await frames(await post({ message: 'hi' }))
-    expect(events).toContain('getAvailableTools:agentic:true')
+    expect(events).toContain('getUnifiedTools:agentic:true')
   })
 
   test('a body-supplied isAdmin flag is ignored', async () => {
     // A caller must not be able to promote itself by adding a field.
     await frames(await post({ message: 'hi', isAdmin: true }))
-    expect(events).toContain('getAvailableTools:agentic:false')
+    expect(events).toContain('getUnifiedTools:agentic:false')
   })
 
-  test('the plan is executed with the session user, session id and role-derived admin flag', async () => {
+  test('the orchestrator runs with the session user, session id and role-derived admin flag', async () => {
     await frames(await post({ message: 'hi' }))
-    expect(capturedExecuteArgs).toMatchObject({
+    expect(capturedOrchestratorArgs).toMatchObject({
       userId: 'u1',
       sessionId: 's-new',
+      organizationId: 'org-1',
+      context: 'agentic',
       isAdmin: false,
     })
-    expect(typeof capturedExecuteArgs!.onStatus).toBe('function')
+    expect(typeof capturedOrchestratorArgs!.onEvent).toBe('function')
   })
 
-  test('the answer prompt gets the formatted step context and a neutral SQL source label', async () => {
+  test('an ADMIN session runs the orchestrator with isAdmin true', async () => {
+    user = { ...analystUser, role: 'admin' }
     await frames(await post({ message: 'hi' }))
-    expect(capturedStreamArgs).toMatchObject({ context: 'SYNTHESIS CONTEXT', source: 'SQL' })
+    expect(capturedOrchestratorArgs).toMatchObject({ isAdmin: true })
   })
 
-  test('an empty plan still streams an answer (synthesis-only turn)', async () => {
-    planSteps = []
-    stepResults = []
+  test('the orchestrator receives the [Session started: …] wrapped question', async () => {
+    await frames(await post({ message: 'hello there', timezone: 'Asia/Jakarta' }))
+    const question = capturedOrchestratorArgs!.question as string
+    expect(question).toContain('[Session started: ')
+    expect(question.endsWith('hello there')).toBe(true)
+  })
+
+  test('a tool-less turn still produces a plan frame and an answer', async () => {
+    steps = []
     const f = await frames(await post({ message: 'hi' }))
-    expect(find(f, 'plan')!.data).toEqual({ steps: [] })
+    expect(find(f, 'plan')).toBeDefined()
     expect(find(f, 'answer')).toBeDefined()
   })
 })
 
 describe('post-answer side effects', () => {
   test('the answer is stored as sender=agent with status complete', async () => {
-    tokens = ['A', 'B']
+    orchestratorResult = { answer: 'AB', toolRuns: [], iterations: 1, citations: [] }
     await frames(await post({ message: 'hi' }))
     const agentWrite = messageCreates.find((c) => (c.data as { sender: string }).sender === 'agent')!
     expect(agentWrite.data).toMatchObject({
@@ -593,28 +604,35 @@ describe('post-answer side effects', () => {
     expect(sessionUpdates[0]!.where).toEqual({ id: 's-new' })
   })
 
-  test('the audit records the step COUNT and the conversation id', async () => {
-    planSteps = [{ id: 'a', tool: 'sql' }, { id: 'b', tool: 'rag' }]
-    steps = []
+  test('the audit records the iteration count and the conversation id', async () => {
+    orchestratorResult = { answer: 'Hello', toolRuns: [], iterations: 2, citations: [] }
     await frames(await post({ message: 'hi' }))
     expect(audits[0]).toMatchObject({
       userId: 'u1',
       action: 'AGENT_DASHBOARD',
       severity: 'info',
-      detail: { message: 'hi', conversationId: 's-new', steps: 2 },
+      detail: { message: 'hi', conversationId: 's-new', iterations: 2 },
     })
   })
 
   test('memory receives the question, the answer and the tool run summary', async () => {
-    stepResults = [{ tool: 'sql', ok: true, latencyMs: 7 }, { tool: 'rag', ok: false, latencyMs: 3 }]
+    orchestratorResult = {
+      answer: 'Hello',
+      toolRuns: [
+        { type: 'SQL', status: 'success', latencyMs: 7 },
+        { type: 'RAG', status: 'error', latencyMs: 3 },
+      ],
+      iterations: 1,
+      citations: [],
+    }
     await frames(await post({ message: 'hi' }))
     expect(remembered[0]).toMatchObject({
       sessionId: 's-new',
       userMessage: 'hi',
       aiMessage: 'Hello',
       toolRuns: [
-        { type: 'sql', status: 'success', latencyMs: 7 },
-        { type: 'rag', status: 'error', latencyMs: 3 },
+        { type: 'SQL', status: 'success', latencyMs: 7 },
+        { type: 'RAG', status: 'error', latencyMs: 3 },
       ],
     })
   })
@@ -625,7 +643,7 @@ describe('post-answer side effects', () => {
   })
 
   test('all four side effects run even when the ANSWER is empty', async () => {
-    tokens = []
+    orchestratorResult = { answer: '', toolRuns: [], iterations: 1, citations: [] }
     await frames(await post({ message: 'hi' }))
     expect(messageCreates.filter((c) => (c.data as { sender: string }).sender === 'agent')).toHaveLength(1)
     expect(sessionUpdates).toHaveLength(1)
@@ -635,10 +653,10 @@ describe('post-answer side effects', () => {
 })
 
 describe('in-stream failures are `error` frames under HTTP 200', () => {
-  test('a planner failure becomes an error frame, not a non-2xx', async () => {
+  test('an orchestrator failure becomes an error frame, not a non-2xx', async () => {
     // The status was committed before `start()` ran, so it CANNOT change. A caller watching only for non-2xx
     // reads this as a success that produced nothing.
-    planThrows = new Error('planner exploded')
+    orchestratorThrows = new Error('planner exploded')
     const res = await post({ message: 'hi' })
     expect(res.status).toBe(200)
     const f = await frames(res)
@@ -646,28 +664,28 @@ describe('in-stream failures are `error` frames under HTTP 200', () => {
     expect(find(f, 'answer')).toBeUndefined()
   })
 
-  test('an executor failure becomes an error frame', async () => {
-    executeThrows = new Error('tool blew up')
+  test('a tool execution failure becomes an error frame', async () => {
+    orchestratorThrows = new Error('tool blew up')
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'error')!.data).toEqual({ message: 'tool blew up' })
   })
 
-  test('a synthesis failure becomes an error frame', async () => {
-    streamThrows = new Error('llm died')
+  test('a final-answer failure becomes an error frame', async () => {
+    orchestratorThrows = new Error('llm died')
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'error')!.data).toEqual({ message: 'llm died' })
   })
 
   test('a NON-Error rejection is replaced with a generic message, never "undefined"', async () => {
     // `e instanceof Error ? e.message : '...'` -- without the fallback the client would render "undefined".
-    streamThrows = 'a string' as unknown as Error
+    orchestratorThrows = 'a string' as unknown as Error
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'error')!.data).toEqual({ message: 'An internal error occurred.' })
   })
 
   test('after an error frame NO side effects are recorded', async () => {
     // The audit and memory write sit after synthesis, so a failed turn must not claim to have produced an answer.
-    streamThrows = new Error('llm died')
+    orchestratorThrows = new Error('llm died')
     await frames(await post({ message: 'hi' }))
     expect(audits).toHaveLength(0)
     expect(remembered).toHaveLength(0)
@@ -675,14 +693,14 @@ describe('in-stream failures are `error` frames under HTTP 200', () => {
   })
 
   test('the stream is CLOSED after an error frame, so the client stops waiting', async () => {
-    planThrows = new Error('boom')
+    orchestratorThrows = new Error('boom')
     const raw = await (await post({ message: 'hi' })).text()
     expect(raw.trimEnd().endsWith('}')).toBe(true)
   })
 
   test('the user turn is STILL persisted when the turn later fails', async () => {
     // Pinned as-is: the message write precedes the plan, so a failed answer leaves the question in the transcript.
-    planThrows = new Error('boom')
+    orchestratorThrows = new Error('boom')
     await frames(await post({ message: 'hi' }))
     expect(messageCreates.filter((c) => (c.data as { sender: string }).sender === 'user')).toHaveLength(1)
   })

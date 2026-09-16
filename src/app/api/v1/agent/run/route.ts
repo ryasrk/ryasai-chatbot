@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireExternalApiKey } from '@/lib/api-keys'
 import { handleApiError, writeAudit } from '@/lib/session'
-import { getAvailableTools } from '@/lib/tool-registry'
-import { planQuery, executePlan, synthesizeAnswer } from '@/lib/planner'
+import { runAgentOrchestrator } from '@/lib/agent-orchestrator'
 import { rememberChatTurn } from '@/lib/cognee'
 import { rateLimit } from '@/lib/redis'
 import { getOrgContext } from '@/lib/prisma-tenant'
@@ -75,10 +74,6 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
 
-    // API-key callers are external automation — never expose admin.* tools
-    const availableTools = await getAvailableTools(question, 'agentic', { isAdmin: false })
-
-    // 1) Plan
     agentRun = await db.agentRun.create({
       data: {
         organizationId: identity.organizationId,
@@ -86,30 +81,24 @@ export async function POST(req: NextRequest) {
         sessionId: body.sessionId ?? undefined,
         question,
         planJson: '',
-        status: 'planning',
+        status: 'executing',
       },
     })
 
-    const plan = await planQuery({ question, availableTools })
-    await db.agentRun.update({
-      where: { id: agentRun.id },
-      data: { planJson: JSON.stringify(plan), status: 'executing' },
-    })
-
-    // 2) Execute — API-key callers never get admin.* execution.
-    const stepResults = await executePlan({
-      plan,
+    // API-key callers are external automation — never expose admin.* tools.
+    // The ReAct orchestrator picks and sequences tools dynamically, so there is
+    // no upfront plan to persist; the iteration count is the honest equivalent.
+    const orchestratorResult = await runAgentOrchestrator({
+      question,
       userId: admin?.id ?? 'system',
+      organizationId: identity.organizationId,
       sessionId: body.sessionId,
+      context: 'agentic',
       isAdmin: false,
     })
 
-    // 3) Synthesize
-    const answer = await synthesizeAnswer({
-      question,
-      stepResults,
-      plan,
-    })
+    const answer = orchestratorResult.answer
+    const stepResults = orchestratorResult.toolRuns
 
     await db.agentRun.update({
       where: { id: agentRun.id },
@@ -127,8 +116,8 @@ export async function POST(req: NextRequest) {
       detail: {
         agentRunId: agentRun.id,
         question,
-        steps: plan.steps.length,
-        synthesis: plan.needsSynthesis,
+        iterations: orchestratorResult.iterations,
+        toolRuns: stepResults.length,
         latencyMs: Date.now() - started,
       },
     })
@@ -136,14 +125,14 @@ export async function POST(req: NextRequest) {
     await rememberChatTurn({
       userMessage: question,
       aiMessage: answer,
-      toolRuns: stepResults.map((r) => ({ type: r.tool, status: r.ok ? 'success' : 'error', latencyMs: r.latencyMs })),
+      toolRuns: stepResults.map((r) => ({ type: r.type, status: r.status, latencyMs: r.latencyMs ?? 0 })),
     })
 
     return NextResponse.json({
       ok: true,
       agentRunId: agentRun.id,
       answer,
-      plan,
+      iterations: orchestratorResult.iterations,
       stepResults,
     })
   } catch (e) {
