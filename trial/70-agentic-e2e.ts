@@ -275,6 +275,167 @@ console.log('\nH. MCP resource content updates (needs the updated fixture)')
   }
 }
 
+// --- I. MCP client capabilities: roots -------------------------------------
+// `roots` is a CLIENT capability: a server may call roots/list to learn which
+// directories we permit it to work in. Without the declaration a well-behaved
+// server assumes none and refuses file work. The fixture performs the real round
+// trip and reports what WE said, so this asserts on the client's answer.
+console.log('\nI. MCP client capabilities: roots')
+{
+  const { callMcpTool, listMcpTools, listMcpRoots, invalidateMcpToolsCache } = await import('@/lib/mcp-client')
+  const { mkdirSync } = await import('node:fs')
+  const fixture = new URL('./fixtures/mcp-roots-server.mjs', import.meta.url).pathname
+  mkdirSync('/tmp/mcp-root-a', { recursive: true })
+  mkdirSync('/tmp/mcp-root-b', { recursive: true })
+
+  await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-roots-fixture' } }))
+  await bypassOrg(() =>
+    db.mcpServer.create({
+      data: {
+        organizationId: orgRow!.organizationId, name: 'mcp-roots-fixture', description: 'asks for roots',
+        transport: 'stdio', command: 'node', args: JSON.stringify([fixture]),
+        url: '', envJson: '{}', headersJson: '{}', isEnabled: true,
+      },
+    }),
+  )
+  invalidateMcpToolsCache()
+
+  try {
+    // The safe default must be TRUTHFUL, not a guess at the host filesystem.
+    delete process.env.MCP_ROOTS
+    check('with no MCP_ROOTS we advertise zero roots', listMcpRoots().length === 0)
+    const sid = (await listMcpTools()).find((t) => t.serverName === 'mcp-roots-fixture')?.serverId ?? ''
+    const none = await callMcpTool(sid, 'ask_roots', {})
+    check('the server is told, truthfully, that we grant none',
+      none.ok && none.output === 'CLIENT_REPORTED_NO_ROOTS', none.error ?? none.output)
+
+    process.env.MCP_ROOTS = '/tmp/mcp-root-a:/tmp/mcp-root-b'
+    const roots = listMcpRoots()
+    check('both configured roots are exposed as file:// uris',
+      roots.length === 2 && roots.every((r) => r.uri.startsWith('file://')), roots.map((r) => r.uri).join(','))
+    const got = await callMcpTool(sid, 'ask_roots', {})
+    check('the SERVER receives our roots over the protocol',
+      got.ok && got.output.includes('file:///tmp/mcp-root-a') && got.output.includes('file:///tmp/mcp-root-b'),
+      got.error ?? got.output)
+
+    process.env.MCP_ROOTS = '/tmp/mcp-root-a:/does/not/exist'
+    check('a non-existent root is ignored, not advertised', listMcpRoots().length === 1)
+  } finally {
+    delete process.env.MCP_ROOTS
+    await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-roots-fixture' } }))
+    invalidateMcpToolsCache()
+  }
+}
+
+// --- J. MCP resource subscriptions -----------------------------------------
+// The spec only requires a server to send `resources/updated` to clients that
+// SUBSCRIBED to that uri. Honouring the notification without subscribing works
+// only against servers that broadcast to everyone; against a conforming server
+// the content stays stale forever.
+console.log('\nJ. MCP resource subscriptions')
+{
+  const { listMcpResources, readMcpResource, getActiveSubscriptions, disconnectMcpServer, invalidateMcpResourcesCache, invalidateMcpToolsCache } =
+    await import('@/lib/mcp-client')
+  const fixture = new URL('./fixtures/mcp-subscribe-server.mjs', import.meta.url).pathname
+
+  await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-subscribe-fixture' } }))
+  await bypassOrg(() =>
+    db.mcpServer.create({
+      data: {
+        organizationId: orgRow!.organizationId, name: 'mcp-subscribe-fixture', description: 'notifies subscribers only',
+        transport: 'stdio', command: 'node', args: JSON.stringify([fixture]),
+        url: '', envJson: '{}', headersJson: '{}', isEnabled: true,
+      },
+    }),
+  )
+  invalidateMcpToolsCache(); invalidateMcpResourcesCache()
+
+  try {
+    const { resources } = await listMcpResources()
+    const mine = resources.find((r) => r.serverName === 'mcp-subscribe-fixture')
+    check('the subscribable resource is listed', mine !== undefined)
+    if (mine) {
+      const first = await readMcpResource(mine.serverId, 'note://live')
+      check('the first read returns version 1', first.output === 'version 1', first.output)
+      check('reading a resource OPENS a subscription',
+        (getActiveSubscriptions()[mine.serverId] ?? []).includes('note://live'),
+        JSON.stringify(getActiveSubscriptions()))
+
+      await new Promise((r) => setTimeout(r, 6000))
+      const after = await readMcpResource(mine.serverId, 'note://live')
+      check('the subscriber is notified, so NEW content is served', after.output === 'version 2', after.output)
+
+      await disconnectMcpServer(mine.serverId)
+      // Assert on THIS server's entry, not on global emptiness: earlier sections
+      // legitimately hold subscriptions to their own fixtures, so requiring an
+      // empty map asserted something `disconnectMcpServer` never promised.
+      check('THIS server\'s subscriptions are released on disconnect',
+        (getActiveSubscriptions()[mine.serverId] ?? []).length === 0,
+        JSON.stringify(getActiveSubscriptions()[mine.serverId] ?? []))
+    }
+  } finally {
+    await bypassOrg(() => db.mcpServer.deleteMany({ where: { name: 'mcp-subscribe-fixture' } }))
+    invalidateMcpToolsCache(); invalidateMcpResourcesCache()
+  }
+}
+
+// --- K. Plugin process isolation -------------------------------------------
+// A plugin's mcp-stdio command is an interpreter, and an interpreter is
+// Turing-complete: allowlisting it is a naming check, not containment. This
+// asserts the sandbox actually removes the network and still runs a real plugin.
+console.log('\nK. Plugin process isolation')
+{
+  const { resolveIsolation, buildIsolatedArgv } = await import('@/lib/plugin-sandbox')
+  const plan = resolveIsolation()
+  console.log(`  level: ${plan.level} — ${plan.detail}`)
+  check('the host provides namespace isolation', plan.level === 'namespaces', plan.detail)
+
+  if (plan.level === 'namespaces') {
+    const { spawn } = await import('node:child_process')
+    const probe = new URL('./fixtures/../fixtures/../fixtures/none', import.meta.url)
+    void probe
+    const script = `
+      const os = require('os'), net = require('net');
+      const n = Object.keys(os.networkInterfaces()).filter(x => x !== 'lo');
+      console.log('IFACES:' + (n.length === 0 ? 'NONE' : n.join(',')));
+      const s = net.connect({ host: '1.1.1.1', port: 53 }); s.setTimeout(3000);
+      s.on('connect', () => { console.log('OUT:CONNECTED'); process.exit(0); });
+      s.on('timeout', () => { console.log('OUT:TIMEOUT'); process.exit(0); });
+      s.on('error', e => { console.log('OUT:BLOCKED:' + e.code); process.exit(0); });
+    `
+    const run = (argv: { file: string; args: string[] }) =>
+      new Promise<string>((res) => {
+        const p = spawn(argv.file, argv.args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        let o = ''
+        p.stdout.on('data', (d) => (o += d)); p.stderr.on('data', (d) => (o += d))
+        p.on('close', () => res(o)); setTimeout(() => { p.kill(); res('TIMEOUT') }, 15000)
+      })
+
+    const iso = await run(buildIsolatedArgv('node', ['-e', script], resolveIsolation('namespaces')))
+    check('inside the sandbox the network is GONE', iso.includes('IFACES:NONE'), iso.trim())
+    check('an outbound connection is BLOCKED', /OUT:BLOCKED/.test(iso), iso.trim())
+  }
+
+  // The sandbox must not break a working plugin.
+  const { normalizeManifest, executePlugin } = await import('@/lib/plugin-registry')
+  const fixture = new URL('./fixtures/mcp-echo-server.mjs', import.meta.url).pathname
+  const m = normalizeManifest({
+    manifestVersion: 2, executorType: 'mcp-stdio', command: 'node', args: [fixture], authType: 'NONE',
+    description: 'echo',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+  })
+  if (!('error' in m)) {
+    const r = await executePlugin({
+      plugin: { manifestJson: JSON.stringify(m), toolId: 'echo_upper' },
+      args: { text: 's' },
+    })
+    check('a real mcp-stdio plugin STILL WORKS under isolation', r.ok && r.output === 'S', r.error ?? r.output)
+  } else {
+    check('the echo manifest validated', false, m.error)
+  }
+}
+
+
 // Summary LAST — an earlier exit here silently skipped the sections below it,
 // so the harness reported success while never running them.
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`)

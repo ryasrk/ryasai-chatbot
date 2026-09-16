@@ -19,13 +19,14 @@
  * - Non-text content blocks serialized (no silent data loss)
  */
 import { statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, basename } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
 import {
   ToolListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
   ResourceUpdatedNotificationSchema,
   PromptListChangedNotificationSchema,
+  ListRootsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
@@ -34,6 +35,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { db } from '@/lib/db'
 import { decryptConfig } from '@/lib/crypto'
 import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
+import { resolveIsolation, buildIsolatedArgv } from '@/lib/plugin-sandbox'
 
 /** A resource advertised by an MCP server (a readable artifact — file, record, page). */
 export interface McpResource {
@@ -115,8 +117,21 @@ let promptsCache: { prompts: McpPrompt[]; at: number } | null = null
 // `notifications/resources/updated`, which is the spec's signal that the content
 // changed — the same contract the list caches already honour.
 const RESOURCE_CONTENT_MAX = Number(process.env.MCP_RESOURCE_CACHE_MAX ?? 100)
+// URIs we have successfully subscribed to, per server, so we never double
+// subscribe and can unsubscribe cleanly on disconnect.
+//
+// WHY SUBSCRIBE AT ALL: the spec only requires a server to send
+// `notifications/resources/updated` to clients that SUBSCRIBED to that uri. We
+// honoured the notification but never subscribed, so a conforming server sent
+// us nothing and our cached content went stale exactly as it did before the
+// handler was added. Honouring a notification without subscribing is a
+// half-implementation: it only works against servers that broadcast to everyone.
+const subscriptions = new Map<string, Set<string>>()
 const resourceContentCache = new Map<string, { output: string; mimeType: string; at: number }>()
 const TOOLS_TTL_MS = 60_000
+// Shorter than a tool call: unsubscribe is fire-and-forget housekeeping while
+// the connection is being torn down, and a slow one must not delay the close.
+const SUBSCRIBE_TIMEOUT_MS = 3_000
 
 const CONNECT_TIMEOUT_MS = Number(process.env.MCP_CONNECT_TIMEOUT_MS ?? 15_000)
 const LIST_TOOLS_TIMEOUT_MS = Number(process.env.MCP_LIST_TOOLS_TIMEOUT_MS ?? 10_000)
@@ -148,15 +163,115 @@ interface McpCallResult {
  * The handler is deliberately tolerant: a notification that cannot be handled
  * must never tear down a working connection.
  */
+/**
+ * A filesystem root this install exposes to MCP servers.
+ *
+ * MCP `roots` are how a CLIENT tells a server which directories it may work in.
+ * They exist so a server can orient itself (and refuse paths outside them)
+ * instead of being handed absolute paths with no context.
+ */
+export interface McpRoot {
+  uri: string
+  name: string
+}
+
+/**
+ * The roots we advertise to servers.
+ *
+ * WHY AN ENV-VAR ALLOWLIST AND NOT SOMETHING WIDER: a root is an explicit
+ * grant — whatever we list, we are telling a foreign process it may read. The
+ * safe default is to advertise NOTHING rather than to guess at the host's
+ * filesystem, so this is opt-in via `MCP_ROOTS` (colon-separated paths, the
+ * same convention as PATH). An install that never sets it answers `roots: []`,
+ * which is a truthful "I grant you no directories" and keeps a server from
+ * assuming it may reach anywhere.
+ *
+ * Paths are resolved and required to be absolute and existing, so a typo cannot
+ * silently advertise a root that does not exist — a server would then fail on a
+ * path it was told was valid.
+ */
+export function listMcpRoots(): McpRoot[] {
+  const raw = process.env.MCP_ROOTS ?? ''
+  const out: McpRoot[] = []
+  for (const entry of raw.split(':').map((p) => p.trim()).filter(Boolean)) {
+    let resolved: string
+    try {
+      resolved = resolve(entry)
+    } catch {
+      console.warn(`[mcp] ignoring unreadable MCP_ROOTS entry: ${entry}`)
+      continue
+    }
+    if (!resolved.startsWith('/')) {
+      console.warn(`[mcp] ignoring non-absolute MCP_ROOTS entry: ${entry}`)
+      continue
+    }
+    let stat: ReturnType<typeof statSync>
+    try {
+      stat = statSync(resolved)
+    } catch {
+      console.warn(`[mcp] ignoring MCP_ROOTS entry that does not exist: ${entry}`)
+      continue
+    }
+    if (!stat.isDirectory()) {
+      console.warn(`[mcp] ignoring MCP_ROOTS entry that is not a directory: ${entry}`)
+      continue
+    }
+    out.push({ uri: `file://${resolved}`, name: basename(resolved) || resolved })
+  }
+  return out
+}
+
+/**
+ * Tell connected servers that the advertised roots changed.
+ *
+ * Symmetry: we declare `roots.listChanged`, so the spec expects us to emit this
+ * when it actually changes. A server that cached the list would otherwise keep
+ * working from a stale grant. Best-effort — one unreachable server must not
+ * prevent the others from being told.
+ */
+export async function notifyRootsChanged(): Promise<number> {
+  let told = 0
+  for (const [, conn] of connections) {
+    try {
+      await conn.client.notification({ method: 'notifications/roots/list_changed' })
+      told += 1
+    } catch {
+      /* a dead connection is not a reason to skip the rest */
+    }
+  }
+  return told
+}
+
 function createClient(): Client {
   const client = new Client(
     { name: 'ryasai-chatbot', version: '1.0.0' },
-    // NOTE: `tools`/`resources`/`prompts` are SERVER capabilities, not client
-    // ones — declaring them here is a type error and enables nothing. A client
-    // opts in by registering the handlers below, which is what a spec-compliant
-    // server checks before emitting the corresponding `*_list_changed`.
-    { capabilities: {} },
+    {
+      // CLIENT capabilities — the surfaces WE offer the server, as opposed to
+      // `tools`/`resources`/`prompts` which the SERVER offers us.
+      //
+      // `roots` + `listChanged`: a server may ask which directories this install
+      // is allowed to work in. Without the declaration a well-behaved server
+      // assumes we have none and refuses file work; MEASURED earlier — the
+      // filesystem server logged "Client does not support MCP Roots, using
+      // allowed directories set from server args".
+      //
+      // `sampling` and `elicitation` are DELIBERATELY ABSENT. Both mean the
+      // server asks US to run an LLM completion or to prompt the user. We have
+      // no handler for either, and declaring a capability we cannot serve would
+      // make a server wait on a request that never answers. A capability must
+      // be declared only when it is actually implemented.
+      capabilities: { roots: { listChanged: true } },
+    },
   )
+
+  // `roots/list` — answer the server with the roots this install exposes.
+  try {
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: listMcpRoots().map((r) => ({ uri: r.uri, name: r.name })),
+    }))
+  } catch (e) {
+    console.warn('[mcp] roots/list handler not registered:', e instanceof Error ? e.message : e)
+  }
   // Each registration is guarded independently: an older SDK missing one schema
   // must not cost us the others, and a notification we cannot handle must never
   // tear down a working connection.
@@ -319,17 +434,27 @@ export async function testMcpServer(
 export async function disconnectMcpServer(serverId: string): Promise<void> {
   const conn = connections.get(serverId)
   if (conn) {
+    // Release subscriptions BEFORE closing, so the server stops tracking us and
+    // does not keep sending notifications down a socket that is going away.
+    await unsubscribeAll(serverId, conn.client)
     await safeClose(conn.client)
     connections.delete(serverId)
+  }
+  // Content cached for this server describes a connection that no longer
+  // exists; the entries would be keyed to a dead serverId and never invalidated.
+  for (const key of [...resourceContentCache.keys()]) {
+    if (key.startsWith(`${serverId}|`)) resourceContentCache.delete(key)
   }
   invalidateMcpToolsCache()
 }
 
 export async function disconnectAllMcp(): Promise<void> {
-  for (const conn of connections.values()) {
+  for (const [serverId, conn] of connections) {
+    await unsubscribeAll(serverId, conn.client)
     await safeClose(conn.client)
   }
   connections.clear()
+  resourceContentCache.clear()
   invalidateMcpToolsCache()
 }
 
@@ -344,6 +469,51 @@ export function invalidateMcpResourcesCache(): void {
  * uri (a malformed notification) clears everything — the conservative direction,
  * because serving stale content is the failure we are avoiding.
  */
+/**
+ * Subscribe to a uri once, and remember it.
+ *
+ * Best-effort: a server that does not implement subscribe answers with a
+ * JSON-RPC error (-32601 or similar), which is a NORMAL capability gap, not a
+ * failure — the read itself already succeeded and must not be undone by it.
+ */
+async function ensureSubscribed(serverId: string, client: Client, uri: string): Promise<void> {
+  const set = subscriptions.get(serverId) ?? new Set<string>()
+  subscriptions.set(serverId, set)
+  if (set.has(uri)) return
+  try {
+    await client.subscribeResource({ uri }, { signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS) })
+    set.add(uri)
+  } catch (e) {
+    // Record it anyway: retrying on every read would add a failed round trip to
+    // each one, and a server that cannot subscribe will not start being able to.
+    set.add(uri)
+    if (!isMethodNotFound(e) && !/subscri/i.test(e instanceof Error ? e.message : '')) {
+      console.warn(`[mcp] subscribe failed for ${uri}:`, e instanceof Error ? e.message : e)
+    }
+  }
+}
+
+/** Unsubscribe everything this server was subscribed to, before closing it. */
+async function unsubscribeAll(serverId: string, client: Client): Promise<void> {
+  const set = subscriptions.get(serverId)
+  if (!set || set.size === 0) return
+  for (const uri of set) {
+    try {
+      await client.unsubscribeResource({ uri }, { signal: AbortSignal.timeout(SUBSCRIBE_TIMEOUT_MS) })
+    } catch {
+      /* the connection is going away anyway */
+    }
+  }
+  subscriptions.delete(serverId)
+}
+
+/** How many uris we currently hold a subscription for (test/diagnostic seam). */
+export function getActiveSubscriptions(): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const [serverId, set] of subscriptions) out[serverId] = [...set]
+  return out
+}
+
 export function invalidateMcpResourceContent(uri?: string): void {
   if (!uri) {
     resourceContentCache.clear()
@@ -462,6 +632,7 @@ export async function readMcpResource(
       return { ok: false, output: '', mimeType, error: 'Resource is binary; this client can only surface text resources.' }
     }
     const output = textParts.join('\n')
+    await ensureSubscribed(serverId, conn.client, uri)
     // Bounded LRU: Map preserves insertion order, so the first key is oldest.
     // A resource that changes on every read cannot grow the cache without limit.
     if (resourceContentCache.size >= RESOURCE_CONTENT_MAX) {
@@ -774,10 +945,18 @@ export async function callStdioMcpTool(
   const client = createClient()
   let transport: StdioClientTransport | null = null
   try {
-    transport = new StdioClientTransport({
-      command: resolveStdioCommand(spec.command),
-      args: spec.args,
-    })
+    // Run plugin-nominated servers under process isolation. The allowlist in the
+    // caller restricts WHICH interpreter may run, but an interpreter is
+    // Turing-complete — a naming check is not a containment boundary. See
+    // `plugin-sandbox.ts` for exactly what this does and does NOT protect.
+    const plan = resolveIsolation()
+    const isolated = buildIsolatedArgv(resolveStdioCommand(spec.command), spec.args, plan)
+    if (plan.level !== 'namespaces') {
+      // Named once per call rather than silently degrading: an operator reading
+      // logs must be able to tell that plugins are NOT network-isolated here.
+      console.warn(`[mcp] plugin "${spec.label}" running with ${plan.detail}`)
+    }
+    transport = new StdioClientTransport({ command: isolated.file, args: isolated.args })
     await client.connect(transport, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
     const exists = await assertToolExists(client, spec.label, toolName)
     if (!exists.ok) return { ok: false, output: '', error: exists.error }
