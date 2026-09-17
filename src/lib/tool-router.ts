@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
-import { smartRoute, pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
+import { pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
+import { selectToolWithLlm } from '@/lib/tool-selector'
 import { analyzeIntent, rewriteQuery } from '@/lib/intent-pipeline'
 import { getPromptSettings } from '@/lib/prompt-settings'
 import { recallContext, rememberChatTurn } from '@/lib/cognee'
@@ -81,21 +82,26 @@ async function _runNonStreamingChatCompletion(args: {
     // The planner is only valuable for genuine multi-step questions that
     // need data from multiple tools (e.g. "compare revenue with the policy
     // doc for Q3").
-    const [docCount, intCount, , , , restEndpoints, promptSettings] = await loadDbData()
-    const restCount = restEndpoints.length
-    const quickRoute = await smartRoute({
-      question: args.question,
-      hasIntegrations: intCount > 0,
-      hasDocuments: docCount > 0,
-      hasRestApis: restCount > 0,
-      preferredIntegrationId: args.integrationId,
+    // The DAG costs a SECOND LLM call (planQueryWithTools), so it must run only
+    // when it can add something. It used to run whenever the heuristic router
+    // was not confident, which was most turns. The model now picks the tool
+    // itself, so it is also the only component that can say whether ONE tool
+    // suffices: the DAG runs only when the model reports that several are
+    // needed. MEASURED cost of getting this wrong: two planner calls per turn on
+    // a BYOK key, where the customer pays for both.
+    const [, intCountForPrompt] = await loadDbData()
+    const quickPick = await selectToolWithLlm({
+      question: args.question, context: 'chat', isAdmin: false,
+      memoryContext: undefined, chatHistory: args.chatHistory,
+      needsDatabaseListing: intCountForPrompt > 0,
     })
-    const clearSingleTool =
-      (quickRoute.decision === 'SQL' || quickRoute.decision === 'RAG' || quickRoute.decision === 'REST') &&
-      quickRoute.scores[0] && quickRoute.scores[0].finalScore > 0.5 &&
-      (!quickRoute.scores[1] || quickRoute.scores[0].finalScore - quickRoute.scores[1].finalScore > 0.05)
+    const needsMultiple = quickPick?.needsMultipleTools === true
+    // A FAILED selector (null) also enters the DAG: with no routing decision at
+    // all, the planner is the only remaining way to answer, and skipping it
+    // would turn a provider blip into an empty reply.
+    const cannotRoute = quickPick === null
 
-    if (!clearSingleTool) {
+    if (needsMultiple || cannotRoute) {
       const dagResult = await runMultiStepDag(args)
       if (dagResult) return dagResult
     }
@@ -397,26 +403,44 @@ async function resolveRouting(
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
   let decision: RouteDecision
   let resolvedIntegrationId = args.integrationId
+  // Arguments the SELECTOR supplied, so the branch does not re-derive them.
+  let selectionArgs: Record<string, unknown> = {}
+  let selectionReason = ''
 
-  if (hasHistory) {
+  // The LLM chooses the tool on BOTH paths (with and without history). History
+  // previously routed through `routeQuery` while the first turn used the
+  // heuristic scorer, so the SAME question could take different branches
+  // depending on whether it was the opening message — a real source of
+  // "sometimes it works" reports.
+  const sel = await selectToolWithLlm({
+    question: effectiveQuestion, context: 'chat', isAdmin: false,
+    memoryContext, chatHistory: args.chatHistory,
+    // Only meaningful when there IS a database to choose between.
+    needsDatabaseListing: intCount > 0,
+  })
+  if (sel) {
+    decision = sel.decision
+    selectionArgs = sel.args
+    selectionReason = sel.reason
+    // The model named the database it wants. Taking it here is what keeps SQL
+    // working at all now that the heuristic router (which used to supply this)
+    // is gone.
+    if (sel.integrationId) resolvedIntegrationId = sel.integrationId
+  } else {
+    // No LLM (unconfigured, or the provider failed). `routeQuery` is the
+    // documented fail-closed fallback; a hard failure here would take chat down
+    // for a deployment whose only problem is a transient provider error.
     const routed = await routeQuery({ question: effectiveQuestion, hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0, memoryContext, chatHistory: args.chatHistory })
     decision = routed.decision
-  } else {
-    const routed = await smartRoute({ question: effectiveQuestion, hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0, memoryContext, preferredIntegrationId: args.integrationId })
-    decision = routed.decision
-    resolvedIntegrationId = routed.integrationId ?? args.integrationId
-    // ponytail: when multiple integrations look plausible, pick the best-scoring
-    // one rather than blocking with a clarification question. The user can
-    // always narrow via the integration dropdown, but blocking on every
-    // question with 2+ DBs was the #1 complaint ("chatbot asks which database
-    // endlessly"). If ambiguity is genuine (no schema keyword overlap), the
-    // score will be 0 and pickBestIntegration below will try semantic match.
-    if (!resolvedIntegrationId && routed.ambiguousIntegrations && routed.ambiguousIntegrations.length > 0) {
-      resolvedIntegrationId = routed.ambiguousIntegrations
-        .sort((a, b) => b.score - a.score)[0]?.integrationId
-    }
+    selectionReason = `fallback router: ${routed.reason}`
   }
 
+  // The SQL tool declares `requiresDataSource: 'integration'` and its schema
+  // requires only `question`, so the MODEL cannot choose an integration — that
+  // has always been the router's job. Replacing the heuristic router dropped
+  // this assignment, and SQL then answered "data source is not yet available"
+  // because `resolvedIntegrationId` was undefined. Caught by
+  // tool-router.test.ts > "SQL branch: returns answer with query results".
   if (decision === 'SQL' && !resolvedIntegrationId) {
     // ponytail: last-resort integration selection. pickBestIntegration uses
     // embedding API which can be slow/unavailable. Try keyword matching first

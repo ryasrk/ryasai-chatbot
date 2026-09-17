@@ -75,8 +75,34 @@ mock.module('@/lib/intent-pipeline', () => ({
   // string hid the very thing under test.
   rewriteQuery: async (a: any) => (state.rewritten ?? a.question),
 }))
+// The SELECTOR is the router now. It reads the same `state.smartRouteResult`
+// the tests already set, mapping the decision back to a tool id, so each test
+// keeps expressing "the router decided SQL" without being rewritten.
+mock.module('@/lib/tool-selector', () => ({
+  selectToolWithLlm: async (a: { question: string }) => {
+    // `routeSeen` is what the rewrite assertions inspect; the SELECTOR is now the
+    // component that sees the question, so it is the one that must record it.
+    state.routeSeen = { question: a.question }
+    const r = state.smartRouteResult
+    if (!r) return null
+    const toolId =
+      r.decision === 'SQL' ? 'sql'
+      : r.decision === 'RAG' ? 'rag'
+      : r.decision === 'REST' ? 'rest'
+      : r.decision === 'PLUGIN' ? 'web_search'
+      : null
+    return {
+      toolId,
+      decision: r.decision,
+      args: {},
+      integrationId: r.integrationId,
+      reason: 'test stub',
+      llmUsed: true,
+    }
+  },
+}))
+
 mock.module('@/lib/smart-router', () => ({
-  smartRoute: async () => state.smartRouteResult,
   // routeQuery is NOT here — it is imported from '@/lib/ai'.
   pickBestIntegrationByKeywords: async () => state.kwIntegration,
   pickBestIntegration: async () => state.semanticIntegration,
@@ -206,7 +232,10 @@ describe('runStreamingChatCompletion — decision dispatches to the right branch
   })
 
   test('CONTEXTUAL_CHAT with prior tool runs routes to the contextual branch', async () => {
-    state.routeResult = { decision: 'CONTEXTUAL_CHAT' }
+    // The SELECTOR decides this now; `routeQuery` is only the fallback when the
+    // selector cannot run. Setting routeResult would leave the selector's own
+    // default in charge and the branch under test would never be reached.
+    state.smartRouteResult = { decision: 'CONTEXTUAL_CHAT' }
     state.toolRuns = [{ type: 'SQL', inputSummary: 'in', outputSummary: 'out' }]
     await runStreamingChatCompletion({
       question: 'q', userId: 'u1', sessionId: 's1',
@@ -216,7 +245,7 @@ describe('runStreamingChatCompletion — decision dispatches to the right branch
   })
 
   test('CONTEXTUAL_CHAT with NO prior tool runs degrades to plain chat', async () => {
-    state.routeResult = { decision: 'CONTEXTUAL_CHAT' }
+    state.smartRouteResult = { decision: 'CONTEXTUAL_CHAT' }
     state.toolRuns = []
     await runStreamingChatCompletion({
       question: 'q', userId: 'u1', sessionId: 's1',

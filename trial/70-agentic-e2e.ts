@@ -66,6 +66,13 @@ async function turn(question: string, maxRounds = 4) {
 
 // --- D. catalogue: function-name legality -----------------------------------
 console.log('D. catalogue')
+// Plugins are seeded explicitly rather than assumed. This check is about the
+// ID ENCODER, and earlier runs left the table empty, so the plugin: case failed
+// for a reason that had nothing to do with what was being tested.
+{
+  const { seedPlugins } = await import('@/lib/plugin-seeds')
+  await bypassOrg(() => seedPlugins(orgRow!.organizationId))
+}
 const tools = await getUnifiedTools({ query: 'search the web', context: 'agentic', isAdmin: false })
 const illegal = tools.filter((t) => !/^[a-zA-Z0-9_-]{1,64}$/.test(t.name))
 check(`every tool id encodes to a legal function name (n=${tools.length})`, illegal.length === 0,
@@ -104,13 +111,26 @@ check('an answer was produced', c.res.answer.trim().length > 20, `${c.res.answer
 console.log('\nE. catalogue parity (needs a populated DB)')
 {
   const { getAvailableTools } = await import('@/lib/tool-registry')
-  const unifiedChat = await getUnifiedTools({ query: 'database query knowledge search', context: 'chat', isAdmin: false })
-  const legacyChat = await getAvailableTools('database query knowledge search', 'chat')
-  const uniIds = unifiedChat.map((t) => t.id).sort()
-  const legIds = legacyChat.map((t) => t.id).sort()
-  check(`both catalogues expose the same ids (n=${uniIds.length})`, JSON.stringify(uniIds) === JSON.stringify(legIds),
+  // Compared in the AGENTIC context, which is where both catalogues still offer
+  // their full set. They no longer agree in `chat` BY DESIGN: the unified
+  // catalogue excludes plugins there (measured — 7 of 8 ordinary chat questions
+  // pulled in irrelevant ones), while the legacy registry still lists them. The
+  // old check compared `chat` and so began failing the moment that restriction
+  // landed, asserting the state we had deliberately removed.
+  const unifiedAgentic = await getUnifiedTools({ query: 'database query knowledge search', context: 'agentic', isAdmin: false })
+  const legacyAgentic = await getAvailableTools('database query knowledge search', 'agentic')
+  const uniIds = unifiedAgentic.map((t) => t.id).sort()
+  const legIds = legacyAgentic.map((t) => t.id).sort()
+  check(`both catalogues expose the same ids in agentic (n=${uniIds.length})`,
+    JSON.stringify(uniIds) === JSON.stringify(legIds),
     JSON.stringify({ onlyUnified: uniIds.filter((i) => !legIds.includes(i)), onlyLegacy: legIds.filter((i) => !uniIds.includes(i)) }))
   check('the catalogue is not empty', uniIds.length > 0)
+  // And the chat restriction itself is pinned, so it cannot regress unnoticed.
+  const { getUnifiedTools: gut } = await import('@/lib/unified-tools')
+  const unifiedChat = await gut({ query: 'database query knowledge search', context: 'chat', isAdmin: false })
+  check('the CHAT catalogue offers NO plugins (agentic-only by design)',
+    unifiedChat.every((t) => !t.id.startsWith('plugin:')),
+    unifiedChat.filter((t) => t.id.startsWith('plugin:')).map((t) => t.id).join(','))
 }
 
 // --- F. MCP runtime tool changes -------------------------------------------

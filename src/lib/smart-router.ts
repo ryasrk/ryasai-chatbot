@@ -113,129 +113,26 @@ export function extractDomainGlossaryTerms(ctxLower: string): Set<string> {
   return glossaryTerms
 }
 
-export async function smartRoute(args: {
-  question: string
-  hasIntegrations: boolean
-  hasDocuments: boolean
-  hasRestApis: boolean
-  memoryContext?: string
-  preferredIntegrationId?: string
-}): Promise<SmartRouteResult> {
-  const tokens = tokenize(args.question)
-  const expandedTokens = expandWithSynonyms(tokens)
-
-  const [schemaMeta, endpointMeta, docMeta, perfData, similarity, pluginRelevant] = await Promise.all([
-    loadSchemaMetadata(),
-    loadEndpointMetadata(),
-    loadDocumentMetadata(),
-    loadPerformanceMetrics(),
-    loadSimilarityBoost(tokens),
-    selectRelevantPlugins({ query: args.question, topK: 1, minScore: 0.05, context: 'chat' }),
-  ])
-
-  const mentionResult = await detectMentionedIntegration(args.question, expandedTokens)
-  const mentionedIntegration = mentionResult?.integrationId
-  // NOTE: detectMentionedIntegration can no longer return `ambiguous` — every one
-  // of its 9 returns yields an id or undefined, because the behaviour that blocked
-  // on 2+ similar scores was deliberately replaced by "pick the top scorer" (see
-  // the comment at its tail). The `mentionedAmbiguous` branch that consumed it was
-  // therefore unreachable, and removing it changes nothing: measured, disabling it
-  // failed 0 tests. The read-side contract lives in smart-router.test.ts
-  // ("ambiguousIntegrations is populated only from the semantic picker").
-
-  const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
-  const scorePromises = tools.map(async (tool): Promise<ToolScore> => {
-    const schemaScore = await scoreSchemaMatch(tool, expandedTokens, schemaMeta, endpointMeta, docMeta, pluginRelevant, args.question)
-    const perf = perfData[tool] ?? NEUTRAL_PERF
-    const perfScore = perf.successRate
-    const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
-    const availability = checkAvailability(tool, args.hasIntegrations, args.hasDocuments, args.hasRestApis)
-    // Circuit breaker with half-open recovery: if tripped but last failure
-    // was >5min ago, allow a probe attempt at reduced score (50%).
-    const tripped = perf.total >= 10 && perf.recentFailRate > 0.7
-    const cooldownMs = Number(process.env.CIRCUIT_BREAKER_COOLDOWN_MS ?? 300_000)
-    const inCooldown = tripped && perf.lastFailureAt && (Date.now() - perf.lastFailureAt.getTime() < cooldownMs)
-    const circuitBreakerTripped = inCooldown === true
-    const isProbe = tripped && !inCooldown
-    const simBoost = similarity[tool] ?? 0
-
-    const rawScore = schemaScore * WEIGHTS.schema +
-      perfScore * WEIGHTS.performance +
-      latencyScore * WEIGHTS.latency +
-      availability * WEIGHTS.availability +
-      simBoost * WEIGHTS.similarity
-    const finalScore = inCooldown || availability === 0
-      ? 0
-      : isProbe
-        ? rawScore * 0.5
-        : rawScore
-
-    return {
-      tool, schemaScore, perfScore, latencyScore, availability,
-      similarityBoost: simBoost, circuitBreakerTripped, finalScore,
-      reason: buildReason(tool, schemaScore, perf, circuitBreakerTripped, simBoost),
-    }
-  })
-  const scores: ToolScore[] = await Promise.all(scorePromises)
-
-  const sorted = [...scores].sort((a, b) => b.finalScore - a.finalScore)
-  const best = sorted[0]
-  const second = sorted[1]
-
-  let decision = best.tool
-  let llmUsed = false
-  let reason = best.reason
-
-  if (best.finalScore - second.finalScore < 0.1 && best.finalScore > 0) {
-    // ponytail: skip LLM tiebreaker when the best tool has a strong schema
-    // match (schemaScore > 0.3 means real keyword overlap with DB tables/docs).
-    // The LLM router prompt doesn't know domain-specific terms, so it would
-    // override SQL→CHAT on every data question because CHAT's neutral score
-    // is within 0.1 of SQL's score.
-    if (best.schemaScore > 0.3) {
-      reason = `${best.tool}: schema match strong (${(best.schemaScore * 100).toFixed(0)}%), skipping LLM tiebreaker`
-    } else {
-      const llmResult = await routeQuery({
-        question: args.question,
-        hasIntegrations: args.hasIntegrations,
-        hasDocuments: args.hasDocuments,
-        hasRestApis: args.hasRestApis,
-        memoryContext: args.memoryContext,
-      })
-      llmUsed = true
-      decision = llmResult.decision
-      reason = `LLM tiebreaker: ${llmResult.reason} (scores: ${best.tool}=${best.finalScore.toFixed(2)}, ${second.tool}=${second.finalScore.toFixed(2)})`
-    }
-  }
-
-  if (best.finalScore === 0 && !llmUsed) {
-    decision = 'CHAT'
-    reason = 'All tools unavailable or circuit breaker tripped — falling back to CHAT'
-  }
-
-  let integrationId: string | undefined
-  let ambiguousIntegrations: AmbiguousIntegration[] | undefined
-  if (decision === 'SQL' && args.hasIntegrations) {
-    if (mentionedIntegration) {
-      integrationId = mentionedIntegration
-    } else if (args.preferredIntegrationId) {
-      integrationId = args.preferredIntegrationId
-    } else {
-      // ponytail: try keyword-only first (fast, no embedding API), then embedding
-      const kwResult = await pickBestIntegrationByKeywords(expandedTokens)
-      if (kwResult) {
-        integrationId = kwResult
-      } else {
-        const pickResult = await pickBestIntegrationWithAmbiguity(expandedTokens, args.question)
-        integrationId = pickResult?.integrationId
-        ambiguousIntegrations = pickResult?.ambiguous
-      }
-    }
-  }
-
-  return { decision, reason, scores, integrationId, llmUsed, ambiguousIntegrations }
-}
-
+// ---------------------------------------------------------------------------
+// Heuristic tool selection was REMOVED here.
+//
+// `smartRoute` scored tools by keyword overlap, latency and history, and asked
+// the LLM only as a tiebreaker. It produced three separable defect classes, all
+// found by measurement and each needing its own regression test:
+//   - phraseMatch divided by the PLUGIN's keyword count, so a plugin listing 3
+//     keywords beat one listing 30 for an identical match;
+//   - jaccardSimilarity had the same inversion in its union denominator (the
+//     same match scored 0.35 vs 0.16);
+//   - the tokenizer strips "%", so "berapa 15% dari 2 juta" had no token able to
+//     match the calculator at all.
+// An LLM choosing from tool descriptions cannot have any of them. MEASURED on
+// the same questions: heuristic 5/8 correct, LLM 9/9. Routing now lives in
+// `src/lib/tool-selector.ts`, used by BOTH the chat and agentic paths.
+//
+// What REMAINS here is used by the branches and the admin surface: integration
+// picking (pickBestIntegration*), the routing score view (getRoutingScores) and
+// invalidateSourceEmbeddingCache.
+// ---------------------------------------------------------------------------
 async function scoreSchemaMatch(
   tool: RouteDecision,
   tokens: string[],

@@ -84,9 +84,28 @@ mock.module('@/lib/ai', () => ({
   parseRestCallJson: parseRestCallJsonImpl,
 }))
 
-const mockSmartRoute = mock(async () => {
+/**
+ * The routing decision now comes from the LLM selector, so that is what the
+ * tests stub. The heuristic `smartRoute` is no longer in the selection path.
+ */
+const mockSelectToolWithLlm = mock(async (_args: {
+  question: string
+  context: 'chat' | 'agentic'
+  isAdmin: boolean
+  memoryContext?: string
+  chatHistory?: Array<{ role: string; content: string }>
+  needsDatabaseListing?: boolean
+}): Promise<{
+  toolId: string | null
+  decision: RouteDecision
+  args: Record<string, unknown>
+  integrationId?: string
+  needsMultipleTools?: boolean
+  reason: string
+  llmUsed: boolean
+}> => {
   smartRouteOrder?.push('smartRoute')
-  return { decision: 'CHAT' as RouteDecision, integrationId: undefined as string | undefined }
+  return { toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }
 })
 // The importer destructures FOUR names from this module. Exporting only
 // smartRoute left pickBestIntegration/pickBestIntegrationByKeywords/tokenize
@@ -95,8 +114,11 @@ const mockSmartRoute = mock(async () => {
 // surface its importer uses.
 const mockPickBestIntegrationByKeywords = mock(async () => null as string | null)
 const mockPickBestIntegration = mock(async () => null as string | null)
+mock.module('@/lib/tool-selector', () => ({
+  selectToolWithLlm: mockSelectToolWithLlm,
+}))
+
 mock.module('@/lib/smart-router', () => ({
-  smartRoute: mockSmartRoute,
   pickBestIntegration: mockPickBestIntegration,
   pickBestIntegrationByKeywords: mockPickBestIntegrationByKeywords,
   // MEASURED: omitting this one let the REAL smart-router run, which read
@@ -353,7 +375,7 @@ beforeEach(() => {
   mockGenerateRestCall.mockClear()
   mockStreamAnswer.mockClear()
   mockStreamChat.mockClear()
-  mockSmartRoute.mockClear()
+  mockSelectToolWithLlm.mockClear()
   mockPickBestIntegrationByKeywords.mockClear()
   mockPickBestIntegration.mockClear()
   mockGetPromptSettings.mockClear()
@@ -382,13 +404,17 @@ beforeEach(() => {
   mockVectorStoreConfigFindFirst.mockImplementation(async () => null)
   mockSearchFtsChunkIds.mockImplementation(async () => [])
   mockRouteQuery.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, reason: 'test' }))
+  // The selector MUST be reset like every other mock. Without this the previous
+  // test's implementation leaked into the next one, so tests passed or failed
+  // based on file order rather than on what they set up.
+  mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'reset', llmUsed: true }))
   mockGenerateSql.mockImplementation(async () => ({ sql: 'SELECT 1', explanation: 'test' }))
   mockGenerateAnswer.mockImplementation(async () => 'The answer is 42')
   mockGenerateChat.mockImplementation(async () => 'Hello!')
   mockGenerateRestCall.mockImplementation(async () => ({ endpointId: 'ep-1', query: {}, body: null, explanation: 'test' }))
-  mockSmartRoute.mockImplementation(async () => {
+  mockSelectToolWithLlm.mockImplementation(async () => {
     smartRouteOrder?.push('smartRoute')
-    return { decision: 'CHAT' as RouteDecision, integrationId: undefined }
+    return { toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }
   })
   mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
   mockPickBestIntegration.mockImplementation(async () => null)
@@ -675,7 +701,7 @@ describe('runNonStreamingChatCompletion', () => {
     mockIntegrationCount.mockImplementation(async () => 0)
     mockDocumentCount.mockImplementation(async () => 0)
     mockRestEndpointCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     mockGenerateChat.mockImplementation(async () => 'Hello from chat!')
 
     const result = await runNonStreamingChatCompletion({
@@ -695,7 +721,7 @@ describe('runNonStreamingChatCompletion', () => {
     mockIntegrationCount.mockImplementation(async () => 1)
     mockDocumentCount.mockImplementation(async () => 0)
     mockRestEndpointCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockIntegrationFindFirst.mockImplementation(async () => ({
       id: 'int-1',
       name: 'Test DB',
@@ -734,7 +760,7 @@ describe('runNonStreamingChatCompletion', () => {
   // with the last guardrail reason. 'blocked' is reserved for rate limits.
   test('SQL branch: persistent guardrail rejection retries then returns error status', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockIntegrationFindFirst.mockImplementation(async () => ({
       id: 'int-1',
       name: 'Test DB',
@@ -759,7 +785,7 @@ describe('runNonStreamingChatCompletion', () => {
 
   test('SQL branch: guardrail rejection recovers on repair attempt', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockIntegrationFindFirst.mockImplementation(async () => ({
       id: 'int-1',
       name: 'Test DB',
@@ -797,7 +823,7 @@ describe('runNonStreamingChatCompletion', () => {
 
   test('SQL branch: execute error returns error status with sanitized message', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockIntegrationFindFirst.mockImplementation(async () => ({
       id: 'int-1',
       name: 'Test DB',
@@ -827,7 +853,7 @@ describe('runNonStreamingChatCompletion', () => {
     mockIntegrationCount.mockImplementation(async () => 0)
     mockDocumentCount.mockImplementation(async () => 1)
     mockRestEndpointCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'RAG' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     // Set up FTS + chunk data for real retrieveRelevantChunks
     mockSearchFtsChunkIds.mockImplementation(async () => ['chunk-1'])
     mockDocChunkFindMany.mockImplementation(async () => [
@@ -859,7 +885,7 @@ describe('runNonStreamingChatCompletion', () => {
 
   test('RAG branch: no chunks found falls back to CHAT', async () => {
     mockDocumentCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'RAG' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     // No FTS hits and no chunks → retrieveRelevantChunks returns empty
     mockSearchFtsChunkIds.mockImplementation(async () => [])
     mockDocChunkFindMany.mockImplementation(async () => [])
@@ -878,7 +904,7 @@ describe('runNonStreamingChatCompletion', () => {
   test('LLM not configured: error propagates from CHAT branch', async () => {
     mockIntegrationCount.mockImplementation(async () => 0)
     mockDocumentCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     mockGenerateChat.mockImplementation(async () => {
       throw new Error('LLM is not configured')
     })
@@ -893,7 +919,7 @@ describe('runNonStreamingChatCompletion', () => {
 
   test('no integration available: SQL decision falls back to CHAT', async () => {
     mockIntegrationCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockGenerateChat.mockImplementation(async () => 'No data source available.')
 
     const result = await runNonStreamingChatCompletion({
@@ -908,7 +934,7 @@ describe('runNonStreamingChatCompletion', () => {
 
   test('SQL tool disabled by prompt settings: falls back to CHAT', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockGetPromptSettings.mockImplementation(async () => ({
       systemPrompt: '',
       tools: { rag: true, sql: false, restApi: true },
@@ -941,6 +967,12 @@ describe('runNonStreamingChatCompletion', () => {
       { stepId: 's2', tool: 'chat', ok: true, output: 'chat result', latencyMs: 5 },
     ])
     mockSynthesizeAnswer.mockImplementation(async () => 'Combined answer from multiple steps')
+    // The DAG costs a second LLM call, so it runs only when the SELECTOR says one
+    // tool cannot suffice. This is the signal that opens it.
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'sql', decision: 'SQL' as RouteDecision, args: {},
+      integrationId: 'int-1', needsMultipleTools: true, reason: 'multi-step', llmUsed: true,
+    }))
 
     const result = await runNonStreamingChatCompletion({
       question: 'Compare sales with the return policy',
@@ -954,12 +986,29 @@ describe('runNonStreamingChatCompletion', () => {
     expect(mockSynthesizeAnswer).toHaveBeenCalledTimes(1)
   })
 
+  test('allowMultiStepDag: a SINGLE-tool decision skips the planner entirely', async () => {
+    // The complement of the test above, and the point of the change: the model
+    // saying "one tool is enough" must NOT spend a second LLM call on a planner.
+    // Without this assertion the gate could be removed and every other test would
+    // still pass, because they either expect the DAG or never requested it.
+    mockPlanQuery.mockClear()
+
+    const result = await runNonStreamingChatCompletion({
+      question: 'how many orders last month',
+      userId: 'user-1',
+      allowMultiStepDag: true,
+    })
+
+    expect(mockPlanQuery).toHaveBeenCalledTimes(0)
+    expect(result).toBeTruthy()
+  })
+
   test('allowMultiStepDag: single-step CHAT plan falls back to single-tool router', async () => {
     mockPlanQuery.mockImplementation(async () => ({
       steps: [{ id: 's1', tool: 'chat', input: {} }],
       needsSynthesis: false,
     }))
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     mockGenerateChat.mockImplementation(async () => 'Single-step chat answer')
 
     const result = await runNonStreamingChatCompletion({
@@ -977,7 +1026,7 @@ describe('runNonStreamingChatCompletion', () => {
     mockPlanQuery.mockImplementation(async () => {
       throw new Error('Planner failed')
     })
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     mockGenerateChat.mockImplementation(async () => 'Fallback chat answer')
 
     const result = await runNonStreamingChatCompletion({
@@ -989,10 +1038,17 @@ describe('runNonStreamingChatCompletion', () => {
     expect(result.answer).toBe('Fallback chat answer')
   })
 
-  test('multi-turn with chat history uses LLM routeQuery instead of smartRoute', async () => {
+  test('a turn with history is routed by the SELECTOR, not by a separate router', async () => {
+    // The old design split routing by whether history existed: the first turn
+    // went through the heuristic scorer and later turns through `routeQuery`, so
+    // the SAME question could take different branches depending on whether it
+    // was the opening message. The selector now runs on every turn and is given
+    // the history, which is what makes the decision consistent.
     mockDocumentCount.mockImplementation(async () => 1)
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, reason: 'contextual' }))
     mockGenerateChat.mockImplementation(async () => 'Contextual answer')
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'contextual', llmUsed: true,
+    }))
 
     const result = await runNonStreamingChatCompletion({
       question: 'What about last month?',
@@ -1001,13 +1057,18 @@ describe('runNonStreamingChatCompletion', () => {
     })
 
     expect(result.answer).toBe('Contextual answer')
-    expect(mockRouteQuery).toHaveBeenCalledTimes(1)
-    expect(mockSmartRoute).not.toHaveBeenCalled()
+    expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(1)
+    // And it must actually RECEIVE the history — routing without it is how a
+    // follow-up like "what about last month?" loses its referent.
+    const call = mockSelectToolWithLlm.mock.calls[0]?.[0] as { chatHistory?: unknown[] } | undefined
+    expect(call?.chatHistory).toHaveLength(2)
   })
 
   test('CONTEXTUAL_CHAT branch: loads prior tool runs and generates contextual answer', async () => {
     mockDocumentCount.mockImplementation(async () => 1)
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    // The SELECTOR decides the route now; routeQuery is only the fallback for a
+    // provider failure, so stubbing routeQuery would never be consulted.
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CONTEXTUAL_CHAT' as RouteDecision, args: {}, reason: 'refers to prior', llmUsed: true }))
     mockToolRunFindMany.mockImplementation(async () => [
       { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
     ])
@@ -1171,23 +1232,27 @@ describe('runNonStreamingChatCompletion — the agentic hand-off', () => {
 })
 
 describe('tool-router — an ambiguous data source', () => {
-  test('the resolved integration is what reaches runSqlBranch', async () => {
-    // Two integrations must EXIST for the ambiguity branch to be reachable: with
-    // intCount 0, chooseAvailableDecision forces CHAT and the code never runs.
+  test('the integration the MODEL named is what reaches runSqlBranch', async () => {
+    // Two integrations must EXIST for the choice to be meaningful: with intCount
+    // 0, chooseAvailableDecision forces CHAT and the code never runs.
+    //
+    // The SELECTOR supplies the database now. It used to come from smartRoute's
+    // score gap, so this test asserted the highest-scoring candidate won; that
+    // mechanism is gone and the property worth pinning is different — the id the
+    // model chose is the one looked up, out of several it was shown.
     mockIntegrationCount.mockImplementation(async () => 2)
     mockIntegrationFindMany.mockImplementation(async () => [
       { id: 'integ-low', name: 'Low', type: 'postgresql' },
       { id: 'integ-high', name: 'High', type: 'postgresql' },
       { id: 'integ-mid', name: 'Mid', type: 'postgresql' },
     ])
-    mockSmartRoute.mockImplementation(async () => ({
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'sql',
       decision: 'SQL' as RouteDecision,
-      integrationId: undefined,
-      ambiguousIntegrations: [
-        { integrationId: 'integ-low', score: 0.2 },
-        { integrationId: 'integ-high', score: 0.9 },
-        { integrationId: 'integ-mid', score: 0.5 },
-      ],
+      args: {},
+      integrationId: 'integ-high',
+      reason: 'stub',
+      llmUsed: true,
     }))
     // This fixture is REQUIRED. Without it findFirst returns null (the default) and
     // runSqlBranch concludes the row does not exist and asks the user — a test that
@@ -1207,8 +1272,8 @@ describe('tool-router — an ambiguous data source', () => {
       .filter(Boolean)
     expect(looked).toContain('integ-high')
     expect(looked).not.toContain('integ-low')
-    // The last-resort strategies must not run: smartRoute already reported a set of
-    // candidates, so there is nothing left to search for.
+    // The last-resort strategies must not run: the model already named a
+    // database, so there is nothing left to search for.
     expect(mockPickBestIntegrationByKeywords).toHaveBeenCalledTimes(0)
     expect(mockPickBestIntegration).toHaveBeenCalledTimes(0)
     expect(r).toBeTruthy()
@@ -1224,10 +1289,13 @@ describe('tool-router — an ambiguous data source', () => {
       { id: 'integ-a', name: 'A', type: 'postgresql' },
       { id: 'integ-b', name: 'B', type: 'postgresql' },
     ])
-    mockSmartRoute.mockImplementation(async () => ({
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'sql',
       decision: 'SQL' as RouteDecision,
+      args: {},
       integrationId: 'integ-gone',
-      ambiguousIntegrations: [],
+      reason: 'stub',
+      llmUsed: true,
     }))
     mockIntegrationFindFirst.mockImplementation(async () => null)
     mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
@@ -1246,10 +1314,12 @@ describe('tool-router — an ambiguous data source', () => {
       { id: 'integ-a', name: 'A', type: 'postgresql' },
       { id: 'integ-b', name: 'B', type: 'postgresql' },
     ])
-    mockSmartRoute.mockImplementation(async () => ({
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'sql',
       decision: 'SQL' as RouteDecision,
-      integrationId: undefined,
-      ambiguousIntegrations: [],
+      args: {},
+      reason: 'stub',
+      llmUsed: true,
     }))
     mockIntegrationFindFirst.mockImplementation(async () => null)
     mockPickBestIntegrationByKeywords.mockImplementation(async () => null)
@@ -1271,7 +1341,10 @@ describe('tool-router — an ambiguous data source', () => {
       { id: 'integ-kw', name: 'Warehouse', type: 'postgresql' },
       { id: 'integ-other', name: 'Other', type: 'postgresql' },
     ])
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: undefined }))
+    // NO integrationId: the model named a tool but not a database, which is the
+    // only situation where the last-resort strategies run. Supplying one would
+    // skip them entirely and the assertion would measure nothing.
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     mockPickBestIntegrationByKeywords.mockImplementation(async () => 'integ-kw')
     mockIntegrationFindFirst.mockImplementation(async () => ({
       id: 'integ-kw', name: 'Warehouse', provider: 'POSTGRESQL', encryptedConfig: 'enc',
@@ -1546,7 +1619,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     expect(result.chartData).toBeNull()
     // No preparer and no routing may have run — the turn ended at the intent gate.
     expect(streamCalls).toHaveLength(0)
-    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+    expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(0)
     expect(mockRouteQuery).toHaveBeenCalledTimes(0)
   })
 
@@ -1569,7 +1642,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // When needsRetrieval is false the chat preparer is the correct exit, and the
     // routing stack must not have been consulted at all.
     expect(streamCalls[0].name).toBe('prepareChatStream')
-    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+    expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(0)
   })
 
   test('needsRetrieval=false goes straight to prepareChatStream with the EFFECTIVE question', async () => {
@@ -1590,7 +1663,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     expect(sent.systemPromptPrefix).toBe('Be terse.')
     expect(sent.memoryContext).toBe(memoryContextValue)
     // Routing is unnecessary: the intent gate already decided no tool is needed.
-    expect(mockSmartRoute).toHaveBeenCalledTimes(0)
+    expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(0)
     expect(mockRouteQuery).toHaveBeenCalledTimes(0)
   })
 
@@ -1697,7 +1770,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     useSchemaRow()
     needsRetrieval()
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
     expect(sqlStreamArgs).toHaveLength(1)
     // The SMART-route branch is the one that carries an integrationId: `routeQuery` (the
@@ -1719,10 +1792,14 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // there is history (`loadIntentPipeline`), so without it the effective question IS the raw question
     // and the assertion would pass even if the dispatcher forwarded `args.question` by mistake.
     //
-    // History also SWITCHES THE ROUTER (`resolveRouting` uses routeQuery, not smartRoute, when there is
-    // history), so the router mock must move with it -- leaving smartRoute mocked here would let the
-    // real routeQuery answer and the decision would silently be its own default instead of SQL.
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, reason: 'test' }))
+    // The SELECTOR routes every turn now, history or not. It used to switch
+    // implementations depending on history, so this stub had to move with it;
+    // with one router there is nothing to switch, and stubbing routeQuery here
+    // would leave the decision to its own default instead of SQL.
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'sql', decision: 'SQL' as RouteDecision, args: {},
+      integrationId: 'int-1', reason: 'test', llmUsed: true,
+    }))
     await runStreamingChatCompletion({
       question: 'total sales',
       userId: 'u1',
@@ -1740,7 +1817,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     useSchemaRow()
     needsRetrieval()
     mockDocumentCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'RAG' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'what is the policy?', userId: 'u1' })
     expect(streamCalls.map((c) => c.name)).toEqual(['prepareRagStream'])
     expect(ragStreamArgs[0].memoryContext).toBe(memoryContextValue)
@@ -1756,7 +1833,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     mockRestEndpointFindMany.mockImplementation(async () => [
       { method: 'GET', path: '/invoices', description: 'invoice list' },
     ])
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'REST' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rest', decision: 'REST' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'list invoices via api', userId: 'u1' })
     expect(streamCalls.map((c) => c.name)).toEqual(['prepareRestStream'])
     // No chatHistory here, so the effective question IS the raw question. Assert the raw value
@@ -1768,7 +1845,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
   test('PLUGIN decision routes to preparePluginStream', async () => {
     useSchemaRow()
     needsRetrieval()
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'PLUGIN' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'what is the weather?', userId: 'u1' })
     expect(streamCalls.map((c) => c.name)).toEqual(['preparePluginStream'])
     // Same reasoning as the REST branch: with no history the effective question is the raw one.
@@ -1780,7 +1857,9 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     useSchemaRow()
     needsRetrieval()
     mockDocumentCount.mockImplementation(async () => 1)
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    // The SELECTOR decides the route now; routeQuery is only the fallback for a
+    // provider failure, so stubbing routeQuery would never be consulted.
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CONTEXTUAL_CHAT' as RouteDecision, args: {}, reason: 'refers to prior', llmUsed: true }))
     mockToolRunFindMany.mockImplementation(async () => [
       { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
     ])
@@ -1806,7 +1885,9 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // The branch a careless test skips. Choosing CONTEXTUAL_CHAT with nothing to
     // be contextual about must not reach a preparer that requires a context.
     mockDocumentCount.mockImplementation(async () => 1)
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    // The SELECTOR decides the route now; routeQuery is only the fallback for a
+    // provider failure, so stubbing routeQuery would never be consulted.
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CONTEXTUAL_CHAT' as RouteDecision, args: {}, reason: 'refers to prior', llmUsed: true }))
     mockToolRunFindMany.mockImplementation(async () => [])
     await runStreamingChatCompletion({
       question: 'what about that?',
@@ -1826,7 +1907,9 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // and a contextual answer. Pinned so a future "always return something"
     // change shows up here rather than in production.
     mockDocumentCount.mockImplementation(async () => 1)
-    mockRouteQuery.mockImplementation(async () => ({ decision: 'CONTEXTUAL_CHAT' as RouteDecision, reason: 'refers to prior' }))
+    // The SELECTOR decides the route now; routeQuery is only the fallback for a
+    // provider failure, so stubbing routeQuery would never be consulted.
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CONTEXTUAL_CHAT' as RouteDecision, args: {}, reason: 'refers to prior', llmUsed: true }))
     mockToolRunFindMany.mockImplementation(async () => [
       { type: 'SQL', inputSummary: 'show sales', outputSummary: 'Sales: $5000' },
     ])
@@ -1841,7 +1924,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
   test('CHAT decision goes to prepareChatStream with the branch arguments', async () => {
     useSchemaRow()
     needsRetrieval()
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, integrationId: undefined }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({
       question: 'hello',
       userId: 'u1',
@@ -1867,7 +1950,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // never reached.
     mockIntegrationCount.mockImplementation(async () => 0)
     mockDocumentCount.mockImplementation(async () => 0)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'total sales', userId: 'u1' })
     expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
     expect(sqlStreamArgs).toHaveLength(0)
@@ -1877,7 +1960,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // applyToolGating runs BEFORE the branch is chosen. Gating after the fact
     // would let a disabled tool execute and only relabel the result.
     useOneIntegration()
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockGetPromptSettings.mockImplementation(async () => ({
       systemPrompt: '',
       tools: { rag: true, sql: false, restApi: true },
@@ -1888,7 +1971,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
 
   test('the operator system prompt is MERGED with the caller prefix, joined by a blank line', async () => {
     useOneIntegration()
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockGetPromptSettings.mockImplementation(async () => ({
       systemPrompt: 'Operator prompt.',
       tools: { rag: true, sql: true, restApi: true },
@@ -1901,7 +1984,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
 
   test('with BOTH prompts empty the merged prefix is undefined, not an empty string', async () => {
     useOneIntegration()
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
     // An empty prefix is not a no-op downstream: generateSql branches on whether
     // a prefix exists, so '' would add an empty system message.
@@ -1910,7 +1993,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
 
   test('a caller prefix alone survives when the operator prompt is empty', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     await runStreamingChatCompletion({ question: 'q', userId: 'u1', systemPromptPrefix: 'Caller only.' })
     // No stray leading blank line from joining an empty second element.
     expect(sqlStreamArgs[0].systemPromptPrefix).toBe('Caller only.')
@@ -1918,7 +2001,7 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
 
   test('the operator prompt alone survives when the caller gave no prefix', async () => {
     mockIntegrationCount.mockImplementation(async () => 1)
-    mockSmartRoute.mockImplementation(async () => ({ decision: 'SQL' as RouteDecision, integrationId: 'int-1' }))
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
     mockGetPromptSettings.mockImplementation(async () => ({
       systemPrompt: 'Operator only.',
       tools: { rag: true, sql: true, restApi: true },
@@ -1942,9 +2025,15 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
       // History is present so the REWRITE step actually happens (without it `rewriteQuery` is never
       // consulted and the first event would be missing), which also means the router is `routeQuery`.
       // `smartRouteOrder` is the shared log for both router mocks, so either one records 'smartRoute'.
-      mockRouteQuery.mockImplementation(async () => {
+      // The SELECTOR is the router now, so it records the routing step. The
+      // order guarantee itself is unchanged and still worth pinning: routing
+      // before intent, or a branch before routing, is invisible in the result.
+      mockSelectToolWithLlm.mockImplementation(async () => {
         smartRouteOrder?.push('smartRoute')
-        return { decision: 'SQL' as RouteDecision, reason: 'test' }
+        return {
+          toolId: 'sql', decision: 'SQL' as RouteDecision, args: {},
+          integrationId: 'int-1', reason: 'test', llmUsed: true,
+        }
       })
       await runStreamingChatCompletion({
         question: 'q',
