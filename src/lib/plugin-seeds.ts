@@ -136,38 +136,6 @@ const PLUGINS: PluginSeed[] = [
     },
     enabled: true,
   },
-  {
-    toolId: 'web_search',
-    name: 'Wikipedia Search',
-    description: 'Search the Indonesian or English Wikipedia for articles. Free, no API key.',
-    category: 'knowledge',
-    subcategory: 'search',
-    keywords: 'wikipedia,search,cari,pencarian,artikel,article,ensiklopedia,encyclopedia,informasi,information',
-    manifest: {
-      executorType: 'webhook',
-      endpoint: 'https://id.wikipedia.org/w/api.php',
-      method: 'GET',
-      authType: 'NONE',
-      timeoutMs: 10000,
-      description: 'Search Wikipedia for articles matching a query.',
-      // The API needs `action`, `list` and `format` to return JSON at all; a
-      // model that omits them gets HTML and a parse failure. Listing them as
-      // required with enum/default values is what makes the call well-formed
-      // instead of a guess — the old prose left all three to chance.
-      parameters: {
-        type: 'object',
-        properties: {
-          srsearch: { type: 'string', description: 'The search query.' },
-          action: { type: 'string', enum: ['query'], description: 'Fixed API action.' },
-          list: { type: 'string', enum: ['search'], description: 'Fixed list mode.' },
-          format: { type: 'string', enum: ['json'], description: 'Response format. Must be json.' },
-          srlimit: { type: 'integer', description: 'Number of results, 1-20. Defaults to 10.' },
-        },
-        required: ['srsearch', 'action', 'list', 'format'],
-      },
-    },
-    enabled: true,
-  },
 ]
 
 

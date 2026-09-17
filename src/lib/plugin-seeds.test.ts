@@ -23,13 +23,35 @@ function manifestFor(toolId: string): Record<string, unknown> {
 const IDS = [...src.matchAll(/toolId: '([^']+)'/g)].map((m) => m[1])
 
 describe('built-in plugin seeds', () => {
-  test('there are 5 built-ins and every id is unique', () => {
-    // Trimmed from 9: timezone_by_location (needed coordinates nobody supplies),
-    // article_fetch (web_search already covered it), docsearch, and news (RSS XML
-    // rather than JSON) were overlapping or awkward for their cost.
-    expect(IDS.length).toBe(5)
-    expect(new Set(IDS).size).toBe(5)
-    expect(IDS.sort()).toEqual(['calculator', 'datetime', 'translate', 'weather', 'web_search'])
+  test('there are 4 built-ins and every id is unique', () => {
+    // Trimmed from 9, then from 5. The removals, and why:
+    //   timezone_by_location  needed coordinates nobody supplies
+    //   article_fetch         web_search appeared to cover it
+    //   docsearch             overlapping
+    //   news                  RSS XML rather than JSON
+    //   web_search            ITS NAME WAS A LIE: the id promised a general web
+    //                         search while the tool could only search Wikipedia,
+    //                         and the model believed the id — asked "cuaca di
+    //                         jakarta" it chose this over the working `weather`
+    //                         plugin on BOTH model families, 10 of 10 runs each.
+    //                         A capability named more broadly than it behaves is
+    //                         worse than a missing one. Retrieval of a known URL
+    //                         is covered by the built-in `web_fetch`.
+    expect(IDS.length).toBe(4)
+    expect(new Set(IDS).size).toBe(4)
+    expect(IDS.sort()).toEqual(['calculator', 'datetime', 'translate', 'weather'])
+  })
+
+  test('NO seed claims to be a general web search', () => {
+    // Guards the naming lie above from returning under a new id. Asserted against
+    // the SEED BLOCKS (what ships), not the whole file — the file legitimately
+    // discusses the removed id in a comment explaining why it is gone.
+    const blocks = src.split(/\n  \{\n/).filter((b) => b.includes("toolId: '"))
+    for (const b of blocks) {
+      const id = /toolId: '([^']+)'/.exec(b)?.[1] ?? ''
+      expect(id, `seed ${id} must not promise a general web search`).not.toMatch(/web_search|websearch|web-search/i)
+      expect(b).toMatch(/executorType: 'webhook'/)
+    }
   })
 
   test('EVERY built-in declares a JSON Schema for its arguments', () => {

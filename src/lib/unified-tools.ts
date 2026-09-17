@@ -13,7 +13,7 @@
 import { db } from '@/lib/db'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { runNonStreamingChatCompletion } from '@/lib/tool-router'
-import { fetchUrlForPlanner, webSearch } from '@/lib/web-fetch'
+import { fetchUrlForPlanner, webSearch, isWebSearchAvailable } from '@/lib/web-fetch'
 import {
   callMcpTool,
   getMcpPrompt,
@@ -348,6 +348,33 @@ export const DIRECT_CHAT_TOOL: UnifiedTool = {
   },
 }
 
+/**
+ * The built-in tools, minus any whose backend cannot work on this install.
+ *
+ * `web_search` is CONDITIONAL. Its fallback scrapes DuckDuckGo, which is blocked
+ * outright on some networks (MEASURED here: the host served an ISP interstitial
+ * and every query failed with ERR_TLS_CERT_ALTNAME_INVALID). Offering it anyway
+ * was actively harmful: asked "cuaca di jakarta" the model chose the broken
+ * `web_search` over the `weather` plugin that returns real data, on both model
+ * families tested, 10 of 10 runs. A tool listed but unable to succeed does not
+ * merely waste a call — it outranks the correct tool.
+ *
+ * `web_fetch` is NOT conditional: retrieval of a known URL works regardless of
+ * any search backend (verified against Wikipedia, example.com and a JSON API).
+ */
+export function getCoreBuiltInTools(): UnifiedTool[] {
+  return [
+    SQL_TOOL,
+    RAG_TOOL,
+    REST_TOOL,
+    ...(isWebSearchAvailable() ? [WEB_SEARCH_TOOL] : []),
+    WEB_FETCH_TOOL,
+    DIRECT_CHAT_TOOL,
+  ]
+}
+
+/** Every built-in tool, including conditionally-available ones. For tests and for
+ *  catalogues that must be exhaustive rather than operational. */
 export const CORE_BUILT_IN_TOOLS: UnifiedTool[] = [
   SQL_TOOL,
   RAG_TOOL,
@@ -680,7 +707,7 @@ export async function getUnifiedTools(args: {
   context: 'chat' | 'agentic'
   isAdmin?: boolean
 }): Promise<UnifiedTool[]> {
-  const tools: UnifiedTool[] = [...CORE_BUILT_IN_TOOLS]
+  const tools: UnifiedTool[] = getCoreBuiltInTools()
 
   if (args.context === 'agentic' && args.isAdmin) {
     tools.push(...buildAdminUnifiedTools())

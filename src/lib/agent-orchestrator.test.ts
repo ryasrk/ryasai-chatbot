@@ -66,14 +66,21 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
   })
 
   test('single tool call executes, observes, and synthesizes final answer', async () => {
-    // Round 1: LLM decides to search the web
+    // Round 1: LLM decides to fetch a URL
     // Round 2: LLM synthesizes answer from observation
+    //
+    // Uses `web_fetch`, not `web_search`. This test is about the ReAct LOOP —
+    // call, observe, synthesize — and `web_search` is now conditional: it is
+    // omitted when no search backend is reachable (no SearXNG and the DuckDuckGo
+    // fallback unreachable), so depending on it would make this test's subject
+    // depend on the network. `web_fetch` is unconditional and exercises the same
+    // loop.
     llmResponses = [
       [
         {
           id: 'call_1',
-          name: 'web_search',
-          arguments: JSON.stringify({ query: 'PT Sentosa quarterly revenue' }),
+          name: 'web_fetch',
+          arguments: JSON.stringify({ url: 'https://example.com/pt-sentosa' }),
         },
       ],
       'Based on the search results, PT Sentosa reported 45 billion IDR in quarterly revenue.',
@@ -89,7 +96,7 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
     expect(result.answer).toContain('45 billion IDR')
     expect(result.iterations).toBe(2)
     expect(result.toolRuns).toHaveLength(1)
-    expect(result.toolRuns[0].type).toBe('CHAT') // web_search maps to CHAT
+    expect(result.toolRuns[0].type).toBe('CHAT') // web_fetch maps to CHAT
     expect(result.toolRuns[0].status).toBe('success')
 
     // Verify events were emitted properly
@@ -102,9 +109,9 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
     llmResponses = [
       [
         {
-          id: 'call_search',
-          name: 'web_search',
-          arguments: JSON.stringify({ query: 'Next.js 16 features' }),
+          id: 'call_rest',
+          name: 'call_rest_api',
+          arguments: JSON.stringify({ endpoint: 'nextjs-release-notes', params: {} }),
         },
         {
           id: 'call_fetch',
@@ -112,11 +119,11 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
           arguments: JSON.stringify({ url: 'https://nextjs.org/docs' }),
         },
       ],
-      'Here is the combined summary from both the search and the documentation page.',
+      'Here is the combined summary from both the API and the documentation page.',
     ]
 
     const result = await runAgentOrchestrator({
-      question: 'Compare search and doc info for Next.js 16',
+      question: 'Compare API and doc info for Next.js 16',
       userId: 'u1',
     })
 
@@ -126,18 +133,20 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
   })
 
   test('circuit breaker blocks failing tool from crashing the orchestrator', async () => {
-    // Trip circuit breaker on web_search
-    toolCircuitBreaker.recordFailure('web_search', new Error('timeout 1'))
-    toolCircuitBreaker.recordFailure('web_search', new Error('timeout 2'))
-    toolCircuitBreaker.recordFailure('web_search', new Error('timeout 3'))
-    expect(toolCircuitBreaker.isExecutionAllowed('web_search').allowed).toBe(false)
+    // Trip circuit breaker on `rest`, chosen because it is UNCONDITIONAL. Using
+    // `web_search` would make this test depend on whether a search backend is
+    // reachable, which is now a deployment fact rather than a code fact.
+    toolCircuitBreaker.recordFailure('rest', new Error('timeout 1'))
+    toolCircuitBreaker.recordFailure('rest', new Error('timeout 2'))
+    toolCircuitBreaker.recordFailure('rest', new Error('timeout 3'))
+    expect(toolCircuitBreaker.isExecutionAllowed('rest').allowed).toBe(false)
 
     llmResponses = [
       [
         {
           id: 'call_broken',
-          name: 'web_search',
-          arguments: JSON.stringify({ query: 'live stock price' }),
+          name: 'call_rest_api',
+          arguments: JSON.stringify({ endpoint: 'live-stock-price', params: {} }),
         },
       ],
       'I apologize, but web search is currently down due to repeated failures. I can provide general information instead.',

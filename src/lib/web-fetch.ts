@@ -214,6 +214,30 @@ export function getSearxngEndpoint(): string | null {
  * Requires `json` in settings.yml `search.formats` — it is NOT on by default and
  * SearXNG answers 403 without it. install.sh --with-searxng writes that config.
  */
+/**
+ * Can web search actually work on this install?
+ *
+ * WHY THIS EXISTS (MEASURED): the fallback is DuckDuckGo HTML scraping, and on a
+ * network that hijacks that host it fails every time — `lite.duckduckgo.com`
+ * resolved to an ISP interstitial (`CN = dnssehat1.huma.net.id`) and every query
+ * returned ERR_TLS_CERT_ALTNAME_INVALID. The `web_search` tool was still listed in
+ * the catalogue, so the model chose it for "cuaca di jakarta" over the `weather`
+ * plugin that worked, and returned nothing. A tool that cannot succeed must not be
+ * offered: a capability listed but non-functional silently outranks the right one.
+ *
+ * A configured SearXNG is the supported path (install.sh --with-searxng) and is
+ * assumed reachable; when it is ABSENT we depend on a scrape that cannot be
+ * trusted, so search is reported unavailable rather than guessing per request.
+ */
+export function isWebSearchAvailable(): boolean {
+  // SearXNG configured -> supported and self-hosted, so offer the tool.
+  if (getSearxngEndpoint()) return true
+  // Explicit opt-in for the scrape fallback, for an operator who has verified the
+  // host is reachable from their network.
+  if ((process.env.WEB_SEARCH_SCRAPE_FALLBACK ?? '').trim() === '1') return true
+  return false
+}
+
 async function searxngSearch(
   query: string,
   maxResults: number,

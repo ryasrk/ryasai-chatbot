@@ -91,3 +91,80 @@ describe('unified-tools — function name encoding and schema mapping', () => {
     expect(res.error).toContain('requires administrator privileges')
   })
 })
+
+describe('web_search is offered only when it can work', () => {
+  // INCIDENT (MEASURED): the fallback scrapes `lite.duckduckgo.com`, and on a
+  // network that hijacks that host it fails EVERY time. Here the host served an
+  // ISP interstitial (`CN = dnssehat1.huma.net.id`), so all three probe queries
+  // returned ERR_TLS_CERT_ALTNAME_INVALID. The tool stayed in the catalogue anyway,
+  // and asked "cuaca di jakarta" both model families chose the broken `web_search`
+  // over the `weather` plugin — which returns real data — in 10 of 10 runs each.
+  // A listed-but-unusable tool does not merely waste a call; it outranks the right
+  // one. After gating it: plugin:weather 10/10 on both families.
+  const withEnv = async (env: Record<string, string | undefined>, fn: () => Promise<void>) => {
+    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]))
+    for (const [k, v] of Object.entries(env)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+    try { await fn() } finally {
+      for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+    }
+  }
+  const ids = async (): Promise<string[]> => {
+    const { getUnifiedTools } = await import('./unified-tools')
+    return (await getUnifiedTools({ query: 'cuaca jakarta', context: 'chat', isAdmin: false })).map((t) => t.id)
+  }
+
+  test('no backend configured → web_search is NOT offered, web_fetch IS', async () => {
+    await withEnv({ SEARXNG_URL: undefined, WEB_SEARCH_SCRAPE_FALLBACK: undefined }, async () => {
+      const found = await ids()
+      expect(found).not.toContain('web_search')
+      // Retrieval of a KNOWN url does not depend on any search backend, so it must
+      // never be gated out with it.
+      expect(found).toContain('web_fetch')
+    })
+  })
+
+  test('a configured SearXNG makes web_search available', async () => {
+    await withEnv({ SEARXNG_URL: 'http://searxng:8080' }, async () => {
+      expect(await ids()).toContain('web_search')
+    })
+  })
+
+  test('an explicit opt-in re-enables the scrape fallback', async () => {
+    // The operator's escape hatch: set WEB_SEARCH_SCRAPE_FALLBACK=1 on a network
+    // where DuckDuckGo is reachable.
+    await withEnv({ SEARXNG_URL: undefined, WEB_SEARCH_SCRAPE_FALLBACK: '1' }, async () => {
+      expect(await ids()).toContain('web_search')
+    })
+  })
+
+  test('the exhaustive catalogue still contains every built-in', async () => {
+    // CORE_BUILT_IN_TOOLS stays complete for callers that need the full list;
+    // only the OPERATIONAL set is filtered. Conflating the two would make the
+    // catalogue lie about what the build contains.
+    const { CORE_BUILT_IN_TOOLS } = await import('./unified-tools')
+    expect(CORE_BUILT_IN_TOOLS.map((t) => t.id)).toContain('web_search')
+  })
+})
+
+describe('the two tool catalogues agree on web_search', () => {
+  // INCIDENT: gating only the unified catalogue left `web_search` visible in the
+  // LEGACY one, and the live harness caught the drift ("onlyLegacy":["web_search"]).
+  // The legacy entry's description is the strongest in the codebase ("ALWAYS use
+  // this ... NEVER use the chat tool"), so an unusable tool there would be chosen
+  // even more forcefully than in the ReAct path. Both must be gated together.
+  test('unified and legacy agree, with and without a search backend', async () => {
+    const { getUnifiedTools } = await import('./unified-tools')
+    const { getAvailableTools } = await import('./tool-registry')
+    const saved = process.env.SEARXNG_URL
+    try {
+      for (const searxng of [undefined, 'http://searxng:8080']) {
+        searxng === undefined ? delete process.env.SEARXNG_URL : (process.env.SEARXNG_URL = searxng)
+        const unified = (await getUnifiedTools({ query: 'cuaca', context: 'agentic', isAdmin: false })).map((t) => t.id)
+        const legacy = (await getAvailableTools('cuaca', 'agentic')).map((t) => t.id)
+        expect(unified.includes('web_search'), `unified @ searxng=${searxng}`).toBe(legacy.includes('web_search'))
+      }
+    } finally {
+      saved === undefined ? delete process.env.SEARXNG_URL : (process.env.SEARXNG_URL = saved)
+    }
+  })
+})

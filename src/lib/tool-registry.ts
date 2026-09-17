@@ -16,6 +16,8 @@ export interface ToolDef {
   subcategory?: string
 }
 
+import { isWebSearchAvailable } from '@/lib/web-fetch'
+
 export const BUILT_IN_TOOLS: ToolDef[] = [
   {
     id: 'sql',
@@ -267,7 +269,18 @@ export async function getAvailableTools(
   // side-effectful tools through the planner.
   const adminTools = context === 'agentic' && opts?.isAdmin ? ADMIN_TOOLS : []
 
-  return [...BUILT_IN_TOOLS, ...adminTools, ...pluginTools, ...mcpToolDefs]
+  // `web_search` is CONDITIONAL, and gated HERE as well as in unified-tools.
+  // The two catalogues must agree: MEASURED by the live harness, gating only the
+  // unified side left `web_search` visible to the legacy multi-step planner while
+  // it was absent from the ReAct catalogue. Its fallback scrapes DuckDuckGo, which
+  // some networks block outright, and this entry's description is the strongest in
+  // the file ("ALWAYS use this ... NEVER use the chat tool"), so an unusable tool
+  // here would be chosen even more forcefully.
+  const builtIns = isWebSearchAvailable()
+    ? BUILT_IN_TOOLS
+    : BUILT_IN_TOOLS.filter((t) => t.id !== 'web_search')
+
+  return [...builtIns, ...adminTools, ...pluginTools, ...mcpToolDefs]
 }
 
 type ContextFlags = { chatEnabled: boolean; agenticEnabled: boolean }
