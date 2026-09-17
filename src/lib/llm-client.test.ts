@@ -1465,6 +1465,67 @@ describe('withUsageTracking / getLastLlmUsage', () => {
     })
     expect(usage).toBeUndefined()
   })
+describe('readCompletionBody reassembles STREAMED tool calls', () => {
+  // INCIDENT: a tool-call reply carries NO content — it is delivered entirely on
+  // `delta.tool_calls`, split across several SSE fragments. The reader collected
+  // only `content`, so with nothing to collect it returned the TRAILING metadata
+  // chunk (`delta: {}`, `finish_reason: "tool_calls"`) and every caller saw an
+  // empty reply while `finish_reason` still said a tool had been chosen.
+  // MEASURED against a Gemini model on the gateway: `get_weather({"city":"Tokyo"})`
+  // arrived correctly on the wire, our client returned nothing, routing scored
+  // 0 of 12 tool calls, and a question about sales fell through to plain chat.
+  // Invisible until now because the DEFAULT provider replies with a non-streamed
+  // JSON body, where JSON.parse keeps tool_calls intact.
+  const sse = (frames: string[]) =>
+    new Response(frames.map((f) => `data: ${f}`).join('\n\n') + '\n\ndata: [DONE]\n\n',
+      { headers: { 'content-type': 'text/event-stream' } })
+
+  test('a tool call split across fragments is rejoined with its arguments', async () => {
+    // `arguments` is a PARTIAL json string per fragment, so it must be APPENDED.
+    // Replacing it would keep only the last piece and yield invalid JSON.
+    const body = (await readCompletionBody(sse([
+      '{"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","index":0,"type":"function","function":{"name":"get_weather","arguments":"{\\"city\\":"}}]},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"Tokyo\\"}"}}]},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}',
+    ]))) as { choices?: Array<{ message?: { tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>; content?: unknown } }> }
+    const tc = body.choices?.[0]?.message?.tool_calls
+    expect(tc).toHaveLength(1)
+    expect(tc![0].function.name).toBe('get_weather')
+    expect(tc![0].function.arguments).toBe('{"city":"Tokyo"}')
+    expect(tc![0].id).toBe('call_1')
+    // Tool calls arrive with no text, so an empty STRING would be a lie; null is
+    // what a non-streamed tool-call reply carries.
+    expect(body.choices?.[0]?.message?.content).toBeNull()
+  })
+
+  test('two calls interleaved by index are kept apart and in order', async () => {
+    const body = (await readCompletionBody(sse([
+      '{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"a","index":0,"function":{"name":"f1","arguments":"{}"}}]},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"b","index":1,"function":{"name":"f2","arguments":"{}"}}]},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+    ]))) as { choices?: Array<{ message?: { tool_calls?: Array<{ function: { name: string } }> } }> }
+    expect(body.choices?.[0]?.message?.tool_calls?.map((t) => t.function.name)).toEqual(['f1', 'f2'])
+  })
+
+  test('a reply with NEITHER content nor tool calls still returns the last chunk', async () => {
+    // The pre-existing behaviour for a genuinely empty reply must survive: callers
+    // read usage and finish_reason off it.
+    const body = (await readCompletionBody(sse([
+      '{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":0}}',
+    ]))) as { usage?: { prompt_tokens?: number } }
+    expect(body.usage?.prompt_tokens).toBe(5)
+  })
+
+  test('text streaming is unaffected — content fragments still concatenate', async () => {
+    const body = (await readCompletionBody(sse([
+      '{"choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}',
+      '{"choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}]}',
+    ]))) as { choices?: Array<{ message?: { content?: string } }> }
+    expect(body.choices?.[0]?.message?.content).toBe('Hello')
+  })
+})
+
 describe('readCompletionBody tolerates a provider that streams anyway', () => {
   // MEASURED against 9router: a POST with NO `stream` key at all came back as
   // `data: {...}\n\ndata: {...}`. The three non-streaming call sites used `res.json()`

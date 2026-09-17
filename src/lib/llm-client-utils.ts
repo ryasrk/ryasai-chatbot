@@ -264,8 +264,37 @@ export async function readCompletionBody(res: Response): Promise<unknown> {
     const pieces: string[] = []
     let lastChunk: Record<string, unknown> | null = null
     let sawContent = false
+    // Tool calls arrive in FRAGMENTS too, on `delta.tool_calls`, and a tool-call
+    // reply carries NO content at all. MEASURED: against a Gemini model on this
+    // gateway the body was SSE with the call split across deltas —
+    //   delta.tool_calls[0].function.name/arguments
+    // — and the old code collected only `content`, so `tool_calls` came back
+    // `undefined` while `finish_reason` still said "tool_calls". The model was
+    // calling correctly and we were discarding it, then reporting "no tool needed".
+    // Only reproduced on a STREAMING provider: a non-streamed JSON body (the
+    // default provider here) keeps tool_calls intact through JSON.parse, so the
+    // defect stayed invisible.
+    const toolCallParts = new Map<number, { id?: string; type?: string; name?: string; args: string }>()
     for (const c of chunks) {
-      const choice = (c.choices as Array<{ delta?: { content?: unknown }; message?: { content?: unknown } }> | undefined)?.[0]
+      const choice = (c.choices as Array<{ delta?: { content?: unknown; tool_calls?: unknown }; message?: { content?: unknown; tool_calls?: unknown } }> | undefined)?.[0]
+      const deltaToolCalls = (choice?.delta as { tool_calls?: unknown } | undefined)?.tool_calls
+      const messageToolCalls = (choice?.message as { tool_calls?: unknown } | undefined)?.tool_calls
+      for (const list of [deltaToolCalls, messageToolCalls]) {
+        if (!Array.isArray(list)) continue
+        for (const raw of list) {
+          const tc = raw as { id?: string; index?: number; type?: string; function?: { name?: string; arguments?: string } }
+          // `index` is the join key the OpenAI streaming format mandates; falling
+          // back to 0 keeps providers that omit it working for the single-call case.
+          const key = typeof tc.index === 'number' ? tc.index : 0
+          const prev = toolCallParts.get(key) ?? { args: '' }
+          // `arguments` is a PARTIAL json string, so it is appended, never replaced.
+          if (typeof tc.function?.arguments === 'string') prev.args += tc.function.arguments
+          if (tc.id) prev.id = tc.id
+          if (tc.type) prev.type = tc.type
+          if (tc.function?.name) prev.name = tc.function.name
+          toolCallParts.set(key, prev)
+        }
+      }
       const delta = choice?.delta?.content
       const message = choice?.message?.content
       // `message.content` on a NON-streamed body is the whole answer, so it wins over
@@ -283,7 +312,33 @@ export async function readCompletionBody(res: Response): Promise<unknown> {
         lastChunk = c
       }
     }
-    if (!sawContent) return chunks[chunks.length - 1]
+    if (!sawContent) {
+      // No content, but a complete tool call is the WHOLE point of the response.
+      // Returning the trailing metadata chunk instead was the defect: it carries
+      // `delta: {}` and a finish_reason, so every caller saw an empty reply.
+      if (toolCallParts.size > 0) {
+        const tail = (chunks[chunks.length - 1] ?? {}) as Record<string, unknown>
+        const tailChoices = (tail.choices as Array<Record<string, unknown>> | undefined) ?? [{}]
+        return {
+          ...tail,
+          choices: [{
+            ...tailChoices[0],
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [...toolCallParts.entries()]
+                .sort((a, b) => a[0] - b[0])
+                .map(([index, tc]) => ({
+                  id: tc.id ?? `call_${index}`,
+                  type: tc.type ?? 'function',
+                  function: { name: tc.name ?? '', arguments: tc.args },
+                })),
+            },
+          }],
+        }
+      }
+      return chunks[chunks.length - 1]
+    }
     // Rebuild a body shaped like a non-streamed reply so every caller reads one shape:
     // `choices[0].message.content` holds the joined text, and the trailing metadata of
     // the last chunk (usage, finish_reason, model) is preserved.
