@@ -23,5 +23,9 @@ export const DATABASE_PROFILE_VERSION = 2
 /** Does this profile carry the current structure? False for legacy or absent ones. */
 export function isProfileCurrent(profile: string | null | undefined): boolean {
   if (!profile) return false
-  return profile.includes(`profile-version: ${DATABASE_PROFILE_VERSION}`)
+  // Matched with a boundary, NOT `includes`. A substring test makes version 2
+  // "equal" to version 20 — so a profile from a FUTURE prompt would be reported
+  // current and never regenerated. Caught by its own test.
+  const m = profile.match(/profile-version:\s*(\d+)/)
+  return m !== null && Number(m[1]) === DATABASE_PROFILE_VERSION
 }

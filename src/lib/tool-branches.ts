@@ -306,15 +306,25 @@ export async function runSqlBranch(args: {
       ? intPrompt.replace(/^\s+/, '')
       : undefined
 
-  const schemaDescription = describeSchema(
-    integration.schemas.map((schema) => ({
-      tableName: schema.tableName,
-      columns: safeParseColumns(schema.columns),
-      rowCount: schema.rowCount ?? undefined,
-      sampleRow: safeParseSampleRow(schema.sampleRow),
-      description: schema.description,
-    })),
-  )
+  const schemaTables = integration.schemas.map((schema) => ({
+    tableName: schema.tableName,
+    columns: safeParseColumns(schema.columns),
+    rowCount: schema.rowCount ?? undefined,
+    sampleRow: safeParseSampleRow(schema.sampleRow),
+    description: schema.description,
+  }))
+  const schemaDescription = describeSchema(schemaTables)
+  // Free-text columns, for the stale-profile fallback. Derived from the reflected
+  // schema rather than hardcoded: they are what the model wrongly filters on when
+  // no query hints tell it otherwise.
+  const textColumns = [
+    ...new Set(
+      schemaTables
+        .flatMap((t) => t.columns)
+        .filter((c) => /char|text|string/i.test(String(c.type)) && !c.primaryKey)
+        .map((c) => c.name),
+    ),
+  ]
   // ponytail: rate-limit BEFORE burning LLM calls — the repair loop can make
   // up to 3 generation calls per turn.
   const orgId = getOrgContext()
@@ -365,6 +375,7 @@ export async function runSqlBranch(args: {
       memoryContext: args.memoryContext,
       systemPromptPrefix: effectiveSystemPromptPrefix,
       repairFeedback: feedback,
+      textColumns,
       // ponytail: admin-authored business context (integration settings) must
       // reach BOTH SQL calls. `ai.ts` renders it into the prompt, and the
       // streaming path has always passed it (stream-preparers.ts) — but nothing

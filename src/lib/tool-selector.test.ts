@@ -70,3 +70,28 @@ describe('tool-selector — the routing prompt stays minimal', () => {
     expect(words).not.toContain('reply in text only for these cases')
   })
 })
+
+describe('tool-selector — an empty reply is not a decision', () => {
+  // MEASURED: with a model that cannot do function calling on this endpoint
+  // (`ag/gemini-3.8-flash-low` returned EMPTY for a one-tool prompt while plain
+  // chat answered "OK"), the selector used to report `no tool needed` and route to
+  // CHAT. A question about sales was then answered from general knowledge, and the
+  // audit reason claimed the model had decided against using data. An empty reply
+  // must instead return null so the caller can fall back.
+  test('the empty-reply branch returns null rather than a CHAT decision', async () => {
+    const src = await Bun.file(new URL('./tool-selector.ts', import.meta.url)).text()
+    const i = src.indexOf("if (rawText.trim() === '')")
+    expect(i, 'the empty-reply guard must exist').toBeGreaterThan(-1)
+    // ...and it must RETURN NULL, not a decision object.
+    expect(src.slice(i, i + 80)).toMatch(/return null/)
+  })
+
+  test('a substantive text answer still routes to CHAT, not null', async () => {
+    const src = await Bun.file(new URL('./tool-selector.ts', import.meta.url)).text()
+    // The contrast that makes the guard meaningful: real text must still be a
+    // legitimate "no tool" outcome, or greetings would fall through to the
+    // heuristic fallback on every turn.
+    expect(src).toMatch(/const contextual = looksContextual/)
+    expect(src).toMatch(/model answered in text \(no tool needed\)/)
+  })
+})

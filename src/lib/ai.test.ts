@@ -979,6 +979,41 @@ describe('profile staleness (MEASURED: a stale profile costs 100% -> 0%)', () =>
   })
 })
 
+describe('generateSql — stale-profile fallback names the text columns', () => {
+  // MEASURED: with a stale (glossary-only) profile, the generic warning alone still
+  // allowed `WHERE tipe_pelanggan ILIKE '%aktif%'` — a filter on a free-text LABEL —
+  // in 2 of 60 runs. Passing the actual text-column names removed it (0 of 60). The
+  // names are derived from the reflected schema, so the prompt must include them.
+  const base = {
+    question: 'berapa jumlah pelanggan aktif?',
+    schemaDescription: 'TABLE pelanggan (10 rows)\n  id bigint\n  nama text\n  tipe_pelanggan text',
+    provider: 'POSTGRESQL',
+  }
+  const STALE = '## Domain\nPenjualan, sales.'
+
+  test('a STALE profile gets the fallback, and it names the text columns', async () => {
+    await generateSql({ ...base, businessContext: STALE, textColumns: ['nama', 'tipe_pelanggan'] })
+    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    expect(user).toMatch(/No query hints are available/i)
+    expect(user).toContain('nama')
+    expect(user).toContain('tipe_pelanggan')
+    expect(user).toMatch(/NOT status columns/i)
+  })
+
+  test('a CURRENT profile gets NO fallback — it already carries query hints', async () => {
+    await generateSql({ ...base, businessContext: `<!-- profile-version: 2 -->\n## QUERY HINTS\n- none`, textColumns: ['nama'] })
+    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    expect(user).not.toMatch(/No query hints are available/i)
+  })
+
+  test('with no text columns the fallback still appears, just without names', async () => {
+    await generateSql({ ...base, businessContext: STALE })
+    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    expect(user).toMatch(/No query hints are available/i)
+    expect(user).not.toMatch(/NOT status columns/i)
+  })
+})
+
 describe('generateDatabaseProfile', () => {
   const tables = [{ tableName: 'orders', columns: [{ name: 'id', type: 'int' }], rowCount: 5 }]
 

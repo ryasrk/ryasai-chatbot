@@ -307,7 +307,17 @@ export async function selectToolWithLlm(args: {
     const wantsMulti = /MULTI_STEP/i.test(rawText)
 
     if (!Array.isArray(result) || result.length === 0) {
-      // The model answered in text. Whether that means a plain reply or a
+      // An EMPTY reply is NOT a decision. MEASURED: with a model that cannot do
+      // function calling on this endpoint (`ag/gemini-3.8-flash-low` returned empty
+      // for a one-tool prompt while plain chat worked), this branch used to report
+      // `no tool needed` and route to CHAT — so a question about sales was answered
+      // from general knowledge while the audit trail claimed the model had chosen
+      // not to use data. Distinguishing empty from substantive matters: the caller
+      // must be able to fall back to another router.
+      if (rawText.trim() === '') {
+        return null
+      }
+      // A substantive text answer. Whether that means a plain reply or a
       // context-dependent one is decided from the SAME rule routeQuery used, so
       // replacing the router does not silently drop the CONTEXTUAL_CHAT branch:
       // a message with no question mark that refers to prior turns or states a

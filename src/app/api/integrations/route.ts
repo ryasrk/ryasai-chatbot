@@ -7,6 +7,7 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
  *
  * Server-only route handler. No 'use client'.
  */
+import { isProfileCurrent } from '@/lib/profile-version'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
@@ -34,6 +35,9 @@ export async function GET(_req: NextRequest) {
         lastTestedAt: true,
         lastTestOk: true,
         createdAt: true,
+        // Needed for the staleness badge: without it the card cannot tell a
+        // glossary-only profile (harmful) from a current one.
+        businessContext: true,
         _count: { select: { schemas: true } },
       },
     })
@@ -48,13 +52,34 @@ export async function GET(_req: NextRequest) {
       lastTestOk: i.lastTestOk,
       createdAt: i.createdAt,
       tableCount: i._count.schemas,
+      businessContextStale: i.businessContext ? !isProfileCurrent(i.businessContext) : false,
     }))
+
+    // Refresh stale profiles in the background. An install that upgrades keeps
+    // whatever profile its prompt version produced until Test Connection runs, and
+    // a glossary-only profile is the HARMFUL state (MEASURED: fabricated filters in
+    // 40 of 40 runs versus 0 of 30 with a current one). Doing it here means the
+    // user never has to know. Fire-and-forget and capped, so loading the page
+    // cannot block or fan out on a long list of integrations.
+    const stale = integrations.filter((i) => i.businessContext && !isProfileCurrent(i.businessContext))
+    if (stale.length > 0) {
+      const { initIntegrationContext } = await import('@/lib/source-init')
+      for (const i of stale.slice(0, MAX_PROFILE_REFRESH_PER_LIST)) {
+        void initIntegrationContext(i.id).catch(logSwallowed('integrations: refresh stale businessContext'))
+      }
+    }
 
     return NextResponse.json({ ok: true, data })
   } catch (e) {
     return handleApiError(e, 'Failed to load integration list.')
   }
 }
+
+/**
+ * Cap on background profile refreshes per list request. Each one costs an LLM
+ * call, so an org with many stale integrations must not spend them all at once.
+ */
+const MAX_PROFILE_REFRESH_PER_LIST = 3
 
 export interface CreateBody {
   name?: string

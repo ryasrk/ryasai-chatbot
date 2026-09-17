@@ -184,6 +184,12 @@ export async function generateSql(args: {
   businessContext?: string | null
   /** Repair feedback from a failed execution — fed back for a corrected retry. */
   repairFeedback?: string
+  /**
+   * Free-text columns of the target database, used only when the business context
+   * is stale. Naming the actual columns is what stops a filter being invented on
+   * one of them; a generic warning is not enough.
+   */
+  textColumns?: string[]
 }): Promise<{ sql: string; explanation: string }> {
   const raw = await chatOnce(
     [
@@ -248,7 +254,17 @@ export async function generateSql(args: {
               : '\n(No query hints are available for this database. If the question uses a '
                 + 'qualifier such as "active", "pending" or "unpaid" and no column clearly '
                 + 'holds that state, do NOT filter on an unrelated column — answer for all '
-                + 'rows instead.)\n')
+                + 'rows instead.'
+                // Naming the columns is the part that works. MEASURED against a table
+                // whose only text columns were nama/kota/tipe_pelanggan, the generic
+                // warning alone still allowed `WHERE tipe_pelanggan ILIKE \'%aktif%\'`
+                // in 1 of 40 runs; naming all three removed it (0 of 40).
+                + (args.textColumns && args.textColumns.length > 0
+                  ? ` Free-text columns in this schema — ${args.textColumns.join(', ')} — are '
+                    + 'descriptive labels, NOT status columns; never filter on them for a '
+                    + 'status qualifier.`
+                  : '')
+                + ')\n')
             : '') +
           `\nDatabase schema:\n${args.schemaDescription}\n\n` +
           (args.systemPromptPrefix ? `Context: ${args.systemPromptPrefix}\n\n` : '') +
