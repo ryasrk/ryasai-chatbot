@@ -56,6 +56,8 @@ import {
   generateSessionTitle,
   generateSchemaDescriptions,
   generateDatabaseProfile,
+  isProfileCurrent,
+  DATABASE_PROFILE_VERSION,
 } from './ai'
 import { LlmNotConfiguredError } from '@/lib/errors'
 
@@ -944,6 +946,39 @@ describe('generateSchemaDescriptions', () => {
   })
 })
 
+describe('profile staleness (MEASURED: a stale profile costs 100% -> 0%)', () => {
+  // Against a table whose only text column is a free-text label, a profile with no
+  // query-hints section made the Text-to-SQL model fabricate a filter on that label
+  // in 10 of 10 runs; the same database with a fresh profile produced 0 of 10. So a
+  // profile written by an older prompt is not merely out of date, it is HARMFUL, and
+  // it must be distinguishable from a current one.
+  test('a generated profile carries the current version marker', async () => {
+    fetchSqlResponse = '## QUERY HINTS\n- no active column'
+    const p = await generateDatabaseProfile({
+      integrationName: 'DB', tables: [{ tableName: 't', columns: [{ name: 'id', type: 'int' }] }],
+    })
+    expect(p).toContain(`profile-version: ${DATABASE_PROFILE_VERSION}`)
+    expect(isProfileCurrent(p)).toBe(true)
+  })
+
+  test('a legacy profile without the marker is reported stale', () => {
+    // The shape found in production: a glossary with no marker and no query hints.
+    expect(isProfileCurrent('## Domain\nPenjualan, sales, pelanggan.')).toBe(false)
+    expect(isProfileCurrent('')).toBe(false)
+    expect(isProfileCurrent(null)).toBe(false)
+  })
+
+  test('an empty model reply does NOT get a marker', async () => {
+    // Marking an empty document current would hide the staleness it needs to report.
+    fetchSqlResponse = '   '
+    const p = await generateDatabaseProfile({
+      integrationName: 'DB', tables: [{ tableName: 't', columns: [{ name: 'id', type: 'int' }] }],
+    })
+    expect(p).toBe('')
+    expect(isProfileCurrent(p)).toBe(false)
+  })
+})
+
 describe('generateDatabaseProfile', () => {
   const tables = [{ tableName: 'orders', columns: [{ name: 'id', type: 'int' }], rowCount: 5 }]
 
@@ -960,7 +995,28 @@ describe('generateDatabaseProfile', () => {
     // property of the TEST double, not of the product: assert on the trimmed
     // model text via a response we control in the mock's own terms.
     fetchSqlResponse = '  A retail database.  '
-    expect(await generateDatabaseProfile({ integrationName: 'DB', tables })).toBe('A retail database.')
+    // The marker is now prepended, so assert the MODEL TEXT is trimmed rather than
+    // the exact whole string — the property under test is trimming, and pinning the
+    // full output would make every version bump a test failure.
+    const p = await generateDatabaseProfile({ integrationName: 'DB', tables })
+    expect(p).toContain('A retail database.')
+    expect(p.endsWith('A retail database.')).toBe(true)
+  })
+
+  test('the prompt REQUIRES a QUERY HINTS section naming absent status columns', async () => {
+    // INCIDENT (MEASURED): a stored profile written BEFORE the prompt asked for
+    // this was 360 chars with no QUERY HINTS at all, and against that schema the
+    // model fabricated `WHERE keterangan ILIKE '%aktif%'` — a filter on a free-text
+    // LABEL, returning NULL — in 40 of 40 runs. Regenerating the SAME database
+    // produced 2,588 chars including "There is no explicit active column ... Do
+    // NOT filter by nama patterns", and the fabricated filter dropped to 0 of 30.
+    // The generation prompt is what makes that section exist, so it is pinned here.
+    await generateDatabaseProfile({ integrationName: 'DB', tables })
+    const sys = getSentMessages().find((m) => m.role === 'system')!.content
+    expect(sys).toContain('## QUERY HINTS')
+    // The two instructions that carry the fix.
+    expect(sys).toMatch(/which column indicates "active" status/i)
+    expect(sys).toMatch(/columns to avoid filtering on/i)
   })
 
   test('the integration name and table details reach the prompt', async () => {

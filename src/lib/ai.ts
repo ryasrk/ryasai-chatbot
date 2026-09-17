@@ -237,6 +237,18 @@ export async function generateSql(args: {
           `Dialect: ${args.provider}\n` +
           (args.businessContext
             ? `\n## BUSINESS CONTEXT\n${args.businessContext}\n`
+            // A profile from an OLDER prompt has no query-hints section, and that is
+            // the harmful state: MEASURED, such a profile made the model fabricate a
+            // filter on a free-text label in 10 of 10 runs, against 0 of 10 with a
+            // current one. Regeneration happens on Test Connection, but an install
+            // that has not re-tested keeps the old profile, so the fallback guidance
+            // is added here rather than relying on regeneration having happened.
+            + (isProfileCurrent(args.businessContext)
+              ? ''
+              : '\n(No query hints are available for this database. If the question uses a '
+                + 'qualifier such as "active", "pending" or "unpaid" and no column clearly '
+                + 'holds that state, do NOT filter on an unrelated column — answer for all '
+                + 'rows instead.)\n')
             : '') +
           `\nDatabase schema:\n${args.schemaDescription}\n\n` +
           (args.systemPromptPrefix ? `Context: ${args.systemPromptPrefix}\n\n` : '') +
@@ -464,6 +476,9 @@ export async function generateSchemaDescriptions(args: {
 // Generated once at connection test time, stored in Integration.businessContext.
 // ---------------------------------------------------------------------------
 
+export { DATABASE_PROFILE_VERSION, isProfileCurrent } from '@/lib/profile-version'
+import { DATABASE_PROFILE_VERSION, isProfileCurrent } from '@/lib/profile-version'
+
 export async function generateDatabaseProfile(args: {
   integrationName: string
   tables: TableSummaryInput[]
@@ -513,7 +528,11 @@ export async function generateDatabaseProfile(args: {
     { purpose: 'schema-description' },
   )
 
-  return raw.trim()
+  const body = raw.trim()
+  if (!body) return ''
+  // The marker is prepended, not asked of the model: a model told to emit it will
+  // sometimes forget, and a marker that is sometimes missing cannot be trusted.
+  return `<!-- profile-version: ${DATABASE_PROFILE_VERSION} -->\n${body}`
 }
 
 /** Pure non-streaming chat (no SQL/RAG) for external API and general questions. */

@@ -24,6 +24,14 @@ export interface Integration {
   tableCount?: number
   maskedConfig?: Record<string, unknown>
   schemas?: IntegrationSchemaRow[]
+  /**
+   * True when the stored business context came from an older generation prompt.
+   * MEASURED: a profile without the query-hints section made the Text-to-SQL model
+   * fabricate a filter on a free-text label in 10 of 10 runs versus 0 of 10 with a
+   * current one, so this drives a "regenerate" prompt in the UI rather than being
+   * cosmetic. `initIntegrationContext` refreshes it on Test Connection.
+   */
+  businessContextStale?: boolean
 }
 
 export interface IntegrationSchemaRow {

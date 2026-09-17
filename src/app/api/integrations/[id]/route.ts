@@ -8,6 +8,7 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
  *
  * Server-only route handler. No 'use client'.
  */
+import { isProfileCurrent } from '@/lib/profile-version'
 import { NextRequest, NextResponse } from 'next/server'
 import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
@@ -64,6 +65,11 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
         updatedAt: integration.updatedAt,
         config: masked,
         businessContext: integration.businessContext,
+        // Staleness is reported so a caller can offer regeneration. MEASURED: a
+        // profile written before the prompt asked for query hints caused a
+        // fabricated filter in 10 of 10 runs, so "has context" is not the same as
+        // "has USABLE context", and the difference must be visible in the API.
+        businessContextStale: integration.businessContext ? !isProfileCurrent(integration.businessContext) : false,
         contextPrompt: integration.contextPrompt,
         tables,
         tableCount: tables.length,
