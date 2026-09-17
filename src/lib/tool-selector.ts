@@ -30,7 +30,7 @@
  */
 import { chatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
-import { getUnifiedTools, toLlmToolDef, functionNameToToolId } from '@/lib/unified-tools'
+import { getUnifiedTools, toLlmToolDef, functionNameToToolId, SQL_TOOL } from '@/lib/unified-tools'
 import type { RouteDecision } from '@/lib/ai'
 import { logSwallowed } from '@/lib/logger'
 import { db } from '@/lib/db'
@@ -196,12 +196,60 @@ export async function selectToolWithLlm(args: {
     ? await db.integration.findMany({
         where: { status: 'active' },
         select: { id: true, name: true, schemas: { select: { tableName: true }, take: 25 } },
-        take: 20,
+        // NO `take` LIMIT on the source list. It was 20, and with 23 connected
+        // that silently hid three databases from the model: MEASURED, the
+        // truncated ones were `SYNTH-Recruitment`, `SYNTH-Vendors` and
+        // `SYNTH-Logistics Euro`, so a question about shipments could not name
+        // the database that holds them. A database the model cannot see is one
+        // it can never choose, and the failure is indistinguishable from a bad
+        // model answer. The prompt SIZE is bounded below instead, by trimming
+        // the per-database table list.
+        orderBy: { createdAt: 'asc' },
       })
     : []
-  const databaseBlock = databases.length > 0
-    ? '\n\nAvailable databases (use `database` to name the ONE that fits):\n'
-      + databases.map((d) => `- ${d.name} — tables: ${d.schemas.map((x) => x.tableName).join(', ') || '(no tables reflected)'}`).join('\n')
+  // The database list goes into the TOOL SCHEMA as a closed enum, NOT into the
+  // prompt as prose. MEASURED, 5 tries each on the same question:
+  //   database named in a prompt list, full rule set : 0/5 emitted it
+  //   database as a schema enum                      : 5/5 emitted it, 5/5 correct
+  // The prose version worked only while the prompt was short — with the real
+  // rule set present the model dropped the field entirely, and no amount of
+  // reordering or rewording fixed it. An enum cannot be dropped: the schema
+  // makes the choice part of the call's contract, and it also prevents an
+  // invented name, since the value must be one of the listed entries.
+  const databaseNames = databases.map((d) => d.name)
+  const withDatabaseEnum: LlmToolDef[] = llmTools.map((t) => {
+    if (t.function.name !== SQL_TOOL.name || databaseNames.length <= 1) return t
+    return {
+      ...t,
+      function: {
+        ...t.function,
+        parameters: {
+          ...(t.function.parameters as Record<string, unknown>),
+          properties: {
+            ...((t.function.parameters as { properties?: Record<string, unknown> }).properties ?? {}),
+            database: {
+              type: 'string',
+              enum: databaseNames,
+              description: 'The ONE database whose tables match the question.',
+            },
+          },
+          // Required only when there is a real choice; a single-database install
+          // has nothing to pick and a strict provider rejects an unfillable field.
+          required: ['question', 'database'],
+        },
+      },
+    } as LlmToolDef
+  })
+  const toolsForCall = withDatabaseEnum
+  // Table names still help the model pick WELL; they stay in the prompt. Only the
+  // choice MECHANISM moved into the schema.
+  const databaseBlock = databases.length > 1
+    ? '\n\nConnected databases and their tables, for choosing between them:\n'
+      + databases.map((d) => {
+          const tables = d.schemas.map((x) => x.tableName)
+          return `- ${d.name} — ${tables.slice(0, 8).join(', ') || '(no tables reflected)'}`
+            + (tables.length > 8 ? `, +${tables.length - 8} more` : '')
+        }).join('\n')
     : ''
 
   const system = [
@@ -226,6 +274,7 @@ export async function selectToolWithLlm(args: {
     '  with a policy document, or fetch something and then look it up), call the',
     '  FIRST one and also include the word MULTI_STEP in your reply text. A single',
     '  tool call is the normal case; say MULTI_STEP only when one cannot suffice.',
+    '',
     args.memoryContext ? `\nContext from memory:\n${args.memoryContext}` : '',
     databaseBlock,
   ].filter(Boolean).join('\n')
@@ -244,7 +293,7 @@ export async function selectToolWithLlm(args: {
       ],
       0,
       'agent',
-      llmTools as LlmToolDef[],
+      toolsForCall as LlmToolDef[],
     )
 
     // A text answer means "no tool" — a legitimate outcome, not an error.

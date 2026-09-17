@@ -130,6 +130,17 @@ export const SQL_TOOL: UnifiedTool = {
         type: 'string',
         description: 'Natural language question to query against the connected SQL database tables',
       },
+      // Declared so the model can actually EXPRESS a choice. Without it the field
+      // has nowhere to live: the model returns only `arguments`, so naming a
+      // database in prose was silently dropped and EVERY selection came back
+      // empty (measured with 23 databases: 8/8 picks lost). Not `required`,
+      // because a single-database install has nothing to choose and a strict
+      // provider would reject an unfillable required field.
+      database: {
+        type: 'string',
+        description:
+          'Name of the database to query, exactly as listed in the tool description. Omit when only one is connected.',
+      },
     },
     required: ['question'],
   },
