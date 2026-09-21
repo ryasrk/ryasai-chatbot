@@ -24,7 +24,12 @@ const TEST_ENV = {
 
 const runIntegration = process.argv.includes('--integration')
 const files: string[] = []
-for await (const f of new Bun.Glob('src/**/*.test.ts').scan()) {
+// ponytail: `benchmark/` is globbed as well as `src/`. It was previously excluded,
+// so `benchmark/*.test.ts` never ran in CI — meaning the eval harnesses, the
+// artifacts most likely to be quoted as findings, were the one thing with no
+// automated check. Both benchmark test files are fully mocked (no live Postgres,
+// no network, no cognee server), so this costs one subprocess each.
+for await (const f of new Bun.Glob('{src,benchmark}/**/*.test.ts').scan()) {
   if (isIntegration(f) !== runIntegration) continue
   files.push(f)
 }
