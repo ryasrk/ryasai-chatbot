@@ -82,7 +82,21 @@ async function main() {
   if (existsSync(OUT_DIR)) rmSync(OUT_DIR, { recursive: true, force: true })
   mkdirSync(OUT_DIR, { recursive: true })
 
-  const env = { ...process.env, ENCRYPTION_SECRET_KEY: process.env.ENCRYPTION_SECRET_KEY ?? 'deadbeef'.repeat(8) }
+  // The SAME two fallbacks scripts/test.ts uses, for the same reasons. Without
+  // DATABASE_URL here, Prisma throws while the client is constructed, three test
+  // files exit non-zero before emitting an lcov report, and their coverage is
+  // silently LOST — which shows up as a coverage-gate failure naming exactly the
+  // modules those tests are the only cover for (observed on CI run 35599268022:
+  // src/lib/mcp-client.ts 52.20% and src/lib/plugin-registry.ts 66.11%, both
+  // floors breached, both covered almost entirely by unified-tools.test.ts).
+  // Keeping the two scripts in agreement matters more than the literal values: a
+  // suite that PASSES under test.ts and then reports degraded coverage under
+  // coverage.ts measures the harness, not the code.
+  const env = {
+    ...process.env,
+    ENCRYPTION_SECRET_KEY: process.env.ENCRYPTION_SECRET_KEY ?? 'deadbeef'.repeat(8),
+    DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit_test_unreachable',
+  }
   const queue = [...files]
   const lcovChunks: string[] = []
   let done = 0
