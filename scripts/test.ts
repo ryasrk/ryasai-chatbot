@@ -17,9 +17,24 @@ const isIntegration = (f: string) => INTEGRATION_FILES.has(f) || f.endsWith('.in
 // test touching crypto.ts (notifications, plugin-registry, vector-stores) failed
 // with "Missing required env var: ENCRYPTION_SECRET_KEY" on a fresh checkout.
 // A real value — .env or CI secret — still wins; this is only a fallback.
+//
+// DATABASE_URL gets the same fallback, for the same reason and by MEASUREMENT:
+// `ci.yml` states "Unit suite needs no database" and sets no DATABASE_URL, but
+// Prisma resolves `env("DATABASE_URL")` when the client is CONSTRUCTED, not when
+// a query runs — so merely importing `db` is enough to throw
+// "Environment variable not found: DATABASE_URL", and process.exit(101) kills
+// the whole file. Three files fail that way on a fresh checkout and pass with
+// any well-formed URL, including one pointing at a host that does not exist:
+//   src/lib/unified-tools.test.ts          (imports db via plugin-selector)
+//   src/lib/tool-branches.test.ts          (imports db)
+//   src/lib/tool-branches-branches.test.ts (imports db)
+// The host is deliberately unreachable. A dummy that CONNECTS would let a test
+// silently depend on real rows; one that cannot connect fails at the query, which
+// is the honest boundary — these are unit tests and they mock the layer anyway.
 const TEST_ENV = {
   ...process.env,
   ENCRYPTION_SECRET_KEY: process.env.ENCRYPTION_SECRET_KEY ?? 'deadbeef'.repeat(8),
+  DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit_test_unreachable',
 }
 
 const runIntegration = process.argv.includes('--integration')

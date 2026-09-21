@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test'
+import { describe, test, expect, beforeEach, mock } from 'bun:test'
 import {
   toolIdToFunctionName,
   functionNameToToolId,
@@ -12,6 +12,25 @@ import {
   buildAdminUnifiedTools,
 } from './unified-tools'
 import { toolCircuitBreaker } from './tool-circuit-breaker'
+
+// `getUnifiedTools` and `getAvailableTools` reach the database for MCP resources
+// and plugins, so these cases need `db` stubbed rather than a live Postgres.
+// WITHOUT THIS THE FILE ONLY PASSED ON A MACHINE WITH A REAL DATABASE: on CI
+// (which sets no DATABASE_URL, and whose ci.yml says "Unit suite needs no
+// database") Prisma threw `Authentication failed against database server` and
+// the file failed there while passing locally for everyone with a .env. That is
+// the worst failure shape — green on the developer's box, red on main — and it
+// went unnoticed precisely because the assertion is about tool GATING, which has
+// nothing to do with MCP rows or plugin rows.
+//
+// Empty results are the correct stub, not a convenience: an absent MCP server and
+// an absent plugin are exactly the states this test's assertions are about.
+mock.module('@/lib/db', () => ({
+  db: {
+    mcpServer: { findMany: async () => [], findFirst: async () => null },
+    plugin: { findMany: async () => [] },
+  },
+}))
 
 describe('unified-tools — function name encoding and schema mapping', () => {
   beforeEach(() => {
