@@ -1,6 +1,7 @@
 # Coverage gate: `coverage-summary.json` is stale, and the gate now fails in CI
 
-**Status: OPEN. Not caused by the commits that exposed it.**
+**Status: OPEN. Not caused by the commits that exposed it — but it IS a real coverage
+drop, not a stale number.**
 
 ## What is happening
 
@@ -34,7 +35,7 @@ second — the coverage gate had never actually run because "Unit tests" failed 
   - src/lib/tool-registry.ts: floor 95% exceeds the merged measurement 93.24%
 ```
 
-## Why it is stale-state drift, not a code regression
+## Why the gate passes locally and fails in CI
 
 **The gate PASSES against the committed `coverage-summary.json` and FAILS against a
 freshly generated one.** Verified directly:
@@ -62,38 +63,52 @@ merged per-file denominator grows. Totals moved like this:
 | linesFound | **25679** | **27620** |
 | filesMeasured | 200 | 205 |
 
-## The mechanism matters — most of these are NOT real coverage losses
+## The mechanism — measured, and NOT the usual phantom artifact
 
-Classifying each breaching file by whether its `hit` count moved:
+Totals moved: `hit` **+588** but `found` **+1,941**. Hits do rise, so the easy
+conclusion is "phantom denominator, nothing to see". Checking the repo's own
+phantom-discounted figure says otherwise:
 
-| file | committed | regenerated | verdict |
+| metric | committed (`HEAD~3`) | regenerated | delta |
 |---|---|---|---|
-| `mcp-client.ts` | 243/267 | 320/613 | **hits ROSE** → phantom denominator |
-| `plugin-registry.ts` | 137/161 | 199/301 | **hits ROSE** → phantom |
-| `ai.ts` | 417/567 | 430/601 | **hits ROSE** → phantom |
-| `planner.ts` | 540/681 | 572/737 | **hits ROSE** → phantom |
-| `plugin-selector.ts` | 181/204 | 191/237 | **hits ROSE** → phantom |
-| `tool-registry.ts` | 258/269 | 262/281 | **hits ROSE** → phantom |
-| `smart-router.ts` | 408/549 | 238/425 | hits FELL → real loss |
-| `tool-router.ts` | 255/367 | 253/391 | hits FELL → real loss |
+| linesHit / linesFound | 22289 / 25679 | 22877 / 27620 | +588 / +1941 |
+| **reachableLinePct** | **95.87** | **92.48** | **−3.39pp** |
+| reachableLinesHit / Found | 19322 / 20154 | 19810 / 21420 | +488 / **+1266** |
 
-6 of 8 are the **phantom-record artifact already documented in `scripts/coverage.ts`**:
-Bun emits zero-hit DA records for non-executable lines in suites that load a module
-transitively, and `coverage.ts` merges per-line with `Math.max` — so `found` is a
-scheduling-dependent union while `hit` counts agree across environments. More files
-running (205 vs 200) inflates denominators without any code becoming less tested.
+Reachable coverage — the figure that already discounts zero-hit records for
+non-executable lines — **fell 3.4 points**. Hits rose, but reachable denominators
+rose 2.6x faster. That is real dilution: newly added code is less covered than the
+existing average, so the repo-wide percentage drops even though more lines are
+covered in absolute terms.
 
-**2 files show a genuine hit decrease** (`smart-router.ts`, `tool-router.ts`) and need a
-real look before anyone assumes this is all artifact.
+Contributors, measured:
+
+- **6 files** exist now that are absent from the older summary: they add
+  `hit=655 / found=1464` all by themselves (44% covered — well below the 86.8%
+  repo average).
+- **19 existing files** grew their denominator by `+802 found` for `+304 hit`
+  (38% on the increment).
+
+Two runs over the identical tree produced **byte-identical** output (`hit=22877`,
+`found=27620`), so this is not run-to-run noise and the "scheduling-dependent
+union" caveat in `scripts/coverage.ts` does not explain it. The earlier draft of
+this document guessed "mostly phantom"; the discounted figure disproves that
+guess, which is exactly why the reachable metric exists.
+
+An earlier version of this file also claimed 8 breaching files were "6 phantom /
+2 real" based on whether `hit` rose. That framing was wrong in both directions and
+is replaced by the reachable-coverage comparison above.
 
 ## What to do
 
-1. **Regenerate the baseline, then re-anchor floors.** Run `bun run coverage` on a clean
-   tree and update the floors in `scripts/coverage-gate.ts` from the merged measurement —
-   **never** from a single-file `--coverage` run (the gate says this itself).
-2. **Attribute the two real losses** (`smart-router.ts`, `tool-router.ts`) to whatever
-   commit removed their coverage before re-anchoring, or the re-anchor launders a genuine
-   regression.
+1. **Do not just re-anchor.** The floors are below the measurement for 14 modules because
+   real, mostly-untested code landed. Moving the floors to the new numbers would accept
+   the 3.4pp drop permanently and erase the only signal that it happened. Prefer adding
+   the missing tests; re-anchor only for the modules where the drop is genuinely
+   unreachable-code accounting, with the reachable figure quoted as evidence.
+2. **The worst offenders are new, not regressed.** `mcp-client.ts` went 243/267 → 320/613
+   (hit up, found more than doubled) and `plugin-registry.ts` 137/161 → 199/301: both grew
+   far faster than they were tested. That is where the tests are worth writing.
 3. **Consider making staleness impossible.** The failure mode here is that floors live in
    one file and the measurement lives in another, with nothing detecting divergence until
    CI goes red on a fresh measurement. A gate that prints "summary is N commits stale" (or
