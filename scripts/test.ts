@@ -58,11 +58,21 @@ async function worker() {
     // fully green suite. A wrong failure count is worse than no count — it
     // trains everyone to ignore the number.
     const summary = out.split('\n').find((l) => /^\s*\d+\s+pass\b/.test(l)) ?? ''
-    totalPass += +(summary.match(/(\d+)\s+pass/)?.[1] ?? 0)
-    totalFail += +(summary.match(/(\d+)\s+fail/)?.[1] ?? 0)
+    const parsedPass = +(summary.match(/(\d+)\s+pass/)?.[1] ?? 0)
+    const parsedFail = +(summary.match(/(\d+)\s+fail/)?.[1] ?? 0)
+    totalPass += parsedPass
+    totalFail += parsedFail
     totalSkip += +(summary.match(/(\d+)\s+skip/)?.[1] ?? 0)
     done++
     if (code !== 0) {
+      // A non-zero exit with a parsed failure count of 0 means the summary line
+      // was never printed (the process died mid-run) or Bun omitted the `pass`
+      // line. Counting that as zero failures made the totals CONTRADICT the file
+      // list — CI printed "6691 pass · 0 fail" directly above "Failed files:",
+      // which is exactly the kind of self-contradicting number this runner's own
+      // comment warns trains people to ignore it. Floor it at 1 so the totals can
+      // never disagree with the exit code.
+      if (parsedFail === 0) totalFail += 1
       failed.push(path)
       console.log(`\nFAIL ${path}`)
       const lines = out.split('\n').filter(Boolean)
