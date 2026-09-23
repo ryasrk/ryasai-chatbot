@@ -26,7 +26,8 @@ import {
   LogOut,
   HelpCircle,
 } from 'lucide-react'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 import { cn } from '@/lib/utils'
 import { useActiveUser } from '@/hooks/use-active-user'
 import { applyTheme, getStoredTheme, getStoredDarkMode } from '@/lib/themes'
@@ -169,7 +170,7 @@ export default function Home() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const { user, orgName, loading, unauthorized, licenseError, refresh } = useActiveUser()
-  const reduceMotion = useReducedMotion()
+  const reduceMotion = usePrefersReducedMotion()
 
   // ponytail: chat + agentic stay mounted once opened (preserves SSE streams and
   // chat state), but there is no reason to mount — and download — them before
@@ -204,8 +205,13 @@ export default function Home() {
     window.history.replaceState(null, '', url)
   }, [])
 
+  // The nav shell only renders for a fully signed-in, licensed, set-up user.
+  // Shortcuts must not fire on login/signup/setup/lockdown screens.
+  const shellActive = !!setup?.setupCompleted && !loading && !!user && !unauthorized && !licenseError
+
   // Handle keyboard shortcuts (Cmd/Ctrl + 1-4)
   useEffect(() => {
+    if (!shellActive) return
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only trap when on desktop and sidebar is visible
       if (window.innerWidth < 768) return
@@ -225,7 +231,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setView])
+  }, [setView, shellActive])
 
   // Real license revalidation: hit POST /api/license/retry (calls the
   // License-Validator service, updates org.licenseStatus in DB), then refresh
@@ -435,7 +441,6 @@ export default function Home() {
                     size="sm"
                     onClick={toggleSidebar}
                     className="h-8 w-8 p-0"
-                    title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   >
                     {sidebarCollapsed ? (

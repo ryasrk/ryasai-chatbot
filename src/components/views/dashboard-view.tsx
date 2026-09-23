@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type ComponentType } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
   Brain,
@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorState, StatGridSkeleton } from '@/components/ui/view-states'
 import { AnimatedNumber, Stagger, StaggerItem } from '@/components/motion'
+import { MetricCard, type MetricIcon } from '@/components/ui/metric-card'
 import { DashboardCharts } from '@/components/views/dashboard-charts'
 import { useDelayedLoading } from '@/hooks/use-delayed-loading'
 import { useCachedViewData } from '@/hooks/use-cached-view-data'
@@ -35,7 +36,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { AnalyticsData } from '@/lib/types'
 
-type StatIcon = ComponentType<{ className?: string }>
+type StatIcon = MetricIcon
 
 const formatNumber = (n: number) => n.toLocaleString('en-US')
 
@@ -132,7 +133,10 @@ export function DashboardView() {
       <Stagger className="grid grid-cols-2 xl:grid-cols-4 gap-2.5">
         {stats.map((stat) => (
           <StaggerItem key={stat.label}>
-            <MetricCard {...stat} />
+            <MetricCard
+              {...stat}
+              value={typeof stat.value === 'number' ? <AnimatedNumber value={stat.value} format={formatNumber} /> : stat.value}
+            />
           </StaggerItem>
         ))}
       </Stagger>
@@ -264,32 +268,6 @@ export function DashboardView() {
         />
       </section>
     </div>
-  )
-}
-
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-  iconClass,
-}: {
-  label: string
-  value: number | string
-  icon: StatIcon
-  iconClass: string
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center justify-between">
-        <div className="min-w-0">
-          <div className="text-lg font-semibold tabular-nums leading-tight">
-            {typeof value === 'number' ? <AnimatedNumber value={value} format={formatNumber} /> : value}
-          </div>
-          <div className="truncate text-xs text-muted-foreground">{label}</div>
-        </div>
-        <Icon className={cn('h-4 w-4 shrink-0', iconClass)} />
-      </CardContent>
-    </Card>
   )
 }
 

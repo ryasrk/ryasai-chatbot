@@ -56,7 +56,7 @@ export function SessionListPanel({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color,transform] duration-200 hover:translate-x-0.5 hover:bg-muted hover:text-foreground"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-[background-color,color] duration-200 hover:bg-muted hover:text-foreground"
           aria-label={`Buka daftar ${title.toLowerCase()}`}
           aria-expanded={false}
         >

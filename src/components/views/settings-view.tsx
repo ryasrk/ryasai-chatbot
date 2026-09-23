@@ -228,11 +228,11 @@ function ChangePasswordCard() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-2.5">
-          <Input type="password" placeholder="Current password" required value={current}
+          <Input type="password" autoComplete="current-password" placeholder="Current password" required value={current}
             onChange={(e) => setCurrent(e.target.value)} disabled={saving} />
-          <Input type="password" placeholder="New password (min. 8)" required minLength={8}
+          <Input type="password" autoComplete="new-password" placeholder="New password (min. 8)" required minLength={8}
             value={next} onChange={(e) => setNext(e.target.value)} disabled={saving} />
-          <Input type="password" placeholder="Confirm new password" required minLength={8}
+          <Input type="password" autoComplete="new-password" placeholder="Confirm new password" required minLength={8}
             value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={saving} />
           {error && <p className="text-xs text-destructive">{error}</p>}
           <Button type="submit" size="sm" disabled={saving || !current || !next || !confirm}>
