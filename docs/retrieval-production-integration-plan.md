@@ -1109,3 +1109,46 @@ and silently discards everything written. It should either be turned off
 (`COGNEE_ENABLED=false`, or the per-org Settings toggle) until the extraction path is fixed, or
 fixed — and the decision needs someone who can see why cognee's own prompt produces unparseable
 output here.
+
+
+### Cross-session memory: the rest of the scenario matrix
+
+Three further findings from checking the scenarios as asked, beyond the write/recall failure
+above.
+
+**Org isolation is CORRECT by construction.** `datasetFor()` returns `org:<orgId>` and
+`kbDatasetFor()` returns `org:<orgId>:kb`; with no org context `orgKey()` returns the literal
+`no-org`, so a caller that forgot `enterWithOrg()` reads and writes a dead name rather than a
+shared one. That is the fail-closed shape this codebase uses elsewhere, and the store on disk
+is per-org as well. It cannot be called VERIFIED end-to-end here, because with nothing indexed
+there is no cross-org recall to attempt — the design is right, the evidence is absent.
+
+**Nothing ever cleans up per-org stores, and they accumulate.** Measured on this install: **58
+non-quarantine store directories** for **1** organization in the database — 57 orphans left by
+organizations that no longer exist — plus 4 quarantine directories, 26 MB total. There is no
+pruning of orphans and no expiry on `.corrupt-*`. The quarantine-on-corruption policy is right
+(never delete a tenant's only copy), but a long-lived install keeps every org it has ever seen,
+and every corruption adds a full copy. On a box running this for a year with normal org churn
+that is unbounded growth with no operator control.
+
+**The write cost lands on every turn and cannot succeed.** `rememberChatTurn` is called from
+both chat paths, and on this backend it took 83.5 s and 95.9 s. It resolves rather than
+throwing, so nothing upstream notices. Even though the call is fire-and-forget, that is 80+
+seconds of an LLM-backed pipeline per turn against a store that gets quarantined.
+
+**What "ready for various scenarios" would actually require**, and where each stands:
+
+| scenario | status |
+|---|---|
+| write session A -> recall session B | **fails** — nothing is indexed |
+| memory survives a restart | **untestable** — the store is quarantined on failed init |
+| memory after a failed cognify | **fails silently** — the caller sees success |
+| org A cannot read org B's memory | design correct, **unverified** (nothing indexed) |
+| no leak to an unrelated user in the same org | dataset is per-ORG, not per-user — **by design**, and needs a product decision, not a fix |
+| store does not grow without bound | **fails** — 57 orphaned stores, no pruning |
+
+The fifth row is worth flagging as a product question rather than a bug: chat memory is scoped
+`org:<id>`, so every user in an org shares one memory graph. For a single-team install that is
+the intended behaviour; for an install where an org has many users with different privileges it
+means one user's remembered facts surface in another user's answers. Nothing in the code claims
+otherwise, but nothing states it either, and the Settings toggle presents it as simply "memory".
