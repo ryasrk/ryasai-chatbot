@@ -21,6 +21,8 @@
  * instrumentation.ts catches it and process.exit(1)s AFTER logging.
  */
 import { z } from 'zod'
+// Single source for the accepted RRF bounds — see the RAG_FUSION_K declaration.
+import { MAX_FUSION_K, MIN_FUSION_K } from './rag-fusion-config'
 
 const EnvSchema = z.object({
   ENCRYPTION_SECRET_KEY: z
@@ -53,6 +55,20 @@ const EnvSchema = z.object({
   COGNEE_SERVER_API_KEY: z.string().optional(),
   CONTEXTUAL_RETRIEVAL: z.enum(['true', 'false']).optional(),
   RAG_LLM_RERANK: z.enum(['true', 'false']).optional(),
+  // RRF dampening. Unset keeps the documented default (RRF_K = 60); setting it also
+  // enables the `x-fusion-k` request override used by the retrieval A/B harness, so
+  // an install that does not opt in cannot have a client pick its ranking.
+  //
+  // Bounds come from MIN_/MAX_FUSION_K so the schema and the code cannot disagree
+  // about what is accepted. That drift is not hypothetical: ALIGNMENT_CHECK is
+  // declared `enum(['http','llm','disabled'])` while its call sites once compared
+  // against `'true'`, so setting the documented value silently DISABLED the guard.
+  RAG_FUSION_K: z.coerce
+    .number()
+    .int()
+    .min(MIN_FUSION_K)
+    .max(MAX_FUSION_K)
+    .optional(),
   REDIS_URL: z.string().url().optional(),
 
   // --- Agentic / RAG tuning (optional, sensible defaults in code) ---

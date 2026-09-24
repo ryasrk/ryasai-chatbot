@@ -159,11 +159,11 @@ const { POST } = await import('./route')
 
 const ROUTE_URL = 'http://localhost/api/rag/evaluate'
 
-function post(body: unknown) {
+function post(body: unknown, headers: Record<string, string> = {}) {
   const req = new Request(ROUTE_URL, {
     method: 'POST',
     body: typeof body === 'string' ? body : JSON.stringify(body),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   }) as Request & { nextUrl: URL }
   req.nextUrl = new URL(ROUTE_URL)
   return POST(req as never)
@@ -590,11 +590,15 @@ describe('the summary is computed by summarizeRagEval over the results', () => {
 })
 
 describe('the response envelope and the audit record', () => {
-  test('the top-level shape is exactly { ok: true, summary, results }', async () => {
+  test('the top-level shape is exactly { ok, summary, fusion, results }', async () => {
     retrievalChunks = [{ chunkId: 'c1', documentName: 'a.md', content: 'x', score: 1 }]
     const body = (await bodyOf(await post({ cases: [{ question: 'q' }] }))) as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(['ok', 'results', 'summary'])
+    // `fusion` names the RRF `k` the run used. Two eval runs at different k are only
+    // comparable if each reports the value it measured, so the config travels with
+    // the numbers rather than living only in the server's environment.
+    expect(Object.keys(body).sort()).toEqual(['fusion', 'ok', 'results', 'summary'])
     expect(body.ok).toBe(true)
+    expect(Object.keys(body.fusion as object).sort()).toEqual(['k', 'overrideAccepted', 'source'])
     expect(Object.keys(body.summary as object).sort()).toEqual([
       'avgLatencyMs',
       'groundedRate',
@@ -603,6 +607,13 @@ describe('the response envelope and the audit record', () => {
       'recallAtK',
       'total',
     ])
+  })
+
+  test('the reported fusion config is the default when nothing is set', async () => {
+    const body = (await bodyOf(await post({ cases: [{ question: 'q' }] }))) as {
+      fusion: { k: number; source: string; overrideAccepted: boolean }
+    }
+    expect(body.fusion).toEqual({ k: 60, source: 'default', overrideAccepted: false })
   })
 
   test('the audit is written AFTER the retrievals and AFTER the summary', async () => {
@@ -629,7 +640,49 @@ describe('the response envelope and the audit record', () => {
       action: 'RAG_EVAL_RUN',
       severity: 'info',
     })
-    expect(auditWrites[0]!.detail).toEqual(body.summary)
+    // The summary PLUS the fusion config, because an audit row for an eval run is
+    // only interpretable if it names the ranking it measured.
+    expect(auditWrites[0]!.detail).toEqual({
+      ...body.summary,
+      fusionK: 60,
+      fusionKSource: 'default',
+      fusionOverrideAccepted: false,
+    })
+  })
+
+  test('x-fusion-k is IGNORED while RAG_FUSION_K is unset — a client cannot pick the ranking', async () => {
+    // The security property of the seam: an operator who has not opted in must not
+    // have a client enable it for them. Asserted through the response, because the
+    // value reaching the retrieval is what matters, not that a header was read.
+    delete process.env.RAG_FUSION_K
+    const body = (await bodyOf(
+      await post({ cases: [{ question: 'q' }] }, { 'x-fusion-k': '1' }),
+    )) as { fusion: { k: number; source: string; overrideAccepted: boolean } }
+    expect(body.fusion).toEqual({ k: 60, source: 'default', overrideAccepted: false })
+  })
+
+  test('x-fusion-k IS honoured once RAG_FUSION_K is set, and it wins', async () => {
+    process.env.RAG_FUSION_K = '10'
+    try {
+      const body = (await bodyOf(
+        await post({ cases: [{ question: 'q' }] }, { 'x-fusion-k': '1' }),
+      )) as { fusion: { k: number; source: string; overrideAccepted: boolean } }
+      expect(body.fusion).toEqual({ k: 1, source: 'request', overrideAccepted: true })
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
+  })
+
+  test('an invalid x-fusion-k falls back to the env value, not to the default', async () => {
+    process.env.RAG_FUSION_K = '10'
+    try {
+      const body = (await bodyOf(
+        await post({ cases: [{ question: 'q' }] }, { 'x-fusion-k': '0' }),
+      )) as { fusion: { k: number; source: string; overrideAccepted: boolean } }
+      expect(body.fusion).toEqual({ k: 10, source: 'env', overrideAccepted: false })
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
   })
 
   test('the audit never carries the question text', async () => {

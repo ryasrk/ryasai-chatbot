@@ -23,6 +23,7 @@ import {
 } from './rag'
 import { cosineSimilarity } from '@/lib/embeddings'
 import { bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
+import { fusionCacheTag, resolveFusionConfig } from '@/lib/rag-fusion-config'
 
 let _cacheHits = 0
 let _cacheMisses = 0
@@ -32,7 +33,7 @@ export function getRagCacheStats(): { hits: number; misses: number; hitRate: num
   return { hits: _cacheHits, misses: _cacheMisses, hitRate: total === 0 ? 0 : _cacheHits / total }
 }
 
-function ragCacheKey(query: string, topK: number): string | null {
+function ragCacheKey(query: string, topK: number, fusionK: number): string | null {
   // ponytail: org-scoped cache key — prevents cross-tenant data disclosure
   // (org A reading org B's cached retrieved chunks for the same query string).
   //
@@ -42,9 +43,16 @@ function ragCacheKey(query: string, topK: number): string | null {
   // returns `undefined` (not an org) on the far side of `bypassOrg()`, so a bypassed path would
   // have read and WRITTEN the shared 'global' entry. Returning null makes the caller skip the
   // cache entirely, so a missing context costs a retrieval, not a cross-tenant disclosure.
+  //
+  // The fusion tag is part of the key because `k` changes the ORDER of the result, and the
+  // cached value is that order. Without it an A/B run over one server process would serve
+  // config A's ranking to a config B request for up to RAG_CACHE_TTL_MS, so the measurement
+  // would be of cache warmth rather than of the constant. It is keyed on the effective `k`
+  // (not on where it came from): two requests that resolve to the same `k` really do produce
+  // identical rankings and should share an entry.
   const orgId = getOrgContext()
   if (!orgId) return null
-  return `rag:${orgId}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
+  return `rag:${orgId}:${fusionCacheTag(fusionK)}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
 }
 
 export async function invalidateRagCache(): Promise<void> {
@@ -62,7 +70,11 @@ export async function retrieveRelevantChunks(args: {
   }
 
   // null when there is no org context: skip the cache rather than share an entry.
-  const cacheKey = ragCacheKey(args.query, args.topK)
+  // Resolved once per call, so the value that keys the cache entry is provably the
+  // same one that orders the result — resolving twice would let a mid-call change
+  // write a ranking under a key that no longer describes it.
+  const fusion = resolveFusionConfig()
+  const cacheKey = ragCacheKey(args.query, args.topK, fusion.k)
   if (cacheKey) {
     const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
     if (cached) {
@@ -117,6 +129,7 @@ export async function retrieveRelevantChunks(args: {
     queryTokens,
     topK: retrievalTopK,
     kgRanking: kgResult.allChunkIds,
+    fusionK: fusion.k,
   })
 
   const mergedChunks = retrievalResult.chunks
@@ -237,6 +250,8 @@ async function retrieveAndFuse(args: {
   queryTokens: string[]
   topK: number
   kgRanking?: string[]
+  /** RRF dampening. Resolved by the caller so it matches the value that keyed the cache. */
+  fusionK: number
 }): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
   const { queryTokens, topK } = args
   const poolSize = Math.max(topK * 8, 24)
@@ -286,7 +301,10 @@ async function retrieveAndFuse(args: {
 
   const rankings = [vectorRanking, toRanking(bm25)]
   if (args.kgRanking?.length) rankings.push(args.kgRanking)
-  const fused = fuseRankings(rankings)
+  // `k` is dampening, not a weight: a lower value lets a strong single-leg rank
+  // outrank cross-leg agreement. Default stays RRF_K unless the deployment opts in
+  // (see rag-fusion-config.ts) — this is a measurement seam, not a tuned default.
+  const fused = fuseRankings(rankings, args.fusionK)
 
   const scored: RetrievedChunk[] = []
   for (const { id, score } of fused) {

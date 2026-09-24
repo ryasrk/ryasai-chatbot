@@ -436,13 +436,33 @@ describe('retrieveRelevantChunks — the tenant-scoped cache', () => {
 
   test('a cache HIT returns the stored value and skips every retriever', async () => {
     const stored = { chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 9, graphContext: '' }
-    // Read under the org the caller actually has context for.
+    // Read under the org the caller actually has context for. The key must name the
+    // fusion config too (rag:<org>:k<k>:<topK>:<query>), or this entry is
+    // unreachable — which is the point of that segment: a cached ORDER is only
+    // valid for the `k` that produced it.
+    const { fusionCacheTag } = await import('./rag-fusion-config')
+    const { RRF_K } = await import('./rag-ranking')
     orgContextHolder.value = 'org-A'
-    cacheStore.set('rag:org-A:5:invoices', stored)
+    cacheStore.set(`rag:org-A:${fusionCacheTag(RRF_K)}:5:invoices`, stored)
     const r = await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
     expect(r.candidatesScanned).toBe(9)
     expect(ftsCalls).toHaveLength(0)
     expect(kgCalls).toHaveLength(0)
+  })
+
+  test('a cache entry written at a DIFFERENT k is not served — identical query, different order', async () => {
+    // Same query and org, but the stored ranking came from k=1. Serving it to a
+    // default-k caller would hand back an order that the requesting config never
+    // produced, which is exactly what the fusion segment of the key prevents.
+    const stored = { chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 9, graphContext: '' }
+    orgContextHolder.value = 'org-A'
+    cacheStore.set('rag:org-A:k1:5:invoices', stored)
+    ftsIds = ['c1']
+    dbChunkRows = [dbChunkRow('c1', 'invoices')]
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+    const r = await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
+    expect(r.candidatesScanned).not.toBe(9)
+    expect(ftsCalls.length).toBeGreaterThan(0)
   })
 
   test('the TTL is passed in SECONDS, not milliseconds, on EVERY write path', async () => {
@@ -1742,7 +1762,10 @@ describe('rag-retrieval.ts — no swallowed vector-store refusal, no length prox
     const sqlSites = code.match(/"organizationId" = \$\{orgId \?\? ''\}/g) ?? []
     expect(sqlSites.length).toBe(2) // the in-transaction query AND the plain retry
     // And the cache key must carry the org, or org A would read org B's chunks.
-    expect(code).toContain('rag:${orgId}:${topK}:')
+    // Matched structurally (orgId is a segment of the template, followed by more
+    // segments) rather than as one exact string, so adding a segment — the fusion
+    // tag — does not require editing this guard, while DROPPING the org does fail.
+    expect(code).toMatch(/rag:\$\{orgId\}:\$\{[^}]+\}:\$\{topK\}:/)
   })
 
   test('a partial pgvector leg is treated as FAILURE, not success', () => {
@@ -1824,5 +1847,149 @@ describe('tenant isolation — the org reaches every retriever AND the cache key
     await retrieve({ query: 'invoices', topK: 5 })
     expect(cacheSets.length).toBe(before)
     expect(cacheSets.every((s) => !s.key.includes('global'))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The configurable fusion constant (docs/retrieval-production-integration-plan.md).
+// Two properties matter and neither is visible from the arm itself: the value
+// resolved at the door must be the value the fusion receives, and it must be part
+// of the cache key — otherwise an A/B run over one server process measures cache
+// warmth instead of the constant.
+// ---------------------------------------------------------------------------
+describe('the fusion constant reaches fuseRankings', async () => {
+  // Dynamic import AFTER the mock.module calls above, so these are the values the
+  // source under test actually resolves — a static import at the top of the file
+  // would load the real modules and could disagree with the mocked ones.
+  const { RRF_K } = await import('./rag-ranking')
+
+  beforeEach(() => {
+    installEventLog()
+    useRealFusion = true
+    rrfCalls.length = 0
+    toRankingImpl = (entries: unknown) =>
+      ((entries ?? []) as Array<{ id: string }>).map((entry) => entry.id)
+    bm25RankImpl = (tokens: unknown, docs: unknown) =>
+      referenceBm25(tokens as string[], docs as Array<{ id: string; tokens: string[] }>)
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = [
+      { id: 'v-only', similarity: 0.99 },
+      { id: 'shared', similarity: 0.98 },
+      { id: 'v2-only', similarity: 0.97 },
+      { id: 'v3-only', similarity: 0.96 },
+      { id: 'v4-only', similarity: 0.95 },
+      { id: 'v5-only', similarity: 0.94 },
+      { id: 'v6-only', similarity: 0.93 },
+      { id: 'v7-only', similarity: 0.92 },
+    ]
+    ftsIds = ['shared']
+    dbChunkRows = [
+      realChunkRow('v-only', 'gamma gamma gamma'),
+      realChunkRow('shared', 'invoices invoices invoices'),
+      realChunkRow('v2-only', 'delta'),
+      realChunkRow('v3-only', 'epsilon'),
+      realChunkRow('v4-only', 'zeta'),
+      realChunkRow('v5-only', 'eta'),
+      realChunkRow('v6-only', 'theta'),
+      realChunkRow('v7-only', 'iota'),
+    ]
+  })
+
+  test('with nothing configured, fuseRankings still receives the documented default', async () => {
+    // The default must not drift: an install that sets nothing behaves exactly as
+    // it did before this seam existed. Without this, a later refactor could pass
+    // `undefined` (→ the parameter default, still fine) or 0 (→ not fine, and
+    // silently so).
+    delete process.env.RAG_FUSION_K
+    await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(rrfCalls).toHaveLength(1)
+    expect(rrfCalls[0].k).toBe(RRF_K)
+  })
+
+  test('RAG_FUSION_K is the value passed through', async () => {
+    process.env.RAG_FUSION_K = '10'
+    try {
+      await retrieveReal({ query: 'invoices', topK: 5 })
+      expect(rrfCalls.at(-1)?.k).toBe(10)
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
+  })
+
+  test('a lower k really does change the ORDER — the mechanism, not just the plumbing', async () => {
+    // 'shared' is rank 2 in the vector leg and rank 1 in the lexical leg; 'v-only'
+    // is rank 1 in the vector leg and absent from the lexical one.
+    //   k=60: shared = 1/62 + 1/61 = 0.03252 vs v-only = 1/61 = 0.01639  → shared wins
+    //   k=1:  shared = 1/3  + 1/2  = 0.83333 vs v-only = 1/2  = 0.5      → shared wins
+    // so this fixture cannot show the inversion. It pins the weaker but load-bearing
+    // property instead: changing k changes the recorded value AND the fused scores,
+    // i.e. the constant is genuinely in the arithmetic rather than threaded and dropped.
+    const defaultOut = await retrieveReal({ query: 'invoices', topK: 5 })
+    const defaultScore = defaultOut.chunks.find((c) => c.chunkId === 'shared')!.score
+    process.env.RAG_FUSION_K = '1'
+    try {
+      const lowOut = await retrieveReal({ query: 'invoices', topK: 5 })
+      const lowScore = lowOut.chunks.find((c) => c.chunkId === 'shared')!.score
+      expect(lowScore).toBeGreaterThan(defaultScore)
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
+  })
+
+  test('an invalid value does not reach the fusion as NaN', async () => {
+    process.env.RAG_FUSION_K = 'not-a-number'
+    try {
+      await retrieveReal({ query: 'invoices', topK: 5 })
+      expect(rrfCalls.at(-1)?.k).toBe(RRF_K)
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
+  })
+})
+
+describe('the fusion config is part of the cache key', async () => {
+  const { fusionCacheTag } = await import('./rag-fusion-config')
+
+  test('two different k values never share a cache entry', async () => {
+    orgContextHolder.value = 'org-test'
+    ftsIds = ['c1']
+    dbChunkRows = [dbChunkRow('c1', 'invoices')]
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+
+    await retrieveReal({ query: 'invoices', topK: 5 })
+    const defaultKey = cacheSets.at(-1)!.key
+
+    cacheStore.clear()
+    cacheSets.length = 0
+    process.env.RAG_FUSION_K = '1'
+    try {
+      await retrieveReal({ query: 'invoices', topK: 5 })
+      const overrideKey = cacheSets.at(-1)!.key
+      // Same query, different ranking → different key. Without this, a config-B
+      // request would be served config A's cached ORDER for the cache TTL, and the
+      // A/B comparison would be measuring cache warmth.
+      expect(defaultKey).not.toBe(overrideKey)
+      expect(defaultKey).toContain('k60')
+      expect(overrideKey).toContain('k1')
+    } finally {
+      delete process.env.RAG_FUSION_K
+    }
+  })
+
+  test('the same k reused still hits the cache — the tag must not fragment it', async () => {
+    orgContextHolder.value = 'org-test'
+    ftsIds = ['c1']
+    dbChunkRows = [dbChunkRow('c1', 'invoices')]
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+
+    const first = await retrieveReal({ query: 'invoices', topK: 5 })
+    const setsAfterFirst = cacheSets.length
+    const second = await retrieveReal({ query: 'invoices', topK: 5 })
+    // Identical config and query → the second call is served from cache, so no new
+    // key is written. A per-call unique tag (a timestamp, a nonce) would pass the
+    // test above while destroying the cache entirely.
+    expect(cacheSets.length).toBe(setsAfterFirst)
+    expect(second.chunks).toEqual(first.chunks)
   })
 })

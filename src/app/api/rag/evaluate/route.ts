@@ -9,6 +9,7 @@ import {
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { getActiveUser, requireRole, handleApiError, writeAudit } from '@/lib/session'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { enterWithFusionK, resolveFusionConfig } from '@/lib/rag-fusion-config'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +23,12 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as { cases?: RagEvalCase[]; topK?: number }
     const cases = Array.isArray(body.cases) ? body.cases.slice(0, 50) : []
     const topK = Math.min(Math.max(1, Number(body.topK ?? 4) || 4), 20)
+    // Retrieval A/B seam: the same golden set can be re-run at a different RRF `k`
+    // against the SAME server process, so a difference between two runs is the
+    // constant rather than a restarted process or a cold cache. Gated on
+    // RAG_FUSION_K, like the chat route — entering a value is a no-op when unset.
+    const fusionOverrideAccepted = enterWithFusionK(req.headers.get('x-fusion-k'))
+    const fusion = resolveFusionConfig()
     const results: Array<{
       question: string
       ok: boolean
@@ -67,10 +74,17 @@ export async function POST(req: NextRequest) {
       userId: user.userId,
       action: 'RAG_EVAL_RUN',
       severity: 'info',
-      detail: { ...summary },
+      // The fusion configuration is recorded because two eval runs at different `k`
+      // are only comparable if each names the value it measured.
+      detail: { ...summary, fusionK: fusion.k, fusionKSource: fusion.source, fusionOverrideAccepted },
     })
 
-    return NextResponse.json({ ok: true, summary, results })
+    return NextResponse.json({
+      ok: true,
+      summary,
+      fusion: { k: fusion.k, source: fusion.source, overrideAccepted: fusionOverrideAccepted },
+      results,
+    })
   } catch (e) {
     return handleApiError(e, 'Failed to run RAG evaluation.')
   }
