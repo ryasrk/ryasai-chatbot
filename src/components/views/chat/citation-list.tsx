@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { citationDetailLabel } from '@/lib/chat-layout'
+import { citationDetailLabel, citationRankLabel } from '@/lib/chat-layout'
 import { cn } from '@/lib/utils'
 import type { Citation } from '@/lib/types'
 
@@ -30,8 +30,9 @@ export function CitationList({ citations }: { citations: Citation[] }) {
         <div className="min-w-0 space-y-2 mt-2">
           {citations.map((c, idx) => {
             const isDb = c.type === 'DATABASE'
-            const score =
-              typeof c.score === 'number' ? Math.round(c.score * 100) : null
+            // A rank, not a percentage: `c.score` is the fused RRF value, whose best
+            // possible reading is ~0.033 (see citationRankLabel).
+            const rankLabel = citationRankLabel(idx, c.score)
             return (
               <div
                 key={idx}
@@ -57,12 +58,12 @@ export function CitationList({ citations }: { citations: Citation[] }) {
                   <span className="min-w-0 break-words text-xs font-medium [overflow-wrap:anywhere]">
                     {c.source}
                   </span>
-                  {score !== null && (
+                  {rankLabel !== null && (
                     <Badge
                       variant="outline"
                       className="text-[10px] text-muted-foreground shrink-0"
                     >
-                      relevance {score}%
+                      {rankLabel}
                     </Badge>
                   )}
                 </div>
