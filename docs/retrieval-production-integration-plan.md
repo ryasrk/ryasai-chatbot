@@ -736,3 +736,42 @@ correct annual-leave policy at rank 1. That is the case lexical-first was design
 working — the vector leg fills in behind a lexical head rather than competing with it — and it
 is the first direct evidence in this document that the vector leg earns its place. The
 benchmark could not have produced it, because its questions were lexical by construction.
+
+
+### 2026-09-24 (close-out): the paraphrase gap, closed by independent measurement
+
+§12 ended by naming the one thing the benchmark could NOT test: its questions were built from
+the documents' own sentences, so they are lexical by construction, which flatters BM25 and
+leaves the vector leg no room. It said the vector leg's value "should appear on PARAPHRASED
+questions, which this corpus cannot generate honestly."
+
+That gap is now measured, on five English questions against the Indonesian corpus — a
+paraphrase, no shared token, and unmapped vocabulary, so the lexical leg has nothing to match:
+
+| question | result | lexical score of the hits |
+|---|---|---|
+| how many annual leave days do employees get? | HIT | bm25 = 0 on every hit |
+| what is the reimbursement limit for business travel? | HIT | bm25 = 0 on every hit |
+| what are the laptop memory requirements? | HIT | bm25 = 4.46 (partial match) |
+| how long does an employee have to submit an expense claim? | MISS | — |
+| when are fire drills conducted? | MISS | — |
+
+**3 of 5.** The load-bearing column is the third one: on all three hits the lexical leg
+scored ZERO, so the hits are attributable to the vector leg alone and the "no embeddings →
+0/5" counterfactual holds by construction rather than by argument. A document could not have
+been found by keyword search at all.
+
+Two things follow, and they are the honest reading:
+
+1. The vector leg EARNS ITS PLACE, but only where lexical matching fails. That is precisely
+   what lexical-first is built to exploit — the leg fills in behind an intact BM25 head
+   instead of competing with it — and it is why the two changes belong together: under RRF
+   this same leg, on this same corpus, measured answer@1 0.2149 and dragged the fused result
+   below BM25 alone.
+2. 3/5 is an improvement, not a solution. Two of five questions still miss, and the model is
+   384-dim MiniLM-class. A larger multilingual model would do better at the cost of a column
+   resize; that trade is a separate decision with its own measurement.
+
+The numbers come from a single corpus of 114 chunks in one language pair, so they bound the
+claim rather than settle it. What they DO settle is the question §12 left open: the vector leg
+contributes real retrieval, measurably, in exactly the case the benchmark could not reach.
