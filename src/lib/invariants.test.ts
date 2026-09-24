@@ -598,8 +598,35 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     // a guard that cannot fail on its own regression. Require it to be an element
     // of the array handed to fuseRankings.
     expect(src).toMatch(/const rankings = \[[^\]]*\bvectorRanking\b[^\]]*\]/)
-    expect(src).toMatch(/fuseRankings\(rankings\)/)
+    // The call must fuse that array. An OPTIONAL second argument is allowed because
+    // the fusion constant became configurable (`RAG_FUSION_K`, see
+    // docs/retrieval-production-integration-plan.md §5): `fuseRankings(rankings, k)`
+    // is the same fusion, just not at the default dampening. What this guard exists
+    // for is a `vectorRanking` that is BUILT and then never fused, so it asserts the
+    // array is passed — not that the call has exactly one argument. The negative
+    // control below keeps that relaxation from becoming "matches anything".
+    expect(src).toMatch(/fuseRankings\(rankings(?:\s*,\s*[^)]*)?\)/)
     expect(src).toMatch(/const vectorScore = vectorScores\.get\(id\)/)
+  })
+
+  test('the fusion guard above still rejects the regressions it was written for', () => {
+    // Negative control: the assertion in the previous test is deliberately loose
+    // enough to accept an optional `k`. Without this, relaxing it once (to let a
+    // configurable constant through) could quietly degrade it into a pattern that
+    // matches any call at all, and the real regression — a vector ranking that is
+    // computed and then dropped from the fusion — would pass CI again.
+    const pattern = /fuseRankings\(rankings(?:\s*,\s*[^)]*)?\)/
+    // ACCEPTED: the two shapes production legitimately uses.
+    expect('const fused = fuseRankings(rankings)').toMatch(pattern)
+    expect('const fused = fuseRankings(rankings, fusionK)').toMatch(pattern)
+    expect('const fused = fuseRankings(rankings, RRF_K)').toMatch(pattern)
+    // REJECTED: the array is renamed, so the fused variable is no longer provably
+    // the one built from vectorRanking.
+    expect('const fused = fuseRankings(otherRankings)').not.toMatch(pattern)
+    // REJECTED: the fusion call is gone entirely.
+    expect('const fused = toRanking(bm25Rank(queryTokens, docs))').not.toMatch(pattern)
+    // REJECTED: a different function that merely mentions the array.
+    expect('const fused = mergeRankings(rankings)').not.toMatch(pattern)
   })
 
   test('the alignment gate runs on BOTH agentic loops before returning an answer', () => {
