@@ -775,3 +775,56 @@ Two things follow, and they are the honest reading:
 The numbers come from a single corpus of 114 chunks in one language pair, so they bound the
 claim rather than settle it. What they DO settle is the question §12 left open: the vector leg
 contributes real retrieval, measurably, in exactly the case the benchmark could not reach.
+
+
+### Caveats that bound §7 and §12, measured after the fact
+
+Two gaps between the benchmark and the pipeline it claims to describe. Both were found by
+auditing the arms rather than by a failure, and both mean the numbers above are narrower than
+they first read.
+
+**1. The benchmark has no reranker; production re-ranks by default.**
+`RAG_LLM_RERANK !== 'false'`, so production retrieves `topK * 3` candidates, fuses them, then
+has the reranker pick `topK` from that head. Every arm here stops at fusion. So the quantity
+that actually decides a production answer is recall at the RERANKER's budget (~12 for
+`topK=4`), not recall at 10 — and the deciding property is whether the answer is IN that head,
+because the reranker can promote within it but cannot recover a chunk that never arrived.
+Measured on the synthetic held-out split:
+
+| budget | BM25 recall@10 | shipped hybrid recall@10 |
+|---|---|---|
+| 4 | 0.2901 | 0.2181 |
+| 12 (what the reranker sees) | 0.3292 | 0.2695 |
+| 30 | 0.4938 | 0.3066 |
+
+**2. On synthetic data the shipped TOKENIZER is weaker than the reference baseline, and the
+gap is not the fusion.** Isolating the two factors at the reranker's budget:
+
+| arm | recall@10 | MRR | ans@1 |
+|---|---|---|---|
+| `bm25-baseline` (reference tokenizer) | 0.3292 | 0.2830 | 0.1811 |
+| `bm25-only` (shipped tokenizer) | 0.2695 | 0.2526 | 0.1749 |
+| **shipped hybrid** (lexical-first) | **0.2695** | **0.2526** | **0.1749** |
+| `vector-only` | 0.1132 | 0.1053 | 0.0576 |
+
+Two things follow, and the first is the reassuring one: `bm25-only` and the shipped hybrid are
+IDENTICAL to four decimal places, so lexical-first costs nothing against lexical-alone. The
+fusion is not the problem on this corpus. The second is not reassuring: the 0.06 gap to
+`bm25-baseline` is a TOKENIZER difference, and it goes the wrong way. `rag-ranking`'s IDF
+prefers corpus-wide `df` from `ts_stat` and falls back to pool-local `df` when that table is
+empty — which offline it always is. On a small pool a rare term collapses toward zero
+discriminating weight. Production populates `CORPUS_DF` from the FTS rebuild, so this is
+partly measurement artefact: on the app's OWN 114 chunks the shipped tokenizer measured
+BETTER (ans@1 0.9504 vs 0.8347), where the corpus statistics exist.
+
+The honest reading is that the two corpora disagree, and the reason is a known mechanism
+rather than noise: corpus-level IDF helps and the offline harness cannot supply it. **The
+real-prose numbers (§12) are the ones to trust for this deployment**, because they were
+measured with the app's own documents and the shipped tokenizer; the synthetic sweep remains
+useful for DIRECTION and for per-tier shape, not for absolute quality.
+
+**A third caveat, on the reranker itself:** it is never exercised in this environment (the
+configured chat endpoint requires an API key that is not available here), and when it fails at
+runtime `dispatchRerank` falls back to `chunks.slice(0, topK)` — the fused order unchanged. So
+the fused order is the floor a production deployment gets even with a dead reranker, and every
+number in §7 and §12 describes that floor.
