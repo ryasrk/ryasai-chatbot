@@ -877,3 +877,78 @@ claimed: rank-1 on every paraphrase question that has an answer, with the vector
 work and the lexical leg contributing nothing on seven of eight. What remains unmeasured is
 ANSWER quality on questions whose answers exist but require synthesis across documents, and
 anything resembling a real user population.
+
+
+### 2026-09-24 (real LLM, second pass): the chunker was the biggest defect, and it was invisible
+
+Measuring with a real LLM endpoint found a defect larger than everything in §7 and §12, and it
+was not in the ranking at all. **A section heading was being turned into its own chunk.**
+
+`splitStructuralBlocks` flushed a heading, pushed it, and flushed AGAIN — so
+`## Penanganan Data Sangat Rahasia` became one chunk and its paragraph the next. Measured on
+the app's own corpus:
+
+| | before | after |
+|---|---|---|
+| chunks | 114 | 55 |
+| fragments under 120 chars | 65 (57%) | 3 (5%) |
+| mean chunk length | 118 | 244 |
+
+**Why it produced wrong answers.** Retrieval matched the TITLE and handed the answer prompt a
+heading with no body. A grounded model then correctly replied "the evidence does not specify
+how strictly confidential data must be handled" — because the evidence genuinely did not. The
+answer was in the corpus, one chunk away, unreachable.
+
+Two questions in the paraphrase set I reported earlier failed for exactly this reason, and I
+had attributed them to the ranking. Rebuilding the corpus with the fix:
+
+- retrieval, ten paraphrase questions: **10/10 at rank 1**, including both previously-failing cases
+- end-to-end with a real LLM: **8/8 answers complete and correct**
+
+**Why no test caught it.** The 39 existing chunking tests passed WITH the bug and WITHOUT it.
+Four assertions were added and negative-controlled by reproducing the original push-then-flush
+code. A first attempt at that control (`if (false)`) did NOT trigger them — recorded because a
+control that does not reproduce the real defect certifies nothing.
+
+### The first honest head-to-head against industrial vector RAG
+
+Everything measured so far was ours against ours. This is ours against the default that
+LangChain/LlamaIndex-style deployments ship: embed the query, take the cosine top-k, stuff it
+into the prompt, generate. Same corpus, same questions, same top-k, same answer prompt, same
+generation model, and a judge from a DIFFERENT model family so self-preference bias cannot
+favour either side. 12 questions, **0 unjudged**:
+
+| RAGAS metric | ours | vector-RAG baseline | delta |
+|---|---|---|---|
+| contextPrecision | 0.973 | 0.925 | **+0.048** |
+| answerRelevance | 0.933 | 0.917 | +0.017 |
+| contextRecall | 0.917 | 0.917 | 0.000 |
+| faithfulness | 0.983 | 1.000 | -0.017 |
+| latency (ms) | 2875 | 35 | — |
+
+**Read honestly, this is a modest and mixed result, not a win.** The ranking work shows up
+where it should — precision, because the lexical-first fusion puts more relevant material in
+the window. Recall is a tie. Faithfulness is very slightly WORSE, and the reason is
+structural rather than a bug: cosine neighbours of a question are narrow, homogeneous context,
+and narrow context is easy to be faithful to. We assemble a wider window from more sources,
+which is where the precision comes from and also where a little extra unsupported phrasing
+creeps in. Both scores are in the same range; neither system is disqualified.
+
+The latency gap is real and is the price of the intent pipeline, query expansion and multi-pass
+retrieval: **2.9 s against 35 ms**, roughly 80x. At `topK=4` on 55 chunks the baseline's
+retrieval is a single sort and ours is a pipeline. That is the number to watch if a deployment
+cares more about latency than about ranking precision, and it is why `RAG_LLM_RERANK` and the
+pipeline's stages are switchable.
+
+### A measurement defect that nearly produced a fabricated result
+
+`rag-eval.ts` returned `0.5` from four metric functions on ANY error and averaged those in. A
+rate-limited judge (HTTP 429, "reset after 5m") therefore produced a complete table of exactly
+0.500 on both sides — which reads as "mediocre quality" rather than "nothing was measured". I
+had that table and almost reported it as a result. Unjudged samples are now `NaN`, excluded
+from the mean, and counted: the run above reports `not judged: 0`.
+
+**Still not measured**, and this is the honest boundary: no real user questions, no multi-hop
+chains requiring a relation graph, and one corpus of 55 chunks in one language pair. The
+baseline comparison is 12 questions — enough to show the systems are comparable, not enough to
+rank them with confidence.
