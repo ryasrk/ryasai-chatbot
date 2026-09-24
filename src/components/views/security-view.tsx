@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
+import { MetricCard } from '@/components/ui/metric-card'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { TableSkeleton, ListRowsSkeleton } from '@/components/ui/view-states'
@@ -247,78 +248,55 @@ export function SecurityView() {
     <div className="space-y-3">
       {/* ---- monitoring stat cards ---- */}
       <div className="grid grid-cols-3 gap-2.5">
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight">{id(monitoring?.stats.toolRunCount24h ?? 0)}</div>
-              <div className="text-xs text-muted-foreground">Tool Runs (24h)</div>
-            </div>
-            <ListChecks className="h-4 w-4 text-success shrink-0" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight">
-                {id(monitoring?.stats.avgToolLatencyMs24h ?? 0)}
-                <span className="text-xs font-normal text-muted-foreground"> ms</span>
-              </div>
-              <div className="text-xs text-muted-foreground">Avg Latency (24h)</div>
-            </div>
-            <FlaskConical className="h-4 w-4 text-muted-foreground shrink-0" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight text-destructive">
-                {id(monitoring?.stats.failedApiCount24h ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">Failed API (24h)</div>
-            </div>
-            <ShieldAlert className="h-4 w-4 text-destructive shrink-0" />
-          </CardContent>
-        </Card>
+        <MetricCard
+          label="Tool Runs (24h)"
+          value={id(monitoring?.stats.toolRunCount24h ?? 0)}
+          icon={ListChecks}
+          iconClass="text-success"
+        />
+        <MetricCard
+          label="Avg Latency (24h)"
+          value={
+            <>
+              {id(monitoring?.stats.avgToolLatencyMs24h ?? 0)}
+              <span className="text-xs font-normal text-muted-foreground"> ms</span>
+            </>
+          }
+          icon={FlaskConical}
+          iconClass="text-muted-foreground"
+        />
+        <MetricCard
+          label="Failed API (24h)"
+          value={id(monitoring?.stats.failedApiCount24h ?? 0)}
+          icon={ShieldAlert}
+          iconClass="text-destructive"
+          valueClass="text-destructive"
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-2.5">
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight">
-                {id(monitoring?.stats.llmTotalTokens24h ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">LLM Tokens (24h)</div>
-            </div>
-            <Coins className="h-4 w-4 text-muted-foreground shrink-0" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight">
-                {id(monitoring?.stats.llmCalls24h ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">LLM Calls (24h)</div>
-            </div>
-            <ListChecks className="h-4 w-4 text-muted-foreground shrink-0" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold leading-tight">
-                {id(
-                  monitoring?.stats.llmCalls24h
-                    ? Math.round((monitoring?.stats.llmTotalTokens24h ?? 0) / monitoring.stats.llmCalls24h)
-                    : 0,
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground">Avg Tokens/Call</div>
-            </div>
-            <FlaskConical className="h-4 w-4 text-muted-foreground shrink-0" />
-          </CardContent>
-        </Card>
+        <MetricCard
+          label="LLM Tokens (24h)"
+          value={id(monitoring?.stats.llmTotalTokens24h ?? 0)}
+          icon={Coins}
+          iconClass="text-muted-foreground"
+        />
+        <MetricCard
+          label="LLM Calls (24h)"
+          value={id(monitoring?.stats.llmCalls24h ?? 0)}
+          icon={ListChecks}
+          iconClass="text-muted-foreground"
+        />
+        <MetricCard
+          label="Avg Tokens/Call"
+          value={id(
+            monitoring?.stats.llmCalls24h
+              ? Math.round((monitoring?.stats.llmTotalTokens24h ?? 0) / monitoring.stats.llmCalls24h)
+              : 0,
+          )}
+          icon={FlaskConical}
+          iconClass="text-muted-foreground"
+        />
       </div>
 
       {/* ---- recent LLM traces (observability ring buffer) ---- */}

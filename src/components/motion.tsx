@@ -7,7 +7,8 @@
 'use client'
 
 import { useEffect, useRef, type ReactNode } from 'react'
-import { motion, useInView, useReducedMotion, type Variants } from 'framer-motion'
+import { motion, useInView, type Variants } from 'framer-motion'
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 import { cn } from '@/lib/utils'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -90,7 +91,7 @@ export function AnimatedNumber({
 }) {
   const ref = useRef<HTMLSpanElement>(null)
   const inView = useInView(ref, { once: true, margin: '-8%' })
-  const reduce = useReducedMotion()
+  const reduce = usePrefersReducedMotion()
 
   // ponytail: the rAF loop writes textContent instead of calling setState. The
   // dashboard renders 8 of these at once — one setState per frame per card was

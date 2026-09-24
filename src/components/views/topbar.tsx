@@ -166,7 +166,10 @@ export function Topbar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-auto px-2 gap-2 hover:bg-accent transition-colors"
+                  // h-auto means the hover/open pill is sized by the 28px avatar
+                  // alone, so without explicit padding the circle sits flush
+                  // against the top, bottom and left edges of the highlight.
+                  className="h-auto rounded-full px-2.5 py-1.5 gap-2 hover:bg-accent transition-colors"
                   aria-label="Account menu"
                   icon={
                     <Avatar className="h-7 w-7">

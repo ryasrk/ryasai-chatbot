@@ -8,6 +8,7 @@ import { Stagger, StaggerItem } from '@/components/motion'
 
 import { describeCron, formatRelativeTime, previewNextRuns } from '@/lib/cron-describe'
 
+import { MetricCard } from '@/components/ui/metric-card'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ListRowsSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
 import { TelegramChannelDialog, type CreatedChannel } from '@/components/telegram-channel-dialog'
@@ -438,57 +439,39 @@ export function SchedulesView() {
       {/* Stats summary */}
       <Stagger className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
         <StaggerItem>
-        <Card>
-          <CardContent className="flex items-center justify-between py-3 px-3.5">
-            <div>
-              <div className="text-lg font-semibold tabular-nums leading-tight">{schedules.length}</div>
-              <div className="text-xs text-muted-foreground">Total Schedules</div>
-            </div>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardContent>
-        </Card>
+          <MetricCard label="Total Schedules" value={schedules.length} icon={Clock} iconClass="text-muted-foreground" />
         </StaggerItem>
         <StaggerItem>
-        <Card>
-          <CardContent className="flex items-center justify-between py-3 px-3.5">
-            <div>
-              <div className="text-lg font-semibold tabular-nums leading-tight text-success">{schedules.filter((s) => s.isActive).length}</div>
-              <div className="text-xs text-muted-foreground">Active</div>
-            </div>
-            <Activity className="h-4 w-4 text-success" />
-          </CardContent>
-        </Card>
+          <MetricCard
+            label="Active"
+            value={schedules.filter((s) => s.isActive).length}
+            icon={Activity}
+            iconClass="text-success"
+            valueClass="text-success"
+          />
         </StaggerItem>
         <StaggerItem>
-        <Card>
-          <CardContent className="flex items-center justify-between py-3 px-3.5">
-            <div>
-              <div className="text-lg font-semibold tabular-nums leading-tight text-success">
-                {(() => {
-                  const withResults = schedules.filter((s) => s.lastResult)
-                  if (withResults.length === 0) return '-'
-                  const successCount = withResults.filter((s) => lastStatusFromResult(s.lastResult) === 'success').length
-                  return `${Math.round((successCount / withResults.length) * 100)}%`
-                })()}
-              </div>
-              <div className="text-xs text-muted-foreground">Success Rate</div>
-            </div>
-            <CheckCircle2 className="h-4 w-4 text-success" />
-          </CardContent>
-        </Card>
+          <MetricCard
+            label="Success Rate"
+            value={(() => {
+              const withResults = schedules.filter((s) => s.lastResult)
+              if (withResults.length === 0) return '-'
+              const successCount = withResults.filter((s) => lastStatusFromResult(s.lastResult) === 'success').length
+              return `${Math.round((successCount / withResults.length) * 100)}%`
+            })()}
+            icon={CheckCircle2}
+            iconClass="text-success"
+            valueClass="text-success"
+          />
         </StaggerItem>
         <StaggerItem>
-        <Card>
-          <CardContent className="flex items-center justify-between py-3 px-3.5">
-            <div>
-              <div className="text-lg font-semibold tabular-nums leading-tight text-destructive">
-                {schedules.filter((s) => lastStatusFromResult(s.lastResult) === 'error').length}
-              </div>
-              <div className="text-xs text-muted-foreground">Failed</div>
-            </div>
-            <AlertCircle className="h-4 w-4 text-destructive" />
-          </CardContent>
-        </Card>
+          <MetricCard
+            label="Failed"
+            value={schedules.filter((s) => lastStatusFromResult(s.lastResult) === 'error').length}
+            icon={AlertCircle}
+            iconClass="text-destructive"
+            valueClass="text-destructive"
+          />
         </StaggerItem>
       </Stagger>
 
