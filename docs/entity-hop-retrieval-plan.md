@@ -361,6 +361,14 @@ same 10-document budget).
 **Corpus:** 114 real chunks of Indonesian policy prose from the running database — the shape this
 product actually stores. **121 extractive questions** were built from its sentences.
 
+**Scope caveat, stated because it bounds what this can conclude:** 114 chunks come from only
+**9 documents**, so this satisfies the plan's "customer-shaped text" intent but NOT its
+"one org with 50+ documents" requirement. Retrieval here is chunk-to-chunk, which is what the grader
+measures anyway, but a corpus of 9 documents is small enough that a single document's phrasing can
+move a rate. Treat the coverage share (7.0%) as the robust result and the recall/MRR deltas as
+indicative. Running this against a real deployment with 50+ documents remains a prerequisite before
+any shipping decision.
+
 **Entity coverage — the number the plan requires be recorded either way:**
 
 | corpus | chunks/docs | with ≥1 entity | entities per doc | bridges (df ≥ 2) |
@@ -407,3 +415,45 @@ A multi-hop comparison on real prose was deliberately **not** fabricated: there 
 relation graph for these chunks, and inventing one is exactly the defect the earlier benchmark audit
 found. Gate 3 therefore remains **partially** satisfied — the coverage question is answered, the
 multi-hop question is not, and it still needs a real corpus with a real answer key.
+
+### Final gate summary (all four criteria now evaluated)
+
+| criterion | threshold | measured | verdict |
+|---|---|---|---|
+| 1. medium+hard recall@10 gain vs production | ≥ +0.10 | +0.1230 | PASS |
+| 2. easy recall@10 drop | ≤ 0.01 | 0.0133 (one question of 75) | FAIL |
+| 3. not worse than production on a real set | ≥ 0 on recall and MRR | recall tied, MRR −0.0121 | FAIL |
+| 4. added p50 | ≤ 50 ms | +0.31 ms | PASS |
+
+**Two of four criteria fail and the verdict is DO NOT SHIP.** Phase 4 was never started, and the
+plan's §5 constraint (no change to production ranking behaviour in this phase) was respected: not one
+line under `src/` was modified by this work.
+
+### The finding that outranks the one this plan set out to test
+
+Both corpora point the same way, and the second is not synthetic:
+
+| corpus | BM25 recall@10 | production hybrid recall@10 | BM25 MRR | hybrid MRR |
+|---|---|---|---|---|
+| synthetic (1200 docs) | 0.3148 | 0.1502 | 0.2817 | 0.2038 |
+| **real prose (114 chunks)** | **1.0000** | **0.9752** | **0.9725** | **0.6254** |
+
+Plain keyword search beats the shipped hybrid pipeline on both. On real prose the hybrid arm loses
+36% of MRR and 2.5% of recall. The mechanism is measured and general — `RRF_K = 60` is nearly flat,
+so cross-leg agreement outweighs a strong single-leg rank — and the fix is a constant, not an
+architecture. That is the next thing to decide, on real data, with trials.
+
+### Recommended next steps, in priority order
+
+1. **Decide `RRF_K` with trials on a 50+ document corpus.** It is one constant in
+   `src/lib/rag-ranking.ts`, it is the largest measured effect in this work, and it is currently
+   set to the Elasticsearch default rather than to anything measured here.
+2. **Settle the identifier-tokenisation question.** `src/lib/rag.ts` maps `W-01` to `["01"]` and
+   `B-0001` to `["0001"]`, collapsing four distinct entity types onto one token; 975 of 1200
+   documents carry a bare-digit token. Neither tokenizer dominates, so this needs measuring rather
+   than assuming.
+3. **Do not ship Entity-Hop.** It fails criterion 2 and criterion 3, and its reach on real prose is
+   bounded by 7% entity coverage regardless of how the ranking is tuned.
+4. **Do not remove the inert components** (hub cutoff, negation). This corpus never exercises them
+   (max entity df 58 < the 60 cutoff; the negation cues never fire), so they are untested, and
+   deleting untested code on the strength of an inert measurement is the opposite of the lesson.
