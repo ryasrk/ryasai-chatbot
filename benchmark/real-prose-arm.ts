@@ -31,6 +31,7 @@
  * Usage:
  *   bun benchmark/real-prose-arm.ts --out=benchmark/results/real-prose-arm.json
  */
+import { FUSION_K_CANDIDATES, makeFusionKArm } from './arms/fusion-k-arm'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { buildEntityIndex } from './arms/entity-hop-arm'
@@ -227,9 +228,10 @@ async function main(): Promise<number> {
     ['bm25-baseline', bm25BaselineArm],
     ['hybrid-rrf', hybridArm],
     ['entity-hop', makeEntityHopArm()],
+    ...FUSION_K_CANDIDATES.map((k) => [`hybrid-k${k}`, makeFusionKArm(k)] as [string, Arm]),
   ]
 
-  const rows: Array<{ arm: string; ready: boolean; recall10: number | null; recall5: number | null; mrr: number | null; n: number }> = []
+  const rows: Array<{ arm: string; ready: boolean; answerAt1?: number; recall10: number | null; recall5: number | null; mrr: number | null; n: number }> = []
   for (const [label, arm] of arms) {
     if (!arm.ready(ctx)) {
       rows.push({ arm: label, ready: false, recall10: null, recall5: null, mrr: null, n: 0 })
@@ -239,6 +241,7 @@ async function main(): Promise<number> {
     rows.push({
       arm: label,
       ready: true,
+      answerAt1: m.overall.answerAt1,
       recall10: m.overall.recall10,
       recall5: m.overall.recall5,
       mrr: m.overall.mrr,
@@ -248,14 +251,14 @@ async function main(): Promise<number> {
 
   console.log(`\n=== SINGLE-HOP RECALL on real prose (budget top-${ARM_BUDGET}, all questions are 1-hop) ===`)
   console.log(`vectors: ${vectorsLoaded ? `yes (${ctx.embeddingModel})` : 'none'}`)
-  console.log('| arm | n | recall@5 | recall@10 | MRR |')
-  console.log('|---|---|---|---|---|')
+  console.log('| arm | n | recall@5 | recall@10 | MRR | ans@1 |')
+  console.log('|---|---|---|---|---|---|')
   for (const r of rows) {
     if (!r.ready) {
       console.log(`| ${r.arm} | 0 | NOT COMPUTABLE — needs a vector cache | | |`)
       continue
     }
-    console.log(`| ${r.arm} | ${r.n} | ${r.recall5!.toFixed(4)} | ${r.recall10!.toFixed(4)} | ${r.mrr!.toFixed(4)} |`)
+    console.log(`| ${r.arm} | ${r.n} | ${r.recall5!.toFixed(4)} | ${r.recall10!.toFixed(4)} | ${r.mrr!.toFixed(4)} | ${(r.answerAt1 ?? 0).toFixed(4)} |`)
   }
 
   const bm25 = rows.find((r) => r.arm === 'bm25-baseline')

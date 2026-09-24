@@ -591,3 +591,42 @@ measuring the hash. The limitation is documented in the spec's header rather tha
 2. **The vector-column migration** for standing installs, above.
 3. **The search-tester decision** (row 9) — expose it in the UI or delete it; needs an owner.
 4. **F2 tokeniser** (row 13) — its own run and its own verdict, per §6c.
+
+### 2026-09-24 (later): the data already answers the questions §11 left open
+
+The same `k` arms were run on the app's own prose (`benchmark/real-prose-arm.ts`, 114 chunks,
+121 questions, real `paraphrase-multilingual-MiniLM-L12-v2` vectors):
+
+| arm | r@5 | r@10 | MRR | ans@1 |
+|---|---|---|---|---|
+| **bm25 only** | **1.0000** | **1.0000** | **0.9725** | **0.9504** |
+| hybrid k=1 | 0.9917 | 1.0000 | 0.7928 | 0.6364 |
+| hybrid k=5 | 0.9917 | 1.0000 | 0.7469 | 0.5868 |
+| hybrid k=20 | 0.9091 | 1.0000 | 0.6605 | 0.4959 |
+| hybrid k=60 (shipped) | 0.8347 | 0.9752 | 0.6254 | 0.4628 |
+| hybrid k=200 | 0.8182 | 0.9587 | 0.6186 | 0.4628 |
+
+And on the dev database, a 384-dim query against the live `vector(1536)` column fails with
+`different vector dimensions 1536 and 384`, so today's production vector leg errors out and
+retrieval is effectively BM25.
+
+Three conclusions follow, and none of them needs another run:
+
+1. **Do NOT run the vector-column migration on its own.** It is the change that turns the
+   vector leg ON, and on real prose that moves answer@1 from BM25's 0.9504 to hybrid-k60's
+   0.4628. The "fix" is a regression of roughly half the first-place answers. The migration
+   may only ship together with a fusion change, and after the next point.
+2. **No value of `k` rescues the hybrid.** Lower is better monotonically on both corpora, but
+   the best hybrid (k=1, ans@1 0.6364) is still 31 points below BM25 alone. Tuning `k` narrows
+   a loss; it does not create a win. The synthetic answer@1 dip at k=1 (61 → 51 of 486) is
+   noise next to that.
+3. **The row-7 A/B is not needed to decide this.** It was blocked on "a real install with 50+
+   documents"; the dev database IS 114 chunks of the product's real documents. What is still
+   worth measuring is a *different* design (vector as a fallback when BM25 finds nothing, or a
+   BM25-weighted fusion), not another value of `k`.
+
+Caveat, stated because it biases the table: the questions are extractive, built from the
+documents' own sentences, which favours lexical matching. That is why BM25 is near-perfect and
+why paraphrased questions could narrow the gap. It does not change conclusion 1: a change that
+turns the vector leg on must be measured before it ships, and on the only real corpus
+available it measures as a large regression.
