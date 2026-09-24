@@ -4,13 +4,46 @@
  * Answers:
  *   GET  .../models           → { data: [{ id: 'mock-model' }] }
  *   POST .../chat/completions → fixed reply
- *   POST .../embeddings       → zero-ish vectors (64 dims)
+ *   POST .../embeddings       → deterministic, input-derived 384-dim vectors
  *
  * Implemented with Node's http module so it works both when imported
  * directly (by Playwright's Node-based global-setup) and when run via
  * `bun run e2e/mock-llm.ts`.
+ *
+ * WHY THE EMBEDDINGS ARE 384-DIM AND INPUT-DERIVED
+ * ----------------------------------------------------------------------------
+ * They used to be `new Array(64).fill(0.001)`: the same vector for every input, at a
+ * dimension the storage column does not accept. That made the vector leg dead in e2e,
+ * and silently so — `canWriteVectorColumn` (`src/lib/embeddings.ts`) compares the
+ * incoming dimension against the live `DocumentChunk.embedding` column (`vector(384)`,
+ * from prisma/schema.prisma) and stores `embeddingJson` only on a mismatch, warning
+ * once. Measured before this change: the e2e DB held 1 chunk and 0 non-null
+ * `embedding`.
+ *
+ * The consequence for THIS suite was that the fused retrieval order equalled the
+ * lexical order: with `vectorRanking` empty, `fuseRankings` received one non-empty
+ * list, and `1/(k + rank)` is strictly decreasing in `rank` for every `k > 0`, so the
+ * result is identical for ANY `k`. A fusion change was therefore not merely hard to
+ * observe in e2e, but arithmetically unobservable — which is what
+ * docs/retrieval-production-integration-plan.md §8.2 records.
+ *
+ * Both properties matter and neither is sufficient alone: matching the dimension lets
+ * the row reach pgvector at all, and deriving the vector from the text stops every
+ * cosine being 1.0 (which would leave the leg present but carrying no signal).
+ *
+ * DETERMINISM IS REQUIRED. The vector is a hash of the input, never random: a random
+ * vector makes the suite flaky, and a flaky e2e is worse than a narrow one. Note this
+ * is a BAG OF TOKENS, not a language model — it is enough to make the vector leg a
+ * real, deterministic participant in the fusion, and it is NOT a measurement of
+ * semantic quality. Real retrieval quality is measured by
+ * `benchmark/real-prose-arm.ts` against a real embedder.
  */
 import http from 'http'
+import { createHash } from 'node:crypto'
+
+/** Must equal the dimension of `DocumentChunk.embedding` in prisma/schema.prisma. */
+export const MOCK_EMBEDDING_DIMS = 384
+
 
 /**
  * Mock behaviour, settable through `POST /__mock/control`.
@@ -26,6 +59,49 @@ export const mockState: {
   verifyToolCallShape: boolean
   shapeViolations: number
 } = { toolCall: null, verifyToolCallShape: false, shapeViolations: 0 }
+
+/**
+ * Deterministic pseudo-embedding: a fixed-dimension unit vector derived from the text.
+ *
+ * Seeded by a SHA-256 of the normalised text, so the same text always produces the same
+ * vector (a random vector would make the suite flaky) and different text produces
+ * different vectors (the old constant vector would not). Tokens also fold in, so two
+ * passages sharing vocabulary land closer than two that share none — the property the
+ * vector leg needs in order to contribute anything to a fused ranking.
+ *
+ * Explicitly NOT a semantic model: no morphology, no cross-lingual mapping. It exists so
+ * the retrieval pipeline has a live, deterministic vector leg in e2e.
+ */
+export function mockEmbedding(text: string): number[] {
+  const vec = new Array<number>(MOCK_EMBEDDING_DIMS).fill(0)
+  const normalised = text.toLowerCase()
+  // Per-token contributions, so shared vocabulary moves the vector in a shared direction.
+  for (const token of normalised.split(/[^\p{L}\p{N}]+/u).filter(Boolean)) {
+    addHashed(vec, token, 1)
+  }
+  // The whole string as well, so a single-token or empty input is still distinguished.
+  addHashed(vec, normalised, 0.5)
+  // Normalise to a unit vector: pgvector's cosine operator is scale-invariant, so this
+  // only keeps the fixture readable, but a zero vector would make cosine undefined.
+  const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0))
+  if (norm === 0) {
+    vec[0] = 1
+    return vec
+  }
+  return vec.map((v) => v / norm)
+}
+
+/** Add a hashed direction for `key` into `vec`, deterministically. */
+function addHashed(vec: number[], key: string, weight: number): void {
+  const digest = createHash('sha256').update(key).digest()
+  // A few independent indices per key from the one digest, plus a sign per index, so
+  // collisions cancel instead of accumulating in a single direction.
+  for (let i = 0; i < 4; i++) {
+    const idx = ((digest[i * 2] << 8) | digest[i * 2 + 1]) % MOCK_EMBEDDING_DIMS
+    const sign = digest[8 + i] % 2 === 0 ? 1 : -1
+    vec[idx] += sign * weight
+  }
+}
 
 export function startMockLlm(port = 4545): http.Server {
   mockState.toolCall = null
@@ -199,23 +275,27 @@ export function startMockLlm(port = 4545): http.Server {
 
     // --- embeddings ---
     if (url.pathname.endsWith('/embeddings')) {
-      let inputCount = 1
+      let inputs: string[] = ['']
       try {
         const body = JSON.parse(rawBody || '{}')
-        inputCount = Array.isArray(body.input) ? body.input.length : 1
+        const raw = body.input
+        // The OpenAI wire format accepts a string or an array of strings (and token
+        // arrays, which this stub treats as opaque). Normalise to a string list so one
+        // code path produces the vectors.
+        inputs = Array.isArray(raw) ? raw.map((v: unknown) => String(v)) : [String(raw ?? '')]
       } catch {
-        /* default to 1 */
+        /* keep the default single input */
       }
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(
         JSON.stringify({
           object: 'list',
-          data: Array.from({ length: inputCount }, (_, i) => ({
+          data: inputs.map((text, i) => ({
             index: i,
-            embedding: new Array(64).fill(0.001),
+            embedding: mockEmbedding(text),
           })),
           model: 'mock-embedding',
-          usage: { prompt_tokens: inputCount, total_tokens: inputCount },
+          usage: { prompt_tokens: inputs.length, total_tokens: inputs.length },
         }),
       )
       return
