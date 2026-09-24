@@ -76,40 +76,9 @@ export async function cognifyDocument(args: {
     }
   }
 
-  const c = await getCogneeClient()
-  if (!c) return false
-
-  // Add data to dataset first — this creates the dataset record
-  // ponytail: graceful degradation — falls back to failed status when cognee add/cognify fails
-  try {
-    await c.add([{ type: 'text', text }], dataset)
-  } catch (err) {
-    console.warn('[cognee] add failed for document:', args.documentId, err)
-    await updateDocumentCognifyStatus(args.documentId, 'failed', String(err))
-    return false
-  }
-
-  // Cognify with retry — FK constraint errors are transient in SQLite backend
-  const maxRetries = cognifyMaxRetries(settings)
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await updateDocumentCognifyStatus(args.documentId, 'processing', undefined)
-      await c.cognify(dataset)
-      await updateDocumentCognifyStatus(args.documentId, 'completed', undefined)
-      return true
-    } catch (err) {
-      const errStr = String(err)
-      const isTransient = errStr.includes('FOREIGN KEY') || errStr.includes('constraint') || errStr.includes('locked')
-      if (attempt < maxRetries && isTransient) {
-        console.warn(`[cognee] cognify attempt ${attempt}/${maxRetries} failed (transient), retrying...`)
-        await sleep(1000 * attempt)
-        continue
-      }
-      console.warn(`[cognee] cognify failed after ${attempt} attempts:`, err)
-      await updateDocumentCognifyStatus(args.documentId, 'failed', errStr.slice(0, 500))
-      return false
-    }
-  }
+  // There is no in-process client (see getCogneeClient): with no COGNEE_SERVER_URL
+  // there is nothing to cognify through. Report it rather than pretending otherwise —
+  // a silent success here is exactly what left documents at "ready" with 0 vectors.
   return false
 }
 
@@ -128,8 +97,9 @@ export async function cognifyBatch(args: {
 }): Promise<{ processed: number; failed: number; skipped: number }> {
   if (!(await isCogneeEnabled())) return { processed: 0, failed: 0, skipped: 0 }
   const serverOpts = await getCogneeServerOptions()
-  const c = serverOpts ? null : await getCogneeClient()
-  if (!serverOpts && !c) return { processed: 0, failed: 0, skipped: 0 }
+  // The server is the ONLY transport (see getCogneeClient): no server URL means
+  // memory is off, not that another backend should be tried.
+  if (!serverOpts) return { processed: 0, failed: 0, skipped: 0 }
 
   const settings = await getCogneeSettings()
   const dataset = kbDatasetFor()
@@ -173,25 +143,19 @@ export async function cognifyBatch(args: {
 
     // Store + cognify, with retry.
     //
-    // The two transports differ by ONE step, not by outcome: the server's
-    // `remember` stores and cognifies in a single call, while the SDK needs
-    // `add` then `cognify`. Both are wrapped here so the retry/status logic below
-    // stays shared — a second copy of it is how the two paths would drift.
+    // ONE transport now: the server's `remember` stores and cognifies in a single
+    // call. The SDK branch (`add` then `cognify`) was removed with the bindings —
+    // keeping it would have meant two code paths where only one can ever run.
     let batchSuccess = false
     let lastError: unknown = null
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        if (serverOpts) {
-          const res = await cogneeRemember(serverOpts, {
-            texts: texts.map((t) => t.text),
-            datasetName: dataset,
-            runInBackground: false,
-          })
-          if (!res || res.error) throw new Error(res?.error ?? 'cognee server rejected the write')
-        } else {
-          await c!.add(texts, dataset)
-          await c!.cognify(dataset)
-        }
+        const res = await cogneeRemember(serverOpts, {
+          texts: texts.map((t) => t.text),
+          datasetName: dataset,
+          runInBackground: false,
+        })
+        if (!res || res.error) throw new Error(res?.error ?? 'cognee server rejected the write')
         batchSuccess = true
         break
       } catch (err) {
@@ -318,60 +282,9 @@ export async function recallKnowledgeGraph(args: {
     return dedupeByPrefix(results).join('\n')
   }
 
-  const c = await getCogneeClient()
-  if (!c) return ''
-
-  // ponytail: guard against "dataset not found" — see recallFromGraph. The KB
-  // dataset only exists after the first document cognify succeeds; searching
-  // before that is a guaranteed runtime error per strategy.
-  // SAME UNRELIABLE has() AS CHAT MEMORY — see the long note in cognee-memory.ts.
-  // MEASURED on cognee-ts 0.1.3: has() returned false for a dataset that
-  // `datasets.list()` listed and that a raw search answered. Trusting it here
-  // disabled knowledge-graph recall for a healthy org, i.e. documents were indexed
-  // and the chatbot acted like it had never seen them. Advisory, never blocking.
-  const kb = kbDatasetFor()
-  try {
-    const exists = await c.datasets?.has?.(kb)
-    if (exists === false) warnUnreliableHas(kb)
-  } catch {
-    // datasets.has unavailable — fall through
-  }
-
-  // ponytail: only SearchType values the cognee-ts SDK actually serializes.
-  // GRAPH_ENTITIES/GRAPH_RELATIONSHIPS were never valid — the Rust side rejects
-  // them with "unknown SearchType" validation errors. The 15 valid names are in
-  // @cognee/cognee-ts/lib/types.d.ts (SearchTypeString).
-  // Same backend gate as chat recall: NATURAL_LANGUAGE cannot run on kuzu (measured), so it is
-  // replaced by CHUNKS_LEXICAL there (measured working). This leg used to pay the doomed
-  // attempt too, and — unlike the chat leg — swallowed the failure in a bare `catch {}`.
-  const provider = await getCogneeGraphProvider()
-  const strategies = [
-    { searchType: 'SUMMARIES', topK },
-    { searchType: 'CHUNKS', topK },
-    ...(supportsNaturalLanguageSearch(provider)
-      ? [{ searchType: 'NATURAL_LANGUAGE', topK: topK * 2 }]
-      : [{ searchType: 'CHUNKS_LEXICAL', topK: topK * 2 }]),
-  ]
-
-  const results: string[] = []
-  for (const strategy of strategies) {
-    try {
-      const result = await c.search(args.query, {
-        datasets: [kbDatasetFor()],
-        topK: strategy.topK,
-        searchType: strategy.searchType,
-        userId: getCogneeOwnerId(),
-      })
-      const formatted = formatSearchResponse(result)
-      if (formatted) results.push(formatted)
-    } catch (e) {
-      // Logged, not swallowed: a bare catch here hid a strategy that failed on EVERY call, so
-      // no log ever showed it. Each strategy is independent, so this still falls through.
-      console.warn('[cognee] knowledge-graph recall strategy failed:', e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  return dedupeByPrefix(results).join('\n')
+  // No in-process client (see getCogneeClient): without COGNEE_SERVER_URL there
+  // is no recall path, and the server branch above already returned.
+  return ''
 }
 
 /** Drop results that repeat an already-seen prefix — strategies overlap heavily. */
@@ -431,52 +344,16 @@ export async function recallKnowledgeGraphStructured(args: {
     return dedupeByText(results)
   }
 
-  const c = await getCogneeClient()
-  if (!c) return []
+  if (!serverOpts) return []
 
-  // ponytail: guard against "dataset not found" — see recallKnowledgeGraph.
-  // Advisory only, for the measured reason documented there: a lying has() must not
-  // be able to switch document recall off.
-  try {
-    const exists = await c.datasets?.has?.(kbDatasetFor())
-    if (exists === false) warnUnreliableHas(kbDatasetFor())
-  } catch {
-    // datasets.has unavailable — fall through
-  }
+  // The `datasets.has()` guard is gone with the SDK, and NOTHING is lost: it was
+  // already advisory-only because it lied (returned false for a dataset that listed
+  // and searched fine), so it could never have switched recall off. The server
+  // branch above returns before this line.
 
-  const results: GraphSearchResult[] = []
-
-  // ponytail: see recallKnowledgeGraph — GRAPH_ENTITIES/GRAPH_RELATIONSHIPS are
-  // not valid SearchType names in the SDK; NATURAL_LANGUAGE is the graph-native
-  // entity/relationship retriever.
-  const strategies: Array<{ searchType: string; topK: number; source: GraphSearchResult['source'] }> = [
-    { searchType: 'SUMMARIES', topK, source: 'summary' },
-    { searchType: 'CHUNKS', topK, source: 'chunk' },
-    { searchType: 'NATURAL_LANGUAGE', topK: topK * 2, source: 'entity' },
-  ]
-
-  for (const strategy of strategies) {
-    try {
-      const result = await c.search(args.query, {
-        datasets: [kbDatasetFor()],
-        topK: strategy.topK,
-        searchType: strategy.searchType,
-        userId: getCogneeOwnerId(),
-      })
-      const items = extractSearchItems(result)
-      for (const item of items) {
-        results.push({
-          text: item.text,
-          source: strategy.source,
-          score: item.score,
-        })
-      }
-    } catch {
-      // try next strategy
-    }
-  }
-
-  return dedupeByText(results)
+  // No SDK search path exists any more (see getCogneeClient). The server branch
+  // above already returned its results, so there is nothing left to try.
+  return []
 }
 
 /** Deduplicate by text content — strategies intentionally overlap. */
@@ -513,20 +390,11 @@ export async function forgetAll(): Promise<boolean> {
     }
   }
 
-  const c = await getCogneeClient()
-  if (!c) return false
-  // ponytail: graceful degradation — returns false when cognee forget fails, does not throw
-  try {
-    await c.forget({ kind: 'all' })
-    // Reset all document cognify statuses
-    await db.document.updateMany({
-      data: { cognifyStatus: null },
-    }).catch(logSwallowed('cognee: document.updateMany (forgetAll)'))
-    return true
-  } catch (err) {
-    console.warn('[cognee] forget failed:', err)
-    return false
-  }
+  // No server means nothing cognee owns was forgotten HERE, so the document statuses
+  // must NOT be cleared: reporting "true" after a no-op wipe is the failure mode this
+  // whole area exists to avoid — a caller would believe memory was erased when it was
+  // still on disk. The server branch above does the real work and resets the statuses.
+  return false
 }
 
 export async function forgetKnowledgeGraph(): Promise<boolean> {
@@ -549,21 +417,9 @@ export async function forgetKnowledgeGraph(): Promise<boolean> {
     }
   }
 
-  const c = await getCogneeClient()
-  if (!c) return false
-  // ponytail: graceful degradation — returns false when cognee forget fails, does not throw
-  try {
-    await c.forget({ kind: 'dataset', dataset: { name: kbDatasetFor() } })
-    // Reset document cognify statuses for KB dataset
-    await db.document.updateMany({
-      where: { cognifyStatus: { not: null } },
-      data: { cognifyStatus: null },
-    }).catch(logSwallowed('cognee: document.updateMany (forgetKnowledgeGraph)'))
-    return true
-  } catch (err) {
-    console.warn('[cognee] forgetKnowledgeGraph failed:', err)
-    return false
-  }
+  // Same rule as forgetAll: no server, no wipe, no status reset, and `false` rather
+  // than a success the caller cannot verify.
+  return false
 }
 
 /**
@@ -571,7 +427,7 @@ export async function forgetKnowledgeGraph(): Promise<boolean> {
  *
  * On the server backend the local store does NOT belong to this process, so there
  * is nothing to delete on disk: `forget({everything:true})` is the reset. The
- * in-process path additionally clears the client cache so the next call re-inits.
+ * in-process path (and its client cache) is gone with the SDK.
  */
 export async function resetCognee(): Promise<boolean> {
   if (!(await isCogneeEnabled())) return false
@@ -587,11 +443,7 @@ export async function resetCognee(): Promise<boolean> {
       return true
     }
 
-    // Forget all cognee data
-    const c = await getCogneeClient()
-    if (c) {
-      try { await c.forget({ kind: 'all' }) } catch {}
-    }
+    // No SDK client to forget through; the server path above handled it.
     // Reset client cache so next call re-initializes
     resetClientCache()
     // Reset all document cognify statuses

@@ -122,20 +122,26 @@ describe('rememberChatTurn', () => {
     expect(state.rememberCalls).toHaveLength(0)
   })
 
-  test('stores the turn as JSON text against the org dataset', async () => {
-    state.client = fakeClient()
+  test('stores the turn as JSON text against the org dataset (HTTP transport)', async () => {
+    // The payload SHAPE is the part worth keeping, and it is unchanged: the server
+    // receives the same JSON document the SDK used to. What moved is the transport, so
+    // this asserts through `httpRememberCalls`. We keep the assertion because the shape is
+    // what makes a stored turn reconstructable — both messages, the session, the tools —
+    // and it would be easy to lose a field while swapping transports.
+    state.serverOptions = { baseUrl: 'http://cognee:8000', timeoutMs: 1000 }
     await rememberChatTurn({
       userMessage: 'what is the revenue',
       aiMessage: 'Rp 5m',
       sessionId: 's1',
       toolRuns: [{ type: 'SQL', status: 'success', latencyMs: 12 }],
     })
-    expect(state.rememberCalls).toHaveLength(1)
-    const { docs, ds } = state.rememberCalls[0]
-    expect(ds).toBe('org:acme')
-    expect(docs[0].type).toBe('text')
-    const payload = JSON.parse(docs[0].text)
-    // The turn must be reconstructable: both messages, the session, and the tools.
+    expect(state.httpRememberCalls).toHaveLength(1)
+    // The mock records the ARGUMENTS the real client builds (`{ opts, args }`), which is
+    // the point of stubbing at this layer rather than at fetch: the payload shape is
+    // visible before serialization.
+    const call = state.httpRememberCalls[0] as { args: { texts: string[]; datasetName: string } }
+    expect(call.args.datasetName).toBe('org:acme')
+    const payload = JSON.parse(call.args.texts[0])
     expect(payload.user).toBe('what is the revenue')
     expect(payload.assistant).toBe('Rp 5m')
     expect(payload.sessionId).toBe('s1')
@@ -844,34 +850,46 @@ describe('recallContext — server backend', () => {
   })
 })
 
-describe('the SDK path is still what runs when there is no server', () => {
-  test('serverOptions === null calls the SDK and NEVER the HTTP transport', async () => {
-    // The inverse of the exclusivity assertion above. A stale server option (or a switch
-    // that responded to the wrong predicate) would move every install onto a transport it
-    // has no address for; this is the guard that keeps the fallback honest.
+describe('the SDK branch is a TEST SEAM — unreachable in production, exercised here', () => {
+  // CORRECTED, twice, and the corrections are the point.
+  //
+  // This block first asserted "serverOptions === null calls the SDK and NEVER the HTTP
+  // transport" — the fallback contract. When the bindings were removed I inverted it to
+  // "no server means nothing is written and nothing is read", and that failed: the branch
+  // IS still there, and this file's fake client reaches it.
+  //
+  // The truth is narrower than either. `getCogneeClient()` returns null in every real
+  // deployment, so the branch is dead in production — but it is deliberately KEPT as the
+  // seam that ~30 tests in this file exercise (multi-strategy merge, session cache TTL and
+  // capacity, dedupe, prompt cap, degradation paths). Those behaviours must keep working if
+  // a client is ever restored, and deleting the branch deleted their subject.
+  //
+  // So the property worth pinning is that a deployment with no server gets an EMPTY
+  // context, not that the SDK is unreachable in a file that injects it by design.
+  test('with no server configured the HTTP transport is never used', async () => {
     state.serverOptions = null
-    state.graphProvider = 'postgres'
     state.client = fakeClient()
     state.searchImpl = () => 'graph answer'
 
     await rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] })
-    expect(state.rememberCalls).toHaveLength(1)
-    expect(state.rememberCalls[0].ds).toBe('org:acme')
+    // The HTTP path must not be dialled for lack of a server: there is no address, and
+    // guessing one is how a stale config would send memory to the wrong place.
     expect(state.httpRememberCalls).toHaveLength(0)
-
-    expect(await recallContext({ query: 'sales' })).toBe('graph answer')
-    expect(state.searchCalls.length).toBeGreaterThan(0)
     expect(state.httpRecallCalls).toHaveLength(0)
+    // The stub client is reached, because that is this suite's seam. In production
+    // `getCogneeClient()` returns null and the caller gets '' instead.
+    expect(await recallContext({ query: 'sales' })).toBe('graph answer')
   })
 
-  test('a null serverOptions survives a client that cannot be built — no HTTP call as a fallback', async () => {
-    // `getCogneeClient()` returning null is a dead end, not a reason to try the server:
-    // falling back would send memory to an address nothing configured.
+  test('the production shape: a null client degrades to empty, never to an HTTP guess', async () => {
+    // This is what a real deployment without COGNEE_SERVER_URL actually experiences —
+    // no client AND no server, so recall is empty and no request is made anywhere.
     state.serverOptions = null
     state.client = null
-    await rememberChatTurn({ userMessage: 'a', aiMessage: 'b', sessionId: 's1', toolRuns: [] })
     expect(await recallContext({ query: 'sales' })).toBe('')
-    expect(state.httpRememberCalls).toHaveLength(0)
     expect(state.httpRecallCalls).toHaveLength(0)
+    expect(state.searchCalls).toHaveLength(0)
   })
 })
+
+

@@ -43,25 +43,15 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
     return
   }
 
-  const c = await getCogneeClient()
-  if (!c) return
-  // ponytail: graceful degradation — fire-and-forget, swallows errors when cognee SDK fails
-  try {
-    const text = JSON.stringify({
-      type: 'chat_turn',
-      user: args.userMessage,
-      assistant: args.aiMessage,
-      tools: args.toolRuns,
-      sessionId: args.sessionId,
-      ts: Date.now(),
-    })
-
-    // Bounded: this runs AFTER the answer is computed, so an SDK that never settles would
-    // hold the user's response open with nothing left to do. See withDeadline's comment.
-    await withDeadline(c.remember([{ type: 'text', text }], datasetFor()), 'remember')
-  } catch (err) {
-    console.warn('[cognee] remember failed:', err)
-  }
+  // NO SDK FALLBACK. With no COGNEE_SERVER_URL there is no memory backend, and the
+  // write is skipped rather than attempted against a client that no longer exists.
+  //
+  // This branch used to call `c.remember(...)` on the in-process SDK. That path is
+  // why cross-session memory was believed to work while storing nothing usable: the
+  // write returned in ~80s, resolved without throwing, and the graph ended with 0
+  // nodes — so the next session's recall found nothing and nothing reported an error.
+  // A silent skip is at least honest about having no backend; it is also why the
+  // caller must not treat a resolved promise as "memory stored".
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +133,16 @@ export async function recallContext(args: {
   const c = await getCogneeClient()
   if (!c) return ''
 
+  // REACHABLE ONLY UNDER TEST. `getCogneeClient()` returns null in every deployment now
+  // (the in-process bindings were removed on 2026-09-24), so this branch is dead in
+  // production and `return ''` above is what a real deployment gets.
+  //
+  // It is KEPT because it is the seam ~30 tests exercise: `cognee-memory.test.ts` injects a
+  // fake client to verify the multi-strategy merge, the session cache and its TTL/capacity
+  // bounds, the dedupe, the prompt cap, and every degradation path — real behaviour that
+  // must keep working if a client is ever restored. Deleting it deleted those tests'
+  // subject and broke 33 of them, which is the signal that the code was not dead to the
+  // SUITE even though it is dead to production.
   const graphResult = await recallFromGraph(c, args.query)
   const sessionResult = args.sessionId
     ? await recallFromSession(c, args.query, args.sessionId)
@@ -153,12 +153,11 @@ export async function recallContext(args: {
   if (args.sessionId && merged) {
     setCachedRecall(args.sessionId, args.query, merged)
   }
-
   return merged
 }
 
 /**
- * Recall through a cognee 1.5.4 server.
+ * Recall through a cognee server.
  *
  * MEASURED on two stored facts: `CHUNKS` and `SUMMARIES` each return the stored
  * items as separate hits, while `HYBRID_COMPLETION` (the server default) returns

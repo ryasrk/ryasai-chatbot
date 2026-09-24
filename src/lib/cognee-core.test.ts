@@ -120,70 +120,20 @@ describe('cognee-core — tenancy: no org context means NOTHING happens', () => 
   })
 })
 
-describe('cognee-core — per-org isolation', () => {
-  test('two orgs get DIFFERENT store directories', async () => {
+describe('cognee-core — per-org SETTINGS isolation (the client tests moved with the SDK)', () => {
+  // The client-construction half of this block was removed on 2026-09-24 with the
+  // in-process bindings: "two orgs get different store directories", "each org gets its
+  // OWN client", "the client is CACHED per org", "an org id with path characters is
+  // sanitised" and "each org's client is built with ITS OWN LLM key" all asserted state
+  // that no longer exists in this process. The store and its isolation now live inside
+  // the v1.6.0 server, one docker volume per deployment.
+  //
+  // What SURVIVES is the settings-cache half, which is still entirely live: settings are
+  // cached per org in this process, and the two tests below are about that cache being
+  // keyed correctly and invalidated narrowly. They were the reason the block caught a
+  // real bug once (a wrong cache key silently measured the env default of 50).
+  test('narrowing the cache to one org does not disturb a sibling org', async () => {
     enterWithOrg('org-a')
-    await getCogneeClient()
-    const a = sdkState.constructArgs[0]
-    resetClientCache('all')
-    sdkState.constructArgs = []
-    enterWithOrg('org-b')
-    await getCogneeClient()
-    const b = sdkState.constructArgs[0]
-    // In `local` mode the store is files on disk. One shared directory is one
-    // shared knowledge graph — this is the isolation boundary.
-    expect(a.dataRootDirectory).not.toBe(b.dataRootDirectory)
-    expect(a.dataRootDirectory).toContain('org-a')
-    expect(b.dataRootDirectory).toContain('org-b')
-  })
-
-  test('an org id with path characters is sanitised before it reaches the path', async () => {
-    enterWithOrg('../../etc/passwd')
-    await getCogneeClient()
-    const args = sdkState.constructArgs[0]
-    // The org id lands in a filesystem path, so traversal must be neutralised.
-    expect(args.dataRootDirectory).not.toContain('..')
-    expect(args.systemRootDirectory).not.toContain('..')
-  })
-
-  test('each org gets its OWN client, not a shared one', async () => {
-    enterWithOrg('org-a')
-    const ca = await getCogneeClient()
-    enterWithOrg('org-b')
-    const cb = await getCogneeClient()
-    expect(ca).not.toBe(cb)
-    expect(sdkState.warmCalls).toBe(2)
-  })
-
-  test('the client is CACHED per org (no re-init on every call)', async () => {
-    enterWithOrg('org-a')
-    const first = await getCogneeClient()
-    const second = await getCogneeClient()
-    expect(first).toBe(second)
-    // Re-warming a graph backend per query would be catastrophic for latency.
-    expect(sdkState.warmCalls).toBe(1)
-  })
-
-  test("each org's client is built with ITS OWN LLM key", async () => {
-    enterWithOrg('org-a')
-    await getCogneeClient()
-    expect(sdkState.constructArgs[0].llmApiKey).toBe('k1')
-    resetClientCache('all')
-    sdkState.constructArgs = []
-    llmState.cfg = { provider: 'ANTHROPIC_COMPATIBLE', baseUrl: 'http://other', apiKey: 'KEY-OF-B', model: 'mb' }
-    enterWithOrg('org-b')
-    await getCogneeClient()
-    // The recorded incident: "whichever org initialised first supplied the LLM
-    // API key that every other org's cognify then billed to."
-    expect(sdkState.constructArgs[0].llmApiKey).toBe('KEY-OF-B')
-    expect(sdkState.constructArgs[0].llmProvider).toBe('anthropic')
-  })
-
-  test('invalidating one org does NOT wipe another org settings cache', async () => {
-    enterWithOrg('org-a')
-    // The setting is read from the AppConfig COLUMN (cogneeBatchSize), not from
-    // a bare `batchSize` field — the first version of this fixture used the
-    // wrong key and silently measured the env default of 50.
     cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local', cogneeBatchSize: 7, cogneeMaxRetries: 7 }
     await getCogneeSettings()
     enterWithOrg('org-b')
@@ -249,61 +199,65 @@ describe('cognee-core — settings resolution', () => {
     expect(sdkState.constructArgs).toHaveLength(0)
   })
 
-  test('a postgres org configures pgvector, not lancedb', async () => {
-    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres', cogneeDbUrl: 'postgresql://x', cogneeBatchSize: 5, cogneeMaxRetries: 2 }
+  test('the storage picker is INERT: dbProvider/dbUrl no longer choose a backend', async () => {
+    // These two tests used to assert that a postgres org produced `graphDatabaseProvider:
+    // 'postgres'` and a local org `kuzu` + `lancedb` in the SDK constructor arguments. That
+    // constructor is gone: the store belongs to the cognee v1.6.0 server, whose backends
+    // are set by docker-compose.yml. The values are still read and echoed to the UI, but
+    // they change nothing — which is exactly what this test pins, so an operator cannot be
+    // told the toggle works when it does not.
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres', cogneeDbUrl: 'postgresql://x' }
     enterWithOrg('org-a')
-    await getCogneeClient()
-    const args = sdkState.constructArgs[0]
-    expect(args.graphDatabaseProvider).toBe('postgres')
-    expect(args.vectorDbProvider).toBe('pgvector')
-    expect(args.vectorDbUrl).toBe('postgresql://x')
+    const settings = await getCogneeSettings()
+    expect(settings.dbProvider).toBe('postgres')
+    expect(settings.dbUrl).toBe('postgresql://x')
+    // Still reported, still inert: with no server there is no transport at all, and
+    // setting dbProvider to postgres does NOT conjure one.
+    delete process.env.COGNEE_SERVER_URL
+    invalidateCogneeSettings('all')
+    expect(await getCogneeBackend()).toBeNull()
   })
 
-  test('a local org uses kuzu + lancedb with a sqlite system db', async () => {
-    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local', cogneeBatchSize: 5, cogneeMaxRetries: 2 }
-    enterWithOrg('org-a')
-    await getCogneeClient()
-    const args = sdkState.constructArgs[0]
-    expect(args.graphDatabaseProvider).toBe('kuzu')
-    expect(args.vectorDbProvider).toBe('lancedb')
-    expect(args.relationalDbUrl).toContain('sqlite:')
-  })
 })
 
 describe('cognee-core — degraded paths never throw', () => {
-  test('a failed warm returns null and does NOT retry immediately', async () => {
-    sdkState.shouldThrow = true
-    enterWithOrg('org-a')
+  // REWRITTEN 2026-09-24. Every test here asserted something about the ARGUMENTS passed
+  // to the in-process SDK constructor ("a failed warm returns null", "an optional
+  // embedding config is not required to build a client", "a missing LLM config omits LLM
+  // settings"). The constructor is gone, so the arguments are gone with it.
+  //
+  // The PROPERTY worth keeping is the one the block is named for, and it still has a live
+  // subject: whatever the configuration state, the memory entry points degrade to
+  // null/empty rather than propagating a failure into a chat turn.
+
+  test('no org context returns null instead of reading another tenant config', async () => {
+    // Fail closed. A background worker that forgot enterWithOrg must get NOTHING.
     expect(await getCogneeClient()).toBeNull()
-    expect(await getCogneeClient()).toBeNull()
-    // A 30s backoff — without it every query pays a failed SDK warm.
-    expect(sdkState.warmCalls).toBe(1)
+    expect(await getCogneeServerOptions()).toBeNull()
+    expect(await getCogneeBackend()).toBeNull()
   })
 
-  test('resetClientCache lets a previously-failed org retry immediately', async () => {
-    sdkState.shouldThrow = true
-    enterWithOrg('org-a')
-    await getCogneeClient()
-    resetClientCache('org')
-    sdkState.shouldThrow = false
-    sdkState.warmCalls = 0
-    expect(await getCogneeClient()).not.toBeNull()
-    expect(sdkState.warmCalls).toBe(1)
-  })
-
-  test('an optional embedding config is not required to build a client', async () => {
-    embState.cfg = null
-    enterWithOrg('org-a')
-    // Falls back to the LLM key/endpoint rather than failing the whole client.
-    expect(await getCogneeClient()).not.toBeNull()
-    expect(sdkState.constructArgs[0].embeddingApiKey).toBe('k1')
-  })
-
-  test('a missing LLM config omits LLM settings instead of crashing', async () => {
+  test('a missing LLM config does not throw — the client is simply absent', async () => {
     llmState.cfg = null
     enterWithOrg('org-a')
-    expect(await getCogneeClient()).not.toBeNull()
-    expect(sdkState.constructArgs[0].llmApiKey).toBeUndefined()
+    expect(await getCogneeClient()).toBeNull()
+  })
+
+  test('a missing embedding config does not throw either', async () => {
+    embState.cfg = null
+    enterWithOrg('org-a')
+    await expect(getCogneeClient()).resolves.toBeNull()
+  })
+
+  test('with no server configured, every entry point degrades instead of throwing', async () => {
+    enterWithOrg('org-a')
+    cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
+    delete process.env.COGNEE_SERVER_URL
+    invalidateCogneeSettings('all')
+    // The point of the whole block: a deployment with no memory backend must keep
+    // serving chat turns, not fail them. `null` is how every caller learns that.
+    expect(await getCogneeBackend()).toBeNull()
+    expect(await getCogneeServerOptions()).toBeNull()
   })
 })
 
@@ -494,12 +448,17 @@ describe('getCogneeBackend — which transport memory calls use', () => {
     delete process.env.COGNEE_SERVER_API_KEY
   })
 
-  test('an unset COGNEE_SERVER_URL keeps the in-process SDK', async () => {
+  test('an unset COGNEE_SERVER_URL means memory is OFF — there is no in-process backend', async () => {
+    // CHANGED CONTRACT (2026-09-24). This used to expect 'inprocess': the
+    // @cognee/cognee-ts SDK was the fallback. The SDK has been removed from the
+    // project, so a fake 'inprocess' would send callers to
+    // `await import('@cognee/cognee-ts')`, which throws at runtime and reads as
+    // "memory is broken" rather than "memory is not configured". `null` is the
+    // honest answer, and every caller already handles it.
     enterWithOrg('org-backend')
     cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
     const backend = await getCogneeBackend()
-    expect(backend?.kind).toBe('inprocess')
-    expect(backend?.serverUrl).toBeNull()
+    expect(backend).toBeNull()
   })
 
   test('COGNEE_SERVER_URL selects the server transport', async () => {
@@ -517,7 +476,9 @@ describe('getCogneeBackend — which transport memory calls use', () => {
     cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'local' }
     process.env.COGNEE_SERVER_URL = '   '
     invalidateCogneeSettings('all')
-    expect((await getCogneeBackend())?.kind).toBe('inprocess')
+    // Unset now means OFF rather than in-process; the point of the test — that
+    // whitespace is not mistaken for a URL — is unchanged.
+    expect(await getCogneeBackend()).toBeNull()
   })
 
   test('the server URL is NOT read from the org row — it is a deployment fact', async () => {
@@ -527,7 +488,10 @@ describe('getCogneeBackend — which transport memory calls use', () => {
     enterWithOrg('org-backend')
     cfgState.appConfig = { cogneeEnabled: true, cogneeDbProvider: 'postgres', cogneeDbUrl: 'postgres://x' }
     invalidateCogneeSettings('all')
-    expect((await getCogneeBackend())?.kind).toBe('inprocess')
+    // The assertion that matters is unchanged and still fails if someone ever adds a
+    // `serverUrl` column to the org row: a config row present, with no env var, must
+    // NOT produce a server backend.
+    expect(await getCogneeBackend()).toBeNull()
   })
 
   test('server options carry the URL, the bounded deadline and the optional key', async () => {

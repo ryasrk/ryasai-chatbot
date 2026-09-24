@@ -1,0 +1,27 @@
+{
+  "_comment": "Authoritative cognee SearchType enum, read from the server's OpenAPI schema. Refresh with scripts/refresh-cognee-search-types.ts against a running server. Committed because CI has no cognee sidecar, and this list is what the searchType invariant checks against.",
+  "source": "GET http://127.0.0.1:8099/openapi.json (cognee 1.6.0-local)",
+  "capturedAt": "2026-09-24",
+  "searchTypes": [
+    "SUMMARIES",
+    "CHUNKS",
+    "RAG_COMPLETION",
+    "HYBRID_COMPLETION",
+    "TRIPLET_COMPLETION",
+    "GRAPH_COMPLETION",
+    "GRAPH_COMPLETION_DECOMPOSITION",
+    "GRAPH_SUMMARY_COMPLETION",
+    "CYPHER",
+    "NATURAL_LANGUAGE",
+    "GRAPH_COMPLETION_COT",
+    "GRAPH_COMPLETION_CONTEXT_EXTENSION",
+    "FEELING_LUCKY",
+    "TEMPORAL",
+    "CODING_RULES",
+    "CHUNKS_LEXICAL",
+    "AGENTIC_COMPLETION",
+    "CODE",
+    "GRAPH_REPORT",
+    "SKILLS"
+  ]
+}

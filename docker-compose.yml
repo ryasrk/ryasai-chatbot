@@ -189,7 +189,7 @@ services:
   # PINNED, never :latest — a memory store whose format the app must read should
   # not change under a `docker compose pull`.
   cognee:
-    image: cognee/cognee:1.5.4.dev20260914
+    image: cognee/cognee:1.6.0
     # ponytail: the image's entrypoint already runs the API server on :8000; we
     # only say where to keep data and which backends to use. Local mode (sqlite +
     # kuzu + lancedb) means ZERO extra services — no second Postgres, no Neo4j —
@@ -227,6 +227,25 @@ services:
       - LITELLM_DROP_PARAMS=true
       # BYOK: this customer's own LLM endpoint, which may be an internal host.
       - LLM_ALLOWED_HOSTS=${COGNEE_LLM_ALLOWED_HOSTS:-*}
+      # --- v1.6.0 latency: turn OFF the per-turn session analysis -----------------
+      # MEASURED on this sidecar with a real store, before these three:
+      #   write 22-30s, search 24-95s (one search took 81s twice in a row).
+      # The server log showed why: after every write it ran `SessionTurnAnalysis`, which
+      # calls the LLM, failed schema validation, and retried — "litellm_native validation
+      # retry 1/3: 1 validation error for SessionTurnAnalysis", six times in the log —
+      # while the actual retrieval took 49 MILLISECONDS ("Found 3 chunks from vector
+      # search"). So the timeout was never the graph; it was one feature retrying.
+      # With these three off: write 9s, search 0.21s, and the stored token is still found.
+      #
+      # AUTO_FEEDBACK=false is the load-bearing one (it also disables the per-turn
+      # feedback question, which is an LLM call). IMPROVE_AUTO_ENABLED=false stops the
+      # automatic improve() pass after remember(). USAGE_LOGGING=false drops per-process
+      # usage rows we do not bill on — the licence is flat, so per-turn usage here has no
+      # consumer. The memory layer we need — store a turn, recall it later — never
+      # needed any of the three.
+      - AUTO_FEEDBACK=${COGNEE_AUTO_FEEDBACK:-false}
+      - IMPROVE_AUTO_ENABLED=${COGNEE_IMPROVE_AUTO:-false}
+      - USAGE_LOGGING=false
     volumes:
       - cogneedata:/cognee-storage
     # NOTE: deliberately NO `ports:` — the app reaches this over the compose

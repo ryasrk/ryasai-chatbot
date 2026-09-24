@@ -31,7 +31,6 @@
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",
-    "@cognee/cognee-ts": "^0.1.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
     "@node-saml/node-saml": "^5.1.0",
@@ -111,9 +110,6 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"
   },
-  "trustedDependencies": [
-    "@cognee/cognee-ts"
-  ],
   "packageManager": "bun@1.4.2",
   "engines": {
     "bun": ">=1.4.2"

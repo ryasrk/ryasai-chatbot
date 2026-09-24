@@ -55,30 +55,46 @@ describe('invariant: single instrumentation file that starts the job worker', ()
 // 2. cognee searchType values must exist in the INSTALLED SDK
 // ---------------------------------------------------------------------------
 // INCIDENT (2026-08): `GRAPH_ENTITIES` / `GRAPH_RELATIONSHIPS` were copied from
-// Python cognee docs. The Rust SDK (@cognee/cognee-ts) rejects them with
-// `validation error: unknown SearchType '…'` — two of four recall strategies
-// failed on every single chat turn. The valid names are re-read from the
-// installed SDK's type declaration, so an SDK upgrade that renames a search
-// type fails HERE instead of in production logs.
-describe('invariant: cognee searchType literals are valid in the installed SDK', () => {
-  const SDK_TYPES = 'node_modules/@cognee/cognee-ts/lib/types.d.ts'
+// Python cognee docs. The Rust SDK (@cognee/cognee-ts) rejected them with
+// `validation error: unknown SearchType '…'` — two of four recall strategies failed
+// on every single chat turn. The valid names were re-read from the installed SDK's
+// type declaration so a rename would fail HERE instead of in production logs.
+//
+// AUTHORITY MOVED 2026-09-24, the guard did not get weaker. The `@cognee/cognee-ts`
+// bindings were removed when this deployment moved to the cognee v1.6.0 API server, so
+// the SDK type file no longer exists to read. The authority is now the SERVER's own
+// OpenAPI schema, captured into a committed fixture by
+// scripts/refresh-cognee-search-types.ts (CI runs no cognee sidecar, so a snapshot is
+// the only way to keep this automated). The assertions below are unchanged in number
+// and kind: the fixture must look real, every literal we send must be in it, and our
+// local mirror must equal it in BOTH directions.
+//
+// The move already earned its keep: read against the v1.6.0 enum, the locally mirrored
+// `FEEDBACK` does not exist server-side. It happened to be used nowhere, so no chat turn
+// was broken — but that is exactly the `GRAPH_ENTITIES` shape of defect, caught here.
+describe('invariant: cognee searchType literals are valid in the pinned v1.6.0 server', () => {
+  const FIXTURE = 'src/lib/__fixtures__/cognee-search-types.json'
 
-  function sdkSearchTypes(): string[] {
-    const dts = readRepo(SDK_TYPES)
-    const m = /export type SearchTypeString = ([^;]+);/.exec(dts)
-    if (!m) throw new Error(`${SDK_TYPES}: SearchTypeString union not found — SDK layout changed, update this guard.`)
-    return [...m[1].matchAll(/"([A-Z_]+)"/g)].map((x) => x[1])
+  function serverSearchTypes(): string[] {
+    const raw = readRepo(FIXTURE)
+    const parsed = JSON.parse(raw) as { searchTypes?: unknown; source?: unknown }
+    if (!Array.isArray(parsed.searchTypes)) {
+      throw new Error(`${FIXTURE}: searchTypes array missing — refresh it with scripts/refresh-cognee-search-types.ts.`)
+    }
+    return parsed.searchTypes as string[]
   }
 
-  test('the SDK type file still exposes SearchTypeString (guard freshness)', () => {
-    const types = sdkSearchTypes()
+  test('the fixture still describes the server enum (guard freshness)', () => {
+    const types = serverSearchTypes()
     expect(types.length).toBeGreaterThanOrEqual(10)
     expect(types).toContain('SUMMARIES')
     expect(types).toContain('CHUNKS')
+    // A fixture with no recorded origin cannot be audited when it disagrees with code.
+    expect(readRepo(FIXTURE)).toContain('openapi.json')
   })
 
-  test('every searchType literal in cognee-*.ts is in the SDK union', () => {
-    const valid = new Set(sdkSearchTypes())
+  test('every searchType literal in cognee-*.ts is in the server enum', () => {
+    const valid = new Set(serverSearchTypes())
     const files = [
       'src/lib/cognee-memory.ts',
       'src/lib/cognee-knowledge-graph.ts',
@@ -93,12 +109,14 @@ describe('invariant: cognee searchType literals are valid in the installed SDK',
     expect(offenders).toEqual([])
   })
 
-  test('COGNEE_SEARCH_TYPES in cognee-types.ts mirrors the SDK union exactly', () => {
+  test('COGNEE_SEARCH_TYPES in cognee-types.ts mirrors the server enum exactly', () => {
     const src = readRepo('src/lib/cognee-types.ts')
     const ours = new Set([...src.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]))
-    const sdk = new Set(sdkSearchTypes())
-    expect([...ours].filter((t) => !sdk.has(t))).toEqual([])
-    expect([...sdk].filter((t) => !ours.has(t))).toEqual([])
+    const server = new Set(serverSearchTypes())
+    // Both directions, exactly as before: a name we would SEND that the server rejects,
+    // and a name the server offers that we would refuse to use.
+    expect([...ours].filter((t) => !server.has(t))).toEqual([])
+    expect([...server].filter((t) => !ours.has(t))).toEqual([])
   })
 })
 

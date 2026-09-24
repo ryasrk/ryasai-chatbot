@@ -31,7 +31,7 @@ interface CogneeSettings {
    *
    * Two backends exist and they are NOT interchangeable at runtime:
    *   - 'server'  — HTTP to cognee 1.5.4 (docs/cognee-http-migration.md)
-   *   - 'inprocess' — the @cognee/cognee-ts SDK, kept as the fallback
+   *   - nothing else. The in-process SDK path was REMOVED on 2026-09-24.
    *
    * The server wins when COGNEE_SERVER_URL is set, because its write path is the
    * one that actually works: measured 19.9s write / 4.3s recall returning the
@@ -41,7 +41,7 @@ interface CogneeSettings {
   serverUrl: string | null
 }
 
-export type CogneeBackend = 'server' | 'inprocess'
+export type CogneeBackend = 'server'
 
 const DISABLED_SETTINGS: CogneeSettings = {
   enabled: false,
@@ -98,9 +98,13 @@ export async function getCogneeBackend(): Promise<{
 } | null> {
   const settings = await getCogneeSettings().catch(() => null)
   if (!settings) return null
-  return settings.serverUrl
-    ? { kind: 'server', serverUrl: settings.serverUrl }
-    : { kind: 'inprocess', serverUrl: null }
+  if (settings.serverUrl) return { kind: 'server', serverUrl: settings.serverUrl }
+  // NO IN-PROCESS FALLBACK — see getCogneeClient below for why the SDK was removed.
+  // With no server configured memory is OFF, and `null` says so. Returning a fake
+  // 'inprocess' would send every caller down a path whose first statement is
+  // `await import('@cognee/cognee-ts')`, which now fails at runtime and would read
+  // as "memory is broken" instead of "memory is not configured".
+  return null
 }
 
 /** HTTP options for the configured server, or null when there is none. */
@@ -118,7 +122,7 @@ export async function getCogneeServerOptions(): Promise<CogneeHttpOptions | null
 //
 // `COGNEE_SERVER_URL` set  -> HTTP to a cognee 1.5.4 API server (the DEFAULT path
 //                             we now ship — see docs/cognee-http-migration.md)
-// `COGNEE_SERVER_URL` unset -> the @cognee/cognee-ts SDK in-process (fallback)
+// `COGNEE_SERVER_URL` unset -> memory is OFF (no in-process fallback exists)
 //
 // Why the server is the primary path, all MEASURED:
 //   - Server 1.5.4: `remember` 19.9s then a recall 4.3s that RETURNED the token.
@@ -132,10 +136,10 @@ export async function getCogneeServerOptions(): Promise<CogneeHttpOptions | null
 //     own LLM call) and GRAPH_COMPLETION was measured failing after 193341ms, so
 //     the graph — the reason cognee is here at all — barely worked in-process.
 //
-// Do NOT bump `@cognee/cognee-ts` without reading scripts/cognee-upgrade-check.md.
-// The fence exists to force evidence, not to forbid upgrades: if a future binding
-// demonstrably populates the graph, verify it with a WRITE-then-RECALL probe and
-// let that evidence supersede this comment.
+// That history is why the bindings were the FALLBACK and never the default. They are
+// now gone entirely (see getCogneeClient), so the choice above is permanent rather
+// than a preference. scripts/cognee-upgrade-check.md still applies to anyone
+// proposing to bring them back.
 export async function getCogneeSettings(): Promise<CogneeSettings> {
   const orgId = getOrgContext()
   if (!orgId) return DISABLED_SETTINGS
@@ -168,6 +172,16 @@ export async function getCogneeSettings(): Promise<CogneeSettings> {
     serverUrl: process.env.COGNEE_SERVER_URL?.trim() || null,
   })
 
+  // ORPHANED FIELDS, kept for API compatibility. `dbProvider` and `dbUrl` used to tell
+  // the in-process SDK which storage to open (kuzu+lancedb, or pgvector over a DB URL).
+  // The bindings are gone and the store belongs to the cognee v1.6.0 server, whose
+  // backends are set by docker-compose.yml — so these two values are now INERT: read from
+  // env and from the org row, surfaced to the UI, and able to change nothing.
+  //
+  // Left in place rather than deleted because `/api/cognee` still accepts and echoes them
+  // and the Settings card renders them; removing the fields is an API change that needs a
+  // deliberate decision, not a side effect of a transport migration. Flagged HERE so the
+  // next reader does not spend an afternoon proving that toggling them has no effect.
   let settings: CogneeSettings
   try {
     // Org-scoped by the tenant extension — this is THIS org's config.
@@ -352,112 +366,35 @@ function quarantineStore(orgId: string, dirs: { dataDir: string; systemDir: stri
   return quarantineDir
 }
 
-export async function getCogneeClient(): Promise<any> {
-  return getCogneeClientWithRetry(false)
-}
-
-/**
- * @param retriedAfterQuarantine internal — set only by the self-heal path so the rebuild
- *   gets exactly one attempt. Callers use `getCogneeClient()`.
- */
-async function getCogneeClientWithRetry(retriedAfterQuarantine: boolean): Promise<any> {
-  // ponytail: graceful degradation — returns null when cognee SDK init fails, callers fall back to no-op
-  const orgId = getOrgContext()
-  if (!orgId) return null
-
-  const entry = entryFor(orgId)
-  if (entry.client) return entry.client
-  if (entry.initFailedAt && Date.now() - entry.initFailedAt < INIT_RETRY_MS) return null
-  // A rebuild is a fresh attempt that deliberately runs while `warming` is already true
-  // (the first attempt set it). Without this exemption the self-heal recursed straight
-  // into this guard and returned null -- the retry looked present in code but never ran,
-  // which is how the recovery tests caught a real defect in the recovery itself.
-  if (entry.warming && !retriedAfterQuarantine) return null
-
-  try {
-    entry.warming = true
-    const settings = await getCogneeSettings()
-    const { Cognee } = await import('@cognee/cognee-ts')
-
-    // This org's LLM config — not whichever org happened to boot first.
-    const llm = await getLlmRuntimeConfig()
-
-    const usePostgres = settings.dbProvider === 'postgres'
-    const { dataDir, systemDir } = storeDirsFor(orgId)
-
-    const settingsObj: Record<string, unknown> = {
-      dataRootDirectory: dataDir,
-      systemRootDirectory: systemDir,
-    }
-
-    if (usePostgres) {
-      if (!settings.dbUrl) {
-        throw new Error('Cognee DB provider is postgres but no DB URL configured. Set it in Settings.')
-      }
-      settingsObj.relationalDbUrl = settings.dbUrl
-      settingsObj.graphDatabaseProvider = 'postgres'
-      settingsObj.vectorDbProvider = 'pgvector'
-      settingsObj.vectorDbUrl = settings.dbUrl
-    } else {
-      settingsObj.relationalDbUrl = `sqlite:${systemDir}/cognee.db?mode=rwc`
-      settingsObj.graphDatabaseProvider = 'kuzu'
-      settingsObj.vectorDbProvider = 'lancedb'
-    }
-
-    if (llm) {
-      settingsObj.llmApiKey = llm.apiKey
-      settingsObj.llmEndpoint = llm.baseUrl
-      settingsObj.llmModel = llm.model
-      settingsObj.llmProvider = llm.provider === 'ANTHROPIC_COMPATIBLE' ? 'anthropic' : 'openai'
-      const emb = await getEmbeddingRuntimeConfig()
-      settingsObj.embeddingProvider = 'openai'
-      settingsObj.embeddingApiKey = emb?.apiKey ?? llm.apiKey
-      settingsObj.embeddingEndpoint = emb?.baseUrl ?? llm.baseUrl
-      settingsObj.embeddingModel = emb?.model ?? 'text-embedding-3-small'
-    }
-
-    const c = new Cognee(settingsObj)
-    // Bounded: a native warm() that never returns must not hang the caller forever.
-    await withDeadline(c.warm(), 'warm')
-    entry.ownerId = await withDeadline(c.ownerId(), 'ownerId')
-    entry.client = c
-    entry.initFailedAt = 0
-    return c
-  } catch (err) {
-    // SELF-HEAL, local mode only. A torn store (see isStoreCorruption) fails every init
-    // forever, so retrying alone never recovers; quarantining the store and rebuilding
-    // does. Deliberately ONE retry: if the fresh store fails too, the problem is not the
-    // store and looping would destroy data on each attempt.
-    // `usePostgres` lives inside the try block and is not visible here. Recomputing the
-    // provider from settings is the honest equivalent: store quarantine only applies to the
-    // LOCAL file-backed store, and a postgres deployment has no `.cognee` directory to move.
-    const localStore = (await getCogneeSettings().catch(() => null))?.dbProvider !== 'postgres'
-    // `!retriedAfterQuarantine` is the ONE-retry guard. It was accidentally dropped during
-    // an edit and the recovery test caught it as an infinite quarantine loop: the rebuild's
-    // own failure carries the same corruption signature, so without this the retry recurses
-    // and quarantines a fresh store on every pass.
-    if (localStore && isStoreCorruption(err) && !retriedAfterQuarantine) {
-      try {
-        quarantineStore(orgId, storeDirsFor(orgId))
-        // retriedAfterQuarantine=true bypasses the warming guard; `warming` stays true so a
-        // concurrent caller still sees an in-flight init rather than starting a second one.
-        return await getCogneeClientWithRetry(true)
-      } catch (rebuildErr) {
-        console.warn('[cognee] rebuild after quarantine also failed:', rebuildErr)
-      }
-    }
-    console.warn('[cognee] init failed:', err)
-    entry.initFailedAt = Date.now()
-    return null
-  } finally {
-    entry.warming = false
-  }
-}
 
 /**
  * Cognee's own user id for the calling org's client. Every search must pass it —
  * it used to be a module-global `_ownerId` set by whichever org initialised first.
  */
+/**
+ * There is NO in-process client. Returns null, always.
+ *
+ * The `@cognee/cognee-ts` SDK was REMOVED from this project on 2026-09-24 when the
+ * deployment moved to the cognee v1.6.0 API server. Two cognee lineages writing one
+ * store is not a configuration risk, it is a corruption mechanism, and this
+ * deployment already paid for it: a LanceDB collection sized 1536 while the
+ * configured embedder returned 384, and a graph holding 0 nodes after a write that
+ * reported success.
+ *
+ * Returning null is the correct shape rather than an error, because every caller
+ * already reads it that way — `const c = serverOpts ? null : await getCogneeClient();
+ * if (!c) return`. null means "no in-process path, take the HTTP one", and with no
+ * `COGNEE_SERVER_URL` it means memory is OFF rather than half-wired.
+ *
+ * KEPT rather than deleted so the call sites keep compiling while the HTTP migration
+ * completes, and so this explanation lives where someone would look for the SDK. If
+ * you are here to re-add it: read scripts/cognee-upgrade-check.md first, then prove
+ * a WRITE-then-RECALL against a fresh store before believing any success return.
+ */
+export async function getCogneeClient(): Promise<null> {
+  return null
+}
+
 export function getCogneeOwnerId(): string | undefined {
   const orgId = getOrgContext()
   return (orgId && _clients.get(orgId)?.ownerId) || undefined

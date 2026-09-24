@@ -23,13 +23,27 @@ export interface GraphSearchResult {
  * strategy is wasted. This set is the single source of truth for validation;
  * keep it in sync with node_modules/@cognee/cognee-ts/lib/types.d.ts.
  */
-export const COGNEE_SEARCH_TYPES: ReadonlySet<string> = new Set([
-  'SUMMARIES', 'CHUNKS', 'RAG_COMPLETION', 'TRIPLET_COMPLETION', 'GRAPH_COMPLETION',
-  'GRAPH_SUMMARY_COMPLETION', 'CYPHER', 'NATURAL_LANGUAGE', 'GRAPH_COMPLETION_COT',
-  'GRAPH_COMPLETION_CONTEXT_EXTENSION', 'FEELING_LUCKY', 'FEEDBACK', 'TEMPORAL',
-  'CODING_RULES', 'CHUNKS_LEXICAL',
-])
+/**
+ * How the memory card describes the backend.
+ *
+ * `local`/`postgres` described the STORAGE the in-process SDK was told to use
+ * (kuzu+lancedb vs pgvector). The app no longer chooses storage — the cognee v1.6.0
+ * server is configured by docker-compose.yml — so those two values are legacy and no
+ * longer produced. `server` is what a reachable sidecar reports; `disabled` means
+ * either the org toggled memory off or no COGNEE_SERVER_URL is configured.
+ *
+ * Kept as a union rather than replaced by a boolean because the card renders the
+ * value, and "server" tells an operator more than "true" does.
+ */
+export type CogneeMode = 'local' | 'postgres' | 'server' | 'disabled'
 
+export const COGNEE_SEARCH_TYPES: ReadonlySet<string> = new Set([
+  'SUMMARIES', 'CHUNKS', 'RAG_COMPLETION', 'HYBRID_COMPLETION',
+  'TRIPLET_COMPLETION', 'GRAPH_COMPLETION', 'GRAPH_COMPLETION_DECOMPOSITION', 'GRAPH_SUMMARY_COMPLETION',
+  'CYPHER', 'NATURAL_LANGUAGE', 'GRAPH_COMPLETION_COT', 'GRAPH_COMPLETION_CONTEXT_EXTENSION',
+  'FEELING_LUCKY', 'TEMPORAL', 'CODING_RULES', 'CHUNKS_LEXICAL',
+  'AGENTIC_COMPLETION', 'CODE', 'GRAPH_REPORT', 'SKILLS',
+])
 export function isValidSearchType(t: string): boolean {
   return COGNEE_SEARCH_TYPES.has(t)
 }

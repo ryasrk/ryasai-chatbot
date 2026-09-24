@@ -1,8 +1,21 @@
-# Migrating to the cognee HTTP server (cognee 1.5.4)
+# Cognee over HTTP (server pinned at v1.6.0)
 
-**Status: MIGRATED. The server is the default backend when `COGNEE_SERVER_URL` is set.**
-Evidence below was measured on this machine against a real `cognee==1.5.4`
-server (FastAPI), not read from documentation.
+**Status: MIGRATED AND PINNED AT v1.6.0. The HTTP server is the ONLY backend — the
+in-process `@cognee/cognee-ts` SDK has been REMOVED from the project.**
+
+Evidence below was measured on this machine against a real `cognee==1.5.4` server
+(FastAPI), not read from documentation. **Those measurements still describe the API
+contract, which is what they were taken for, but the pinned version is now 1.6.0.**
+Where a number is specific to 1.5.4 the line says so; do not re-read it as a v1.6.0
+measurement. The v1.6.0 upgrade is measured separately, at the bottom of this page.
+
+WHY ONLY ONE VERSION, EVER. Two cognee lineages exist and they are NOT the same
+implementation: the Python server (`topoteretes/cognee`) and the Rust/TS bindings
+(`topoteretes/cognee-rs`, npm `@cognee/cognee-ts`). Running both against one store
+mixes two writers with different on-disk formats and different bugs — which is exactly
+how this deployment produced a LanceDB collection sized 1536 while the configured
+embedder returned 384, and a graph with 0 nodes after a write reported success. One
+lineage, one version, one writer.
 
 ## Why this document exists
 
@@ -43,12 +56,12 @@ silently leave the deployment on the weaker in-process path.
 
 | Track | Repo | Version | What we use it for |
 |---|---|---|---|
-| Python (server + library) | `topoteretes/cognee` | **1.5.4** | the migrated-to backend |
-| Rust + TS bindings | `topoteretes/cognee-rs` | 0.1.3 (npm `@cognee/cognee-ts`, latest 0.2.0) | the fallback path |
+| Python (server + library) | `topoteretes/cognee` | **1.6.0** | THE backend |
+| Rust + TS bindings | `topoteretes/cognee-rs` | 0.1.3 (npm `@cognee/cognee-ts`, latest 0.2.0) | **REMOVED** — no longer a dependency |
 
 ## Measured: the server works end-to-end
 
-Server: `cognee==1.5.4`, sqlite + kuzu + lancedb, LLM via the local gateway,
+Server: `cognee==1.5.4` at the time of these measurements, sqlite + kuzu + lancedb,
 embeddings via a local OpenAI-compatible endpoint.
 
 ```
@@ -148,7 +161,7 @@ For a second write, assert BOTH tokens are visible via `CHUNKS` (not via
 
 `docker-compose.yml` runs cognee as a sidecar:
 
-- pinned image `cognee/cognee:1.5.4.dev20260914` (never `:latest` — the app must
+- pinned image `cognee/cognee:1.6.0` (never `:latest` — the app must
   be able to read what the store wrote),
 - local mode (sqlite + kuzu + lancedb) so there is **no second database**,
 - named volume `cogneedata` so the graph survives a recreate,

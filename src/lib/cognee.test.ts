@@ -63,9 +63,28 @@ function withOrg<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 const _savedFlag = process.env.COGNEE_ENABLED
+const _savedServerUrl = process.env.COGNEE_SERVER_URL
+
+/**
+ * No cognee server for this file, and the point is that it must be EXPLICIT.
+ *
+ * `COGNEE_SERVER_URL` decides whether memory has a backend at all. Bun loads `.env` and the
+ * runner passes it through, so a developer or CI box with a sidecar configured — the
+ * supported deployment — silently changed what these tests measured. MEASURED: adding it to
+ * `.env` turned 9 tests red across this file and cognee-degradation.test.ts.
+ *
+ * Deleted at module scope rather than in a hook so it also covers the top-level
+ * `describe('disabled (default)')` bodies, which run before any `beforeEach` in sibling
+ * blocks. Tests that want a server set it themselves.
+ */
+delete process.env.COGNEE_SERVER_URL
+
 afterAll(async () => {
   if (_savedFlag === undefined) delete process.env.COGNEE_ENABLED
   else process.env.COGNEE_ENABLED = _savedFlag
+  // Restore, so this file cannot leak into whatever the runner schedules next in-process.
+  if (_savedServerUrl === undefined) delete process.env.COGNEE_SERVER_URL
+  else process.env.COGNEE_SERVER_URL = _savedServerUrl
   try {
     const config = await db.appConfig.findFirst()
     if (config) {
@@ -117,7 +136,7 @@ describe('cognee memory layer — disabled (default)', () => {
   test('cogneeHealth reports disabled + disconnected', async () => {
     return withOrg(async () => {
     delete process.env.COGNEE_ENABLED
-    expect(await cogneeHealth()).toEqual({ enabled: false, connected: false, mode: 'disabled' })
+    expect(await cogneeHealth()).toEqual({ enabled: false, connected: false, mode: 'disabled', serverVersion: null })
     })
   })
 
@@ -338,7 +357,13 @@ describe('cognee memory layer — enabled (package installed, graceful degradati
     return withOrg(async () => {
     const health = await cogneeHealth()
     expect(health.enabled).toBe(true)
-    expect(health.mode === 'local' || health.mode === 'postgres').toBe(true)
+    // CHANGED CONTRACT: the mode used to be the storage backend the in-process SDK was
+    // told to open ('local' | 'postgres'). Storage now belongs to the v1.6.0 server, so a
+    // reachable sidecar reports 'server' and an unconfigured one reports 'disabled'.
+    // Asserting the OLD values would have kept passing only while the field was inert.
+    expect(['server', 'disabled']).toContain(health.mode)
+    // And `serverVersion` is what makes 'connected' auditable rather than a bare boolean.
+    expect(health).toHaveProperty('serverVersion')
     })
   })
 

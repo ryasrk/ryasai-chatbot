@@ -71,7 +71,8 @@ if (LIVE_ENABLED) {
 
 import { db } from '@/lib/db'
 import { forgetAll, recallContext, rememberChatTurn, cogneeHealth } from '@/lib/cognee'
-import { getCogneeClient } from '@/lib/cognee-core'
+import { getCogneeServerOptions } from '@/lib/cognee-core'
+import { cogneeListDatasets, cogneeServerReady } from '@/lib/cognee-http'
 
 // `describe.skip` when not opted in, mirroring the RUN_COGNEE_E2E gate in
 // cognee.e2e.test.ts: the file must be inert in CI without a cognee backend.
@@ -132,20 +133,29 @@ async function pollRecall(
 }
 
 /**
- * List the cognee dataset names that belong to `orgId`, straight through the SDK.
+ * List the cognee dataset names that belong to `orgId`, via the HTTP server.
  *
  * `recallContext()` cannot be used for the post-delete check: it degrades to '' on
  * ANY error (including "dataset not found") and then retries WITHOUT a dataset
- * filter, so it cannot distinguish "the dataset is gone" from "the backend is
- * down" — and a test that cannot tell those apart passes for the wrong reason.
- * Reading the dataset list directly reports the difference.
+ * filter, so it cannot distinguish "the dataset is gone" from "the backend is down"
+ * — and a test that cannot tell those apart passes for the wrong reason.
+ *
+ * CHANGED 2026-09-24: this read the in-process SDK's `datasets.list()`, which threw
+ * on failure. The SDK is gone, and `cogneeListDatasets()` returns `[]` on failure —
+ * so the distinction above is now WEAKER here, not preserved. Stated rather than
+ * papered over: a red run must not be read as "the dataset is gone" when the server
+ * may simply be down. The `RUN_COGNEE_E2E` gate plus the liveness check below are
+ * what keep that from being mistaken for a clean result.
  */
 async function orgDatasets(orgId: string): Promise<string[]> {
   const names = await withOrg(orgId, async () => {
-    const client = await getCogneeClient()
-    if (!client) throw new Error('getCogneeClient() returned null during cleanup verification.')
-    const datasets = (await client.datasets.list()) as Array<{ name: string }>
-    return datasets.map((d) => d.name)
+    const serverOpts = await getCogneeServerOptions()
+    if (!serverOpts) {
+      throw new Error(
+        'No COGNEE_SERVER_URL: this live suite verifies the HTTP server and the in-process SDK is gone.',
+      )
+    }
+    return cogneeListDatasets(serverOpts)
   })
   // The live run's dataset name is `org:<orgId>` (datasetFor() in cognee-types.ts).
   return names.filter((name) => name === `org:${orgId}` || name.startsWith(`org:${orgId}:`))
@@ -251,18 +261,25 @@ maybeDescribe('cognee live — real @cognee/cognee-ts store/recall round-trip', 
       const org = liveOrgId
 
       await withOrg(org, async () => {
-        const client = await getCogneeClient()
-        if (!client) {
-          // FAIL LOUDLY, by design. When the opt-in flag is set, a client that
-          // cannot be built is a real failure: a silently skipped/passed test here
-          // would reproduce the very "integration was never verified" problem this
-          // file exists to remove.
+        // READINESS GATE, server-based. The in-process SDK is gone, so "can a client
+        // be built?" is no longer a meaningful question; "is the configured server
+        // reachable?" is. Kept loud for the same reason as before: with the opt-in
+        // flag set, an unreachable backend is a real failure, and a silently skipped
+        // test here would reproduce the "integration was never verified" problem this
+        // file exists to remove.
+        const serverOpts = await getCogneeServerOptions()
+        if (!serverOpts) {
           throw new Error(
-            'getCogneeClient() returned null for org ' +
-              `${org} even though RUN_COGNEE_LIVE=true. The cognee SDK could not be ` +
-              'initialised (its own warning above has the cause). Common causes: ' +
-              '@cognee/cognee-ts is not installed, no LlmConfig row for the org, or ' +
-              'the configured LLM/embedding base URL is unreachable or blocked.',
+            `RUN_COGNEE_E2E is set but no COGNEE_SERVER_URL is configured for org ${org}. ` +
+              'This suite now verifies the HTTP server (the in-process SDK was removed on ' +
+              '2026-09-24). Point COGNEE_SERVER_URL at the cognee v1.6.0 sidecar.',
+          )
+        }
+        if (!(await cogneeServerReady(serverOpts))) {
+          throw new Error(
+            `The cognee server at ${serverOpts.baseUrl} is not ready for org ${org}. ` +
+              'Check the sidecar is up and that its own env has a usable LLM + embedding ' +
+              'provider (the WRITE path calls both).',
           )
         }
 

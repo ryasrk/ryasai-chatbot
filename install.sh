@@ -352,7 +352,7 @@ services:
     networks: [ryasai-net]
 
   cognee:
-    image: cognee/cognee:1.5.4.dev20260914
+    image: cognee/cognee:1.6.0
     environment:
       - SYSTEM_ROOT_DIRECTORY=/cognee-storage/system
       - DATA_ROOT_DIRECTORY=/cognee-storage/data
@@ -384,6 +384,20 @@ services:
       - COGNEE_SKIP_CONNECTION_TEST=true
       - LITELLM_DROP_PARAMS=true
       - LLM_ALLOWED_HOSTS=${COGNEE_LLM_ALLOWED_HOSTS:-*}
+      # --- v1.6.0 latency: turn OFF the per-turn session analysis -----------------
+      # MEASURED against this sidecar and a real store, before these three:
+      #   write 22-30s, search 24-95s (two consecutive searches took 81s each).
+      # The server log showed the cause was NOT retrieval: "Found 3 chunks from
+      # vector search" took 49 MILLISECONDS, then `SessionTurnAnalysis` ran, failed
+      # schema validation and retried — "litellm_native validation retry 1/3: 1
+      # validation error for SessionTurnAnalysis", six times in one log. WITH these
+      # three off: write 9s, search 0.21s, and the stored token is still recalled.
+      # AUTO_FEEDBACK=false is the load-bearing one; IMPROVE_AUTO_ENABLED=false stops
+      # the post-remember improve() pass; USAGE_LOGGING=false drops usage rows we do
+      # not bill on (the licence is flat, so nothing consumes them).
+      - AUTO_FEEDBACK=${COGNEE_AUTO_FEEDBACK:-false}
+      - IMPROVE_AUTO_ENABLED=${COGNEE_IMPROVE_AUTO:-false}
+      - USAGE_LOGGING=false
     volumes:
       - cogneedata:/cognee-storage
     healthcheck:

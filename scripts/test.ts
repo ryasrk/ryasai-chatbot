@@ -4,6 +4,8 @@
 // Each test file gets its own bun process for perfect mock isolation.
 // Revert to `bun test src/` when Bun fixes mock.module cross-file isolation.
 
+import { parseBunSummary } from './test-summary'
+
 const CONCURRENCY = 8
 
 // ponytail: integration tests need things this runner does not provision —
@@ -93,12 +95,15 @@ async function worker() {
     // exit code stayed 0. The runner thus reported "2369 pass · 8 fail" on a
     // fully green suite. A wrong failure count is worse than no count — it
     // trains everyone to ignore the number.
-    const summary = out.split('\n').find((l) => /^\s*\d+\s+pass\b/.test(l)) ?? ''
-    const parsedPass = +(summary.match(/(\d+)\s+pass/)?.[1] ?? 0)
-    const parsedFail = +(summary.match(/(\d+)\s+fail/)?.[1] ?? 0)
+    // Counts come from scripts/test-summary.ts, which is unit-tested in
+    // test-runner.test.ts. The `skip` count was silently ZERO for as long as this runner
+    // has existed: Bun prints `pass` / `skip` / `fail` on separate lines, and the code here
+    // used to read only the `pass` line, so `skip` could never match — 54 skipped tests
+    // reported as "0 skip". See that module for the full account.
+    const { pass: parsedPass, fail: parsedFail, skip: parsedSkip } = parseBunSummary(out)
     totalPass += parsedPass
     totalFail += parsedFail
-    totalSkip += +(summary.match(/(\d+)\s+skip/)?.[1] ?? 0)
+    totalSkip += parsedSkip
     done++
     if (code !== 0) {
       // A non-zero exit with a parsed failure count of 0 means the summary line
