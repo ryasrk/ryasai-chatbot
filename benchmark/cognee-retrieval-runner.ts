@@ -143,6 +143,10 @@ export interface RawResults {
   cogneeVersion: string | null
   baseUrl: string
   dataset: string
+  /** Audit Fix 6: Record embedding metadata so the results artifact is self-describing. */
+  embeddingModel: string | null
+  embeddingDimensions: number | null
+  embeddingEndpoint: string | null
   /** Mode decides which per-question series exist; mixing modes in one file would merge series. */
   mode: Mode
   searchType: string
@@ -760,6 +764,9 @@ export async function main(): Promise<number> {
     cogneeVersion: version,
     baseUrl,
     dataset,
+    embeddingModel: process.env.EMBEDDING_MODEL ?? process.env.COGNEE_EMBEDDING_MODEL ?? null,
+    embeddingDimensions: process.env.EMBEDDING_DIMENSIONS ? Number(process.env.EMBEDDING_DIMENSIONS) : null,
+    embeddingEndpoint: process.env.EMBEDDING_ENDPOINT ?? null,
     mode,
     searchType,
     answerSearchType,

@@ -29,6 +29,30 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { Corpus, CorpusDocument, GroundTruthRelation } from './cognee-corpus'
+import { lintGroundTruth } from './cognee-gt-lint'
+
+/**
+ * Audit Fix 1: Explicit allowlist of positive predicates for multi-hop chaining.
+ * Excludes negative predicates (e.g. `no_record_for`) and retracted relations,
+ * so multi-hop questions never follow links that the evidence explicitly disclaims.
+ */
+export const POSITIVE_CHAIN_PREDICATES = new Set([
+  'from_vendor',
+  'received_delivery',
+  'raised_against',
+  'signed_off',
+  'covers',
+  'approved',
+  'for_project',
+  'carried_batch',
+  'contains_serial',
+  'raised',
+  'scoped_to_project',
+  'against_vendor',
+  'filed',
+  'at_warehouse',
+  'involved_batch',
+])
 
 // ---------------------------------------------------------------------------
 // Types — the §4.1 record shape, exactly.
@@ -134,6 +158,14 @@ interface World {
   edgesEndingAt: Map<string, Edge[]>
   /** entity id -> edges whose SUBJECT is it (the only legal way to CONTINUE a chain). */
   edgesStartingAt: Map<string, Edge[]>
+  /** Positive, unretracted edges only (Audit Fix 1). */
+  positiveEdges: Edge[]
+  positiveEdgesStartingAt: Map<string, Edge[]>
+  positiveEdgesEndingAt: Map<string, Edge[]>
+  /** Positive first edges that have at least one valid outgoing second hop in a different doc. */
+  edgesWithSeconds: Edge[]
+  /** Positive first edges that have at least two valid outgoing hops in different docs. */
+  edgesWithThirds: Edge[]
   /** Tokens so frequent that an answer containing one would not identify anything. */
   commonTokens: Set<string>
   names: Record<string, string>
@@ -214,6 +246,31 @@ function loadWorld(path: string): World {
     else edgesStartingAt.set(e.subject, [e])
   }
 
+  // Audit Fix 1: Filter positive, unretracted edges specifically for multi-hop chaining
+  const positiveEdges = allEdges.filter((e) => POSITIVE_CHAIN_PREDICATES.has(e.predicate) && !e.retracted)
+  const positiveEdgesStartingAt = new Map<string, Edge[]>()
+  const positiveEdgesEndingAt = new Map<string, Edge[]>()
+  for (const e of positiveEdges) {
+    const from = positiveEdgesStartingAt.get(e.subject)
+    if (from) from.push(e)
+    else positiveEdgesStartingAt.set(e.subject, [e])
+
+    const into = positiveEdgesEndingAt.get(e.object)
+    if (into) into.push(e)
+    else positiveEdgesEndingAt.set(e.object, [e])
+  }
+
+  // Pre-filter candidate first edges with outgoing chains for fast and reliable sampling
+  const edgesWithSeconds = positiveEdges.filter((a) =>
+    (positiveEdgesStartingAt.get(a.object) ?? []).some((b) => b.docId !== a.docId),
+  )
+  const edgesWithThirds = edgesWithSeconds.filter((a) => {
+    const seconds = (positiveEdgesStartingAt.get(a.object) ?? []).filter((b) => b.docId !== a.docId)
+    return seconds.some((b) =>
+      (positiveEdgesStartingAt.get(b.object) ?? []).some((c) => c.docId !== a.docId && c.docId !== b.docId),
+    )
+  })
+
   // Frequency table over whole documents, so "common" means "common in THIS
   // corpus" instead of depending on a stopword list that drifts from the data.
   const docFreq = new Map<string, number>()
@@ -226,7 +283,24 @@ function loadWorld(path: string): World {
   const commonTokens = new Set<string>()
   for (const [t, n] of docFreq) if (n > threshold) commonTokens.add(t)
 
-  return { corpus, docs, docById, docsForEntity, byPredicate, relsByDoc, allEdges, edgesEndingAt, edgesStartingAt, commonTokens, names }
+  return {
+    corpus,
+    docs,
+    docById,
+    docsForEntity,
+    byPredicate,
+    relsByDoc,
+    allEdges,
+    edgesEndingAt,
+    edgesStartingAt,
+    positiveEdges,
+    positiveEdgesStartingAt,
+    positiveEdgesEndingAt,
+    edgesWithSeconds,
+    edgesWithThirds,
+    commonTokens,
+    names,
+  }
 }
 
 /** True when `token` never appears in `doc`.ids(...) — used for minimality checks. */
@@ -367,15 +441,30 @@ function buildEasy(w: World, rng: Rng, idx: number, used: Set<string>): Benchmar
 function nounFor(predicate: string): string {
   switch (predicate) {
     case 'raised_against':
-      return 'vendor'
     case 'from_vendor':
+    case 'against_vendor':
       return 'vendor'
     case 'carried_batch':
+    case 'involved_batch':
       return 'batch'
     case 'scoped_to_project':
+    case 'for_project':
       return 'project'
     case 'approved':
+    case 'covers':
       return 'invoice'
+    case 'signed_off':
+      return 'purchase order'
+    case 'contains_serial':
+      return 'serial'
+    case 'received_delivery':
+      return 'delivery'
+    case 'at_warehouse':
+      return 'warehouse'
+    case 'filed':
+      return 'incident'
+    case 'raised':
+      return 'audit finding'
     default:
       return 'entity'
   }
@@ -384,23 +473,20 @@ function nounFor(predicate: string): string {
 /**
  * MEDIUM — two edges across two documents, with one required distractor.
  *
+ * Audit Fix 1: Chained only from POSITIVE relations (never `no_record_for`).
+ *
  * Shape: docA(subject ->mid-> X), docB(X ->answer-> ...). The question names the
  * subject and asks for the second edge's object; the middle entity is NOT named,
  * which is what forces the join.
  */
 function buildMedium(w: World, rng: Rng, idx: number, used: Set<string>): BenchmarkQuestion | null {
-  // Seeding from a hardcoded predicate list was the bug that produced 51 of 350
-  // medium questions: the corpus builds 2-edge chains under ~13 different first
-  // predicates, and only 51 of them start with the three I had listed. The tier
-  // must draw from the whole edge set, or the shortfall looks like a corpus limit
-  // when it is really a generator limit.
-  const allEdges = w.allEdges
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const a = rng.pick(allEdges)
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const a = rng.pick(w.edgesWithSeconds)
     const mid = a.object
-    const seconds = (w.edgesStartingAt.get(mid) ?? []).filter((e) => e.docId !== a.docId)
+    const seconds = (w.positiveEdgesStartingAt.get(mid) ?? []).filter((e) => e.docId !== a.docId)
     if (seconds.length === 0) continue
     const b = rng.pick(seconds)
+    if (a.subject === b.object || b.object === a.object) continue
     const hops: Hop[] = [
       { from: label(w, a.subject), via: a.predicate, to: label(w, a.object), docId: a.docId },
       { from: label(w, b.subject), via: b.predicate, to: label(w, b.object), docId: b.docId },
@@ -415,7 +501,7 @@ function buildMedium(w: World, rng: Rng, idx: number, used: Set<string>): Benchm
     const answer = canonicalAnswer(w, b.object)
     if (answer.length < 5 || isCommonToken(answer, w)) continue
 
-    const sib = (w.edgesStartingAt.get(mid) ?? []).find((e) => e.predicate === b.predicate && e.object !== b.object)
+    const sib = (w.positiveEdgesStartingAt.get(mid) ?? []).find((e) => e.predicate === b.predicate && e.object !== b.object)
     used.add(key)
     return {
       id: `medium-${String(idx).padStart(5, '0')}`,
@@ -450,21 +536,23 @@ function _collectEdgesFor(w: World, entityId: string): Edge[] {
 /**
  * HARD — three edges across three documents, two required distractors.
  *
+ * Audit Fix 1: Chained only from POSITIVE relations (never `no_record_for`).
+ *
  * The specific thing separating three-edge from two-edge traversal is that the
  * second distractor shares the MIDDLE entity and terminates one edge early with
  * a plausible wrong answer.
  */
 function buildHard(w: World, rng: Rng, idx: number, used: Set<string>): BenchmarkQuestion | null {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const a = rng.pick(w.allEdges)
-    const seconds = (w.edgesStartingAt.get(a.object) ?? []).filter((e) => e.docId !== a.docId)
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const a = rng.pick(w.edgesWithThirds)
+    const seconds = (w.positiveEdgesStartingAt.get(a.object) ?? []).filter((e) => e.docId !== a.docId)
     if (seconds.length === 0) continue
     const b = rng.pick(seconds)
     if (b.object === a.object) continue
-    const thirds = (w.edgesStartingAt.get(b.object) ?? []).filter((e) => e.docId !== a.docId && e.docId !== b.docId)
+    const thirds = (w.positiveEdgesStartingAt.get(b.object) ?? []).filter((e) => e.docId !== a.docId && e.docId !== b.docId)
     if (thirds.length === 0) continue
     const c = rng.pick(thirds)
-    if (a.subject === c.object || c.object === b.object) continue
+    if (a.subject === c.object || c.object === b.object || c.object === a.object) continue
     const hops: Hop[] = [
       { from: label(w, a.subject), via: a.predicate, to: label(w, a.object), docId: a.docId },
       { from: label(w, b.subject), via: b.predicate, to: label(w, b.object), docId: b.docId },
@@ -481,8 +569,8 @@ function buildHard(w: World, rng: Rng, idx: number, used: Set<string>): Benchmar
     // stops one edge early from the SECOND. d2 is the discriminating one — a
     // two-edge retriever finds d2's document and answers with a plausible wrong
     // value, which is exactly the failure a three-edge question must catch.
-    const d1 = (w.edgesStartingAt.get(a.object) ?? []).find((e) => e.object !== b.object)
-    const d2 = (w.edgesStartingAt.get(b.object) ?? []).find((e) => e.object !== c.object)
+    const d1 = (w.positiveEdgesStartingAt.get(a.object) ?? []).find((e) => e.object !== b.object)
+    const d2 = (w.positiveEdgesStartingAt.get(b.object) ?? []).find((e) => e.object !== c.object)
     used.add(key)
     return {
       id: `hard-${String(idx).padStart(5, '0')}`,
@@ -535,46 +623,52 @@ function buildComplex(w: World, rng: Rng, idx: number, used: Set<string>): Bench
     if (answer.length < 5 || isCommonToken(answer, w)) continue
     used.add(key)
 
-    // The distractor is the SAME question answered from the retracted record: the
-    // timing the memo overturned. A retriever that trusts the stale note lands
-    // here, which is what "resolve the contradiction" has to mean.
+    // Audit Fix 3:
+    // 1. Delivery display label: use label(w, corr.deliveryId) which is "delivery DL-XXX",
+    //    NEVER raw corr.deliveryId ("dlv-XXX") which appears in 0 corpus documents.
+    const deliveryLabel = label(w, corr.deliveryId)
+
+    // 2. Evidence linking document: find the exact document linking this delivery to the chosen vendor or project.
+    //    - If vendor: dock intake summary (from_vendor relation docId)
+    //    - If project: delivery note (for_project relation docId)
+    //    NEVER fall back to naming[0] (which is an unrelated vendor master record).
+    const linkingPredicate = chosen.kind === 'vendor' ? 'from_vendor' : 'for_project'
+    const linkEdge = w.positiveEdges.find(
+      (e) => e.subject === corr.deliveryId && e.predicate === linkingPredicate && e.object === chosen!.id,
+    )
+    if (!linkEdge) continue
+    const linkDoc = w.docById.get(linkEdge.docId)
+    if (!linkDoc) continue
+
+    const evidence = [corr.correctDocId, linkEdge.docId]
     const staleText = (w.docById.get(corr.incorrectDocId)?.text ?? '')
     const staleDay = /day\s+(\d+)/i.exec(staleText)?.[1]
 
-    // The correction memo says the vendor and project are UNCHANGED but does not
-    // name them — the names live on the original delivery note it supersedes (and,
-    // for the vendor, on the dock intake memo). Citing only the memo produced a
-    // ground truth whose answer appears in no cited document at all (measured: 70
-    // of 200 complex questions). The evidence set is therefore the memo PLUS the
-    // records that carry the unchanged facts, which is what "the corrected record
-    // still applies to X" actually requires a retriever to assemble.
-    const evidence = [corr.correctDocId]
-    const staleDoc = w.docById.get(corr.incorrectDocId)
-    if (staleDoc && canonicalAnswer(w, chosen.id) && staleDoc.text.toLowerCase().includes(answer.toLowerCase())) {
-      evidence.push(corr.incorrectDocId)
-    } else {
-      // Fall back to the document that actually names the entity, so the answer is
-      // always readable from the cited set even when the stale note omits it.
-      const naming = (w.docsForEntity.get(chosen.id) ?? []).filter((d) => d !== corr.correctDocId)
-      if (naming.length > 0) evidence.push(naming[0])
-    }
-    if (evidence.length < 2) continue
+    // Distractor: a sibling entity of the same kind from another delivery
+    const siblingLink = w.positiveEdges.find(
+      (e) => e.predicate === linkingPredicate && e.subject !== corr.deliveryId && e.object !== chosen!.id,
+    )
+    const distractorEntity = siblingLink ? canonicalAnswer(w, siblingLink.object) : undefined
+    const distractorStrings = [distractorEntity, staleDay ? `day ${staleDay}` : undefined].filter(Boolean) as string[]
+    const distractorDocIds = [corr.incorrectDocId, siblingLink?.docId].filter(Boolean) as string[]
+
+    used.add(key)
     return {
       id: `complex-${String(idx).padStart(5, '0')}`,
       tier: 'complex',
       submechanism: 'supersession',
-      question: `A later memo corrects the arrival timing for ${corr.deliveryId} but states other details are unchanged. Which ${chosen.kind} does that corrected record still apply to?`,
+      question: `A later memo corrects the arrival timing for ${deliveryLabel} but states other details are unchanged. Which ${chosen.kind} does that corrected record still apply to?`,
       answer,
       answerAliases: [label(w, chosen.id), answer],
       evidenceDocIds: evidence,
       hopChain: [
-        { from: label(w, corr.subject), via: 'was_late', to: corr.correctAssertion, docId: corr.correctDocId },
-        { from: label(w, corr.subject), via: `unchanged_${chosen.kind}`, to: label(w, chosen.id), docId: corr.correctDocId },
+        { from: deliveryLabel, via: 'was_late', to: corr.correctAssertion, docId: corr.correctDocId },
+        { from: deliveryLabel, via: linkingPredicate, to: label(w, chosen.id), docId: linkEdge.docId },
       ],
-      distractorDocIds: [corr.incorrectDocId],
-      distractorStrings: staleDay ? [`day ${staleDay}`] : [],
+      distractorDocIds,
+      distractorStrings,
       mustAppearTokens: [answer],
-      mustNotAppearTokens: [],
+      mustNotAppearTokens: distractorEntity ? [distractorEntity] : [],
       asOf: staleDay ? `superseded: reported day ${staleDay}` : null,
       answerIsNegative: false,
     }
@@ -670,7 +764,7 @@ function main() {
   for (const tier of ['easy', 'medium', 'hard', 'complex'] as Tier[]) {
     let made = 0
     let attempts = 0
-    while (made < want[tier] && attempts < want[tier] * 12) {
+    while (made < want[tier] && attempts < want[tier] * 50) {
       attempts++
       const q = builders[tier](made + 1)
       if (!q) continue
@@ -691,6 +785,17 @@ function main() {
   console.log('tier counts:', JSON.stringify(byTier))
   const evidenceSizes = questions.map((q) => q.evidenceDocIds.length)
   console.log(`evidence docs per question: min ${Math.min(...evidenceSizes)} max ${Math.max(...evidenceSizes)} avg ${(evidenceSizes.reduce((a, b) => a + b, 0) / evidenceSizes.length).toFixed(2)}`)
+
+  console.log('\n--- VERIFYING GROUND TRUTH WITH GT-LINT ---')
+  const lintResult = lintGroundTruth(w.corpus, questions)
+  if (!lintResult.passed) {
+    console.error(`\n❌ FAILED: ${lintResult.violations.length} ground-truth violations found!`)
+    for (const v of lintResult.violations.slice(0, 10)) {
+      console.error(`  [${v.tier}] ${v.id} (${v.check}): ${v.message}`)
+    }
+    process.exit(1)
+  }
+  console.log(`✅ GT-LINT PASSED: All ${questions.length} questions verified with 0 violations.`)
 }
 
 if (import.meta.main) main()

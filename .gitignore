@@ -103,10 +103,14 @@ tsconfig.tsbuildinfo
 
 # Benchmark run artifacts — timestamped output of benchmark/prinasa-runner.ts
 # (38+ files per run). Regenerate with `bun run bench:prinasa`. Kept out of the
-# tree so `git status` stays reviewable; ground-truth-failures.json is tracked
-# deliberately (it is the curated input, not a run artifact).
+# tree so `git status` stays reviewable; ground-truth-failures.json and cited
+# benchmark reports/results are tracked deliberately so reports are reproducible on clone.
 benchmark/results/*.json
 !benchmark/results/ground-truth-failures.json
+!benchmark/results/cognee-1000-results.json
+!benchmark/results/cognee-1000-report.json
+!benchmark/results/cognee-1000-bm25.json
+!benchmark/results/supermemory-1000.json
 
 # Third-party tool scaffolding (impeccable critique system). Installed locally
 # per developer, not project source: nothing under src/ or the build references

@@ -8,7 +8,16 @@
  * comparison falsifiable.
  */
 import { describe, expect, test } from 'bun:test'
-import { buildIndex, evidenceHitAtK, finalHopRank, score, tokenize, topK } from './cognee-bm25-baseline'
+import {
+  buildIndex,
+  evidenceHitAtK,
+  extractIdentifiers,
+  finalHopRank,
+  iterativeTopK,
+  score,
+  tokenize,
+  topK,
+} from './cognee-bm25-baseline'
 
 describe('tokenize', () => {
   test('lowercases and drops tokens shorter than 2 chars', () => {
@@ -152,5 +161,43 @@ describe('controls the harness depends on', () => {
       b: 'invoice INV-4471 approved by Ratna Wibowo',
     })
     expect(topK(index, 'zzqx wobble frandanglorp', 10)).toEqual([])
+  })
+})
+
+describe('iterative search and entity extraction (Audit Fix 2)', () => {
+  test('extractIdentifiers extracts standard corpus identifiers', () => {
+    const text = 'W-01 received delivery DL-001 under batch B-0001 with invoice INV-0001 from vendor PT Sinar Abadi for Project Alpha.'
+    const ids = extractIdentifiers(text)
+    expect(ids).toContain('W-01')
+    expect(ids).toContain('DL-001')
+    expect(ids).toContain('B-0001')
+    expect(ids).toContain('INV-0001')
+    expect(ids).toContain('PT Sinar Abadi')
+    expect(ids).toContain('Project Alpha')
+  })
+
+  test('iterativeTopK traverses multi-hop link that single query cannot find', () => {
+    // docA matches question query "Ratna Wibowo" and links to "B-2291".
+    // docB has "B-2291" and "PT Sinar Abadi", but zero tokens in common with query.
+    // Single search for query can only find docA.
+    // Iterative search must discover docB via the extracted identifier "B-2291".
+    const texts = {
+      docA: 'Ratna Wibowo signed off on intake of B-2291 at the site.',
+      docB: 'Item B-2291 originated from vendor PT Sinar Abadi.',
+      docC: 'Unrelated catering memo for Bandung branch canteen.',
+    }
+    const index = buildIndex(texts)
+
+    const query = 'Who was involved in the verification with Ratna Wibowo at the site?'
+
+    // Single query only finds docA (docB has zero query tokens)
+    const single = topK(index, query, 10)
+    expect(single).toContain('docA')
+    expect(single).not.toContain('docB')
+
+    // Iterative search finds BOTH docA and docB within fixed budget of 10
+    const iter = iterativeTopK(index, texts, query, 10, 2)
+    expect(iter).toContain('docA')
+    expect(iter).toContain('docB')
   })
 })

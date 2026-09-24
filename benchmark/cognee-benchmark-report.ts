@@ -738,6 +738,39 @@ export function buildReport(raws: RawResults) {
       'SUMMARIES and every *_COMPLETION strategy).',
   })
 
+  // Audit Fix 6: Easy tier ceiling validity gate (§3.1, §11)
+  // Easy tier questions have single-document evidence with literal answer tokens.
+  // A memory layer that misses literal identifiers on single-document questions
+  // has a fundamental retrieval or embedding defect. Below 95% invalidates the run.
+  const easyTier = tierMetrics.find((m) => m.tier === 'easy')
+  const easyRecall10 = easyTier?.recall['10'] ?? 0
+  const easyCeilingPass = (easyTier?.n ?? 0) > 0 && easyRecall10 >= 0.95
+
+  gates.push({
+    id: 'easy-ceiling',
+    name: 'Easy tier ceiling validity check: recall@10 >= 0.95 (§3.1, §11)',
+    status: (easyTier?.n ?? 0) === 0 ? 'NOT COMPUTABLE' : easyCeilingPass ? 'PASS' : 'FAIL',
+    expected: 'easy recall@10 >= 0.95 (ceiling check; below 95% invalidates run for all tiers)',
+    actual: `easy recall@10 = ${fmtRate(easyRecall10)} (${easyTier ? `${Math.round(easyRecall10 * easyTier.n)}/${easyTier.n}` : '0/0'})`,
+    ifFails: 'RUN INVALID: The memory layer failed on single-document questions with literal answer tokens. A vector search that misses literal IDs points to a configuration or embedder failure.',
+  })
+
+  // Audit Fix 6: Ingest cost scaling check (detect O(n^2) re-cognify)
+  const itemsProcessed = raws.ingest.itemsProcessed
+  const docCount = raws.corpus.documentCount
+  const isQuadraticIngest = docCount > 0 && itemsProcessed > 2 * docCount
+
+  gates.push({
+    id: 'ingest-scaling',
+    name: 'Ingest scaling check: linear vs quadratic re-cognify',
+    status: raws.ingest.skipped ? 'NOT COMPUTABLE' : isQuadraticIngest ? 'FAIL' : 'PASS',
+    expected: `items_processed ≈ ${docCount} (linear ingest)`,
+    actual: raws.ingest.skipped
+      ? 'ingest skipped'
+      : `items_processed = ${itemsProcessed} (${isQuadraticIngest ? `O(n^2) quadratic re-cognify detected: ${itemsProcessed} processed for ${docCount} documents` : 'linear'})`,
+    ifFails: 'Ingest cost grows quadratically with dataset size. Every batch re-cognifies the entire dataset so far.',
+  })
+
   return {
     requested,
     ks,
@@ -807,6 +840,8 @@ function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
   p(`| cognee version | ${raws.cogneeVersion ?? '(unknown)'} |`)
   p(`| base url | ${raws.baseUrl} |`)
   p(`| dataset | \`${raws.dataset}\` |`)
+  p(`| embedding model | ${(raws as unknown as Record<string, unknown>).embeddingModel ?? '(unrecorded)'} |`)
+  p(`| embedding dimensions | ${(raws as unknown as Record<string, unknown>).embeddingDimensions ?? '(unrecorded)'} |`)
   p(`| mode | ${raws.mode} |`)
   p(`| retrieval searchType | ${raws.searchType} |`)
   p(`| answer searchType | ${raws.answerSearchType} |`)
@@ -818,6 +853,16 @@ function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
   p(`| ingest | ${raws.ingest.skipped ? 'skipped' : `${raws.ingest.documentsWritten} docs in ${(raws.ingest.totalMs / 1000).toFixed(1)}s (${raws.ingest.msPerDoc?.toFixed(0)}ms/doc, batch=${raws.ingest.batchSize})`} |`)
   p(`| run aborted | ${raws.aborted ? `YES — ${raws.abortReason}` : 'no'} |`)
   p()
+
+  const failedGates = r.gates.filter((g) => g.status === 'FAIL')
+  if (failedGates.length > 0) {
+    p('> ⚠️ **RUN INVALID** — One or more critical validity gates failed:')
+    for (const g of failedGates) {
+      p(`> - **${g.name}**: ${g.actual}. ${g.ifFails}`)
+    }
+    p('> No comparison table or accuracy claims may be quoted from an invalid run.')
+    p()
+  }
 
   p('## RETRIEVAL metrics (§5.1) — with reproduction data')
   p()

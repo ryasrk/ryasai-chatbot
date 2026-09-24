@@ -205,6 +205,71 @@ export function topK(index: Bm25Index, query: string, k: number, params: Bm25Par
   return scored.slice(0, k).map((s) => s.docId)
 }
 
+const ID_REGEX = /\b(INV-\d+|PO-\d+|DL-\d+|B-\d+|SN-\d+|AF-\d+|IR-\d+|W-\d+|PT\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|Project\s+[A-Za-z0-9]+)\b/g
+
+export function extractIdentifiers(text: string): string[] {
+  const matches = text.match(ID_REGEX) ?? []
+  return [...new Set(matches)]
+}
+
+/**
+ * Audit Fix 2: Iterative BM25 search.
+ * Multi-hop retrieval cannot be answered by a single keyword query when later-hop
+ * documents share no vocabulary with the question.
+ *
+ * This performs multi-round search under a STRICT FIXED BUDGET (e.g. 10 documents total):
+ * - Round 1: Search question, take top 4 documents.
+ * - Round 2: Extract new entity identifiers from round 1 documents (not in original question),
+ *   and query BM25 with those discovered entities to fill remaining budget (up to 10 total).
+ * - Round 3 (for 3-hop hard questions): repeat with identifiers from round 2 documents.
+ */
+export function iterativeTopK(
+  index: Bm25Index,
+  textsById: Record<string, string>,
+  query: string,
+  totalBudget: number = 10,
+  maxRounds: number = 2,
+  params: Bm25Params = DEFAULT_PARAMS,
+): string[] {
+  const r1Budget = maxRounds === 1 ? totalBudget : Math.min(4, totalBudget)
+  const r1Docs = topK(index, query, r1Budget, params)
+  if (maxRounds === 1 || r1Docs.length >= totalBudget) return r1Docs
+
+  const qTokens = new Set(tokenize(query))
+  const seenDocs = new Set(r1Docs)
+  const allRanked = [...r1Docs]
+
+  let currentDocs = r1Docs
+  for (let round = 2; round <= maxRounds; round++) {
+    if (allRanked.length >= totalBudget) break
+    const candidateIds = new Set<string>()
+    for (const docId of currentDocs) {
+      const docText = textsById[docId] ?? ''
+      for (const id of extractIdentifiers(docText)) {
+        const idTokens = tokenize(id)
+        if (!idTokens.every((t) => qTokens.has(t))) candidateIds.add(id)
+      }
+    }
+    if (candidateIds.size === 0) break
+
+    const queryNext = [...candidateIds].join(' ')
+    const remainingBudget = totalBudget - allRanked.length
+    const nextDocs = topK(index, queryNext, remainingBudget + seenDocs.size, params)
+    const addedThisRound: string[] = []
+    for (const d of nextDocs) {
+      if (!seenDocs.has(d)) {
+        seenDocs.add(d)
+        allRanked.push(d)
+        addedThisRound.push(d)
+        if (allRanked.length >= totalBudget) break
+      }
+    }
+    currentDocs = addedThisRound
+  }
+
+  return allRanked.slice(0, totalBudget)
+}
+
 // ---------------------------------------------------------------------------
 // Grading — the SAME rule the main report uses, so the rows are comparable
 // ---------------------------------------------------------------------------
@@ -252,27 +317,51 @@ const argOf = (name: string, fallback: string | null = null): string | null => {
 }
 
 function main(): void {
-  const resultsPath = argOf('results', 'benchmark/results/cognee-1000-results.json')!
+  const resultsPath = argOf('results', null)
+  const corpusPath = argOf('corpus', null)
+  const questionsPath = argOf('questions', null)
   const outJson = argOf('out-json', null)
   const k1 = Number(argOf('k1', String(DEFAULT_PARAMS.k1)))
   const b = Number(argOf('b', String(DEFAULT_PARAMS.b)))
   const params: Bm25Params = { k1, b }
 
-  const raw = JSON.parse(readFileSync(resultsPath, 'utf8')) as RawResults
-  const texts = raw.corpus.textsById
+  let texts: Record<string, string> = {}
+  let questions: RawQuestion[] = []
+  let docIds: string[] = []
+  let comparisonWindow = 10
+
+  if (corpusPath && questionsPath) {
+    const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as { docs: Array<{ id: string; text: string }> }
+    texts = Object.fromEntries(corpus.docs.map((d) => [d.id, d.text]))
+    docIds = corpus.docs.map((d) => d.id)
+    questions = readFileSync(questionsPath, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+    console.log(`BM25 baseline over corpus: ${corpusPath} and questions: ${questionsPath}`)
+  } else {
+    const finalResultsPath = resultsPath ?? 'benchmark/results/cognee-1000-results.json'
+    const raw = JSON.parse(readFileSync(finalResultsPath, 'utf8')) as RawResults
+    texts = raw.corpus.textsById
+    docIds = raw.corpus.documentIds
+    questions = raw.results
+    comparisonWindow = raw.topK ?? 10
+    console.log(`BM25 baseline over results artifact: ${finalResultsPath}`)
+  }
+
   const docCount = Object.keys(texts).length
 
-  console.log(`BM25 baseline over ${resultsPath}`)
   console.log(`  corpus documents   ${docCount}`)
-  console.log(`  questions          ${raw.results.length}`)
+  console.log(`  questions          ${questions.length}`)
   console.log(`  params             k1=${k1} b=${b}`)
-  console.log(`  comparison window  top-${raw.topK} (same as the recorded cognee run)`)
+  console.log(`  comparison window  top-${comparisonWindow} (same as the recorded cognee run)`)
 
   const t0 = Date.now()
   const index = buildIndex(texts)
   console.log(`  index built in     ${Date.now() - t0}ms (avgdl=${index.avgdl.toFixed(1)} tokens)`)
 
-  // Grade every question in a single pass.
+  // Grade every question in a single pass (Single Search).
   interface PerQuestion {
     id: string
     tier: string
@@ -282,60 +371,83 @@ function main(): void {
     evidenceIn20: boolean
     rr: number
   }
-  const perQuestion: PerQuestion[] = []
+  const perQuestionSingle: PerQuestion[] = []
+  const perQuestionIterative: PerQuestion[] = []
 
-  for (const q of raw.results) {
-    // Window of 20 so recall@20 can be reported; the recorded cognee run caps at
-    // 10, which is why the report marks its own recall@20 NOT COMPUTABLE. BM25
-    // has no such cap, and comparing at a k the other arm cannot reach would be
-    // misleading — the report prints both and says which is comparable.
-    const ranked = topK(index, q.question, 20, params)
-    const rank = finalHopRank(ranked, q.evidenceDocIds)
-    perQuestion.push({
+  for (const q of questions) {
+    // Single search
+    const rankedSingle = topK(index, q.question, 20, params)
+    const rankSingle = finalHopRank(rankedSingle, q.evidenceDocIds)
+    perQuestionSingle.push({
       id: q.id,
       tier: q.tier,
-      rankOfFinalHop: rank,
-      evidenceIn5: evidenceHitAtK(ranked, q.evidenceDocIds, 5),
-      evidenceIn10: evidenceHitAtK(ranked, q.evidenceDocIds, 10),
-      evidenceIn20: evidenceHitAtK(ranked, q.evidenceDocIds, 20),
-      rr: rank > 0 ? 1 / rank : 0,
+      rankOfFinalHop: rankSingle,
+      evidenceIn5: evidenceHitAtK(rankedSingle, q.evidenceDocIds, 5),
+      evidenceIn10: evidenceHitAtK(rankedSingle, q.evidenceDocIds, 10),
+      evidenceIn20: evidenceHitAtK(rankedSingle, q.evidenceDocIds, 20),
+      rr: rankSingle > 0 ? 1 / rankSingle : 0,
+    })
+
+    // Audit Fix 2: Iterative search with follow-up rounds (fixed budget: 10 docs)
+    const rankedIter = iterativeTopK(index, texts, q.question, 10, 2, params)
+    const rankIter = finalHopRank(rankedIter, q.evidenceDocIds)
+    perQuestionIterative.push({
+      id: q.id,
+      tier: q.tier,
+      rankOfFinalHop: rankIter,
+      evidenceIn5: evidenceHitAtK(rankedIter, q.evidenceDocIds, 5),
+      evidenceIn10: evidenceHitAtK(rankedIter, q.evidenceDocIds, 10),
+      evidenceIn20: evidenceHitAtK(rankedIter, q.evidenceDocIds, 10), // budget is 10
+      rr: rankIter > 0 ? 1 / rankIter : 0,
     })
   }
 
   const tiers = ['easy', 'medium', 'hard', 'complex']
-  const metrics: TierMetrics[] = []
+  const metricsSingle: TierMetrics[] = []
+  const metricsIterative: TierMetrics[] = []
+
   for (const tier of [...tiers, 'ALL']) {
-    const rows = tier === 'ALL' ? perQuestion : perQuestion.filter((r) => r.tier === tier)
-    metrics.push({
+    const sRows = tier === 'ALL' ? perQuestionSingle : perQuestionSingle.filter((r) => r.tier === tier)
+    metricsSingle.push({
       tier,
-      n: rows.length,
-      recall5: mean(rows.map((r) => (r.evidenceIn5 ? 1 : 0))),
-      recall10: mean(rows.map((r) => (r.evidenceIn10 ? 1 : 0))),
-      recall20: mean(rows.map((r) => (r.evidenceIn20 ? 1 : 0))),
-      answerAt1: mean(rows.map((r) => (r.rankOfFinalHop === 1 ? 1 : 0))),
-      mrr: mean(rows.map((r) => r.rr)),
+      n: sRows.length,
+      recall5: mean(sRows.map((r) => (r.evidenceIn5 ? 1 : 0))),
+      recall10: mean(sRows.map((r) => (r.evidenceIn10 ? 1 : 0))),
+      recall20: mean(sRows.map((r) => (r.evidenceIn20 ? 1 : 0))),
+      answerAt1: mean(sRows.map((r) => (r.rankOfFinalHop === 1 ? 1 : 0))),
+      mrr: mean(sRows.map((r) => r.rr)),
+    })
+
+    const iRows = tier === 'ALL' ? perQuestionIterative : perQuestionIterative.filter((r) => r.tier === tier)
+    metricsIterative.push({
+      tier,
+      n: iRows.length,
+      recall5: mean(iRows.map((r) => (r.evidenceIn5 ? 1 : 0))),
+      recall10: mean(iRows.map((r) => (r.evidenceIn10 ? 1 : 0))),
+      recall20: mean(iRows.map((r) => (r.evidenceIn20 ? 1 : 0))),
+      answerAt1: mean(iRows.map((r) => (r.rankOfFinalHop === 1 ? 1 : 0))),
+      mrr: mean(iRows.map((r) => r.rr)),
     })
   }
 
-  console.log('\n=== BM25 recall (evidence rule: ALL evidence docs in the top-k) ===')
+  console.log('\n=== Single-Search BM25 recall (Budget: 10 docs, 1 query) ===')
   console.log('| tier | n | recall@5 | recall@10 | recall@20 | answer@1 | MRR |')
   console.log('|---|---|---|---|---|---|---|')
-  for (const m of metrics) {
+  for (const m of metricsSingle) {
     console.log(`| ${m.tier} | ${m.n} | ${m.recall5.toFixed(4)} | ${m.recall10.toFixed(4)} | ${m.recall20.toFixed(4)} | ${m.answerAt1.toFixed(4)} | ${m.mrr.toFixed(4)} |`)
   }
 
-  const overall = metrics.find((m) => m.tier === 'ALL')!
+  console.log('\n=== Iterative BM25 recall (Audit Fix 2 — Budget: 10 docs, multi-round follow-up) ===')
+  console.log('| tier | n | recall@5 | recall@10 | answer@1 | MRR |')
+  console.log('|---|---|---|---|---|---|')
+  for (const m of metricsIterative) {
+    console.log(`| ${m.tier} | ${m.n} | ${m.recall5.toFixed(4)} | ${m.recall10.toFixed(4)} | ${m.answerAt1.toFixed(4)} | ${m.mrr.toFixed(4)} |`)
+  }
+
+  const overallSingle = metricsSingle.find((m) => m.tier === 'ALL')!
+  const overallIter = metricsIterative.find((m) => m.tier === 'ALL')!
 
   // --- SELF-CONTROLS. Always run, never optional. ---------------------------
-  // A control that can be skipped is a control that will be absent, and the
-  // whole reason this baseline exists is that the earlier probe printed a 100%
-  // beside no control at all. These two run on every invocation:
-  //
-  //   1. Gibberish queries must return NOTHING. If an unworded query scores,
-  //      the corpus or the tokenizer is leaking rather than matching.
-  //   2. The same rankings graded against a RANDOM evidence id must collapse
-  //      toward chance. If real and random score alike, `evidenceHitAtK` is not
-  //      measuring retrieval and no row above is trustworthy.
   console.log('\n=== SELF-CONTROLS (must pass before the row above is quotable) ===')
   const gibberish = ['zzqx', 'wobble', 'frandanglorp', 'quintz', 'blorptastic', 'vidrizzle']
   let gibberishHits = 0
@@ -348,9 +460,8 @@ function main(): void {
 
   // Deterministic "random" evidence id per question: step through the document
   // id list by a coprime stride so the same ids are picked on every run.
-  const docIds = raw.corpus.documentIds
   const stride = 7919 // prime, coprime with 1200, so the walk visits many ids
-  const sample = raw.results.slice(0, 300)
+  const sample = questions.slice(0, 300)
   let realHits = 0
   let randomHits = 0
   sample.forEach((q, i) => {
@@ -365,16 +476,12 @@ function main(): void {
   )
   const controlsPass = gibberishOk && randomOk
 
-  console.log('\n=== HOW TO READ THIS AGAINST THE RECORDED COGNEE ROW ===')
-  console.log(`  BM25     recall@10 = ${overall.recall10.toFixed(4)}   answer@1 = ${overall.answerAt1.toFixed(4)}   MRR = ${overall.mrr.toFixed(4)}`)
-  console.log('  cognee   recall@10 = 0.1030   answer@1 = 0.0390   MRR = 0.0579  (benchmark/results/cognee-1000-report.md)')
-  const verdict =
-    overall.recall10 > 0.103
-      ? 'BM25 WINS on recall@10. The graph layer does not currently beat a keyword index on this corpus.'
-      : overall.recall10 < 0.103
-        ? 'cognee wins on recall@10. The graph layer is adding retrieval value over a keyword index here.'
-        : 'TIE on recall@10 to 4 decimals. No retrieval-value claim is supportable either way.'
-  console.log(`  => ${verdict}`)
+  console.log('\n=== HEAD-TO-HEAD COMPARISON @ TOP-10 ===')
+  console.log(`  BM25 (iterative 2-round) recall@10 = ${overallIter.recall10.toFixed(4)}   answer@1 = ${overallIter.answerAt1.toFixed(4)}   MRR = ${overallIter.mrr.toFixed(4)}`)
+  console.log(`  BM25 (single-query)      recall@10 = ${overallSingle.recall10.toFixed(4)}   answer@1 = ${overallSingle.answerAt1.toFixed(4)}   MRR = ${overallSingle.mrr.toFixed(4)}`)
+  console.log('  cognee 1.5.4 (CHUNKS)    recall@10 = 0.1030   answer@1 = 0.0390   MRR = 0.0579  (benchmark/results/cognee-1000-report.md)')
+  console.log('  supermemory (superrag)   recall@10 = 0.0780   answer@1 = 0.0580   MRR = 0.0721  (benchmark/results/supermemory-vs-bm25-vs-cognee.md)')
+
   if (!controlsPass) {
     console.log('\n  !! A SELF-CONTROL FAILED — the comparison above is NOT quotable. Fix the')
     console.log('  harness before citing any number from this run.')
@@ -390,16 +497,18 @@ function main(): void {
       outJson,
       JSON.stringify(
         {
-          version: 1,
+          version: 2,
           kind: 'bm25-baseline',
-          sourceResults: resultsPath,
+          sourceResults: resultsPath ?? `${corpusPath} + ${questionsPath}`,
           params,
           corpusDocuments: docCount,
-          questions: raw.results.length,
-          comparisonWindow: raw.topK,
+          questions: questions.length,
+          comparisonWindow,
           controls: { gibberishHits, gibberishExpectedZero: true, realHits, randomHits, sampleSize: sample.length, pass: controlsPass },
-          metrics,
-          perQuestion,
+          metricsSingle,
+          metricsIterative,
+          perQuestionSingle,
+          perQuestionIterative,
         },
         null,
         2,

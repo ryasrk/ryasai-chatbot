@@ -1,0 +1,768 @@
+{
+  "kind": "cognee-benchmark-report",
+  "generatedAt": "2026-09-16T02:36:24.251Z",
+  "design": "docs/cognee-benchmark-design.md",
+  "source": {
+    "results": "/tmp/benchmark-1000-results.json",
+    "startedAt": "2026-09-16T02:04:57.828Z",
+    "finishedAt": "2026-09-16T02:35:15.541Z",
+    "aborted": false
+  },
+  "run": {
+    "cogneeVersion": "1.5.4",
+    "baseUrl": "http://127.0.0.1:8099",
+    "dataset": "bench:cognee1000:corpus",
+    "mode": "retrieval",
+    "searchType": "CHUNKS",
+    "answerSearchType": "HYBRID_COMPLETION",
+    "topK": 10,
+    "maxChunksReturned": 10,
+    "concurrency": 6,
+    "corpusDocuments": 1200,
+    "questions": 1000,
+    "questionsByTier": {
+      "easy": 150,
+      "medium": 350,
+      "hard": 300,
+      "complex": 200
+    }
+  },
+  "ingest": {
+    "skipped": false,
+    "batchSize": 25,
+    "batches": 48,
+    "documentsWritten": 1200,
+    "itemsProcessed": 29400,
+    "probeFound": true,
+    "probeDocId": "doc-0001",
+    "probeChunks": 5,
+    "perBatchMs": [
+      19715,
+      29382,
+      15323,
+      16423,
+      15885,
+      16310,
+      17730,
+      28345,
+      14635,
+      19403,
+      17490,
+      22585,
+      33214,
+      17348,
+      16904,
+      18814,
+      18355,
+      16493,
+      29073,
+      17989,
+      18071,
+      19327,
+      19332,
+      30896,
+      28965,
+      64129,
+      34533,
+      21894,
+      22812,
+      21103,
+      21474,
+      26007,
+      33085,
+      23432,
+      34073,
+      39693,
+      31623,
+      24918,
+      28322,
+      29294,
+      26703,
+      27398,
+      27887,
+      27494,
+      29119,
+      41424,
+      30504,
+      30545
+    ],
+    "perBatchDocs": [
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25
+    ],
+    "totalMs": 1245909,
+    "msPerDoc": 1038.2575,
+    "errors": []
+  },
+  "retrieval": {
+    "overall": {
+      "tier": "ALL",
+      "n": 1000,
+      "n_graded": 1000,
+      "recall": {
+        "5": 0.081,
+        "10": 0.103,
+        "20": 0.103
+      },
+      "recall_partial": {
+        "5": 0.18083333333333323,
+        "10": 0.24466666666666706,
+        "20": 0.24466666666666706
+      },
+      "evidence_precision": {
+        "5": 0.057600000000000276,
+        "10": 0.0401000000000003,
+        "20": 0.0401000000000003
+      },
+      "answer_at_rank_1": 0.039,
+      "mrr": 0.05789206349206353,
+      "distractor_rejection_rate": 0.9965034965034965,
+      "distractor_as_answer_rate": 0.0034965034965034965,
+      "answerability_gap_20_5": 0.021999999999999992,
+      "latency": {
+        "n": 1000,
+        "min": 1411,
+        "p50": 3426,
+        "p90": 4116.6,
+        "p99": 4871.33,
+        "max": 5431,
+        "n_low": false
+      }
+    },
+    "perTier": [
+      {
+        "tier": "easy",
+        "n": 150,
+        "n_graded": 150,
+        "recall": {
+          "5": 0.16,
+          "10": 0.2733333333333333,
+          "20": 0.2733333333333333
+        },
+        "recall_partial": {
+          "5": 0.16,
+          "10": 0.2733333333333333,
+          "20": 0.2733333333333333
+        },
+        "evidence_precision": {
+          "5": 0.03200000000000001,
+          "10": 0.02733333333333334,
+          "20": 0.02733333333333334
+        },
+        "answer_at_rank_1": 0.05333333333333334,
+        "mrr": 0.106521164021164,
+        "distractor_rejection_rate": 1,
+        "distractor_as_answer_rate": 0,
+        "answerability_gap_20_5": 0.11333333333333331,
+        "latency": {
+          "n": 150,
+          "min": 1953,
+          "p50": 3428,
+          "p90": 3938,
+          "p99": 5067.709999999999,
+          "max": 5173,
+          "n_low": false
+        }
+      },
+      {
+        "tier": "medium",
+        "n": 350,
+        "n_graded": 350,
+        "recall": {
+          "5": 0,
+          "10": 0,
+          "20": 0
+        },
+        "recall_partial": {
+          "5": 0.18857142857142858,
+          "10": 0.26571428571428574,
+          "20": 0.26571428571428574
+        },
+        "evidence_precision": {
+          "5": 0.07542857142857125,
+          "10": 0.053142857142857124,
+          "20": 0.053142857142857124
+        },
+        "answer_at_rank_1": 0,
+        "mrr": 0,
+        "distractor_rejection_rate": 1,
+        "distractor_as_answer_rate": 0,
+        "answerability_gap_20_5": 0,
+        "latency": {
+          "n": 350,
+          "min": 1562,
+          "p50": 3467,
+          "p90": 4117.6,
+          "p99": 4934.419999999998,
+          "max": 5289,
+          "n_low": false
+        }
+      },
+      {
+        "tier": "hard",
+        "n": 300,
+        "n_graded": 300,
+        "recall": {
+          "5": 0,
+          "10": 0,
+          "20": 0
+        },
+        "recall_partial": {
+          "5": 0.024444444444444435,
+          "10": 0.04555555555555558,
+          "20": 0.04555555555555558
+        },
+        "evidence_precision": {
+          "5": 0.014666666666666672,
+          "10": 0.01366666666666667,
+          "20": 0.01366666666666667
+        },
+        "answer_at_rank_1": 0,
+        "mrr": 0,
+        "distractor_rejection_rate": 0.9933333333333333,
+        "distractor_as_answer_rate": 0.006666666666666667,
+        "answerability_gap_20_5": 0,
+        "latency": {
+          "n": 300,
+          "min": 1418,
+          "p50": 3358.5,
+          "p90": 3965.5,
+          "p99": 4611.929999999999,
+          "max": 4869,
+          "n_low": false
+        }
+      },
+      {
+        "tier": "complex",
+        "n": 200,
+        "n_graded": 200,
+        "recall": {
+          "5": 0.285,
+          "10": 0.31,
+          "20": 0.31
+        },
+        "recall_partial": {
+          "5": 0.4175,
+          "10": 0.485,
+          "20": 0.485
+        },
+        "evidence_precision": {
+          "5": 0.10999999999999976,
+          "10": 0.06649999999999984,
+          "20": 0.06649999999999984
+        },
+        "answer_at_rank_1": 0.155,
+        "mrr": 0.2095694444444445,
+        "distractor_rejection_rate": 1,
+        "distractor_as_answer_rate": 0,
+        "answerability_gap_20_5": 0.025000000000000022,
+        "latency": {
+          "n": 200,
+          "min": 1411,
+          "p50": 3441.5,
+          "p90": 4333.6,
+          "p99": 4905.8899999999985,
+          "max": 5431,
+          "n_low": false
+        }
+      }
+    ],
+    "ksComputed": [
+      5,
+      10
+    ]
+  },
+  "answer": {
+    "note": "String rule §4.3.3, NOT an LLM judge. §5.2 judge_disagreement_rate is not computable (no judge called). This is stricter than a human judge and must not be quoted as the design's judged_answer_accuracy.",
+    "accuracy": null,
+    "perTier": {
+      "easy": null,
+      "medium": null,
+      "hard": null,
+      "complex": null
+    },
+    "selfDisclosureRate": null,
+    "n": 0
+  },
+  "latency": {
+    "retrievalPerTier": {
+      "easy": {
+        "n": 150,
+        "min": 1953,
+        "p50": 3428,
+        "p90": 3938,
+        "p99": 5067.709999999999,
+        "max": 5173,
+        "n_low": false
+      },
+      "medium": {
+        "n": 350,
+        "min": 1562,
+        "p50": 3467,
+        "p90": 4117.6,
+        "p99": 4934.419999999998,
+        "max": 5289,
+        "n_low": false
+      },
+      "hard": {
+        "n": 300,
+        "min": 1418,
+        "p50": 3358.5,
+        "p90": 3965.5,
+        "p99": 4611.929999999999,
+        "max": 4869,
+        "n_low": false
+      },
+      "complex": {
+        "n": 200,
+        "min": 1411,
+        "p50": 3441.5,
+        "p90": 4333.6,
+        "p99": 4905.8899999999985,
+        "max": 5431,
+        "n_low": false
+      }
+    },
+    "retrievalPerStrategy": {
+      "CHUNKS": {
+        "n": 1000,
+        "min": 1411,
+        "p50": 3426,
+        "p90": 4116.6,
+        "p99": 4871.33,
+        "max": 5431,
+        "n_low": false
+      }
+    },
+    "retrievalOverall": {
+      "n": 1000,
+      "min": 1411,
+      "p50": 3426,
+      "p90": 4116.6,
+      "p99": 4871.33,
+      "max": 5431,
+      "n_low": false
+    },
+    "synthesis": {
+      "n": 0,
+      "min": null,
+      "p50": null,
+      "p90": null,
+      "p99": null,
+      "max": null,
+      "n_low": true
+    },
+    "ingestWriteMsPerDoc": 1038.2575,
+    "ingestTotalMs": 1245909
+  },
+  "controls": {
+    "gates": [
+      {
+        "id": "corpus-size",
+        "name": "Corpus-size control — \"return everything\" must be impossible",
+        "status": "PASS",
+        "expected": "return_everything answer@1 == 0 and recall@10 ≈ 0 (design §7.1 arithmetic: 4.2e-10)",
+        "actual": "derived expectation for random ranking = 8.33e-4; empirical return_everything answer@1 = 0.0010, recall@10 = 0.0030 over n=1200 docs",
+        "ifFails": "Either the corpus was not built to size, or top-k is not honoured by the server. Both invalidate every other number."
+      },
+      {
+        "id": "hits-ratio",
+        "name": "Mean returned chunks / corpus size < 0.01",
+        "status": "PASS",
+        "expected": "< 0.01 (§7.1 — a server ignoring top-k returns a large fraction of the corpus)",
+        "actual": "10.0 / 1200 = 0.008333",
+        "ifFails": "The server is returning a large fraction of the corpus; the run is invalid."
+      },
+      {
+        "id": "topk-honoured",
+        "name": "topK honoured (recorded because the measured server does NOT honour it strictly)",
+        "status": "PASS",
+        "expected": "<= 10 chunks per recall (--topk=10)",
+        "actual": "max chunks returned by any single recall = 10; recall@20 NOT COMPUTABLE",
+        "ifFails": "Chunks beyond topK are reported (harmless for recall@k) but any k above the observed window cannot be measured."
+      },
+      {
+        "id": "oracle",
+        "name": "oracle baseline scores 1.0 on every retrieval metric (§6.1)",
+        "status": "PASS",
+        "expected": "recall@k = 1.0, answer@1 = 1.0, MRR = 1.0 for every tier",
+        "actual": "overall recall@10=1.0000 answer@1=1.0000 MRR=0.5560 — DESIGN CONFLICT: MRR cannot reach 1.0 for a multi-hop chain under any ordering, because §5.1 defines it as the rank of the first hit covering ALL evidenceDocIds, which for an h-hop question is at best rank h. Answer@1 and recall@k are 1.0 and are what this gate passes on.",
+        "ifFails": "The grader or the ground truth is broken; no other number in the run is trustworthy."
+      },
+      {
+        "id": "ingest-landed",
+        "name": "Ingest independently confirmed (a `status: \"completed\"` is NOT evidence)",
+        "status": "PASS",
+        "expected": "remember returned items_processed > 0 per batch AND an independent probe recall found the text",
+        "actual": "items_processed=29400 over 48 batches; probe for doc-0001 = FOUND; 0 batch errors",
+        "ifFails": "Questions score 0 for a data-availability reason and read as a retrieval failure (§9 threat 14)."
+      },
+      {
+        "id": "aborted",
+        "name": "No rate-limit abort (§9 threat 10)",
+        "status": "PASS",
+        "expected": "zero abort-triggering 429 streaks; no empty response scored as a miss without an `aborted` flag",
+        "actual": "0 questions carry an error/abort flag",
+        "ifFails": "Empty/throttled responses are scored as misses and the low score is a rate-limiter artefact."
+      },
+      {
+        "id": "unanswerable-control",
+        "name": "Unanswerable-question control: 0 leaks (§7.2)",
+        "status": "NOT COMPUTABLE",
+        "expected": "0 questions return a mustNotAppearToken as the cited answer",
+        "actual": "NOT COMPUTABLE — this run contains 0 unanswerable questions. The design puts them in a MIRROR dataset built by the same generator with a different seed (§2.1/§7.2); this run has no mirror, so the control cannot be computed from its data. A control that is silently absent is precisely the probe's recorded failure, so it is reported as a row rather than omitted.",
+        "ifFails": "Retrieval is not dataset-scoped, or the mirror questions were accidentally answerable from the corpus."
+      },
+      {
+        "id": "dataset-scope",
+        "name": "Dataset-scope check (question asked against a disjoint dataset, §7.6)",
+        "status": "NOT COMPUTABLE",
+        "expected": "0 hits carrying the answer, when a corpus question is asked against the mirror dataset",
+        "actual": "NOT COMPUTABLE — no disjoint second dataset was populated or queried by this run.",
+        "ifFails": "Every hit above is suspect; the probe exists precisely because this failure mode is real."
+      },
+      {
+        "id": "bm25-naive",
+        "name": "bm25_naive baseline (§6.4 — the discriminating baseline)",
+        "status": "NOT COMPUTABLE",
+        "expected": "top-k by lexical score over the same corpus and questions",
+        "actual": "NOT COMPUTABLE from the recorded data. bm25_naive requires a lexical index over the corpus; this runner records cognee's own retrieval and the corpus texts, and does not build or read an FTS index. It is NOT approximated with a token-overlap proxy, because §6.4 is the only baseline that decides whether the graph layer earns its place and a proxy would be quoted as if it were BM25.",
+        "ifFails": "Without this row a cognee score is uninterpretable: 71% vs 68% and 71% vs 12% are different findings."
+      },
+      {
+        "id": "doc-resolution",
+        "name": "Chunk → document resolution usable (text-identity match against the corpus)",
+        "status": "PASS",
+        "expected": ">= 50% of served questions have at least one chunk that resolves to a corpus document",
+        "actual": "1000/1000 questions graded; 10000/10000 returned chunks resolved to a document (0 unmatched, counted as non-evidence)",
+        "ifFails": "recall@k / answer@1 / MRR would measure the harness rather than the memory layer. Likely causes: the server truncated, re-split, or synthesized the chunk so it no longer matches the document text (expected for SUMMARIES and every *_COMPLETION strategy)."
+      }
+    ],
+    "oracle": {
+      "overall": {
+        "tier": "ALL",
+        "n": 1000,
+        "n_graded": 1000,
+        "recall": {
+          "5": 1,
+          "10": 1,
+          "20": 1
+        },
+        "recall_partial": {
+          "5": 1,
+          "10": 1,
+          "20": 1
+        },
+        "evidence_precision": {
+          "5": 1,
+          "10": 1,
+          "20": 1
+        },
+        "answer_at_rank_1": 1,
+        "mrr": 0.5559999999999943,
+        "distractor_rejection_rate": 0.9965034965034965,
+        "distractor_as_answer_rate": 0.0034965034965034965,
+        "answerability_gap_20_5": 0,
+        "latency": {
+          "n": 1000,
+          "min": 1411,
+          "p50": 3426,
+          "p90": 4116.6,
+          "p99": 4871.33,
+          "max": 5431,
+          "n_low": false
+        }
+      },
+      "perTier": [
+        {
+          "tier": "easy",
+          "n": 150,
+          "n_graded": 150,
+          "recall": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "recall_partial": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "evidence_precision": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "answer_at_rank_1": 1,
+          "mrr": 1,
+          "distractor_rejection_rate": 1,
+          "distractor_as_answer_rate": 0,
+          "answerability_gap_20_5": 0,
+          "latency": {
+            "n": 150,
+            "min": 1953,
+            "p50": 3428,
+            "p90": 3938,
+            "p99": 5067.709999999999,
+            "max": 5173,
+            "n_low": false
+          }
+        },
+        {
+          "tier": "medium",
+          "n": 350,
+          "n_graded": 350,
+          "recall": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "recall_partial": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "evidence_precision": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "answer_at_rank_1": 1,
+          "mrr": 0.5,
+          "distractor_rejection_rate": 1,
+          "distractor_as_answer_rate": 0,
+          "answerability_gap_20_5": 0,
+          "latency": {
+            "n": 350,
+            "min": 1562,
+            "p50": 3467,
+            "p90": 4117.6,
+            "p99": 4934.419999999998,
+            "max": 5289,
+            "n_low": false
+          }
+        },
+        {
+          "tier": "hard",
+          "n": 300,
+          "n_graded": 300,
+          "recall": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "recall_partial": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "evidence_precision": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "answer_at_rank_1": 1,
+          "mrr": 0.3333333333333322,
+          "distractor_rejection_rate": 0.9933333333333333,
+          "distractor_as_answer_rate": 0.006666666666666667,
+          "answerability_gap_20_5": 0,
+          "latency": {
+            "n": 300,
+            "min": 1418,
+            "p50": 3358.5,
+            "p90": 3965.5,
+            "p99": 4611.929999999999,
+            "max": 4869,
+            "n_low": false
+          }
+        },
+        {
+          "tier": "complex",
+          "n": 200,
+          "n_graded": 200,
+          "recall": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "recall_partial": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "evidence_precision": {
+            "5": 1,
+            "10": 1,
+            "20": 1
+          },
+          "answer_at_rank_1": 1,
+          "mrr": 0.655,
+          "distractor_rejection_rate": 1,
+          "distractor_as_answer_rate": 0,
+          "answerability_gap_20_5": 0,
+          "latency": {
+            "n": 200,
+            "min": 1411,
+            "p50": 3441.5,
+            "p90": 4333.6,
+            "p99": 4905.8899999999985,
+            "max": 5431,
+            "n_low": false
+          }
+        }
+      ]
+    },
+    "returnEverything": {
+      "tier": "ALL",
+      "n": 1000,
+      "n_graded": 1000,
+      "recall": {
+        "5": 0,
+        "10": 0.003,
+        "20": 0.012
+      },
+      "recall_partial": {
+        "5": 0.0005,
+        "10": 0.006666666666666667,
+        "20": 0.016
+      },
+      "evidence_precision": {
+        "5": 0.0002,
+        "10": 0.0013,
+        "20": 0.0016500000000000004
+      },
+      "answer_at_rank_1": 0.001,
+      "mrr": 0.0010385281385281385,
+      "distractor_rejection_rate": 0.9965034965034965,
+      "distractor_as_answer_rate": 0.0034965034965034965,
+      "answerability_gap_20_5": 0.012,
+      "latency": {
+        "n": 1000,
+        "min": 1411,
+        "p50": 3426,
+        "p90": 4116.6,
+        "p99": 4871.33,
+        "max": 5431,
+        "n_low": false
+      }
+    },
+    "randomExpected": {
+      "recall": {
+        "5": 0.0008901272067290355,
+        "10": 0.0017973174176402797,
+        "20": 0.00366340898996242
+      },
+      "answerAt1": 0.0008333333333333334
+    },
+    "unanswerable": {
+      "n": 0,
+      "computed": false
+    },
+    "meanHitsRatio": null,
+    "idGrading": {
+      "gradable": 1000,
+      "total": 1000
+    }
+  },
+  "baselines": {
+    "oracle": "computed",
+    "return_everything": "computed",
+    "random": "derived (hypergeometric expectation, not sampled)",
+    "bm25_naive": "NOT COMPUTABLE — no lexical index over the corpus in this run",
+    "chunk_only": "effectively this run (searchType=CHUNKS)",
+    "no_filler": "NOT COMPUTABLE — requires a separate 200-document corpus build"
+  },
+  "mediumStratified": {
+    "n": 218,
+    "metrics": {
+      "tier": "medium/stratified",
+      "n": 218,
+      "n_graded": 218,
+      "recall": {
+        "5": 0,
+        "10": 0,
+        "20": 0
+      },
+      "recall_partial": {
+        "5": 0.21100917431192662,
+        "10": 0.30275229357798167,
+        "20": 0.30275229357798167
+      },
+      "evidence_precision": {
+        "5": 0.0844036697247705,
+        "10": 0.06055045871559619,
+        "20": 0.06055045871559619
+      },
+      "answer_at_rank_1": 0,
+      "mrr": 0,
+      "distractor_rejection_rate": 1,
+      "distractor_as_answer_rate": 0,
+      "answerability_gap_20_5": 0,
+      "latency": {
+        "n": 218,
+        "min": 1657,
+        "p50": 3550.5,
+        "p90": 4161.6,
+        "p99": 4979.859999999998,
+        "max": 5163,
+        "n_low": false
+      }
+    }
+  },
+  "failures": [],
+  "scope": [
+    "RETRIEVAL, not faithfulness: a hit means the joined evidence was findable, not that the reply used it.",
+    "Synthetic, templated, single-domain corpus — cleaner than production, so these rates are an upper bound.",
+    "One language (English procurement prose). Multi-lingual recall is not measured.",
+    "Not customer scale: 12,000 synthetic one-sentence documents are not 12,000 customer documents.",
+    "A single run is not a rate. Run --trials N on a stratified subset before calling a failure a defect.",
+    "No LLM judge: the design §5.2 judged metrics and judge_disagreement_rate are not computable here.",
+    "No routing metric: this harness does not go through smartRoute."
+  ]
+}

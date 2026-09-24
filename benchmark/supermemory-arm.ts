@@ -217,29 +217,50 @@ async function main(): Promise<void> {
 
     // Ingestion is ASYNC by design ("Adds are accepted instantly but processed
     // through a queue"). Grading before the queue drains would measure the queue.
-    // Poll until search actually returns content for a known phrase.
+    // Audit Fix 5: Wait until FULL index readiness (all documents indexed, not just one probe hit).
     console.log('\n--- WAIT FOR QUEUE ---')
-    const probeQ = textsById[docIds[0]].split(' ').slice(0, 6).join(' ')
     let ready = false
+    const sampleIndices = [0, Math.floor(docIds.length / 2), docIds.length - 1]
+
     for (let attempt = 0; attempt < 720; attempt++) {
-      // `/v4/search` for the SAME reason the grading call uses it: v3 returns an
-      // empty result set on this build, so probing v3 would wait forever and then
-      // blame the corpus for a route regression.
-      const r = await api(base, apiKey, '/v4/search', {
-        method: 'POST',
-        body: { q: probeQ, containerTag, searchMode: 'hybrid', limit: 3, threshold: 0 },
-        timeoutMs: 60_000,
-      })
-      const n = (r.json as { total?: number; results?: unknown[] } | null)?.total ?? 0
-      if (n > 0) {
+      // 1. Verify container documentCount reached full doc count
+      const tagListRes = await api(base, apiKey, '/v3/container-tags/list', { method: 'GET', timeoutMs: 30_000 })
+      const tags = (tagListRes.json as Array<{ containerTag?: string; documentCount?: number }>) ?? []
+      const currentTag = tags.find((t) => t.containerTag === containerTag)
+      const docCount = currentTag?.documentCount ?? 0
+
+      // 2. Probe search across start, middle, and end of the corpus
+      let allSamplesFound = false
+      if (docCount >= docIds.length) {
+        let sampleHits = 0
+        for (const idx of sampleIndices) {
+          const probeQ = textsById[docIds[idx]].split(' ').slice(0, 6).join(' ')
+          const r = await api(base, apiKey, '/v4/search', {
+            method: 'POST',
+            body: { q: probeQ, containerTag, searchMode: 'hybrid', limit: 3, threshold: 0 },
+            timeoutMs: 30_000,
+          })
+          const n = (r.json as { total?: number; results?: unknown[] } | null)?.total ?? 0
+          if (n > 0) sampleHits++
+        }
+        if (sampleHits === sampleIndices.length) {
+          allSamplesFound = true
+        }
+      }
+
+      if (docCount >= docIds.length && allSamplesFound) {
         ready = true
-        console.log(`  searchable after ${attempt * 5}s (probe returned ${n})`)
+        console.log(`  full corpus indexed and searchable (${docCount}/${docIds.length} docs, all sample probes verified) after ${attempt * 5}s`)
         break
+      }
+
+      if (attempt % 6 === 0) {
+        console.log(`  queue status: ${docCount}/${docIds.length} documents processed (attempt ${attempt})`)
       }
       await sleep(5000)
     }
     if (!ready) {
-      console.error('  corpus never became searchable within 60 minutes — aborting rather than scoring a queue artefact')
+      console.error('  corpus never reached full index readiness within 60 minutes — aborting rather than scoring a partial index')
       process.exit(1)
     }
   } else {
@@ -394,7 +415,7 @@ async function main(): Promise<void> {
       '# supermemory arm — retrieval comparison',
       '',
       `Source corpus/questions: \`${resultsPath}\` (identical to the cognee run and the BM25 baseline).`,
-      `taskType=\`${taskType}\` (document retrieval, NOT memory extraction), searchMode=documents, limit=${limit}, threshold=0.`,
+      `taskType=\`${taskType}\` (document retrieval, NOT memory extraction), searchMode=hybrid, limit=${limit}, threshold=0.`,
       '',
       '| tier | n | recall@5 | recall@10 | answer@1 | MRR | p50 ms | p90 ms |',
       '|---|---|---|---|---|---|---|---|',

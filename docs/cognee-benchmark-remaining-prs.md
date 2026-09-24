@@ -11,28 +11,12 @@ currently invalidates the most claims.
 
 ## PR-1 — `bm25_naive`: the baseline that makes our own score interpretable
 
-**Status: BLOCKING. Nothing else on this list matters as much.**
+**Status: COMPLETED** (Committed in `04b6807` and updated with Iterative Search in `benchmark/cognee-bm25-baseline.ts`).
 
-The committed report's own text says it plainly:
-
-> **NOT COMPUTABLE.** … It is deliberately NOT approximated with a token-overlap proxy —
-> §6.4 is the only baseline that decides whether the graph layer earns its place, and a
-> proxy would be quoted as though it were BM25.
->
-> **Consequence, stated plainly:** without this row, the cognee score above is **not
-> interpretable**.
-
-Today we have recall@10 = **0.1030** overall (easy 0.2733, medium **0.0000**, hard **0.0000**,
-complex 0.3100). We cannot yet say whether that is bad — a plain lexical index might score
-0.30, or 0.03. Those are opposite conclusions about whether the graph layer is worth its
-operational cost.
-
-**Do:** build a lexical index over the same corpus + questions (Postgres `ts_rank`, or reuse
-`src/lib/rag-fts.ts`) and add it as a real baseline arm. `benchmark/cognee-retrieval-runner.ts`
-records the corpus texts, so no re-ingest is required.
-
-**Trap:** a token-overlap proxy is not BM25 and must not be labelled as such. If the index
-cannot be built, keep the NOT COMPUTABLE row rather than substituting a proxy.
+- Single-query BM25: recall@10 = **0.3080**, answer@1 = 0.1830, MRR = 0.2767.
+- Iterative 2-round BM25 (Audit Fix 2): recall@10 = **0.4760**, answer@1 = 0.1830, MRR = 0.3065 under the same fixed 10-document budget.
+- Verified by 22 unit tests in `benchmark/cognee-bm25-baseline.test.ts` (including determinism, tie-breaking, k1 saturation, length penalty, and multi-hop entity traversal).
+- Automated self-controls (200 gibberish queries = 0 hits, random evidence id divergence) pass on every invocation.
 
 ---
 
@@ -128,58 +112,14 @@ records the point of the Dockerfile:
 
 ## PR-8 — Spike: evaluate supermemory as a cognee replacement (decision, not a migration)
 
-**Status: NOT STARTED. Verify before believing anything below.**
+**Status: COMPLETED** (Runner: `benchmark/supermemory-arm.ts`, Report: `benchmark/results/supermemory-vs-bm25-vs-cognee.md`).
 
-### What is actually open source (verified against the repo, not the marketing)
-
-`supermemoryai/supermemory` is **MIT**, but the licence covers the *clients*, not the engine.
-Repository contents: `apps/{web,mcp,docs,memory-graph-playground,raycast-extension,sdk-playground}`
-and `packages/{ai-sdk,tools,hooks,ui,validation,lib,memory-graph,*-sdk-python}`.
-
-**There is no server engine directory.** The local server is a **prebuilt binary** from
-GitHub Releases — `supermemory-server-linux-x64`, **~312 MB** at `server-v0.0.8`. So:
-SDKs/plugins/MCP/dashboard = auditable; **the memory engine itself = closed, unauditable.**
-
-### Facts that bear on our deployment model
-
-| fact | source | why it matters here |
-|---|---|---|
-| Local mode is **one binary, offline-capable**, BYO model (incl. Ollama) | README | genuinely fits an air-gapped on-prem install |
-| **Air-gapped self-hosting is an Enterprise (paid) tier** feature | `llms-full.txt` pricing | we ship exactly that to customers; this becomes a commercial/redistribution question |
-| Pricing is **usage-based, metered in SM tokens** | `llms-full.txt` | conflicts with our signed-licence model, where metering is deliberately absent. Local-binary metering behaviour is **unverified** |
-| **v0.0.8**, and the 0.0.7 release notes record an upgrade that **silently wiped search vectors** | releases API | a data-loss bug in an upgrade path, at 0.0.x, on a system that would hold customer knowledge |
-| **No Docker image** published (no Docker Hub namespace found) | registry check | our install path is compose-first; a 312 MB binary is packaging friction |
-| Benchmark claims (#1 LongMemEval / LoCoMo / ConvoMem, "95% Recall@15") are **the vendor's own** | README | treat as unverified by us until we reproduce on our corpus |
-
-### Why this is a spike and not a migration
-
-1. **We cannot currently justify replacing cognee, because PR-1 is missing.** Our cognee
-   score is uninterpretable without `bm25_naive`. Switching dependencies before establishing
-   the baseline risks re-running the same unknown with a different vendor and calling it an
-   improvement.
-2. **The engine is a closed binary.** This product's own invariants (`AGENTS.md`) lean on
-   being able to read and patch what we ship to customer premises — see the cognee
-   `NATURAL_LANGUAGE`/kuzu gate and the `@cognee/cognee-ts` upgrade guard, both of which exist
-   because we could measure and inspect the dependency. A black-box engine removes that.
-3. **The operational failure we hit with cognee may not be fixed by switching.** cognee's
-   crash was `RuntimeError: cannot schedule new futures after shutdown` under sustained
-   ingest. supermemory ingests asynchronously (its API is explicitly async + a `dreaming`
-   operation), so it may well be better here — but that is a *hypothesis to measure*.
-
-### Minimum viable spike (time-boxed)
-
-1. Install the local binary on the lab host; confirm **offline** operation and whether it
-   meters, phones home, or requires any licence key. *(Unverified today — do this first; it
-   can end the spike immediately.)*
-2. Ingest the **same 1200-doc corpus** from `benchmark/cognee-corpus.ts` and ask the **same
-   1000 questions**. Reuse `benchmark/cognee-benchmark-report.ts` unchanged — it is a pure
-   scorer over a raw-results file, so a new runner only has to emit the same shape.
-3. Report **both** vendors against **PR-1's bm25_naive baseline**, plus ingest throughput and
-   the sustained-ingest stability result.
-4. Decide on: licence/redistribution terms, binary auditability, and whether the
-   `SCORE = cognee vs supermemory vs bm25` table justifies the migration.
-
-**Do not** treat the vendor's benchmark numbers as a substitute for step 3 on our corpus.
+Key verified findings:
+1. **Measured Retrieval:** recall@10 = **0.0780** across 1000 questions (BM25 scored **0.3080** single / **0.4760** iterative; cognee scored 0.1030).
+2. **Auditability:** The self-hosted binary is an executable Bun bundle containing readable JavaScript (`Usage metering is disabled in self-hosted builds`, `SUPERMEMORY_DISABLE_TELEMETRY=1`, `sm_self_hosted: true`).
+3. **Embedder Bottleneck:** Default local embedder (`Xenova/bge-base-en-v1.5`, 768d) suffers severe cosine compression on templated enterprise docs (within-question spread p50 is only 0.0301), causing retrieval to collapse onto 33% of the corpus.
+4. **Route Bug:** Self-hosted v0.0.8 `/v3/search` returns 0 results for all queries; the working route is `/v4/search`.
+5. **Conclusion:** Migrating cognee → supermemory for document retrieval is **NOT justified**. Keep supermemory in consideration only for user-level conversation memory and user profiles.
 
 ---
 
