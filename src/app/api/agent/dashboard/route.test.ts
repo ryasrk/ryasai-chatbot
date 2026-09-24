@@ -42,6 +42,8 @@ let sessionRow: Record<string, unknown> | null = null
 let createdSession = { id: 's-new', createdAt: new Date('2026-03-01T00:00:00Z') }
 let historyRows: Array<Record<string, unknown>> = []
 let steps: Array<Record<string, unknown>> = []
+/** `thinking` events the orchestrator emits before its steps; `undefined` = an event with no content. */
+let orchestratorThinking: Array<string | undefined> = []
 let unifiedTools: Array<{ id: string; name: string; description: string; category: string }> = []
 let orchestratorResult: Record<string, unknown> = {}
 let tokens: string[] = []
@@ -130,6 +132,7 @@ mock.module('@/lib/agent-orchestrator', () => ({
     events.push('runAgentOrchestrator')
     if (orchestratorThrows) throw orchestratorThrows
     const onEvent = args.onEvent as (e: { type: string; data: Record<string, unknown> }) => void
+    for (const content of orchestratorThinking) onEvent({ type: 'thinking', data: { content } })
     for (const s of steps) {
       onEvent({ type: 'tool_start', data: { stepId: s.stepId, toolId: s.tool, arguments: { q: 'x' } } })
       onEvent({
@@ -220,6 +223,7 @@ beforeEach(() => {
   createdSession = { id: 's-new', createdAt: new Date('2026-03-01T00:00:00Z') }
   historyRows = []
   steps = []
+  orchestratorThinking = []
   unifiedTools = [
     { id: 'sql', name: 'query_database', description: 'SQL', category: 'database' },
     { id: 'rag', name: 'search_knowledge_base', description: 'RAG', category: 'knowledge' },
@@ -318,6 +322,17 @@ describe('the SSE frame format', () => {
   test('the thinking frame carries its message', async () => {
     const f = await frames(await post({ message: 'hi' }))
     expect(find(f, 'thinking')!.data).toEqual({ content: 'Analyzing request...' })
+  })
+
+  test('the orchestrator\'s own thinking is forwarded, and a content-less one still says something', async () => {
+    orchestratorThinking = ['Checking the sales table', undefined]
+    const f = await frames(await post({ message: 'hi' }))
+    const thinking = f.filter((x) => x.event === 'thinking').map((x) => x.data)
+    expect(thinking).toEqual([
+      { content: 'Analyzing request...' },
+      { content: 'Checking the sales table' },
+      { content: 'Thinking...' },
+    ])
   })
 
   test('the plan frame exposes the tool ids the agent can reach', async () => {

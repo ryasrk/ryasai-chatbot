@@ -103,7 +103,7 @@ mock.module('@/lib/session', () => ({
 }))
 
 // `db` is mocked even though no route module reads it directly: smart-router's
-// `detectMentionedIntegration`, `pickBestIntegration*` and every loader in
+// `pickBestIntegration*` and every loader in
 // smart-router-helpers go through it, and one stray un-stubbed call would otherwise
 // try to reach a real Postgres from a unit test.
 mock.module('@/lib/db', () => ({
@@ -485,17 +485,13 @@ describe('the scoring arithmetic is the real implementation', () => {
     expect(sql.circuitBreakerTripped).toBe(false)
   })
 
-  test('schemaScore is ALWAYS 0 here because the route passes an empty token array', async () => {
-    // Found by running this file, not by reading the route: getRoutingScores calls
-    // `scoreSchemaMatch(tool, [], schemaMeta, endpointMeta, docMeta, [], '')` -- the
-    // token list, the plugin list and the question are all empty strings/arrays. So
-    // `if (tokens.length === 0) return 0` fires before ANY keyword or semantic
-    // scoring, and the schema leg of the score is dead in this endpoint.
-    //
-    // That is the difference between this diagnostic table and a live routing
-    // decision: smartRoute passes `expandedTokens` and the real question. Recorded
-    // here with the metadata deliberately non-empty, so this cannot pass because the
-    // fixtures were empty.
+  test('schemaScore is ALWAYS 0 here because no question is being routed', async () => {
+    // Found by running this file, not by reading the route: getRoutingScores used to
+    // call `scoreSchemaMatch(tool, [], ...)` with an empty token list, so the schema
+    // leg returned 0 before any keyword or semantic scoring. That helper was deleted
+    // with the heuristic router it served; the route now states `schemaScore = 0`.
+    // Recorded here with the metadata deliberately non-empty, so this cannot pass
+    // because the fixtures were empty.
     schemaMetadata = ['customers']
     endpointMetadata = ['orders']
     documentMetadata = ['payroll']

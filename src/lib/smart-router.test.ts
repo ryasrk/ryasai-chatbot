@@ -358,7 +358,7 @@ describe('smart-router keywordOverlap', () => {
 // ANY non-Latin script produced ZERO tokens:
 //   "什么是退款政策"   → []
 //   "لماذا الاسترداد"  → []
-// With zero tokens `scoreSchemaMatch` returns 0 immediately, every candidate's
+// With zero tokens the (since-removed) `scoreSchemaMatch` returned 0 immediately, every candidate's
 // keywordScore is 0, and integration selection becomes impossible — SQL was
 // effectively unusable for those users. The separator is now `[^\p{L}\p{N}]`
 // and both paths share rag.ts's STOPWORDS + isMeaningfulToken.

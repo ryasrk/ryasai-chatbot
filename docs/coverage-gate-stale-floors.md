@@ -1,7 +1,8 @@
 # Coverage gate: `coverage-summary.json` is stale, and the gate now fails in CI
 
-**Status: OPEN. Not caused by the commits that exposed it — but it IS a real coverage
-drop, not a stale number.**
+**Status: RESOLVED — tests first, then evidence-backed re-anchors. See [Resolution](#resolution)
+at the end. Not caused by the commits that exposed it — but it WAS a real coverage drop,
+not a stale number.**
 
 ## What is happening
 
@@ -126,3 +127,41 @@ exit 101. Fixed by giving both scripts the same fallback, with the host delibera
 unreachable so a unit test cannot silently depend on real rows. Related: `ci.yml` states
 "Unit suite needs no database", which was false and is the comment that made this look
 like a mystery rather than a missing variable.
+
+## Resolution
+
+Done in the order "What to do" asks for: missing tests first, re-anchor only what is left
+and provably non-executable.
+
+**Local reproduction.** `scripts/coverage.ts` measured 0 files on Windows (`normalizeSfPath`
+only recognised `/`-rooted paths, so Bun's `src\lib\x.ts` keys missed the `src/` filter) and
+overwrote the summary with an empty one. With that fixed, a local run reproduced all 13 CI
+breaches to two decimals, which made every step below measurable before pushing.
+
+**Tests for the real gaps** (reachable coverage 92.06% → 93.32% locally):
+
+| module | merged before → after | what was untested |
+|---|---|---|
+| `mcp-client.ts` | 320/613 → 511/619 | resources, templates, subscriptions, content cache + LRU, prompts, roots, list_changed handlers, `callStdioMcpTool` — new `mcp-client-resources.test.ts` |
+| `plugin-registry.ts` | 199/301 → 232/301 | the whole `mcp-stdio` executor, incl. the execution-time allowlist re-check (negative-controlled) — new `plugin-registry-mcp-stdio.test.ts` |
+| `planner.ts` | 572/737 → 582/737 | circuit-open refusal for `mcp:` and `plugin:` steps |
+| `license-client.ts` | 129/152 → 131/152 | production pinning of the validator URL; a wrong-type (X25519) key failing closed |
+| `agent/dashboard/route.ts` | 142/143 → 143/143 | forwarding the orchestrator's own `thinking` events + fallback text |
+| `tool-router.ts` | 253 → 256 hits | the `routeQuery` fallback when the tool selector returns nothing |
+| `web-fetch.ts` | — | `isWebSearchAvailable` in its own suite (already hit transitively in the merge) |
+
+**Dead code, not a coverage gap.** `smart-router.ts` hits FELL 408 → 238 because `43f2264`
+deleted `smartRoute` and orphaned `scoreSchemaMatch`, `keywordScoreForTool` and
+`detectMentionedIntegration`. Their only remaining caller passed an empty token list, so
+they could never do anything. Deleted: 227/308, 100% of executable lines.
+
+**Re-anchored with evidence.** For the ten modules still below their floor, the merged
+per-line misses were dumped and classified. Every one is a comment, blank line, brace,
+type-annotation member, or continuation line of a multi-line string literal — except the
+POSIX-only `MCP_ROOTS` branches (run on CI, skipped on Windows) and `web-fetch.ts:166`
+(declared unreachable in its test). Each floor is now the merged measurement rounded down,
+minus 1 for denominator drift, and its comment records the hit/record pair it came from so
+a future drift shows up as a changed pair.
+
+Still open, from "What to do" item 3: nothing detects a stale `coverage-summary.json` before
+CI regenerates it.

@@ -125,6 +125,7 @@ mock.module('@/lib/web-fetch', () => ({
 
 import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQuery, planQueryWithTools, synthesizeAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
 import type { PlanStep, Plan } from '@/lib/planner'
+import { toolCircuitBreaker } from '@/lib/tool-circuit-breaker'
 import type { ToolDef } from '@/lib/tool-registry'
 
 const TOOLS: ToolDef[] = [
@@ -349,6 +350,45 @@ describe('executePlan', () => {
     expect(results[0].ok).toBe(true)
     expect(results[0].output).toBe('mcp-output')
     expect(mockCallMcpTool).toHaveBeenCalledTimes(1)
+  })
+
+  // The breaker is shared, process-wide state, so each test opens its own tool's
+  // circuit and resets it in `finally` -- a leaked open circuit would fail an
+  // unrelated test that happens to reuse the tool name.
+  const withOpenCircuit = async (tool: string, run: () => Promise<void>) => {
+    for (let i = 0; i < 3; i++) toolCircuitBreaker.recordFailure(tool, new Error('down'))
+    try { await run() } finally { toolCircuitBreaker.reset(tool) }
+  }
+
+  test('an OPEN circuit refuses an mcp step without calling the server', async () => {
+    await withOpenCircuit('mcp:flaky:toolA', async () => {
+      const statuses: string[] = []
+      const results = await executePlan({
+        plan: { steps: [{ id: 's1', tool: 'mcp:flaky:toolA', input: {} }], needsSynthesis: false },
+        userId: 'u1',
+        onStatus: (_id, _tool, status) => statuses.push(status),
+      })
+      expect(results[0].ok).toBe(false)
+      expect(results[0].error).toContain('circuit open')
+      expect(statuses.at(-1)).toBe('error')
+      expect(mockCallMcpTool).not.toHaveBeenCalled()
+    })
+  })
+
+  test('an OPEN circuit refuses a plugin step without even looking the plugin up', async () => {
+    await withOpenCircuit('plugin:flaky', async () => {
+      const statuses: string[] = []
+      const results = await executePlan({
+        plan: { steps: [{ id: 's1', tool: 'plugin:flaky', input: {} }], needsSynthesis: false },
+        userId: 'u1',
+        onStatus: (_id, _tool, status) => statuses.push(status),
+      })
+      expect(results[0].ok).toBe(false)
+      expect(results[0].error).toContain('circuit open')
+      expect(statuses.at(-1)).toBe('error')
+      expect(mockPluginFindFirst).not.toHaveBeenCalled()
+      expect(mockExecutePlugin).not.toHaveBeenCalled()
+    })
   })
 
   test('onStatus callback fires running→done for successful step', async () => {

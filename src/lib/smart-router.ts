@@ -1,11 +1,11 @@
 import { STOPWORDS } from '@/lib/rag'
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
-import { selectRelevantPlugins, type ScoredPlugin } from '@/lib/plugin-selector'
+import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { getEmbeddingRuntimeConfig, embedTexts, cosineSimilarity } from '@/lib/embeddings'
 import {
  tokenize, expandWithSynonyms, keywordOverlap, checkAvailability, buildReason,
-  computeSemanticScore, loadSchemaMetadata, loadEndpointMetadata, loadDocumentMetadata,
+  loadSchemaMetadata, loadEndpointMetadata, loadDocumentMetadata,
   loadPerformanceMetrics, loadSimilarityBoost, getQuestionEmbedding,
   invalidateSourceEmbeddingCache,
   WEIGHTS, NEUTRAL_PERF,
@@ -132,133 +132,12 @@ export function extractDomainGlossaryTerms(ctxLower: string): Set<string> {
 // What REMAINS here is used by the branches and the admin surface: integration
 // picking (pickBestIntegration*), the routing score view (getRoutingScores) and
 // invalidateSourceEmbeddingCache.
+//
+// The three helpers that served it -- scoreSchemaMatch, keywordScoreForTool and
+// detectMentionedIntegration -- were orphaned by that removal and are gone too:
+// getRoutingScores was their last caller and always passed an empty token list,
+// so the keyword and semantic legs could never run.
 // ---------------------------------------------------------------------------
-async function scoreSchemaMatch(
-  tool: RouteDecision,
-  tokens: string[],
-  schemaMeta: string[],
-  endpointMeta: string[],
-  docMeta: string[],
-  pluginRelevant: ScoredPlugin[] = [],
-  question: string,
-): Promise<number> {
-  if (tokens.length === 0) return 0
-  const keywordScore = keywordScoreForTool(tool, tokens, schemaMeta, endpointMeta, docMeta, pluginRelevant)
-  const semanticScore = await computeSemanticScore(question, tool)
-  return keywordScore * 0.4 + semanticScore * 0.6
-}
-
-function keywordScoreForTool(
-  tool: RouteDecision,
-  tokens: string[],
-  schemaMeta: string[],
-  endpointMeta: string[],
-  docMeta: string[],
-  pluginRelevant: ScoredPlugin[] = [],
-): number {
-  switch (tool) {
-    case 'SQL': return keywordOverlap(tokens, schemaMeta)
-    case 'REST': return keywordOverlap(tokens, endpointMeta)
-    case 'RAG': return keywordOverlap(tokens, docMeta)
-    case 'PLUGIN': return pluginRelevant.length > 0 ? pluginRelevant[0].score : 0
-    case 'CHAT':
-    case 'CONTEXTUAL_CHAT': return 0 // ponytail: CHAT has no schema match — neutral baseline only. A non-zero value caused false LLM tiebreakers on every SQL/RAG question.
-    default: return 0
-  }
-}
-
-async function detectMentionedIntegration(
-  question: string,
-  tokens: string[],
-): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
-  const integrations = await db.integration.findMany({
-    where: { status: 'active' },
-    include: { schemas: { select: { tableName: true, columns: true } } },
-  })
-  if (integrations.length === 0) return undefined
-  if (integrations.length === 1) return undefined
-
-  const lower = question.toLowerCase()
-
-  // ponytail: check business context domain terms first — when 10 DBs are
-  // connected, schema keyword matching alone can't tell them apart if they
-  // share generic table names. But each DB's businessContext contains domain
-  // terms ("mining safety", "payroll", "inventory", "CRM") that are far more
-  // discriminative. If the question matches 2+ domain terms in one
-  // integration's businessContext, prefer that integration immediately.
-  for (const integ of integrations) {
-    if (!integ.businessContext) continue
-    const ctxLower = integ.businessContext.toLowerCase()
-    const glossaryTerms = extractDomainGlossaryTerms(ctxLower)
-    let ctxMatches = 0
-    for (const term of glossaryTerms) {
-      // 2 chars, not 4: the old floor dropped every CJK glossary term, because a
-      // two-character Chinese word is a complete concept. `tokenize` already
-      // uses 2 via `isMeaningfulToken`, so this now matches the rest of the
-      // pipeline instead of being the one place with a higher bar.
-      if (term.length >= 2 && lower.includes(term)) ctxMatches++
-    }
-    if (ctxMatches >= 2) {
-      return { integrationId: integ.id }
-    }
-  }
-
-  for (const integ of integrations) {
-    const nameLower = integ.name.toLowerCase()
-    if (lower.includes(nameLower)) return { integrationId: integ.id }
-    const significantWords = nameLower.split(/\s+/).filter(
-      (w) => w.length >= 4 && !STOPWORDS.has(w) && !['db', 'database', 'data', 'store', 'media'].includes(w),
-    )
-    if (significantWords.length >= 2 && significantWords.every((w) => lower.includes(w))) {
-      return { integrationId: integ.id }
-    }
-  }
-
-  const scored = integrations.map((integ) => {
-    const schemaKeywords = new Set<string>()
-    for (const s of integ.schemas) {
-      schemaKeywords.add(s.tableName.toLowerCase())
-      try {
-        const cols = JSON.parse(s.columns) as Array<{ name?: string }>
-        for (const c of cols) {
-          if (c.name) schemaKeywords.add(c.name.toLowerCase())
-        }
-      } catch { /* skip */ }
-    }
-    // Filter out generic app-internal column names that pollute keyword matching
-    // (id, status, createdat, etc.) — these appear in every integration's schema
-    // and never help discriminate between domain databases.
-    for (const generic of GENERIC_SCHEMA_TOKENS) schemaKeywords.delete(generic)
-    // Also filter stopwords — common words like "many", "total", "system"
-    // match column names in app-internal tables and cause false positives.
-    for (const sw of STOPWORDS) schemaKeywords.delete(sw)
-
-    let matches = 0
-    const matchedTokens: string[] = []
-    for (const token of tokens) {
-      if (schemaKeywords.has(token)) { matches++; matchedTokens.push(token); continue }
-      for (const kw of schemaKeywords) {
-        if (kw.length >= 4 && (kw.includes(token) || token.includes(kw))) {
-          matches++
-          matchedTokens.push(`${token}→${kw}`)
-          break
-        }
-      }
-    }
-    return { id: integ.id, name: integ.name, score: matches, keywordCount: schemaKeywords.size }
-  })
-
-  scored.sort((a, b) => b.score - a.score)
-  // ponytail: pick the top-scoring integration. Only return undefined if NO
-  // integration has any keyword overlap at all. Previous code blocked with a
-  // clarification when two integrations had similar scores — that caused the
-  // "which database?" loop on every question when 2+ DBs were active.
-  if (scored[0].score > 0) {
-    return { integrationId: scored[0].id }
-  }
-  return undefined
-}
-
 export async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
   question: string,
@@ -266,8 +145,8 @@ export async function pickBestIntegrationWithAmbiguity(
   const integrations = await db.integration.findMany({
     where: { status: 'active' },
     // `businessContext` is REQUIRED here because it carries the domain glossary. It was
-    // not loaded, so the glossary path existed in `detectMentionedIntegration` but not
-    // in THIS picker -- and this picker is the one the SQL branch calls.
+    // not loaded, so the glossary path existed in the old heuristic router but not in
+    // THIS picker -- and this picker is the one the SQL branch calls.
     select: {
       id: true,
       name: true,
@@ -347,7 +226,7 @@ export async function pickBestIntegrationWithAmbiguity(
         }
       } catch { /* skip */ }
     }
-    // Filter generic tokens same as detectMentionedIntegration
+    // Drop generic column-name noise before matching
     const nameSet = new Set(
       allNames.filter((n) => !GENERIC_SCHEMA_TOKENS.has(n)),
     )
@@ -529,7 +408,8 @@ export async function getRoutingScores(): Promise<{
 
   const tools: RouteDecision[] = ['SQL', 'RAG', 'REST', 'CHAT', 'PLUGIN']
   const scores = await Promise.all(tools.map(async (tool) => {
-    const schemaScore = await scoreSchemaMatch(tool, [], schemaMeta, endpointMeta, docMeta, [], '')
+    // No question is being routed here, so there is nothing to match the schema against.
+    const schemaScore = 0
     const perf = perfData[tool] ?? NEUTRAL_PERF
     const latencyScore = 1 - Math.min(perf.avgLatencyMs / 5000, 1)
     const availability = 1
