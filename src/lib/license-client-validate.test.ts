@@ -246,3 +246,53 @@ describe('deactivateMachine', () => {
     expect(body.nonce).toBeUndefined()
   })
 })
+
+describe('the validator URL is pinned in production', () => {
+  // A customer controls their own env. If production honoured LICENSE_VALIDATOR_URL,
+  // pointing it at a server that signs "valid" for everything would be the whole
+  // bypass -- the signature check only proves the answer came from WHOEVER holds
+  // the key the client trusts, so WHERE the client asks matters as much.
+  const saved = { nodeEnv: process.env.NODE_ENV, e2e: process.env.E2E_TEST_MODE }
+  afterEach(() => {
+    if (saved.nodeEnv === undefined) delete (process.env as Record<string, string | undefined>).NODE_ENV
+    else (process.env as Record<string, string | undefined>).NODE_ENV = saved.nodeEnv
+    if (saved.e2e === undefined) delete process.env.E2E_TEST_MODE
+    else process.env.E2E_TEST_MODE = saved.e2e
+  })
+
+  test('production ignores LICENSE_VALIDATOR_URL and asks the official authority', async () => {
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
+    delete process.env.E2E_TEST_MODE
+    process.env.LICENSE_VALIDATOR_URL = 'https://attacker.example'
+    replySigned((nonce) => ({ valid: true, plan: null, expires_at: null, message: '', nonce }))
+    await validateLicense('K', 'm')
+    expect(String(fetchCalls[0].url)).toBe('https://license.ryasai.my.id/api/v1/license/validate')
+  })
+
+  test('the E2E harness is the one production-mode exception', async () => {
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = 'production'
+    process.env.E2E_TEST_MODE = 'true'
+    process.env.LICENSE_VALIDATOR_URL = 'http://127.0.0.1:9100'
+    replySigned((nonce) => ({ valid: true, plan: null, expires_at: null, message: '', nonce }))
+    await validateLicense('K', 'm')
+    expect(String(fetchCalls[0].url)).toBe('http://127.0.0.1:9100/api/v1/license/validate')
+  })
+})
+
+describe('a public key of the WRONG TYPE fails closed', () => {
+  test('an X25519 key (encryption, not signing) rejects the response instead of throwing', async () => {
+    // X25519 and Ed25519 keys look alike and are generated side by side, so this
+    // is a plausible operator mix-up. crypto.verify THROWS for a key type that
+    // cannot verify; that must land as "not verified", never as an unhandled error.
+    const wrong = crypto.generateKeyPairSync('x25519').publicKey.export({ format: 'der', type: 'spki' }).toString('hex')
+    process.env.LICENSE_SIGNING_PUBLIC_KEY = wrong
+    try {
+      replySigned((nonce) => ({ valid: true, plan: 'enterprise', expires_at: null, message: 'ok', nonce }))
+      const r = await validateLicense('K', 'm')
+      expect(r.valid).toBe(false)
+      expect(r.signatureVerified).toBe(false)
+    } finally {
+      process.env.LICENSE_SIGNING_PUBLIC_KEY = PUBLIC_KEY_HEX
+    }
+  })
+})

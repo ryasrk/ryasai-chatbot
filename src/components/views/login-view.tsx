@@ -188,7 +188,10 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
           <div className="absolute inset-0 bg-gradient-to-r from-transparent to-background/90" />
           <div className="relative z-10 p-10 lg:p-14 space-y-3">
             <div className="flex items-center gap-2 text-[11px] tracking-[0.3em] text-primary uppercase">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              {/* 4-point sparkle (Gemini-style): concave diamond built from four quadratic curves */}
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-primary animate-pulse">
+                <path d="M12 0C12 6.6 17.4 12 24 12C17.4 12 12 17.4 12 24C12 17.4 6.6 12 0 12C6.6 12 12 6.6 12 0Z" />
+              </svg>
               Divine Intelligence
             </div>
             <h1 className="brand-title text-3xl lg:text-4xl text-foreground leading-tight max-w-md">
@@ -220,7 +223,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               </div>
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
-            <CardFooter className="flex flex-col gap-2">
+            <CardFooter className="flex flex-col gap-3 px-0 pt-4">
               <Button
                 type="submit"
                 className="w-full"
@@ -255,7 +258,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
                   )}
                 </div>
               )}
-              <button type="button" className="text-xs text-muted-foreground hover:text-foreground mt-2" onClick={() => { setMode('signup'); resetSignup() }}>
+              <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => { setMode('signup'); resetSignup() }}>
                 No account? Sign up
               </button>
             </CardFooter>
@@ -281,7 +284,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               </div>
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
-            <CardFooter className="flex flex-col gap-2">
+            <CardFooter className="flex flex-col gap-3 px-0 pt-4">
               <Button
                 type="submit"
                 className="w-full"
@@ -290,7 +293,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               >
                 Continue
               </Button>
-              <button type="button" className="text-xs text-muted-foreground hover:text-foreground mt-2" onClick={() => { setMode('login'); resetSignup() }}>
+              <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => { setMode('login'); resetSignup() }}>
                 Already have an account? Sign in
               </button>
             </CardFooter>
@@ -316,7 +319,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               </div>
               {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             </CardContent>
-            <CardFooter className="flex flex-col gap-2">
+            <CardFooter className="flex flex-col gap-3 px-0 pt-4">
               <Button
                 type="submit"
                 className="w-full"
@@ -325,7 +328,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
               >
                 Activate & Continue
               </Button>
-              <button type="button" className="text-xs text-muted-foreground hover:text-foreground mt-2 flex items-center gap-1" onClick={() => setSignupStep(0)}>
+              <button type="button" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1" onClick={() => setSignupStep(0)}>
                 <ArrowLeft className="h-3 w-3" /> Back
               </button>
             </CardFooter>

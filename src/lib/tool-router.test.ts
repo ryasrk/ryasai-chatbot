@@ -1064,6 +1064,26 @@ describe('runNonStreamingChatCompletion', () => {
     expect(call?.chatHistory).toHaveLength(2)
   })
 
+  test('when the SELECTOR cannot decide (no LLM, provider down), routeQuery is the fallback', async () => {
+    // A hard failure here would take chat down for a deployment whose only problem
+    // is a transient provider error, so a null selection must route, not throw.
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockSelectToolWithLlm.mockImplementation(async () => null as never)
+    mockRouteQuery.mockImplementation(async () => ({ decision: 'CHAT' as RouteDecision, reason: 'fallback' }))
+    mockGenerateChat.mockImplementation(async () => 'Routed by the fallback')
+
+    const history = [{ role: 'user' as const, content: 'hi' }]
+    const result = await runNonStreamingChatCompletion({ question: 'Hello there', userId: 'user-1', chatHistory: history })
+
+    expect(result.answer).toBe('Routed by the fallback')
+    expect(mockRouteQuery).toHaveBeenCalledTimes(1)
+    // The fallback must see the same sources the selector would have: telling it
+    // "no documents" would silently disable RAG for every fallback-routed turn.
+    const call = (mockRouteQuery.mock.calls[0] as unknown[])[0] as { hasDocuments: boolean; chatHistory: unknown[] }
+    expect(call.hasDocuments).toBe(true)
+    expect(call.chatHistory).toEqual(history)
+  })
+
   test('CONTEXTUAL_CHAT branch: loads prior tool runs and generates contextual answer', async () => {
     mockDocumentCount.mockImplementation(async () => 1)
     // The SELECTOR decides the route now; routeQuery is only the fallback for a

@@ -19,7 +19,7 @@
  * and the function ratio is what exposes that.
  */
 import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync, renameSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 
 const CONCURRENCY = Number(process.env.COVERAGE_CONCURRENCY ?? 8)
 const OUT_DIR = '.coverage-merge'
@@ -38,8 +38,13 @@ const REPO_ROOT = process.cwd()
  * than combine it.
  */
 function normalizeSfPath(raw: string): string {
-  const abs = raw.startsWith('/') ? raw : resolve(REPO_ROOT, raw)
-  return abs.startsWith(REPO_ROOT + '/') ? abs.slice(REPO_ROOT.length + 1) : raw
+  const abs = isAbsolute(raw) ? raw : resolve(REPO_ROOT, raw)
+  const rel = relative(REPO_ROOT, abs)
+  // Keys must use `/` on every OS: FLOORS and the `src/` filter below are written
+  // that way, and on Windows Bun emits `src\lib\x.ts`, which matched neither -- a
+  // local run measured 0 files and overwrote the summary with an empty one.
+  const outside = rel.startsWith('..') || isAbsolute(rel)
+  return (outside ? raw : rel).replaceAll('\\', '/')
 }
 
 function parseLcov(text: string, into: Map<string, FileCov>) {

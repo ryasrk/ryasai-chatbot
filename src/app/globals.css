@@ -471,13 +471,94 @@ a {
   background: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
 }
 
+/* Reduced motion kills looping/decorative motion — the drifting background
+   gradient, entrance animations, anything that moves on its own. It no longer
+   zeroes `transition-duration` globally: that flattened every hover, focus and
+   state change in the app to nothing, so on a machine with the OS setting on
+   the whole UI read as dead — no tab hover, no toast stack, no button
+   feedback. Reduce means avoid large, self-starting, vestibular-triggering
+   motion, not strip the state-change feedback that tells you the UI responded.
+   Transitions here are all <=250ms on color/opacity/transform. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Skeleton shimmer: a highlight band sliding across via transform only, so it
+   runs on the compositor (no layout/paint per frame). Reduced-motion users
+   get a slow opacity fade instead of a frozen block — the global rule above
+   would otherwise kill every animation and make loading look hung. */
+[data-slot="skeleton"] {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--muted);
+}
+[data-slot="skeleton"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--foreground) 10%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+@keyframes skeleton-fade {
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="skeleton"]::after { display: none; }
+  [data-slot="skeleton"] {
+    animation: skeleton-fade 2s ease-in-out infinite !important;
+    animation-duration: 2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* Toast stack motion under reduced motion.
+   Sonner ships its own opt-out — `@media (prefers-reduced-motion){
+   [data-sonner-toast],[data-sonner-toast]>*{transition:none!important;
+   animation:none!important}}` — injected at runtime, so it lands after this
+   sheet and wins any `!important` tie at equal specificity. That killed the
+   whole stack effect (drop-in, shuffle-up, fade-out) on machines with the OS
+   setting on, leaving toasts to pop in and out. Re-enabling it is a deliberate
+   product call: the motion is <=0.4s, transform/opacity only, and confined to
+   the toast stack. Selectors are scoped through [data-sonner-toaster] purely
+   to out-specify sonner's rule. */
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toaster] [data-sonner-toast] {
+    transition-property: transform, opacity, height, box-shadow !important;
+    transition-duration: 400ms, 400ms, 400ms, 200ms !important;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  /* Content of the collapsed toasts behind the front one fades with the stack. */
+  [data-sonner-toaster] [data-sonner-toast] > * {
+    transition: opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+  /* The list itself shifts when the stack expands on hover. */
+  [data-sonner-toaster] {
+    transition: transform 400ms ease !important;
+  }
+  /* Swipe-to-dismiss rides keyframes, which sonner's rule also zeroed out. */
+  [data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"] {
+    animation-duration: 200ms !important;
+    animation-timing-function: ease-out !important;
+    animation-fill-mode: forwards !important;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"][data-swipe-direction="left"] { animation-name: swipe-out-left !important; }
+  [data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"][data-swipe-direction="right"] { animation-name: swipe-out-right !important; }
+  [data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"][data-swipe-direction="up"] { animation-name: swipe-out-up !important; }
+  [data-sonner-toaster] [data-sonner-toast][data-swipe-out="true"][data-swipe-direction="down"] { animation-name: swipe-out-down !important; }
 }

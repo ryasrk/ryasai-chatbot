@@ -45,7 +45,10 @@ function TabsTrigger({
       data-slot="tabs-trigger"
       className={cn(
         // shrink-0 keeps each trigger intact while the list scrolls horizontally.
-        "data-[state=active]:bg-background data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-muted-foreground inline-flex h-[calc(100%-1px)] shrink-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4", // nosemgrep — data array entry, not obfuscated code
+        // Hover feedback is scoped to inactive triggers: the active one already
+        // owns the raised pill, so a hover tint on it just made it flicker.
+        "data-[state=inactive]:hover:bg-background/60 data-[state=inactive]:hover:text-foreground data-[state=inactive]:active:scale-[0.98]",
+        "data-[state=active]:bg-background data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-muted-foreground inline-flex h-[calc(100%-1px)] shrink-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow,transform] duration-200 ease-out focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4", // nosemgrep — data array entry, not obfuscated code
         className
       )}
       {...props}

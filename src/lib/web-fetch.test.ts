@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
-import { fetchUrlForPlanner, webSearch, getSearxngEndpoint } from '@/lib/web-fetch'
+import { fetchUrlForPlanner, webSearch, getSearxngEndpoint, isWebSearchAvailable } from '@/lib/web-fetch'
 
 // ---------------------------------------------------------------------------
 // fetch mocking for redirect tests. Hostnames use the reserved `.example` TLD
@@ -178,6 +178,46 @@ describe('webSearch', () => {
     const r = await webSearch('   ')
     expect(r.ok).toBe(false)
     expect(r.error).toBeTruthy()
+  })
+})
+
+describe('isWebSearchAvailable — a tool that cannot succeed must not be offered', () => {
+  const original = { searx: process.env.SEARXNG_URL, scrape: process.env.WEB_SEARCH_SCRAPE_FALLBACK }
+  afterEach(() => {
+    if (original.searx === undefined) delete process.env.SEARXNG_URL
+    else process.env.SEARXNG_URL = original.searx
+    if (original.scrape === undefined) delete process.env.WEB_SEARCH_SCRAPE_FALLBACK
+    else process.env.WEB_SEARCH_SCRAPE_FALLBACK = original.scrape
+  })
+
+  it('with NEITHER SearXNG nor the scrape opt-in, search is unavailable', () => {
+    // The scrape fallback fails on networks that hijack DuckDuckGo, and a listed-but-dead
+    // web_search outranked the plugin that would have worked. Off by default.
+    delete process.env.SEARXNG_URL
+    delete process.env.WEB_SEARCH_SCRAPE_FALLBACK
+    expect(isWebSearchAvailable()).toBe(false)
+  })
+
+  it('a configured SearXNG makes it available', () => {
+    process.env.SEARXNG_URL = 'http://searxng:8080'
+    delete process.env.WEB_SEARCH_SCRAPE_FALLBACK
+    expect(isWebSearchAvailable()).toBe(true)
+  })
+
+  it('an INVALID SearXNG url does not count as configured', () => {
+    process.env.SEARXNG_URL = 'file:///etc/passwd'
+    delete process.env.WEB_SEARCH_SCRAPE_FALLBACK
+    expect(isWebSearchAvailable()).toBe(false)
+  })
+
+  it('the scrape fallback needs the EXACT opt-in value "1" (whitespace tolerated)', () => {
+    delete process.env.SEARXNG_URL
+    process.env.WEB_SEARCH_SCRAPE_FALLBACK = ' 1 '
+    expect(isWebSearchAvailable()).toBe(true)
+    for (const v of ['true', 'yes', '0', '']) {
+      process.env.WEB_SEARCH_SCRAPE_FALLBACK = v
+      expect(isWebSearchAvailable()).toBe(false)
+    }
   })
 })
 

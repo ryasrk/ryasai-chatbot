@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "private": true,
   "scripts": {
-    "dev": "set -a; . ./.env 2>/dev/null; set +a; next dev -p \"${PORT:-3000}\" 2>&1 | tee dev.log",
+    "dev": "bun scripts/dev.ts",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "set -a; . ./.env 2>/dev/null; set +a; NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
