@@ -149,7 +149,12 @@ Output ONLY a number 0.0-1.0.`
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-faithfulness')
     return clampScore(parseFloat(raw.trim()))
   } catch {
-    return 0.5
+    // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
+    // indistinguishable from a real assessment, and the average below used to include it —
+    // so a judge that was rate-limited (measured: HTTP 429, `reset after 5m`) produced a
+    // full table of exactly 0.500 that read as a mediocre result rather than as no result.
+    // Averaging now SKIPS these and reports how many were skipped.
+    return Number.NaN
   }
 }
 
@@ -170,7 +175,12 @@ Output ONLY a number 0.0-1.0.`
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-relevance')
     return clampScore(parseFloat(raw.trim()))
   } catch {
-    return 0.5
+    // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
+    // indistinguishable from a real assessment, and the average below used to include it —
+    // so a judge that was rate-limited (measured: HTTP 429, `reset after 5m`) produced a
+    // full table of exactly 0.500 that read as a mediocre result rather than as no result.
+    // Averaging now SKIPS these and reports how many were skipped.
+    return Number.NaN
   }
 }
 
@@ -191,7 +201,12 @@ Output ONLY a number 0.0-1.0.`
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-precision')
     return clampScore(parseFloat(raw.trim()))
   } catch {
-    return 0.5
+    // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
+    // indistinguishable from a real assessment, and the average below used to include it —
+    // so a judge that was rate-limited (measured: HTTP 429, `reset after 5m`) produced a
+    // full table of exactly 0.500 that read as a mediocre result rather than as no result.
+    // Averaging now SKIPS these and reports how many were skipped.
+    return Number.NaN
   }
 }
 
@@ -214,7 +229,12 @@ Output ONLY a number 0.0-1.0.`
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-recall')
     return clampScore(parseFloat(raw.trim()))
   } catch {
-    return 0.5
+    // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
+    // indistinguishable from a real assessment, and the average below used to include it —
+    // so a judge that was rate-limited (measured: HTTP 429, `reset after 5m`) produced a
+    // full table of exactly 0.500 that read as a mediocre result rather than as no result.
+    // Averaging now SKIPS these and reports how many were skipped.
+    return Number.NaN
   }
 }
 
@@ -319,7 +339,16 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
   }
 
   // Aggregate
-  const avg = (fn: (r: RagasResult) => number) => results.reduce((s, r) => s + fn(r), 0) / results.length
+  // Skip unjudged samples instead of counting them as 0.5: a mean over real judgements only,
+  // with the skip count reported, so an eval that mostly failed cannot masquerade as an eval
+  // that mostly passed.
+  const judged = (fn: (r: RagasResult) => number): number[] =>
+    results.map(fn).filter((v) => Number.isFinite(v))
+  const avg = (fn: (r: RagasResult) => number) => {
+    const vals = judged(fn)
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : Number.NaN
+  }
+  const skipped = (fn: (r: RagasResult) => number): number => results.length - judged(fn).length
   const summary = {
     questions: results.length,
     avgFaithfulness: avg((r) => r.metrics.faithfulness),
@@ -327,6 +356,10 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
     avgContextPrecision: avg((r) => r.metrics.contextPrecision),
     avgContextRecall: avg((r) => r.metrics.contextRecall),
     avgLatencyMs: avg((r) => r.latencyMs),
+    judgedFaithfulness: skipped((r) => r.metrics.faithfulness),
+    judgedAnswerRelevance: skipped((r) => r.metrics.answerRelevance),
+    judgedContextPrecision: skipped((r) => r.metrics.contextPrecision),
+    judgedContextRecall: skipped((r) => r.metrics.contextRecall),
   }
 
   // Post RAGAS scores to Langfuse if configured (fire-and-forget, never blocks)

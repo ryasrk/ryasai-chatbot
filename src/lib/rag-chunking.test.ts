@@ -398,3 +398,60 @@ describe('splitStructuralBlocks — a table meeting a heading flushes the table'
     expect(tableBlock).not.toContain('## Next Section')
   })
 })
+
+describe('a heading must not become a chunk of its own', () => {
+  // REGRESSION (found by measuring the app's own corpus, not by a failing test):
+  // `splitStructuralBlocks` flushed the heading TWICE, so every section title became a
+  // standalone chunk with no body. Measured on 114 real chunks: 65 fragments (57%), mean
+  // 118 chars, 15 of them a bare title. Retrieval then returned "## Penanganan Data Sangat
+  // Rahasia" WITHOUT its content, and a grounded model correctly said the evidence did not
+  // answer the question — a chunking failure that presents as a retrieval failure and is
+  // invisible to any recall metric that counts a heading as a hit.
+  //
+  // The 39 tests that existed when this shipped all passed with the bug PRESENT, which is
+  // why the assertions below exist rather than a note in the code.
+  test('a section title and its body arrive in the SAME block', () => {
+    const doc = '# Judul Dokumen\n## Penanganan Data\nData wajib dienkripsi dan diberi label.'
+    const blocks = splitStructuralBlocks(doc)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toContain('## Penanganan Data')
+    expect(blocks[0]).toContain('Data wajib dienkripsi')
+  })
+
+  test('no block is a bare heading — every block carries content beyond its title', () => {
+    const doc = [
+      '# Kebijakan',
+      '## Bagian Satu',
+      'Isi bagian satu yang cukup panjang untuk dibaca.',
+      '## Bagian Dua',
+      'Isi bagian dua juga ada.',
+    ].join('\n')
+    for (const block of splitStructuralBlocks(doc)) {
+      const withoutHeadings = block
+        .split('\n')
+        .filter((l) => !/^#{1,6}\s+\S/.test(l.trim()))
+        .join('')
+        .trim()
+      expect(withoutHeadings.length, `block was a bare heading: ${JSON.stringify(block)}`).toBeGreaterThan(0)
+    }
+  })
+
+  test('consecutive headings stay readable instead of being dropped', () => {
+    // Two headings with no body between them is legal input; neither may vanish.
+    const blocks = splitStructuralBlocks('# Atas\n## Tengah\nisi setelahnya')
+    const joined = blocks.join('\n')
+    expect(joined).toContain('# Atas')
+    expect(joined).toContain('## Tengah')
+    expect(joined).toContain('isi setelahnya')
+  })
+
+  test('a heading opens a section rather than closing one', () => {
+    // The exact shape that broke: content AFTER a heading must stay with it, and content
+    // BEFORE it must not be pulled in.
+    const blocks = splitStructuralBlocks('paragraf pendahuluan\n## Seksi\nisi seksi')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toBe('paragraf pendahuluan')
+    expect(blocks[1]).toContain('## Seksi')
+    expect(blocks[1]).toContain('isi seksi')
+  })
+})

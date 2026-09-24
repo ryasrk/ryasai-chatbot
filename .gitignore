@@ -107,6 +107,8 @@ tsconfig.tsbuildinfo
 # benchmark reports/results are tracked deliberately so reports are reproducible on clone.
 benchmark/results/*.json
 !benchmark/results/ground-truth-failures.json
+# Head-to-head vs a standard vector-RAG baseline, judged by a different model family.
+!benchmark/results/rag-comparison-store.json
 !benchmark/results/cognee-1000-results.json
 !benchmark/results/cognee-1000-report.json
 !benchmark/results/cognee-1000-bm25.json

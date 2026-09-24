@@ -1,0 +1,52 @@
+{
+  "measuredAt": "2026-09-24",
+  "what": "Head-to-head: shipped pipeline vs standard vector-RAG baseline (cosine top-k, no lexical leg, no fusion)",
+  "fairness": {
+    "sameCorpus": "9 documents / 55 chunks, same extraction pipeline",
+    "sameQuestions": "LLM-generated paraphrases, not written by the system's author",
+    "sameTopK": 4,
+    "sameAnswerPrompt": true,
+    "sameGenerationModel": "cbcn/deepseek-v4.1-flash",
+    "judgeModel": "cx/gpt-5.6-terra",
+    "judgeIsDifferentFamily": "yes \u2014 GPT judge, DeepSeek generator, so self-preference bias cannot favour either side",
+    "unjudged": {
+      "ours": 0,
+      "baseline": 0
+    }
+  },
+  "results": {
+    "ours": {
+      "n": 12,
+      "faithfulness": 0.9833333333333334,
+      "answerRelevance": 0.9333333333333332,
+      "contextPrecision": 0.9727272727272727,
+      "contextRecall": 0.9166666666666666,
+      "latencyMs": 2875.0833333333335,
+      "unjudged": 0
+    },
+    "baselineVectorRag": {
+      "n": 12,
+      "faithfulness": 1,
+      "answerRelevance": 0.9166666666666666,
+      "contextPrecision": 0.9249999999999999,
+      "contextRecall": 0.9166666666666666,
+      "latencyMs": 34.583333333333336,
+      "unjudged": 0
+    }
+  },
+  "delta": {
+    "faithfulness": -0.0167,
+    "answerRelevance": 0.0167,
+    "contextPrecision": 0.0477,
+    "contextRecall": 0.0
+  },
+  "interpretation": [
+    "contextPrecision +0.048: our ranking puts more relevant material in the window.",
+    "faithfulness -0.017: the baseline is very slightly more grounded, which follows from it",
+    "  returning only cosine neighbours of the question; narrow context is easy to be faithful to.",
+    "contextRecall and answerRelevance effectively tied.",
+    "latency 2875ms vs 35ms: ours runs the intent pipeline, query expansion and multi-pass",
+    "  retrieval; the baseline is one cosine sort. That is the cost of the precision gain and",
+    "  it is the number to watch if latency matters more than ranking quality."
+  ]
+}
