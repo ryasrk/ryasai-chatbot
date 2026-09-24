@@ -1,6 +1,6 @@
 {
   "kind": "real-prose-arm",
-  "generatedAt": "2026-09-24T04:56:25.736Z",
+  "generatedAt": "2026-09-24T05:09:55.393Z",
   "source": {
     "database": "postgresql://ryasai:***@127.0.0.1:5432/ryasai",
     "chunks": 114
@@ -15,6 +15,11 @@
   },
   "questions": 121,
   "budget": 10,
+  "vectors": {
+    "model": "paraphrase-multilingual-MiniLM-L12-v2",
+    "docs": 114,
+    "queries": 121
+  },
   "rows": [
     {
       "arm": "bm25-baseline",
@@ -26,18 +31,18 @@
     },
     {
       "arm": "hybrid-rrf",
-      "ready": false,
-      "recall10": null,
-      "recall5": null,
-      "mrr": null,
-      "n": 0
+      "ready": true,
+      "recall10": 0.9752066115702479,
+      "recall5": 0.8347107438016529,
+      "mrr": 0.6253935458480916,
+      "n": 121
     },
     {
       "arm": "entity-hop",
       "ready": true,
-      "recall10": 1,
-      "recall5": 1,
-      "mrr": 0.8891184573002754,
+      "recall10": 0.9752066115702479,
+      "recall5": 0.8264462809917356,
+      "mrr": 0.6132460973370065,
       "n": 121
     }
   ],

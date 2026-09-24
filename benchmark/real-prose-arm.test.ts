@@ -7,6 +7,7 @@
  * make the coverage finding look better than it is.
  */
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { buildQuestions, coverageOf, extractiveQuestion, sentencesOf } from './real-prose-arm'
 
 describe('sentencesOf', () => {
@@ -98,5 +99,51 @@ describe('coverageOf', () => {
     expect(c.withEntity).toBe(0)
     expect(c.coverageShare).toBe(0)
     expect(c.distinctEntities).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Phase 3 finding itself. These pin the DIRECTION, not the exact values, so a
+// regression that flips the conclusion fails here rather than being discovered by
+// re-reading a report.
+// ---------------------------------------------------------------------------
+describe('real-prose result is recorded, and its direction is pinned', () => {
+  const result = JSON.parse(
+    readFileSync(new URL('./results/real-prose-arm.json', import.meta.url), 'utf8'),
+  ) as {
+    coverage: { documents: number; coverageShare: number; meanEntitiesPerDoc: number }
+    rows: Array<{ arm: string; ready: boolean; recall10: number | null; mrr: number | null }>
+  }
+  const row = (arm: string) => result.rows.find((r) => r.arm === arm)!
+
+  test('entity coverage on real prose is recorded AND low', () => {
+    // The mechanism can only hop where an entity exists. If a future extraction change
+    // raises this, the Phase 3 conclusion must be revisited rather than assumed.
+    expect(result.coverage.documents).toBeGreaterThan(50)
+    expect(result.coverage.coverageShare).toBeLessThan(0.25)
+  })
+
+  test('the comparison is computable, so the numbers are not NOT COMPUTABLE placeholders', () => {
+    for (const arm of ['bm25-baseline', 'hybrid-rrf', 'entity-hop']) {
+      expect(row(arm).ready).toBe(true)
+      expect(row(arm).recall10).not.toBeNull()
+      expect(row(arm).mrr).not.toBeNull()
+    }
+  })
+
+  test('Entity-Hop is NOT better than production hybrid on real prose (gate 3 direction)', () => {
+    const p2 = row('hybrid-rrf')
+    const hop = row('entity-hop')
+    expect(hop.recall10!).toBeLessThanOrEqual(p2.recall10!)
+    expect(hop.mrr!).toBeLessThanOrEqual(p2.mrr!)
+  })
+
+  test('keyword search beats the shipped hybrid pipeline on real prose', () => {
+    // The headline finding of Phase 3. If fusion is ever fixed, this flips and the
+    // report must be updated deliberately.
+    const bm25 = row('bm25-baseline')
+    const p2 = row('hybrid-rrf')
+    expect(bm25.recall10!).toBeGreaterThanOrEqual(p2.recall10!)
+    expect(bm25.mrr!).toBeGreaterThan(p2.mrr!)
   })
 })

@@ -377,15 +377,28 @@ and no amount of tuning changes that — extraction is the gate, not the ranking
 
 | arm | n | recall@5 | recall@10 | MRR | gold chunk ranked 1st |
 |---|---|---|---|---|---|
-| bm25-baseline | 121 | 1.0000 | 1.0000 | **0.9725** | **115/121** |
-| entity-hop | 121 | 1.0000 | 1.0000 | **0.8891** | **95/121** |
-| hybrid-rrf | — | NOT COMPUTABLE — no committed vector cache for this corpus | | | |
+| bm25-baseline | 121 | 1.0000 | **1.0000** | **0.9725** | **115/121** |
+| hybrid-rrf (P2) | 121 | 0.8347 | 0.9752 | 0.6254 | — |
+| entity-hop | 121 | 0.8264 | 0.9752 | 0.6132 | 95/121 |
 
-Both arms returned the answer inside the top 10 for every question, so recall cannot separate them
-here and this corpus is too easy to discriminate on that metric. MRR does separate them, and
-Entity-Hop is **worse**: it costs 20 questions their rank-1 position (115 → 95). That is the same
-tail dilution measured on the synthetic corpus, now reproduced on real text with no ID patterns to
-blame — the hop ranking simply adds documents ahead of a chunk BM25 already ranked first.
+Vectors for this corpus were built with the same model as the synthetic cache
+(`paraphrase-multilingual-MiniLM-L12-v2`, 384d), so the hybrid arm is computable here.
+
+**Gate 3 result: FAIL.** Criterion 3 asks whether Entity-Hop is worse than P2 on real data.
+It ties on recall@10 (0.9752 both) and is **worse on MRR** (0.6132 vs 0.6254, −0.0121), so it is
+worse on the metric that can discriminate. The first run of this check, before the vector caches
+existed, showed a larger MRR gap (0.8891 vs 0.9725) on a lexical-only path; with vectors the gap
+narrows but the sign does not change.
+
+**The larger result on real prose: every arm loses to plain keyword search.** BM25 scores
+recall@10 1.0000 and MRR 0.9725 where the shipped hybrid pipeline scores 0.9752 and 0.6254. Hybrid
+retrieval *loses* 2.5% of recall and 36% of MRR to a keyword index on the product's own documents.
+This is the same direction as the synthetic finding in `retrieval-arms-decision.md` §2b and is now
+reproduced on real text, so it is not an artefact of the synthetic corpus.
+
+Both dense arms also cost 20 of 121 questions their rank-1 position relative to BM25, which is the
+tail-dilution mechanism again — a fused ranking adds documents ahead of a chunk the lexical leg
+already ranked first.
 
 **What Phase 3 does NOT establish, stated plainly.** These 121 questions are single-hop and
 extractive, so they test only whether the right chunk is returned. Gate 3 asks whether the arm is

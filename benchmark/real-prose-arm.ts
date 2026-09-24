@@ -197,13 +197,30 @@ async function main(): Promise<number> {
     return 2
   }
 
-  // Same context shape as the main harness. No embeddings: the real corpus has no
-  // committed vector cache, so the hybrid arm will report NOT COMPUTABLE and the
-  // comparison falls back to BM25 + Entity-Hop on the lexical path. That is stated
-  // in the output rather than silently substituted.
-  const ctx: ArmContext = {
-    texts,
-    docIds: chunkIds,
+  // Same context shape as the main harness. Optional vector caches let the hybrid arm be
+  // graded too; when they are absent it reports NOT COMPUTABLE rather than silently
+  // dropping its vector leg and being read as a hybrid result.
+  const ctx: ArmContext = { texts, docIds: chunkIds }
+  const docCache = argOf('embeddings')
+  const queryCache = argOf('query-embeddings')
+  let vectorsLoaded = false
+  if (docCache && queryCache) {
+    try {
+      const doc = JSON.parse(readFileSync(docCache, 'utf8')) as { model: string; vectors: Record<string, number[]> }
+      const qry = JSON.parse(readFileSync(queryCache, 'utf8')) as { model: string; vectors: Record<string, number[]> }
+      // Mismatched models make every cosine meaningless while still printing a number.
+      if (doc.model !== qry.model) throw new Error(`model mismatch: docs ${doc.model} vs queries ${qry.model}`)
+      ctx.embeddings = doc.vectors
+      ctx.embeddingModel = doc.model
+      ctx.queryEmbeddings = qry.vectors
+      ctx.queryEmbeddingModel = qry.model
+      vectorsLoaded = true
+    } catch (error) {
+      console.error(`vector caches unusable: ${error instanceof Error ? error.message : 'load failed'}`)
+      return 3
+    }
+  } else {
+    console.log('\nno --embeddings/--query-embeddings given: the hybrid arm reports NOT COMPUTABLE')
   }
 
   const arms: Array<[string, Arm]> = [
@@ -230,6 +247,7 @@ async function main(): Promise<number> {
   }
 
   console.log(`\n=== SINGLE-HOP RECALL on real prose (budget top-${ARM_BUDGET}, all questions are 1-hop) ===`)
+  console.log(`vectors: ${vectorsLoaded ? `yes (${ctx.embeddingModel})` : 'none'}`)
   console.log('| arm | n | recall@5 | recall@10 | MRR |')
   console.log('|---|---|---|---|---|')
   for (const r of rows) {
@@ -258,6 +276,7 @@ async function main(): Promise<number> {
           coverage,
           questions: questions.length,
           budget: ARM_BUDGET,
+          vectors: vectorsLoaded ? { model: ctx.embeddingModel ?? null, docs: Object.keys(ctx.embeddings ?? {}).length, queries: Object.keys(ctx.queryEmbeddings ?? {}).length } : null,
           rows,
           note:
             'Single-hop extractive questions only. Multi-hop chains were NOT synthesised over real prose, ' +
