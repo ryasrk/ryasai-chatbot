@@ -1,18 +1,16 @@
 /**
  * Entity-Hop retriever as a benchmark arm (docs/entity-hop-retrieval-plan.md, Phase 2).
  *
- * The plan says Entity-Hop is ONE MORE RANKING fed into the RRF that already exists, so the
- * legs are not re-implemented: `bm25Rank`, `fuseRankings`, `toRanking` and `tokenize` are the
- * production functions and `directRankings` reproduces the vector leg of
- * `benchmark/arms/hybrid-arm.ts`. A difference between this arm and that baseline is therefore
- * a difference in the hop step, not between two hand-rolled scorers.
+ * The plan says Entity-Hop is ONE MORE RANKING fed into the RRF that already exists, so the legs are
+ * not re-implemented: `bm25Rank`, `fuseRankings`, `toRanking` and `tokenize` are production functions
+ * and `directRankings` reproduces the vector leg of `benchmark/arms/hybrid-arm.ts`. A difference
+ * between this arm and that baseline is therefore a difference in the hop step.
  *
- * WHICH SEED A RUN USED — read before quoting a table. Both legs seed and both legs fuse when
- * `ctx.embeddings` and `ctx.queryEmbeddings` are present; otherwise the seed and the direct
- * legs are lexical-only, which is why `ready()` is true without vectors. `entityHopStats`
- * counts each call so a table can name its seed instead of implying one; a question with no
- * vector of its own degrades that ONE question and bumps `missingQueryVector` rather than
- * being absorbed silently. Deterministic: ties break on entity/docId ascending.
+ * WHICH SEED A RUN USED — read before quoting a table. Both legs seed and fuse when `ctx.embeddings`
+ * and `ctx.queryEmbeddings` are present; otherwise the seed and the direct legs are lexical-only, which
+ * is why `ready()` is true without vectors. `entityHopStats` counts each call so a table can name its
+ * seed instead of implying one; a question with no vector of its own degrades that ONE question and
+ * bumps `missingQueryVector` rather than passing silently. Ties break on entity/docId ascending.
  */
 import type { Arm, ArmContext, EntityHopAblation, EntityHopArmFactory } from '../arm-types'
 import { ARM_BUDGET, ENTITY_HOP_DEFAULTS } from '../arm-types'
@@ -25,11 +23,10 @@ const BIGRAM_PATTERN = /\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b/g
 const NEGATION_PATTERN = /no record|not (?:attached|related|applicable)|does not apply|tidak ada|bukan/i
 /** One appearance bridges nothing, so a bigram below this document frequency is not an entity. */
 const MIN_BIGRAM_DF = 2
-
-/**
- * Work bounds. One hub entity can name most documents, so an unbounded hop would fan out across
- * the whole corpus; traversal is in weighted order, so a cap drops the weakest bridges first.
- * The scan cap matters because a negation skip adds nothing while still consuming a scan.
+/*
+ * Work bounds. One hub entity can name most documents, so an unbounded hop would fan out across the
+ * corpus; traversal is in weighted order, so a cap drops the weakest bridges first. Scans are capped
+ * separately because a negation skip adds nothing while still consuming one.
  */
 const MAX_FRONTIER_ENTITIES = 48
 const MAX_DOCS_PER_HOP = 96
@@ -49,7 +46,7 @@ export const entityHopStats = { vectorSeeded: 0, lexicalSeeded: 0, missingQueryV
 export interface EntityIndex {
   /** docId -> sorted, deduplicated entities in that document. */
   docEntities: Map<string, string[]>
-  /** entity -> sorted docIds containing it, and the document frequency of each. */
+  /** entity -> sorted docIds containing it, with its document frequency in `df`. */
   entityDocs: Map<string, string[]>
   df: Map<string, number>
   totalDocs: number
@@ -62,8 +59,8 @@ function byId(a: string, b: string): number {
 
 /**
  * Entities in one text: IDs, `PT ...` organisations, and Capitalised bigrams that cleared the
- * document-frequency gate. `bigramDf` is the corpus-wide df of bigram candidates; without it
- * no bigram is an entity, which is the right answer for text seen once.
+ * document-frequency gate. `bigramDf` is the corpus-wide df of bigram candidates; without it no bigram
+ * is an entity, which is the right answer for text seen once.
  */
 export function extractEntities(text: string, bigramDf?: Map<string, number>): string[] {
   const found = new Set<string>()
@@ -85,11 +82,11 @@ export function buildEntityIndex(texts: Record<string, string>): EntityIndex {
   const docIds = Object.keys(texts).sort(byId)
   const bigramDf = new Map<string, number>()
   for (const docId of docIds) {
+    // Per-document dedup: df counts DOCUMENTS, not occurrences.
     const seen = new Set<string>()
     for (const match of (texts[docId] ?? '').matchAll(BIGRAM_PATTERN)) {
       seen.add(`${match[1]} ${match[2]}`.toLowerCase())
     }
-    // Per-document dedup above: df counts DOCUMENTS, not occurrences.
     for (const bigram of seen) bigramDf.set(bigram, (bigramDf.get(bigram) ?? 0) + 1)
   }
   const docEntities = new Map<string, string[]>()
@@ -111,10 +108,7 @@ export function buildEntityIndex(texts: Record<string, string>): EntityIndex {
   }
 }
 
-/**
- * Does `text` carry a negation cue in the same sentence as `entity`? The plan's rule is that
- * one negated mention blocks the hop through that document for that entity.
- */
+/** Is there a negation cue in the same sentence as `entity`? One such mention blocks the hop. */
 function negatedFor(text: string, entity: string): boolean {
   const needle = entity.toLowerCase()
   for (const sentence of text.toLowerCase().split(/[.!?;\n]+/)) {
@@ -124,9 +118,9 @@ function negatedFor(text: string, entity: string): boolean {
 }
 
 /**
- * The hop walk. `seedIds` were already retrieved by the direct legs, so they are marked seen and
- * never re-scored — which makes this step purely additive and keeps an empty hop ranking
- * byte-identical to the plain hybrid ranking (pinned by a test).
+ * The hop walk. `seedIds` were already retrieved by the direct legs, so they are marked seen and never
+ * re-scored — which makes this step purely additive and keeps an empty hop ranking byte-identical to
+ * the plain hybrid ranking (pinned by a test).
  */
 function walkHops(
   index: EntityIndex,
@@ -138,15 +132,14 @@ function walkHops(
   const score = new Map<string, number>()
   const paths = new Map<string, HopPath>()
   const seenDocs = new Set(seedIds)
-  // "minus everything already visited": question entities never seed a hop, and an entity
-  // already used as a bridge is not used again at a later hop.
+  // "minus everything already visited": a question entity never seeds a hop, and an entity already
+  // used as a bridge is not reused at a later hop.
   const visitedEntities = new Set(questionEntities)
   const collect = (into: Map<string, string>, docId: string): void => {
     for (const entity of index.docEntities.get(docId) ?? []) {
       if (!visitedEntities.has(entity) && !into.has(entity)) into.set(entity, docId)
     }
   }
-
   let frontier = new Map<string, string>()
   for (const docId of seedIds) collect(frontier, docId)
 
@@ -196,8 +189,8 @@ interface Prepared {
   vectors: Map<string, number[]>
 }
 
-// Keyed on the context object: one corpus per run, and rebuilding the tokenised index inside
-// rank() would land in the timed region the plan budgets 50 ms for.
+// Keyed on the context object: one corpus per run, and rebuilding the tokenised index inside rank()
+// would land in the timed region the plan budgets 50 ms for.
 const preparedCache = new WeakMap<ArmContext, Prepared>()
 
 function unit(v: number[]): number[] {
@@ -225,14 +218,14 @@ function prepare(ctx: ArmContext): Prepared {
 }
 
 /**
- * Cosine top-k over the cached vectors, truncated exactly as `hybrid-arm.ts` truncates its leg
- * — a longer list would change the fused order that arm reports. Empty without a vector cache,
- * which is what makes the lexical-only path work. Stable sort, so ties keep corpus order.
+ * Both direct legs, unfused. Cosine top-k is truncated exactly as `hybrid-arm.ts` truncates its leg,
+ * because a longer list would change the fused order that arm reports. The vector leg is empty without
+ * a cache, which is what makes the lexical-only path work.
  */
 function directRankings(question: string, ctx: ArmContext, prepared: Prepared, budget: number) {
   const cached = prepared.vectors.size ? ctx.queryEmbeddings?.[question] ?? ctx.queryEmbeddings?.[question.trim()] : null
-  // Counted, not absorbed: a table labelled "hybrid seed" whose questions partly ran
-  // lexical-only would overstate how good the first hop was.
+  // Counted, not absorbed: a table labelled "hybrid seed" whose questions partly ran lexical-only
+  // would overstate how good the first hop was.
   if (prepared.vectors.size && !cached) entityHopStats.missingQueryVector += 1
   const query = cached ? unit(cached) : null
   const scored: Array<{ id: string; score: number }> = []
@@ -253,9 +246,9 @@ function directRankings(question: string, ctx: ArmContext, prepared: Prepared, b
 }
 
 /**
- * The arm id names the variant, because the ablation runner selects rows by id. Options are the
- * plan's ablations; an empty options object is the shipped arm, whose id the frozen contract
- * fixes at `entity-hop`. The seed is not an option — it follows what the context carries.
+ * The arm id names the variant, because the ablation runner selects rows by id. An empty options object
+ * is the shipped arm, whose id the frozen contract fixes at `entity-hop`. The seed is not an option —
+ * it follows what the context carries.
  */
 function armIdFor(opts: Partial<EntityHopAblation>): string {
   if (opts.disableRarityWeight) return 'ablate-rarity-weight'
@@ -266,25 +259,28 @@ function armIdFor(opts: Partial<EntityHopAblation>): string {
   return 'entity-hop'
 }
 
+/** The seed the arm and the trail both walk from, so the trail explains the graded list. */
+function seedFor(question: string, ctx: ArmContext, budget: number, seedSize: number) {
+  const prepared = prepare(ctx)
+  const direct = directRankings(question, ctx, prepared, budget)
+  const seeds = toRanking(fuseRankings([direct.vector, direct.lexical])).slice(0, seedSize)
+  const entities = new Set(extractEntities(question, prepared.index.df))
+  return { prepared, direct, seeds, entities }
+}
+
 /** The factory the ablation runner uses, so every variant is this same code path. */
 export const makeEntityHopArm: EntityHopArmFactory = (opts: Partial<EntityHopAblation> = {}): Arm => {
   const options = { ...ENTITY_HOP_DEFAULTS, ...opts }
-  const seedOf = (question: string, ctx: ArmContext, budget: number) => {
-    const prepared = prepare(ctx)
-    const direct = directRankings(question, ctx, prepared, budget)
-    return { prepared, direct, seeds: toRanking(fuseRankings([direct.vector, direct.lexical])).slice(0, options.seedSize) }
-  }
   return {
     id: armIdFor(opts),
     kind: 'entity-hop',
     // Lexical-only operation is supported on purpose: a corpus is enough.
     ready: (ctx) => ctx.docIds.length > 0,
     rank: (question, ctx, budget) => {
-      const { prepared, direct, seeds } = seedOf(question, ctx, budget)
-      const entities = new Set(extractEntities(question, prepared.index.df))
+      const { prepared, direct, seeds, entities } = seedFor(question, ctx, budget, options.seedSize)
       const hop = walkHops(prepared.index, seeds, ctx.texts, entities, options)
-      // Appended as one more retriever, so it cannot push out a strong direct hit — which is
-      // what protects the easy tier.
+      // Appended as one more retriever, so it cannot push out a strong direct hit — which is what
+      // protects the easy tier.
       return toRanking(fuseRankings([direct.vector, direct.lexical, hop.ranking])).slice(0, budget)
     },
   }
@@ -295,11 +291,7 @@ export const arm: Arm = makeEntityHopArm()
 /** Evidence trail for the hop step: one path per contributed document, in hop order. */
 export function explainEntityHop(question: string, ctx: ArmContext, opts?: Partial<EntityHopAblation>): HopPath[] {
   const options = { ...ENTITY_HOP_DEFAULTS, ...opts }
-  // The same seed `rank` uses at the harness's budget, so the trail explains the list that was
-  // graded rather than a differently-truncated seed of it.
-  const prepared = prepare(ctx)
-  const direct = directRankings(question, ctx, prepared, ARM_BUDGET)
-  const seeds = toRanking(fuseRankings([direct.vector, direct.lexical])).slice(0, options.seedSize)
-  const entities = new Set(extractEntities(question, prepared.index.df))
+  // Same budget as `rank(..., ARM_BUDGET)`, so the trail explains the list that was graded.
+  const { prepared, seeds, entities } = seedFor(question, ctx, ARM_BUDGET, options.seedSize)
   return walkHops(prepared.index, seeds, ctx.texts, entities, options).paths
 }
