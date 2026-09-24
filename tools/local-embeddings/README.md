@@ -59,6 +59,29 @@ and the direction is the same) — it would have made Indonesian retrieval worse
 than lexical matching alone. Note both models are 384-dim; the reason to prefer the
 multilingual one is language coverage, not size.
 
+## The one step the install cannot do for you
+
+The compose service and `LLM_ALLOWED_HOSTS` are wired automatically (compose, `install.sh`,
+and the image build), so the server is reachable and permitted on a fresh install. **The
+embedding endpoint is NOT auto-filled**, and that is deliberate rather than an omission:
+
+`getEmbeddingRuntimeConfig()` (`src/lib/embeddings.ts`) reads `embeddingBaseUrl`,
+`embeddingModel` and the embedding key from the org's `LlmConfig` ROW — never from an env
+var — and falls back to the CHAT `baseUrl` when `embeddingBaseUrl` is null. The setup wizard
+asks for the chat endpoint only. So on a new install, until someone opens
+**AI Config → Embedding** and enters the values above, the embedder points at whatever
+serves chat completions. That normally means embeddings are rejected outright (a chat model
+is not an embeddings endpoint) and retrieval runs lexical-only — the exact silent degradation
+described above.
+
+We do not pre-fill it because the endpoint is per-ORG and BYOK: the same install can host
+several orgs, each with its own provider, and writing a local default into the row would
+silently override a customer's hosted embedding provider. The deliberate choice is that the
+operator asserts it.
+
+`rag_vector_leg_total{outcome="not_attempted"}` is what reveals this without reading logs: a
+sustained non-zero there means no query embedding ever resolved.
+
 ## The column dimension must match your model
 
 `DocumentChunk.embedding` is declared `Unsupported("vector(384)")` to match this
