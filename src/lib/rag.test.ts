@@ -587,3 +587,31 @@ describe('getRagCacheStats', () => {
     expect(stats.hitRate).toBe(total === 0 ? 0 : stats.hits / total)
   })
 })
+
+describe('tokenizeForScoring — BM25 needs term frequency and whole identifiers', () => {
+  test('repeats are KEPT, unlike tokenize, so BM25 sees term frequency', async () => {
+    const { tokenize, tokenizeForScoring } = await import('./rag')
+    const text = 'cuti cuti cuti tahunan'
+    expect(tokenize(text).filter((t) => t === 'cuti')).toHaveLength(1)
+    expect(tokenizeForScoring(text).filter((t) => t === 'cuti')).toHaveLength(3)
+  })
+
+  test('a hyphenated identifier is kept WHOLE and also split', async () => {
+    const { tokenizeForScoring } = await import('./rag')
+    const tokens = tokenizeForScoring('Kode INV-4471 berlaku')
+    expect(tokens).toContain('inv-4471')
+    expect(tokens).toContain('inv')
+    expect(tokens).toContain('4471')
+  })
+
+  test('stopwords and single characters are still dropped, like tokenize', async () => {
+    const { tokenizeForScoring, tokenize } = await import('./rag')
+    const text = 'the dan dari a 7 sisa cuti'
+    expect(new Set(tokenizeForScoring(text))).toEqual(new Set(tokenize(text)))
+  })
+
+  test('empty input is an empty list', async () => {
+    const { tokenizeForScoring } = await import('./rag')
+    expect(tokenizeForScoring('')).toEqual([])
+  })
+})

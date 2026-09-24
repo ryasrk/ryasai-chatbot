@@ -143,7 +143,7 @@ describe('hybrid retrieval — both legs always run', () => {
   })
 })
 
-describe('hybrid retrieval — RRF fusion', () => {
+describe('hybrid retrieval — lexical-first fusion', () => {
   test('a chunk both legs agree on outranks a chunk only one leg found', async () => {
     return withOrg(async () => {
     vectorRows = [
@@ -161,15 +161,23 @@ describe('hybrid retrieval — RRF fusion', () => {
     })
   })
 
-  test('scores are RRF-scale, never raw counts', async () => {
+  test('the ordering score is an exact rank ladder, not a raw count', async () => {
     return withOrg(async () => {
-    vectorRows = [{ id: 'shared', similarity: 0.9 }]
+    vectorRows = [
+      { id: 'shared', similarity: 0.9 },
+      { id: 'v1', similarity: 0.5 },
+    ]
     ftsIds = ['shared']
 
-    const result = await retrieveRelevantChunks({ query: 'npwp tax', topK: 5 })
-    // Two retrievers both at rank 1 => 2/(60+1) ≈ 0.0328. The old scale was 0-30.
-    expect(result.chunks[0].score).toBeGreaterThan(0)
-    expect(result.chunks[0].score).toBeLessThan(0.1)
+    const result = await retrieveRelevantChunks({ query: 'npwp tax filing', topK: 5 })
+    // The contract is "rank order, expressed as a number", so the scores are exactly
+    // 1/(rank+1). This replaced an RRF scale whose top value was ~0.0328 and an
+    // additive scale before that (0-30); a ladder is none of those, and asserting the
+    // EXACT values is what keeps it from drifting back into a similarity.
+    expect(result.chunks.map((c) => c.score)).toEqual([1, 0.5])
+    // …and the raw BM25 number is still reported separately, for the UI, where a
+    // real term-overlap score is the useful thing to show.
+    expect(typeof result.chunks[0].scoreBreakdown.bm25).toBe('number')
     })
   })
 
@@ -187,7 +195,7 @@ describe('hybrid retrieval — RRF fusion', () => {
   })
 })
 
-describe('hybrid retrieval — knowledge graph as a third retriever', () => {
+describe('hybrid retrieval — the knowledge graph contributes candidates', () => {
   test('KG-only chunks enter the pool and are ranked, not bolted on', async () => {
     return withOrg(async () => {
     vectorRows = [{ id: 'v1', similarity: 0.9 }]
@@ -199,10 +207,14 @@ describe('hybrid retrieval — knowledge graph as a third retriever', () => {
     })
   })
 
-  test('KG agreement lifts a chunk without a hand-tuned multiplier', async () => {
+  test('KG agreement cannot reorder the lexical head, only append behind it', async () => {
     return withOrg(async () => {
-    // Previously: KG-local hits were multiplied by 1.3 and KG-only chunks scored
-    // at lexical*0.8 — constants that only made sense on the old additive scale.
+    // This replaced a test that asserted KG "lifted" a chunk's score. Two previous
+    // mechanisms did that — a hand-tuned 1.3x multiplier, then RRF giving the graph a
+    // third vote — and both let a graph edge outrank an exact term match. Measured on
+    // the app's own documents, that class of promotion is what put answer@1 at 0.4628
+    // against 0.9504 for plain BM25 (docs/retrieval-production-integration-plan.md §12).
+    // The graph now adds CANDIDATES; it does not get a vote on order.
     vectorRows = [
       { id: 'v1', similarity: 0.95 },
       { id: 'shared', similarity: 0.6 },
@@ -211,13 +223,28 @@ describe('hybrid retrieval — knowledge graph as a third retriever', () => {
     kgChunkIds = ['shared']
 
     const withKg = await retrieveRelevantChunks({ query: 'npwp tax filing', topK: 5 })
-    const sharedScore = withKg.chunks.find((c) => c.chunkId === 'shared')!.score
+    const orderWithKg = ids(withKg)
 
     kgChunkIds = []
-    const withoutKg = await retrieveRelevantChunks({ query: 'npwp tax filing again', topK: 5 })
-    const sharedBaseline = withoutKg.chunks.find((c) => c.chunkId === 'shared')!.score
+    const withoutKg = await retrieveRelevantChunks({ query: 'npwp tax filing', topK: 5 })
 
-    expect(sharedScore).toBeGreaterThan(sharedBaseline)
+    // Same order with and without the graph vote: the lexical head is untouched.
+    expect(orderWithKg).toEqual(ids(withoutKg))
+    expect(withKg.chunks.map((c) => c.score)).toEqual(withoutKg.chunks.map((c) => c.score))
+    })
+  })
+
+  test('a KG-only chunk is appended strictly BEHIND the lexical hits', async () => {
+    return withOrg(async () => {
+    vectorRows = [{ id: 'kgonly', similarity: 0.99 }]
+    ftsIds = ['exact']
+    kgChunkIds = ['kgonly']
+
+    const result = await retrieveRelevantChunks({ query: 'npwp format', topK: 5 })
+    // The graph's chunk has the HIGHEST vector similarity but no term match, so a
+    // vote-based fusion would place it first. It must come last.
+    expect(ids(result)[0]).toBe('exact')
+    expect(ids(result)).toEqual(['exact', 'kgonly'])
     })
   })
 })

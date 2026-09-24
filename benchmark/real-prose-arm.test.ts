@@ -124,26 +124,38 @@ describe('real-prose result is recorded, and its direction is pinned', () => {
   })
 
   test('the comparison is computable, so the numbers are not NOT COMPUTABLE placeholders', () => {
-    for (const arm of ['bm25-baseline', 'hybrid-rrf', 'entity-hop']) {
+    for (const arm of ['bm25-baseline', 'lexical-first-hybrid', 'entity-hop']) {
       expect(row(arm).ready).toBe(true)
       expect(row(arm).recall10).not.toBeNull()
       expect(row(arm).mrr).not.toBeNull()
     }
   })
 
-  test('Entity-Hop is NOT better than production hybrid on real prose (gate 3 direction)', () => {
-    const p2 = row('hybrid-rrf')
+  test('Entity-Hop is NOT better than the production ranking on real prose (gate 3 direction)', () => {
+    const p2 = row('lexical-first-hybrid')
     const hop = row('entity-hop')
     expect(hop.recall10!).toBeLessThanOrEqual(p2.recall10!)
     expect(hop.mrr!).toBeLessThanOrEqual(p2.mrr!)
   })
 
-  test('keyword search beats the shipped hybrid pipeline on real prose', () => {
-    // The headline finding of Phase 3. If fusion is ever fixed, this flips and the
-    // report must be updated deliberately.
+  test('the SHIPPED ranking matches the best keyword baseline instead of losing to it', () => {
+    // This assertion is INVERTED from the Phase 3 finding it replaces, deliberately and
+    // on the recorded direction, exactly as that test's own comment required ("If fusion
+    // is ever fixed, this flips and the report must be updated deliberately").
+    //
+    // Phase 3 measured RRF fusion LOSING to plain keyword search (answer@1 0.4628 vs
+    // 0.9504). That is why production now ships lexical-first with a term-frequency,
+    // hyphen-preserving tokenizer (docs/retrieval-production-integration-plan.md §12):
+    // `lexical-first-hybrid` in this file is that shipping arm, so the equality below is the
+    // product matching the best baseline while still admitting vector-only candidates,
+    // not the product merely tying a straw man.
     const bm25 = row('bm25-baseline')
-    const p2 = row('hybrid-rrf')
-    expect(bm25.recall10!).toBeGreaterThanOrEqual(p2.recall10!)
-    expect(bm25.mrr!).toBeGreaterThan(p2.mrr!)
+    const shipped = row('lexical-first-hybrid')
+    expect(shipped.recall10!).toBeGreaterThanOrEqual(bm25.recall10!)
+    expect(shipped.mrr!).toBeGreaterThanOrEqual(bm25.mrr!)
+    // The regression this replaced must not come back: the RRF variant, which the
+    // comparison harness still grades even though production no longer ships it.
+    const rrf = row('lexical-first-hybrid-k60')
+    if (rrf?.ready) expect(rrf.mrr!).toBeLessThan(shipped.mrr!)
   })
 })

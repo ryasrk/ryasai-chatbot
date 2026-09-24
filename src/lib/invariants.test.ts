@@ -20,6 +20,9 @@ import { expandQuery } from './intent-pipeline'
 import { readFileSync, existsSync, globSync } from 'node:fs'
 import { join } from 'node:path'
 
+/** `lexicalFirst(...)` called with the vector ranking among its candidates. */
+const LEXICAL_FIRST_WITH_VECTOR = /lexicalFirst\([^;]*\bvectorRanking\b[^;]*\)/
+
 const REPO_ROOT = join(import.meta.dir, '../..')
 
 function readRepo(rel: string): string {
@@ -593,40 +596,26 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     // have NO production callers (only a test mock), so grepping for them proves
     // nothing — assert on the module that actually orders results.
     const src = codeOnly('src/lib/rag-retrieval.ts')
-    // ASSIGNMENT, not mere mention. Asserting that the identifier `vectorRanking`
-    // appears somewhere passed even after it was deleted from the fusion array —
-    // a guard that cannot fail on its own regression. Require it to be an element
-    // of the array handed to fuseRankings.
-    expect(src).toMatch(/const rankings = \[[^\]]*\bvectorRanking\b[^\]]*\]/)
-    // The call must fuse that array. An OPTIONAL second argument is allowed because
-    // the fusion constant became configurable (`RAG_FUSION_K`, see
-    // docs/retrieval-production-integration-plan.md §5): `fuseRankings(rankings, k)`
-    // is the same fusion, just not at the default dampening. What this guard exists
-    // for is a `vectorRanking` that is BUILT and then never fused, so it asserts the
-    // array is passed — not that the call has exactly one argument. The negative
-    // control below keeps that relaxation from becoming "matches anything".
-    expect(src).toMatch(/fuseRankings\(rankings(?:\s*,\s*[^)]*)?\)/)
+    // ASSIGNMENT, not mere mention: asserting that the identifier `vectorRanking`
+    // appears somewhere passed even after it was deleted from the fusion — a guard
+    // that cannot fail on its own regression. Require `vectorRanking` to be inside the
+    // candidate list handed to `lexicalFirst`, the function that orders results.
+    expect(src).toMatch(LEXICAL_FIRST_WITH_VECTOR)
     expect(src).toMatch(/const vectorScore = vectorScores\.get\(id\)/)
   })
 
   test('the fusion guard above still rejects the regressions it was written for', () => {
-    // Negative control: the assertion in the previous test is deliberately loose
-    // enough to accept an optional `k`. Without this, relaxing it once (to let a
-    // configurable constant through) could quietly degrade it into a pattern that
-    // matches any call at all, and the real regression — a vector ranking that is
-    // computed and then dropped from the fusion — would pass CI again.
-    const pattern = /fuseRankings\(rankings(?:\s*,\s*[^)]*)?\)/
-    // ACCEPTED: the two shapes production legitimately uses.
-    expect('const fused = fuseRankings(rankings)').toMatch(pattern)
-    expect('const fused = fuseRankings(rankings, fusionK)').toMatch(pattern)
-    expect('const fused = fuseRankings(rankings, RRF_K)').toMatch(pattern)
-    // REJECTED: the array is renamed, so the fused variable is no longer provably
-    // the one built from vectorRanking.
-    expect('const fused = fuseRankings(otherRankings)').not.toMatch(pattern)
-    // REJECTED: the fusion call is gone entirely.
+    // Negative control, so the pattern cannot quietly degrade into "matches anything".
+    const pattern = LEXICAL_FIRST_WITH_VECTOR
+    // ACCEPTED: the shape production uses, with and without the graph leg.
+    expect('const fused = lexicalFirst(toRanking(bm25), [...vectorRanking, ...(args.kgRanking ?? [])])').toMatch(pattern)
+    expect('const fused = lexicalFirst(toRanking(bm25), vectorRanking)').toMatch(pattern)
+    // REJECTED: the vector leg is computed but not passed.
+    expect('const fused = lexicalFirst(toRanking(bm25), [...(args.kgRanking ?? [])])').not.toMatch(pattern)
+    // REJECTED: the combining call is gone entirely.
     expect('const fused = toRanking(bm25Rank(queryTokens, docs))').not.toMatch(pattern)
-    // REJECTED: a different function that merely mentions the array.
-    expect('const fused = mergeRankings(rankings)').not.toMatch(pattern)
+    // REJECTED: a different function that merely mentions the vector ranking.
+    expect('const fused = mergeRankings(toRanking(bm25), vectorRanking)').not.toMatch(pattern)
   })
 
   test('the alignment gate runs on BOTH agentic loops before returning an answer', () => {

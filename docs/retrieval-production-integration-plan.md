@@ -527,6 +527,9 @@ unset resolves to the documented default, asserted by test rather than assumed.
 
 ### The offline `k` sweep result — suggestive, and NOT the decision
 
+*[SUPERSEDED by §12: this command and its artefacts were removed once production stopped
+having a `k`. The table below is kept as the measurement that motivated the redesign.]*
+
 `bun benchmark/fusion-k-sweep.ts --scope=held-out --out=benchmark/results/fusion-k-sweep.json`
 (n=486, budget top-10, deterministic across runs):
 
@@ -630,3 +633,57 @@ documents' own sentences, which favours lexical matching. That is why BM25 is ne
 why paraphrased questions could narrow the gap. It does not change conclusion 1: a change that
 turns the vector leg on must be measured before it ships, and on the only real corpus
 available it measures as a large regression.
+
+
+---
+
+## 12. The design chosen, and what shipped
+
+§11 concluded that no value of `k` rescues RRF fusion, and §11's own measurement already
+contained the answer: BM25 alone beat every fused variant, while `vector-only` scored
+answer@1 0.2149 — the vector leg is the weaker retriever on this corpus, so giving it an
+equal vote can only cost ranking quality. The fix is not to tune the vote, it is to stop
+holding one.
+
+**Shipped: lexical-first with a scoring tokenizer.**
+
+1. `lexicalFirst` (`src/lib/rag-ranking.ts`) keeps the BM25 order exactly and appends
+   vector/KG-only ids after it, deduped, scored `1/(rank+1)`. It replaced `fuseRankings`,
+   which is retained for the offline comparison arms only.
+2. `tokenizeForScoring` (`src/lib/rag.ts`) keeps term frequency (so BM25 is real BM25, not
+   a set overlap) and keeps hyphenated identifiers whole as well as split.
+
+Measured, 121 questions over the app's own 114 chunks (real MiniLM vectors):
+
+| ranking | recall@10 | MRR | ans@1 |
+|---|---|---|---|
+| BM25 only, shipped tokenizer | 1.0000 | 0.9139 | 0.8347 |
+| RRF fusion (what was shipping) | 0.9752 | 0.6254 | 0.4628 |
+| **lexical-first + scoring tokenizer (now shipping)** | **1.0000** | **0.9731** | **0.9504** |
+| vector leg alone | 0.5620 | 0.3254 | 0.2149 |
+
+Synthetic held-out (n=486) confirms the direction on a corpus with tiers keyword search
+cannot solve: recall@10 0.3848 → 0.4342, hard tier 0.4638 → 0.3768 at the same time as the
+complex tier rises 0.3404 → 0.7340.
+
+**Consequences that had to be handled, not deferred:**
+
+- `RAG_FUSION_K`, the `x-fusion-k` header, and `rag-fusion-config.ts` are DELETED. They
+  configured a constant that no longer exists. A leftover header is inert, asserted through
+  `/api/rag/evaluate`.
+- The cache key's `k<value>` segment became `RANKING_VERSION` ('lex1'). The old tag existed
+  so an A/B could not read a stale ranking's order; the same hazard now applies across a
+  release, so the segment stays and is bumped with the ranking.
+- Retrieval metrics are labelled `ranking="lex1"` instead of `k="60"`, for the same reason.
+- The benchmark arms now import the production tokenizer and combination, so the numbers
+  above describe the product rather than a copy (the entity-hop arm's base too, or its
+  measured delta would be against a ranking that no longer exists).
+- The `k` sweep, its arm and its result file are removed: they measured a parameter
+  production no longer has.
+
+**What this still does not prove.** The benchmark questions are extractive, built from the
+documents' own sentences, which favours lexical matching — that is why BM25 is near-perfect
+here and why the vector leg has little room to help. The vector leg's value should show up on
+PARAPHRASED questions, which this corpus cannot generate honestly. On a deployment with real
+user traffic, §6a's product-surface A/B is still worth running once paraphrase data exists;
+until then the evidence supports lexical-first and nothing stronger.

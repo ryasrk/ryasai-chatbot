@@ -112,7 +112,7 @@ function main(): number {
           budget: ARM_BUDGET,
           capCandidates: CAP_CANDIDATES,
           baseline: {
-            arm: 'hybrid-rrf',
+            arm: 'lexical-first-hybrid',
             easy: p2Easy,
             medium: p2.perTier.medium?.recall10 ?? 0,
             hard: p2.perTier.hard?.recall10 ?? 0,

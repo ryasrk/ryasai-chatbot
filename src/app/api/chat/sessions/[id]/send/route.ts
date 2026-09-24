@@ -4,7 +4,6 @@ import { getActiveUser, handleApiError } from '@/lib/session'
 import { runStreamingChatCompletion, type ChatHistoryEntry, type StreamingCompletionResult } from '@/lib/tool-router'
 import { runSimpleStreamingChat, simplePipelineEnabled } from '@/lib/simple-pipeline'
 import { enterWithOrg } from '@/lib/prisma-tenant'
-import { enterWithFusionK } from '@/lib/rag-fusion-config'
 import { rememberChatTurn } from '@/lib/cognee'
 import { generateSessionTitle, generateSessionSummary } from '@/lib/ai'
 import { stripSessionWrapper } from '@/lib/tool-utils'
@@ -260,11 +259,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
           // different warm cache and a different startup state.
           const override = req.headers.get('x-pipeline')
           const useSimple = simplePipelineEnabled() && (override === null || override !== 'full')
-          // Retrieval fusion override, same gate as the pipeline one above: honoured ONLY
-          // while RAG_FUSION_K is set, so an operator who has not opted in cannot have a
-          // client choose this deployment's ranking configuration. It must be entered
-          // BEFORE the stream is prepared, because the retrieval runs inside it.
-          enterWithFusionK(req.headers.get('x-fusion-k'))
           streaming = useSimple
             ? await runSimpleStreamingChat({
                 question: contextualizedText,

@@ -141,6 +141,41 @@ export function fuseRankings(rankings: string[][], k: number = RRF_K): RankedId[
     .sort((a, b) => b.score - a.score)
 }
 
+/**
+ * Version of the ranking stored in the cache. Bump it whenever the ORDER a query
+ * produces changes, so entries written by the previous ranking are never served:
+ * the cached value is that order, and a TTL-long mix of old and new orders would
+ * make a ranking change unmeasurable.
+ */
+export const RANKING_VERSION = 'lex1' // bump when `lexicalFirst` or its tokens change
+
+/**
+ * Lexical-first combination: the BM25 order is kept intact and vector-only hits are
+ * appended after it, in similarity order.
+ *
+ * WHY NOT RRF. Measured on the app's own documents and on the synthetic benchmark
+ * (docs/retrieval-production-integration-plan.md §11-12), every RRF variant ranked
+ * BELOW BM25 alone — answer@1 0.4628 at the shipped k=60, 0.6364 at the best k, against
+ * 0.9504 for BM25 — because fusion lets a weak vector leg (vector alone: answer@1
+ * 0.2149) demote the lexical #1. A weighted RRF (lexical ×4) still lost (0.6281).
+ * Appending cannot demote a lexical hit, so it is never worse than BM25 on what BM25
+ * finds, while the vector leg still recovers documents BM25 misses entirely (a
+ * paraphrased question with no shared term).
+ *
+ * `score` is a descending rank value (1 for the head), NOT a similarity: it exists so
+ * callers that sort or merge by score keep this order.
+ */
+export function lexicalFirst(lexicalRanking: string[], vectorRanking: string[]): RankedId[] {
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  for (const id of [...lexicalRanking, ...vectorRanking]) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    ordered.push(id)
+  }
+  return ordered.map((id, index) => ({ id, score: 1 / (index + 1) }))
+}
+
 /** Ids of a scored list in rank order — the shape fuseRankings consumes. */
 export function toRanking(scored: RankedId[]): string[] {
   return scored.map((entry) => entry.id)

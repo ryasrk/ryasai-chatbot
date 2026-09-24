@@ -80,9 +80,9 @@ async function main(): Promise<number> {
 
   const hybrid = await tryImport(new URL('./arms/hybrid-arm.ts', import.meta.url))
   let production = hybrid.mod?.arm
-  let fallback = `hybrid-rrf not usable (${hybrid.error ?? 'no arm export'})`
+  let fallback = `lexical-first-hybrid not usable (${hybrid.error ?? 'no arm export'})`
   if (production && !production.ready(ctx)) {
-    fallback = `hybrid-rrf present but NOT READY (${ctx.embeddings ? 'unknown missing input' : 'no vector cache'})`
+    fallback = `lexical-first-hybrid present but NOT READY (${ctx.embeddings ? 'unknown missing input' : 'no vector cache'})`
     production = undefined
   } else if (production) fallback = ''
   // BM25 is graded every run: it is the reference the recorded cognee/supermemory rows compare to.

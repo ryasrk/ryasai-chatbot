@@ -29,7 +29,7 @@ function seriesFor(metric: string): string[] {
 
 function labelValues(metric: string): string[] {
   return seriesFor(metric)
-    .map((line) => /k="(\d+)"/.exec(line)?.[1])
+    .map((line) => /ranking="v(\d+)"/.exec(line)?.[1])
     .filter((v): v is string => v !== undefined)
 }
 
@@ -43,7 +43,7 @@ describe('samples land without a prior initMetrics() call', () => {
     // unregistered metric is a silent no-op, so on a fresh process every retrieval
     // before the first /api/metrics scrape would record nothing.
     expect(seriesFor(RAG_LATENCY_METRIC)).toEqual([])
-    recordRetrievalTiming({ ms: 42, fusionK: 60, candidatesScanned: 17, returned: 4 })
+    recordRetrievalTiming({ ms: 42, rankingVersion: 'v60', candidatesScanned: 17, returned: 4 })
     expect(seriesFor(RAG_LATENCY_METRIC).length).toBeGreaterThan(0)
     expect(prometheusText()).toContain('rag_retrieval_latency_ms_count')
   })
@@ -63,18 +63,18 @@ describe('samples land without a prior initMetrics() call', () => {
   })
 })
 
-describe('the fusion config labels the series, so an A/B run is readable', () => {
-  test('two different k values produce two labelled series', () => {
-    recordRetrievalTiming({ ms: 10, fusionK: 60, candidatesScanned: 5, returned: 3 })
-    recordRetrievalTiming({ ms: 20, fusionK: 1, candidatesScanned: 5, returned: 3 })
+describe('the ranking version labels the series, so an A/B run is readable', () => {
+  test('two different ranking versions produce two labelled series', () => {
+    recordRetrievalTiming({ ms: 10, rankingVersion: 'v60', candidatesScanned: 5, returned: 3 })
+    recordRetrievalTiming({ ms: 20, rankingVersion: 'v1', candidatesScanned: 5, returned: 3 })
     const values = labelValues(RAG_LATENCY_METRIC)
     expect(values).toContain('60')
     expect(values).toContain('1')
   })
 
-  test('repeated samples at one k share a series rather than multiplying labels', () => {
+  test('repeated samples at one version share a series rather than multiplying labels', () => {
     for (let i = 0; i < 5; i++) {
-      recordRetrievalTiming({ ms: 10, fusionK: 60, candidatesScanned: 5, returned: 3 })
+      recordRetrievalTiming({ ms: 10, rankingVersion: 'v60', candidatesScanned: 5, returned: 3 })
     }
     // Distinct label SETS, not sample count: 5 identical samples are one series.
     expect(new Set(labelValues(RAG_LATENCY_METRIC)).size).toBe(1)
@@ -83,22 +83,22 @@ describe('the fusion config labels the series, so an A/B run is readable', () =>
 
 describe('the other retrieval samples', () => {
   test('candidates scanned and results returned are both recorded', () => {
-    recordRetrievalTiming({ ms: 30, fusionK: 60, candidatesScanned: 240, returned: 12 })
+    recordRetrievalTiming({ ms: 30, rankingVersion: 'v60', candidatesScanned: 240, returned: 12 })
     const text = prometheusText()
     expect(text).toContain(RAG_CANDIDATES_METRIC)
     expect(text).toContain(RAG_RESULTS_METRIC)
     // A wrong wiring (swapping the two arguments) would still emit both names, so
     // assert the VALUES land in the right buckets: candidates into the 250 bucket,
     // results into the 12 bucket.
-    expect(text).toMatch(new RegExp(`${RAG_CANDIDATES_METRIC}_bucket\\{k="60",le="250"} 1`))
-    expect(text).toMatch(new RegExp(`${RAG_RESULTS_METRIC}_bucket\\{k="60",le="12"} 1`))
+    expect(text).toMatch(new RegExp(`${RAG_CANDIDATES_METRIC}_bucket\\{ranking="v60",le="250"} 1`))
+    expect(text).toMatch(new RegExp(`${RAG_RESULTS_METRIC}_bucket\\{ranking="v60",le="12"} 1`))
   })
 
   test('zero results is a real observation, not a missing sample', () => {
     // An empty retrieval is the interesting case (nothing matched); it must appear in
     // the 0 bucket rather than being dropped as falsy.
-    recordRetrievalTiming({ ms: 5, fusionK: 60, candidatesScanned: 0, returned: 0 })
-    expect(prometheusText()).toMatch(new RegExp(`${RAG_RESULTS_METRIC}_bucket\\{k="60",le="0"} 1`))
+    recordRetrievalTiming({ ms: 5, rankingVersion: 'v60', candidatesScanned: 0, returned: 0 })
+    expect(prometheusText()).toMatch(new RegExp(`${RAG_RESULTS_METRIC}_bucket\\{ranking="v60",le="0"} 1`))
   })
 })
 
@@ -120,9 +120,9 @@ describe('a cache hit is NOT a retrieval', () => {
 
   test('the latency count equals the number of real retrievals, not of cache reads', () => {
     recordRetrievalCache(true)
-    recordRetrievalTiming({ ms: 20, fusionK: 60, candidatesScanned: 3, returned: 1 })
+    recordRetrievalTiming({ ms: 20, rankingVersion: 'v60', candidatesScanned: 3, returned: 1 })
     recordRetrievalCache(false)
-    recordRetrievalTiming({ ms: 40, fusionK: 60, candidatesScanned: 4, returned: 2 })
+    recordRetrievalTiming({ ms: 40, rankingVersion: 'v60', candidatesScanned: 4, returned: 2 })
     const countLine = prometheusText().split('\n').find((l) => l.startsWith(`${RAG_LATENCY_METRIC}_count`))!
     expect(countLine.endsWith(' 2')).toBe(true)
   })

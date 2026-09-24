@@ -21,9 +21,18 @@ import {
   selectTopRetrievedChunks,
   type RetrievedChunk,
 } from './rag'
+// Namespace import for the one export added after `./rag` was already mocked with a
+// partial surface in several test files: a named import of a name a mock omits throws at
+// module-evaluation time ("Export named ... not found"), which surfaces as an unrelated
+// file failing. Reading it off the namespace degrades to `tokenize` under such a mock.
+import * as ragTokens from './rag'
+const scoringTokens = (text: string): string[] =>
+  (ragTokens.tokenizeForScoring ?? ragTokens.tokenize)(text)
 import { cosineSimilarity } from '@/lib/embeddings'
-import { bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
-import { fusionCacheTag, resolveFusionConfig } from '@/lib/rag-fusion-config'
+import { RANKING_VERSION, bm25Rank, lexicalFirst, toRanking } from '@/lib/rag-ranking'
+
+// Re-exported so callers that already depend on this module need no second import.
+export { RANKING_VERSION }
 import { recordRetrievalCache, recordRetrievalTiming } from '@/lib/rag-metrics'
 
 let _cacheHits = 0
@@ -34,7 +43,7 @@ export function getRagCacheStats(): { hits: number; misses: number; hitRate: num
   return { hits: _cacheHits, misses: _cacheMisses, hitRate: total === 0 ? 0 : _cacheHits / total }
 }
 
-function ragCacheKey(query: string, topK: number, fusionK: number): string | null {
+function ragCacheKey(query: string, topK: number): string | null {
   // ponytail: org-scoped cache key — prevents cross-tenant data disclosure
   // (org A reading org B's cached retrieved chunks for the same query string).
   //
@@ -44,16 +53,9 @@ function ragCacheKey(query: string, topK: number, fusionK: number): string | nul
   // returns `undefined` (not an org) on the far side of `bypassOrg()`, so a bypassed path would
   // have read and WRITTEN the shared 'global' entry. Returning null makes the caller skip the
   // cache entirely, so a missing context costs a retrieval, not a cross-tenant disclosure.
-  //
-  // The fusion tag is part of the key because `k` changes the ORDER of the result, and the
-  // cached value is that order. Without it an A/B run over one server process would serve
-  // config A's ranking to a config B request for up to RAG_CACHE_TTL_MS, so the measurement
-  // would be of cache warmth rather than of the constant. It is keyed on the effective `k`
-  // (not on where it came from): two requests that resolve to the same `k` really do produce
-  // identical rankings and should share an entry.
   const orgId = getOrgContext()
   if (!orgId) return null
-  return `rag:${orgId}:${fusionCacheTag(fusionK)}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
+  return `rag:${orgId}:${RANKING_VERSION}:${topK}:${query.slice(0, 500).toLowerCase().trim()}`
 }
 
 export async function invalidateRagCache(): Promise<void> {
@@ -74,8 +76,7 @@ export async function retrieveRelevantChunks(args: {
   // Resolved once per call, so the value that keys the cache entry is provably the
   // same one that orders the result — resolving twice would let a mid-call change
   // write a ranking under a key that no longer describes it.
-  const fusion = resolveFusionConfig()
-  const cacheKey = ragCacheKey(args.query, args.topK, fusion.k)
+  const cacheKey = ragCacheKey(args.query, args.topK)
   if (cacheKey) {
     const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
     if (cached) {
@@ -110,7 +111,7 @@ export async function retrieveRelevantChunks(args: {
   }
 
   // Leaf retrieval: this is the unit that runs the retrievers and therefore the one
-  // whose duration and result count are comparable across fusion configs.
+  // whose duration and result count are comparable across runs.
   recordRetrievalCache(false)
 
   // HyDE: embed a hypothetical answer instead of the raw query for vector search.
@@ -133,17 +134,13 @@ export async function retrieveRelevantChunks(args: {
     recallGraphContext(args.query),
   ])
 
-  // The knowledge graph is fused in as a third retriever rather than post-hoc
-  // boosted. The old code multiplied KG-local hits by 1.3 and scored KG-only
-  // chunks at lexical*0.8 — two hand-tuned constants that only made sense while
-  // every leg shared one additive scale, and which would be nonsense now that
-  // fused scores are RRF (~0.016) and raw lexical scores are counts (~0-30).
+  // The knowledge graph contributes candidates after the lexical head, alongside the
+  // vector leg (see `lexicalFirst`), never ahead of an exact term match.
   const retrievalResult = await retrieveAndFuse({
     vectorQuery,
     queryTokens,
     topK: retrievalTopK,
     kgRanking: kgResult.allChunkIds,
-    fusionK: fusion.k,
   })
 
   const mergedChunks = retrievalResult.chunks
@@ -165,8 +162,8 @@ export async function retrieveRelevantChunks(args: {
   // Measured to the END of this function, so the number covers what a caller waits
   // for (both legs, the graph, fusion and the reranker) rather than only the legs.
   recordRetrievalTiming({
+    rankingVersion: RANKING_VERSION,
     ms: Date.now() - retrievalStartedAt,
-    fusionK: fusion.k,
     candidatesScanned: retrievalResult.candidatesScanned,
     returned: finalChunks.length,
   })
@@ -272,8 +269,6 @@ async function retrieveAndFuse(args: {
   queryTokens: string[]
   topK: number
   kgRanking?: string[]
-  /** RRF dampening. Resolved by the caller so it matches the value that keyed the cache. */
-  fusionK: number
 }): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
   const { queryTokens, topK } = args
   const poolSize = Math.max(topK * 8, 24)
@@ -314,19 +309,16 @@ async function retrieveAndFuse(args: {
       // Keywords fold in as extra term occurrences — a lightweight BM25F: a term
       // that is both in the body and an extracted keyword legitimately scores
       // higher, without a hand-picked field weight.
-      tokens: tokenize(chunk.content).concat(
+      tokens: scoringTokens(chunk.content).concat(
         (chunk.keywords ?? '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean),
       ),
     })),
   )
   const bm25Scores = new Map(bm25.map((entry) => [entry.id, entry.score]))
 
-  const rankings = [vectorRanking, toRanking(bm25)]
-  if (args.kgRanking?.length) rankings.push(args.kgRanking)
-  // `k` is dampening, not a weight: a lower value lets a strong single-leg rank
-  // outrank cross-leg agreement. Default stays RRF_K unless the deployment opts in
-  // (see rag-fusion-config.ts) — this is a measurement seam, not a tuned default.
-  const fused = fuseRankings(rankings, args.fusionK)
+  // BM25 decides the head; semantic and graph candidates fill in behind it. See
+  // `lexicalFirst` for the measurement that replaced reciprocal-rank fusion.
+  const fused = lexicalFirst(toRanking(bm25), [...vectorRanking, ...(args.kgRanking ?? [])])
 
   const scored: RetrievedChunk[] = []
   for (const { id, score } of fused) {

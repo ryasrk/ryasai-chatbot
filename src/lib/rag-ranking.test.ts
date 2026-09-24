@@ -187,3 +187,36 @@ describe('bm25 + rrf together', () => {
     expect(fused.map((f) => f.id)).toContain('exact')
   })
 })
+
+describe('lexicalFirst — the lexical head is never demoted', () => {
+  // Imported dynamically so this block does not change the import list above.
+  test('the BM25 order is kept exactly, even when the vector leg disagrees', async () => {
+    const { lexicalFirst } = await import('./rag-ranking')
+    const out = lexicalFirst(['lex1', 'lex2', 'lex3'], ['vec1', 'lex3', 'lex1'])
+    // The regression this replaces: under RRF a chunk ranked by BOTH legs (lex3 here)
+    // could overtake the lexical #1. Measured on the app's own documents, that is what
+    // dropped answer@1 from 0.9504 (BM25) to 0.4628 (RRF k=60).
+    expect(out.slice(0, 3).map((e) => e.id)).toEqual(['lex1', 'lex2', 'lex3'])
+  })
+
+  test('vector-only hits are kept, AFTER every lexical hit, in vector order', async () => {
+    const { lexicalFirst } = await import('./rag-ranking')
+    const out = lexicalFirst(['a'], ['v1', 'a', 'v2'])
+    expect(out.map((e) => e.id)).toEqual(['a', 'v1', 'v2'])
+  })
+
+  test('with no lexical match the vector order IS the result — the semantic fallback', async () => {
+    const { lexicalFirst } = await import('./rag-ranking')
+    expect(lexicalFirst([], ['v1', 'v2']).map((e) => e.id)).toEqual(['v1', 'v2'])
+  })
+
+  test('no duplicates, and scores strictly decrease so score-sorting callers keep the order', async () => {
+    const { lexicalFirst } = await import('./rag-ranking')
+    const out = lexicalFirst(['a', 'b', 'a'], ['b', 'c', 'c'])
+    expect(out.map((e) => e.id)).toEqual(['a', 'b', 'c'])
+    for (let i = 1; i < out.length; i++) expect(out[i].score).toBeLessThan(out[i - 1].score)
+    // Re-sorting by score (what mergeRetrievalResults and selectTopRetrievedChunks do)
+    // must reproduce the same order.
+    expect([...out].sort((x, y) => y.score - x.score).map((e) => e.id)).toEqual(['a', 'b', 'c'])
+  })
+})

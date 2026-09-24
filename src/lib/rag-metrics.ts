@@ -5,7 +5,7 @@
  * ----------------------------------------------------------------------------
  * `docs/retrieval-production-integration-plan.md` §4b: before changing what orders
  * results, there has to be a way to see what the current ordering COSTS. Without a
- * pre-change baseline, a regression after a fusion change cannot be told apart from
+ * pre-change baseline, a regression after a ranking change cannot be told apart from
  * normal variation, and the inherited 50 ms latency budget has no production
  * counterpart to compare against.
  *
@@ -19,14 +19,11 @@
  * scrape. Registering inside each helper costs one map lookup and removes that whole
  * class of "the dashboard is empty and nothing errors".
  *
- * LABEL CARDINALITY
+ * LABELS
  * ----------------------------------------------------------------------------
- * `k` is labelled with the effective value. That is bounded by what a deployment
- * actually configures — normally one value, plus one per A/B comparison — rather
- * than by the 1..1000 input range, because a value that is never used never creates
- * a series. Labeling by source instead (`default|env|request`) was rejected: it
- * cannot tell a k=1 run from a k=10 run, which is the only question the A/B harness
- * asks.
+ * Series are labelled with the ranking version (`RANKING_VERSION` in rag-retrieval.ts),
+ * one value per deployed ranking, so a before/after comparison across a ranking change
+ * is readable in one panel.
  */
 // A NAMESPACE import, not named imports, on purpose. `metrics.ts` is mocked in other
 // test files with a partial surface (e.g. only `inc`/`observe`), and a named import of
@@ -63,11 +60,11 @@ export const RAG_CACHE_MISS_METRIC = 'rag_cache_miss_total'
  */
 export function recordRetrievalTiming(args: {
   ms: number
-  fusionK: number
+  rankingVersion: string
   candidatesScanned: number
   returned: number
 }): void {
-  const labels = { k: String(args.fusionK) }
+  const labels = { ranking: args.rankingVersion }
   // Optional calls (`?.`) because a mocked `metrics` may omit any of these.
   metrics.histogram?.(
     RAG_LATENCY_METRIC,

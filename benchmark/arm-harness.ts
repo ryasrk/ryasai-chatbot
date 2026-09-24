@@ -266,7 +266,7 @@ export function renderArmMetrics(metrics: ArmMetrics[]): string {
  * performs badly, which is the failure mode this whole benchmark exists to avoid.
  */
 const ARM_MODULES: Array<{ file: string; id: string }> = [
-  { file: './arms/hybrid-arm', id: 'hybrid-rrf' },
+  { file: './arms/hybrid-arm', id: 'lexical-first-hybrid' },
   { file: './arms/entity-hop-arm', id: 'entity-hop' },
 ]
 

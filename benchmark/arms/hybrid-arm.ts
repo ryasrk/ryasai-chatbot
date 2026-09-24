@@ -7,8 +7,8 @@
  * `retrieveAndFuse` (src/lib/rag-retrieval.ts) is what the product actually ships
  * and it has never been measured on this benchmark, so nobody knows whether a new
  * algorithm has room to win. This arm reproduces that ranking offline and imports
- * the production pure functions — `bm25Rank`, `fuseRankings`, `toRanking`, `RRF_K`
- * (src/lib/rag-ranking.ts) and `tokenize` (src/lib/rag.ts) — instead of
+ * the production pure functions — `bm25Rank`, `lexicalFirst`, `toRanking`
+ * (src/lib/rag-ranking.ts) and the tokenizers (src/lib/rag.ts) — instead of
  * re-implementing them, so the row measures the product's code, not a copy that
  * can drift.
  *
@@ -39,11 +39,11 @@
  * a hybrid label. A question missing from the cache throws, never degrades.
  */
 import type { Arm, ArmContext } from '../arm-types'
-import { RRF_K, bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
+import { bm25Rank, lexicalFirst, toRanking } from '@/lib/rag-ranking'
 // ponytail: src/lib/rag.ts pulls in @/lib/embeddings, which opens a DB handle on
 // import. The import SUCCEEDS, but the process then never exits on its own —
 // every script that imports this module must end with process.exit(code).
-import { tokenize } from '@/lib/rag'
+import { tokenize, tokenizeForScoring } from '@/lib/rag'
 
 /** Unit-scale a vector, so cosine similarity is a plain dot product. */
 function unit(v: number[]): number[] {
@@ -65,7 +65,7 @@ const indexes = new WeakMap<ArmContext, Index>()
 function buildIndex(ctx: ArmContext): Index {
   const cached = indexes.get(ctx)
   if (cached) return cached
-  const docs = ctx.docIds.map((id) => ({ id, tokens: tokenize(ctx.texts[id] ?? '') }))
+  const docs = ctx.docIds.map((id) => ({ id, tokens: tokenizeForScoring(ctx.texts[id] ?? '') }))
   const vectors = new Map<string, number[]>()
   for (const id of ctx.docIds) {
     const vector = ctx.embeddings?.[id]
@@ -91,7 +91,7 @@ function vectorRanking(index: Index, query: number[], wanted: number): string[] 
 }
 
 export const arm: Arm = {
-  id: 'hybrid-rrf',
+  id: 'lexical-first-hybrid',
   kind: 'hybrid',
 
   ready: (ctx) =>
@@ -103,14 +103,15 @@ export const arm: Arm = {
     if (!queryVector) {
       // Loud, not silent: a hybrid result computed without the vector leg would be
       // reported as P2 and understate the product.
-      throw new Error(`hybrid-rrf has no query vector for ${JSON.stringify(question.slice(0, 80))}`)
+      throw new Error(`lexical-first-hybrid has no query vector for ${JSON.stringify(question.slice(0, 80))}`)
     }
     const index = buildIndex(ctx)
     // Production's pool depth: the vector store asks for max(topK*8, 16), and
     // topK is the budget here because this arm has no rerank stage widening it.
     const wanted = Math.max(budget * 8, 16)
     const lexicalRanking = toRanking(bm25Rank(tokenize(question), index.docs))
-    const fused = fuseRankings([vectorRanking(index, unit(queryVector), wanted), lexicalRanking], RRF_K)
+    // The production combination: BM25 order intact, vector-only hits appended.
+    const fused = lexicalFirst(lexicalRanking, vectorRanking(index, unit(queryVector), wanted))
     return fused.slice(0, budget).map((entry) => entry.id)
   },
 }

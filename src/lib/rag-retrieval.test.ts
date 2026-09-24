@@ -9,7 +9,7 @@ const orgContextHolder: { value: string | undefined } = { value: undefined }
 const selectCalls: Array<{ count: number; k: number }> = []
 let buildCitationTrailImpl: (q: string, kg: unknown, chunks: unknown[]) => unknown[] = () => []
 let bm25RankImpl: (tokens: unknown, docs: unknown) => unknown = () => []
-let fuseRankingsImpl: (rankings: unknown) => unknown = () => []
+let lexicalFirstImpl: (lexical: unknown, vector: unknown) => unknown = () => []
 let toRankingImpl: (entries: unknown) => unknown = () => ({})
 let decomposeQueryImpl: (q: string) => string[] = (q) => [q]
 let mergeRetrievedResultsImpl: (r: unknown[]) => unknown = (r) => r[0]
@@ -52,6 +52,7 @@ mock.module('@/lib/constants', () => ({
 }))
 mock.module('./rag', () => ({
   tokenize: (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean),
+  tokenizeForScoring: (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean),
   scoreChunk: () => ({ total: 0, lexicalTotal: 0, contentHits: 0, keywordHits: 0, phraseHits: 0, semanticSimilarity: 0, semanticScore: 0 }),
   applySemanticScore: (s: unknown) => s,
   applyVectorStoreScore: (s: unknown) => s,
@@ -77,8 +78,9 @@ mock.module('@/lib/citation-trail', () => ({
 }))
 
 mock.module('@/lib/rag-ranking', () => ({
+  RANKING_VERSION: 'lex1',
   bm25Rank: (tokens: unknown, docs: unknown) => bm25RankImpl(tokens, docs),
-  fuseRankings: (rankings: unknown) => fuseRankingsImpl(rankings),
+  lexicalFirst: (lexical: unknown, vector: unknown) => lexicalFirstImpl(lexical, vector),
   toRanking: (entries: unknown) => toRankingImpl(entries),
 }))
 
@@ -340,31 +342,31 @@ beforeEach(() => {
   indexBuildThrows = null
   allDocsFallback = []
   buildCitationTrailImpl = () => []
-  // Real-shaped: the pool comes from db.documentChunk (NOT from fuseRankings), so
+  // Real-shaped: the pool comes from db.documentChunk (NOT from lexicalFirst), so
   // the rankings must be built from ids that actually exist in dbChunkRows.
   bm25RankImpl = (_tokens: unknown, docs: unknown) =>
     ((docs ?? []) as Array<{ id: string }>).map((d) => ({ id: d.id, score: 1 }))
-  // MEASURED: rankings arrives as [vectorRanking, lexicalRanking] and the vector
-  // leg is EMPTY whenever the vector store is unconfigured. Reading rankings[0]
-  // made the fused set empty and every downstream test silently tested nothing.
-  // Union all rankings, as RRF would.
+  // Mirrors the real `lexicalFirst`: the lexical ranking first, then the
+  // vector/KG ids it did not already contain, deduped, scored 1/(index+1). The
+  // vector leg is EMPTY whenever the vector store is unconfigured, so reading
+  // only one argument would make the fused set empty and every downstream test
+  // silently test nothing.
   //
   // A second latent defect lived here and this round exposed it: bm25RankImpl
   // returns objects ({ id, score }), but this helper walked each ranking as if it
   // held bare IDS. So the union contained objects, byId.get(object) was undefined,
   // and the scored list came back EMPTY. Every existing test passed only because it
-  // overrode fuseRankingsImpl explicitly, so the broken default was never exercised
+  // overrode the fusion stub explicitly, so the broken default was never exercised
   // — a test helper that silently returns nothing is worse than no helper.
-  fuseRankingsImpl = (rankingsInput: unknown) => {
-    const rankings = (rankingsInput ?? []) as unknown[][]
+  lexicalFirstImpl = (lexical: unknown, vector: unknown) => {
     const ids: string[] = []
-    for (const r of rankings) {
-      for (const entry of (r ?? []) as Array<string | { id: string }>) {
+    for (const r of [lexical, vector]) {
+      for (const entry of (Array.isArray(r) ? r : []) as Array<string | { id: string }>) {
         const id = typeof entry === 'string' ? entry : entry?.id
         if (id && !ids.includes(id)) ids.push(id)
       }
     }
-    return ids.map((id) => ({ id, score: 1 }))
+    return ids.map((id, index) => ({ id, score: 1 / (index + 1) }))
   }
   toRankingImpl = (entries: unknown) => entries
   decomposeQueryImpl = (q) => [q]
@@ -438,23 +440,22 @@ describe('retrieveRelevantChunks — the tenant-scoped cache', () => {
   test('a cache HIT returns the stored value and skips every retriever', async () => {
     const stored = { chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 9, graphContext: '' }
     // Read under the org the caller actually has context for. The key must name the
-    // fusion config too (rag:<org>:k<k>:<topK>:<query>), or this entry is
+    // ranking version too (rag:<org>:<version>:<topK>:<query>), or this entry is
     // unreachable — which is the point of that segment: a cached ORDER is only
-    // valid for the `k` that produced it.
-    const { fusionCacheTag } = await import('./rag-fusion-config')
-    const { RRF_K } = await import('./rag-ranking')
+    // valid for the ranking that produced it.
+    const { RANKING_VERSION } = await import('./rag-retrieval')
     orgContextHolder.value = 'org-A'
-    cacheStore.set(`rag:org-A:${fusionCacheTag(RRF_K)}:5:invoices`, stored)
+    cacheStore.set(`rag:org-A:${RANKING_VERSION}:5:invoices`, stored)
     const r = await retrieveRelevantChunks({ query: 'invoices', topK: 5 })
     expect(r.candidatesScanned).toBe(9)
     expect(ftsCalls).toHaveLength(0)
     expect(kgCalls).toHaveLength(0)
   })
 
-  test('a cache entry written at a DIFFERENT k is not served — identical query, different order', async () => {
-    // Same query and org, but the stored ranking came from k=1. Serving it to a
-    // default-k caller would hand back an order that the requesting config never
-    // produced, which is exactly what the fusion segment of the key prevents.
+  test('a cache entry written by a DIFFERENT ranking is not served — identical query, different order', async () => {
+    // Same query and org, but the stored ranking came from an old RRF k=1 build.
+    // Serving it would hand back an order the current ranking never produced,
+    // which is exactly what the version segment of the key prevents.
     const stored = { chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 9, graphContext: '' }
     orgContextHolder.value = 'org-A'
     cacheStore.set('rag:org-A:k1:5:invoices', stored)
@@ -553,7 +554,7 @@ describe('retrieveRelevantChunks — HyDE and rerank switches', () => {
 
   test('reranking is ON by default', async () => {
     ftsIds = ['c1', 'c2']
-    fuseRankingsImpl = () => [chunk('c1'), chunk('c2'), chunk('c3'), chunk('c4')]
+    lexicalFirstImpl = () => [chunk('c1'), chunk('c2'), chunk('c3'), chunk('c4')]
     await retrieveRelevantChunks({ query: 'invoices', topK: 1 })
     // Default ON: the flagship precision feature used to be opt-in while the docs
     // claimed otherwise, so it never ran anywhere.
@@ -1350,57 +1351,23 @@ describe('an UnsupportedVectorProviderError is a REFUSAL, not an empty result', 
 })
 
 // ---------------------------------------------------------------------------
-// RRF fusion ordering, retriever ARGUMENTS and EVENT ORDER.
+// Lexical-first ordering, retriever ARGUMENTS and EVENT ORDER.
 //
-// The existing suite overrides `fuseRankingsImpl`/`bm25RankImpl` with helpers,
+// The existing suite overrides `lexicalFirstImpl`/`bm25RankImpl` with helpers,
 // so the ORDER the real code produces was never asserted — only that something
 // came back. This block installs REAL implementations for the two pure ranking
 // helpers (obtained from a real import at runtime, then closed over) and drives
-// the real fusion.
+// the real ordering.
 // ---------------------------------------------------------------------------
 
-// The REAL fusion lives in a sibling module. lib/rag/import-scope.e2e.test.ts
-// loads this same source and proves the lexical leg produces twelve non-zero
-// scores with NO test substitution, so the substitution below is the only reason
-// the lexical contribution is not visible from here.
-const RRF_TAGS: Record<string, string[]> = {
-  semantic: ['semantic', 'vector'],
-  lexical: ['lexical', 'bm25', 'okapi', 'tf-idf', 'idf', 'term'],
-  knowledge: ['knowledge', 'graph', 'kg', 'entity', 'relation', 'cognee'],
-}
-
 /**
- * Which RRF input does a ranking belong to? See rag-ranking.ts docstrings.
- *
- * Defensive about the element type: `toRanking` is a swappable stub in this file
- * (some tests set it to an identity over `{id}` objects), so a ranking handed to
- * the fusion may hold objects rather than strings. Reading `.toLowerCase()` off
- * one used to THROW inside the mock factory, which bun reported only as
- * `error: expect(received).toBe(expected)` — the swallowed-failure mode noted at
- * the top of this file.
- */
-function tagRanking(ranking: unknown): string {
-  const ids = (Array.isArray(ranking) ? ranking : []).map((entry) =>
-    typeof entry === 'string'
-      ? entry
-      : String((entry as { id?: unknown } | null)?.id ?? ''),
-  )
-  for (const [tag, words] of Object.entries(RRF_TAGS)) {
-    if (ids.some((id) => words.some((w) => id.toLowerCase().includes(w)))) return tag
-  }
-  return 'unknown'
-}
-
-/**
- * Swap in the REAL Reciprocal Rank Fusion for the local identity stub, keeping
+ * Swap in a REAL-behaving lexical-first ordering for the local stub, keeping
  * EVERY other pre-existing behaviour (the stubs still run for bm25Rank and
  * toRanking, so no earlier test's assumptions move).
  *
  * The switch happens inside the factory, on FIRST CALL rather than at module
  * evaluation: `mock.module` factories run the moment the engine imports the
- * specifier, which is long before a test body gets control. The factory returns
- * a shape (an object with `fuseRankings`) that any call site accepts, whether
- * the class was ACTUALLY assigned by then or not.
+ * specifier, which is long before a test body gets control.
  */
 const { retrieveRelevantChunks: retrieveReal } = await import('./rag-retrieval')
 
@@ -1417,7 +1384,7 @@ function realChunkRow(id: string, content: string): Record<string, unknown> {
   }
 }
 
-const rrfCalls: Array<{ rankings: string[][]; k: number | undefined; tagged: string[] }> = []
+const lexicalFirstCalls: Array<{ lexical: string[]; vector: string[] }> = []
 let useRealFusion = false
 
 /**
@@ -1464,79 +1431,71 @@ function referenceBm25(
 }
 
 /**
- * Reference Reciprocal Rank Fusion, written out from the paper (Cormack et al.
- * 2009): fused(d) = sum over retrievers of 1/(k + rank(d)), rank is 1-based,
- * k = 60 by default. Deliberately INDEPENDENT of the implementation under test,
- * so agreement between the two is evidence rather than a tautology.
+ * Reference lexical-first ordering, written out from its contract rather than
+ * imported: the lexical (BM25) ranking is kept intact as the head, then every
+ * vector/KG id it did not already contain is appended in its own order, deduped,
+ * and each position scored 1/(index+1). INDEPENDENT of the implementation under
+ * test, so agreement between the two is evidence rather than a tautology.
  *
- * Why this is a local function and not the shipped one: lib/rag/import-scope.e2e.test.ts
- * (which loads this exact source with NO test substitution) records that the
- * lexical leg produces twelve non-zero scores before fusion is even called. The
- * only reason that contribution is invisible from here is that this file READS
- * the fusion through a mocked module and therefore cannot observe the local
- * binding the source calls. Note the ordering live: semantic dominates because
- * every candidate arrives from the vector leg, and the lexical list is ordered
- * by real BM25 over the union.
+ * Accepts both bare ids and `{ id, score }` entries: `toRanking` is one of this
+ * file's swappable stubs, and the identity form hands raw bm25 objects straight
+ * through. Treating an object as its own key would make every lexical id a
+ * distinct entry, which is how a leg silently disappears.
  */
-export function referenceFuse<T>(rankings: T[][], k = 60): Array<{ id: string; score: number }> {
-  const fused = new Map<string, number>()
-  for (const ranking of rankings) {
-    for (let index = 0; index < ranking.length; index += 1) {
-      // Accept both a bare id and a `{ id, score }` entry: `toRanking` is one of
-      // this file's swappable stubs, and the identity form hands the raw bm25
-      // objects straight through. Treating an object as its own map key made
-      // every lexical id a distinct entry, which is how the lexical leg silently
-      // disappeared from the fusion.
-      const entry = ranking[index]
-      const id = typeof entry === 'string' ? entry : String((entry as { id?: unknown } | null)?.id ?? '')
-      if (!id) continue
-      fused.set(id, (fused.get(id) ?? 0) + 1 / (k + index + 1))
-    }
+export function referenceLexicalFirst(lexical: unknown[], vector: unknown[]): Array<{ id: string; score: number }> {
+  const ordered: string[] = []
+  const seen = new Set<string>()
+  for (const entry of [...lexical, ...vector]) {
+    const id = typeof entry === 'string' ? entry : String((entry as { id?: unknown } | null)?.id ?? '')
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ordered.push(id)
   }
-  return [...fused.entries()]
-    .map(([id, score]) => ({ id, score }))
-    .sort((a, b) => b.score - a.score)
+  return ordered.map((id, index) => ({ id, score: 1 / (index + 1) }))
+}
+
+function toIds(ranking: unknown): string[] {
+  return (Array.isArray(ranking) ? ranking : []).map((entry) =>
+    typeof entry === 'string' ? entry : String((entry as { id?: unknown } | null)?.id ?? ''),
+  )
 }
 
 mock.module('@/lib/rag-ranking', () => ({
-  RRF_K: 60,
+  RANKING_VERSION: 'lex1',
   bm25Rank: (tokens: unknown, docs: unknown) => bm25RankImpl(tokens, docs),
-  fuseRankings: (rankings: unknown, k?: number) => {
-    if (!useRealFusion) return fuseRankingsImpl(rankings)
-    const lists = (rankings ?? []) as string[][]
-    rrfCalls.push({ rankings: lists, k, tagged: lists.map(tagRanking) })
-    return referenceFuse(lists, k)
+  lexicalFirst: (lexical: unknown, vector: unknown) => {
+    if (!useRealFusion) return lexicalFirstImpl(lexical, vector)
+    lexicalFirstCalls.push({ lexical: toIds(lexical), vector: toIds(vector) })
+    return referenceLexicalFirst(toIds(lexical), toIds(vector))
   },
   toRanking: (entries: unknown) => toRankingImpl(entries),
 }))
 
-describe('the RRF fusion ordering', () => {
+describe('the lexical-first ordering', () => {
   beforeEach(() => {
     installEventLog()
     useRealFusion = true
-    rrfCalls.length = 0
+    lexicalFirstCalls.length = 0
     // `toRankingImpl` defaults to an identity at the top of this file, which
-    // hands the fusion raw `{ id, score }` objects instead of ids. The REAL
-    // toRanking is a two-line pure function, so it is reproduced exactly here
-    // rather than read through the same module the source reads through.
+    // hands raw `{ id, score }` objects instead of ids. The REAL toRanking is a
+    // one-line pure function, so it is reproduced exactly here.
     toRankingImpl = (entries: unknown) =>
       ((entries ?? []) as Array<{ id: string }>).map((entry) => entry.id)
     // Real BM25 scoring, so the lexical ranking reflects the query instead of
     // the default stub's "every document scores 1".
     bm25RankImpl = (tokens: unknown, docs: unknown) =>
       referenceBm25(tokens as string[], docs as Array<{ id: string; tokens: string[] }>)
+    process.env.RAG_LLM_RERANK = 'false' // take the truncation path, not the reranker
   })
 
-  test('a chunk found by BOTH legs outranks a chunk found by only one', async () => {
-    // RRF: fused = sum of 1/(k + rank). A chunk in both rankings collects two
-    // contributions, so it must beat either single-leg chunk. This is the whole
-    // point of rank fusion and it had no assertion before.
+  test('the BM25 top hit is ranked FIRST even when the vector leg ranks another chunk first', async () => {
+    // The lexical head is never demoted: an exact term match must not be pushed
+    // below a semantically-close-but-lexically-absent chunk.
     embedConfigValue = { id: 'e1', model: 'test-embed' }
     embedResult = [[1, 0]]
-    // Vector leg: v-only first, then the shared chunk.
     pgvectorRows = [
       { id: 'v-only', similarity: 0.99 },
-      { id: 'shared', similarity: 0.98 },
+      { id: 'lex-hit', similarity: 0.5 },
       { id: 'v2-only', similarity: 0.97 },
       { id: 'v3-only', similarity: 0.96 },
       { id: 'v4-only', similarity: 0.95 },
@@ -1544,11 +1503,10 @@ describe('the RRF fusion ordering', () => {
       { id: 'v6-only', similarity: 0.93 },
       { id: 'v7-only', similarity: 0.92 },
     ]
-    // Lexical leg: the shared chunk ONLY.
-    ftsIds = ['shared']
+    ftsIds = ['lex-hit']
     dbChunkRows = [
       realChunkRow('v-only', 'gamma gamma gamma'),
-      realChunkRow('shared', 'invoices invoices invoices'),
+      realChunkRow('lex-hit', 'invoices invoices invoices'),
       realChunkRow('v2-only', 'delta'),
       realChunkRow('v3-only', 'epsilon'),
       realChunkRow('v4-only', 'zeta'),
@@ -1556,45 +1514,59 @@ describe('the RRF fusion ordering', () => {
       realChunkRow('v6-only', 'theta'),
       realChunkRow('v7-only', 'iota'),
     ]
-    process.env.RAG_LLM_RERANK = 'false' // take the truncation path, not the reranker
 
     const out = await retrieveReal({ query: 'invoices', topK: 5 })
-    // The chunk both retrievers ranked must come FIRST even though the vector
-    // leg alone would have put it second. The recorded call proves the LEXICAL
-    // leg really contributed a one-id ranking — without it, "shared" would only
-    // be first because the vector leg happened to order it there.
-    expect(rrfCalls).toHaveLength(1)
-    expect(rrfCalls[0].rankings).toHaveLength(2)
-    expect(rrfCalls[0].rankings[0][0]).toBe('v-only')
-    expect(rrfCalls[0].rankings[1]).toEqual(['shared'])
-    expect(out.chunks[0]?.chunkId).toBe('shared')
+    // The recorded call proves the vector leg really did rank v-only first, so
+    // lex-hit being first is the lexical head winning, not a coincidence.
+    expect(lexicalFirstCalls).toHaveLength(1)
+    expect(lexicalFirstCalls[0].vector[0]).toBe('v-only')
+    expect(lexicalFirstCalls[0].lexical).toEqual(['lex-hit'])
+    expect(out.chunks[0]?.chunkId).toBe('lex-hit')
+    expect(out.chunks[0]?.score).toBe(1)
   })
 
-  test('the SEMANTIC and LEXICAL rankings are each tagged so provenance is auditable', () => {
-    // Every candidate id passed into the fusion must be explicitly tagged, so
-    // the result is auditable: no id enters the pool untagged (a bare id with
-    // no retriever provenance cannot be debugged).
-    const rankings = [['semantic-1', 'shared-1'], ['shared-1', 'lexical-1']]
-    // The tagger is what the recorded-calls assertion below depends on, so pin it
-    // directly: a mis-tagged leg would make the audit log lie about provenance.
-    expect(rankings.map(tagRanking)).toEqual(['semantic', 'lexical'])
-    const fused = referenceFuse(rankings)
-    // `shared-1` is rank 2 in one list and rank 1 in the other, so its two
-    // contributions (1/62 + 1/61) beat `semantic-1`'s single 1/61 — RRF fuses on
-    // RANK, not on either retriever's score.
-    expect(fused[0].id).toBe('shared-1')
-    // The internal ORDER decides the winner, so this cannot pass on mere set
-    // membership: with `shared-1` LAST in both lists it drops behind
-    // `semantic-1`, which keeps the better rank in the semantic leg.
-    const sharedSecondBothLegs = referenceFuse([['semantic-1', 'shared-1'], ['lexical-1', 'shared-1']])
-    expect(sharedSecondBothLegs[0].id).toBe('shared-1')
+  test('a vector-only chunk still appears, AFTER every lexical hit', async () => {
+    embedConfigValue = { id: 'e1', model: 'test-embed' }
+    embedResult = [[1, 0]]
+    pgvectorRows = [{ id: 'v-only', similarity: 0.99 }]
+    ftsIds = ['lex-1', 'lex-2']
+    dbChunkRows = [
+      realChunkRow('v-only', 'gamma'),
+      realChunkRow('lex-1', 'invoices invoices invoices'),
+      realChunkRow('lex-2', 'invoices beta'),
+    ]
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    const ids = out.chunks.map((c) => c.chunkId)
+    // Not dropped: the semantic leg still contributes recall.
+    expect(ids).toContain('v-only')
+    // ...but strictly behind both lexical hits.
+    expect(ids.indexOf('v-only')).toBeGreaterThan(ids.indexOf('lex-1'))
+    expect(ids.indexOf('v-only')).toBeGreaterThan(ids.indexOf('lex-2'))
+    expect(ids.slice(0, 2).sort()).toEqual(['lex-1', 'lex-2'])
+  })
 
-    // And a chunk present in only ONE leg loses to one present in BOTH, at equal
-    // rank — this is the property "the union of retrievers beats either retriever"
-    // that makes hybrid retrieval worth its cost.
-    const singleLeg = referenceFuse([['shared-1', 'only-semantic'], ['only-lexical']])
-    expect(singleLeg.findIndex((e) => e.id === 'shared-1')).toBe(0)
-    expect(singleLeg.findIndex((e) => e.id === 'only-semantic')).toBeGreaterThan(0)
+  test('a KG-only chunk id is appended after the lexical hits too', async () => {
+    embedConfigValue = null
+    kgResultValue = { localChunks: [], allChunkIds: ['kg-only'], graphContext: '' }
+    ftsIds = ['lex-1']
+    dbChunkRows = [
+      realChunkRow('kg-only', 'omega'),
+      realChunkRow('lex-1', 'invoices invoices'),
+    ]
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(lexicalFirstCalls).toHaveLength(1)
+    // The KG ranking rides in the non-lexical argument, never the lexical head.
+    expect(lexicalFirstCalls[0].vector).toContain('kg-only')
+    expect(lexicalFirstCalls[0].lexical).not.toContain('kg-only')
+    expect(out.chunks.map((c) => c.chunkId)).toEqual(['lex-1', 'kg-only'])
+  })
+
+  test('the reference ordering: lexical intact, then deduped non-lexical ids, scored 1/(i+1)', () => {
+    const fused = referenceLexicalFirst(['l1', 'shared'], ['v1', 'shared', 'v2', 'v1'])
+    expect(fused.map((e) => e.id)).toEqual(['l1', 'shared', 'v1', 'v2'])
+    expect(fused.map((e) => e.score)).toEqual([1, 1 / 2, 1 / 3, 1 / 4])
+    // Object entries (the identity toRanking stub) collapse to their ids.
+    expect(referenceLexicalFirst([{ id: 'a' }], ['a', 'b']).map((e) => e.id)).toEqual(['a', 'b'])
   })
 
   test('a chunk from NEITHER leg is never invented into the result', async () => {
@@ -1606,7 +1578,6 @@ describe('the RRF fusion ordering', () => {
       realChunkRow('v1', 'invoices alpha'),
       realChunkRow('l1', 'invoices beta'),
     ]
-    process.env.RAG_LLM_RERANK = 'false'
     const out = await retrieveReal({ query: 'invoices', topK: 5 })
     expect(out.chunks.map((c) => c.chunkId).sort()).toEqual(['l1', 'v1'])
     expect(out.candidatesScanned).toBe(2)
@@ -1625,7 +1596,6 @@ describe('the RRF fusion ordering', () => {
       vectorCount += 1
       return []
     }
-    process.env.RAG_LLM_RERANK = 'false'
     // A vector store must be CONFIGURED or the leg is skipped entirely.
     vectorStoreConfigValue = { id: 'vs1', provider: 'QDRANT' }
     await retrieveReal({ query: 'invoices', topK: 4 })
@@ -1640,9 +1610,8 @@ describe('the RRF fusion ordering', () => {
   })
 
   test('the EVENT ORDER is semantically-then-lexically, and the union is loaded once', async () => {
-    // The shared event log records each seam as it runs. Order matters: the
-    // lexical query is built from the ORIGINAL tokens and must not wait on the
-    // embedding provider, or a slow embed stalls the whole search.
+    // The lexical query is built from the ORIGINAL tokens and must not wait on
+    // the embedding provider, or a slow embed stalls the whole search.
     embedConfigValue = { id: 'e1', model: 'test-embed' }
     embedResult = [[1, 0]]
     ftsIds = ['l1']
@@ -1652,10 +1621,7 @@ describe('the RRF fusion ordering', () => {
     // it — the log stays empty, which would make this test measure nothing.
     vectorStoreConfigValue = { id: 'vs1', provider: 'QDRANT' }
     originalSearchVectorStore = async () => { events.push('vector-store'); return [] }
-    process.env.RAG_LLM_RERANK = 'false'
     await retrieveReal({ query: 'invoices', topK: 2 })
-    // The vector log fired, and the lexical leg ran for the SAME query in the
-    // same call — so the two legs are concurrent, not sequential-with-a-skip.
     expect(events).toEqual(['vector-store'])
     expect(ftsCalls.length).toBeGreaterThan(0)
     expect(ftsCalls.at(-1)!.queryTokens).toEqual(['invoices'])
@@ -1852,144 +1818,49 @@ describe('tenant isolation — the org reaches every retriever AND the cache key
 })
 
 // ---------------------------------------------------------------------------
-// The configurable fusion constant (docs/retrieval-production-integration-plan.md).
-// Two properties matter and neither is visible from the arm itself: the value
-// resolved at the door must be the value the fusion receives, and it must be part
-// of the cache key — otherwise an A/B run over one server process measures cache
-// warmth instead of the constant.
+// The ranking version is part of the cache key. A cached ORDER is only valid for
+// the ranking that produced it: after the switch from reciprocal-rank fusion to
+// lexical-first, an entry written under the old `k60` key must not be served,
+// or users would keep getting the demoted-lexical order for the cache TTL.
 // ---------------------------------------------------------------------------
-describe('the fusion constant reaches fuseRankings', async () => {
-  // Dynamic import AFTER the mock.module calls above, so these are the values the
-  // source under test actually resolves — a static import at the top of the file
-  // would load the real modules and could disagree with the mocked ones.
-  const { RRF_K } = await import('./rag-ranking')
+describe('the ranking version is part of the cache key', async () => {
+  // Dynamic import AFTER the mock.module calls above, so this is the value the
+  // source under test actually resolves (re-exported from rag-ranking).
+  const { RANKING_VERSION } = await import('./rag-retrieval')
 
   beforeEach(() => {
-    installEventLog()
-    useRealFusion = true
-    rrfCalls.length = 0
-    toRankingImpl = (entries: unknown) =>
-      ((entries ?? []) as Array<{ id: string }>).map((entry) => entry.id)
-    bm25RankImpl = (tokens: unknown, docs: unknown) =>
-      referenceBm25(tokens as string[], docs as Array<{ id: string; tokens: string[] }>)
-    embedConfigValue = { id: 'e1', model: 'test-embed' }
-    embedResult = [[1, 0]]
-    pgvectorRows = [
-      { id: 'v-only', similarity: 0.99 },
-      { id: 'shared', similarity: 0.98 },
-      { id: 'v2-only', similarity: 0.97 },
-      { id: 'v3-only', similarity: 0.96 },
-      { id: 'v4-only', similarity: 0.95 },
-      { id: 'v5-only', similarity: 0.94 },
-      { id: 'v6-only', similarity: 0.93 },
-      { id: 'v7-only', similarity: 0.92 },
-    ]
-    ftsIds = ['shared']
-    dbChunkRows = [
-      realChunkRow('v-only', 'gamma gamma gamma'),
-      realChunkRow('shared', 'invoices invoices invoices'),
-      realChunkRow('v2-only', 'delta'),
-      realChunkRow('v3-only', 'epsilon'),
-      realChunkRow('v4-only', 'zeta'),
-      realChunkRow('v5-only', 'eta'),
-      realChunkRow('v6-only', 'theta'),
-      realChunkRow('v7-only', 'iota'),
-    ]
-  })
-
-  test('with nothing configured, fuseRankings still receives the documented default', async () => {
-    // The default must not drift: an install that sets nothing behaves exactly as
-    // it did before this seam existed. Without this, a later refactor could pass
-    // `undefined` (→ the parameter default, still fine) or 0 (→ not fine, and
-    // silently so).
-    delete process.env.RAG_FUSION_K
-    await retrieveReal({ query: 'invoices', topK: 5 })
-    expect(rrfCalls).toHaveLength(1)
-    expect(rrfCalls[0].k).toBe(RRF_K)
-  })
-
-  test('RAG_FUSION_K is the value passed through', async () => {
-    process.env.RAG_FUSION_K = '10'
-    try {
-      await retrieveReal({ query: 'invoices', topK: 5 })
-      expect(rrfCalls.at(-1)?.k).toBe(10)
-    } finally {
-      delete process.env.RAG_FUSION_K
-    }
-  })
-
-  test('a lower k really does change the ORDER — the mechanism, not just the plumbing', async () => {
-    // 'shared' is rank 2 in the vector leg and rank 1 in the lexical leg; 'v-only'
-    // is rank 1 in the vector leg and absent from the lexical one.
-    //   k=60: shared = 1/62 + 1/61 = 0.03252 vs v-only = 1/61 = 0.01639  → shared wins
-    //   k=1:  shared = 1/3  + 1/2  = 0.83333 vs v-only = 1/2  = 0.5      → shared wins
-    // so this fixture cannot show the inversion. It pins the weaker but load-bearing
-    // property instead: changing k changes the recorded value AND the fused scores,
-    // i.e. the constant is genuinely in the arithmetic rather than threaded and dropped.
-    const defaultOut = await retrieveReal({ query: 'invoices', topK: 5 })
-    const defaultScore = defaultOut.chunks.find((c) => c.chunkId === 'shared')!.score
-    process.env.RAG_FUSION_K = '1'
-    try {
-      const lowOut = await retrieveReal({ query: 'invoices', topK: 5 })
-      const lowScore = lowOut.chunks.find((c) => c.chunkId === 'shared')!.score
-      expect(lowScore).toBeGreaterThan(defaultScore)
-    } finally {
-      delete process.env.RAG_FUSION_K
-    }
-  })
-
-  test('an invalid value does not reach the fusion as NaN', async () => {
-    process.env.RAG_FUSION_K = 'not-a-number'
-    try {
-      await retrieveReal({ query: 'invoices', topK: 5 })
-      expect(rrfCalls.at(-1)?.k).toBe(RRF_K)
-    } finally {
-      delete process.env.RAG_FUSION_K
-    }
-  })
-})
-
-describe('the fusion config is part of the cache key', async () => {
-  const { fusionCacheTag } = await import('./rag-fusion-config')
-
-  test('two different k values never share a cache entry', async () => {
     orgContextHolder.value = 'org-test'
     ftsIds = ['c1']
     dbChunkRows = [dbChunkRow('c1', 'invoices')]
     toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
-
-    await retrieveReal({ query: 'invoices', topK: 5 })
-    const defaultKey = cacheSets.at(-1)!.key
-
-    cacheStore.clear()
-    cacheSets.length = 0
-    process.env.RAG_FUSION_K = '1'
-    try {
-      await retrieveReal({ query: 'invoices', topK: 5 })
-      const overrideKey = cacheSets.at(-1)!.key
-      // Same query, different ranking → different key. Without this, a config-B
-      // request would be served config A's cached ORDER for the cache TTL, and the
-      // A/B comparison would be measuring cache warmth.
-      expect(defaultKey).not.toBe(overrideKey)
-      expect(defaultKey).toContain('k60')
-      expect(overrideKey).toContain('k1')
-    } finally {
-      delete process.env.RAG_FUSION_K
-    }
   })
 
-  test('the same k reused still hits the cache — the tag must not fragment it', async () => {
-    orgContextHolder.value = 'org-test'
-    ftsIds = ['c1']
-    dbChunkRows = [dbChunkRow('c1', 'invoices')]
-    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+  test('the key carries RANKING_VERSION and the org segment', async () => {
+    expect(RANKING_VERSION).toBe('lex1')
+    await retrieveReal({ query: 'invoices', topK: 5 })
+    const key = cacheSets.at(-1)!.key
+    expect(key).toBe(`rag:org-test:${RANKING_VERSION}:5:invoices`)
+    expect(key).toContain(':org-test:')
+    expect(key).not.toContain('k60')
+  })
 
+  test('an entry stored under the old k60 key is NOT served', async () => {
+    const stale = { chunks: [chunk('stale')], queryTokens: ['x'], candidatesScanned: 77, graphContext: '' }
+    cacheStore.set('rag:org-test:k60:5:invoices', stale)
+    const out = await retrieveReal({ query: 'invoices', topK: 5 })
+    // Served from a fresh retrieval, not from the RRF-era entry.
+    expect(out.candidatesScanned).not.toBe(77)
+    expect(out.chunks.map((c) => c.chunkId)).not.toContain('stale')
+    expect(ftsCalls.length).toBeGreaterThan(0)
+  })
+
+  test('the same ranking reused still hits the cache — the tag must not fragment it', async () => {
     const first = await retrieveReal({ query: 'invoices', topK: 5 })
     const setsAfterFirst = cacheSets.length
     const second = await retrieveReal({ query: 'invoices', topK: 5 })
-    // Identical config and query → the second call is served from cache, so no new
-    // key is written. A per-call unique tag (a timestamp, a nonce) would pass the
-    // test above while destroying the cache entirely.
+    // Identical ranking and query → the second call is served from cache, so no
+    // new key is written. A per-call unique tag (a timestamp, a nonce) would pass
+    // the tests above while destroying the cache entirely.
     expect(cacheSets.length).toBe(setsAfterFirst)
     expect(second.chunks).toEqual(first.chunks)
   })
@@ -2011,32 +1882,32 @@ describe('retrieval records a baseline instead of only a log line', () => {
     dbChunkRows = [dbChunkRow('c1', 'invoices')]
   })
 
-  test('a miss records a latency sample labelled with the effective k', async () => {
+  test('a miss records a latency sample labelled with the ranking version', async () => {
     orgContextHolder.value = 'org-metrics'
     await retrieveReal({ query: 'invoices', topK: 5 })
     const text = prometheusText()
     expect(text).toContain('rag_retrieval_latency_ms_count')
     expect(text).toMatch(/rag_cache_miss_total 1/)
     // Labelled with the value that ordered the result, so an A/B run is readable.
-    expect(text).toMatch(/rag_retrieval_latency_ms_count\{k="60"\}/)
+    expect(text).toMatch(/rag_retrieval_latency_ms_count\{ranking="lex1"\}/)
   })
 
   test('a cache HIT does not add a latency sample — the p50 must not improve with hit rate', async () => {
     orgContextHolder.value = 'org-metrics'
     await retrieveReal({ query: 'invoices', topK: 5 })
     const afterMiss = prometheusText()
-    const missCount = Number(/rag_retrieval_latency_ms_count\{k="60"\} (\d+)/.exec(afterMiss)?.[1])
+    const missCount = Number(/rag_retrieval_latency_ms_count\{ranking="lex1"\} (\d+)/.exec(afterMiss)?.[1])
     expect(missCount).toBe(1)
 
     // Same query, so the second call is served from cache.
-    cacheStore.set(`rag:org-metrics:k60:5:invoices`, {
+    cacheStore.set(`rag:org-metrics:lex1:5:invoices`, {
       chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 99, graphContext: '',
     })
     const second = await retrieveReal({ query: 'invoices', topK: 5 })
     expect(second.candidatesScanned).toBe(99) // proves it really was the cache path
 
     const afterHit = prometheusText()
-    const countAfter = Number(/rag_retrieval_latency_ms_count\{k="60"\} (\d+)/.exec(afterHit)?.[1])
+    const countAfter = Number(/rag_retrieval_latency_ms_count\{ranking="lex1"\} (\d+)/.exec(afterHit)?.[1])
     // Still 1: the hit was counted as a hit and contributed no timing observation.
     expect(countAfter).toBe(1)
     expect(afterHit).toMatch(/rag_cache_hit_total 1/)

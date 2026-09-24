@@ -31,7 +31,7 @@
  * Usage:
  *   bun benchmark/real-prose-arm.ts --out=benchmark/results/real-prose-arm.json
  */
-import { FUSION_K_CANDIDATES, makeFusionKArm } from './arms/fusion-k-arm'
+import { DESIGN_ARMS } from './arms/fusion-design-arms'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { buildEntityIndex } from './arms/entity-hop-arm'
@@ -226,9 +226,9 @@ async function main(): Promise<number> {
 
   const arms: Array<[string, Arm]> = [
     ['bm25-baseline', bm25BaselineArm],
-    ['hybrid-rrf', hybridArm],
+    ['lexical-first-hybrid', hybridArm],
     ['entity-hop', makeEntityHopArm()],
-    ...FUSION_K_CANDIDATES.map((k) => [`hybrid-k${k}`, makeFusionKArm(k)] as [string, Arm]),
+    ...DESIGN_ARMS.map((a) => [a.id, a] as [string, Arm]),
   ]
 
   const rows: Array<{ arm: string; ready: boolean; answerAt1?: number; recall10: number | null; recall5: number | null; mrr: number | null; n: number }> = []

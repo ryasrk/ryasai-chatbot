@@ -158,7 +158,7 @@ describe('shape and determinism', () => {
   })
 
   test('the arm reports the id and kind the harness registry expects', () => {
-    expect(arm.id).toBe('hybrid-rrf')
+    expect(arm.id).toBe('lexical-first-hybrid')
     expect(arm.kind).toBe('hybrid')
   })
 })

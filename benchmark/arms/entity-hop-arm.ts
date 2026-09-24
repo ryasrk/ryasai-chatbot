@@ -2,7 +2,7 @@
  * Entity-Hop retriever as a benchmark arm (docs/entity-hop-retrieval-plan.md, Phase 2).
  *
  * The plan calls Entity-Hop ONE MORE RANKING fed into the existing RRF, so the legs are not
- * re-implemented: `bm25Rank`, `fuseRankings`, `toRanking` and `tokenize` are production functions and
+ * re-implemented: `bm25Rank`, `lexicalFirst`, `toRanking` and the tokenizers are production functions and
  * `directRankings` reproduces the vector leg of `benchmark/arms/hybrid-arm.ts`.
  *
  * WHICH SEED A RUN USED — read before quoting a table. Both legs seed and fuse when `ctx.embeddings` and
@@ -13,8 +13,8 @@
  */
 import type { Arm, ArmContext, EntityHopAblation, EntityHopArmFactory } from '../arm-types'
 import { ARM_BUDGET, ENTITY_HOP_DEFAULTS } from '../arm-types'
-import { tokenize } from '@/lib/rag'
-import { bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
+import { tokenize, tokenizeForScoring } from '@/lib/rag'
+import { bm25Rank, lexicalFirst, toRanking } from '@/lib/rag-ranking'
 
 const ID_PATTERN = /\b[A-Z]{1,5}-\d{2,6}\b/g
 const PT_PATTERN = /\bPT\s+([A-Z][a-z]+)(?:\s+([A-Z][a-z]+))?/g
@@ -195,7 +195,10 @@ function prepare(ctx: ArmContext): Prepared {
   }
   const prepared: Prepared = {
     index: buildEntityIndex(ctx.texts),
-    docs: ctx.docIds.map((id) => ({ id, tokens: tokenize(ctx.texts[id] ?? '') })),
+    // The production scoring tokenizer, so the base this arm hops from is the base
+    // production ships — otherwise the measured hop delta is against a ranking that no
+    // longer exists (docs/retrieval-production-integration-plan.md §12).
+    docs: ctx.docIds.map((id) => ({ id, tokens: tokenizeForScoring(ctx.texts[id] ?? '') })),
     vectors,
   }
   preparedCache.set(ctx, prepared)
@@ -243,7 +246,7 @@ function seedFor(question: string, ctx: ArmContext, budget: number, seedSize: nu
   return {
     prepared,
     direct,
-    seeds: toRanking(fuseRankings([direct.vector, direct.lexical])).slice(0, seedSize),
+    seeds: toRanking(lexicalFirst(direct.lexical, direct.vector)).slice(0, seedSize),
     entities: new Set(extractEntities(question, prepared.index.df)),
   }
 }
@@ -258,9 +261,9 @@ export const makeEntityHopArm: EntityHopArmFactory = (opts: Partial<EntityHopAbl
     rank: (question, ctx, budget) => {
       const { prepared, direct, seeds, entities } = seedFor(question, ctx, budget, options.seedSize)
       const hop = walkHops(prepared.index, seeds, ctx.texts, entities, options)
-      // Appended as one more retriever, so it cannot push out a strong direct hit — which is what protects
-      // the easy tier.
-      return toRanking(fuseRankings([direct.vector, direct.lexical, hop.ranking])).slice(0, budget)
+      // Appended after the direct ranking, so it cannot push out a strong direct hit — the
+      // same guarantee `lexicalFirst` gives the vector leg, and what protects the easy tier.
+      return toRanking(lexicalFirst(direct.lexical, [...direct.vector, ...hop.ranking])).slice(0, budget)
     },
   }
 }

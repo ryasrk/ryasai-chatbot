@@ -263,14 +263,15 @@ test.describe('RAG citations', () => {
     expect(bodyText, 'a fused RRF score must not be rendered as a percentage').not.toMatch(/relevance \d+%/i)
   })
 
-  test('x-fusion-k is IGNORED while RAG_FUSION_K is unset', async ({ page }) => {
-    // Row 12: the override boundary, asserted through a REAL HTTP surface.
+  test('a leftover x-fusion-k header is inert — the ranking is not client-selectable', async ({ page }) => {
+    // Asserted through a REAL HTTP surface: `/api/rag/evaluate` is session-auth, runs real
+    // retrievals, and reports the ranking it measured. (`/api/v1/chat/completions` is NOT
+    // usable here — it authenticates by API key, so it answers 401 and would test nothing.)
     //
-    // `/api/rag/evaluate` is the right surface for this: it is the admin eval endpoint the
-    // retrieval A/B harness drives, it runs real retrievals, and it reports the fusion
-    // configuration it measured. The OpenAI-compatible `/api/v1/chat/completions` route is
-    // NOT usable here — it authenticates by API key, not session cookie, so it answers 401
-    // and would have tested nothing about fusion.
+    // The header belonged to the in-situ RRF A/B seam. That seam is gone: the ranking is now
+    // fixed per release and named by RANKING_VERSION. A client or harness still sending the
+    // header must get a byte-identical result, and never an error — a deployment must not
+    // let anyone probe its ranking configuration through a status code.
     await login(page)
     await uploadDocument(page, ANSWER_DOC.name, ANSWER_DOC.body)
 
@@ -283,28 +284,26 @@ test.describe('RAG citations', () => {
     const plain = await post({})
     expect(plain.status(), 'the eval endpoint must accept an admin session').toBe(200)
     const plainBody = (await plain.json()) as {
-      fusion: { k: number; source: string; overrideAccepted: boolean }
-      summary: { total: number }
+      rankingVersion: string
+      summary: Record<string, number>
     }
-    // The eval really ran: at least one case was graded, otherwise the config report below
-    // is incidental rather than evidence about a retrieval.
+    // The eval really ran, or the comparison below is incidental rather than evidence
+    // about a retrieval.
     expect(plainBody.summary.total).toBeGreaterThan(0)
+    expect(typeof plainBody.rankingVersion).toBe('string')
 
-    const withOverride = await post({ 'x-fusion-k': '1' })
-    expect(withOverride.status()).toBe(200)
-    const overrideBody = (await withOverride.json()) as {
-      fusion: { k: number; source: string; overrideAccepted: boolean }
+    const withHeader = await post({ 'x-fusion-k': '1' })
+    expect(withHeader.status()).toBe(plain.status())
+    const headerBody = (await withHeader.json()) as {
+      rankingVersion: string
+      summary: Record<string, number>
     }
-
-    // THE ASSERTION: RAG_FUSION_K is unset on the e2e server, so the header must be
-    // refused and both requests must report the same default configuration. If the gate
-    // were missing, the second run would report k=1 / source='request' and this fails.
-    expect(overrideBody.fusion.overrideAccepted).toBe(false)
-    expect(overrideBody.fusion.source).toBe('default')
-    expect(overrideBody.fusion.k).toBe(plainBody.fusion.k)
-
-    // And the ignored header is a NO-OP, never an error — a deployment that has not opted
-    // in must not let a client probe its configuration through a 4xx/5xx.
-    expect(withOverride.status()).toBe(plain.status())
+    // THE ASSERTION: the header changed nothing about the ranking. Compared field by
+    // field, NOT on the whole summary — `avgLatencyMs` is a wall-clock measurement, so a
+    // deep-equality check over it fails whenever the two calls take a different number of
+    // milliseconds (measured: 100 vs 1 on the first attempt), which is a flaky assertion
+    // about timing rather than a check on ranking.
+    expect(headerBody.rankingVersion).toBe(plainBody.rankingVersion)
+    expect({ ...plainBody.summary, avgLatencyMs: 0 }).toEqual({ ...headerBody.summary, avgLatencyMs: 0 })
   })
 })

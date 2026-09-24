@@ -170,7 +170,7 @@ describe('boundary behaviour on the exact thresholds', () => {
 describe('a genuine zero is a measurement, not missing data', () => {
   // REGRESSION: the first version tested `!baseHard`, so the production hybrid arm's real
   // 0.0000 medium+hard score read as "unavailable" and every verdict came back NOT COMPUTABLE.
-  // This is not hypothetical — that is exactly what hybrid-rrf scores on the held-out split.
+  // This is not hypothetical — that is exactly what lexical-first-hybrid scores on the held-out split.
   test('a baseline of exactly 0 on medium+hard still produces a verdict', () => {
     const zero: ArmMetrics = {
       ...metrics({ medium: 0, hard: 0, easy: 0.5600, p50ms: 4.6 }),

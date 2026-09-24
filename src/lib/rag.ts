@@ -50,6 +50,28 @@ export function isMeaningfulToken(word: string): boolean {
   return true
 }
 
+/**
+ * Tokens for BM25 SCORING: keeps repeats (term frequency) and hyphenated identifiers.
+ *
+ * `tokenize` dedupes, which is right for a query and wrong for a document: every term
+ * frequency becomes 1 and BM25 degrades to a weighted set overlap. It also splits
+ * "INV-4471" into "inv"/"4471" and drops the joined form, which is the token an exact
+ * identifier lookup turns on. Measured on the benchmark (docs/retrieval-production-
+ * integration-plan.md §12): keeping both moves real-prose answer@1 from 0.8347 to 0.9504
+ * and synthetic recall@10 from 0.3848 to 0.4342. Keeping TF WITHOUT the joined form
+ * was worse on synthetic (0.2551), so the two changes ship together.
+ */
+export function tokenizeForScoring(text: string): string[] {
+  if (!text) return []
+  const out: string[] = []
+  for (const raw of text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}-]*[\p{L}\p{N}]|[\p{L}\p{N}]/gu) ?? []) {
+    const parts = raw.includes('-') ? raw.split('-').filter(Boolean) : [raw]
+    if (parts.length > 1) out.push(raw)
+    for (const part of parts) if (isMeaningfulToken(part)) out.push(part)
+  }
+  return out
+}
+
 export function tokenize(text: string): string[] {
   if (!text) return []
   const words = text
