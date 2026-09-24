@@ -1,5 +1,41 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { isBlockedHost, normalizeBaseUrl } from './llm-config'
+
+/**
+ * The DEFAULT posture, isolated from the machine running the tests.
+ *
+ * `isBlockedHost` consults `LLM_ALLOWED_HOSTS`, and Bun auto-loads `.env` — so a developer
+ * or CI box with a self-hosted embedder configured (the supported
+ * `LLM_ALLOWED_HOSTS=127.0.0.1` topology) made the "loopback is blocked by default"
+ * assertions fail. MEASURED: with that one line in `.env`, two tests here failed and six
+ * files in the suite went red, all in security tests, none of them about retrieval.
+ *
+ * Clearing the variable for these blocks is not a weakening: the allowlist's own
+ * precedence IS asserted, deliberately and with the variable set, in the block below. What
+ * is fixed here is that the DEFAULT tests now test the default.
+ */
+beforeEach(() => {
+  delete process.env.LLM_ALLOWED_HOSTS
+  delete process.env.LLM_ALLOW_BLOCKED_HOSTS
+  delete process.env.E2E_TEST_MODE
+})
+
+/** Restore whatever the environment had, so this file cannot leak into the suite. */
+const AMBIENT = {
+  allow: process.env.LLM_ALLOWED_HOSTS,
+  hatch: process.env.LLM_ALLOW_BLOCKED_HOSTS,
+  e2e: process.env.E2E_TEST_MODE,
+}
+afterEach(() => {
+  for (const [k, v] of [
+    ['LLM_ALLOWED_HOSTS', AMBIENT.allow],
+    ['LLM_ALLOW_BLOCKED_HOSTS', AMBIENT.hatch],
+    ['E2E_TEST_MODE', AMBIENT.e2e],
+  ] as Array<[string, string | undefined]>) {
+    if (v === undefined) delete process.env[k]
+    else process.env[k] = v
+  }
+})
 
 describe('SSRF — IP bypass attempts', () => {
   describe('RFC1918 private ranges', () => {

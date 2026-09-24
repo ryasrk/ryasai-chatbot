@@ -31,10 +31,31 @@ const isIntegration = (f: string) => INTEGRATION_FILES.has(f) || f.endsWith('.in
 // The host is deliberately unreachable. A dummy that CONNECTS would let a test
 // silently depend on real rows; one that cannot connect fails at the query, which
 // is the honest boundary — these are unit tests and they mock the layer anyway.
-const TEST_ENV = {
-  ...process.env,
+const TEST_ENV: Record<string, string> = {
+  ...(process.env as Record<string, string>),
   ENCRYPTION_SECRET_KEY: process.env.ENCRYPTION_SECRET_KEY ?? 'deadbeef'.repeat(8),
   DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit_test_unreachable',
+}
+
+// Set to the EMPTY STRING, which is the only form that actually works. Bun does not override
+// an env var that is already present, so an empty value here beats `.env` in the child.
+// MEASURED, all three attempts, same probe reading `process.env.LLM_ALLOWED_HOSTS`:
+//   - `delete TEST_ENV[key]`          → child re-loaded `.env` → "127.0.0.1"  (still leaks)
+//   - `--no-env-file` on the spawn    → unreliable for `bun test`             (still leaks)
+//   - `LLM_ALLOWED_HOSTS: ''`         → wins over `.env`                      (unset, effectively)
+// Same effect as running with `env LLM_ALLOWED_HOSTS=` by hand, which was what proved the
+// cause in the first place.
+//
+// WHY THIS MATTERS: `LLM_ALLOWED_HOSTS` changes the DEFAULT SECURITY POSTURE of
+// `isBlockedHost()`. Adding the documented `LLM_ALLOWED_HOSTS=127.0.0.1` to `.env` so an
+// install can reach a self-hosted embedding server on loopback turned six security test
+// files red — every one of them asserting the default, none of them about that setting.
+//
+// Tests that exercise the allowlist SET it themselves, which still works: only the ambient
+// value is suppressed. `ENCRYPTION_SECRET_KEY` and `DATABASE_URL` keep the explicit
+// fallbacks above, which is what keeps the suite runnable on a fresh checkout.
+for (const key of ['LLM_ALLOWED_HOSTS', 'LLM_ALLOW_BLOCKED_HOSTS', 'E2E_TEST_MODE']) {
+  if (TEST_ENV[key] !== undefined) TEST_ENV[key] = ''
 }
 
 const runIntegration = process.argv.includes('--integration')
