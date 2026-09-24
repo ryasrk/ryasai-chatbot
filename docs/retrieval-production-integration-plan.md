@@ -500,3 +500,94 @@ changes E2E retrieval behaviour.
 - **E2E coverage of fusion is new, and therefore unproven.** Steps in §8.3 make fusion observable in
   E2E for the first time; until row 11 lands and passes in both modes, treat the claim "E2E guards the
   ranking" as aspirational, not established.
+
+---
+
+## 11. Execution log
+
+### 2026-09-24 — rows 1, 2, 4, 5, 6, 8, 10, 11, 12 implemented
+
+Six commits, each independently reviewable. Nothing changes production behaviour: `RAG_FUSION_K`
+unset resolves to the documented default, asserted by test rather than assumed.
+
+| # | task | state |
+|---|---|---|
+| 1 | fusion config in the RAG cache key | done |
+| 2 | retrieval metrics, cache hits excluded from latency | done |
+| 4 | `RAG_FUSION_K` + guarded `x-fusion-k` + env-schema | done |
+| 5 | relaxed the `fuseRankings` invariant, with a negative control | done |
+| 6 | offline `k` sweep | done — result below |
+| 7 | Phase 6a A/B on a real install | **not done** — needs a 50+ document deployment |
+| 8 | citation badge shows a rank, not a percentage | done |
+| 9 | search-tester decision | **not done** — needs an owner (see §7b) |
+| 10 | e2e mock returns 384-dim input-derived vectors | done |
+| 11 | e2e citation assertion on a two-document corpus | done |
+| 12 | e2e override guard | done |
+| 13 | F2 tokeniser measured separately | **not started** — deliberately separated (§6c) |
+
+### The offline `k` sweep result — suggestive, and NOT the decision
+
+`bun benchmark/fusion-k-sweep.ts --scope=held-out --out=benchmark/results/fusion-k-sweep.json`
+(n=486, budget top-10, deterministic across runs):
+
+| k | easy r@10 | medium | hard | complex | ALL r@10 | ALL MRR | ans@1 |
+|---|---|---|---|---|---|---|---|
+| **1** | **1.0000** | 0.0000 | 0.0145 | 0.3298 | **0.2222** | 0.2038 | 0.1049 |
+| 5 | 1.0000 | 0.0000 | 0.0000 | 0.3298 | 0.2181 | 0.2075 | 0.1235 |
+| 10 | 0.7600 | 0.0000 | 0.0000 | 0.3298 | 0.1811 | 0.2026 | 0.1235 |
+| 20 | 0.5733 | 0.0000 | 0.0000 | 0.3298 | 0.1523 | 0.2072 | 0.1276 |
+| 40 | 0.5600 | 0.0000 | 0.0000 | 0.3298 | 0.1502 | 0.2053 | 0.1276 |
+| *60* | 0.5600 | 0.0000 | 0.0000 | 0.3298 | 0.1502 | 0.2038 | 0.1255 |
+| 100 | 0.5200 | 0.0000 | 0.0000 | 0.3298 | 0.1440 | 0.2027 | 0.1255 |
+| 200 | 0.5067 | 0.0000 | 0.0000 | 0.3298 | 0.1420 | 0.2022 | 0.1255 |
+
+The easy tier falls **monotonically** in `k` (1.0000 → 0.5067) and the all-tier recall@10 is best
+at `k = 1` (+0.0720 over the shipped value). The mechanism §2b describes is therefore real and
+measured across the whole range, not just at two points.
+
+**Two reasons this must not be shipped on the strength of this table:**
+
+1. **answer@1 gets slightly WORSE at k=1** (0.1255 → 0.1049) while MRR is flat (0.2038 → 0.2038).
+   Recall improves by pulling evidence into the window without putting it first, which is the
+   least useful kind of movement for a citation a user reads — and it is the same pattern that
+   sank Entity-Hop. A recall-only reading of this table would hide it.
+2. It is **offline**, inheriting every documented difference from production (no reranker, no
+   knowledge-graph leg, no `keywords` field, whole-corpus lexical leg). §6a on a real install is
+   what decides, with three runs.
+
+So the honest summary is: the constant is load-bearing, the sweep says a lower value is plausibly
+better, and the deciding measurement has not been run because it needs a corpus this repository
+does not have.
+
+### Two things found that were NOT in the plan
+
+**A migration the schema needs and never got.** `prisma/schema.prisma` declares
+`embedding Unsupported("vector(384)")`, but the local dev and e2e databases both still carry
+`vector(1536)`. Commit `63c2c21` changed the schema and its own message says "BREAKING FOR EXISTING
+INSTALLS — this needs a migration", yet shipped no migration, and `prisma db push` cannot resize an
+`Unsupported("vector(n)")` column — verified by probing a scratch database, where a FRESH push
+correctly creates 384. So a standing install keeps a 1536 column and the vector leg stays dead
+there. The e2e database was resized by hand to unblock the e2e work; the dev database was left
+alone because its 114 stored vectors are at 1536 and resizing drops them. **This needs the
+documented migration (`tools/local-embeddings/README.md`) and is the one open item that affects
+production rather than the harness.**
+
+**The e2e suite is fixed and still cannot see a fusion change.** Both halves of that statement are
+measured. The mock now returns 384-dim input-derived vectors, so chunks do reach pgvector (1 non-null
+`embedding`, up from 0) and citations DO render — the new test proves the RAG branch runs
+(`ToolRun` type `RAG`), that the answering document is cited, and that the badge is a rank rather
+than a percentage. But `resolveVectorScores` discards the vector leg below
+`MIN_VECTOR_LEG_ROWS = 8`, and with 3-4 chunks the log reads
+`requested: 96, received: 4` — so `vectorRanking` is empty, `fuseRankings` gets one non-empty list,
+and `1/(k + rank)` is monotonic for every `k`. Enlarging the fixture was tried and reverted: the
+mock embedder is a hash bag of tokens, and ten filler documents made meeting-room text outrank the
+document that literally answers the question. A test asserting rank order over that would be
+measuring the hash. The limitation is documented in the spec's header rather than worked around.
+
+### What remains
+
+1. **Phase 6a on a real install** (row 7) — the only thing that can decide `RRF_K`, and it needs
+   50+ documents. Nothing else in this plan can substitute for it.
+2. **The vector-column migration** for standing installs, above.
+3. **The search-tester decision** (row 9) — expose it in the UI or delete it; needs an owner.
+4. **F2 tokeniser** (row 13) — its own run and its own verdict, per §6c.

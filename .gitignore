@@ -116,6 +116,7 @@ benchmark/results/*.json
 !benchmark/results/entity-hop-ablation.json
 !benchmark/results/real-prose-arm.json
 !benchmark/results/entity-hop-tune.json
+!benchmark/results/fusion-k-sweep.json
 
 # Third-party tool scaffolding (impeccable critique system). Installed locally
 # per developer, not project source: nothing under src/ or the build references
