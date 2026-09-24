@@ -37,17 +37,26 @@ Cross-lingual cosine on this corpus, L2-normalised:
 
 | Indonesian question | English document | cosine |
 |---|---|---|
-| Berapa tarif lembur pada hari kerja? | overtime rate on a working day | 0.543 |
-| Berapa hari cuti tahunan? | 12 working days of annual leave | 0.465 |
-| Berapa lama jangka waktu refund? | refund within 30 days | 0.748 |
-| *(off-topic)* resep kue bolu | — | **0.185** |
+| Berapa tarif lembur pada hari kerja? | overtime rate on a working day | 0.692 |
+| Berapa hari cuti tahunan? | 12 working days of annual leave | 0.621 |
+| Berapa lama jangka waktu refund? | refund within 30 days | 0.888 |
 
-Every real ID→EN match sits far above the 0.185 noise floor.
+Every real ID→EN match sits far above the noise floor: the same questions against an
+off-topic probe ("resep kue bolu") score **-0.040 to 0.064**, so the separation is
+0.62-0.89 versus ~0.0 — not a marginal margin that a threshold could easily swallow.
 
-**Rejected: `all-MiniLM-L6-v2`.** English-only. On the same pairs it scored the
-*English translation* of a question (0.100) **lower** than an unrelated
-Indonesian sentence (0.359) — it would have made Indonesian retrieval worse than
-lexical matching alone. Note both models are 384-dim; the reason to prefer the
+> Earlier revisions of this table listed 0.543 / 0.465 / 0.748 with a "0.185 noise floor".
+> Re-measured independently against the running server (same model, `normalize_embeddings=True`,
+> so the vectors are unit-length and a dot product IS the cosine): the matches are HIGHER and
+> the noise is LOWER than recorded. The direction and the conclusion are unchanged, and the
+> corrected numbers are the stronger evidence — the old figures were pessimistic, not wrong
+> in a way that flattered this design.
+
+**Rejected: `all-MiniLM-L6-v2`.** English-only. On the same pair it scored the
+*English translation* of a question **lower** than an unrelated Indonesian
+sentence (0.068 vs 0.499, re-measured; the original run recorded 0.100 vs 0.359
+and the direction is the same) — it would have made Indonesian retrieval worse
+than lexical matching alone. Note both models are 384-dim; the reason to prefer the
 multilingual one is language coverage, not size.
 
 ## The column dimension must match your model

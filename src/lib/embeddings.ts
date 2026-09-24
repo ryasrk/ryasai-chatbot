@@ -122,7 +122,24 @@ export async function getEmbeddingRuntimeConfig(
       apiKey = ''
     }
   }
-  if (provider !== 'OLLAMA' && !apiKey.trim()) return null
+  // A null return here is NOT inert: `embedDocumentChunks` exits on its first
+  // line, so the document still reports status=ready with chunkCount set while
+  // ZERO vectors are written — and the ingestion job is recorded as a success.
+  // That made a real misconfiguration look like a working install: 15 jobs
+  // "completed" with `DocumentChunk.embedding` NULL on every row. Every other
+  // early return above already warns; this one silently returned null, which is
+  // why it cost hours to find. Same reason the row selection uses findFirst:
+  // the branch taken here is the whole diagnosis.
+  if (provider !== 'OLLAMA' && !apiKey.trim()) {
+    console.warn(
+      '[embeddings] embedding is configured but its API key is EMPTY — refusing ' +
+        'to build a client, so NO vectors will be written (retrieval degrades to ' +
+        'lexical only, silently). Set the embedding key in Settings → AI ' +
+        'Configuration → Embedding. A self-hosted OpenAI-compatible server that ' +
+        'does not authenticate still needs a non-empty placeholder value.',
+    )
+    return null
+  }
 
   return { provider, baseUrl, apiKey, model }
 }

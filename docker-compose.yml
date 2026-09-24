@@ -50,6 +50,14 @@ services:
       # rather than only in .env so an existing .env cannot silently keep the
       # app on the weaker in-process SDK after this upgrade.
       - COGNEE_SERVER_URL=http://cognee:8000
+      # Required to reach the local embedding server. isBlockedHost() refuses
+      # private/loopback hosts to prevent SSRF, and that guard applies to
+      # SELF-HOSTED inference too: without this the app cannot call
+      # `local-embeddings`, `resolveQueryEmbedding` returns null, and semantic
+      # retrieval silently degrades to BM25 only while still reporting a
+      # healthy-looking similarity score. Scoped to the compose service name,
+      # not a wildcard.
+      - LLM_ALLOWED_HOSTS=${LLM_ALLOWED_HOSTS:-local-embeddings}
     depends_on:
       db:
         condition: service_healthy
@@ -88,6 +96,12 @@ services:
       - LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
       - LICENSE_PRODUCT=ryasai-chatbot
       - COGNEE_SERVER_URL=http://cognee:8000
+      # Required for the local embedding server. isBlockedHost() refuses
+      # loopback/private hosts to prevent SSRF, and that guard applies to
+      # SELF-HOSTED inference too — without this the app cannot reach
+      # `local-embeddings`, so semantic retrieval silently degrades to BM25.
+      # Scoped to this compose service name rather than a wildcard.
+      - LLM_ALLOWED_HOSTS=${LLM_ALLOWED_HOSTS:-local-embeddings}
     depends_on:
       db:
         condition: service_healthy
@@ -100,6 +114,50 @@ services:
     # ponytail: NO HTTP healthcheck — the scheduler is a BullMQ worker with no
     # listening port. Liveness = restart: unless-stopped + Redis stalled-job
     # detection (BullMQ re-queues a dead worker's jobs automatically).
+    restart: unless-stopped
+    networks:
+      - ryasai-net
+
+  # Local embedding server (semantic RAG + cognee) — no hosted embedding key.
+  #
+  # WHY IT IS IN THE DEFAULT INSTALL: without it, `resolveQueryEmbedding` returns
+  # null and retrieval silently degrades to BM25 only. MEASURED (tools/local-embeddings/
+  # README): semantic retrieval contributed 3/5 hits on hard paraphrase questions,
+  # and 0/5 without it — while still REPORTING a healthy-looking similarity score,
+  # so nothing appears broken.
+  #
+  # DIMENSION: this model is 384-dim and `DocumentChunk.embedding` is declared
+  # `vector(384)`, so they match by construction. A mismatch is the single most
+  # damaging failure mode here — every vector write silently falls back to
+  # `embeddingJson` and the pgvector leg returns an empty candidate set.
+  # If you change EMBEDDING_MODEL, change the Prisma column to match:
+  #   ALTER TABLE "DocumentChunk" DROP COLUMN embedding;
+  #   ALTER TABLE "DocumentChunk" ADD COLUMN embedding vector(<new dims>);
+  local-embeddings:
+    build:
+      context: ./tools/local-embeddings
+      dockerfile: Dockerfile
+    # Loopback only. This server has NO authentication, so publishing it on the
+    # host's external interface would let anyone compute embeddings on the box.
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      - EMBEDDING_HOST=0.0.0.0
+      - EMBEDDING_PORT=8081
+    volumes:
+      # Model weights (~470MB) are downloaded on first use. Persist them or every
+      # container restart re-downloads from HuggingFace.
+      - hfcache:/root/.cache/huggingface
+    healthcheck:
+      # `python` is present in this image, so no curl/wget dependency.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # First boot downloads ~470MB of weights, so the start period is generous;
+      # a tighter one would mark a healthy container as permanently unhealthy.
+      start_period: 300s
     restart: unless-stopped
     networks:
       - ryasai-net
@@ -218,3 +276,4 @@ volumes:
   pgdata:
   redisdata:
   cogneedata:
+  hfcache:

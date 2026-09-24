@@ -269,6 +269,13 @@ services:
       - NODE_ENV=production
       - LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
       - LICENSE_PRODUCT=ryasai-chatbot
+      # Needed to reach the local embedding service. isBlockedHost() refuses
+      # private/loopback hosts to prevent SSRF, and that guard applies to
+      # self-hosted inference too: without this the app cannot call
+      # `local-embeddings`, `resolveQueryEmbedding` returns null, and semantic
+      # retrieval silently degrades to BM25 only while still reporting a
+      # healthy-looking similarity score. Scoped to the service name.
+      - LLM_ALLOWED_HOSTS=${LLM_ALLOWED_HOSTS:-local-embeddings}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -291,10 +298,48 @@ services:
       - NODE_ENV=production
       - LICENSE_VALIDATOR_URL=https://license.ryasai.my.id
       - LICENSE_PRODUCT=ryasai-chatbot
+      # Ingestion (embedDocumentChunks) runs here, so the worker needs the same
+      # local-embeddings reachability as `app`. Missing this is invisible in
+      # testing: the HTTP path still embeds, while documents uploaded by a
+      # background job silently store no vectors.
+      - LLM_ALLOWED_HOSTS=${LLM_ALLOWED_HOSTS:-local-embeddings}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+    networks: [ryasai-net]
+
+  # Local embedding server: semantic RAG + cognee without a hosted key.
+  #
+  # WHY IT SHIPS BY DEFAULT: without it `resolveQueryEmbedding` returns null and
+  # retrieval silently degrades to lexical (BM25) only, while still reporting a
+  # healthy-looking similarity score — MEASURED at 0/5 on hard paraphrase
+  # questions versus 3/5 with it (tools/local-embeddings/README.md).
+  #
+  # DIMENSION: 384-dim model, and `DocumentChunk.embedding` is `vector(384)`, so
+  # they match by construction. A mismatch is the worst failure mode here: every
+  # vector write falls back to `embeddingJson` and the pgvector leg returns an
+  # empty candidate set, with only a console warning. Change EMBEDDING_MODEL and
+  # you MUST resize the Prisma column to the same width and re-embed.
+  local-embeddings:
+    image: ghcr.io/ryasrk/ryasai-chatbot:embeddings
+    environment:
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      - EMBEDDING_HOST=0.0.0.0
+      - EMBEDDING_PORT=8081
+    volumes:
+      # ~470MB of weights download on first use; without this every restart
+      # re-downloads them from HuggingFace.
+      - hfcache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # First boot downloads ~470MB, so a tighter start_period would mark a
+      # healthy container permanently unhealthy.
+      start_period: 300s
     restart: unless-stopped
     networks: [ryasai-net]
 
@@ -320,10 +365,22 @@ services:
       - LLM_ENDPOINT=${COGNEE_LLM_ENDPOINT:-}
       - LLM_MODEL=${COGNEE_LLM_MODEL:-}
       - EMBEDDING_PROVIDER=${COGNEE_EMBEDDING_PROVIDER:-openai}
-      - EMBEDDING_API_KEY=${COGNEE_EMBEDDING_API_KEY:-}
-      - EMBEDDING_ENDPOINT=${COGNEE_EMBEDDING_ENDPOINT:-}
-      - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-}
-      - EMBEDDING_DIMENSIONS=${COGNEE_EMBEDDING_DIMENSIONS:-1536}
+      # MEASURED: litellm keys off PROVIDER, not ENDPOINT. With provider `openai`
+      # and an EMPTY key it ignores EMBEDDING_ENDPOINT and calls api.openai.com,
+      # which fails every write with `No credentials for provider: openai` and an
+      # HTTP 400 — a message that points at OpenAI when the real problem is our
+      # own local server never being contacted. A non-empty placeholder keeps it
+      # on the OpenAI-compatible path (api_base) where the local server is used.
+      # The value is never validated: local-embeddings does not authenticate.
+      - EMBEDDING_API_KEY=${COGNEE_EMBEDDING_API_KEY:-local-no-auth}
+      - EMBEDDING_ENDPOINT=${COGNEE_EMBEDDING_ENDPOINT:-http://local-embeddings:8081/v1}
+      - EMBEDDING_MODEL=${COGNEE_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      # 384, NOT 1536: cognee shares the local embedding server with RAG, whose
+      # model is 384-dim. cognee stores vectors separately from DocumentChunk, so
+      # this does not have to match the pgvector column — but it MUST match what
+      # the endpoint actually returns, or every write fails with a pydantic
+      # "List should have at least N items" error that names the wrong cause.
+      - EMBEDDING_DIMENSIONS=${COGNEE_EMBEDDING_DIMENSIONS:-384}
       - COGNEE_SKIP_CONNECTION_TEST=true
       - LITELLM_DROP_PARAMS=true
       - LLM_ALLOWED_HOSTS=${COGNEE_LLM_ALLOWED_HOSTS:-*}
@@ -394,6 +451,7 @@ volumes:
   pgdata:
   redisdata:
   cogneedata:
+  hfcache:
 EOF
 
 # --- Disk guard ------------------------------------------------------------

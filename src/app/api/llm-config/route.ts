@@ -69,7 +69,17 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const existing = await db.llmConfig.findFirst()
+    // MEASURED BUG: this was `findFirst()` with NO purpose filter, so on an
+    // install with more than one LlmConfig row it updated whichever row the DB
+    // happened to return first. The READERS are purpose-specific — the chat
+    // client reads `purpose: 'chat'`, and the embedder reads `purpose: 'chat'`
+    // first (see getEmbeddingRuntimeConfig). So saving embedding settings could
+    // update a row the embedder NEVER reads. The symptom is the worst kind:
+    // the settings page shows the values saved, `embedDocumentChunks` exits on
+    // its first line, every document still reports status=ready with a chunk
+    // count, and the ingestion jobs all record as successes with zero vectors.
+    // Pin the write to the chat row, which is what both readers prefer.
+    const existing = await db.llmConfig.findFirst({ where: { purpose: 'chat' } })
 
     // apiKey is required on first create; on update, a blank value keeps the existing key.
     if (!apiKey && !existing) {

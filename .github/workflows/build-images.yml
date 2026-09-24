@@ -42,3 +42,21 @@ jobs:
           tags: ghcr.io/ryasrk/ryasai-chatbot:scheduler
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Ships in the default install: the compose `local-embeddings` service pulls
+      # this tag. Without the job, `install.sh` references an image that was never
+      # published and every install fails at pull time.
+      #
+      # Build context is tools/local-embeddings (NOT the repo root) — the
+      # Dockerfile there copies only server.py and installs the CPU-only torch.
+      # A repo-root context would ship the whole source tree into an image that
+      # needs none of it.
+      - name: Build & push local embeddings
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/local-embeddings
+          file: tools/local-embeddings/Dockerfile
+          push: true
+          tags: ghcr.io/ryasrk/ryasai-chatbot:embeddings
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
