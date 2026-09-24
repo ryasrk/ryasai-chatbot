@@ -220,6 +220,20 @@ export interface EntityHopOptions {
   maxDocumentFrequency: number
   /** Contribution of a hop hit is multiplied by this per additional hop. */
   decay: number
+  /**
+   * How many hop documents may enter the fusion.
+   *
+   * Without a cap the walk returns 91-145 documents on this corpus (measured: p50 102,
+   * never zero), and RRF at k=60 barely discriminates rank — 1/61 = 0.01639 at rank 1
+   * versus 1/200 = 0.00500 at rank 140. The whole tail therefore collects credit, and a
+   * hop document at hop-rank 1 outbids a direct leg at leg-rank 9 (0.01639 > 0.01449),
+   * which is how the easy tier loses its top-10 slots.
+   *
+   * The cap keeps the property the easy-tier gate depends on: a document reached
+   * entirely through weak bridges stops competing with a direct hit. Measured on the
+   * DEV split; the held-out split was graded once with the chosen value.
+   */
+  maxHopDocs: number
 }
 
 export const ENTITY_HOP_DEFAULTS: EntityHopOptions = {
@@ -227,6 +241,7 @@ export const ENTITY_HOP_DEFAULTS: EntityHopOptions = {
   maxHops: 2,
   maxDocumentFrequency: 60,
   decay: 0.5,
+  maxHopDocs: 10,
 }
 
 /**

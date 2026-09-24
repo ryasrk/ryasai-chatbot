@@ -1,0 +1,45 @@
+{
+  "kind": "real-prose-arm",
+  "generatedAt": "2026-09-24T04:56:25.736Z",
+  "source": {
+    "database": "postgresql://ryasai:***@127.0.0.1:5432/ryasai",
+    "chunks": 114
+  },
+  "coverage": {
+    "documents": 114,
+    "withEntity": 8,
+    "coverageShare": 0.07017543859649122,
+    "meanEntitiesPerDoc": 0.07017543859649122,
+    "distinctEntities": 5,
+    "bridgingEntities": 3
+  },
+  "questions": 121,
+  "budget": 10,
+  "rows": [
+    {
+      "arm": "bm25-baseline",
+      "ready": true,
+      "recall10": 1,
+      "recall5": 1,
+      "mrr": 0.9724517906336088,
+      "n": 121
+    },
+    {
+      "arm": "hybrid-rrf",
+      "ready": false,
+      "recall10": null,
+      "recall5": null,
+      "mrr": null,
+      "n": 0
+    },
+    {
+      "arm": "entity-hop",
+      "ready": true,
+      "recall10": 1,
+      "recall5": 1,
+      "mrr": 0.8891184573002754,
+      "n": 121
+    }
+  ],
+  "note": "Single-hop extractive questions only. Multi-hop chains were NOT synthesised over real prose, because there is no ground-truth relation graph for it and a fabricated answer key is the defect the earlier benchmark audit found."
+}

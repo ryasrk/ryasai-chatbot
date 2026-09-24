@@ -32,6 +32,9 @@ export const VARIANTS: VariantSpec[] = [
   { name: 'ablate-negation', options: { disableNegation: true }, note: 'negation skipping off' },
   { name: 'hops-1', options: { maxHops: 1 }, note: 'H=1' },
   { name: 'hops-3', options: { maxHops: 3 }, note: 'H=3' },
+  // The tail-dilution control. UNCAPPED is the shape that failed the easy-tier gate by 13x; a variant
+  // that reproduces it is kept so the failure stays reproducible after the default changes.
+  { name: 'ablate-hop-doc-cap', options: { maxHopDocs: 200 }, note: 'hop ranking uncapped (the failing shape)' },
 ]
 
 interface HopModule { arm?: Arm; makeEntityHopArm?: EntityHopArmFactory }

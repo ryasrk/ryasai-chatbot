@@ -15,6 +15,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import type { ArmContext, EntityHopAblation } from '../arm-types'
+import { ENTITY_HOP_DEFAULTS } from '../arm-types'
 import { arm, buildEntityIndex, explainEntityHop, extractEntities, makeEntityHopArm } from './entity-hop-arm'
 import { arm as hybridArm } from './hybrid-arm'
 
@@ -301,5 +302,53 @@ describe('the arm contract', () => {
     expect(arm.ready(lexical)).toBe(true)
     expect(explainEntityHop(VECTORED_QUESTION, lexical)).toEqual([])
     expect(arm.rank(VECTORED_QUESTION, lexical, 10).length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The hop-document cap. The uncapped tail is what breaks the easy tier:
+// measured on the benchmark corpus the walk returns 91-145 documents (p50 102,
+// never zero), and RRF at k=60 discriminates rank weakly (1/61 = 0.01639 at rank
+// 1 versus 1/200 = 0.00500 at rank 140), so the whole tail collects credit and a
+// hop document at hop-rank 1 outbids a direct leg at leg-rank 9 (0.01639 > 0.01449).
+// ---------------------------------------------------------------------------
+describe('hop-document cap', () => {
+  // A corpus wide enough that an uncapped walk returns far more documents than the cap.
+  const wide: ArmContext = {
+    docIds: ['seed', ...Array.from({ length: 40 }, (_, i) => `hub-${String(i).padStart(2, '0')}`)],
+    texts: {
+      // The seed names one strong bridge that every hub document also carries.
+      seed: 'Delivery DL-900 is recorded with the shared bridge BR-001.',
+      ...Object.fromEntries(
+        Array.from({ length: 40 }, (_, i) => [
+          `hub-${String(i).padStart(2, '0')}`,
+          `Unit ${i} carries the shared bridge BR-001 together with asset AS-${String(i).padStart(3, '0')}.`,
+        ]),
+      ),
+    },
+  }
+  const question = 'Which unit carries delivery DL-900?'
+
+  test('the fixture really does produce more hop documents than a small cap', () => {
+    // Guard against a vacuous test: without this, a cap that never binds would pass.
+    const uncapped = explainEntityHop(question, wide, { maxHopDocs: 500 })
+    expect(uncapped.length).toBeGreaterThan(10)
+  })
+
+  test('the cap bounds how many hop documents enter the fusion', () => {
+    for (const cap of [1, 3, 10]) {
+      expect(explainEntityHop(question, wide, { maxHopDocs: cap }).length).toBeLessThanOrEqual(cap)
+    }
+  })
+
+  test('a tighter cap is a prefix of a looser one — the cap trims the tail, not the head', () => {
+    const tight = explainEntityHop(question, wide, { maxHopDocs: 5 }).map((p) => p.docId)
+    const loose = explainEntityHop(question, wide, { maxHopDocs: 20 }).map((p) => p.docId)
+    expect(loose.slice(0, tight.length)).toEqual(tight)
+  })
+
+  test('the default cap is positive, so a shipped arm cannot disable the fix by accident', () => {
+    expect(ENTITY_HOP_DEFAULTS.maxHopDocs).toBeGreaterThan(0)
+    expect(ENTITY_HOP_DEFAULTS.maxHopDocs).toBeLessThanOrEqual(20)
   })
 })

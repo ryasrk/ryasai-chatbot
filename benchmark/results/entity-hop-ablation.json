@@ -1,6 +1,6 @@
 {
   "kind": "entity-hop-ablation",
-  "generatedAt": "2026-09-24T04:42:16.906Z",
+  "generatedAt": "2026-09-24T04:51:06.535Z",
   "scope": "held-out",
   "budget": 10,
   "command": "bun benchmark/entity-hop-ablation.ts --split=held-out --out=benchmark/results/entity-hop-ablation.json",
@@ -43,8 +43,8 @@
         "hopRecall": [
           1
         ],
-        "latencyP50Ms": 1.784,
-        "latencyP90Ms": 3.022
+        "latencyP50Ms": 1.556,
+        "latencyP90Ms": 2.677
       },
       "medium": {
         "n": 179,
@@ -57,8 +57,8 @@
           0.9720670391061452,
           0.055865921787709494
         ],
-        "latencyP50Ms": 1.707,
-        "latencyP90Ms": 2.725
+        "latencyP50Ms": 1.835,
+        "latencyP90Ms": 2.56
       },
       "hard": {
         "n": 138,
@@ -72,8 +72,8 @@
           0.41304347826086957,
           0.41304347826086957
         ],
-        "latencyP50Ms": 3.718,
-        "latencyP90Ms": 6.02
+        "latencyP50Ms": 3.43,
+        "latencyP90Ms": 5.456
       },
       "complex": {
         "n": 94,
@@ -86,8 +86,8 @@
           1,
           0.5714285714285714
         ],
-        "latencyP50Ms": 4.287,
-        "latencyP90Ms": 6.586
+        "latencyP50Ms": 4.015,
+        "latencyP90Ms": 6.085
       }
     },
     "overall": {
@@ -102,8 +102,8 @@
         0.2710526315789474,
         0.41304347826086957
       ],
-      "latencyP50Ms": 2.664,
-      "latencyP90Ms": 5.424
+      "latencyP50Ms": 2.397,
+      "latencyP90Ms": 4.973
     }
   },
   "baselineMetrics": {
@@ -121,8 +121,8 @@
         "hopRecall": [
           0.56
         ],
-        "latencyP50Ms": 4.73,
-        "latencyP90Ms": 10.079
+        "latencyP50Ms": 4.536,
+        "latencyP90Ms": 10.011
       },
       "medium": {
         "n": 179,
@@ -135,8 +135,8 @@
           0.6033519553072626,
           0.2122905027932961
         ],
-        "latencyP50Ms": 4.679,
-        "latencyP90Ms": 7.752
+        "latencyP50Ms": 4.492,
+        "latencyP90Ms": 7.512
       },
       "hard": {
         "n": 138,
@@ -150,8 +150,8 @@
           0,
           0.42028985507246375
         ],
-        "latencyP50Ms": 4.242,
-        "latencyP90Ms": 6.565
+        "latencyP50Ms": 3.943,
+        "latencyP90Ms": 6.518
       },
       "complex": {
         "n": 94,
@@ -164,8 +164,8 @@
           0.8617021276595744,
           0.06349206349206349
         ],
-        "latencyP50Ms": 4.818,
-        "latencyP90Ms": 6.713
+        "latencyP50Ms": 4.515,
+        "latencyP90Ms": 7.058
       }
     },
     "overall": {
@@ -180,8 +180,8 @@
         0.11052631578947368,
         0.42028985507246375
       ],
-      "latencyP50Ms": 4.604,
-      "latencyP90Ms": 7.612
+      "latencyP50Ms": 4.369,
+      "latencyP90Ms": 7.502
     }
   },
   "variants": [
@@ -197,75 +197,75 @@
         "perTier": {
           "easy": {
             "n": 75,
-            "recall5": 0.28,
-            "recall10": 0.4266666666666667,
-            "answerAt1": 0.05333333333333334,
-            "mrr": 0.14627513227513225,
-            "evidenceCoverage": 0.4266666666666667,
+            "recall5": 0.38666666666666666,
+            "recall10": 0.5466666666666666,
+            "answerAt1": 0.10666666666666667,
+            "mrr": 0.2186613756613756,
+            "evidenceCoverage": 0.5466666666666666,
             "hopRecall": [
-              0.4266666666666667
+              0.5466666666666666
             ],
-            "latencyP50Ms": 4.729,
-            "latencyP90Ms": 7.102
+            "latencyP50Ms": 4.791,
+            "latencyP90Ms": 7.355
           },
           "medium": {
             "n": 179,
-            "recall5": 0.0111731843575419,
-            "recall10": 0.12849162011173185,
-            "answerAt1": 0.0111731843575419,
-            "mrr": 0.04680766161213088,
-            "evidenceCoverage": 0.3994413407821229,
+            "recall5": 0.09497206703910614,
+            "recall10": 0.21787709497206703,
+            "answerAt1": 0.0335195530726257,
+            "mrr": 0.08830806065442935,
+            "evidenceCoverage": 0.5251396648044693,
             "hopRecall": [
-              0.6145251396648045,
-              0.18435754189944134
+              0.7877094972067039,
+              0.26256983240223464
             ],
-            "latencyP50Ms": 4.96,
-            "latencyP90Ms": 7.256
+            "latencyP50Ms": 4.78,
+            "latencyP90Ms": 6.839
           },
           "hard": {
             "n": 138,
             "recall5": 0,
-            "recall10": 0.07246376811594203,
+            "recall10": 0,
             "answerAt1": 0,
-            "mrr": 0.07403381642512079,
-            "evidenceCoverage": 0.35748792270531443,
+            "mrr": 0.08533183804922936,
+            "evidenceCoverage": 0.34057971014492777,
             "hopRecall": [
-              0.3115942028985507,
+              0.1956521739130435,
               0.4057971014492754,
-              0.35507246376811596
+              0.42028985507246375
             ],
-            "latencyP50Ms": 4.728,
-            "latencyP90Ms": 7.014
+            "latencyP50Ms": 4.398,
+            "latencyP90Ms": 7.164
           },
           "complex": {
             "n": 94,
-            "recall5": 0.13829787234042554,
-            "recall10": 0.3617021276595745,
+            "recall5": 0.24468085106382978,
+            "recall10": 0.3723404255319149,
             "answerAt1": 0,
-            "mrr": 0.0704745018574806,
-            "evidenceCoverage": 0.4734042553191489,
+            "mrr": 0.08492063492063494,
+            "evidenceCoverage": 0.6329787234042553,
             "hopRecall": [
-              0.574468085106383,
+              0.8829787234042553,
               0.09523809523809523
             ],
-            "latencyP50Ms": 5.506,
-            "latencyP90Ms": 7.71
+            "latencyP50Ms": 4.7,
+            "latencyP90Ms": 6.219
           }
         },
         "overall": {
           "n": 486,
-          "recall5": 0.07407407407407407,
-          "recall10": 0.2037037037037037,
-          "answerAt1": 0.012345679012345678,
-          "mrr": 0.07446600039192632,
-          "evidenceCoverage": 0.4060356652949246,
+          "recall5": 0.1419753086419753,
+          "recall10": 0.2366255144032922,
+          "answerAt1": 0.02880658436213992,
+          "mrr": 0.10692403161538987,
+          "evidenceCoverage": 0.49691358024691307,
           "hopRecall": [
-            0.49176954732510286,
-            0.25,
-            0.35507246376811596
+            0.6008230452674898,
+            0.2868421052631579,
+            0.42028985507246375
           ],
-          "latencyP50Ms": 4.941,
-          "latencyP90Ms": 7.102
+          "latencyP50Ms": 4.676,
+          "latencyP90Ms": 7.15
         }
       },
       "verdict": {
@@ -275,13 +275,13 @@
             "id": "c1",
             "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
             "status": "PASS",
-            "detail": "gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1"
+            "detail": "gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1"
           },
           {
             "id": "c2",
             "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
             "status": "FAIL",
-            "detail": "drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01"
+            "detail": "drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01"
           },
           {
             "id": "c3",
@@ -293,20 +293,20 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.3370 ms; allowed 50 ms"
+            "detail": "added p50 +0.3070 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
           "baseline": 0,
-          "variant": 0.10410094637223975,
-          "gain": 0.10410094637223975
+          "variant": 0.12302839116719243,
+          "gain": 0.12302839116719243
         },
         "easy": {
           "baseline": 0.56,
-          "variant": 0.4266666666666667,
-          "drop": 0.13333333333333336
+          "variant": 0.5466666666666666,
+          "drop": 0.01333333333333342
         },
-        "addedP50Ms": 0.33699999999999974,
+        "addedP50Ms": 0.3070000000000004,
         "reasons": []
       }
     },
@@ -324,75 +324,75 @@
         "perTier": {
           "easy": {
             "n": 75,
-            "recall5": 0.17333333333333334,
-            "recall10": 0.38666666666666666,
-            "answerAt1": 0,
-            "mrr": 0.0731111111111111,
-            "evidenceCoverage": 0.38666666666666666,
+            "recall5": 0.41333333333333333,
+            "recall10": 0.5733333333333334,
+            "answerAt1": 0.14666666666666667,
+            "mrr": 0.2666243386243386,
+            "evidenceCoverage": 0.5733333333333334,
             "hopRecall": [
-              0.38666666666666666
+              0.5733333333333334
             ],
-            "latencyP50Ms": 4.89,
-            "latencyP90Ms": 6.893
+            "latencyP50Ms": 4.496,
+            "latencyP90Ms": 6.592
           },
           "medium": {
             "n": 179,
-            "recall5": 0,
-            "recall10": 0.05027932960893855,
-            "answerAt1": 0,
-            "mrr": 0.02871331027755608,
-            "evidenceCoverage": 0.31564245810055863,
+            "recall5": 0.03910614525139665,
+            "recall10": 0.061452513966480445,
+            "answerAt1": 0.027932960893854747,
+            "mrr": 0.0777223552363217,
+            "evidenceCoverage": 0.43854748603351956,
             "hopRecall": [
-              0.4692737430167598,
-              0.16201117318435754
+              0.659217877094972,
+              0.21787709497206703
             ],
-            "latencyP50Ms": 5.162,
-            "latencyP90Ms": 7.595
+            "latencyP50Ms": 4.739,
+            "latencyP90Ms": 5.68
           },
           "hard": {
             "n": 138,
             "recall5": 0,
-            "recall10": 0.028985507246376812,
+            "recall10": 0,
             "answerAt1": 0,
-            "mrr": 0.09675925925925924,
-            "evidenceCoverage": 0.37922705314009697,
+            "mrr": 0.11811594202898548,
+            "evidenceCoverage": 0.26570048309178756,
             "hopRecall": [
-              0.3333333333333333,
-              0.41304347826086957,
-              0.391304347826087
+              0.18115942028985507,
+              0.18840579710144928,
+              0.427536231884058
             ],
-            "latencyP50Ms": 5.277,
-            "latencyP90Ms": 7.664
+            "latencyP50Ms": 4.361,
+            "latencyP90Ms": 6.387
           },
           "complex": {
             "n": 94,
-            "recall5": 0.1702127659574468,
-            "recall10": 0.3404255319148936,
-            "answerAt1": 0,
-            "mrr": 0.06820753123944615,
-            "evidenceCoverage": 0.526595744680851,
+            "recall5": 0.3191489361702128,
+            "recall10": 0.32978723404255317,
+            "answerAt1": 0.09574468085106383,
+            "mrr": 0.2001013171225937,
+            "evidenceCoverage": 0.6170212765957447,
             "hopRecall": [
-              0.6808510638297872,
-              0.07936507936507936
+              0.8617021276595744,
+              0.06349206349206349
             ],
-            "latencyP50Ms": 5.756,
-            "latencyP90Ms": 7.781
+            "latencyP50Ms": 4.858,
+            "latencyP90Ms": 6.736
           }
         },
         "overall": {
           "n": 486,
-          "recall5": 0.059670781893004114,
-          "recall10": 0.1522633744855967,
-          "answerAt1": 0,
-          "mrr": 0.06252531190802792,
-          "evidenceCoverage": 0.3854595336076815,
+          "recall5": 0.13991769547325103,
+          "recall10": 0.1748971193415638,
+          "answerAt1": 0.051440329218107,
+          "mrr": 0.14201368476059842,
+          "evidenceCoverage": 0.4447873799725658,
           "hopRecall": [
-            0.4588477366255144,
-            0.2394736842105263,
-            0.391304347826087
+            0.5493827160493827,
+            0.18157894736842106,
+            0.427536231884058
           ],
-          "latencyP50Ms": 5.202,
-          "latencyP90Ms": 7.456
+          "latencyP50Ms": 4.642,
+          "latencyP90Ms": 6.184
         }
       },
       "verdict": {
@@ -402,13 +402,13 @@
             "id": "c1",
             "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
             "status": "FAIL",
-            "detail": "gain +0.0410 (variant 0.0410 vs baseline 0.0000); need 0.1"
+            "detail": "gain +0.0347 (variant 0.0347 vs baseline 0.0000); need 0.1"
           },
           {
             "id": "c2",
             "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
-            "status": "FAIL",
-            "detail": "drop +0.1733 (variant 0.3867 vs baseline 0.5600); allowed 0.01"
+            "status": "PASS",
+            "detail": "drop -0.0133 (variant 0.5733 vs baseline 0.5600); allowed 0.01"
           },
           {
             "id": "c3",
@@ -420,20 +420,20 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.5980 ms; allowed 50 ms"
+            "detail": "added p50 +0.2730 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
           "baseline": 0,
-          "variant": 0.04100946372239748,
-          "gain": 0.04100946372239748
+          "variant": 0.03470031545741325,
+          "gain": 0.03470031545741325
         },
         "easy": {
           "baseline": 0.56,
-          "variant": 0.38666666666666666,
-          "drop": 0.1733333333333334
+          "variant": 0.5733333333333334,
+          "drop": -0.013333333333333308
         },
-        "addedP50Ms": 0.5979999999999999,
+        "addedP50Ms": 0.2730000000000006,
         "reasons": []
       }
     },
@@ -451,75 +451,75 @@
         "perTier": {
           "easy": {
             "n": 75,
-            "recall5": 0.28,
-            "recall10": 0.4266666666666667,
-            "answerAt1": 0.05333333333333334,
-            "mrr": 0.14627513227513225,
-            "evidenceCoverage": 0.4266666666666667,
+            "recall5": 0.38666666666666666,
+            "recall10": 0.5466666666666666,
+            "answerAt1": 0.10666666666666667,
+            "mrr": 0.2186613756613756,
+            "evidenceCoverage": 0.5466666666666666,
             "hopRecall": [
-              0.4266666666666667
+              0.5466666666666666
             ],
-            "latencyP50Ms": 5.124,
-            "latencyP90Ms": 6.067
+            "latencyP50Ms": 4.599,
+            "latencyP90Ms": 6.792
           },
           "medium": {
             "n": 179,
-            "recall5": 0.0111731843575419,
-            "recall10": 0.12849162011173185,
-            "answerAt1": 0.0111731843575419,
-            "mrr": 0.04680766161213088,
-            "evidenceCoverage": 0.3994413407821229,
+            "recall5": 0.09497206703910614,
+            "recall10": 0.21787709497206703,
+            "answerAt1": 0.0335195530726257,
+            "mrr": 0.08830806065442935,
+            "evidenceCoverage": 0.5251396648044693,
             "hopRecall": [
-              0.6145251396648045,
-              0.18435754189944134
+              0.7877094972067039,
+              0.26256983240223464
             ],
-            "latencyP50Ms": 5.128,
-            "latencyP90Ms": 6.98
+            "latencyP50Ms": 4.734,
+            "latencyP90Ms": 7.269
           },
           "hard": {
             "n": 138,
             "recall5": 0,
-            "recall10": 0.07246376811594203,
+            "recall10": 0,
             "answerAt1": 0,
-            "mrr": 0.07403381642512079,
-            "evidenceCoverage": 0.35748792270531443,
+            "mrr": 0.08533183804922936,
+            "evidenceCoverage": 0.34057971014492777,
             "hopRecall": [
-              0.3115942028985507,
+              0.1956521739130435,
               0.4057971014492754,
-              0.35507246376811596
+              0.42028985507246375
             ],
-            "latencyP50Ms": 4.959,
-            "latencyP90Ms": 6.866
+            "latencyP50Ms": 4.46,
+            "latencyP90Ms": 6.063
           },
           "complex": {
             "n": 94,
-            "recall5": 0.13829787234042554,
-            "recall10": 0.3617021276595745,
+            "recall5": 0.24468085106382978,
+            "recall10": 0.3723404255319149,
             "answerAt1": 0,
-            "mrr": 0.0704745018574806,
-            "evidenceCoverage": 0.4734042553191489,
+            "mrr": 0.08492063492063494,
+            "evidenceCoverage": 0.6329787234042553,
             "hopRecall": [
-              0.574468085106383,
+              0.8829787234042553,
               0.09523809523809523
             ],
-            "latencyP50Ms": 5.418,
-            "latencyP90Ms": 8.002
+            "latencyP50Ms": 4.906,
+            "latencyP90Ms": 6.098
           }
         },
         "overall": {
           "n": 486,
-          "recall5": 0.07407407407407407,
-          "recall10": 0.2037037037037037,
-          "answerAt1": 0.012345679012345678,
-          "mrr": 0.07446600039192632,
-          "evidenceCoverage": 0.4060356652949246,
+          "recall5": 0.1419753086419753,
+          "recall10": 0.2366255144032922,
+          "answerAt1": 0.02880658436213992,
+          "mrr": 0.10692403161538987,
+          "evidenceCoverage": 0.49691358024691307,
           "hopRecall": [
-            0.49176954732510286,
-            0.25,
-            0.35507246376811596
+            0.6008230452674898,
+            0.2868421052631579,
+            0.42028985507246375
           ],
-          "latencyP50Ms": 5.124,
-          "latencyP90Ms": 6.98
+          "latencyP50Ms": 4.655,
+          "latencyP90Ms": 6.595
         }
       },
       "verdict": {
@@ -529,13 +529,13 @@
             "id": "c1",
             "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
             "status": "PASS",
-            "detail": "gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1"
+            "detail": "gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1"
           },
           {
             "id": "c2",
             "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
             "status": "FAIL",
-            "detail": "drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01"
+            "detail": "drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01"
           },
           {
             "id": "c3",
@@ -547,20 +547,20 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.5200 ms; allowed 50 ms"
+            "detail": "added p50 +0.2860 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
           "baseline": 0,
-          "variant": 0.10410094637223975,
-          "gain": 0.10410094637223975
+          "variant": 0.12302839116719243,
+          "gain": 0.12302839116719243
         },
         "easy": {
           "baseline": 0.56,
-          "variant": 0.4266666666666667,
-          "drop": 0.13333333333333336
+          "variant": 0.5466666666666666,
+          "drop": 0.01333333333333342
         },
-        "addedP50Ms": 0.5199999999999996,
+        "addedP50Ms": 0.2860000000000005,
         "reasons": []
       }
     },
@@ -578,75 +578,75 @@
         "perTier": {
           "easy": {
             "n": 75,
-            "recall5": 0.28,
-            "recall10": 0.4266666666666667,
-            "answerAt1": 0.05333333333333334,
-            "mrr": 0.14627513227513225,
-            "evidenceCoverage": 0.4266666666666667,
+            "recall5": 0.38666666666666666,
+            "recall10": 0.5466666666666666,
+            "answerAt1": 0.10666666666666667,
+            "mrr": 0.2186613756613756,
+            "evidenceCoverage": 0.5466666666666666,
             "hopRecall": [
-              0.4266666666666667
+              0.5466666666666666
             ],
-            "latencyP50Ms": 4.689,
-            "latencyP90Ms": 5.703
+            "latencyP50Ms": 4.553,
+            "latencyP90Ms": 6.651
           },
           "medium": {
             "n": 179,
-            "recall5": 0.0111731843575419,
-            "recall10": 0.12849162011173185,
-            "answerAt1": 0.0111731843575419,
-            "mrr": 0.04680766161213088,
-            "evidenceCoverage": 0.3994413407821229,
+            "recall5": 0.09497206703910614,
+            "recall10": 0.21787709497206703,
+            "answerAt1": 0.0335195530726257,
+            "mrr": 0.08830806065442935,
+            "evidenceCoverage": 0.5251396648044693,
             "hopRecall": [
-              0.6145251396648045,
-              0.18435754189944134
+              0.7877094972067039,
+              0.26256983240223464
             ],
-            "latencyP50Ms": 4.878,
-            "latencyP90Ms": 7.226
+            "latencyP50Ms": 4.757,
+            "latencyP90Ms": 6.869
           },
           "hard": {
             "n": 138,
             "recall5": 0,
-            "recall10": 0.07246376811594203,
+            "recall10": 0,
             "answerAt1": 0,
-            "mrr": 0.07403381642512079,
-            "evidenceCoverage": 0.35748792270531443,
+            "mrr": 0.08533183804922936,
+            "evidenceCoverage": 0.34057971014492777,
             "hopRecall": [
-              0.3115942028985507,
+              0.1956521739130435,
               0.4057971014492754,
-              0.35507246376811596
+              0.42028985507246375
             ],
-            "latencyP50Ms": 4.604,
-            "latencyP90Ms": 7.406
+            "latencyP50Ms": 4.175,
+            "latencyP90Ms": 5.598
           },
           "complex": {
             "n": 94,
-            "recall5": 0.13829787234042554,
-            "recall10": 0.3617021276595745,
+            "recall5": 0.24468085106382978,
+            "recall10": 0.3723404255319149,
             "answerAt1": 0,
-            "mrr": 0.0704745018574806,
-            "evidenceCoverage": 0.4734042553191489,
+            "mrr": 0.08492063492063494,
+            "evidenceCoverage": 0.6329787234042553,
             "hopRecall": [
-              0.574468085106383,
+              0.8829787234042553,
               0.09523809523809523
             ],
-            "latencyP50Ms": 5.519,
-            "latencyP90Ms": 7.491
+            "latencyP50Ms": 4.945,
+            "latencyP90Ms": 6.778
           }
         },
         "overall": {
           "n": 486,
-          "recall5": 0.07407407407407407,
-          "recall10": 0.2037037037037037,
-          "answerAt1": 0.012345679012345678,
-          "mrr": 0.07446600039192632,
-          "evidenceCoverage": 0.4060356652949246,
+          "recall5": 0.1419753086419753,
+          "recall10": 0.2366255144032922,
+          "answerAt1": 0.02880658436213992,
+          "mrr": 0.10692403161538987,
+          "evidenceCoverage": 0.49691358024691307,
           "hopRecall": [
-            0.49176954732510286,
-            0.25,
-            0.35507246376811596
+            0.6008230452674898,
+            0.2868421052631579,
+            0.42028985507246375
           ],
-          "latencyP50Ms": 4.845,
-          "latencyP90Ms": 7.298
+          "latencyP50Ms": 4.645,
+          "latencyP90Ms": 6.606
         }
       },
       "verdict": {
@@ -656,13 +656,13 @@
             "id": "c1",
             "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
             "status": "PASS",
-            "detail": "gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1"
+            "detail": "gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1"
           },
           {
             "id": "c2",
             "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
             "status": "FAIL",
-            "detail": "drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01"
+            "detail": "drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01"
           },
           {
             "id": "c3",
@@ -674,20 +674,20 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.2410 ms; allowed 50 ms"
+            "detail": "added p50 +0.2760 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
           "baseline": 0,
-          "variant": 0.10410094637223975,
-          "gain": 0.10410094637223975
+          "variant": 0.12302839116719243,
+          "gain": 0.12302839116719243
         },
         "easy": {
           "baseline": 0.56,
-          "variant": 0.4266666666666667,
-          "drop": 0.13333333333333336
+          "variant": 0.5466666666666666,
+          "drop": 0.01333333333333342
         },
-        "addedP50Ms": 0.24099999999999966,
+        "addedP50Ms": 0.2759999999999998,
         "reasons": []
       }
     },
@@ -705,75 +705,75 @@
         "perTier": {
           "easy": {
             "n": 75,
-            "recall5": 0.28,
-            "recall10": 0.41333333333333333,
-            "answerAt1": 0.05333333333333334,
-            "mrr": 0.14331216931216934,
-            "evidenceCoverage": 0.41333333333333333,
+            "recall5": 0.38666666666666666,
+            "recall10": 0.5466666666666666,
+            "answerAt1": 0.10666666666666667,
+            "mrr": 0.2186613756613756,
+            "evidenceCoverage": 0.5466666666666666,
             "hopRecall": [
-              0.41333333333333333
+              0.5466666666666666
             ],
-            "latencyP50Ms": 4.648,
-            "latencyP90Ms": 6.753
+            "latencyP50Ms": 4.316,
+            "latencyP90Ms": 5.511
           },
           "medium": {
             "n": 179,
-            "recall5": 0.01675977653631285,
-            "recall10": 0.12849162011173185,
-            "answerAt1": 0.0111731843575419,
-            "mrr": 0.047086991221069435,
-            "evidenceCoverage": 0.3994413407821229,
+            "recall5": 0.09497206703910614,
+            "recall10": 0.21787709497206703,
+            "answerAt1": 0.0335195530726257,
+            "mrr": 0.08830806065442935,
+            "evidenceCoverage": 0.5251396648044693,
             "hopRecall": [
-              0.6201117318435754,
-              0.1787709497206704
+              0.7877094972067039,
+              0.26256983240223464
             ],
-            "latencyP50Ms": 4.93,
-            "latencyP90Ms": 6.826
+            "latencyP50Ms": 4.595,
+            "latencyP90Ms": 6.445
           },
           "hard": {
             "n": 138,
             "recall5": 0,
             "recall10": 0,
             "answerAt1": 0,
-            "mrr": 0.08396307798481714,
-            "evidenceCoverage": 0.35507246376811646,
+            "mrr": 0.08533183804922936,
+            "evidenceCoverage": 0.34057971014492777,
             "hopRecall": [
-              0.2391304347826087,
+              0.1956521739130435,
               0.4057971014492754,
               0.42028985507246375
             ],
-            "latencyP50Ms": 4.416,
-            "latencyP90Ms": 6.16
+            "latencyP50Ms": 4.255,
+            "latencyP90Ms": 6.315
           },
           "complex": {
             "n": 94,
-            "recall5": 0.13829787234042554,
-            "recall10": 0.3617021276595745,
+            "recall5": 0.24468085106382978,
+            "recall10": 0.3723404255319149,
             "answerAt1": 0,
-            "mrr": 0.0704745018574806,
-            "evidenceCoverage": 0.4734042553191489,
+            "mrr": 0.08492063492063494,
+            "evidenceCoverage": 0.6329787234042553,
             "hopRecall": [
-              0.574468085106383,
+              0.8829787234042553,
               0.09523809523809523
             ],
-            "latencyP50Ms": 5.442,
-            "latencyP90Ms": 8.129
+            "latencyP50Ms": 4.829,
+            "latencyP90Ms": 7.261
           }
         },
         "overall": {
           "n": 486,
-          "recall5": 0.07613168724279835,
-          "recall10": 0.18106995884773663,
-          "answerAt1": 0.012345679012345678,
-          "mrr": 0.07693105362858452,
-          "evidenceCoverage": 0.40329218106995846,
+          "recall5": 0.1419753086419753,
+          "recall10": 0.2366255144032922,
+          "answerAt1": 0.02880658436213992,
+          "mrr": 0.10692403161538987,
+          "evidenceCoverage": 0.49691358024691307,
           "hopRecall": [
-            0.4711934156378601,
-            0.24736842105263157,
+            0.6008230452674898,
+            0.2868421052631579,
             0.42028985507246375
           ],
-          "latencyP50Ms": 4.839,
-          "latencyP90Ms": 7.081
+          "latencyP50Ms": 4.53,
+          "latencyP90Ms": 6.445
         }
       },
       "verdict": {
@@ -782,14 +782,14 @@
           {
             "id": "c1",
             "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
-            "status": "FAIL",
-            "detail": "gain +0.0726 (variant 0.0726 vs baseline 0.0000); need 0.1"
+            "status": "PASS",
+            "detail": "gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1"
           },
           {
             "id": "c2",
             "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
             "status": "FAIL",
-            "detail": "drop +0.1467 (variant 0.4133 vs baseline 0.5600); allowed 0.01"
+            "detail": "drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01"
           },
           {
             "id": "c3",
@@ -801,20 +801,20 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.2350 ms; allowed 50 ms"
+            "detail": "added p50 +0.1610 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
           "baseline": 0,
-          "variant": 0.07255520504731862,
-          "gain": 0.07255520504731862
+          "variant": 0.12302839116719243,
+          "gain": 0.12302839116719243
         },
         "easy": {
           "baseline": 0.56,
-          "variant": 0.41333333333333333,
-          "drop": 0.14666666666666672
+          "variant": 0.5466666666666666,
+          "drop": 0.01333333333333342
         },
-        "addedP50Ms": 0.23500000000000032,
+        "addedP50Ms": 0.16100000000000048,
         "reasons": []
       }
     },
@@ -832,30 +832,157 @@
         "perTier": {
           "easy": {
             "n": 75,
+            "recall5": 0.38666666666666666,
+            "recall10": 0.5466666666666666,
+            "answerAt1": 0.10666666666666667,
+            "mrr": 0.2186613756613756,
+            "evidenceCoverage": 0.5466666666666666,
+            "hopRecall": [
+              0.5466666666666666
+            ],
+            "latencyP50Ms": 4.854,
+            "latencyP90Ms": 6.96
+          },
+          "medium": {
+            "n": 179,
+            "recall5": 0.09497206703910614,
+            "recall10": 0.21787709497206703,
+            "answerAt1": 0.0335195530726257,
+            "mrr": 0.08830806065442935,
+            "evidenceCoverage": 0.5251396648044693,
+            "hopRecall": [
+              0.7877094972067039,
+              0.26256983240223464
+            ],
+            "latencyP50Ms": 4.879,
+            "latencyP90Ms": 6.581
+          },
+          "hard": {
+            "n": 138,
+            "recall5": 0,
+            "recall10": 0,
+            "answerAt1": 0,
+            "mrr": 0.08533183804922936,
+            "evidenceCoverage": 0.34057971014492777,
+            "hopRecall": [
+              0.1956521739130435,
+              0.4057971014492754,
+              0.42028985507246375
+            ],
+            "latencyP50Ms": 4.593,
+            "latencyP90Ms": 5.956
+          },
+          "complex": {
+            "n": 94,
+            "recall5": 0.24468085106382978,
+            "recall10": 0.3723404255319149,
+            "answerAt1": 0,
+            "mrr": 0.08492063492063494,
+            "evidenceCoverage": 0.6329787234042553,
+            "hopRecall": [
+              0.8829787234042553,
+              0.09523809523809523
+            ],
+            "latencyP50Ms": 5.1,
+            "latencyP90Ms": 6.435
+          }
+        },
+        "overall": {
+          "n": 486,
+          "recall5": 0.1419753086419753,
+          "recall10": 0.2366255144032922,
+          "answerAt1": 0.02880658436213992,
+          "mrr": 0.10692403161538987,
+          "evidenceCoverage": 0.49691358024691307,
+          "hopRecall": [
+            0.6008230452674898,
+            0.2868421052631579,
+            0.42028985507246375
+          ],
+          "latencyP50Ms": 4.827,
+          "latencyP90Ms": 6.473
+        }
+      },
+      "verdict": {
+        "status": "DO NOT SHIP",
+        "criteria": [
+          {
+            "id": "c1",
+            "label": "plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline",
+            "status": "PASS",
+            "detail": "gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1"
+          },
+          {
+            "id": "c2",
+            "label": "plan item 2 — easy recall@10 drop ≤ 0.01",
+            "status": "FAIL",
+            "detail": "drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01"
+          },
+          {
+            "id": "c3",
+            "status": "NOT COMPUTABLE",
+            "label": "plan item 3 — real-org golden set not worse than P2",
+            "detail": "Phase 3 has not run; not evaluable from this benchmark"
+          },
+          {
+            "id": "c4",
+            "label": "plan item 4 — added p50 ≤ 50 ms",
+            "status": "PASS",
+            "detail": "added p50 +0.4580 ms; allowed 50 ms"
+          }
+        ],
+        "mediumHard": {
+          "baseline": 0,
+          "variant": 0.12302839116719243,
+          "gain": 0.12302839116719243
+        },
+        "easy": {
+          "baseline": 0.56,
+          "variant": 0.5466666666666666,
+          "drop": 0.01333333333333342
+        },
+        "addedP50Ms": 0.4580000000000002,
+        "reasons": []
+      }
+    },
+    {
+      "name": "ablate-hop-doc-cap",
+      "note": "hop ranking uncapped (the failing shape)",
+      "options": {
+        "maxHopDocs": 200
+      },
+      "notComputable": null,
+      "metrics": {
+        "arm": "ablate-hop-doc-cap",
+        "kind": "entity-hop",
+        "scope": "held-out",
+        "perTier": {
+          "easy": {
+            "n": 75,
             "recall5": 0.28,
             "recall10": 0.4266666666666667,
             "answerAt1": 0.05333333333333334,
-            "mrr": 0.14516402116402116,
+            "mrr": 0.14627513227513225,
             "evidenceCoverage": 0.4266666666666667,
             "hopRecall": [
               0.4266666666666667
             ],
-            "latencyP50Ms": 5.131,
-            "latencyP90Ms": 7.51
+            "latencyP50Ms": 4.662,
+            "latencyP90Ms": 6.121
           },
           "medium": {
             "n": 179,
             "recall5": 0.0111731843575419,
             "recall10": 0.12849162011173185,
             "answerAt1": 0.0111731843575419,
-            "mrr": 0.04674558836570009,
-            "evidenceCoverage": 0.39385474860335196,
+            "mrr": 0.04680766161213088,
+            "evidenceCoverage": 0.3994413407821229,
             "hopRecall": [
-              0.6033519553072626,
+              0.6145251396648045,
               0.18435754189944134
             ],
-            "latencyP50Ms": 5.128,
-            "latencyP90Ms": 6.374
+            "latencyP50Ms": 4.885,
+            "latencyP90Ms": 6.43
           },
           "hard": {
             "n": 138,
@@ -869,8 +996,8 @@
               0.4057971014492754,
               0.35507246376811596
             ],
-            "latencyP50Ms": 4.619,
-            "latencyP90Ms": 7.105
+            "latencyP50Ms": 4.482,
+            "latencyP90Ms": 6.645
           },
           "complex": {
             "n": 94,
@@ -878,13 +1005,13 @@
             "recall10": 0.3617021276595745,
             "answerAt1": 0,
             "mrr": 0.0704745018574806,
-            "evidenceCoverage": 0.4627659574468085,
+            "evidenceCoverage": 0.4734042553191489,
             "hopRecall": [
-              0.5531914893617021,
+              0.574468085106383,
               0.09523809523809523
             ],
-            "latencyP50Ms": 5.374,
-            "latencyP90Ms": 7.83
+            "latencyP50Ms": 5.098,
+            "latencyP90Ms": 8.01
           }
         },
         "overall": {
@@ -892,15 +1019,15 @@
           "recall5": 0.07407407407407407,
           "recall10": 0.2037037037037037,
           "answerAt1": 0.012345679012345678,
-          "mrr": 0.07427167025932457,
-          "evidenceCoverage": 0.40192043895747603,
+          "mrr": 0.07446600039192632,
+          "evidenceCoverage": 0.4060356652949246,
           "hopRecall": [
-            0.4835390946502058,
+            0.49176954732510286,
             0.25,
             0.35507246376811596
           ],
-          "latencyP50Ms": 5.041,
-          "latencyP90Ms": 7.162
+          "latencyP50Ms": 4.769,
+          "latencyP90Ms": 7.038
         }
       },
       "verdict": {
@@ -928,7 +1055,7 @@
             "id": "c4",
             "label": "plan item 4 — added p50 ≤ 50 ms",
             "status": "PASS",
-            "detail": "added p50 +0.4370 ms; allowed 50 ms"
+            "detail": "added p50 +0.4000 ms; allowed 50 ms"
           }
         ],
         "mediumHard": {
@@ -941,7 +1068,7 @@
           "variant": 0.4266666666666667,
           "drop": 0.13333333333333336
         },
-        "addedP50Ms": 0.4370000000000003,
+        "addedP50Ms": 0.40000000000000036,
         "reasons": []
       }
     }

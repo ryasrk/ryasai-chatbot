@@ -67,6 +67,15 @@ These results cannot be compared to the other engines yet:
 | 200 gibberish queries return no hit | 0/200 |
 | real vs random evidence id, first 300 questions | 160/300 vs 3/300 |
 
+## Definition note: MRR here is MRR@20
+
+The MRR column in `cognee-bm25-baseline.ts` is computed over a **20**-document window (the same
+window as its `recall@20` column), so a final-hop document at rank 11-20 still earns credit. The
+arm harness in `benchmark/arm-harness.ts` reports **MRR@10** instead, because every arm it grades
+is capped at the same 10-document budget. On the clean set the two differ slightly: 0.2767 over 20
+documents versus 0.2755 over 10. Verdicts use `recall@10`, which is identical under both windows;
+only MRR differs, and the window is stated wherever MRR appears.
+
 ## Limits
 
 - **Retrieval only.** A hit means the evidence documents were in the top 10, not that an answer was

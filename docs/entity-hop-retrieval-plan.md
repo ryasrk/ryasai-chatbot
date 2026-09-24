@@ -289,3 +289,108 @@ forward, and this needs an operator decision rather than an agent one:
 
 Until one of those happens, any Phase 2 pass is a pass on a **synthetic, ID-dense corpus only**.
 The plan's gate 3 stays open, and no shipping claim may skip it.
+
+### 2026-09-24 — Phase 2 complete: verdict DO NOT SHIP
+
+All three arms and the decision rule are now in place and every number below is reproducible with
+one command per table.
+
+**The gate, on held-out (chosen before any code was written):**
+
+| criterion | measured | verdict |
+|---|---|---|
+| medium+hard gain ≥ +0.10 vs production hybrid | +0.1230 | PASS |
+| easy drop ≤ 0.01 | 0.0133 | **FAIL** |
+| real-org golden set not worse | not runnable (see above) | NOT COMPUTABLE |
+| added p50 ≤ 50 ms | +0.31 ms | PASS |
+
+**One defect the plan did not anticipate, and it was the dominant one.** The walk returned 91–145
+hop documents per question (p50 102, never zero), and `RRF_K = 60` barely discriminates rank, so the
+whole tail collected credit and a hop document at hop-rank 1 outbid a direct leg at leg-rank 9. That
+cost the easy tier 0.1333 — a 13x breach of its allowance. Capping hop documents at 10 (`maxHopDocs`,
+tuned on DEV only, exactly as Phase 2 prescribes) cut the easy breach to 0.0133, i.e. **one question
+out of 75**, while raising the medium+hard gain to +0.1230. The dev split predicted a zero drop; the
+held-out split gave 0.0133. A 0.01 allowance is inside the noise of a 75-question tier, and the
+report records that rather than re-tuning on held-out.
+
+No cap improves every tier: raising it buys hard-tier recall (0.1667 at cap 80) and pays in easy
+(0.3867) and answer@1 (0.0058). That tradeoff is the honest summary of the mechanism here.
+
+**The larger finding is not about Entity-Hop.** On this corpus the shipped hybrid pipeline scores
+recall@10 0.1502 against plain keyword search's 0.3148, and BM25 answers the easy tier perfectly
+(1.0000) where the fused pipeline manages 0.5600. The cause is measured and is arithmetic, not
+corpus-specific: `RRF_K = 60` is nearly flat, so cross-leg agreement outweighs a strong single-leg
+rank. See `benchmark/results/retrieval-arms-decision.md` §2b.
+
+**Two more results worth keeping:**
+
+- **Tokenisation.** `src/lib/rag.ts` maps `W-01` to `["01"]` and `B-0001` to `["0001"]`, collapsing
+  `B-0001`/`INV-0001`/`PO-0001`/`AR-0001` onto one token. 975 of 1200 documents carry a bare-digit
+  token. The production tokenizer and the benchmark tokenizer disagree materially on the same split
+  (all-tier 0.3803 vs 0.4577), and neither dominates. Not changed; documented.
+- **Ablations that do nothing are reported as untested, not as validated.** Hub-cutoff and negation
+  are inert here because `MAX_DF = 60` is never reached and the negation cues never fire.
+
+### Phase 3 remains blocked, and it is now the only thing gating any shipping decision
+
+Phase 3 needs one org with 50+ documents. The local database has **one org with 9 documents**, so it
+cannot run. Two options, both needing an operator decision:
+
+1. Point the benchmark at a real deployment's database, or
+2. Ingest a customer-shaped document set — multi-page PDFs, tables, prose **without** identifiers —
+   into a scratch org and treat it as the Phase 3 corpus. Note `test-data/wikipedia/` already holds
+   12 real prose articles (37–94 KB each) that contain almost no identifiers, which is exactly the
+   corpus shape this benchmark is weakest on.
+
+Until then, every number in this plan is a measurement on a **synthetic, ID-dense corpus**, and no
+shipping claim may skip gate 3.
+
+### What is NOT being done, deliberately
+
+Phase 4 (ship behind a flag) is **not** started. Gate 1's easy criterion fails, gate 3 cannot be
+evaluated, and the `RRF_K` finding needs a decision on real data before any fusion change — that is
+a change to production behaviour and the plan's own §5 forbids it in this phase.
+
+### 2026-09-24 — Phase 3 executed on the real corpus available here (partially unblocked)
+
+Phase 3 was recorded as blocked because no org held 50+ documents. The *coverage* half of gate 3
+does not need that many, and it turned out to be the half that decides the mechanism's reach, so it
+was run on the app's own stored chunks via `benchmark/real-prose-arm.ts` (read-only, same grader,
+same 10-document budget).
+
+**Corpus:** 114 real chunks of Indonesian policy prose from the running database — the shape this
+product actually stores. **121 extractive questions** were built from its sentences.
+
+**Entity coverage — the number the plan requires be recorded either way:**
+
+| corpus | chunks/docs | with ≥1 entity | entities per doc | bridges (df ≥ 2) |
+|---|---|---|---|---|
+| **real prose** (app DB) | 114 | **8 (7.0%)** | 0.07 | 3 |
+| synthetic benchmark | 1200 | 1200 (100.0%) | 3.34 | 431 |
+
+That is the decisive Phase 3 result: **Entity-Hop can only hop where an entity exists, and in real
+prose that is 7% of chunks.** The synthetic benchmark is 100%. The mechanism's reach on this
+customer-shaped corpus is therefore about an order of magnitude narrower than the benchmark implies,
+and no amount of tuning changes that — extraction is the gate, not the ranking.
+
+**Single-hop retrieval on real prose (both arms find every answer, but not equally):**
+
+| arm | n | recall@5 | recall@10 | MRR | gold chunk ranked 1st |
+|---|---|---|---|---|---|
+| bm25-baseline | 121 | 1.0000 | 1.0000 | **0.9725** | **115/121** |
+| entity-hop | 121 | 1.0000 | 1.0000 | **0.8891** | **95/121** |
+| hybrid-rrf | — | NOT COMPUTABLE — no committed vector cache for this corpus | | | |
+
+Both arms returned the answer inside the top 10 for every question, so recall cannot separate them
+here and this corpus is too easy to discriminate on that metric. MRR does separate them, and
+Entity-Hop is **worse**: it costs 20 questions their rank-1 position (115 → 95). That is the same
+tail dilution measured on the synthetic corpus, now reproduced on real text with no ID patterns to
+blame — the hop ranking simply adds documents ahead of a chunk BM25 already ranked first.
+
+**What Phase 3 does NOT establish, stated plainly.** These 121 questions are single-hop and
+extractive, so they test only whether the right chunk is returned. Gate 3 asks whether the arm is
+worse than production on real data; on the metric available it is (MRR), and on recall it is tied.
+A multi-hop comparison on real prose was deliberately **not** fabricated: there is no ground-truth
+relation graph for these chunks, and inventing one is exactly the defect the earlier benchmark audit
+found. Gate 3 therefore remains **partially** satisfied — the coverage question is answered, the
+multi-hop question is not, and it still needs a real corpus with a real answer key.

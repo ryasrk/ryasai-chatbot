@@ -114,6 +114,7 @@ benchmark/results/*.json
 # Cited as the source of benchmark/results/entity-hop-decision.md, so it must be
 # readable from a clone — same rule as the other cited result files above.
 !benchmark/results/entity-hop-ablation.json
+!benchmark/results/real-prose-arm.json
 
 # Third-party tool scaffolding (impeccable critique system). Installed locally
 # per developer, not project source: nothing under src/ or the build references
