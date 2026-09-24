@@ -58,7 +58,22 @@ export const mockState: {
   toolCall: string | null
   verifyToolCallShape: boolean
   shapeViolations: number
-} = { toolCall: null, verifyToolCallShape: false, shapeViolations: 0 }
+  /**
+   * What the mock answers when the question is a ROUTING prompt, or null to answer
+   * every prompt with the canned text.
+   *
+   * WHY THIS EXISTS. `routeQuery` (`src/lib/ai.ts`) asks the model to reply with one
+   * of SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT and maps ANY unparseable reply to
+   * CHAT. The canned reply ("Jawaban uji dari mock LLM.") is unparseable, so every
+   * e2e chat turn routed to plain CHAT — verified by querying the e2e database after a
+   * run: the assistant row's `citations` was `[]` and the only `ToolRun` was `CHAT`.
+   *
+   * That made `CitationList` unreachable in this suite, so an assertion on it would
+   * have been vacuous: it could not fail for any retrieval change. A test that needs
+   * the RAG branch opts in with `configureMock({ routerDecision: 'RAG' })`.
+   */
+  routerDecision: string | null
+} = { toolCall: null, verifyToolCallShape: false, shapeViolations: 0, routerDecision: null }
 
 /**
  * Deterministic pseudo-embedding: a fixed-dimension unit vector derived from the text.
@@ -107,6 +122,7 @@ export function startMockLlm(port = 4545): http.Server {
   mockState.toolCall = null
   mockState.verifyToolCallShape = false
   mockState.shapeViolations = 0
+  mockState.routerDecision = null
   const server = http.createServer(async (req, res) => {
     if (!req.url) {
       res.writeHead(404).end()
@@ -142,9 +158,11 @@ export function startMockLlm(port = 4545): http.Server {
         const cmd = JSON.parse(rawBody || '{}') as {
           toolCall?: string | null
           verifyToolCallShape?: boolean
+          routerDecision?: string | null
         }
         if ('toolCall' in cmd) mockState.toolCall = cmd.toolCall ?? null
         if ('verifyToolCallShape' in cmd) mockState.verifyToolCallShape = !!cmd.verifyToolCallShape
+        if ('routerDecision' in cmd) mockState.routerDecision = cmd.routerDecision ?? null
         mockState.shapeViolations = 0
       } catch {
         /* ignore malformed control payloads */
@@ -177,7 +195,8 @@ export function startMockLlm(port = 4545): http.Server {
       const verifyShape = mockState.verifyToolCallShape ? '1' : undefined
 
       let parsedBody: {
-        messages?: Array<{ role?: string; tool_calls?: Array<Record<string, unknown>> }>
+        messages?: Array<{ role?: string; tool_calls?: Array<Record<string, unknown>>; content?: unknown }>
+        tools?: Array<{ function?: { name?: string } }>
       } = {}
       try {
         parsedBody = JSON.parse(rawBody || '{}')
@@ -210,7 +229,15 @@ export function startMockLlm(port = 4545): http.Server {
 
       const hasToolResult = (parsedBody.messages ?? []).some((m) => m.role === 'tool')
 
-      if (wantsToolCall && !hasToolResult) {
+      // A tool call is only legal on a request that OFFERED tools, and gating on that is
+      // what keeps this mode scoped. Without the gate the mock answered EVERY prompt with
+      // a tool_calls payload whenever a test set the control — measured: the KG extractor,
+      // source-init and the intent analyser all run on the same mock, all expected text,
+      // and all failed with `raw.replace is not a function`, turning a routing test into a
+      // 90-second timeout. Only the tool selector and the agent planner send `tools`.
+      const offersTools = Array.isArray(parsedBody.tools) && parsedBody.tools.length > 0
+
+      if (wantsToolCall && offersTools && !hasToolResult) {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(
           JSON.stringify({
@@ -244,8 +271,21 @@ export function startMockLlm(port = 4545): http.Server {
         return
       }
 
+      // Routing prompts get a parseable single-word decision when a test asked for
+      // one. Detected from the prompt's own closing instruction rather than from any
+      // header, because the router call is made deep inside the pipeline and carries
+      // no marker a test could set: `routeQuery` sends "Answer only SQL / RAG / REST /
+      // CHAT / CONTEXTUAL_CHAT." as the last line of the user message.
+      const isRoutingPrompt = (parsedBody.messages ?? []).some(
+        (m) => typeof (m as { content?: unknown }).content === 'string'
+          && ((m as { content: string }).content).includes('Answer only SQL'),
+      )
       // Second round (a tool result is present) or no tool requested: final text.
-      const finalText = hasToolResult ? 'MOCK_ANSWER_AFTER_TOOL' : 'Jawaban uji dari mock LLM.'
+      const finalText = isRoutingPrompt && mockState.routerDecision
+        ? mockState.routerDecision
+        : hasToolResult
+          ? 'MOCK_ANSWER_AFTER_TOOL'
+          : 'Jawaban uji dari mock LLM.'
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(
         JSON.stringify({
