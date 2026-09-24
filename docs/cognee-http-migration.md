@@ -229,3 +229,78 @@ therefore semantic/structural, not JSON keyword overlap.
   thousands of chunks and far more collisions;
 - **not** a faithfulness measure — no LLM-judged scoring was applied.
 
+
+---
+
+## The v1.6.0 move (2026-09-24) — what it took, measured
+
+The bindings were removed and the server pinned at v1.6.0. Every number below was measured
+on this machine against a real sidecar and a real store, not read from a changelog.
+
+### Getting the sidecar to accept our embedding endpoint took three corrections
+
+1. **The model id must be `openai/<name>`.** With a bare
+   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, EVERY write failed after
+   exactly 30s with "Embedding connection test timed out". The embedding endpoint was up the
+   whole time and answered a direct request from inside the container in **0.47s at 384
+   dimensions** — and the server's own access log showed cognee never called it even once.
+   litellm reads the provider from the model string, so a bare `sentence-transformers/...`
+   was parsed as a provider named `sentence-transformers`. Same shape as `anthropic/claude-…`.
+2. **The container must be able to reach the endpoint.** Our local embedding server bound
+   `127.0.0.1:4503`, which a container cannot see; it needs `0.0.0.0` and
+   `host.docker.internal:host-gateway`. Symptom was the same 30s timeout, which is why (1)
+   had to be ruled out by checking the server's access log rather than trusting the message.
+3. **Tokenizer.** cognee warns it cannot map that model to a TikToken encoding and falls back
+   to approximate counts. `HUGGINGFACE_TOKENIZER` did not change it, and the warning is
+   non-fatal (it affects chunk sizing, not correctness), so it is left as a known warning
+   rather than hacked around.
+
+### The real latency defect was a feature we do not use
+
+Before configuration: **write 22–30s, search 24–95s** (two consecutive searches, 81s each).
+The server log said retrieval was never the cost — `Found 3 chunks from vector search` took
+**49ms** — and the timeout was `SessionTurnAnalysis` calling the LLM, failing schema
+validation and retrying:
+
+```
+litellm_native validation retry 1/3: 1 validation error for SessionTurnAnalysis
+```
+
+six times in one log. With `AUTO_FEEDBACK=false`, `IMPROVE_AUTO_ENABLED=false` and
+`USAGE_LOGGING=false`: **write 9s, search 0.21s**, same facts recalled. These are set in
+`docker-compose.yml`, `install.sh` and `.env.example`. Someone re-enabling them should expect
+to re-measure, not to get the old numbers back.
+
+Warm recall through the whole app layer, on a seeded database: **0.35–0.43s**.
+
+### End-to-end, through app code rather than curl
+
+`cogneeHealth()` → `connected=true mode=server version=1.6.0-local`; two turns written in two
+sessions, both recalled from a third; both sentinel tokens FOUND. Cross-session memory works,
+which it did not before this change — the previous state returned `len=0` on every attempt
+while the write resolved successfully.
+
+### Two defects this surfaced, both fixed
+
+- **The chat-turn write blocked the answer.** `tool-router.ts` `await`ed `rememberChatTurn`
+  before returning, so `/api/v1/chat/completions` hung past a 90s timeout on a 5.6–9.7s write
+  (85s on a brand-new dataset). Now `void`, matching `send/route.ts`. Same spec: 13.1s → 13.4s.
+- **`recallContext` had no deadline**, and four call sites await it mid-turn — `tool-router.ts`
+  inside a `Promise.all`, so it gated the entire turn. `.catch(() => '')` handles rejection,
+  not a call that never settles, and the transport timeout is 240s. Now bounded inside
+  `recallContext` so no caller can forget.
+
+### Open, and NOT fixed
+
+- **Memory reaches tool selection.** `tool-router.ts` passes `memoryContext` into
+  `selectToolWithLlm`, so what was remembered in an earlier session can change which tool the
+  router picks. Observed in E2E as `e2e/03-knowledge-chat` failing to render citations once a
+  server was configured (the RAG branch was not taken), while the same spec passes with memory
+  off. The planner call deliberately passes `memoryContext: undefined`, which suggests the
+  routing case was not considered. **This needs a product decision, not a patch**: either
+  memory should not influence routing at all, or it should and the behaviour needs to be
+  intended and tested. Not changed here because guessing would silently alter routing for
+  every install.
+- `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
+  `646bbc9` with memory off. Its `signIn()` helper times out waiting for either `#email` or the
+  Dashboard heading.
