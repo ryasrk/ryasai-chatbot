@@ -1026,3 +1026,86 @@ paraphrase cases where it does work.
 **Still not measured:** concurrent load (all numbers are sequential single-caller), and any
 corpus larger than 55 chunks, where ranking — and therefore the reranker — should matter more
 than it does here.
+
+
+### 2026-09-24: cross-session memory writes consistently FAIL, and recall is always empty
+
+Asked to check whether cross-session memory runs stably. It does not run at all, and the
+failure is silent — `rememberChatTurn` resolves without throwing, logs a warning, and the very
+next recall returns `''`. Measured end-to-end with a unique sentinel token
+(`ZQ7MEMORYTOKEN`), writing in one session id and reading in another:
+
+| step | result |
+|---|---|
+| `isCogneeEnabled()` | true |
+| backend | `inprocess` (no `COGNEE_SERVER_URL`, no cognee server running) |
+| `rememberChatTurn` | "ok" after **83.5 s**, then **95.9 s** on the second one |
+| `recallContext` (>3 attempts, fresh session ids) | 112-129 ms, `len=0`, sentinel **never found** |
+
+**Root cause, from the native pipeline log:**
+
+```
+Cognify error: Pipeline execution failed: task 3 failed after 1 attempt(s):
+LLM error: Deserialization error: Failed to deserialize JSON content:
+expected value at line 1 column 1. Raw: This chunk is about:
+```
+
+cognee's graph-extraction task requires the LLM to return JSON; the configured model returned
+prose. The pipeline ends `DATASET_PROCESSING_ERRORED` and, because 0 nodes and 0 edges exist,
+nothing is retrievable.
+
+**It is not the write that fails and not the model that is incapable.** Verified in the
+database, the data IS persisted:
+
+| store | contents |
+|---|---|
+| `cognee.db` `datasets` | 1 row, `org:cmsst1wd20000h8h2k8bp70s4` |
+| `cognee.db` `data` / `dataset_data` | 2 rows each |
+| `cognee.db` `nodes` / `edges` | **0 / 0** |
+| `pipeline_runs` | 12 rows, latest `DATASET_PROCESSING_ERRORED` |
+| `.cognee/data/.../text_f3cb948e...txt` | the sentinel token, verbatim |
+
+So the raw turn was stored and the GraphRAG index was never built. `recallContext` then has
+nothing indexed to search.
+
+**And the model CAN produce the JSON.** Tested the same extraction prompt against several
+models on this endpoint:
+
+| model | JSON array from a bare "return JSON" prompt |
+|---|---|
+| `cbcn/deepseek-v4.1-flash` | **valid, 1.58 s** (with an explicit "no prose, no fences" instruction) |
+| `cbcn/minimax-m3` | valid, 3.35 s |
+| `cx/gpt-5.6-terra` | valid, 2.54 s |
+
+Earlier in the same investigation the same model answered the same extraction prompt with an
+EMPTY string, and the failing pipeline shows truncated prose ("This chunk is about:"). So the
+behaviour is prompt- and path-dependent rather than a fixed model limitation — which means the
+fix is likely on cognee's call side (its own prompt/parse), not in our config. That is the
+next thing to determine, and it needs the Rust binding's prompt, which is not readable here.
+
+**Second, independent symptom: the local store is repeatedly quarantined as corrupt.**
+Four `.corrupt-<timestamp>` directories exist for this org, all dated the same day
+(13:06, 13:31, 13:36, 13:38), created by `quarantineStore` when graph-database initialisation
+fails. Each quarantine builds a FRESH empty store — so even a successful write would be lost
+when the next initialisation fails. Quarantine-not-delete is the right call for tenant data,
+but combined with a failing cognify it means memory never accumulates.
+
+**Cost:** every chat turn pays 83-96 s in a fire-and-forget write that cannot succeed. If this
+is firing in the background on real traffic, it is pure waste plus repeated quarantine churn.
+
+**Status: NOT fixed, and NOT safe to describe as "memory works".** The scenarios it must be
+ready for, none of which it currently passes:
+
+1. write in session A, recall in session B — **fails** (nothing indexed)
+2. memory survives a process restart — **untested**, and cannot be trusted while the store is
+   being quarantined on init
+3. memory after a failed cognify — **fails**, and the failure is invisible to the caller
+4. multiple orgs isolated — dataset naming (`org:<id>`) looks right and the store is per-org,
+   but with nothing indexed this is unverified rather than verified
+5. no leak across sessions to unrelated users — same position as (4)
+
+The honest summary: cross-session memory is currently a no-op that costs 80+ seconds per turn
+and silently discards everything written. It should either be turned off
+(`COGNEE_ENABLED=false`, or the per-org Settings toggle) until the extraction path is fixed, or
+fixed — and the decision needs someone who can see why cognee's own prompt produces unparseable
+output here.
