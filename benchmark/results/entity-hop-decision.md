@@ -74,10 +74,10 @@ The thresholds are named constants in `benchmark/entity-hop-verdict.ts`, taken f
 
 | criterion | status | measured |
 |---|---|---|
-| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **FAIL** | gain +0.0410 (variant 0.0410 vs baseline 0.0000); need 0.1 |
-| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1733 (variant 0.3867 vs baseline 0.5600); allowed 0.01 |
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **FAIL** | gain +0.0347 (variant 0.0347 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **PASS** | drop -0.0133 (variant 0.5733 vs baseline 0.5600); allowed 0.01 |
 | plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
-| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +1.3270 ms; allowed 50 ms |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.2730 ms; allowed 50 ms |
 
 **Verdict: DO NOT SHIP**
 
@@ -85,10 +85,10 @@ The thresholds are named constants in `benchmark/entity-hop-verdict.ts`, taken f
 
 | criterion | status | measured |
 |---|---|---|
-| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1 |
-| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01 |
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01 |
 | plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
-| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +1.5150 ms; allowed 50 ms |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.2860 ms; allowed 50 ms |
 
 **Verdict: DO NOT SHIP**
 
@@ -96,10 +96,10 @@ The thresholds are named constants in `benchmark/entity-hop-verdict.ts`, taken f
 
 | criterion | status | measured |
 |---|---|---|
-| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1 |
-| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01 |
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01 |
 | plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
-| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +1.4820 ms; allowed 50 ms |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.2760 ms; allowed 50 ms |
 
 **Verdict: DO NOT SHIP**
 
@@ -107,10 +107,10 @@ The thresholds are named constants in `benchmark/entity-hop-verdict.ts`, taken f
 
 | criterion | status | measured |
 |---|---|---|
-| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **FAIL** | gain +0.0726 (variant 0.0726 vs baseline 0.0000); need 0.1 |
-| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1467 (variant 0.4133 vs baseline 0.5600); allowed 0.01 |
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01 |
 | plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
-| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +1.6240 ms; allowed 50 ms |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.1610 ms; allowed 50 ms |
 
 **Verdict: DO NOT SHIP**
 
@@ -118,78 +118,48 @@ The thresholds are named constants in `benchmark/entity-hop-verdict.ts`, taken f
 
 | criterion | status | measured |
 |---|---|---|
-| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1 |
-| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01 |
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1230 (variant 0.1230 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.0133 (variant 0.5467 vs baseline 0.5600); allowed 0.01 |
 | plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
-| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +1.8540 ms; allowed 50 ms |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.4580 ms; allowed 50 ms |
 
 **Verdict: DO NOT SHIP**
 
-Criterion 3 is plan item 3 and is **NOT COMPUTABLE** for every variant: it needs a real org's
-golden set, which is Phase 3. It is never the reason for a refusal, and it is never a pass.
+### ablate-hop-doc-cap — hop ranking uncapped (the failing shape) — control for the cap
+
+| criterion | status | measured |
+|---|---|---|
+| plan item 1 — medium+hard recall@10 gain ≥ 0.1 vs baseline | **PASS** | gain +0.1041 (variant 0.1041 vs baseline 0.0000); need 0.1 |
+| plan item 2 — easy recall@10 drop ≤ 0.01 | **FAIL** | drop +0.1333 (variant 0.4267 vs baseline 0.5600); allowed 0.01 |
+| plan item 3 — real-org golden set not worse than P2 | **NOT COMPUTABLE** | Phase 3 has not run; not evaluable from this benchmark |
+| plan item 4 — added p50 ≤ 50 ms | **PASS** | added p50 +0.4000 ms; allowed 50 ms |
+
+**Verdict: DO NOT SHIP**
 
 ## Which components moved which number
 
-Stated only where the numbers differ.
+Generated from the same run as the tables above, so these deltas cannot drift from the per-variant
+verdicts. "Identical" means every metric cell, not approximately equal.
 
-- **Rarity weight is load-bearing.** Removing it takes medium from 0.1285 to 0.0503, hard from
-  0.0725 to 0.0290, and all-tier recall@10 from 0.2037 to 0.1523. It is the one ablation with a
-  large effect, and the effect favours the arm.
-- **The second hop is what reaches the hard tier.** `hops-1` leaves medium untouched at 0.1285 but
-  takes hard to 0.0000 (from 0.0725), and all-tier from 0.2037 to 0.1811.
-- **`hops-3` adds nothing over `hops-2`.** Every recall and answer@1 cell is identical to the full
-  arm, so the third hop contributes no evidence on this corpus.
-- **The hub-cutoff and negation ablations are identical to the full arm on every metric.** In this
-  corpus the default `MAX_DF = 60` is not reached and the negation cues do not fire, so neither
-  component is exercised at all. By this measurement they are *untested*, not *proven superfluous*;
-  the plan's "does not move recall → remove it" rule cannot be applied to them from this data.
-- **The hop-document cap is the largest single lever, and it is now the default.** `maxHopDocs`
-  bounds how many hop documents enter the fusion. `ablate-hop-doc-cap` sets it to 200, which is
-  effectively uncapped and reproduces the earlier failing shape: easy 0.4267, medium 0.1285,
-  hard 0.0725, all 0.2037, answer@1 0.0123. The shipped default of 10 gives easy 0.5467, medium
-  0.2179, hard 0.0000, all 0.2366, answer@1 0.0288.
-
-## Why the cap exists, and the dev/held-out gap
-
-This is the one tuning step the plan provides for, and its outcome is worth recording precisely.
-
-**The mechanism, measured.** Without a cap the walk contributed 91-145 documents per question
-(min 91, p50 102, p90 126, max 145, and *never* zero across 486 questions). RRF at `k = 60`
-discriminates rank only weakly: one hop document at hop-rank 1 scores `1/61 = 0.01639`, while a
-direct leg's rank 9 scores `1/(60+9) = 0.01449`. So a document reached through a hop outbid a direct
-hit, and because every one of the ~102 hop documents still contributed a small
-positive amount, the whole tail collected credit against the direct legs' head. The easy tier lost
-its top-10 slots to that tail. This is tail dilution from an uncapped ranking, not a bug in the walk.
-
-**The cap was chosen on DEV only**, as the plan's Phase 2 requires, and the held-out split was
-graded once afterwards:
-
-| maxHopDocs (DEV) | easy | medium | hard | all | answer@1 | med+hard gain vs P2 |
-|---|---|---|---|---|---|---|
-| 3 | 0.4667 | 0.0877 | 0.0185 | 0.2237 | 0.0525 | +0.0511 |
-| 5 | 0.4667 | 0.0936 | 0.0185 | 0.2062 | 0.0214 | +0.0541 |
-| 8 | 0.4667 | 0.1404 | 0.0185 | 0.2101 | 0.0195 | +0.0781 |
-| **10 (chosen)** | **0.4667** | **0.1754** | **0.0185** | **0.2140** | 0.0156 | **+0.0961** |
-| 12 | 0.4667 | 0.1696 | 0.0185 | 0.2062 | 0.0156 | +0.0931 |
-| 15 | 0.4533 | 0.1637 | 0.0185 | 0.1984 | 0.0175 | +0.0901 |
-| 20 | 0.4533 | 0.1637 | 0.0185 | 0.1984 | 0.0175 | +0.0901 |
-| 40 | 0.4133 | 0.1287 | 0.0617 | 0.1926 | 0.0078 | +0.0931 |
-| 80 | 0.3867 | 0.0819 | 0.1667 | 0.2023 | 0.0058 | +0.1201 |
-| 200 (uncapped) | 0.3733 | 0.0819 | 0.1420 | 0.1926 | 0.0058 | +0.1081 |
-
-`maxHopDocs = 10` was chosen because it is the largest cap whose DEV easy score is **identical to
-P2's** (0.4667, a zero drop) while still gaining +0.0961 on medium+hard — the only row that
-satisfies the easy criterion on dev at all.
-
-**On held-out the same value gives a 0.0133 easy drop**, so dev predicted a zero drop and held-out
-gave a non-zero one. That gap is the finding: a threshold this tight is not safely tunable on 514
-dev questions, and a 0.01 allowance is inside the noise of a 75-question tier. This is recorded
-rather than resolved by re-tuning on held-out, which the plan forbids.
-
-**Uncapped was not better, and the trade is real.** Raising the cap buys hard-tier recall
-(0.1667 at cap 80 versus 0.0000 at cap 10) and pays for it with easy (0.3867 versus 0.5467) and
-answer@1 (0.0058 versus 0.0288). There is no cap that improves every tier, which is the honest
-summary of this mechanism on this corpus.
+- **The hop-document cap is the largest lever.** `ablate-hop-doc-cap` (uncapped) gives easy
+  0.4267, medium 0.1285, hard 0.0725, all
+  0.2037; the shipped cap of 10 gives easy 0.5467, medium 0.2179,
+  hard 0.0000, all 0.2366. Capping buys easy and answer@1 and gives up hard-tier recall.
+- **Rarity weight is load-bearing on medium.** Removing it takes medium from 0.2179 to 0.0615
+  and all-tier from 0.2366 to 0.1749 — but it leaves easy *higher* (0.5733 vs
+  0.5467) and answer@1 higher (0.0514 vs 0.0288). It is not a strict win in either
+  direction, which is why the plan's "remove what does not help" rule is not applied mechanically here.
+- **The second hop is what reaches the hard tier, and only via the uncapped shape.** With the cap
+  on, `hops-1` and `hops-2` are identical on every metric (medium 0.2179, hard 0.0000); the hard-tier gain
+  (0.0725 vs 0.0000) only appears when the ranking is uncapped.
+- **`hops-3` adds nothing over `hops-2`.** Every recall and answer@1 cell is identical
+  (medium 0.2179, hard 0.0000, all 0.2366), so the third hop contributes no evidence on this corpus.
+- **The hub-cutoff and negation ablations are identical to the full arm on every metric**
+  (medium 0.2179, hard 0.0000, all 0.2366; negation 0.2366 all). In this corpus the default
+  `MAX_DF = 60` is not reached (measured maximum entity df is 58) and the negation cues never fire,
+  so neither component is exercised at all. By this measurement they are *untested*, not *proven
+  superfluous*; the plan's "does not move recall → remove it" rule cannot be applied to them here,
+  and removing them would delete code that no measurement has tested.
 
 ## What this does not establish
 
