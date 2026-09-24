@@ -47,6 +47,19 @@ const LATENCY_BUCKETS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
 export const RAG_LATENCY_METRIC = 'rag_retrieval_latency_ms'
 export const RAG_CANDIDATES_METRIC = 'rag_retrieval_candidates'
 export const RAG_RESULTS_METRIC = 'rag_retrieval_results'
+/**
+ * Whether the vector leg contributed anything, and whether it was attempted at all.
+ *
+ * `not_attempted` means no query embedding was resolved — the embedder is unreachable,
+ * misconfigured, or its host is SSRF-blocked. `empty` means the leg ran and found nothing,
+ * which is legitimate on a small or purely lexical query. Different faults, different fixes.
+ *
+ * NEITHER is visible in latency, candidate count or result count, and that is the point:
+ * a deployment whose vector leg had been dead for weeks reported normal-looking numbers
+ * throughout, because a lexical-only answer is still a good answer. A sustained zero on
+ * `not_attempted`, or on `empty` for a corpus that has embeddings, is the alarm.
+ */
+export const RAG_VECTOR_LEG_METRIC = 'rag_vector_leg_total'
 export const RAG_CACHE_HIT_METRIC = 'rag_cache_hit_total'
 export const RAG_CACHE_MISS_METRIC = 'rag_cache_miss_total'
 
@@ -63,6 +76,8 @@ export function recordRetrievalTiming(args: {
   rankingVersion: string
   candidatesScanned: number
   returned: number
+  vectorHits: number
+  vectorAttempted: boolean
 }): void {
   const labels = { ranking: args.rankingVersion }
   // Optional calls (`?.`) because a mocked `metrics` may omit any of these.
@@ -80,6 +95,10 @@ export function recordRetrievalTiming(args: {
   metrics.observe?.(RAG_CANDIDATES_METRIC, args.candidatesScanned, labels)
   metrics.histogram?.(RAG_RESULTS_METRIC, 'Chunks returned per RAG retrieval', [0, 1, 2, 4, 8, 12, 20, 50])
   metrics.observe?.(RAG_RESULTS_METRIC, args.returned, labels)
+  // A separate series per outcome, so either failure is alarmable without parsing logs.
+  metrics.counter?.(RAG_VECTOR_LEG_METRIC, 'RAG retrievals by vector-leg outcome')
+  const outcome = !args.vectorAttempted ? 'not_attempted' : args.vectorHits === 0 ? 'empty' : 'used'
+  metrics.inc?.(RAG_VECTOR_LEG_METRIC, { ...labels, outcome })
 }
 
 /** One cache read. A miss is counted too — the ratio is the useful signal. */

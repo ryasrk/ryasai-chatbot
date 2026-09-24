@@ -166,6 +166,8 @@ export async function retrieveRelevantChunks(args: {
     ms: Date.now() - retrievalStartedAt,
     candidatesScanned: retrievalResult.candidatesScanned,
     returned: finalChunks.length,
+    vectorHits: retrievalResult.vectorHits,
+    vectorAttempted: retrievalResult.vectorAttempted,
   })
   log.debug('RAG cache miss', { query: args.query.slice(0, 50), topK: args.topK, candidatesScanned: retrievalResult.candidatesScanned })
   if (cacheKey) await cacheSet(cacheKey, result, Math.floor(RAG_CACHE_TTL_MS / 1000))
@@ -269,7 +271,19 @@ async function retrieveAndFuse(args: {
   queryTokens: string[]
   topK: number
   kgRanking?: string[]
-}): Promise<{ chunks: RetrievedChunk[]; candidatesScanned: number }> {
+}): Promise<{
+  chunks: RetrievedChunk[]
+  candidatesScanned: number
+  /**
+   * How many chunks the VECTOR leg actually contributed, and whether a vector was
+   * even attempted. Reported because a dead vector leg is this subsystem's signature
+   * failure: the dimension mismatch, the SSRF-blocked embedder and the unset
+   * RAG-column each produced a healthy-looking answer with the leg silently empty.
+   * Result quality cannot distinguish "no semantic match" from "no semantic leg".
+   */
+  vectorHits: number
+  vectorAttempted: boolean
+}> {
   const { queryTokens, topK } = args
   const poolSize = Math.max(topK * 8, 24)
 
@@ -296,7 +310,9 @@ async function retrieveAndFuse(args: {
     // Neither retriever produced anything (no embeddings yet, empty FTS index).
     candidates = await loadAllCandidateChunks()
   }
-  if (candidates.length === 0) return { chunks: [], candidatesScanned: 0 }
+  if (candidates.length === 0) {
+    return { chunks: [], candidatesScanned: 0, vectorHits: vectorRanking.length, vectorAttempted: Boolean(queryEmbedding) }
+  }
 
   const byId = new Map(candidates.map((chunk) => [chunk.chunkId, chunk]))
 
@@ -352,7 +368,12 @@ async function retrieveAndFuse(args: {
     })
   }
 
-  return { chunks: selectTopRetrievedChunks(scored, topK), candidatesScanned: candidates.length }
+  return {
+    chunks: selectTopRetrievedChunks(scored, topK),
+    candidatesScanned: candidates.length,
+    vectorHits: vectorRanking.length,
+    vectorAttempted: Boolean(queryEmbedding),
+  }
 }
 
 async function recallGraphContext(query: string): Promise<string> {
@@ -418,7 +439,13 @@ async function resolveVectorScores(args: { vector: number[] | null; topK: number
       })
     }
   } catch (e) {
-    log.debug('pgvector search unavailable, trying external vector store', { error: e instanceof Error ? e.message : String(e) })
+    // WARN, not debug. At the default LOG_LEVEL=info a `debug` here is invisible, and
+    // this is the one path where retrieval silently loses half its inputs: the leg comes
+    // back empty, fusion proceeds with BM25 alone, and every downstream signal (answers,
+    // citations, similarity scores) still looks healthy. MEASURED cost of this being
+    // invisible: a dimension mismatch and an SSRF-blocked embedder each took hours to
+    // find, and both presented as "retrieval works, it just isn't very good".
+    log.warn('pgvector search unavailable, trying external vector store', { error: e instanceof Error ? e.message : String(e) })
   }
 
   try {

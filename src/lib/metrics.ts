@@ -227,6 +227,12 @@ export function initMetrics(): void {
   histogram('rag_retrieval_results', 'Chunks returned per RAG retrieval', [0, 1, 2, 4, 8, 12, 20, 50])
   counter('rag_cache_hit_total', 'RAG retrievals served from cache')
   counter('rag_cache_miss_total', 'RAG retrievals that ran the retrievers')
+  // Vector-leg outcome. `not_attempted` (no query embedding resolved: embedder
+  // unreachable, misconfigured, or SSRF-blocked) and `empty` (ran, found nothing) are
+  // different faults with different fixes, and neither is inferable from latency or
+  // result counts — a lexical-only answer is still a good answer, which is why this
+  // leg was dead in production for weeks while every other series looked normal.
+  counter('rag_vector_leg_total', 'RAG retrievals by vector-leg outcome')
   counter('sql_queries_total', 'Total SQL queries executed')
   counter('guardrail_blocks_total', 'Total SQL guardrail blocks')
 }
