@@ -111,7 +111,52 @@ export function clearSessionCache(sessionId?: string): void {
 // Recall (graph + session)
 // ---------------------------------------------------------------------------
 
+/**
+ * Upper bound on a recall, applied HERE so every caller inherits it.
+ *
+ * WHY AT THIS LAYER. Four call sites await recall on a path where the user is waiting:
+ * `tool-router.ts` (inside a `Promise.all` — so it holds up the whole turn), `planner.ts`
+ * twice, and `agent-orchestrator.ts`. Each had `.catch(() => '')`, which handles a
+ * REJECTION and does nothing about a call that does not settle. The inner `withDeadline`
+ * calls only wrap the legacy SDK path; the HTTP path through `cogneeRecall` had no bound
+ * at all, and the layer's own COGNEE_CALL_TIMEOUT_MS is 240_000ms.
+ *
+ * MEASURED against the cognee v1.6.0 sidecar: an unbounded search on a cold dataset took
+ * 24-95s — two consecutive searches, 81s each — and E2E saw it as 15s timeouts with no
+ * citation rendered, on chat turns that should not have involved memory at all.
+ *
+ * Bounding once here rather than four times at the call sites also means a NEW caller
+ * cannot forget: there is no unwrapped version to reach for.
+ *
+ * `COGNEE_RECALL_TIMEOUT_MS` overrides it. The default is far below the 240s transport
+ * timeout on purpose: memory is an enhancement, so a slow recall should cost a few lines
+ * of context, never the answer.
+ */
+const RECALL_DEADLINE_MS = Number(process.env.COGNEE_RECALL_TIMEOUT_MS ?? 8000)
+
 export async function recallContext(args: {
+  query: string
+  sessionId?: string
+}): Promise<string> {
+  return boundedRecall(recallContextUnbounded(args))
+}
+
+async function boundedRecall(run: Promise<string>): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expiry = new Promise<string>((resolve) => {
+    timer = setTimeout(() => {
+      // warn, not debug: if this fires the deployment is losing memory silently, and the
+      // measured 24-95s searches above are what it looks like.
+      console.warn(
+        `[cognee] recall exceeded ${RECALL_DEADLINE_MS}ms — answering without memory`,
+      )
+      resolve('')
+    }, RECALL_DEADLINE_MS)
+  })
+  return Promise.race([run, expiry]).finally(() => clearTimeout(timer))
+}
+
+async function recallContextUnbounded(args: {
   query: string
   sessionId?: string
 }): Promise<string> {

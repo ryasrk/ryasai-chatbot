@@ -84,11 +84,22 @@ export async function runAgentOrchestrator(
   })
   const llmToolDefs: LlmToolDef[] = tools.map(toLlmToolDef)
 
-  // 2. Fetch memory context
-  const memoryContext = await recallContext({
-    query: options.question,
-    sessionId: options.sessionId,
-  }).catch(() => '')
+  // 2. Fetch memory context, BOUNDED — memory must never decide how long an answer takes.
+  //
+  // `.catch(() => '')` alone bounds nothing: it handles a REJECTION, and the failure that
+  // actually happens is a call that does not settle. MEASURED against the cognee v1.6.0
+  // sidecar: an unbounded search on a cold dataset took 24-95s (two consecutive searches,
+  // 81s each), while this layer's own COGNEE_CALL_TIMEOUT_MS is 240_000ms. So a chat turn
+  // could sit for four minutes inside a step whose whole contribution is a few lines of
+  // recalled context — which is how E2E saw a 15s timeout with no citation rendered.
+  //
+  // 2s is generous for a warm store (measured 0.21-0.35s) and short enough that a cold or
+  // broken one is a non-event: an answer without memory is still a correct answer.
+  // Override with ORCHESTRATOR_MEMORY_TIMEOUT_MS to wait longer deliberately.
+  const memoryContext = await bounded(
+    recallContext({ query: options.question, sessionId: options.sessionId }).catch(() => ''),
+    Number(process.env.ORCHESTRATOR_MEMORY_TIMEOUT_MS ?? 2000),
+  )
 
   // 3. Build base system prompt
   const systemPrompt = [
@@ -373,4 +384,27 @@ export async function* streamAgentOrchestrator(
   }
 
   return finalResult!
+}
+
+
+/**
+ * Resolve with `promise`, or with `''` if it has not settled within `ms`.
+ *
+ * For the memory step specifically: a deadline here is not an error path, it is the normal
+ * behaviour of an enhancement that must never hold up the answer. Resolving (rather than
+ * rejecting) keeps the call site free of a try/catch whose purpose would be to say "carry
+ * on without memory".
+ *
+ * The timer is always cleared, so a fast call cannot leave a stray timeout holding the
+ * process open or firing into a settled promise.
+ */
+async function bounded(promise: Promise<string>, ms: number): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expiry = new Promise<string>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[orchestrator] memory recall exceeded ${ms}ms — answering without it`)
+      resolve('')
+    }, ms)
+  })
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer))
 }

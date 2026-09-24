@@ -13,9 +13,11 @@ mock.module('@/lib/llm-config', () => ({
   }),
 }))
 
-// Mock cognee recall
+// Mock cognee recall. The indirection exists so a test can make it HANG: the failure that
+// matters here is a call that never settles, which `.catch()` cannot handle.
+let recallImpl: () => Promise<string> = async () => ''
 mock.module('@/lib/cognee', () => ({
-  recallContext: async () => '',
+  recallContext: () => recallImpl(),
 }))
 
 // Mock web search
@@ -47,6 +49,31 @@ describe('agent-orchestrator — Dynamic ReAct loop', () => {
     llmResponses = []
     capturedMessages = []
     toolCircuitBreaker.reset()
+  })
+
+  test('a HANGING memory recall does not delay the answer — the deadline drops it', async () => {
+    // The defect this pins, found via E2E: `await recallContext(...).catch(() => '')` on the
+    // critical path. `.catch` handles a rejection; it does NOT bound a call that never
+    // settles, and the layer's own COGNEE_CALL_TIMEOUT_MS is 240_000ms. Measured against
+    // the cognee v1.6.0 sidecar: an unbounded search took 24-95s, so a chat turn could sit
+    // for minutes inside a step whose whole contribution is a few lines of context.
+    process.env.ORCHESTRATOR_MEMORY_TIMEOUT_MS = '100'
+    recallImpl = () => new Promise<string>(() => {}) // never settles, never rejects
+    llmResponses = ['Answered without memory.']
+
+    const t0 = Date.now()
+    const result = await runAgentOrchestrator({
+      question: 'Hello',
+      userId: 'u1',
+      isAdmin: false,
+    })
+    const elapsed = Date.now() - t0
+
+    // The answer arrives, and it arrives bounded by the deadline rather than by the call.
+    expect(result.answer).toContain('Answered without memory')
+    expect(elapsed).toBeLessThan(5_000)
+    delete process.env.ORCHESTRATOR_MEMORY_TIMEOUT_MS
+    recallImpl = async () => ''
   })
 
   test('direct conversational answer returns in round 1 without tool calls', async () => {

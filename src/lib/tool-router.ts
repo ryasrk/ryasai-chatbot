@@ -166,7 +166,20 @@ async function _runNonStreamingChatCompletion(args: {
   else if (effectiveDecision === 'CONTEXTUAL_CHAT' && contextualContext) result = await runContextualChatBranch({ ...branchArgs, context: contextualContext })
   else result = await runChatBranch(branchArgs)
 
-  await rememberChatTurn({ sessionId: args.sessionId, userMessage: args.question, aiMessage: result.answer, toolRuns: result.toolRuns.map((t) => ({ type: t.type, status: t.status, latencyMs: t.latencyMs ?? 0 })) })
+  // FIRE AND FORGET — the answer is already computed, so the memory write must not be on
+  // the path that returns it.
+  //
+  // This was `await`, and the cost is MEASURED, not theoretical: against the cognee v1.6.0
+  // sidecar a single chat-turn write took 5.6-9.7s on a fresh dataset (and 85s on the very
+  // first write of a new dataset, while the pipeline compiles). E2E saw the effect on
+  // `/api/v1/chat/completions`, which drives THIS path: the request hung past its 90s
+  // timeout, while the same spec passed in 13.1s with memory off. The identical call in
+  // `chat/sessions/[id]/send/route.ts` already used `void` for exactly this reason.
+  //
+  // Errors are still logged inside rememberChatTurn, so a memory failure remains visible
+  // and never reaches the caller — which is the same guarantee the previous `await` gave,
+  // minus the latency.
+  void rememberChatTurn({ sessionId: args.sessionId, userMessage: args.question, aiMessage: result.answer, toolRuns: result.toolRuns.map((t) => ({ type: t.type, status: t.status, latencyMs: t.latencyMs ?? 0 })) })
   return result
 }
 
