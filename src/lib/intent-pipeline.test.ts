@@ -1538,3 +1538,52 @@ describe('the synonym indices — derived behaviour, not the load-time counters'
     expect(expandQuery('zzzz qqqq')).toEqual(['zzzz qqqq'])
   })
 })
+
+describe('mergeRetrievalResults ranks by AGREEMENT, not by a per-query score', () => {
+  // REGRESSION (found by measuring a compound question against the real corpus):
+  // `score` is per-QUERY — `lexicalFirst` gives every pass's rank-1 chunk exactly 1.0 — so
+  // sorting a merged pool by score alone compares incomparable numbers and resolves every tie
+  // by Map insertion order. Measured: the original query ranked the correct document first,
+  // one synonym expansion ranked a different one, and the merge promoted a THIRD document that
+  // contained nothing about the question, purely on tie order.
+  const mk = (chunks: Array<[string, number]>) =>
+    ({
+      chunks: chunks.map(([chunkId, score]) => ({
+        chunkId, documentId: 'd', documentName: 'n.md', chunkIndex: 0, content: 'x', score,
+        scoreBreakdown: { lexical: 0, semantic: 0, phrase: 0, bm25: 0, semanticSimilarity: 0, semanticScore: 0, total: score },
+      })),
+      queryTokens: [], candidatesScanned: 0, graphContext: '',
+    }) as never
+
+  test('a chunk two passes agree on outranks a lone rank-1 hit', () => {
+    const r = mergeRetrievalResults([
+      mk([['lone', 1.0], ['shared', 0.5]]),
+      mk([['other', 1.0], ['shared', 0.5]]),
+    ])
+    expect(r.chunks[0].chunkId).toBe('shared')
+  })
+
+  test('score still breaks ties WITHIN the same agreement count', () => {
+    // `shared` appears in both, `alsoBoth` too; the higher score wins between them.
+    const r = mergeRetrievalResults([
+      mk([['shared', 0.4], ['alsoBoth', 0.9]]),
+      mk([['shared', 0.4], ['alsoBoth', 0.9]]),
+    ])
+    expect(r.chunks.map((c) => c.chunkId)).toEqual(['alsoBoth', 'shared'])
+  })
+
+  test('the order is DETERMINISTIC across input permutations', () => {
+    // Without a total tie-break the result depends on Map iteration order, so two identical
+    // requests could return different orderings — and the cached copy would freeze whichever
+    // one ran first.
+    const a = mergeRetrievalResults([
+      mk([['x', 0.5], ['y', 0.5]]),
+      mk([['p', 0.5], ['q', 0.5]]),
+    ])
+    const b = mergeRetrievalResults([
+      mk([['p', 0.5], ['q', 0.5]]),
+      mk([['x', 0.5], ['y', 0.5]]),
+    ])
+    expect(a.chunks.map((c) => c.chunkId)).toEqual(b.chunks.map((c) => c.chunkId))
+  })
+})
