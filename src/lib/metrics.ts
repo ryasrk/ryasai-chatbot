@@ -209,6 +209,24 @@ export function initMetrics(): void {
   counter('tool_errors_total', 'Total tool execution errors')
   gauge('active_sessions', 'Active chat sessions')
   counter('rag_queries_total', 'Total RAG queries')
+  // Retrieval observability (docs/retrieval-production-integration-plan.md §4b).
+  // These are ALSO registered on first use in `rag-metrics.ts`, because this function
+  // only runs when the /api/metrics route module loads — on a fresh process the first
+  // retrieval would otherwise record nothing and the series would appear only after
+  // the first scrape. Keep the HELP strings identical to that module's.
+  histogram(
+    'rag_retrieval_latency_ms',
+    'RAG retrieval duration in milliseconds, excluding cache hits',
+    [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+  )
+  histogram(
+    'rag_retrieval_candidates',
+    'Candidate chunks scanned per RAG retrieval',
+    [1, 5, 10, 25, 50, 100, 250, 500, 1000, 5000],
+  )
+  histogram('rag_retrieval_results', 'Chunks returned per RAG retrieval', [0, 1, 2, 4, 8, 12, 20, 50])
+  counter('rag_cache_hit_total', 'RAG retrievals served from cache')
+  counter('rag_cache_miss_total', 'RAG retrievals that ran the retrievers')
   counter('sql_queries_total', 'Total SQL queries executed')
   counter('guardrail_blocks_total', 'Total SQL guardrail blocks')
 }

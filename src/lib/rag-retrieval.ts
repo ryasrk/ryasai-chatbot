@@ -24,6 +24,7 @@ import {
 import { cosineSimilarity } from '@/lib/embeddings'
 import { bm25Rank, fuseRankings, toRanking } from '@/lib/rag-ranking'
 import { fusionCacheTag, resolveFusionConfig } from '@/lib/rag-fusion-config'
+import { recordRetrievalCache, recordRetrievalTiming } from '@/lib/rag-metrics'
 
 let _cacheHits = 0
 let _cacheMisses = 0
@@ -79,10 +80,15 @@ export async function retrieveRelevantChunks(args: {
     const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
     if (cached) {
       _cacheHits += 1
+      // Counter only. A hit performs no retrieval work, so putting its near-zero
+      // duration in the latency histogram would drag p50 down in proportion to the
+      // hit rate — retrieval would look faster the busier the cache got.
+      recordRetrievalCache(true)
       log.debug('RAG cache hit', { query: args.query.slice(0, 50), topK: args.topK })
       return cached
     }
   }
+  const retrievalStartedAt = Date.now()
 
   // Sub-query decomposition: complex multi-part questions → parallel retrieval + merge.
   if (!args._skipDecompose) {
@@ -95,9 +101,17 @@ export async function retrieveRelevantChunks(args: {
       const merged = mergeRetrievedResults(subResults)
       _cacheMisses += 1
       if (cacheKey) await cacheSet(cacheKey, merged, Math.floor(RAG_CACHE_TTL_MS / 1000))
+      // No timing sample here on purpose: this is a composite of the sub-retrievals,
+      // each of which already recorded its own. Sampling both would count one user
+      // question as 1 + N retrievals in the histogram and skew the p50 upward on
+      // exactly the complex questions the A/B comparison is about.
       return merged
     }
   }
+
+  // Leaf retrieval: this is the unit that runs the retrievers and therefore the one
+  // whose duration and result count are comparable across fusion configs.
+  recordRetrievalCache(false)
 
   // HyDE: embed a hypothetical answer instead of the raw query for vector search.
   let vectorQuery = args.query
@@ -148,6 +162,14 @@ export async function retrieveRelevantChunks(args: {
   }
 
   _cacheMisses += 1
+  // Measured to the END of this function, so the number covers what a caller waits
+  // for (both legs, the graph, fusion and the reranker) rather than only the legs.
+  recordRetrievalTiming({
+    ms: Date.now() - retrievalStartedAt,
+    fusionK: fusion.k,
+    candidatesScanned: retrievalResult.candidatesScanned,
+    returned: finalChunks.length,
+  })
   log.debug('RAG cache miss', { query: args.query.slice(0, 50), topK: args.topK, candidatesScanned: retrievalResult.candidatesScanned })
   if (cacheKey) await cacheSet(cacheKey, result, Math.floor(RAG_CACHE_TTL_MS / 1000))
 

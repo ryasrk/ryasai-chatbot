@@ -1,5 +1,6 @@
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { prometheusText, resetMetrics } from './metrics'
 import { join } from 'node:path'
 
 
@@ -1991,5 +1992,53 @@ describe('the fusion config is part of the cache key', async () => {
     // test above while destroying the cache entirely.
     expect(cacheSets.length).toBe(setsAfterFirst)
     expect(second.chunks).toEqual(first.chunks)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Retrieval observability, at the seam that actually orders results
+// (docs/retrieval-production-integration-plan.md §4b). The unit tests in
+// rag-metrics.test.ts prove the helpers separate hits from retrievals; these prove
+// the RETRIEVAL PATH calls them that way, which is the part a refactor can break
+// without touching rag-metrics.ts at all.
+// ---------------------------------------------------------------------------
+describe('retrieval records a baseline instead of only a log line', () => {
+  beforeEach(() => {
+    installEventLog()
+    resetMetrics()
+    toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
+    ftsIds = ['c1']
+    dbChunkRows = [dbChunkRow('c1', 'invoices')]
+  })
+
+  test('a miss records a latency sample labelled with the effective k', async () => {
+    orgContextHolder.value = 'org-metrics'
+    await retrieveReal({ query: 'invoices', topK: 5 })
+    const text = prometheusText()
+    expect(text).toContain('rag_retrieval_latency_ms_count')
+    expect(text).toMatch(/rag_cache_miss_total 1/)
+    // Labelled with the value that ordered the result, so an A/B run is readable.
+    expect(text).toMatch(/rag_retrieval_latency_ms_count\{k="60"\}/)
+  })
+
+  test('a cache HIT does not add a latency sample — the p50 must not improve with hit rate', async () => {
+    orgContextHolder.value = 'org-metrics'
+    await retrieveReal({ query: 'invoices', topK: 5 })
+    const afterMiss = prometheusText()
+    const missCount = Number(/rag_retrieval_latency_ms_count\{k="60"\} (\d+)/.exec(afterMiss)?.[1])
+    expect(missCount).toBe(1)
+
+    // Same query, so the second call is served from cache.
+    cacheStore.set(`rag:org-metrics:k60:5:invoices`, {
+      chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 99, graphContext: '',
+    })
+    const second = await retrieveReal({ query: 'invoices', topK: 5 })
+    expect(second.candidatesScanned).toBe(99) // proves it really was the cache path
+
+    const afterHit = prometheusText()
+    const countAfter = Number(/rag_retrieval_latency_ms_count\{k="60"\} (\d+)/.exec(afterHit)?.[1])
+    // Still 1: the hit was counted as a hit and contributed no timing observation.
+    expect(countAfter).toBe(1)
+    expect(afterHit).toMatch(/rag_cache_hit_total 1/)
   })
 })
