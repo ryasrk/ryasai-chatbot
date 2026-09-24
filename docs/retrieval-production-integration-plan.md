@@ -952,3 +952,77 @@ from the mean, and counted: the run above reports `not judged: 0`.
 chains requiring a relation graph, and one corpus of 55 chunks in one language pair. The
 baseline comparison is 12 questions — enough to show the systems are comparable, not enough to
 rank them with confidence.
+
+
+### 2026-09-24: where the latency actually goes, and why my 80x claim was wrong
+
+The §12 comparison reported **2875 ms vs 35 ms** and called it "the price of the pipeline".
+That framing was wrong, and the harness was unfair in two ways I had built in myself:
+
+1. **The baseline searched in-memory vectors; we queried the database.** `baselineVecs` was
+   pre-embedded into a Map before the loop, so the baseline's timer covered one cosine sort
+   over a JS array. Ours covered Postgres, pgvector, FTS, the graph and the reranker.
+2. **First-call warm-up was inside our timer.** Later samples on the same corpus measured
+   37-54 ms, not 2875 ms — the gap was model loading, connection setup and a cold HNSW index
+   on the first query of the run.
+
+Measured honestly, unique queries on a warm process, cache MISS every time:
+
+| stage | p50 |
+|---|---|
+| retrieval WITHOUT the reranker | **47 ms** |
+| knowledge graph (`dualLevelRetrieval`) | 3 ms |
+| the reranker's single LLM call | **1730 ms** |
+| retrieval WITH the reranker | ~1800 ms |
+| full `retrieveWithReflection` (expansions + reflection) | ~5800 ms in the earlier run |
+
+**Our retrieval is ~47 ms. Almost all of it is one LLM call.** The comparison in §12 was
+therefore not measuring retrieval at all — it measured a reranker call against no reranker
+call, with the baseline additionally spared the database.
+
+Verified the LLM call is stable, not pathological: 15 sequential reranker calls gave a p50 of
+**1.73 s** with fourteen between 1.26 s and 1.92 s and one 9.59 s outlier. Prompt size is
+nearly irrelevant — 3.8 KB and 72 KB prompts differed by 360 ms — so shortening the reranker
+prompt is not the lever.
+
+### Does the reranker earn its 1.7 s? Sometimes, and measurably so
+
+Graded on retrieval recall, which is the only thing the reranker can change:
+
+| question set | top-1 without | top-1 with | top-4 without | top-4 with | p50 |
+|---|---|---|---|---|---|
+| 24 golden questions | 21/24 | 24/24 | 24/24 | 24/24 | 54 ms -> 3088 ms |
+| 8 deliberately hard paraphrases | **6/8** | **7/8** | **7/8** | **8/8** | 51 ms -> 2554 ms |
+
+So it is not decoration: on questions that need it, it converts three misses into hits. On
+questions that do not, it costs 1.7 s to change nothing. That is the definition of a call that
+should be conditional rather than unconditional.
+
+### A conditional gate works, and is worth ~32%
+
+Tested against every golden question (72), using only signals already computed before the
+reranker would run:
+
+| gate | reranker called | real misses it skipped |
+|---|---|---|
+| `head < 0.55 or gap < 0.10` | 43/72 (60%) | **1 of 15** |
+| `head < 0.60 or gap < 0.15` | 49/72 (68%) | **0 of 15** |
+| `head < 0.65 or gap < 0.20` | 56/72 (78%) | 0 of 15 |
+
+`head` is the top chunk's similarity, `gap` the distance to rank 2. At `head < 0.60 or
+gap < 0.15` the reranker is skipped on 32% of traffic and no real miss is skipped — the margin
+is real but modest, and it is a 32% saving, NOT the 57x the raw latency ratio suggests.
+
+**Not yet shipped**: the thresholds are fitted on 72 questions from ONE corpus. Tuning a gate
+on the same data used to evaluate it is how a gate gets published at 0-of-15 and then misses
+in production. The honest next step is a held-out split, which this corpus is too small to
+provide.
+
+**The other lever, already available and free:** `RAG_LLM_RERANK=false`. On the golden set the
+reranker changes no recall at all (24/24 either way), so a latency-sensitive deployment can
+turn it off and lose nothing measurable on lexical-style questions — at the cost of the hard
+paraphrase cases where it does work.
+
+**Still not measured:** concurrent load (all numbers are sequential single-caller), and any
+corpus larger than 55 chunks, where ranking — and therefore the reranker — should matter more
+than it does here.
