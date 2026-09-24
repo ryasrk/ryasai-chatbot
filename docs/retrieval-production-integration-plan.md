@@ -828,3 +828,52 @@ configured chat endpoint requires an API key that is not available here), and wh
 runtime `dispatchRerank` falls back to `chunks.slice(0, topK)` — the fused order unchanged. So
 the fused order is the floor a production deployment gets even with a dead reranker, and every
 number in §7 and §12 describes that floor.
+
+
+### 2026-09-24 (with a real LLM): the "3/5" was measuring the corpus, not the retrieval
+
+§12 and the close-out above both quoted **3/5** on hard paraphrase questions and treated the
+two misses as a ranking shortfall. That reading was WRONG, and a real LLM endpoint made the
+error visible.
+
+**The two "misses" asked about things the corpus does not contain.** Counted directly:
+
+| term | chunks in corpus |
+|---|---|
+| `kebakaran` | 0 |
+| `fire drill` | 0 |
+| `reimburse` | 0 |
+| `klaim` | 0 |
+
+So those questions could not be answered by ANY ranking — the retrieval was being blamed for
+a missing document. Re-run against eight paraphrase questions whose answers DO exist
+(English questions, Indonesian corpus, no shared vocabulary):
+
+| | top-1 | in top-5 |
+|---|---|---|
+| reranker OFF | **8/8** | 8/8 |
+| reranker ON | **8/8** | 8/8 |
+
+**8 of 8 at rank 1, and `bm25=0` on seven of them** — the lexical leg found nothing at all on
+those seven, so the vector leg alone put the correct document first. That is much stronger
+evidence for the vector leg than the 3/5 it replaces, and it is the honest number: the
+earlier figure understated it by measuring topic coverage.
+
+**The reranker is confirmed working, and confirmed to change nothing measurable here.** Its
+existence had been an assumption in §11-12 (no reranker in the offline arms). Now verified
+against the real model:
+
+- it returns well-formed scores and promotes correctly — given a mid-list paternity-leave
+  chunk among three distractors it returned `index 2 -> 10` against `1, 1, 1` for the rest;
+- end-to-end grounding, 4 questions, **4/4 GROUNDED** at ~1.1-1.7 s each, with every figure
+  correct (`5 working days`, `Rp 7.500.000`, `5 members`, `16 GB`);
+- on absent topics it **admits ignorance in 3/3 cases** rather than inventing an answer, even
+  at `semanticSimilarity` 0.614 where a weaker model would have been tempted;
+- toggling `RAG_LLM_RERANK` moves none of the eight paraphrase questions, because when the
+  vector leg already puts the right document first there is nothing for a reranker to fix.
+
+**What this changes in the conclusion.** Retrieval quality on this corpus is better than §12
+claimed: rank-1 on every paraphrase question that has an answer, with the vector leg doing the
+work and the lexical leg contributing nothing on seven of eight. What remains unmeasured is
+ANSWER quality on questions whose answers exist but require synthesis across documents, and
+anything resembling a real user population.
