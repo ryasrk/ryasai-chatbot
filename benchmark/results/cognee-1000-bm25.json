@@ -1,7 +1,7 @@
 {
   "version": 2,
   "kind": "bm25-baseline",
-  "sourceResults": "/tmp/corpus.json + /tmp/questions.jsonl",
+  "sourceResults": "benchmark/data/cognee-1000-corpus.json + benchmark/data/cognee-1000-questions.jsonl",
   "params": {
     "k1": 1.2,
     "b": 0.75

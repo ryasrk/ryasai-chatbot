@@ -11,10 +11,10 @@ currently invalidates the most claims.
 
 ## PR-1 — `bm25_naive`: the baseline that makes our own score interpretable
 
-**Status: COMPLETED** (Committed in `04b6807` and updated with Iterative Search in `benchmark/cognee-bm25-baseline.ts`).
+**Status: COMPLETED.** Added in `04b6807`; iterative mode added in the benchmark-audit commit. See `benchmark/results/cognee-1000-bm25-baseline.md`.
 
-- Single-query BM25: recall@10 = **0.3080**, answer@1 = 0.1830, MRR = 0.2767.
-- Iterative 2-round BM25 (Audit Fix 2): recall@10 = **0.4760**, answer@1 = 0.1830, MRR = 0.3065 under the same fixed 10-document budget.
+- Clean question set (`benchmark/data/`): recall@10 single **0.3080**, iterative **0.4760**.
+- Pre-audit question set (the one cognee and supermemory ran): recall@10 single **0.2300**, iterative **0.5070**.
 - Verified by 22 unit tests in `benchmark/cognee-bm25-baseline.test.ts` (including determinism, tie-breaking, k1 saturation, length penalty, and multi-hop entity traversal).
 - Automated self-controls (200 gibberish queries = 0 hits, random evidence id divergence) pass on every invocation.
 
@@ -115,11 +115,11 @@ records the point of the Dockerfile:
 **Status: COMPLETED** (Runner: `benchmark/supermemory-arm.ts`, Report: `benchmark/results/supermemory-vs-bm25-vs-cognee.md`).
 
 Key verified findings:
-1. **Measured Retrieval:** recall@10 = **0.0780** across 1000 questions (BM25 scored **0.3080** single / **0.4760** iterative; cognee scored 0.1030).
+1. **Measured Retrieval:** recall@10 = **0.0780** on the pre-audit question set (BM25 on the same set: 0.2300 single / 0.5070 iterative; cognee 0.1030, a run its own report marks INVALID). The readiness wait in that run confirmed only one document, so the number is unverified until re-run behind the new gate.
 2. **Auditability:** The self-hosted binary is an executable Bun bundle containing readable JavaScript (`Usage metering is disabled in self-hosted builds`, `SUPERMEMORY_DISABLE_TELEMETRY=1`, `sm_self_hosted: true`).
 3. **Embedder Bottleneck:** Default local embedder (`Xenova/bge-base-en-v1.5`, 768d) suffers severe cosine compression on templated enterprise docs (within-question spread p50 is only 0.0301), causing retrieval to collapse onto 33% of the corpus.
 4. **Route Bug:** Self-hosted v0.0.8 `/v3/search` returns 0 results for all queries; the working route is `/v4/search`.
-5. **Conclusion:** Migrating cognee → supermemory for document retrieval is **NOT justified**. Keep supermemory in consideration only for user-level conversation memory and user profiles.
+5. **Conclusion:** Migrating cognee → supermemory for document retrieval is **not justified on this evidence**. Re-run both dense arms on the clean question set before a final call. Keep supermemory in consideration only for user-level conversation memory and user profiles.
 
 ---
 

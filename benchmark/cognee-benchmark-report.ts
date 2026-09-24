@@ -18,6 +18,8 @@
  *   bun benchmark/cognee-benchmark-report.ts --results=/tmp/raw.json \
  *       --out-json=/tmp/report.json --out-md=/tmp/report.md
  */
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,9 @@ interface RawResults {
   cogneeVersion: string | null
   baseUrl: string
   dataset: string
+  embeddingModel?: string | null
+  embeddingDimensions?: number | null
+  embeddingEndpoint?: string | null
   mode: string
   searchType: string
   answerSearchType: string
@@ -755,20 +760,35 @@ export function buildReport(raws: RawResults) {
     ifFails: 'RUN INVALID: The memory layer failed on single-document questions with literal answer tokens. A vector search that misses literal IDs points to a configuration or embedder failure.',
   })
 
-  // Audit Fix 6: Ingest cost scaling check (detect O(n^2) re-cognify)
-  const itemsProcessed = raws.ingest.itemsProcessed
-  const docCount = raws.corpus.documentCount
-  const isQuadraticIngest = docCount > 0 && itemsProcessed > 2 * docCount
-
+  // Ingest scaling is judged on per-batch WALL TIME, not on items_processed.
+  // Measured on the recorded 1.5.4 run: items_processed = 29400 for 1200 docs
+  // (= 25+50+…+1200, a cumulative counter), yet batch time only grew 19.3s → 31.8s
+  // (first-5 vs last-5 mean). A cumulative counter is not re-processing; a batch
+  // that takes N× longer as the dataset grows N× is.
+  const scaling = ingestScaling(raws.ingest.perBatchMs)
   gates.push({
     id: 'ingest-scaling',
-    name: 'Ingest scaling check: linear vs quadratic re-cognify',
-    status: raws.ingest.skipped ? 'NOT COMPUTABLE' : isQuadraticIngest ? 'FAIL' : 'PASS',
-    expected: `items_processed ≈ ${docCount} (linear ingest)`,
-    actual: raws.ingest.skipped
-      ? 'ingest skipped'
-      : `items_processed = ${itemsProcessed} (${isQuadraticIngest ? `O(n^2) quadratic re-cognify detected: ${itemsProcessed} processed for ${docCount} documents` : 'linear'})`,
-    ifFails: 'Ingest cost grows quadratically with dataset size. Every batch re-cognifies the entire dataset so far.',
+    name: 'Ingest scaling: per-batch time stays roughly flat as the dataset grows',
+    status: raws.ingest.skipped || scaling === null ? 'NOT COMPUTABLE' : scaling.growth <= INGEST_GROWTH_LIMIT ? 'PASS' : 'FAIL',
+    expected: `last-5 / first-5 mean batch time <= ${INGEST_GROWTH_LIMIT} over ${raws.ingest.batches} batches (quadratic ingest would grow ~${raws.ingest.batches}x)`,
+    actual:
+      scaling === null
+        ? 'fewer than 10 batches recorded'
+        : `batch time ${(scaling.firstMs / 1000).toFixed(1)}s → ${(scaling.lastMs / 1000).toFixed(1)}s (${scaling.growth.toFixed(2)}x); items_processed=${raws.ingest.itemsProcessed} is cumulative and not used`,
+    ifFails: 'Each batch re-processes the dataset so far; ingest cost grows quadratically with document count.',
+  })
+
+  // An unrecorded embedder makes a low score uninterpretable: the hashed UAT
+  // fixture (uat/fixtures/embedding-server.ts) produces near-zero recall that
+  // reads as a product failure. A run must say which model it measured.
+  const embedder = embedderVerdict(raws.embeddingModel ?? null)
+  gates.push({
+    id: 'embedder-recorded',
+    name: 'Embedding model recorded and not the hashed UAT fixture',
+    status: embedder.ok ? 'PASS' : 'FAIL',
+    expected: 'a named, real embedding model in the results file',
+    actual: embedder.reason,
+    ifFails: 'RUN INVALID: the score cannot be attributed to a model. Re-run with EMBEDDING_MODEL set to the model the cognee server actually uses.',
   })
 
   return {
@@ -811,16 +831,65 @@ let randomAnswerAt1: number | null = null
 /** Distractor evidence doc ids, so the stratified table can require disjointness. */
 const distractorDocs = new Set<string>()
 
-function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
+function renderControls(p: (s?: string) => void, r: ReturnType<typeof buildReport>): void {
+  p('## CONTROL BLOCK (§7 — PASS/FAIL against the registered expectation)')
+  p()
+  p('| gate | status | expectation | actual | if it fails |')
+  p('|---|---|---|---|---|')
+  for (const g of r.gates) {
+    p(`| ${g.id} | **${g.status}** | ${g.expected} | ${g.actual.replace(/\|/g, '\\|').replace(/\n/g, ' ')} | ${g.ifFails} |`)
+  }
+  p()
+
+  const failures = r.gates.filter((g) => g.status === 'FAIL')
+  const notComputable = r.gates.filter((g) => g.status === 'NOT COMPUTABLE' || g.status === 'INCONCLUSIVE')
+  if (failures.length) {
+    p('### ⚠ FAILED CONTROLS — READ THIS BEFORE ANY NUMBER ABOVE')
+    p()
+    for (const g of failures) {
+      p(`- **${g.id}**: ${g.actual}`)
+      p(`  - Registered expectation: ${g.expected}`)
+      p(`  - What it means: ${g.ifFails}`)
+    }
+    p()
+  }
+  if (notComputable.length) {
+    p('### ⚠ CONTROLS THAT COULD NOT BE COMPUTED')
+    p()
+    p('A control that is absent reads as a passing control. These are listed as rows rather than')
+    p('omitted, because the probe\'s 100% was meaningless for exactly this reason — nothing in the')
+    p('output said the control had not run.')
+    p()
+    for (const g of notComputable) p(`- **${g.id}** [${g.status}]: ${g.actual}`)
+    p()
+  }
+}
+
+function render(raws: RawResults, r: ReturnType<typeof buildReport>, provenance: Provenance | null = null): string {
   const L: string[] = []
   const p = (s = '') => L.push(s)
   const rate = (v: number | null) => fmtRate(v)
   const _pctv = (v: number | null) => fmtPct(v)
 
-  p('# cognee knowledge-graph benchmark — retrieval report')
+  const failedGates = r.gates.filter((g) => g.status === 'FAIL')
+  const invalid = failedGates.length > 0
+
+  p(invalid ? '# RUN INVALID — cognee retrieval report' : '# cognee knowledge-graph benchmark — retrieval report')
   p()
   p(`Generated: ${new Date().toISOString()}`)
   p()
+  if (provenance) {
+    p(provenance.tracked ? '' : '> **NOT REPRODUCIBLE** — the results file is not tracked by git, so this report cannot be re-checked from a clone.')
+    p(`Results file: \`${provenance.path}\` · sha256 \`${provenance.sha256}\` · git ${provenance.commit ?? '(unknown)'} · ${provenance.tracked ? 'tracked' : 'UNTRACKED'}`)
+    p()
+  }
+  if (invalid) {
+    p('**This run failed one or more validity gates. No metric below may be quoted, and the metric')
+    p('tables are withheld.** Failed gates:')
+    p()
+    for (const g of failedGates) p(`- **${g.id}** — ${g.actual}. ${g.ifFails}`)
+    p()
+  }
   p('## Scope statement (read before quoting any number below)')
   p()
   p('**This measures RETRIEVAL. It does not measure answer quality.** A hit means the joined')
@@ -840,8 +909,8 @@ function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
   p(`| cognee version | ${raws.cogneeVersion ?? '(unknown)'} |`)
   p(`| base url | ${raws.baseUrl} |`)
   p(`| dataset | \`${raws.dataset}\` |`)
-  p(`| embedding model | ${(raws as unknown as Record<string, unknown>).embeddingModel ?? '(unrecorded)'} |`)
-  p(`| embedding dimensions | ${(raws as unknown as Record<string, unknown>).embeddingDimensions ?? '(unrecorded)'} |`)
+  p(`| embedding model | ${raws.embeddingModel ?? '(unrecorded)'} |`)
+  p(`| embedding dimensions | ${raws.embeddingDimensions ?? '(unrecorded)'} |`)
   p(`| mode | ${raws.mode} |`)
   p(`| retrieval searchType | ${raws.searchType} |`)
   p(`| answer searchType | ${raws.answerSearchType} |`)
@@ -854,14 +923,11 @@ function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
   p(`| run aborted | ${raws.aborted ? `YES — ${raws.abortReason}` : 'no'} |`)
   p()
 
-  const failedGates = r.gates.filter((g) => g.status === 'FAIL')
-  if (failedGates.length > 0) {
-    p('> ⚠️ **RUN INVALID** — One or more critical validity gates failed:')
-    for (const g of failedGates) {
-      p(`> - **${g.name}**: ${g.actual}. ${g.ifFails}`)
-    }
-    p('> No comparison table or accuracy claims may be quoted from an invalid run.')
-    p()
+  if (invalid) {
+    // Skip straight to the control block: printing the tables of an invalid run
+    // is how a number with a footnote gets quoted anyway.
+    renderControls(p, r)
+    return L.join('\n')
   }
 
   p('## RETRIEVAL metrics (§5.1) — with reproduction data')
@@ -1049,37 +1115,7 @@ function render(raws: RawResults, r: ReturnType<typeof buildReport>): string {
   p('never as a benchmark result.')
   p()
 
-  p('## CONTROL BLOCK (§7 — PASS/FAIL against the registered expectation)')
-  p()
-  p('| gate | status | expectation | actual | if it fails |')
-  p('|---|---|---|---|---|')
-  for (const g of r.gates) {
-    p(`| ${g.id} | **${g.status}** | ${g.expected} | ${g.actual.replace(/\|/g, '\\|').replace(/\n/g, ' ')} | ${g.ifFails} |`)
-  }
-  p()
-
-  const failures = r.gates.filter((g) => g.status === 'FAIL')
-  const notComputable = r.gates.filter((g) => g.status === 'NOT COMPUTABLE' || g.status === 'INCONCLUSIVE')
-  if (failures.length) {
-    p('### ⚠ FAILED CONTROLS — READ THIS BEFORE ANY NUMBER ABOVE')
-    p()
-    for (const g of failures) {
-      p(`- **${g.id}**: ${g.actual}`)
-      p(`  - Registered expectation: ${g.expected}`)
-      p(`  - What it means: ${g.ifFails}`)
-    }
-    p()
-  }
-  if (notComputable.length) {
-    p('### ⚠ CONTROLS THAT COULD NOT BE COMPUTED')
-    p()
-    p('A control that is absent reads as a passing control. These are listed as rows rather than')
-    p('omitted, because the probe\'s 100% was meaningless for exactly this reason — nothing in the')
-    p('output said the control had not run.')
-    p()
-    for (const g of notComputable) p(`- **${g.id}** [${g.status}]: ${g.actual}`)
-    p()
-  }
+  renderControls(p, r)
 
   p('## What this does NOT prove (§8)')
   p()
@@ -1189,7 +1225,8 @@ async function main(): Promise<number> {
   for (const r of raws.results) for (const id of r.evidenceDocIds) void id
 
   const report = buildReport(raws)
-  const md = render(raws, report)
+  const provenance = readProvenance(resultsPath)
+  const md = render(raws, report, provenance)
 
   const gates = report.gates.map((g) => ({ ...g }))
   const failures = gates.filter((g) => g.status === 'FAIL')
@@ -1198,7 +1235,7 @@ async function main(): Promise<number> {
     kind: 'cognee-benchmark-report',
     generatedAt: new Date().toISOString(),
     design: 'docs/cognee-benchmark-design.md',
-    source: { results: resultsPath, startedAt: raws.startedAt, finishedAt: raws.finishedAt, aborted: raws.aborted },
+    source: { results: resultsPath, provenance, startedAt: raws.startedAt, finishedAt: raws.finishedAt, aborted: raws.aborted },
     run: {
       cogneeVersion: raws.cogneeVersion,
       baseUrl: raws.baseUrl,
@@ -1272,6 +1309,45 @@ async function main(): Promise<number> {
     return 1
   }
   return 0
+}
+
+/** A batch may get somewhat slower as the graph grows; quadratic ingest grows ~batch-count x. */
+const INGEST_GROWTH_LIMIT = 3
+
+export function ingestScaling(perBatchMs: number[]): { firstMs: number; lastMs: number; growth: number } | null {
+  if (perBatchMs.length < 10) return null
+  const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length
+  const firstMs = mean(perBatchMs.slice(0, 5))
+  const lastMs = mean(perBatchMs.slice(-5))
+  return { firstMs, lastMs, growth: firstMs > 0 ? lastMs / firstMs : Infinity }
+}
+
+/** Hashed bag-of-words UAT fixture model names — not a semantic model. */
+const FAKE_EMBEDDERS = [/hash/i, /fake/i, /uat/i, /bag-of-words/i]
+
+export function embedderVerdict(model: string | null): { ok: boolean; reason: string } {
+  if (!model) return { ok: false, reason: 'no embedding model recorded in the results file' }
+  if (FAKE_EMBEDDERS.some((re) => re.test(model))) return { ok: false, reason: `embedding model "${model}" is a test fixture, not a semantic model` }
+  return { ok: true, reason: `embedding model "${model}"` }
+}
+
+interface Provenance {
+  path: string
+  sha256: string
+  commit: string | null
+  tracked: boolean
+}
+
+function readProvenance(path: string): Provenance {
+  const sha256 = createHash('sha256').update(readFileSync(path)).digest('hex')
+  const git = (args: string[]): string | null => {
+    try {
+      return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    } catch {
+      return null
+    }
+  }
+  return { path, sha256, commit: git(['rev-parse', '--short', 'HEAD']), tracked: git(['ls-files', '--error-unmatch', path]) !== null }
 }
 
 const SCOPE = [

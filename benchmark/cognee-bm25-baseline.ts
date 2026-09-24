@@ -317,9 +317,11 @@ const argOf = (name: string, fallback: string | null = null): string | null => {
 }
 
 function main(): void {
+  // Default input is the committed, gt-lint-clean question set. `--results=<runner json>`
+  // regrades the questions recorded inside a cognee run instead (the pre-audit set).
   const resultsPath = argOf('results', null)
-  const corpusPath = argOf('corpus', null)
-  const questionsPath = argOf('questions', null)
+  const corpusPath = resultsPath ? null : argOf('corpus', 'benchmark/data/cognee-1000-corpus.json')
+  const questionsPath = resultsPath ? null : argOf('questions', 'benchmark/data/cognee-1000-questions.jsonl')
   const outJson = argOf('out-json', null)
   const k1 = Number(argOf('k1', String(DEFAULT_PARAMS.k1)))
   const b = Number(argOf('b', String(DEFAULT_PARAMS.b)))
@@ -341,7 +343,7 @@ function main(): void {
       .map((l) => JSON.parse(l))
     console.log(`BM25 baseline over corpus: ${corpusPath} and questions: ${questionsPath}`)
   } else {
-    const finalResultsPath = resultsPath ?? 'benchmark/results/cognee-1000-results.json'
+    const finalResultsPath = resultsPath!
     const raw = JSON.parse(readFileSync(finalResultsPath, 'utf8')) as RawResults
     texts = raw.corpus.textsById
     docIds = raw.corpus.documentIds
@@ -479,8 +481,14 @@ function main(): void {
   console.log('\n=== HEAD-TO-HEAD COMPARISON @ TOP-10 ===')
   console.log(`  BM25 (iterative 2-round) recall@10 = ${overallIter.recall10.toFixed(4)}   answer@1 = ${overallIter.answerAt1.toFixed(4)}   MRR = ${overallIter.mrr.toFixed(4)}`)
   console.log(`  BM25 (single-query)      recall@10 = ${overallSingle.recall10.toFixed(4)}   answer@1 = ${overallSingle.answerAt1.toFixed(4)}   MRR = ${overallSingle.mrr.toFixed(4)}`)
-  console.log('  cognee 1.5.4 (CHUNKS)    recall@10 = 0.1030   answer@1 = 0.0390   MRR = 0.0579  (benchmark/results/cognee-1000-report.md)')
-  console.log('  supermemory (superrag)   recall@10 = 0.0780   answer@1 = 0.0580   MRR = 0.0721  (benchmark/results/supermemory-vs-bm25-vs-cognee.md)')
+  if (resultsPath) {
+    // Only a --results run grades the SAME questions the recorded arms answered.
+    console.log('  cognee 1.5.4 (CHUNKS)    recall@10 = 0.1030   (same pre-audit questions; that run fails its validity gates)')
+    console.log('  supermemory (superrag)   recall@10 = 0.0780   (same pre-audit questions)')
+  } else {
+    console.log('  cognee / supermemory: NOT COMPARABLE — their recorded runs used the pre-audit question set.')
+    console.log('  Re-run both arms on benchmark/data/cognee-1000-questions.jsonl, or pass --results to compare on the old set.')
+  }
 
   if (!controlsPass) {
     console.log('\n  !! A SELF-CONTROL FAILED — the comparison above is NOT quotable. Fix the')

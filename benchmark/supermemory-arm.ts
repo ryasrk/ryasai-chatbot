@@ -80,6 +80,25 @@ const argOf = (name: string, fallback: string | null = null): string | null => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/** How many documents the readiness gate must see come back by their own id. */
+export const READINESS_SAMPLE_SIZE = 50
+
+/**
+ * Deterministic, evenly spread sample of document ids. Always includes the first
+ * and last document, so a queue that drains in order cannot pass on early docs only.
+ */
+export function readinessSample(docIds: string[], size: number): string[] {
+  if (docIds.length <= size) return [...docIds]
+  const out = new Set<string>()
+  for (let i = 0; i < size; i++) out.add(docIds[Math.round((i * (docIds.length - 1)) / (size - 1))])
+  return [...out]
+}
+
+/** A query built from a document's own opening words, so its own id should rank. */
+export function probePhrase(text: string): string {
+  return text.split(/\s+/).slice(0, 12).join(' ')
+}
+
 // ---------------------------------------------------------------------------
 // Chunk -> document resolution
 // ---------------------------------------------------------------------------
@@ -186,6 +205,7 @@ async function main(): Promise<void> {
 
   // --- INGEST ---------------------------------------------------------------
   let ingestMs = 0
+  let indexReady: { sampled: number; confirmed: number; waitMs: number } | null = null
   if (!skipIngest) {
     console.log('\n--- INGEST ---')
     // The batch endpoint accepts up to 600 documents per call, so 1200 docs is
@@ -217,52 +237,41 @@ async function main(): Promise<void> {
 
     // Ingestion is ASYNC by design ("Adds are accepted instantly but processed
     // through a queue"). Grading before the queue drains would measure the queue.
-    // Audit Fix 5: Wait until FULL index readiness (all documents indexed, not just one probe hit).
+    // One probe returning ANY hit proves one document is searchable, not 1200. The
+    // gate instead samples documents across the corpus and requires each to come
+    // back BY ITS OWN customId (`documents[].id`, the field the grader already
+    // trusts). A document still in the queue cannot satisfy that.
     console.log('\n--- WAIT FOR QUEUE ---')
+    const sample = readinessSample(docIds, READINESS_SAMPLE_SIZE)
+    const confirmed = new Set<string>()
     let ready = false
-    const sampleIndices = [0, Math.floor(docIds.length / 2), docIds.length - 1]
-
-    for (let attempt = 0; attempt < 720; attempt++) {
-      // 1. Verify container documentCount reached full doc count
-      const tagListRes = await api(base, apiKey, '/v3/container-tags/list', { method: 'GET', timeoutMs: 30_000 })
-      const tags = (tagListRes.json as Array<{ containerTag?: string; documentCount?: number }>) ?? []
-      const currentTag = tags.find((t) => t.containerTag === containerTag)
-      const docCount = currentTag?.documentCount ?? 0
-
-      // 2. Probe search across start, middle, and end of the corpus
-      let allSamplesFound = false
-      if (docCount >= docIds.length) {
-        let sampleHits = 0
-        for (const idx of sampleIndices) {
-          const probeQ = textsById[docIds[idx]].split(' ').slice(0, 6).join(' ')
-          const r = await api(base, apiKey, '/v4/search', {
-            method: 'POST',
-            body: { q: probeQ, containerTag, searchMode: 'hybrid', limit: 3, threshold: 0 },
-            timeoutMs: 30_000,
-          })
-          const n = (r.json as { total?: number; results?: unknown[] } | null)?.total ?? 0
-          if (n > 0) sampleHits++
-        }
-        if (sampleHits === sampleIndices.length) {
-          allSamplesFound = true
-        }
+    const waitStart = Date.now()
+    for (let attempt = 0; attempt < 720 && !ready; attempt++) {
+      for (const docId of sample) {
+        if (confirmed.has(docId)) continue
+        const r = await api(base, apiKey, '/v4/search', {
+          method: 'POST',
+          body: { q: probePhrase(textsById[docId]), containerTag, searchMode: 'hybrid', limit: 10, threshold: 0 },
+          timeoutMs: 30_000,
+        })
+        const results = ((r.json as { results?: SearchResult[] } | null)?.results ?? []) as SearchResult[]
+        if (results.some((h) => (h.documents ?? []).some((d) => d?.id === docId))) confirmed.add(docId)
       }
-
-      if (docCount >= docIds.length && allSamplesFound) {
-        ready = true
-        console.log(`  full corpus indexed and searchable (${docCount}/${docIds.length} docs, all sample probes verified) after ${attempt * 5}s`)
-        break
+      ready = confirmed.size === sample.length
+      if (!ready) {
+        if (attempt % 6 === 0) console.log(`  readiness: ${confirmed.size}/${sample.length} sampled docs retrievable by id`)
+        await sleep(5000)
       }
-
-      if (attempt % 6 === 0) {
-        console.log(`  queue status: ${docCount}/${docIds.length} documents processed (attempt ${attempt})`)
-      }
-      await sleep(5000)
     }
+    indexReady = { sampled: sample.length, confirmed: confirmed.size, waitMs: Date.now() - waitStart }
     if (!ready) {
-      console.error('  corpus never reached full index readiness within 60 minutes — aborting rather than scoring a partial index')
+      console.error(
+        `  only ${confirmed.size}/${sample.length} sampled documents became retrievable by id within 60 minutes — ` +
+          'refusing to grade a partial index',
+      )
       process.exit(1)
     }
+    console.log(`  all ${sample.length} sampled documents retrievable by id after ${(indexReady.waitMs / 1000).toFixed(0)}s`)
   } else {
     console.log('\n(ingest skipped — reusing the existing container)')
   }
@@ -390,6 +399,7 @@ async function main(): Promise<void> {
           sourceResults: resultsPath,
           corpusDocuments: docIds.length,
           ingestMs,
+          indexReady,
           returnedChunks,
           unmatchedChunks: unmatched,
           questionsWithError: errCount,
@@ -416,6 +426,9 @@ async function main(): Promise<void> {
       '',
       `Source corpus/questions: \`${resultsPath}\` (identical to the cognee run and the BM25 baseline).`,
       `taskType=\`${taskType}\` (document retrieval, NOT memory extraction), searchMode=hybrid, limit=${limit}, threshold=0.`,
+      indexReady
+        ? `Index readiness: ${indexReady.confirmed}/${indexReady.sampled} sampled documents retrievable by their own id after ${(indexReady.waitMs / 1000).toFixed(0)}s.`
+        : 'Index readiness: not measured (ingest skipped; the existing container was reused).',
       '',
       '| tier | n | recall@5 | recall@10 | answer@1 | MRR | p50 ms | p90 ms |',
       '|---|---|---|---|---|---|---|---|',

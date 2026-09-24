@@ -1,87 +1,88 @@
-# supermemory vs BM25 vs cognee — retrieval comparison on identical input
+# supermemory vs BM25 vs cognee — retrieval comparison
 
-**Question answered:** is supermemory worth migrating to from cognee?
+**Question:** should we migrate from cognee to supermemory?
 
-**Short answer: no — and the more important finding is that BM25 beats both, especially in iterative multi-hop mode.**
-
-All three arms ran the **same 1200-document corpus** and the **same 1000 questions**,
-graded by the **same evidence rule** (`evidence_hit@k` = *every* evidence document present
-in the top-k). The corpus and questions are produced deterministically from committed artifacts.
+**Answer:** no. The recorded runs do not support it, and they do not support "BM25 beats both by
+3×" either. That claim came from a benchmark whose answer keys were about half wrong. The audit
+of 2026-09-24 corrected the ground truth and the harness. The corrected numbers are below, split
+by the question set each arm actually ran.
 
 ---
 
-## 1. Head-to-head Comparison @ Top-10 Window
+## 1. What is comparable today
 
-| arm | recall@5 | recall@10 | answer@1 | MRR | p50 latency | ingest |
-|---|---|---|---|---|---|---|
-| **BM25 (iterative 2-round, 10-doc budget)** | **0.3030** | **0.4760** | **0.1830** | **0.3065** | ~0 ms (in-process) | **none** |
-| **BM25 (single query, 10-doc budget)** | **0.2850** | **0.3080** | **0.1830** | **0.2767** | ~0 ms (in-process) | **none** |
-| cognee 1.5.4 (`CHUNKS`, single query)* | 0.0810 | 0.1030 | 0.0390 | 0.0579 | 3 426 ms | 1 246 s (1 038 ms/doc) |
-| supermemory 0.0.8 (`superrag`, single query) | 0.0740 | 0.0780 | 0.0580 | 0.0721 | **60 ms** | **6 s submitted** (queue ~24 min) |
+All three arms ran the same 1200-document corpus and the **pre-audit** 1000-question set stored in
+`benchmark/results/cognee-1000-results.json`. They used the same evidence rule: every evidence
+document must be in the top 10. On that set:
 
-*\*Note on Cognee:* The committed cognee 1.5.4 run was audited on 2026-09-24 and flagged for failing the design's ceiling check (`easy.recall10 = 0.2733 < 0.95`, triggering `RUN INVALID`), using an unrecorded embedder, and demonstrating quadratic $O(n^2)$ re-cognify ingest cost (`items_processed = 29400` across 48 batches of 25).
+| arm | recall@10 | run status |
+|---|---|---|
+| BM25, single search | 0.2300 | valid (self-controls pass) |
+| BM25, iterative (2 rounds, 10-doc budget) | 0.5070 | valid |
+| cognee 1.5.4 (`CHUNKS`) | 0.1030 | **INVALID**: easy recall@10 is 0.2733 (below 0.95), and no embedding model is recorded |
+| supermemory 0.0.8 (`superrag`, `searchMode=hybrid`) | 0.0780 | **unverified**: the run's readiness wait confirmed only 1 document was searchable |
 
-### Per tier (recall@10)
+The pre-audit question set has known defects. 445 chains pass through a `no_record_for` link. 70
+complex questions name deliveries as `dlv-NNN`, an identifier that appears in no document. The
+table above therefore compares the arms against each other only, not against a correct answer key.
 
-| arm | easy | medium | hard | complex | ALL |
+Reproduce the BM25 rows:
+`bun benchmark/cognee-bm25-baseline.ts --results=benchmark/results/cognee-1000-results.json`.
+Reproduce the cognee verdict:
+`bun benchmark/cognee-benchmark-report.ts --results=benchmark/results/cognee-1000-results.json`
+(exits 1; the metric tables are withheld).
+
+## 2. The clean question set (BM25 only so far)
+
+`benchmark/data/cognee-1000-questions.jsonl` passes `gt-lint` with 0 violations. BM25 on it:
+
+| mode | easy | medium | hard | complex | all |
 |---|---|---|---|---|---|
-| **BM25 (iterative 2-round)** | **1.0000** | **0.4486** | **0.0300** | **0.8000** | **0.4760** |
-| **BM25 (single query)** | **1.0000** | **0.0571** | 0.0100 | **0.6750** | **0.3080** |
-| cognee 1.5.4 (single query) | 0.2733 | 0.0000 | 0.0000 | 0.3100 | 0.1030 |
-| supermemory 0.0.8 (single query) | 0.2933 | 0.0000 | 0.0000 | 0.1700 | 0.0780 |
+| single | 1.0000 | 0.0571 | 0.0100 | 0.6750 | 0.3080 |
+| iterative | 1.0000 | 0.4486 | 0.0300 | 0.8000 | 0.4760 |
 
-**BM25 wins every tier.** On **easy** — one evidence document, the answer is a literal token — BM25 is **1.0000** against supermemory 0.2933 and cognee 0.2733. On **medium**, single query scores near 0 for all engines because later-hop documents share no vocabulary with the question; when allowed 2 search rounds within the same 10-document budget, BM25 jumps to **0.4486**.
+cognee and supermemory have **not** been run on this set. Both need their servers; neither was
+reachable when this was written. Until they are re-run, no cross-engine claim on the clean set is
+possible.
 
----
+## 3. What the audit changed in the harness
 
-## 2. Benchmark Audit Findings & Fixes (2026-09-24)
+| # | defect | change |
+|---|---|---|
+| 1 | 445 chains followed `no_record_for`, a "not related" link | medium and hard chains draw only from an allowlist of positive predicates |
+| 2 | Medium and hard cannot be answered in one search | BM25 reports single and iterative modes under the same 10-document budget |
+| 3 | Complex questions named `dlv-NNN`; vendor evidence was the vendor master record | the question names `delivery DL-NNN`; evidence is the document asserting that delivery's vendor or project |
+| 4 | The cited results file was gitignored | the cited JSON files and the clean corpus and questions are committed; the cognee report prints the results file's sha256 and git status |
+| 5 | supermemory readiness stopped at the first hit | the arm waits until 50 sampled documents, spread across the corpus, each come back by their own `customId`; the report records the count and wait time |
+| 6 | cognee's easy-tier rule was not enforced | the report fails `easy-ceiling` and `embedder-recorded`, titles the report RUN INVALID, and withholds the metric tables; the runner refuses to start without a named, non-fixture embedder |
 
-An audit of the initial benchmark run identified six critical methodological defects that have now been addressed:
+Correction to the audit on finding 6. `items_processed = 29400` is **not** evidence of
+quadratic ingest. It is a cumulative counter (25 + 50 + … + 1200). Measured per-batch wall time
+grew only from 19.3s to 31.8s (first-5 vs last-5 mean, 1.64×). Quadratic ingest would have grown
+about 48×. The report now judges ingest scaling on batch time, and this run passes.
 
-1. **Positive-Only Chains (Audit Fix 1):** In the original question generator, 445/1000 chains traversed `no_record_for` (negative evidence) hops. Medium and hard multi-hop tiers now strictly enforce `POSITIVE_CHAIN_PREDICATES` allowlist.
-2. **Iterative Search Mode (Audit Fix 2):** Because multi-hop questions contain no vocabulary from later hops in their question text, a single keyword search cannot find subsequent evidence documents. Iterative search (2-round entity traversal under a strict 10-document budget) tests true multi-hop retrieval capability.
-3. **Repaired Complex-Tier Keys (Audit Fix 3):** Fixed delivery display identifiers in questions (using `delivery DL-XXX` instead of raw unrendered `dlv-XXX`), and grounded vendor linking documents in the dock intake summary (`from_vendor` relation docId) rather than arbitrary vendor master records.
-4. **Reproducible Raw Results (Audit Fix 4):** Unignored cited result JSONs in `.gitignore` so fresh clones can reproduce the exact benchmark tables without external dependencies.
-5. **Supermemory Readiness Gate (Audit Fix 5):** The runner was updated to verify full document count readiness (`documentCount === docIds.length`) and sample probes across start, middle, and end of the corpus before beginning retrieval scoring.
-6. **Enforced Cognee Validity Gates (Audit Fix 6):** Added automatic enforcement of the easy-tier ceiling check (`easy.recall10 >= 0.95`, otherwise marking `RUN INVALID`) and detection of quadratic $O(n^2)$ ingest re-cognify.
+## 4. What the supermemory run did show
 
----
+These observations do not depend on the answer keys:
 
-## 3. Why supermemory lost — measured, not guessed
-
-### A. The embedding model cannot separate these documents
-Probing with a known document's **exact text**, the correct document scored `sim=1.000`
-but four **unrelated** documents scored `0.920–0.926`. Across all 10 000 returned hits:
-- similarity p10 / p50 / p90: 0.697 / 0.740 / 0.803
-- within-question spread (max−min of 10 hits): p50 **0.0301**, p90 0.0520
-A median spread of **0.03** over 10 candidates means the ranker barely differentiates them;
-ordering among near-equal vectors is close to arbitrary. This is `Xenova/bge-base-en-v1.5` (768d), the local English default.
-
-### B. Retrieval collapses onto a small subset
-- Distinct documents ever returned (of 1200): **399 (33%)**
-- Share of all 10 000 hits from the top 50 documents: **63.1%**
-- Most-returned single document: 303 times out of 1000 questions
-- Medium+hard questions where the evidence doc appeared *anywhere* in the top 10: 252 / 650
-
-### C. Multi-hop requires iterative search or graph hops
-`medium` and `hard` are **0.0000** on single-shot search across both dense arms. For supermemory, 252/650 medium+hard questions retrieved *one* evidence document, but never *all* required documents.
-
----
-
-## 4. Self-Hosted Server Audit Insights
-
-1. **`/v3/search` route regression in 0.0.8:** It returns `{"results":[],"total":0}` for every query, while `/v4/search` returns the same content with a similarity score.
-2. **`POST /v3/documents/batch` containerTag handling:** Ignores `containerTag` in its response; the read-back exposes it only as the deprecated plural `containerTags`.
-3. **Auditable Bun Executable:** The self-hosted binary is a Bun executable with readable JavaScript:
-   - `Usage metering is disabled in self-hosted builds.`
-   - `process.env.SUPERMEMORY_DISABLE_TELEMETRY === "1"`
-   - `sm_self_hosted: !0`
-   Metering is disabled and telemetry can be turned off via environment variables.
-
----
+- **Similarity is compressed.** Across 10,000 returned hits, the median spread between the top
+  and bottom of a question's 10 hits was 0.030. The embedder was `Xenova/bge-base-en-v1.5` (768d).
+- **Results are concentrated.** Only 399 of 1200 documents were ever returned, and one document
+  was returned for 303 questions. A partially built index would also produce this, so it is not
+  attributable to the embedder until the run is repeated behind the new readiness gate.
+- **`/v3/search` returns nothing on 0.0.8.** It returned `{"results":[],"total":0}` for every
+  query, while `/v4/search` worked.
+- **Self-hosted telemetry and metering.** The binary is a Bun bundle with readable JavaScript:
+  metering is disabled in self-hosted builds, and `SUPERMEMORY_DISABLE_TELEMETRY=1` turns off
+  telemetry.
 
 ## 5. Recommendation
 
-1. **Migrating cognee → supermemory for document retrieval is not justified.** It trades 0.1030 for 0.0780 while both lose to a keyword index.
-2. **The real finding is that BM25 beats both by 2x to 3x, and by 4x in iterative mode.** Production RAG should prioritize hybrid BM25 + dense fusion (`src/lib/rag.ts` RRF).
-3. **Keep supermemory in consideration for user conversation memory and user profiles**, which this document-retrieval benchmark does not evaluate.
+1. **Do not migrate** cognee → supermemory for document retrieval on this evidence. Neither dense
+   arm has a valid run that beats keyword search.
+2. **Re-run both dense arms on the clean question set** before drawing any cross-engine conclusion:
+   - cognee with a real, recorded embedder;
+   - supermemory behind the new readiness gate.
+3. **Compare against keyword + vector fusion** (`src/lib/rag.ts`), not only against plain BM25.
+   That is what production runs.
+4. **Keep supermemory in view for conversation memory**, which this benchmark does not measure.

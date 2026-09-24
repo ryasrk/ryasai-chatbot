@@ -43,6 +43,7 @@
  * Re-running must not re-ingest: pass `--skip-ingest` to reuse a dataset that is
  * already populated. Ingest is the only expensive, non-idempotent step.
  */
+import { embedderVerdict } from './cognee-benchmark-report'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { cogneeRemember, cogneeRecall, cogneeServerVersion, cogneeListDatasets } from '../src/lib/cognee-http'
@@ -708,6 +709,15 @@ export async function main(): Promise<number> {
   const answerSearchType = argOf('answer-search-type', 'HYBRID_COMPLETION')
   const skipIngest = has('skip-ingest') || has('skipIngest')
   const resume = has('resume')
+
+  // Refuse to spend an hour of ingest on a run the report will mark invalid: a
+  // missing or fixture embedder is exactly how the recorded 1.5.4 run became
+  // uninterpretable (see embedderVerdict in cognee-benchmark-report.ts).
+  const embedder = embedderVerdict(process.env.EMBEDDING_MODEL ?? process.env.COGNEE_EMBEDDING_MODEL ?? null)
+  if (!embedder.ok) {
+    console.error(`refusing to run: ${embedder.reason}. Set EMBEDDING_MODEL to the model the cognee server uses.`)
+    process.exit(2)
+  }
 
   if (!['retrieval', 'answer', 'both'].includes(mode)) {
     console.error(`--mode=${mode} must be retrieval|answer|both`)

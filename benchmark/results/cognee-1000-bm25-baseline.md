@@ -1,88 +1,76 @@
-# BM25 baseline — the row that makes the cognee number interpretable
+# BM25 baseline — single search and iterative search
 
-Regenerate: `bun benchmark/cognee-bm25-baseline.ts --out-json=benchmark/results/cognee-1000-bm25.json`
-(needs no server — runs deterministically over the corpus and questions).
+No server is needed. Every number below comes from one of these two commands:
 
-**Provenance:**
-- Corpus: 1200 documents (`--docs=1200 --with-contradictions`, seed 20260916).
-- Questions: 1000 questions (150 easy / 350 medium / 300 hard / 200 complex), verified by `benchmark/cognee-gt-lint.ts` with 0 violations.
-- Comparison window: top-10, matching the cognee and supermemory benchmark arms.
+```bash
+# A. Clean question set (the default input, committed under benchmark/data/)
+bun benchmark/cognee-bm25-baseline.ts --out-json=benchmark/results/cognee-1000-bm25.json
 
----
+# B. The pre-audit question set, as recorded inside the cognee run
+bun benchmark/cognee-bm25-baseline.ts --results=benchmark/results/cognee-1000-results.json
+```
 
-## 1. Benchmark Audit Findings & Revisions (2026-09-24)
+## Inputs
 
-An audit of the initial benchmark run identified six critical methodological defects that have now been addressed:
-
-1. **Positive-Only Chains (Audit Fix 1):** In the original question generator, 445/1000 chains traversed `no_record_for` (negative evidence) hops. Medium and hard multi-hop tiers now strictly enforce `POSITIVE_CHAIN_PREDICATES` allowlist.
-2. **Repaired Complex-Tier Keys (Audit Fix 3):** Fixed delivery display identifiers in questions (using `delivery DL-XXX` instead of raw unrendered `dlv-XXX`), and grounded vendor linking documents in the dock intake summary (`from_vendor` relation docId) rather than arbitrary vendor master records.
-3. **Automated GT Linting (MuSiQue Discipline):** Added `benchmark/cognee-gt-lint.ts` enforcing that 100% of hop documents contain both entities, no chains traverse negative edges, and no early documents leak answers.
-4. **Iterative Search Mode (Audit Fix 2):** Because multi-hop questions contain no vocabulary from later hops in their question text, a single keyword search cannot find subsequent evidence documents. Iterative search (2-round entity traversal under a strict 10-document budget) tests true multi-hop retrieval capability.
-
----
-
-## 2. Results: Single-Search vs. Iterative-Search BM25
-
-### Single-Search BM25 (1 Query, Fixed Budget: 10 Docs)
-
-| tier | n | recall@5 | recall@10 | recall@20 | answer@1 | MRR |
-|---|---|---|---|---|---|---|
-| easy | 150 | 1.0000 | **1.0000** | 1.0000 | 0.8200 | 0.9089 |
-| medium | 350 | 0.0000 | **0.0571** | 0.0829 | 0.0000 | 0.0083 |
-| hard | 300 | 0.0100 | **0.0100** | 0.4167 | 0.1000 | 0.2073 |
-| complex | 200 | 0.6600 | **0.6750** | 0.6950 | 0.1500 | 0.3763 |
-| **ALL** | **1000** | **0.2850** | **0.3080** | **0.4430** | **0.1830** | **0.2767** |
-
-### Iterative BM25 (Audit Fix 2 — 2 Rounds, Discovered Entity Follow-up, Fixed Budget: 10 Docs)
-
-| tier | n | recall@5 | recall@10 | answer@1 | MRR |
-|---|---|---|---|---|---|
-| easy | 150 | 1.0000 | **1.0000** | 0.8200 | 0.9089 |
-| medium | 350 | 0.0457 | **0.4486** | 0.0000 | 0.0690 |
-| hard | 300 | 0.0000 | **0.0300** | 0.1000 | 0.2232 |
-| complex | 200 | 0.6850 | **0.8000** | 0.1500 | 0.3953 |
-| **ALL** | **1000** | **0.3030** | **0.4760** | **0.1830** | **0.3065** |
-
----
-
-## 3. Head-to-Head Comparison @ Top-10
-
-| arm | recall@10 | answer@1 | MRR | Latency p50 |
-|---|---|---|---|---|
-| **BM25 (iterative 2-round, 10-doc budget)** | **0.4760** | **0.1830** | **0.3065** | ~0 ms |
-| **BM25 (single-query, 10-doc budget)** | **0.3080** | **0.1830** | **0.2767** | ~0 ms |
-| cognee 1.5.4 (`CHUNKS`, single-query)* | 0.1030 | 0.0390 | 0.0579 | 3 426 ms |
-| supermemory 0.0.8 (`superrag`, single-query) | 0.0780 | 0.0580 | 0.0721 | 60 ms |
-
-*\*Note on Cognee:* The committed cognee 1.5.4 run was flagged by the audit for failing the design's ceiling check (`easy.recall10 = 0.2733 < 0.95`, triggering `RUN INVALID`), and likely used an unverified embedding model.
-
----
-
-## 4. Self-Controls (Mechanical Proof of Harness Validity)
-
-Two automated controls run on every invocation and both PASS:
-
-| control | result | what a failure would mean |
+| input | file | how it was made |
 |---|---|---|
-| 200 gibberish queries must return **no** hit | 0/200 PASS | a tokenizer or corpus leak is scoring without matching |
-| same rankings graded against a **random** evidence id | real 160/300 vs random 3/300 PASS | `evidenceHitAtK` is not measuring retrieval |
+| corpus | `benchmark/data/cognee-1000-corpus.json` | `bun benchmark/cognee-corpus.ts --docs=1200 --with-contradictions` |
+| clean questions | `benchmark/data/cognee-1000-questions.jsonl` | `bun benchmark/cognee-question-gen.ts --corpus=… --easy=150 --medium=350 --hard=300 --complex=200` (seed 20260916) |
+| pre-audit questions | inside `benchmark/results/cognee-1000-results.json` | the question set cognee and supermemory were run on |
 
-The metric is the **same evidence rule** the main report uses (`evidence_hit@k` = *every*
-evidence doc in the top-k), graded on the clean question set verified by `cognee-gt-lint.ts`.
-The implementation is pinned by `benchmark/cognee-bm25-baseline.test.ts` (IDF sign, `k1`
-saturation, `b` length penalty, distinct-query-term handling, iterative multi-round retrieval,
-and the docId tie-break).
+The clean set passes `bun benchmark/cognee-gt-lint.ts` with 0 violations. The generator runs the
+same lint and exits non-zero on any violation.
 
----
+Neither question set is a subset of the other. The generator fixes changed which chains exist, so
+the two sets are different questions over the same corpus.
 
-## 5. Scope & Limitations
+## Results on the clean question set (command A)
 
-1. **Retrieval, not answer quality.** A hit means the evidence was *findable*. Neither
-   arm's retrieval score says the final reply used it or stated it correctly.
-2. **Synthetic templated corpus.** Identifiers like `DL-001`, `B-0001`, `INV-0001` strongly
-   benefit lexical search. In real unstructured text with synonyms and OCR noise, dense
-   retrieval has different trade-offs.
-3. **BM25 is unstemmed.** A stemmed BM25 or Postgres `ts_rank` arm would score higher.
-4. **Iterative search bridges multi-hop.** Multi-hop questions cannot be answered by single-shot
-   lexical queries; when given 2 rounds within the same 10-document budget, BM25 recall
-   jumps from 0.0571 to 0.4486 on medium tier.
+Both modes use a 10-document budget. Iterative mode takes the top 4 documents for the question,
+then searches for the identifiers those documents mention. It adds new documents until it reaches 10.
+
+| tier | n | single @10 | iterative @10 | single answer@1 | single MRR |
+|---|---|---|---|---|---|
+| easy | 150 | 1.0000 | 1.0000 | 0.8200 | 0.9089 |
+| medium | 350 | 0.0571 | 0.4486 | 0.0000 | 0.0083 |
+| hard | 300 | 0.0100 | 0.0300 | 0.1000 | 0.2073 |
+| complex | 200 | 0.6750 | 0.8000 | 0.1500 | 0.3763 |
+| **all** | **1000** | **0.3080** | **0.4760** | **0.1830** | **0.2767** |
+
+Hard stays near 0 in both modes. Iterative mode runs 2 rounds, and hard questions need 3 hops.
+Running a third round inside the same budget did not change the result.
+
+## Results on the pre-audit question set (command B)
+
+| mode | recall@10 |
+|---|---|
+| single | 0.2300 |
+| iterative | 0.5070 |
+
+## Comparison with cognee and supermemory
+
+These results cannot be compared to the other engines yet:
+
+- **Different questions.** The recorded cognee (0.1030) and supermemory (0.0780) runs used the
+  pre-audit question set. Command B grades BM25 on those same questions (single 0.2300), so only
+  that row compares directly. The clean-set numbers above have no cognee or supermemory
+  counterpart until both arms are re-run.
+- **The cognee run is invalid.** Its report fails two gates: easy recall@10 is 0.2733 (below
+  0.95), and no embedding model is recorded. Check with:
+  `bun benchmark/cognee-benchmark-report.ts --results=benchmark/results/cognee-1000-results.json`
+  (exits 1 and withholds the metric tables).
+
+## Self-controls (command A, both PASS)
+
+| control | result |
+|---|---|
+| 200 gibberish queries return no hit | 0/200 |
+| real vs random evidence id, first 300 questions | 160/300 vs 3/300 |
+
+## Limits
+
+- **Retrieval only.** A hit means the evidence documents were in the top 10, not that an answer was
+  correct.
+- **Synthetic templated corpus.** Identifiers such as `DL-001` favour keyword search.
+- **The BM25 is unstemmed.**
+- **One run, no trials.**
