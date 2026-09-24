@@ -687,3 +687,52 @@ here and why the vector leg has little room to help. The vector leg's value shou
 PARAPHRASED questions, which this corpus cannot generate honestly. On a deployment with real
 user traffic, §6a's product-surface A/B is still worth running once paraphrase data exists;
 until then the evidence supports lexical-first and nothing stronger.
+
+### 2026-09-24 (last): the vector-column migration, applied
+
+§11 recorded a migration that commit `63c2c21` declared necessary and never shipped. With
+data cleanup authorised — this is a fresh program, so the 114 stored `uat-deterministic-1536`
+vectors were expendable — it is now APPLIED to the dev database, and the vector leg is live
+for the first time.
+
+What was done, in the documented order (`tools/local-embeddings/README.md`):
+
+1. `DROP INDEX "DocumentChunk_embedding_hnsw"` — the HNSW index is bound to the column type.
+2. `ALTER TABLE "DocumentChunk" DROP COLUMN embedding` then `ADD COLUMN embedding vector(384)`.
+   `prisma/schema.prisma` already declared `vector(384)`; the live column was the stale part,
+   so no schema edit was needed and `prisma db push` cannot do this (it is opaque to
+   `Unsupported("vector(n)")` — verified earlier by probing a scratch database).
+3. Re-embedded all 114 chunks from the cached MiniLM vectors (`/tmp/real-doc-embeddings.json`,
+   the same ones the benchmark used), rewriting `embedding`, `embeddingJson`, `embeddingModel`
+   and `embeddedAt` together so the three cannot disagree.
+4. Rebuilt the HNSW index; `indisvalid` and `indisready` both true.
+
+**`LLM_ALLOWED_HOSTS=127.0.0.1` was the missing piece.** `isBlockedHost()` refuses loopback and
+private hosts to prevent SSRF, and the self-hosted embedding server listens on loopback — so
+the query embedding came back `null` and retrieval silently degraded to lexical-only. The
+operator-facing fix is `LLM_ALLOWED_HOSTS` (checked BEFORE the blocklist, exact hostnames),
+NOT the test marker `LLM_ALLOW_BLOCKED_HOSTS`, which `env-schema.ts` refuses in production.
+This is documented in `tools/local-embeddings/README.md` and was simply not set in `.env`.
+
+Setting it broke six security test files, all asserting the DEFAULT posture. That was fixed
+in the test RUNNER, not by weakening the guard — see the commit for the three levers that did
+and did not work.
+
+**The result, and why it matters more than the benchmark did.** The benchmark built its
+questions from the documents' own sentences, which is why BM25 scored ~perfect and the vector
+leg had no room to help. Asking a question the corpus shares no vocabulary with shows the
+other side:
+
+```
+Q: "how many annual leave days do employees get?"     (English; corpus is Indonesian)
+  #1 01-kebijakan-cuti.md            bm25=0    sim=0.7791
+  #2 01-kebijakan-cuti.md            bm25=0    sim=0.5843
+  #3 01-kebijakan-cuti.md            bm25=0    sim=0.6521
+  #4 09-panduan-pelatihan-karyawan.md bm25=0    sim=0.5734
+```
+
+Every hit has `bm25=0`: the lexical leg found NOTHING, and the vector leg alone produced the
+correct annual-leave policy at rank 1. That is the case lexical-first was designed to keep
+working — the vector leg fills in behind a lexical head rather than competing with it — and it
+is the first direct evidence in this document that the vector leg earns its place. The
+benchmark could not have produced it, because its questions were lexical by construction.
