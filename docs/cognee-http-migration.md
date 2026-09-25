@@ -300,9 +300,10 @@ while the write resolved successfully.
 
   An earlier version of this note claimed the E2E citation failure was this effect ("the RAG
   branch was not taken"). **That was wrong and is retracted**: in that failing run the tool run
-  was `RAG|success` and the citations were present in the database. The rendering failure has a
-  different cause, not yet identified. The routing effect below is real but was established by
-  direct measurement, not by that E2E run.
+  was `RAG|success` and the citations were present in the database. The citation failure had two
+  unrelated causes, both since found and fixed — see "RESOLVED: 03-knowledge-chat" below. The
+  routing effect described here is real but was established by direct measurement, not by that
+  E2E run.
 
   Measured (sections below, and note the retraction): memory in the routing prompt shifts
   decisions in BOTH directions and is shape-sensitive. The first headline claimed a large
@@ -312,9 +313,10 @@ while the write resolved successfully.
   pulls a counting question off SQL 3 times in 10. Two prompt-level variants have now been
   measured at **zero** further effect, so "change what gets injected" is NOT established as
   sufficient — see "Attempt 2 measured" for the full result.
-- **The graph write path still rejects valid JSON.** Measured from the sidecar's own log over
-  the life of the current container: **160** `ValidationError: 1 validation error for
-  KnowledgeGraph` events. Classified by the rejected input, not by guesswork:
+- **The graph write path still rejects valid JSON — PARTLY FIXED.** The fence-shaped
+  rejections are gone (the anchored-stripper defect below was patched and verified: 0 fence
+  payloads since). What remains is a different, unresolved shape. Original measurement from the
+  sidecar's own log, classified by the rejected input rather than by guesswork:
 
   | rejected input | count | what it means |
   |---|---|---|
