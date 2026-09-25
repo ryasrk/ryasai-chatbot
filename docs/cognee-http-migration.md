@@ -304,11 +304,14 @@ while the write resolved successfully.
   different cause, not yet identified. The routing effect below is real but was established by
   direct measurement, not by that E2E run.
 
-  Measured (section below): memory in the routing prompt **helps a lot** on document-answerable
-  questions (5/20 → 20/20 correct) and **hurts** when the injected text is conversation-shaped
-  (the selector returned NULL 7/8). So the answer is not "remove it" — it is "change what gets
-  injected", which is a behaviour change that needs its own measurement and should beat the
-  recorded baseline.
+  Measured (sections below, and note the retraction): memory in the routing prompt shifts
+  decisions in BOTH directions and is shape-sensitive. The first headline claimed a large
+  benefit (5/20 → 20/20) — **that number is retracted**, because the memory text used to
+  produce it contained the author's own hint. What survives measurement: memory moves a
+  document-answerable question from SQL (wrong) to RAG (right) 14/15 vs 0/10 without it, and
+  pulls a counting question off SQL 3 times in 10. Two prompt-level variants have now been
+  measured at **zero** further effect, so "change what gets injected" is NOT established as
+  sufficient — see "Attempt 2 measured" for the full result.
 - **The graph write path still rejects valid JSON.** Measured from the sidecar's own log over
   the life of the current container: **160** `ValidationError: 1 validation error for
   KnowledgeGraph` events. Classified by the rejected input, not by guesswork:
@@ -424,10 +427,23 @@ healthy, and neither was visible from the code.
    error naming the endpoint rather than the cause. Added
    `host.docker.internal:host-gateway`, which is Docker's portable alias.
 
-**Not fixed by this**: retrieval quality. The stored token is found by searching for the
-token itself, but NOT by a semantic query ("kode hub utama" returns nothing) — so a fact is
-stored and not recallable by meaning. That is a separate defect and is NOT documented as
-solved here.
+**Retrieval by meaning: WORKS — an earlier claim of mine that it did not is RETRACTED.**
+
+I reported that a stored token was findable only by searching the token itself and not by a
+semantic query, and listed it as an open defect. That was a MEASUREMENT ERROR: the test ran
+against `probe:fencefix` in a container that had already been replaced, so it was querying a
+dataset whose matching container no longer existed. Re-measured on the dataset and container
+that actually pair up (`probe:compose-measure`, compose sidecar), `searchType: CHUNKS`:
+
+| query | contains the stored token |
+|---|---|
+| "kode hub distribusi utama" | **yes** |
+| "kode hub" | **yes** |
+| "apa kode hub" | **yes** |
+
+So memory retrieval works by meaning, not only by literal token match. The lesson joins the
+others in this document: a probe that pairs a dataset with the wrong container produces a
+confident false negative.
 
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
   `646bbc9` with memory off, and again against the production standalone build. Its `signIn()`
@@ -682,10 +698,24 @@ Same fixture (memory about a distribution hub), 10 interleaved pairs per questio
 - The greeting is unaffected, which is the main thing to check when adding text to a prompt.
 - The counting question is pulled OFF SQL by memory 3 times in 10 — the same direction seen
   before, now with a smaller effect. Memory is not free here.
-- **The third row is not about memory at all**: that question routes wrongly with memory OFF.
-  It is a pre-existing router defect that this work happened to expose — `REST=5`, `CHAT=2`
-  and `NULL=3` with memory, and 0/10 without — and it is left as its own finding rather than
-  bundled into a memory change.
+- **The third row is a MEASUREMENT ERROR OF MINE, not a defect.** I reported
+  "list the connected integrations" routing wrongly 0/10 with memory off, as a pre-existing
+  router bug. It is not: `getUnifiedTools` exposes `admin:list_integrations` ONLY for
+  `context === 'agentic' && isAdmin`, and I asked the question through the CHAT path.
+  Counted directly:
+
+  | context | isAdmin | tools | has admin:list_integrations |
+  |---|---|---|---|
+  | chat | false | 5 | no |
+  | chat | true | 5 | no |
+  | agentic | false | 5 | no |
+  | agentic | **true** | **16** | **yes** |
+
+  So the router had no correct answer available to give, and 0/10 was the honest outcome for
+  a question asked in the wrong place. The chat path deliberately excludes admin and plugin
+  tools — the comment above that gate records why (7 of 8 ordinary questions pulled in
+  irrelevant plugins on the chat path). Recorded as a retracted finding rather than deleted,
+  because "I measured the wrong thing" is the reusable lesson.
 
 Net: memory in the routing prompt is **mixed**, and no prompt-level variant measured so far
 removes the cost without giving up the benefit (0/10 -> 14/15 on the document question).
