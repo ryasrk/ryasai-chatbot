@@ -205,18 +205,37 @@ export function startJobWorker(): Worker<JobData> {
   void ensureOrderReconcileRepeatable().catch((e) =>
     console.warn('[worker] failed to ensure order-reconcile repeatable:', e),
   )
-  // ponytail: orphaned-job recovery. If the app crashes/redeploys mid-job the
-  // job stays on the `active` list holding a stale lock; BullMQ's stalled
-  // checker re-queues it, but jobs enqueued by a process whose worker never
-  // started (the duplicated-root-instrumentation bug) sit on `wait` forever
-  // with zero attempts — `wait`-side jobs are picked up automatically once a
-  // live worker exists, so this only needs to log what we adopted.
-  void adoptStuckJobs().catch(() => null)
+  // Startup diagnostics — NOT a recovery mechanism. See the doc comment on
+  // `reportQueuedJobsOnStartup` for what actually recovers orphaned jobs (the worker's own
+  // stalled checker, plus a live worker for `wait`) and why a queue inspected while the app
+  // is down still shows orphans.
+  void reportQueuedJobsOnStartup().catch(() => null)
   return worker
 }
 
 /** Log the queue depth the moment a worker first attaches — makes backlog visible. */
-async function adoptStuckJobs(): Promise<void> {
+/**
+ * Report what is already waiting, so a restart is visible in the logs.
+ *
+ * RENAMED FROM `adoptStuckJobs`, which promised something it did not do. It never adopted
+ * anything: it counted `wait` and logged. That is worth keeping (a restart with a backlog
+ * should say so), but a function named "adopt" that only reports is how a real gap stays
+ * invisible — a reader assumes orphaned jobs are handled because a function says so.
+ *
+ * WHAT ACTUALLY RECOVERS ORPHANED JOBS, and why nothing is adopted here:
+ *
+ * - `wait` jobs need no help. A live worker picks them up; this only reports the backlog.
+ * - `active` jobs orphaned by a killed process are recovered by BullMQ's own stalled
+ *   checker, which the worker is configured with (`stalledInterval: 30_000`,
+ *   `maxStalledCount: 1`). The checker runs INSIDE a live worker, so it only fires once a
+ *   worker exists — which is why a queue inspected while the app is down still shows them.
+ *   MEASURED: 9 such jobs sat on `active` with the app stopped, and the documents from that
+ *   same run were fully embedded (e2e-answer.txt 2/2 chunks, the others 1/1).
+ *
+ * So this is diagnostics, and it is named and documented as such rather than left looking
+ * like a recovery mechanism.
+ */
+async function reportQueuedJobsOnStartup(): Promise<void> {
   try {
     const health = await checkRedisHealth()
     if (!health.connected) {
@@ -225,7 +244,7 @@ async function adoptStuckJobs(): Promise<void> {
     }
     const waiting = await redis.llen('bull:document-processing:wait')
     if (waiting > 0) {
-      console.log(`[worker] Adopting ${waiting} queued document job(s) from a previous run.`)
+      console.log(`[worker] ${waiting} document job(s) already queued; a live worker will pick them up.`)
     }
   } catch {
     // diagnostics only — never block worker startup

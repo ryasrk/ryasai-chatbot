@@ -494,7 +494,11 @@ describe('enqueueOrSync — the Redis-down degradation path', () => {
   })
 })
 
-describe('adoptStuckJobs diagnostics', () => {
+// Named for what it does. It was `adoptStuckJobs`, which described a recovery mechanism
+// that does not exist: the function counted `wait` and logged, and never adopted anything
+// (including the `active` orphans it was named for, which BullMQ's own stalled checker
+// recovers once a worker is live).
+describe('reportQueuedJobsOnStartup diagnostics', () => {
   test('logs nothing when Redis is unreachable, and does not block startup', async () => {
     // Diagnostics only: a Redis outage must not stop the worker from attaching, because
     // BullMQ reconnects on its own and a refusal here would leave the queue unserved.
