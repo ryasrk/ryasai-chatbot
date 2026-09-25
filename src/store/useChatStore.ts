@@ -59,6 +59,24 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => {
       const last = state.messages[state.messages.length - 1]
       if (!last || last.sender !== 'ai') {
+        // THE ANSWER IS DROPPED HERE, SILENTLY — and this branch is reachable.
+        //
+        // MEASURED (e2e/03-knowledge-chat, memory enabled): the SSE `answer` frame carried
+        // citations=2, the placeholder was confirmed present in the store right after
+        // addMessage ("user,ai"), and yet this branch ran — leaving the store as
+        // [user, ai(previous), user] with the new answer nowhere. The cause is that the
+        // placeholder can be displaced before the answer arrives: `selectSession`
+        // (use-chat-sessions.ts) does `setMessages(msgs)` from the server, and the server
+        // only holds PERSISTED messages, so an in-flight placeholder is wiped.
+        //
+        // Returning early is still right — there is no AI row to finalize — but it must not
+        // be SILENT, and the citations must not vanish without a trace. Logging turns a
+        // mystery ("Sources never renders with memory on") into a direct diagnosis.
+        console.warn(
+          '[chat] answer arrived with no AI message to finalize — the placeholder was ' +
+            'displaced (a session reload replaces messages with persisted rows only). ' +
+            `Dropping ${payload.citations?.length ?? 0} citation(s) and the answer text.`,
+        )
         return { isStreaming: false, currentStatus: '', currentStatusMessage: '' }
       }
       const finalized = {

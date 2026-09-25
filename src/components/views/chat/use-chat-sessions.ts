@@ -34,7 +34,27 @@ export function useChatSessions(onSessionCreated: () => void) {
         const data = await res.json()
         if (ac.signal.aborted) return
         const msgs: ChatMessageItem[] = data.messages ?? []
-        useChatStore.getState().setMessages(msgs)
+
+        // DO NOT DISCARD AN IN-FLIGHT TURN. The server returns PERSISTED messages only, so a
+        // plain `setMessages(msgs)` wipes any local row that has not been saved yet — which is
+        // exactly the streaming placeholder the answer is about to be finalized into.
+        //
+        // MEASURED (e2e/03-knowledge-chat with memory enabled): the SSE `answer` frame carried
+        // 2 citations, the placeholder was confirmed present right after addMessage, and the
+        // store then read `[user, ai(previous), user]` at assertion time. `finalizeLastAiMessage`
+        // found its last row was not an AI row, took the early return, and dropped the answer
+        // plus both citations — the warning it now logs fired once, reporting exactly that.
+        //
+        // Local rows are kept when they are still streaming or when the server has not caught
+        // up with them yet; server rows win for everything already persisted, so an edit or
+        // delete on another device is still reflected.
+        const persistedIds = new Set(msgs.map((m) => m.id))
+        const inFlight = useChatStore
+          .getState()
+          .messages.filter((m) => m.status === 'generating' || !persistedIds.has(m.id))
+          .filter((m) => !msgs.some((server) => server.id === m.id))
+
+        useChatStore.getState().setMessages(inFlight.length > 0 ? [...msgs, ...inFlight] : msgs)
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') return
         toast.error(
