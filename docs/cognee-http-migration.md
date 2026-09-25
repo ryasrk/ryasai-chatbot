@@ -502,7 +502,7 @@ So memory retrieval works by meaning, not only by literal token match. The lesso
 others in this document: a probe that pairs a dataset with the wrong container produces a
 confident false negative.
 
-### `03-knowledge-chat` fails ONLY with memory active: the cause is the TEST MOCK
+### `03-knowledge-chat` fails ONLY with memory active: cause UNKNOWN, backend proven correct
 
 One spec fails when a sidecar is configured and passes 16/16 without one. Established by
 dumping the database after a failing run rather than by reading the UI:
@@ -515,13 +515,20 @@ dumping the database after a failing run rather than by reading the UI:
 So retrieval, citation construction and persistence are all CORRECT with memory on. What fails
 is the rendering assertion, and the reason is in the harness:
 
-**`e2e/mock-llm.ts` has no one-shot guard on its configured tool call.** It emits the tool
-call on EVERY request that offers tools
-(`if (wantsToolCall && offersTools && !hasToolResult)`), and the chat path calls
-`selectToolWithLlm` **twice per turn** — `quickPick` (tool-router.ts:93) and the real routing
-call (tool-router.ts:428). Both offer tools. Enabling memory changes how often that pipeline
-runs, which changes which of the two consumes the tool call, which changes whether the RAG
-branch is taken at all.
+**A cause I proposed and then DISPROVED, recorded so it is not re-proposed.** My first
+explanation was that `e2e/mock-llm.ts` has no one-shot guard on its configured tool call
+(it emits on every request offering tools, and the chat path calls `selectToolWithLlm` twice
+per turn — `quickPick` at tool-router.ts:93 and routing at :428), so memory changed which call
+consumed the tool call and the RAG branch was never reached.
+
+**That cannot be right, and my own evidence says so.** The database after a FAILING run holds
+the AI message WITH full citations (769 chars, including `e2e-answer.txt`) — which is only
+possible if the RAG branch DID run and citations WERE built. A missing tool call would have
+produced an empty citation list, which is exactly what the "no sidecar" runs show. So the mock
+is not what blocks the branch.
+
+The one-shot experiment corroborates it from the other side: adding the guard made citations go
+from `ADA(769)` to **`KOSONG`**, i.e. it BROKE a branch that was working.
 
 **I tried the obvious fix and it made things WORSE, which is the informative part.** Adding a
 `toolCallEmitted` flag (emit once, reset on a tool result) is correct in isolation, and with it
@@ -529,10 +536,18 @@ the citations went from `ADA(769)` to **`KOSONG`** — because the first consume
 so the real routing call then got a plain text reply and no citations at all. The mock cannot
 distinguish the two calls: both are identical HTTP requests offering the same tools.
 
-Reverted, and recorded as **an unresolved harness defect, not a product one**. Fixing it needs
-one of: a distinct marker the mock can key on (e.g. a header the routing call sets), or a mock
-that answers tool-call-shaped requests by position rather than by a global flag. Until then
-`bun run e2e` with a sidecar configured shows 15/16, and the failing spec is measuring the mock.
+Reverted. **The true cause is UNKNOWN**, and the honest statement is narrower than the one I
+first wrote: with a sidecar configured, retrieval and citations work and are persisted, yet the
+UI does not render the `Sources (n)` control, and only in this spec. Without a sidecar the same
+spec passes, so the difference is real and reproducible (2 consecutive runs).
+
+What is ruled OUT by measurement: retrieval, citation construction, persistence, the RAG branch
+being taken, and the mock's tool-call handling. What is left to check is the render path — the
+streaming `answer` frame's `citations` field versus the refetch path — and that needs an SSE
+capture on this spec, which my attempts did not land.
+
+Until then `bun run e2e` with a sidecar shows 15/16. This does NOT affect CI, which sets no
+`COGNEE_SERVER_URL` and runs the suite without memory (16/16).
 
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
   `646bbc9` with memory off, and again against the production standalone build. Its `signIn()`
