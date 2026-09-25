@@ -467,6 +467,35 @@ So this is a **latency** defect, not a data-loss one: the extraction is retried 
 `_MAX_VALIDATION_RETRIES`, with a 240s tenacity stop floor) and eventually succeeds. 117 s
 versus 9 s is the visible cost, and it is why a fresh-dataset write can take minutes.
 
+**Root cause narrowed by direct isolation.** Same endpoint, same model, same `json_object`,
+varying only the prompt:
+
+| prompt | reply |
+|---|---|
+| short ("Extract a graph. JSON only.") | clean JSON, 314 chars |
+| cognee-style schema-in-prompt | **empty string** |
+| cognee-style, WITHOUT `json_object` | **empty string** |
+| long filler system prompt (98-638 chars) | answered in every case |
+
+So it is neither `response_format` nor prompt LENGTH (filler up to 638 chars was answered
+fine) — it is something specific to the schema-bearing prompt. The empty replies in the live
+log match this exactly: the captured `input_value` for the recent failures is `''`, not prose.
+**I did not isolate which element of that prompt triggers it**, and the prompt lives inside the
+server, so this is recorded as the boundary rather than guessed past.
+
+**Retries are NOT wasted, so do not "fix" this by removing them.** Counted over one
+container's log:
+
+| stage | count |
+|---|---|
+| validation retry 1/3 | 297 |
+| retry 2/3 | 215 (so 82 recovered at attempt 2) |
+| retry 3/3 | 142 |
+| gave up entirely ("Retrying … in Ns") | 113 |
+
+184 of 297 eventually succeeded on a retry. Removing retries would convert those into losses.
+The cost is latency, and the fix has to be the prompt, not the retry count.
+
 **Three framework choices were tested to remove it, and only one works on this endpoint:**
 
 | `STRUCTURED_OUTPUT_FRAMEWORK` | result |

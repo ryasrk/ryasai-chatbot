@@ -32,6 +32,27 @@ export const RAG_MAX_CHUNKS_PER_UPLOAD = 500
  */
 export const MEMORY_CONTEXT_MAX_CHARS = 2000
 
+/**
+ * Cap on the text handed to cognee's WRITE path per chat turn.
+ *
+ * WHY THIS EXISTS. `rememberChatTurn` used to serialise the full user message and the full
+ * assistant reply with no bound. Long answers are normal (a document-grounded RAG answer is
+ * routinely several thousand characters), and the write path runs cognee's graph extraction
+ * over whatever it is given.
+ *
+ * MEASURED, and the reason this is a latency fix rather than tidiness: the extraction call is
+ * prompt-sensitive in a way I isolated directly — the same endpoint and model return clean
+ * JSON for a short extraction prompt, and an EMPTY STRING for a long schema-bearing one. A
+ * validation failure is then retried up to three times before succeeding, so an oversized turn
+ * is paid for repeatedly: writes on a fresh dataset measured 228s, 135s and 117s, against 8.9s
+ * for a small one.
+ *
+ * 4000 chars keeps a full turn's substance (both messages plus tool summary) while keeping the
+ * extraction input near the sizes that were observed to succeed. Truncation is marked so a
+ * reader of the stored memory can see it happened.
+ */
+export const MEMORY_WRITE_MAX_CHARS = 4000
+
 // Rate limiting
 export const RATE_LIMIT_WINDOW_MS = 60_000
 export const RATE_LIMIT_DEFAULT = 60

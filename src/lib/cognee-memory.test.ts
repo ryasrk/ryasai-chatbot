@@ -1,4 +1,5 @@
 import { test, expect, describe, mock, beforeEach } from 'bun:test'
+import { MEMORY_WRITE_MAX_CHARS } from '@/lib/constants'
 
 // ---------------------------------------------------------------------------
 // Chat memory: remember/recall + the session-level semantic cache.
@@ -120,6 +121,43 @@ describe('rememberChatTurn', () => {
     state.client = null
     await rememberChatTurn({ userMessage: 'hi', aiMessage: 'hello', sessionId: 's1', toolRuns: [] })
     expect(state.rememberCalls).toHaveLength(0)
+  })
+
+  test('an OVERSIZED turn is truncated and MARKED before it reaches cognee', async () => {
+    // Why this is pinned: cognee's graph extraction is prompt-sensitive — measured, the same
+    // endpoint returns clean JSON for a short extraction prompt and an EMPTY STRING for a long
+    // one — and a validation failure is retried up to 3x, so an oversized turn is paid for
+    // repeatedly (writes on a fresh dataset: 228s/135s/117s vs 8.9s for a small one).
+    state.serverOptions = { baseUrl: 'http://cognee:8000', timeoutMs: 1000 }
+    const huge = 'x'.repeat(MEMORY_WRITE_MAX_CHARS * 2)
+    await rememberChatTurn({
+      userMessage: 'summarise this',
+      aiMessage: huge,
+      sessionId: 's-big',
+      toolRuns: [],
+    } as never)
+
+    expect(state.httpRememberCalls).toHaveLength(1)
+    const call = state.httpRememberCalls[0] as { args: { texts: string[] } }
+    const sent = call.args.texts[0]
+    expect(sent.length).toBeLessThanOrEqual(MEMORY_WRITE_MAX_CHARS + 60)
+    // Marked, not silent: stored memory is read back into future prompts, so a reader must be
+    // able to tell a clipped turn from a short one.
+    expect(sent).toContain('[memory truncated for extraction]')
+  })
+
+  test('a normal-sized turn passes through untouched', async () => {
+    // The bound must not alter the common case at all.
+    state.serverOptions = { baseUrl: 'http://cognee:8000', timeoutMs: 1000 }
+    await rememberChatTurn({
+      userMessage: 'berapa penjualan',
+      aiMessage: 'Rp 5 miliar',
+      sessionId: 's-small',
+      toolRuns: [],
+    } as never)
+    const call = state.httpRememberCalls[0] as { args: { texts: string[] } }
+    expect(call.args.texts[0]).not.toContain('[memory truncated')
+    expect(JSON.parse(call.args.texts[0]).assistant).toBe('Rp 5 miliar')
   })
 
   test('stores the turn as JSON text against the org dataset (HTTP transport)', async () => {

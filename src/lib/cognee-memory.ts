@@ -4,7 +4,7 @@
  */
 import type { ChatTurnMemory } from './cognee-types'
 import { datasetFor } from './cognee-types'
-import { MEMORY_CONTEXT_MAX_CHARS } from '@/lib/constants'
+import { MEMORY_CONTEXT_MAX_CHARS, MEMORY_WRITE_MAX_CHARS } from '@/lib/constants'
 import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline, getCogneeGraphProvider, supportsNaturalLanguageSearch, getCogneeServerOptions } from './cognee-core'
 import { cogneeRemember, cogneeRecall } from './cognee-http'
 
@@ -19,14 +19,21 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (serverOpts) {
     // ponytail: graceful degradation — fire-and-forget, memory loss is never fatal
     try {
-      const text = JSON.stringify({
-        type: 'chat_turn',
-        user: args.userMessage,
-        assistant: args.aiMessage,
-        tools: args.toolRuns,
-        sessionId: args.sessionId,
-        ts: Date.now(),
-      })
+      // BOUNDED. See MEMORY_WRITE_MAX_CHARS for the measurement: cognee's extraction is
+      // prompt-sensitive (clean JSON for a short prompt, an empty string for a long
+      // schema-bearing one), a validation failure is retried up to 3x, and writes on a fresh
+      // dataset measured 228s/135s/117s versus 8.9s for a small one. Truncating here keeps
+      // each turn near the sizes observed to succeed.
+      const text = capWritePayload(
+        JSON.stringify({
+          type: 'chat_turn',
+          user: args.userMessage,
+          assistant: args.aiMessage,
+          tools: args.toolRuns,
+          sessionId: args.sessionId,
+          ts: Date.now(),
+        }),
+      )
       const res = await cogneeRemember(serverOpts, {
         texts: [text],
         datasetName: datasetFor(),
@@ -110,6 +117,18 @@ export function clearSessionCache(sessionId?: string): void {
 // ---------------------------------------------------------------------------
 // Recall (graph + session)
 // ---------------------------------------------------------------------------
+
+/**
+ * Bound what one chat turn contributes to cognee's write path.
+ *
+ * Truncation is MARKED rather than silent: the stored memory is read back verbatim into future
+ * prompts, so a reader (human or model) should be able to tell that a turn was clipped instead
+ * of assuming the conversation ended there.
+ */
+function capWritePayload(text: string): string {
+  if (text.length <= MEMORY_WRITE_MAX_CHARS) return text
+  return `${text.slice(0, MEMORY_WRITE_MAX_CHARS)}\n[memory truncated for extraction]`
+}
 
 /**
  * Upper bound on a recall, applied HERE so every caller inherits it.
