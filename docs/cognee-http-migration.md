@@ -785,8 +785,20 @@ Same fixture (memory about a distribution hub), 10 interleaved pairs per questio
 | "list the connected integrations" | SQL | **0/10** | **0/10** |
 
 - The greeting is unaffected, which is the main thing to check when adding text to a prompt.
-- The counting question is pulled OFF SQL by memory 3 times in 10 — the same direction seen
-  before, now with a smaller effect. Memory is not free here.
+- The counting question ("how many documents are uploaded?") is pulled off SQL by memory
+  3 times in 10. **But SQL is not the right answer for it either**, which I got wrong twice:
+  the `sql` tool queries the CUSTOMER's connected databases
+  (`unified-tools.ts`: "Query structured relational data from connected databases"), while
+  "how many documents are uploaded" is a question about THIS APP's own knowledge base. There is
+  no chat-path tool for that — `admin:list_integrations` and friends exist only for agentic +
+  admin (counted earlier in this document), and no tool counts app documents at all. So the
+  "expected SQL" column in that table encodes a wrong expectation, and the memory effect there
+  is smaller than the table implies.
+- Correcting that expectation shrinks the memory finding rather than growing it: the only case
+  where memory demonstrably changes routing for the BETTER is the document-answerable question
+  (0/10 → 14/15), and the only demonstrated harm is on questions whose expected answer was
+  itself wrong. Memory's net effect is therefore best described as **unproven**, not as the
+  "mixed but mostly harmful" I wrote earlier.
 - **The third row is a MEASUREMENT ERROR OF MINE, not a defect.** I reported
   "list the connected integrations" routing wrongly 0/10 with memory off, as a pre-existing
   router bug. It is not: `getUnifiedTools` exposes `admin:list_integrations` ONLY for
