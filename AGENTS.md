@@ -466,10 +466,12 @@ flow is e2e-tested via mock Midtrans (:4547, `MIDTRANS_BASE_URL` test seam).
 - Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables,
   `test-data/` PDFs). **Checked against the actual build:** `.dockerignore` excludes
   `test-data/`, and `.next/standalone/` ships only `node_modules`, `public` and `server.js` —
-  so neither the PDF fixtures nor `scripts/` reach the customer image today. The remaining
-  exposure is `connectors.ts`'s `SQLITE_DEMO` provider, which IS compiled into the app and
-  would let a customer point an integration at demo tables. That is the real item, and it is
-  recorded here rather than the whole list being repeated as if nothing had been checked.
+  so neither the PDF fixtures nor `scripts/` reach the customer image today. The last
+  remaining reference was a COMMENT in `prisma/schema.prisma` listing `SQLITE_DEMO` among the
+  allowed providers. Checked before acting on it: `SQLITE_DEMO` appears NOWHERE in `src/` — the
+  demo connector was already removed, and the UI offers only POSTGRESQL / MYSQL / MSSQL — so the
+  comment was the last trace of a capability that no longer exists. Removed. The checklist item
+  is therefore CLOSED, not carried forward.
 - `helm/` chart lags docker-compose — `helm/README.md` carries a NOT-PRODUCTION-READY
   banner and a divergence table; don't point customers at it until reconciled (compose +
   `install.sh` are the supported path).

@@ -142,7 +142,7 @@ model Integration {
   organizationId  String
   name            String
   type            String   // DATABASE | API
-  provider        String   // POSTGRESQL | MYSQL | MSSQL | REST_API | SQLITE_DEMO
+  provider        String   // POSTGRESQL | MYSQL | MSSQL | REST_API
   encryptedConfig String   // AES-256-GCM hex blob (nonce + ciphertext)
   status          String   @default("active") // active | inactive | error
   lastTestedAt    DateTime?
