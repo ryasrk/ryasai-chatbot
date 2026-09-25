@@ -210,6 +210,22 @@ export async function fetchWithRetry(url: string, init: RequestInit): Promise<Re
       }
     }
   }
+  // Wrap a TRANSPORT failure in LlmProviderError so it reaches `classifyProviderFailure`.
+  //
+  // MEASURED BEFORE THIS FIX, against the real endpoint with a dead base URL:
+  //
+  //     message: "Unable to connect. Is the computer able to access the url?"
+  //     hint:    (empty)
+  //
+  // That is Bun's raw fetch error surfacing to the customer unclassified. `classifyProviderFailure`
+  // has had an `unreachable` branch all along — verified it returns the right kind for
+  // "Unable to connect…", ECONNREFUSED, ENOTFOUND, "fetch failed" and a timeout — but the branch
+  // was UNREACHABLE, because only HTTP responses were ever wrapped in LlmProviderError and a
+  // transport error never got there. A wrong base URL or a firewall is the most common BYOK
+  // failure there is, and it was the one case with no guidance.
+  if (lastError && !(lastError instanceof LlmProviderError)) {
+    throw new LlmProviderError(null, lastError.message)
+  }
   throw lastError ?? new Error('LLM fetch failed.')
 }
 
@@ -407,13 +423,17 @@ export function redactProviderBody(body: string): string {
 export class LlmProviderError extends Error {
   readonly status: number
   readonly failure: ProviderFailure
-  constructor(status: number, body: string, stream = false) {
+  constructor(status: number | null, body: string, stream = false) {
     const { failure } = { failure: classifyProviderFailure(status, body) }
+    // A TRANSPORT failure has no HTTP status. Printing "HTTP null" would be a confusing thing to
+    // show a customer whose real problem is a wrong base URL or a blocked port, so the status is
+    // omitted and the underlying message is carried instead.
+    const label = status === null ? 'transport error' : `error (HTTP ${status})`
     // Redact BEFORE the slice: a key that straddles the 200-char boundary would otherwise leave a
     // fragment behind, and the classification above already ran on the raw body where it is useful.
-    super(`LLM ${stream ? 'stream ' : ''}error (HTTP ${status}): ${redactProviderBody(body).slice(0, 200)}`)
+    super(`LLM ${stream ? 'stream ' : ''}${label}: ${redactProviderBody(body).slice(0, 200)}`)
     this.name = 'LlmProviderError'
-    this.status = status
+    this.status = status as number
     this.failure = failure
   }
 }

@@ -1072,6 +1072,32 @@ describe('fetchWithRetry (via chatOnce)', () => {
     expect(calls).toBe(4)
   })
 
+  test('a TRANSPORT failure is classified as unreachable and carries a hint', async () => {
+    // MEASURED against the real endpoint with a dead base URL, before this fix:
+    //   message: "Unable to connect. Is the computer able to access the url?"
+    //   hint:    (empty)
+    // i.e. Bun's raw fetch error reaching the customer unclassified. `classifyProviderFailure` has
+    // always had an `unreachable` branch, but only HTTP responses were ever wrapped, so the branch
+    // was unreachable code. A wrong base URL or a firewall is the most common BYOK failure there
+    // is, and it was the one case with no guidance — the opposite of the module's stated purpose.
+    global.fetch = mock(() => { throw new Error('Unable to connect. Is the computer able to access the url?') }) as unknown as typeof fetch
+
+    let caught: unknown = null
+    try {
+      await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).not.toBeNull()
+    expect(caught).toBeInstanceOf(LlmProviderError)
+    const err = caught as LlmProviderError
+    expect(err.failure.kind).toBe('unreachable')
+    expect(err.failure.hint).toContain('Could not reach your AI provider')
+    // A transport failure has no HTTP status; "HTTP null" would be a confusing thing to show.
+    expect(err.message).toContain('transport error')
+    expect(err.message).not.toContain('HTTP null')
+  })
+
   test('4xx error does NOT retry → throws immediately', async () => {
     let calls = 0
     global.fetch = mock((_: string, __: RequestInit) => {
