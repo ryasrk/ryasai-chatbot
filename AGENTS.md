@@ -505,6 +505,36 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 - Benchmark run artifacts are gitignored (`benchmark/results/*.json`, keeping the
   curated `ground-truth-failures.json`) so they stop polluting the working tree.
 
+## Silent-failure classes found by probing (2026-09-25)
+
+Three defects this round shared one shape: **the code reported success for work it had not done, or
+dropped data on the way out** — and every one was found by executing a probe, not by reading.
+
+1. **A guard that matched a WORD, not a CALL.** `invariants.test.ts` asserted
+   `toContain('startJobWorker')`, so deleting the call left it green (the name survives in the
+   `import` above). Now strips comments and requires an invocation, negative-controlled.
+
+2. **A wipe reported as done when the forget failed.** `resetCognee` wrapped
+   `cogneeForget(...)` in `catch {}` and returned `true`, so "forget everything" cleared every
+   `cognifyStatus` and wrote a success audit row while the memory was still there. Its siblings
+   `forgetAll`/`forgetKnowledgeGraph` already returned `false`; it was the lone outlier.
+
+3. **A field SELECTED but never MAPPED.** `GET /api/documents/[id]` selected `cognifyStatus` and
+   `cognifyError` and then built the response by hand without them, so a failed memory-index
+   looked like a healthy document. The field was in Prisma, in the `select`, in the client type,
+   and in the sibling list route — and still never reached the client.
+
+**Rules that follow from these:**
+
+- Assert on the **response body**, not on the query. 71 route tests already do; the 4 that assert on
+  the `select` argument would pass while the mapping is missing. A field can be selected, typed and
+  documented and still not be returned.
+- `catch {}` around an operation whose RESULT YOU REPORT is a false-success bug. Either propagate
+  the failure or record it in a field the UI reads. Graceful degradation is for work that is
+  optional (memory recall returning `''`); it is not for work whose completion you claim.
+- When one function in a family gets a rule right and a sibling does not, the outlier is the bug —
+  check the family, not just the call site.
+
 ## Conventions
 
 - **English** in all user-facing strings (UI, errors, system prompts, comments).
