@@ -194,15 +194,6 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `ai.test.ts` asserts on this prompt text — extend those assertions when adding rules.
 - **SQL eval harness**: `bun run sql-eval --integration <id>` (`benchmark/sql-eval.ts`, needs `EVAL_ORG_ID`) measures execution accuracy + keyword presence (ILIKE/CURRENT_DATE/LIMIT) against a golden question set (`--file` for custom sets, `--out` for JSON results). Prompt changes should be measured with it, not vibes.
 
-### Text-to-SQL prompt conventions
-
-- The single SQL-generation prompt lives inline in `generateSql()` (`src/lib/ai.ts`). Rules 13–16 encode hard-won behavior — do not drop them when restructuring:
-  - String search must be **case-insensitive per dialect**: PostgreSQL `ILIKE '%x%'` (or `LOWER()`), MySQL/MSSQL `LOWER(col) LIKE`, ClickHouse `positionCaseInsensitive(col, 'x') > 0`. Bare `=` or case-sensitive `LIKE` misses real user data.
-  - `%`/`_` inside a search term need an explicit `ESCAPE` clause; never strip user wildcards silently.
-  - `IS NULL` / `COALESCE`, never `= NULL`; LIKE on a NULL column returns NULL.
-  - Substring match for "contains / menyebut / terkait / tentang"; exact case-insensitive equality for "exactly / persis".
-- `ai.test.ts` asserts on this prompt text — extend those assertions when adding rules.
-
 ### LLM → Database safety (audit-verified)
 
 **Enforced**: `guardrails.ts` — SELECT/WITH-only, mutation-keyword + injection-pattern rejection (string-literal-aware scan), **side-effecting-function denial** (`detectDangerousFunctions`: `pg_read_file`, `dblink`, `set_config`, `load_file`, `file()`, `url()`, `openrowset`, …), single statement, LIMIT clamped/forced to `SQL_MAX_LIMIT=100` (`constants.ts`); re-checked at the execution boundary by `assertSelectOnly()` + `assertNoDangerousFunctions()` in `real-connectors.ts` (shared function list — do NOT create a second copy, that divergence is what made the boundary weaker than the guard). **DB-layer read-only**: Postgres `SET TRANSACTION READ ONLY` + `SET LOCAL statement_timeout`, MySQL `SET TRANSACTION READ ONLY` / `START TRANSACTION READ ONLY`, ClickHouse `readonly=1` + `request_timeout`, MSSQL `readOnlyIntent` (see gap below). Driver-level timeouts (30s `QUERY_TIMEOUT_MS`) for pg/MySQL/MSSQL/ClickHouse; per-integration semaphore `SQL_MAX_CONCURRENT=3` (`tool-utils.ts`, per-instance not distributed); verified TLS by default; `queryHistory` rows + audit trail (`GUARDRAIL_BLOCK` logged critical).
@@ -578,6 +569,20 @@ by reading the code.
    pointed at the model; the model was never told. **If a prompt seems ignored, verify it was
    DELIVERED — check `prompt_tokens` against the text you sent, not just the code path.**
 
+12. **A rule set delivered in the wrong ROLE — and a single sample nearly hid it.** The provider
+   discards a system message above ~2000 characters (see 11). Auditing every system message the app
+   sends found TWO production prompts over the line: the Text-to-SQL specialist (3033 chars) and
+   memory context (2606 chars). So the SQL RULES — including rules 13-16 that encode real fixed bugs
+   — were discarded on EVERY request, and recall from prior turns was dropped while still costing
+   the call that produced it. Both moved to USER messages, where there is no ceiling (12000 chars
+   reports 1558 prompt_tokens and a system instruction is still obeyed). Memory context moved for a
+   second reason too: it is derived from earlier user turns, so it is untrusted input and a system
+   message gives it the highest authority — fencing alone would not have fixed that.
+   **Beware the lucky sample.** An early probe showed the 3033-char SQL prompt reporting 548
+   prompt_tokens, apparently delivered, which would have justified leaving the defect in place.
+   Re-running the same shape three times showed it dropped 3/3, and sweeping 1800/2000/2100/2200
+   located the boundary between 2000 and 2100. One favourable sample is not a measurement.
+
 **A local note that generalises:** three rounds of "the model ignores this rule" ended here. Round 7
 moved the ambiguity rule into code because a prompt rewrite changed nothing (0/4) — the right
 outcome, for a reason I did not know: there was nothing to ignore. When a prompt change has EXACTLY
@@ -594,20 +599,6 @@ change under test. Pin fixes like this with a DETERMINISTIC test on the pure fun
 gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
 effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
 tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
-
-12. **A rule set delivered in the wrong ROLE — and a single sample nearly hid it.** The provider
-   discards a system message above ~2000 characters (see 11). Auditing every system message the app
-   sends found TWO production prompts over the line: the Text-to-SQL specialist (3033 chars) and
-   memory context (2606 chars). So the SQL RULES — including rules 13-16 that encode real fixed bugs
-   — were discarded on EVERY request, and recall from prior turns was dropped while still costing
-   the call that produced it. Both moved to USER messages, where there is no ceiling (12000 chars
-   reports 1558 prompt_tokens and a system instruction is still obeyed). Memory context moved for a
-   second reason too: it is derived from earlier user turns, so it is untrusted input and a system
-   message gives it the highest authority — fencing alone would not have fixed that.
-   **Beware the lucky sample.** An early probe showed the 3033-char SQL prompt reporting 548
-   prompt_tokens, apparently delivered, which would have justified leaving the defect in place.
-   Re-running the same shape three times showed it dropped 3/3, and sweeping 1800/2000/2100/2200
-   located the boundary between 2000 and 2100. One favourable sample is not a measurement.
 
 **Rules that follow from these:**
 
