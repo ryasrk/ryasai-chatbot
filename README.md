@@ -1,12 +1,17 @@
 # ryasai — Enterprise AI Assistant
 
-![CI](https://github.com/ryasai/Chatbot/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-Proprietary-red) ![Version](https://img.shields.io/badge/version-0.4.1-blue) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
+![CI](https://github.com/ryasai/Chatbot/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/license-Proprietary-red) ![Version](https://img.shields.io/badge/version-1.0.0-blue) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
-**Multi-tenant SaaS** AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails and organizational isolation.
+**On-prem, multi-tenant** AI assistant that answers questions by routing to the right tool: SQL queries, document RAG, REST API calls, external plugins, or general chat. Built for enterprises that need data-grounded AI with security guardrails and organizational isolation.
 
 - **Multi-tenant:** Each organization is completely isolated. Documents, queries, and results are per-org. Org context enforced via AsyncLocalStorage + Prisma extension.
 - **Advanced RAG:** Hybrid retrieval (vector + lexical + knowledge graph) with RRF rank fusion. BM25 with corpus-level IDF. Structure-aware chunking (headings + tables stay whole). Evaluation framework with a per-org golden-set generator and independent-judge support.
 - **Production-grade security:** AES-256-GCM encryption, session fixation defense, SSRF protection, audit logging, role-based access control.
+
+**Deployment model:** one install per customer, on the customer's own hardware, licensed with a
+signed machine-bound key. There is no vendor cloud and no per-token billing — the customer supplies
+their own LLM and embedding endpoints (BYOK), so inference spend goes to their provider, not to us.
+Multiple `Organization` rows within one install are supported and fully isolated.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for full system design. See [MULTI-TENANT-GUIDE.md](./MULTI-TENANT-GUIDE.md) for org isolation details.
 
