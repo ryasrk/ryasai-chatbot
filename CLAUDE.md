@@ -1096,3 +1096,46 @@ All free/open-source stack (no paid subscriptions). Deps pre-installed: `fast-ch
 **Verified**: `tsc --noEmit` 0 errors · `bun run lint` 0 errors (160 pre-existing warnings, mostly in `.github/skills/impeccable`, unrelated to this session) · `bun run test` 1616 pass / 0 fail / 8 skip across 102 files · live e2e re-check (isolated worktree, same Postgres/mock-LLM/mock-license harness as the automated suite) confirms the sidebar tooltip text is now legible and "Add Database" still renders single-line at all tested widths.
 
 **Next**: visual spot-check the other 4 non-default themes (Midnight/Forest/Slate/Sandstone) in a real browser session — the contrast audit computed all 10 combinations mathematically but only Enterprise Blue/dark was screenshotted this session. Consider running `impeccable detect` again once impeccable's ruleset catches structural patterns like the icon-prop bug (currently out of its scope — it's a project-specific `Button` API convention, not a general anti-pattern).
+
+### 2026-09-25 — Release 1.0.0: memory integration replaced, and a guard that proved nothing
+
+**Version aligned to 1.0.0** in all six places it was stamped (package.json, .env.example,
+install.sh, and the two code fallbacks + otel) — they had drifted to FOUR different numbers
+(0.4.0 / 2.0.0 / 0.5.0 / 0.0.0), and the code fallbacks are what the customer's UI actually
+displays (the Dockerfile declares no `ARG`, so `NEXT_PUBLIC_APP_VERSION` from `.env` never
+reaches the bundle). CHANGELOG converted from a two-month-old `[Unreleased]` into `[1.0.0]`.
+
+**Cognee: one backend, one version, one writer.** Removed `@cognee/cognee-ts` entirely and moved
+memory to a pinned **cognee v1.6.0 API server**; with no `COGNEE_SERVER_URL` memory is OFF rather
+than half-wired. Reason is measured, not stylistic: two lineages writing one store produced a
+collection sized 1536 while the embedder returned 384, and a graph with 0 nodes after a write
+that reported success. Cross-session recall now works and is measured (write ~9s warm, recall
+0.21-0.35s from a different session, found by a semantic query too).
+
+**Latency, localized honestly.** Write latency is the CUSTOMER's model, not this code: measured
+on their endpoint, "Say OK" answers in 1.3s while an extraction request takes 23.7s. All four
+write sites are fire-and-forget, so an answer is never blocked — the cost is memory FRESHNESS.
+Two claims I made and then retracted with the refuting numbers are recorded in
+`docs/cognee-http-migration.md`.
+
+**A guard that proved nothing — the most valuable find of the session.** Following the discipline
+of negative-controlling every guard: deleting the real `startJobWorker()` CALL from
+`src/instrumentation.ts` left the suite at **49 pass, 0 fail**, because the assertion was
+`toContain('startJobWorker')` and the name survives in the import one line above (a comment
+satisfied it too). That guard exists for the repo's most expensive known outage (40 document jobs
+stuck 16+ hours). It now strips comments and requires an INVOCATION. Two other guards were
+audited and held (cognee searchTypes; the SQL deny-list, which was already written against a call
+count).
+
+**Also fixed:** the chat UI could drop an in-flight answer and then drop it silently (both fixed);
+e2e now clears the BullMQ queue as well as Postgres (orphaned jobs were leaving a document
+without a vector and failing a citation assertion); `adoptStuckJobs` renamed — it never adopted
+anything.
+
+**Verified by execution, not assertion:** `tsc` 0 · `lint` 0 · `bun run test` 265/265 files,
+6825 pass, 0 fail, 71 skip · `bun run e2e` 16/16 (dev) · `bun run e2e:prod` 16/16 against the
+standalone build, which reports version 1.0.0 and ships no `@cognee`.
+
+**Known and documented, not hidden:** the provider occasionally returns an empty body for an
+extraction call (rare, not reproducible on demand; retries recover it — 184 of 297 first-attempt
+validation failures eventually succeeded). The exact trigger is outside this codebase.
