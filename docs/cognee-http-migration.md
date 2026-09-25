@@ -292,15 +292,93 @@ while the write resolved successfully.
 
 ### Open, and NOT fixed
 
-- **Memory reaches tool selection.** `tool-router.ts` passes `memoryContext` into
-  `selectToolWithLlm`, so what was remembered in an earlier session can change which tool the
-  router picks. Observed in E2E as `e2e/03-knowledge-chat` failing to render citations once a
-  server was configured (the RAG branch was not taken), while the same spec passes with memory
-  off. The planner call deliberately passes `memoryContext: undefined`, which suggests the
-  routing case was not considered. **This needs a product decision, not a patch**: either
-  memory should not influence routing at all, or it should and the behaviour needs to be
-  intended and tested. Not changed here because guessing would silently alter routing for
-  every install.
+- **Memory reaches tool selection, and its effect is measured — see the section below.**
+  `tool-router.ts` passes `memoryContext` into `selectToolWithLlm`, which renders it as
+  `Context from memory:` in the routing prompt; the `routeQuery` fallback renders it too
+  (`Memory from prior interactions:`). So an earlier session's remembered facts can change
+  which tool the router picks.
+
+  An earlier version of this note claimed the E2E citation failure was this effect ("the RAG
+  branch was not taken"). **That was wrong and is retracted**: in that failing run the tool run
+  was `RAG|success` and the citations were present in the database. The rendering failure has a
+  different cause, not yet identified. The routing effect below is real but was established by
+  direct measurement, not by that E2E run.
+
+  Measured (section below): memory in the routing prompt **helps a lot** on document-answerable
+  questions (5/20 → 20/20 correct) and **hurts** when the injected text is conversation-shaped
+  (the selector returned NULL 7/8). So the answer is not "remove it" — it is "change what gets
+  injected", which is a behaviour change that needs its own measurement and should beat the
+  recorded baseline.
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
   `646bbc9` with memory off. Its `signIn()` helper times out waiting for either `#email` or the
   Dashboard heading.
+
+---
+
+## Does memory in the routing prompt help or hurt? Measured
+
+Asked directly, so measured directly. Same model, same questions, **conditions interleaved
+alternately** so provider drift lands on both sides equally. `routeQuery`-style fallbacks are
+counted separately (`NULL` = the selector returned nothing, so routing fell through to the
+heuristic router).
+
+### 1. It clearly HELPS when the answer lives in a document
+
+Question: *"What is the primary distribution hub code?"* — answerable from an uploaded
+document, so `RAG` is correct. 20 pairs:
+
+| | SQL (wrong) | RAG (right) | NULL |
+|---|---|---|---|
+| without memory | **14/20** | 5/20 | 1/20 |
+| with memory | 0/20 | **20/20** | 0/20 |
+
+Without memory the router sends this to SQL two times in three and the document is never
+searched. This is the single biggest routing effect measured here, and it is a **strong
+argument for keeping memory in the prompt.**
+
+### 2. It clearly HURTS when the memory is conversation-shaped
+
+`rememberChatTurn` writes chat turns; `recallContext` returns recalled chunks that look like
+them. Question as above, 8 pairs per condition:
+
+| memory injected | RAG (right) | SQL | CHAT | NULL |
+|---|---|---|---|---|
+| none | 3/8 | 5/8 | 0/8 | 0/8 |
+| **conversation-shaped** (`Events: chat turn / Roles: user, assistant`) | 0/8 | 1/8 | 0/8 | **7/8** |
+| document-shaped (`This chunk is about the warehouse manual…`) | 6/8 | 0/8 | 1/8 | 1/8 |
+
+Conversation-shaped memory — **exactly what this system writes by default** — pushed the
+selector to return nothing 7 times out of 8. `NULL` is survivable, not fatal: it falls through
+to `routeQuery`, which is conservative. But a router that has stopped deciding is not doing its
+job, and this is the shape of memory a real install accumulates.
+
+### 3. It can HURT a question that should go to SQL
+
+*"how many documents are uploaded?"* — 6 pairs:
+
+| | SQL (right) | RAG (wrong) |
+|---|---|---|
+| without memory | 5/6 | 1/6 |
+| with memory | 3/6 | 1/6 (+2 NULL) |
+
+Smaller and noisier than the effects above, but it points the wrong way: memory containing
+document-ish text pulls a counting question toward document search.
+
+### What this means
+
+The honest summary is **mixed, and shape-dependent, not "good" or "bad"**:
+
+- Memory in the routing prompt is doing real work that the base prompt cannot do. On a
+  document-answerable question it moved routing from 5/20 to 20/20 correct. Removing it outright
+  would be a measurable regression.
+- But what gets injected is currently *whatever recall happens to return*, and recalled chat
+  turns are a poor routing signal: they pushed the selector to `NULL` 7/8.
+- The prompt placement compounds it: memory is rendered directly beneath *"Reply in text only
+  when the question needs no data at all: … a message that refers to earlier turns."* A block of
+  remembered conversation sitting under that instruction is an invitation to answer from memory
+  instead of calling a tool.
+
+**The likely fix is not to remove memory from routing but to change WHAT is injected** — a
+distilled summary of remembered topic, or document-shaped recall only — and to measure it the
+same way. That is a prompt/behaviour change affecting every install, so it is recorded here
+rather than guessed at. The runs above are the baseline any change should beat.
