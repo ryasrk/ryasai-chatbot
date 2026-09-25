@@ -1,7 +1,11 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Last updated 2026-08-14. Version 0.4.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
+> Last updated 2026-09-25. Version 1.0.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
+>
+> **Counts and versions in this file drift.** Sections 1–2 and 8 describe CURRENT state and are
+> corrected to 1.0.0; section 9 (Progress Log) is HISTORICAL and its numbers were true when
+> written — do not "fix" them. When you need a number, run the command.
 
 ---
 
@@ -12,9 +16,9 @@
 | Path | `/home/ryasr/ryasai/Chatbot` |
 | Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · PostgreSQL 16 (pgvector + pg_trgm) · Bun · Tailwind 4 · shadcn/ui |
 | Runtime | Bun for dev/test, Node standalone for prod build |
-| Domain | Multi-tenant SaaS AI assistant: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
-| Status | **Production ready** (2026-07-27): Postgres migration complete, production RAG architecture, fail-closed auth, standalone build verified |
-| Version | 0.4.0 |
+| Domain | Multi-tenant AI assistant deployed **on-prem per customer**, licensed with a signed machine-bound key: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
+| Status | **Release 1.0.0** (2026-09-25). Verified by execution, not assertion: `tsc` 0 · `lint` 0 · `bun run test` 265/265 files, 6825 pass, 0 fail · `bun run e2e` 16/16 (dev) and `e2e:prod` 16/16 against the standalone build |
+| Version | 1.0.0 |
 | Language | English (standardized — all UI, errors, system prompts, comments in English) |
 
 ---
@@ -37,8 +41,9 @@
 - SSO/SAML: enterprise-tier feature, integrates with organization identity providers.
 - Session: `getActiveUser()` calls `enterWithOrg()` to set context, checks license status.
 
-**Data layer (Prisma schema — 30 models)**
-- `Company`, `User`, `Integration` (encrypted config), `IntegrationSchema` (reflected table/columns cache).
+**Data layer (Prisma schema — 31 models; verify with `grep -c "^model " prisma/schema.prisma`)**
+- `Organization` (tenant root), `User` (RBAC `admin|analyst|viewer`), `Integration` (encrypted config), `IntegrationSchema` (reflected table/columns cache).
+  **There is no `Company` model** — an earlier revision listed one. Verified: `grep -c "^model Company " prisma/schema.prisma` = 0, `companyId` = 0, `organizationId` = 93.
 - `LlmConfig` + `VectorStoreConfig` (per-tenant LLM + vector store, AES-256-GCM encrypted keys).
 - `Document` → `DocumentChunk` (content, keywords, embeddingJson, embeddingModel).
 - `RestApiConnector` → `RestApiEndpoint` (whitelisted method+path+paramSchema).
@@ -69,7 +74,7 @@
 - `GUARDRAIL_BLOCK` audit at `critical` severity.
 
 **Connectors (`src/lib/connectors.ts`)**
-- Registry pattern: `getConnector(id, provider, config)`. Provider: POSTGRESQL | MYSQL | MSSQL | SQLITE_DEMO | REST_API.
+- Registry pattern: `getConnector(id, provider, config)`. Provider: POSTGRESQL | MYSQL | MSSQL | CLICKHOUSE | REST_API. **There is no `SQLITE_DEMO`** — it was removed; the UI offers only POSTGRESQL/MYSQL/MSSQL. Drivers load through the static `DRIVER_LOADERS` map in `real-connectors.ts` (invariant #3 in AGENTS.md), never a variable-specifier `import()`.
 - `fetchSchema()` reflection, `executeQuery(sql)`, `describeSchema()` for LLM prompts.
 
 **Streaming** — Real SSE token streaming via `runStreamingChatCompletion` in `tool-router.ts`. Old Socket.io WS service deleted (P1.5).
@@ -103,7 +108,7 @@
 - UI polling (15s) + toast notification on run completion. History dialog with export buttons.
 
 **Tests**
-- 913 unit tests across 56 files (`bun run test` — per-file subprocess runner for mock isolation), 4 Playwright e2e (`bun run e2e`), mock LLM server for determinism.
+- 6825 unit tests across 265 files (`bun run test` — per-file subprocess runner for mock isolation), 16 Playwright e2e (`bun run e2e`), mock LLM server for determinism. **Do not trust a count you did not just run** — earlier revisions of this file said "913 across 56" long after both numbers had changed.
 
 ### 2.2 Gaps & risks (super-app blockers)
 
@@ -162,7 +167,7 @@ User query
 
 ### Super-app principles (non-negotiable)
 
-1. **Tenant isolation is sacred** — every tool, every memory query, every graph traversal carries `companyId`. No cross-tenant leakage ever.
+1. **Tenant isolation is sacred** — every tool, every memory query, every graph traversal is scoped by `organizationId` (injected by the tenant extension, not hand-written). No cross-tenant leakage ever.
 2. **Fail-closed by default** — missing config, expired key, ambiguous permission → refuse, audit, explain. Never guess.
 3. **Tools are whitelisted, never free-form** — the LLM proposes a tool *id* from a registry; it cannot invent endpoints or SQL tables.
 4. **Every tool run is observable** — `ToolRun` row with latency, input/output summary, status. Every guardrail block → `AuditLog` critical.
@@ -187,7 +192,7 @@ User query
 
 **Phase 1 — Parallel memory (non-destructive)**
 - Add `src/lib/cognee.ts` wrapping `@cognee/cognee-ts`.
-- On every chat turn: `cognee.remember({ userMessage, aiMessage, toolRuns, sessionId })` with `dataset=company:{companyId}`.
+- On every chat turn: `cognee.remember({ userMessage, aiMessage, toolRuns, sessionId })` against the org dataset. **The real names are `org:<id>` and `org:<id>:kb`** (`datasetFor()` / `kbDatasetFor()` in `cognee-types.ts`), not `company:{companyId}` — an earlier revision of this section used the old naming.
 - On every `routeQuery`: first call `cognee.recall(question, { session_id })` → inject top memory hits into the router prompt as "prior context".
 - Keep existing RAG untouched. Measure: does recall improve follow-up questions ("what about last month?")?
 
@@ -196,7 +201,7 @@ User query
   - Upload doc → extract text (reuse `document-parsers.ts`) → `cognee.add()` → `cognee.cognify()`.
   - Cognee extracts entities + relationships, builds graph, stores embeddings in pgvector.
 - Retrieval: `cognee.recall(question)` returns graph-grounded chunks + related entities. Falls back to existing lexical RAG if cognee unavailable.
-- Per-tenant dataset isolation: `dataset=company:{companyId}:kb`.
+- Per-tenant dataset isolation: `org:<id>:kb` (see above).
 
 **Phase 3 — Agent memory across sessions**
 - `improve()` after each successful tool run: store "this SQL answered this question well" as a pattern.
@@ -217,7 +222,7 @@ User query
   GRAPH_DATABASE_PROVIDER=postgres
   CACHE_BACKEND=postgres
   ```
-- **Isolation**: cognee datasets are namespaced `company:{companyId}`. Enforce in `src/lib/cognee.ts` wrapper — never let a raw `companyId`-less call through.
+- **Isolation**: cognee datasets are namespaced `org:<id>`. The wrapper in `cognee-types.ts` is the only place a dataset name is built, so no call can reach a name without an org. Verified against the code, not the design sketch.
 
 ### When NOT to use cognee
 
@@ -282,7 +287,7 @@ if result.error and retries < 2:
 ### 5.3 Hybrid retrieval (current — keep, wrap cognee as outer ring)
 
 ```
-retrieveRelevantChunks(companyId, query, topK):
+retrieveRelevantChunks(query, topK):
   queryTokens = tokenize(query)
   queryEmbedding = embed(query) if embeddingConfigured
   vectorHits = vectorStore.search(queryEmbedding) if vectorStoreConfigured
@@ -296,9 +301,9 @@ retrieveRelevantChunks(companyId, query, topK):
 
 **Cognee outer ring** (Phase 2+):
 ```
-retrieveWithGraph(companyId, query, topK):
+retrieveWithGraph(query, topK):
   flat = retrieveRelevantChunks(...)        // existing
-  graph = cognee.recall(query, { dataset: `company:${companyId}:kb` })
+  graph = cognee.recall(query, { dataset: kbDatasetFor() })  // org:<id>:kb
   // graph returns entities + relationship-aware chunks
   return mergeDedupe(flat, graph, preferGraphForMultiHop(query))
 ```
@@ -318,14 +323,14 @@ validateAndSanitizeLlmSql(sql):
 ### 5.5 Memory write-back (new — cognee Phase 1)
 
 ```
-afterChatTurn(companyId, sessionId, userMsg, aiMsg, toolRuns[]):
+afterChatTurn(sessionId, userMsg, aiMsg, toolRuns[]):
   await cognee.remember({
     type: "chat_turn",
     user: userMsg,
     assistant: aiMsg,
     tools: toolRuns.map(t => ({ type: t.type, status: t.status, latency: t.latencyMs })),
     timestamp: now()
-  }, { dataset: `company:${companyId}`, session_id: sessionId })
+  }, { dataset: datasetFor(), session_id: sessionId })  // org:<id>
   // fire-and-forget; never block the response on memory write
 ```
 
@@ -383,7 +388,7 @@ runAgenticLoop(question, context, maxIter=3):
 - **Encrypt at rest**: all integration configs, LLM keys, vector store keys → AES-256-GCM (`src/lib/crypto.ts`). Never log decrypted values.
 - **SQL guardrails**: every LLM-generated SQL passes `validateAndSanitizeLlmSql` before execution. No exceptions, no bypass flag.
 - **REST whitelisting**: only `RestApiEndpoint` rows with `isEnabled=true` are callable. LLM cannot invent paths.
-- **Tenant scoping**: every DB query includes `where: { companyId }`. Lint rule: grep for `db.*findMany` without `companyId` in code review.
+- **Tenant scoping**: the Prisma extension in `prisma-tenant.ts` injects `organizationId` from AsyncLocalStorage — it is NOT written into each `where` by hand, and there is no `companyId`. Two rules that ARE load-bearing: (a) every route must call `enterWithOrg(...)` itself (`enterWith` does not propagate to the caller's frame), enforced by `tenant-route-guard.test.ts`; (b) loading a row by a CLIENT-SUPPLIED id must use `findFirst`, never `findUnique`, because the extension cannot scope a unique `where`.
 - **API keys**: hashed (`keyHash`), prefix-only stored, rate-limited, revocable, audit-logged.
 - **Session cookies**: `httpOnly`, `sameSite=lax`, `secure` in prod, signed.
 
@@ -402,8 +407,8 @@ runAgenticLoop(question, context, maxIter=3):
 ### Testing
 - `bunx tsc --noEmit` — zero errors.
 - `bun run lint` — zero errors.
-- `bun run test` — 913 unit tests across 56 files (per-file subprocess runner, 0 fail). Any new lib file ships with `*.test.ts`.
-- `bun run e2e` — 4 golden-path specs with mock LLM, keep green.
+- `bun run test` — per-file subprocess runner, must report 0 fail (265 files as of 1.0.0; the runner prints the real count, so read it rather than this line). Any new lib file ships with `*.test.ts`.
+- `bun run e2e` — 16 golden-path specs with mock LLM, keep green. Also run `bun run e2e:prod` before shipping; dev and the standalone build diverge.
 - **New rule for super-app work**: every new tool in the registry ships with a unit test for its executor + a guardrail test if it touches external systems.
 
 ### Code conventions (observed)
@@ -466,8 +471,8 @@ runAgenticLoop(question, context, maxIter=3):
 bun run dev          # dev server on $PORT (3000 default)
 bun run build        # standalone build → .next/standalone
 bun run start        # prod standalone server
-bun run test         # unit tests (913 pass, 0 fail, 8 skip — per-file runner for mock isolation)
-bun run e2e          # Playwright (4 specs, mock LLM)
+bun run test         # unit tests (per-file runner for mock isolation — read the count it prints)
+bun run e2e          # Playwright (16 specs, mock LLM + mock license validator)
 bun run lint         # eslint (0 errors)
 bunx tsc --noEmit    # typecheck (0 errors)
 bunx prisma db push  # apply schema to PostgreSQL
@@ -498,7 +503,7 @@ bash reset.sh        # reset DB + re-seed
 | `src/lib/prompt-settings.ts` | Per-tenant system prompt + tool toggles |
 | `mini-services/scheduler/index.ts` | Cron-based scheduled run worker |
 | `src/app/api/v1/chat/completions/route.ts` | OpenAI-compatible external API |
-| `prisma/schema.prisma` | 30 models, multi-tenant, encrypted configs |
+| `prisma/schema.prisma` | 31 models, multi-tenant, encrypted configs |
 
 ### Specs & progress
 - `PLAN.md` — overhaul plan (all phases P0–P5 + S4 + RAG complete)
@@ -538,7 +543,7 @@ bash reset.sh        # reset DB + re-seed
 **S2 — Cognee memory (G2, G3)** — `src/lib/cognee.ts` (132 lines) + `src/lib/cognee.test.ts` (76 lines, 8 tests):
 - NO-OP when `COGNEE_ENABLED=false` (default). Dynamic import of `@cognee/cognee-ts` (not installed — fails gracefully).
 - **Reuses tenant LLM config** (`getLlmRuntimeConfig`) — cognee gets the same baseUrl/apiKey/model the chatbot uses. No separate cognee env vars.
-- Per-tenant client cache keyed by companyId. `datasetFor(companyId)` → `company:{companyId}` isolation.
+- Per-tenant client cache. `datasetFor()` → `org:<id>` isolation.
 - Exports: `rememberChatTurn` (fire-and-forget), `recallContext` (prompt-ready string), `forgetCompany` (GDPR), `cogneeHealth`.
 
 **S3 — Plugin registry (G7)** — 4 new files:
@@ -746,7 +751,15 @@ Query → tokenize → load schema/endpoint/doc metadata + ToolRun history + sim
 
 ### 2026-07-24 — Single-tenant admin-only refactor + full audit fixes
 
-**Architectural change**: Removed `Company` model, `companyId` from ALL models, `role` from `User`. App is now single-tenant, admin-only. Every DB query, every function signature, every API route, every view simplified.
+> ⚠️ **REVERTED — this entry describes a state that no longer exists.** The single-tenant
+> refactor below was undone: the codebase IS multi-tenant, with `Organization` as the tenant
+> root, `organizationId` on every model and `role` back on `User`. Verified:
+> `grep -c "organizationId" prisma/schema.prisma` = 93, `companyId` = 0. Kept for the reasoning
+> (the audit fixes in this entry are real and still apply), but **do not follow its
+> "no companyId / everyone is admin" guidance** — that is exactly the bug class
+> `prisma-tenant.ts` and `tenant-route-guard.test.ts` exist to prevent.
+
+**Architectural change (since REVERTED)**: Removed `Company` model, `companyId` from ALL models, `role` from `User`. App became single-tenant, admin-only. Every DB query, every function signature, every API route, every view simplified.
 
 **Schema changes** (prisma/schema.prisma — 521→380 lines):
 - Removed `Company` model entirely
