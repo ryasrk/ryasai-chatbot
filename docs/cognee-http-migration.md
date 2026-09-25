@@ -344,14 +344,36 @@ deployment actually produced:
 | model output | upstream strip |
 |---|---|
 | `` ```json … ``` `` (fence wraps everything) | works |
-| `` ```json … ``` `` + "Hope this helps!" | **falls through** |
-| "Here you go:" + `` ```json … ``` `` | **falls through** |
+| "Here you go:" + `` ```json … ``` `` | **falls through** (prose before) |
+| `` ```json … ``` `` + "Hope this helps!" | **falls through** (prose after) |
 | clean JSON, no fence | works (unchanged) |
 
-Two independent defects, both needed fixing: the pattern was anchored, AND the call site used
-`.match()` (position 0 only), so prose BEFORE the block was never examined even after the
-pattern was widened. Rejections in the log matched both shapes verbatim — one opened with
-`Fixed the field names (```json`.
+Two independent defects, both needed fixing: the pattern was anchored `\A...\Z`, AND the call
+site used `.match()` (position 0 only), so prose BEFORE the block was never examined even
+after the pattern was widened.
+
+**Which shapes actually occurred, counted rather than assumed.** Of 155 `KnowledgeGraph`
+rejections in one container's log, 28 contained a fence:
+
+| shape | count | handled by upstream? |
+|---|---|---|
+| starts with the fence | **24** | yes — `\Z` is satisfied when the fence is the tail |
+| starts with **prose**, fence later | **4** | **no** — `.match()` never looks past position 0 |
+
+So the anchoring that bit us in practice was `.match()`, not `\A`: the 24 fenced rejections
+began AT the fence, and the 4 that began with prose are the ones position-0 matching cannot
+see. One of those four is verbatim:
+
+    input_value='Fixed the field names (`...  }\n    }\n  ]\n}\n```'
+
+**What is evidence and what is reasoning.** The four prose-first payloads are in the log and
+are quoted above. The "prose AFTER the fence" row is reasoning about the same anchored
+pattern, not something observed here — no captured payload had trailing prose, partly because
+pydantic truncates the value it reports. It is listed as a shape the fix handles, not as a
+failure this deployment was measured to suffer.
+
+pydantic truncates the middle of long values (`...`), so these payloads prove what they START
+with and how they END, and nothing about the middle.
 
 `tools/cognee-server/patch-fence-strip.sh` widens the pattern and switches the call to
 `.search()`. It is applied at container start, so it is visible here rather than buried in a
@@ -366,16 +388,41 @@ believed the fix had failed — recorded because the next person will hit it too
 It also carries a behavioural check, not just a syntax check: it exercises the four shapes
 above on the file it just wrote and refuses to report success if any fails.
 
-**Measured effect.** Identical write to a NEW dataset, which was the worst case:
+**Measured effect.**
 
-| | before | after |
-|---|---|---|
-| first write on a fresh dataset | **228 s** | **35.5 s** |
-| `ValidationError … KnowledgeGraph` of the fence kind, per container | 24 | **0** |
+| | before | after | how it was obtained |
+|---|---|---|---|
+| first write on a fresh dataset | **228.0 s** | **67 s** | `228004ms` is saved in the probe output; the 67 s is a clean in-container measurement on the compose sidecar, a fresh dataset |
+| fence payloads rejected | **24** | **0** | counted from the container logs |
+| `_strip_json_fence` behaviour | 1/4 shapes | **4/4** | run live in the patched container |
 
-The zero is verified by timestamp, not by a count: `docker logs` retains earlier containers'
-output, so the raw total was still 29. Filtering to the container that had the patch applied
-gives 0 fence rejections — the remaining one is prose.
+**An earlier figure of 35.5 s is RETRACTED.** It came from a manual container that has since
+been removed, was never written to a file, and cannot be reproduced — the same mistake as
+trusting a summary line. The clean measurement on the container that actually ships is
+**67 s**, which is still a large improvement over 228 s but is not the number I first reported.
+
+The zero is verified by timestamp as well as by count, because `docker logs` retains earlier
+containers' output: the raw total for a fresh container still read 29 until filtered. The one
+remaining `KnowledgeGraph` rejection in the patched compose container is **prose**
+(`Baik, saya catat: kode h…`) — a model answering instead of extracting, which no fence fix
+addresses — and it produced **0** retries.
+
+### Two configuration gaps this work exposed
+
+Both would have left memory non-functional on a customer's compose install while looking
+healthy, and neither was visible from the code.
+
+1. **The sidecar had no LLM credentials.** `docker-compose.yml` reads
+   `COGNEE_LLM_API_KEY`/`COGNEE_EMBEDDING_*`, and this deployment's `.env` had none — so the
+   container started, passed its health check, and failed every write with
+   `LLM API key is not set. [LLMAPIKeyNotSetError]`. The app's own `LlmConfig` row cannot be
+   read from inside the container, so there is no fallback. `.env` now carries them, with a
+   comment saying they are REQUIRED.
+2. **The container could not reach the host.** Local model servers live on the host
+   (`127.0.0.1:4503`, `127.0.0.1:20128`) and a container cannot resolve that to its host.
+   `docker-compose.yml` had no `extra_hosts`, so writes would have failed with a connection
+   error naming the endpoint rather than the cause. Added
+   `host.docker.internal:host-gateway`, which is Docker's portable alias.
 
 **Not fixed by this**: retrieval quality. The stored token is found by searching for the
 token itself, but NOT by a semantic query ("kode hub utama" returns nothing) — so a fact is

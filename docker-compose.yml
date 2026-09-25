@@ -258,6 +258,13 @@ services:
     # the patch is visible here and deletable the moment upstream widens the regex; the
     # script refuses to apply if the pattern is no longer anchored, which is how you know.
     entrypoint: ["/bin/bash", "/opt/cognee-patch/entrypoint-with-patch.sh"]
+    # REACH THE HOST. `COGNEE_LLM_ENDPOINT` / `COGNEE_EMBEDDING_ENDPOINT` are typically
+    # local model servers on the host (a local embedding sidecar, an on-prem gateway), and a
+    # container cannot resolve `localhost` to its host. Without this mapping the sidecar
+    # starts healthy and every write fails with a connection error that names the endpoint
+    # rather than the cause. `host-gateway` is Docker's portable alias for the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./tools/cognee-server:/opt/cognee-patch:ro
       - cogneedata:/cognee-storage
