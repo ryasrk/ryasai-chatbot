@@ -69,14 +69,31 @@ const INTENT_SYSTEM_PROMPT = `You are an intent analyzer for an enterprise AI as
 
 1. Does this question need retrieval (documents/database lookup), or can it be answered directly?
 2. Is there enough context to retrieve effectively, or do we need to ask for clarification?
-3. If this is a follow-up question, rewrite it as a standalone search query.
 
 Rules:
-- "What is the procedure?" with history → rewrite to "procedure for [topic from history]"
-- "Hello" / "Thanks" / "What is Python?" → no retrieval needed
-- When rewriting, preserve the user's original language (English/Indonesian)
+- "Hello" / "Thanks" / "What is Python?" → no retrieval needed`
 
-CRITICAL — DEFAULT TO NOT CLARIFYING:
+/**
+ * The long-form clarification rules, sent as a SECOND user message rather than inside the system
+ * prompt.
+ *
+ * WHY THEY ARE NOT IN THE SYSTEM PROMPT: MEASURED against the customer's provider, a system
+ * message above ~2100 characters is DISCARDED ENTIRELY — not truncated. Reported `prompt_tokens`
+ * for an otherwise identical request:
+ *
+ *     1900 chars -> 269 tokens   (delivered)
+ *     2300 chars ->  44 tokens   (dropped; 44 is the user message alone)
+ *
+ * 3/3 identical in both directions, so it is a stable limit and not provider noise. This prompt
+ * was 2872 characters — ALWAYS over it — so `analyzeIntent` never saw its own instructions. The
+ * model replied in prose, `parseIntentJson` failed, and the function returned its safe defaults
+ * (`needsRetrieval: true, needsClarification: false`) after spending seconds on the call. That is
+ * also why round 7's ambiguity rule looked like the model ignoring it: the model was never told.
+ *
+ * Splitting keeps the instructions under the ceiling and puts the bulky list where a large block
+ * is harmless.
+ */
+const INTENT_CLARIFICATION_RULES = `CRITICAL — DEFAULT TO NOT CLARIFYING:
 - The system has a smart router that automatically selects the best database
   integration and generates appropriate SQL queries. You do NOT need to know
   which table or column to query — the system figures that out.
@@ -104,15 +121,18 @@ CRITICAL — DEFAULT TO NOT CLARIFYING:
   prompt said nothing about it, so the model fell through to needsRetrieval=false
   and the REST branch was never reached even with a working connector.
 
-Output ONLY valid JSON (no markdown fence):
+Output ONLY valid JSON (no markdown fence). Exactly these keys:
 {
   "needsRetrieval": true|false,
   "needsClarification": true|false,
-  "clarificationQuestion": "one focused question or null",
-  "rewrittenQuery": "standalone search query or null",
-  "entities": { "topic": "...", "document_type": "..." },
-  "confidence": 0.0-1.0
-}`
+  "clarificationQuestion": "one focused question or null"
+}
+Do NOT emit a rewritten query, entities, or a confidence score. Callers read only the three keys
+above: MEASURED by grepping for consumers, "rewrittenQuery", "entities" and "confidence" were
+produced and parsed but read by NOTHING — follow-up rewriting goes through the separate
+rewriteQuery() call in tool-router.ts. Asking for them cost tokens and model effort on every
+request for no effect.`
+
 
 /**
  * Does this question name WHAT is being asked about?
@@ -233,6 +253,10 @@ export async function analyzeIntent(args: {
       {
         role: 'user',
         content: `Conversation history:\n${historyText || '(none)'}\n\nAvailable data sources:\n${contextFlags}\n\nUser question: ${args.question}`,
+      },
+      {
+        role: 'user',
+        content: INTENT_CLARIFICATION_RULES,
       },
     ], 0, 'intent-analysis')
 

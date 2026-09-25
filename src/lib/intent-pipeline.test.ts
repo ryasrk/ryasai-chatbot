@@ -380,11 +380,37 @@ describe('analyzeIntent', () => {
     const firstCall = (mockChatOnce.mock.calls as unknown as Array<
       [unknown, Array<{ role: string; content: string }>]
     >)[0]
-    const sysMsg = firstCall?.[1]?.find((m) => m.role === 'system')
+    // The guard's PURPOSE is that the model is told about the schema and that no stray
+    // string-concatenation artifacts reach it. The instruction text is now split across two
+    // messages, so the schema sentence is checked wherever it lands rather than only in the system
+    // message — MEASURED reason for the split: a system message above ~2100 chars is discarded
+    // ENTIRELY by the provider (1900 chars -> 269 prompt_tokens, 2300 -> 44), and this prompt was
+    // 2872, so the model was receiving none of it.
+    const allMsgs = firstCall?.[1] ?? []
+    const sysMsg = allMsgs.find((m) => m.role === 'system')
     expect(sysMsg).toBeDefined()
-    expect(sysMsg!.content).toContain('schema summaries')
-    expect(sysMsg!.content).not.toContain("' +")
-    expect(sysMsg!.content).not.toContain("\\n' +")
+    const everyPromptText = allMsgs.map((m) => m.content).join('\n')
+    expect(everyPromptText).toContain('schema summaries')
+    for (const m of allMsgs) {
+      expect(m.content).not.toContain("' +")
+      expect(m.content).not.toContain("\\n' +")
+    }
+  })
+
+  test('the system prompt stays under the provider ceiling that silently drops it', async () => {
+    // The ceiling is ~2100 chars, measured while looking for the truncation point, and exceeding it
+    // discards the message rather than trimming it — so an over-long prompt fails SILENTLY and looks
+    // like a model that ignores instructions. This test is the guard: if the prompt grows past the
+    // limit again, the failure should be here and not in production behaviour.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ needsRetrieval: true, needsClarification: false }))
+    await analyzeIntent({ question: 'what is the leave policy?', hasDocuments: true, hasIntegrations: true })
+    const firstCall = (mockChatOnce.mock.calls as unknown as Array<
+      [unknown, Array<{ role: string; content: string }>]
+    >)[0]
+    const sysMsg = firstCall?.[1]?.find((m) => m.role === 'system')
+    const PROVIDER_SYSTEM_CEILING = 2100
+    expect(sysMsg!.content.length).toBeLessThan(PROVIDER_SYSTEM_CEILING)
   })
 
   test('parses valid JSON response from LLM correctly', async () => {
