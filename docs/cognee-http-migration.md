@@ -435,9 +435,26 @@ Counted on a live sidecar after the fence patch: **58** rejections, **0** of the
     '**Turn 1**\n\n**User:** ...edia dan siap diproses.'
     'Berikut contoh turn perc...lah yang ingin dipesan.'
 
-These are PROSE, and the important part is that prose is the *correct* answer for some of the
-calls that produce them — cognee routes summarisation through the same structured-output path
-as graph extraction, and a summarisation prompt legitimately wants a sentence back.
+These are PROSE. `KnowledgeGraph` requires `summary` and `description` as plain strings
+alongside `nodes`/`edges` (`shared/data_models.py`), so a model that starts answering the
+summary in sentences never reaches the structured part — and the whole reply fails validation.
+
+**I first attributed this to cognee routing summarisation through the structured path, and
+that was wrong.** `KnowledgeGraph` IS the graph-extraction model; there is no summarisation
+task in that path. What the model actually does, tested directly against this endpoint:
+
+| prompt | reply |
+|---|---|
+| short extraction prompt, with `json_object` | clean JSON |
+| short extraction prompt, WITHOUT `json_object` | clean JSON |
+| long schema-in-prompt extraction, with `json_object` | **empty string** |
+| the real cognee calls (long prompts, real documents) | **prose** |
+
+So the capability is there and the failure is prompt-dependent, not model-dependent. The
+observed shape is the model attempting the `summary` field in prose and never emitting JSON.
+**I did not isolate the exact trigger**, and the two candidate explanations (prompt length vs
+`response_format` in this provider's tool-calling path) were not separated by measurement.
+Recorded as unresolved rather than guessed at.
 
 **They do not block anything.** Writes were measured completing while these retries ran:
 
