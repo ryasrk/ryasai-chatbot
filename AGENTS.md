@@ -523,6 +523,21 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Build & Deploy
 
+**HOW THE DISPLAYED VERSION REACHES THE IMAGE — checked, because the obvious path is dead.**
+`src/lib/public-config.ts` exposes `appVersion` from `NEXT_PUBLIC_APP_VERSION`, and `install.sh`
+writes that variable into the customer's `.env`. That `.env` line does **not** set it for the
+browser: `NEXT_PUBLIC_*` is normally substituted by the bundler at BUILD time, and the Dockerfile
+declares no `ARG`/`ENV` for it, so no substitution happens. Inspected in the built output:
+
+    server chunk : appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "1.0.0"
+    client chunk : M.default.env.NEXT_PUBLIC_APP_VERSION || "1.0.0"
+
+so what a customer actually sees is the **hardcoded fallback**. That is why the fallback is kept
+equal to the released version (1.0.0) and is called out above as needing to move with any future
+release — it is the real display value, not a placeholder. If a deployment ever needs to override
+the version at build time, add `ARG NEXT_PUBLIC_APP_VERSION` to the builder stage and pass it from
+compose `build.args`; until then the fallback IS the mechanism.
+
 **KNOWN FORWARD-COMPAT WARNING, not a defect.** `bun run build` prints:
 
     ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
