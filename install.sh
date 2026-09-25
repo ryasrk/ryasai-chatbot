@@ -703,9 +703,47 @@ docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 # --- Health ----------------------------------------------------------------
 info "Waiting for app to come up on 127.0.0.1:${APP_PORT}..."
+# The loop used to end with an unconditional success banner: if all 60 attempts (180s) failed,
+# it still printed "installed" and the access URL. On a customer's own hardware that is a support
+# call with no diagnostic — they are told it worked and then find a blank page.
+#
+# Two stages, deliberately different endpoints:
+#   1. liveness (/api/v1/health) — no dependency probe, so this only proves the process is up.
+#   2. readiness (/api/health) — hits Postgres and returns 503 when the DB is unreachable, which
+#      is the failure a fresh install actually hits (wrong DATABASE_URL, DB still migrating).
+# Readiness is reported, not fatal: the app degrades gracefully without Redis and the operator
+# may still be bringing up their database, so the installer warns and keeps the exit code clean.
+APP_UP=false
 for i in $(seq 1 60); do
-  curl -sf "http://127.0.0.1:${APP_PORT}/api/v1/health" >/dev/null 2>&1 && break || sleep 3
+  if curl -sf "http://127.0.0.1:${APP_PORT}/api/v1/health" >/dev/null 2>&1; then APP_UP=true; break; fi
+  sleep 3
 done
+
+if [ "$APP_UP" != true ]; then
+  echo
+  echo -e "${C_RED}ERROR:${C_NC} The app did NOT come up on 127.0.0.1:${APP_PORT} within 180 seconds." >&2
+  echo
+  echo "  Container status:"
+  docker compose -f docker-compose.prod.yml ps || true
+  echo
+  echo "  Last 40 log lines:"
+  docker compose -f docker-compose.prod.yml logs --tail=40 app || true
+  echo
+  echo "  Diagnose with:"
+  echo "    docker compose -f docker-compose.prod.yml logs app"
+  echo "    docker compose -f docker-compose.prod.yml ps"
+  echo
+  echo "  Common causes: DATABASE_URL unreachable from the container, port ${APP_PORT} already"
+  echo "  in use, or the db service still initialising."
+  exit 1
+fi
+
+if ! curl -sf "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null 2>&1; then
+  echo
+  warn "The app process is up but its DEPENDENCY CHECK reports not-ready (usually Postgres)."
+  warn "Open http://127.0.0.1:${APP_PORT}/api/health for the per-dependency detail."
+  warn "Setup will not work until the database is reachable."
+fi
 
 echo
 echo "=============================================================="
