@@ -496,123 +496,29 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 - Benchmark run artifacts are gitignored (`benchmark/results/*.json`, keeping the
   curated `ground-truth-failures.json`) so they stop polluting the working tree.
 
-## Silent-failure classes found by probing (2026-09-25)
+## Silent-failure classes found by probing
 
 Thirteen defects across eight rounds shared one shape: **the code reported success for work it had
-not done, or dropped data on the way out** — and every one was found by executing a probe, not
-by reading the code.
+not done, or dropped data on the way out** — and every one was found by executing a probe, not by
+reading the code. The full catalogue, with measurements and the reasoning for each fix, lives in
+**`docs/silent-failure-classes.md`**. Read it before trusting a guard, reversing a test's
+expectation, or changing how a prompt is delivered.
 
-1. **A guard that matched a WORD, not a CALL.** `invariants.test.ts` asserted
-   `toContain('startJobWorker')`, so deleting the call left it green (the name survives in the
-   `import` above). Now strips comments and requires an invocation, negative-controlled.
-
-2. **A wipe reported as done when the forget failed.** `resetCognee` wrapped
-   `cogneeForget(...)` in `catch {}` and returned `true`, so "forget everything" cleared every
-   `cognifyStatus` and wrote a success audit row while the memory was still there. Its siblings
-   `forgetAll`/`forgetKnowledgeGraph` already returned `false`; it was the lone outlier.
-
-3. **A field SELECTED but never MAPPED** — the same shape as the dropped hint, one round
-   earlier. `GET /api/documents/[id]` selected `cognifyStatus` and
-   `cognifyError` and then built the response by hand without them, so a failed memory-index
-   looked like a healthy document. The field was in Prisma, in the `select`, in the client type,
-   and in the sibling list route — and still never reached the client.
-
-4. **A classified error whose `hint` is dropped on the last hop.** `classifyProviderFailure`
-   produces the actionable half of a BYOK failure ("re-enter the key", "add credit", "pick a model
-   your provider serves"), `toTypedError` carries it across the wire — and `extractError` (48
-   callers) returned only `message`. A test asserted that as CORRECT (`toBe('Invalid credentials')`
-   for an object carrying `hint: 'Check password'`), so the vague half was pinned in place.
-   `fetchProviderModels` was worse: it threw `Failed to fetch models (HTTP 401)` without reading
-   the body, so the classifier could not run at all on the first feedback a pasted key ever gets.
-
-5. **A defence that is correct and TESTED while callers bypass it.** `evidence-boundary.ts` had
-   the lowest line coverage in the repo (46.7%) and was the prompt-injection boundary. Its own
-   tests were good; the defect was that `reflexion.ts` and `intent-pipeline.ts` interpolated the
-   same untrusted document text RAW. Testing the wrapper proves the wrapper works, never that
-   anyone calls it — so the guard now reads the CALLER files.
-
-6. **A null that means two different things.** `cogneeRecall` returns `null` on HTTP failure and
-   never throws, so a dead sidecar and an empty dataset took the same `if (!hits?.length) continue`
-   branch, silently. Recall is best-effort and stays non-fatal; what changed is that an outage is
-   now a different code path from an empty result, and only the outage warns.
-
-7. **A keyword list that hijacks a routing decision.** The `datetime` plugin declares the bare
-   keyword "tahun", so any question containing a time word scored above the promotion threshold and
-   was moved OFF the route the classifier had chosen. 5 of 6 database questions carrying a time word
-   were hijacked, and the WRONG answer scored higher than a right one ("Tampilkan pesanan per jam."
-   0.415 vs "Hitung 15% dari 2 juta." 0.383) — so a threshold could not separate them. Fixed with a
-   quality gate: a match must be the question's SUBJECT, not a qualifier inside it.
-
-8. **A documented rule that a LATER guard silently overrides.** The intent prompt has always
-   listed two ambiguity cases requiring clarification, and a heuristic guard beneath it suppresses
-   clarification whenever the question contains 'berapa' / 'how many' — which is exactly what both
-   ambiguous shapes contain. So the rule never fired: "Berapa banyak itu?" was answered with a
-   confident "Jumlahnya 2.405 (total stok)" picked from one of three connected databases, and the
-   user could not tell it was a guess. When a prompt states a rule, check what happens AFTER it
-   returns — a downstream guard can make it unreachable.
-
-9. **A fix placed where it can never run.** The replacement rule was correct and detected all four
-   cases in isolation, and still changed nothing, because it was inserted inside the suppression's
-   own `if (parsed.needsClarification …)` block — and the model returns `needsClarification=false`
-   for precisely those questions. Test the PURE FUNCTION separately from the integration, or a
-   placement bug looks like a logic bug.
-
-10. **A branch on prose.** The clarification caller compared the human-readable `reason` string;
-   when that text gained a suffix the comparison stopped matching, and a TIME question was answered
-   with the COUNT clarification. Branch on a stable key; treat a `reason` field as documentation.
-
-11. **An instruction that is never DELIVERED, which looks like a model ignoring it.** The intent
-   system prompt was 2872 characters and the provider DISCARDS a system message above ~2100 —
-   measured: 1900 chars reports `prompt_tokens: 269`, 2300 reports `44` (the user message alone),
-   3/3 identical in both directions. So `analyzeIntent` never received its own instructions, replied
-   in prose, failed to parse, and returned safe defaults after seconds of work. Every symptom
-   pointed at the model; the model was never told. **If a prompt seems ignored, verify it was
-   DELIVERED — check `prompt_tokens` against the text you sent, not just the code path.**
-
-12. **A rule set delivered in the wrong ROLE — and a single sample nearly hid it.** The provider
-   discards a system message above ~2000 characters (see 11). Auditing every system message the app
-   sends found TWO production prompts over the line: the Text-to-SQL specialist (3033 chars) and
-   memory context (2606 chars). So the SQL RULES — including rules 13-16 that encode real fixed bugs
-   — were discarded on EVERY request, and recall from prior turns was dropped while still costing
-   the call that produced it. Both moved to USER messages, where there is no ceiling (12000 chars
-   reports 1558 prompt_tokens and a system instruction is still obeyed). Memory context moved for a
-   second reason too: it is derived from earlier user turns, so it is untrusted input and a system
-   message gives it the highest authority — fencing alone would not have fixed that.
-   **Beware the lucky sample.** An early probe showed the 3033-char SQL prompt reporting 548
-   prompt_tokens, apparently delivered, which would have justified leaving the defect in place.
-   Re-running the same shape three times showed it dropped 3/3, and sweeping 1800/2000/2100/2200
-   located the boundary between 2000 and 2100. One favourable sample is not a measurement.
-
-**A local note that generalises:** three rounds of "the model ignores this rule" ended here. Round 7
-moved the ambiguity rule into code because a prompt rewrite changed nothing (0/4) — the right
-outcome, for a reason I did not know: there was nothing to ignore. When a prompt change has EXACTLY
-zero effect twice, suspect delivery before trying a third wording.
-
-**A prompt is not always the lever.** Rewriting the intent prompt — narrowing the conflicting rule
-and explaining the failure inline — changed the measurement by 0/4. The rule moved into code because
-a model cannot be relied on to gate itself. Try the prompt, but MEASURE it before believing it, and
-be willing to conclude that the enforcement belongs somewhere else.
-
-**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
-5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
-change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
-gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
-effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
-tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
-
-13. **A mechanism fed nothing, because two different meanings shared one value.** `pg_class.reltuples`
-   returns -1 for a table that has never been ANALYZEd — the normal state for a freshly created or
-   freshly loaded table. The reflection query coerced that to 0, and the enrichment guard skipped
-   rowCount `<= 0` as empty. So on this deployment ALL 11 reflected tables were skipped and no
-   distinct values were ever collected — while `describeSchema` was perfectly able to render them
-   (`-- values: SDM, Keuangan, ...`) and simply had nothing to render. The user-visible result:
-   "Berapa jumlah karyawan di departemen HR?" answered "0 orang", because the model could not map
-   "HR" to the real value "SDM". A correct query against a wrong assumption.
-   **When one value carries two meanings ("unknown" and "empty"), check every comparison against
-   it.** Better: keep "unknown" distinct, so a guard cannot mistake it for a measurement. The
-   existing test that guarded this was right about the RISK (an unbounded `SELECT DISTINCT` is
-   expensive) and wrong about the remedy; the cost is now bounded by the pool's 30s `query_timeout`
-   plus `LIMIT 21`.
+| # | class | the tell |
+|---|-------|----------|
+| 1 | a guard matching a WORD, not a CALL | deleting the call left the suite green |
+| 2 | a wipe reported done when the forget failed | `catch {}` around an operation whose RESULT you report |
+| 3 | a field SELECTED but never MAPPED | data correct at both ends, lost in the middle |
+| 4 | a classified error whose `hint` is dropped | a test pinned the vague half as CORRECT |
+| 5 | a defence correct and TESTED while callers bypass it | testing the wrapper never proves anyone calls it |
+| 6 | a null that means two different things | a dead dependency and an empty result took one branch |
+| 7 | a keyword list hijacking a routing decision | the WRONG answer scored higher than a right one |
+| 8 | a documented rule a LATER guard silently overrides | the prompt was right; a downstream guard made it unreachable |
+| 9 | a fix placed where it can never run | correct logic inside a branch that never executes |
+| 10 | a branch on prose | the `reason` string gained a suffix and stopped matching |
+| 11 | an instruction never DELIVERED | over the provider's system-message ceiling, so discarded |
+| 12 | a rule set delivered in the wrong ROLE | same, plus system authority for untrusted text |
+| 13 | two meanings sharing one value | -1 ("unknown") read as 0 ("empty"), so a mechanism was fed nothing |
 
 **Rules that follow from these:**
 
@@ -625,25 +531,23 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
 - A test that asserts the current behaviour of a lossy stage can pin the loss in place. When
   reversing one, state in the test why the old expectation was wrong — the next reader will
   otherwise "fix" it back.
-- Assert on the **response body**, not on the query. 71 route tests already do; the 4 that assert on
-  the `select` argument would pass while the mapping is missing. A field can be selected, typed and
-  documented and still not be returned.
+- Assert on the **response body**, not on the query. A field can be selected, typed and documented
+  and still not be returned.
 - `catch {}` around an operation whose RESULT YOU REPORT is a false-success bug. Either propagate
   the failure or record it in a field the UI reads. Graceful degradation is for work that is
   optional (memory recall returning `''`); it is not for work whose completion you claim.
 - When one function in a family gets a rule right and a sibling does not, the outlier is the bug —
   check the family, not just the call site.
-- **A test whose negative control SURVIVES is vacuous — rewrite it, do not keep it.** The first
-  memory-context guard asserted only on the rendered size of the system message, so flipping the
-  role back to `'system'` left it green. Asserting the property you actually mean (the ROLE and the
-  fence) is what made the control fail. A guard that cannot fail is worse than no guard, because it
-  reports safety.
-- **Check what your PROBE returns before believing its verdict.** A probe that read `schema.tables`
-  off a function returning a plain array reported "no distinct values" for a function that had them,
-  and nearly sent me to fix the wrong layer. Assert the probe's own shape first: if the data source
-  is unexpectedly empty, suspect the reader.
-- **Sweep a suspected boundary; do not probe it once.** Stepping 1800 → 2000 → 2100 → 2200 located
-  the system-message ceiling within one run. A single probe at 3033 reported the prompt as delivered.
+- **If a prompt seems ignored, verify it was DELIVERED** — check `prompt_tokens` against the text
+  you sent, not just the code path. A system message over ~2000 characters is discarded whole.
+- **Sweep a suspected boundary; do not probe it once.** A single probe at 3033 chars reported a
+  prompt as delivered; a sweep located the cliff between 2000 and 2100.
+- **A test whose negative control SURVIVES is vacuous — rewrite it, do not keep it.** A guard that
+  cannot fail is worse than no guard, because it reports safety.
+- **Check what your PROBE returns before believing its verdict.** An unexpectedly empty data source
+  usually means the reader is wrong, not the source.
+- **When one value carries two meanings, check every comparison against it.** Prefer keeping
+  "unknown" distinct from "empty" so no guard can mistake one for the other.
 
 ## Conventions
 
