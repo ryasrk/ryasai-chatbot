@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Eleven defects across five rounds shared one shape: **the code reported success for work it had
+Ten defects across five rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -552,13 +552,6 @@ by reading the code.
    0.415 vs "Hitung 15% dari 2 juta." 0.383) — so a threshold could not separate them. Fixed with a
    quality gate: a match must be the question's SUBJECT, not a qualifier inside it.
 
-**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
-5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
-change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
-gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
-effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
-tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
-
 8. **A documented rule that a LATER guard silently overrides.** The intent prompt has always
    listed two ambiguity cases requiring clarification, and a heuristic guard beneath it suppresses
    clarification whenever the question contains 'berapa' / 'how many' — which is exactly what both
@@ -581,6 +574,13 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
 and explaining the failure inline — changed the measurement by 0/4. The rule moved into code because
 a model cannot be relied on to gate itself. Try the prompt, but MEASURE it before believing it, and
 be willing to conclude that the enforcement belongs somewhere else.
+
+**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
+5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
+change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
+gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
+effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
+tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
 
 **Rules that follow from these:**
 
