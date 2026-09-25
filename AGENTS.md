@@ -498,7 +498,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing
 
-Thirteen defects across eight rounds shared one shape: **the code reported success for work it had
+Fifteen defects across nine rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not by
 reading the code. The full catalogue, with measurements and the reasoning for each fix, lives in
 **`docs/silent-failure-classes.md`**. Read it before trusting a guard, reversing a test's
@@ -519,6 +519,8 @@ expectation, or changing how a prompt is delivered.
 | 11 | an instruction never DELIVERED | over the provider's system-message ceiling, so discarded |
 | 12 | a rule set delivered in the wrong ROLE | same, plus system authority for untrusted text |
 | 13 | two meanings sharing one value | -1 ("unknown") read as 0 ("empty"), so a mechanism was fed nothing |
+| 14 | a dead mechanism that reports itself healthy | a schedule stops permanently and the row still says active |
+| 15 | the same input, two routes, one sample | a gate "fixed" on the strength of a single odd run |
 
 **Rules that follow from these:**
 

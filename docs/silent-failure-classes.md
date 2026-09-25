@@ -127,6 +127,30 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
    expensive) and wrong about the remedy; the cost is now bounded by the pool's 30s `query_timeout`
    plus `LIMIT 21`.
 
+
+14. **A dead schedule that reports itself healthy.** A BullMQ repeatable job stops rescheduling once
+   it exhausts its attempts, and NOTHING recorded that: the `ScheduledRun` row kept `isActive: true`
+   and a `nextRunAt` that simply stopped moving. MEASURED on this deployment: a daily 06:00 run died
+   on 2026-09-11 (the embedding baseUrl pointed at `localhost` while the operator allowlist held only
+   `127.0.0.1`, so `normalizeBaseUrl` threw on every run and the job burned all 3 attempts). 41 days
+   later the UI rendered it as an ordinary date with a relative time. An admin would believe the
+   daily report was being delivered.
+   **The failure mode is "a state nobody can observe", not "a bug in the scheduler".** When a
+   mechanism can stop permanently, the record it leaves behind must be able to say so — otherwise
+   "not running" and "running fine" are the same row.
+   Worth separating from the cause: the CONFIG was wrong, but the fact that a wrong config produced
+   a silent, permanent, invisible stop is the defect. A misconfiguration should be loud.
+
+15. **The same question, two different routes, and one sample.** A sales question once returned a
+   `PLUGIN` tool run whose output was raw Wikipedia search JSON. That looked like a repeat of class
+   7/12 (a keyword list hijacking a routing decision), so the plugin gate was probed with the REAL
+   `Plugin` rows: business questions produced ZERO candidates, and "Jam berapa sekarang?" still
+   matched datetime and dominated correctly. Re-running the question gave SQL 3/3 with substantive
+   answers. The single odd result was the CUSTOMER'S model choosing differently on that run.
+   Recorded because the temptation was to "fix" a gate that was already correct — and because
+   classes 7 and 12 were real, so the prior is strong and has to be checked against the current
+   measurement, not assumed from it.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
