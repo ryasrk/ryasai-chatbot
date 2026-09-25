@@ -434,9 +434,22 @@ export async function resetCognee(): Promise<boolean> {
   try {
     const serverOpts = await getCogneeServerOptions()
     if (serverOpts) {
+      // A FAILED WIPE MUST NOT BE REPORTED AS A SUCCESSFUL ONE. This used to be
+      // `try { await cogneeForget(...) } catch {}`, which returned `true` regardless — so the
+      // API answered `{ ok: true }`, wrote a COGNEE_RESET audit row, and cleared every
+      // document's `cognifyStatus`, while the memory itself was still there. For a
+      // privacy/GDPR "forget everything" action, reporting a wipe that did not happen is the
+      // worst possible outcome, and the operator has no way to notice.
+      //
+      // The updateMany sweep below is DIFFERENT and keeps its swallow-on-failure semantics: if
+      // only that throws, the wipe really did happen and returning false would invite a needless
+      // retry (a test pins that distinction).
       try {
         await cogneeForget(serverOpts, { everything: true })
-      } catch {}
+      } catch (err) {
+        console.warn('[cognee] reset: server forget FAILED — not clearing cognify status', err)
+        return false
+      }
       await db.document.updateMany({
         data: { cognifyStatus: null },
       }).catch(logSwallowed('cognee: document.updateMany (resetCognee)'))

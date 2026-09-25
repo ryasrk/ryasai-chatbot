@@ -1078,14 +1078,22 @@ describe('server backend — forget / reset', () => {
     expect(dbState.updateManyCalls).toHaveLength(1)
   })
 
-  test('resetCognee still reports done when the forget rejects', async () => {
+  test('resetCognee reports FAILURE when the forget rejects, and does not clear statuses', async () => {
     core.serverOptions = SERVER_OPTS
-    // `await cogneeForget(...)` inside the server branch has no `.catch`, and the
-    // surrounding try/catch there swallows it — the reset is a local-state
-    // operation and must succeed regardless of the remote store's health.
+    // ASSERTION REVERSED DELIBERATELY. This test used to require `true`, reasoning that "the reset
+    // is a local-state operation that must succeed regardless of the remote store's health".
+    // That reasoning does not hold on the SERVER backend: there is no local store in this process,
+    // so `forget({everything:true})` IS the reset — a swallowed failure meant the API answered
+    // `{ ok: true }`, wrote a COGNEE_RESET audit row, and cleared every `cognifyStatus`, while the
+    // memory was still there. For a privacy/GDPR "forget everything" action, reporting a wipe that
+    // did not happen is the worst outcome, and the operator cannot detect it.
+    //
+    // `forgetAll` — the sibling function — already returned false in this case, with a comment
+    // saying exactly that. The two now agree.
     httpState.forgetThrows = new Error('forget down')
-    expect(await resetCognee()).toBe(true)
-    expect(dbState.updateManyCalls).toHaveLength(1)
+    expect(await resetCognee()).toBe(false)
+    // Critically: statuses must NOT be cleared, or the app would believe documents are unindexed.
+    expect(dbState.updateManyCalls).toHaveLength(0)
   })
 
   test('forgetAll still clears statuses when the sweep fails', async () => {
