@@ -744,10 +744,23 @@ describe('executeRestRequest — SSRF and auth', () => {
   // through to 169.254.169.254. The hatch is disabled here so the PRODUCTION path
   // is what gets exercised.
   const savedHatch = process.env.LLM_ALLOW_BLOCKED_HOSTS
-  beforeEach(() => { delete process.env.LLM_ALLOW_BLOCKED_HOSTS })
+  // `LLM_ALLOWED_HOSTS` is the OTHER override and is the one a self-hosted install actually sets
+  // (the shipped .env.example documents `LLM_ALLOWED_HOSTS=127.0.0.1,localhost` for a local model).
+  // It was not cleared here, so these SSRF tests passed under `bun run test` — whose runner strips
+  // the env file — and FAILED when the same file was run directly, where `.env` loads and allows
+  // 127.0.0.1. MEASURED: 48 pass / 1 fail with .env loaded, 49 pass / 0 fail with the variable
+  // empty. A security test that depends on how it was invoked is not testing the security property,
+  // so both overrides are now controlled per-test and restored afterwards.
+  const savedAllowed = process.env.LLM_ALLOWED_HOSTS
+  beforeEach(() => {
+    delete process.env.LLM_ALLOW_BLOCKED_HOSTS
+    delete process.env.LLM_ALLOWED_HOSTS
+  })
   afterEach(() => {
     if (savedHatch === undefined) delete process.env.LLM_ALLOW_BLOCKED_HOSTS
     else process.env.LLM_ALLOW_BLOCKED_HOSTS = savedHatch
+    if (savedAllowed === undefined) delete process.env.LLM_ALLOWED_HOSTS
+    else process.env.LLM_ALLOWED_HOSTS = savedAllowed
   })
 
   const base = {
@@ -771,6 +784,27 @@ describe('executeRestRequest — SSRF and auth', () => {
     // The cloud metadata address must never be reachable from an admin-set baseUrl.
     expect(r.ok).toBe(false)
     expect(fetched).toBe(false)
+  })
+
+  test('a blocked host produces an ACTIONABLE message, not "check the connection"', async () => {
+    // The blocked-host case is unreachable BY POLICY, so telling the user to "check the connection
+    // and whitelisted endpoints" sends an admin to debug the network, the firewall and the
+    // credentials while the real fix is one environment variable. MEASURED: a REST connector
+    // pointing at an internal API produced the blocked-host error into ToolRun.errorMessage (which
+    // the Security view shows) while the chat message said "check the connection".
+    globalFetch = async () => { fetched = true; return new Response('x', { status: 200 }) }
+    let fetched = false
+    const r = await executeRestRequest({
+      connector: { ...base, baseUrl: 'http://169.254.169.254' },
+      endpointId: 'ep-1',
+      method: 'GET',
+      path: '/',
+      plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+    })
+    expect(r.ok).toBe(false)
+    expect(fetched).toBe(false)
+    // The transport error names the reason; the branch turns it into advice.
+    if (!r.ok) expect(r.error).toMatch(/blocked internal host/i)
   })
 
   test('a relative path escape onto an internal host is blocked too', async () => {

@@ -606,8 +606,22 @@ export async function runRestBranch(args: {
   })
 
   if (!result.ok) {
+    // Say WHY when the reason is diagnosable, and keep the vague text only for genuinely unknown
+    // failures. The blocked-host case is not "check the connection" — the endpoint is unreachable BY
+    // POLICY, so an admin following that advice would debug the network, the firewall and the
+    // credentials while the actual fix is one environment variable.
+    //
+    // MEASURED: a REST connector pointing at an internal API returned
+    // "Endpoint points to a blocked internal host." into ToolRun.errorMessage (visible in the
+    // Security view) while the chat said "Check the connection and whitelisted endpoints." The
+    // correct instruction is `LLM_ALLOWED_HOSTS`, which is the documented self-hosted opt-in.
+    const blockedHost = /blocked internal host/i.test(result.error)
+    const answer = blockedHost
+      ? 'This API endpoint is on a host that ryasai blocks by default (internal/loopback addresses are refused to prevent SSRF). ' +
+        'An admin can allow it by adding the hostname to LLM_ALLOWED_HOSTS, then retrying.'
+      : 'Sorry, the REST API request failed to execute. Check the connection and whitelisted endpoints.'
     return {
-      answer: 'Sorry, the REST API request failed to execute. Check the connection and whitelisted endpoints.',
+      answer,
       citations: [],
       chartData: null,
       toolRuns: [
