@@ -507,8 +507,9 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Three defects this round shared one shape: **the code reported success for work it had not done, or
-dropped data on the way out** — and every one was found by executing a probe, not by reading.
+Five defects across two rounds shared one shape: **the code reported success for work it had
+not done, or dropped data on the way out** — and every one was found by executing a probe, not
+by reading the code.
 
 1. **A guard that matched a WORD, not a CALL.** `invariants.test.ts` asserted
    `toContain('startJobWorker')`, so deleting the call left it green (the name survives in the
@@ -519,7 +520,8 @@ dropped data on the way out** — and every one was found by executing a probe, 
    `cognifyStatus` and wrote a success audit row while the memory was still there. Its siblings
    `forgetAll`/`forgetKnowledgeGraph` already returned `false`; it was the lone outlier.
 
-3. **A field SELECTED but never MAPPED.** `GET /api/documents/[id]` selected `cognifyStatus` and
+3. **A field SELECTED but never MAPPED** — the same shape as the dropped hint, one round
+   earlier. `GET /api/documents/[id]` selected `cognifyStatus` and
    `cognifyError` and then built the response by hand without them, so a failed memory-index
    looked like a healthy document. The field was in Prisma, in the `select`, in the client type,
    and in the sibling list route — and still never reached the client.
@@ -532,23 +534,17 @@ dropped data on the way out** — and every one was found by executing a probe, 
    `fetchProviderModels` was worse: it threw `Failed to fetch models (HTTP 401)` without reading
    the body, so the classifier could not run at all on the first feedback a pasted key ever gets.
 
-5. **A value that exists at every layer and is dropped by a hand-built response.** (Previous
-   round, kept here as one list: `GET /api/documents/[id]` selected `cognifyStatus`/`cognifyError`
-   and never mapped them.)
-
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
-  presence at the ends implies a path between them. All three of the above had the data correct at
-  both ends.
+  presence at the ends implies a path between them. Numbers 3 and 4 both had the data correct at
+  BOTH ends and lost it in the middle.
 - When a mechanism is built to produce an actionable message (a classifier, a hint field, a
   `code`), grep for its CONSUMERS. A classifier nobody calls and a hint nobody displays are the
   same defect as no classifier at all.
 - A test that asserts the current behaviour of a lossy stage can pin the loss in place. When
   reversing one, state in the test why the old expectation was wrong — the next reader will
   otherwise "fix" it back.
-
-
 - Assert on the **response body**, not on the query. 71 route tests already do; the 4 that assert on
   the `select` argument would pass while the mapping is missing. A field can be selected, typed and
   documented and still not be returned.
