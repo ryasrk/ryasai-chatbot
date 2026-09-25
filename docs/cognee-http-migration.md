@@ -507,10 +507,41 @@ the numbers above are why. The earlier sentence in this document reading "writes
 228s/135s/117s versus 8.9s for a small one" was a small-sample comparison across different times
 and datasets; stated as if payload size explained it, which this table refutes.
 
-**What the latency actually is remains unlocated.** Candidates not yet separated: provider
-queueing (the same endpoint answering a plain 6-request burst in under a second), cognee's own
-per-write pipeline work, and the `SessionTurnAnalysis`-class LLM calls that
-AUTO_FEEDBACK=false was already measured to remove once.
+**What the latency actually is: LOCATED — it is provider inference time for the extraction
+task, not cognee and not our code.** Measured directly against the customer's endpoint, same
+model, same temperature, varying only the task:
+
+| prompt | latency |
+|---|---|
+| "Say OK" | **1.3 s** |
+| an entity/relationship extraction request | **23.7 s** |
+
+and a plain extraction call repeated four times: 19.6 s, 13.3 s, 20.4 s, 18.1 s. So the
+endpoint answers trivial prompts in ~1 s and takes **13-24 s** for extraction, consistently.
+
+That accounts for the whole write cost: a write runs several such calls (extraction, plus
+cognee's own pipeline steps), so tens of seconds is the floor, and a retry adds another
+13-24 s each time rather than a small overhead. It is a property of the model/endpoint the
+customer brings under BYOK, not a defect in this codebase — and it is why the numbers spread
+from 41 s to 168 s for nominally similar work: one to three extra extraction calls' worth of
+variance.
+
+Consequence worth stating for sales: **a self-hosted memory graph costs what the customer's own
+model costs for extraction.** A small or slow model makes writes slow; a bigger one may be
+faster at this task but costs more. That is a deployment choice, and the honest guidance is to
+point `COGNEE_LLM_MODEL` at a model that is good at structured extraction, not necessarily the
+same one used for chat.
+
+**A per-stage extraction model would be the ideal answer, and on this pin it DOES NOT WORK —
+do not advertise it.** cognee v1.6.0 declares `llm_extraction_model` in
+`infrastructure/llm/config.py` and ships `infrastructure/llm/pipeline_stage.py`, whose own
+docstring says it routes "every LLM call made within this block to the model configured for
+`stage` (one of extraction | summarization | query)". Checked against the shipped tree:
+`llm_extraction_model` appears ONLY in that declaration and in
+`tests/unit/infrastructure/llm/test_stage_routing.py` — **no production code reads it**. Setting
+it changes nothing, so an operator who sets it would see no effect and no error, which is the
+worst shape for a config knob. Recorded so nobody sells the capability, and so the check is
+repeated if the sidecar is ever bumped.
 
 **Retries are NOT wasted, so do not "fix" this by removing them.** Counted over one
 container's log:
