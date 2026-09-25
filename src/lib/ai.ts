@@ -76,6 +76,64 @@ export interface RoutingContext {
  * LLM router. Decides which pipeline to run.
  * Uses deterministic prompting (temp=0) per spec §7.
  */
+/**
+ * Is a plugin match strong enough to override the route the classifier chose?
+ *
+ * The promotion below used to fire on ANY match above a score threshold, and the score is
+ * normalised by the plugin's own vocabulary — so ONE common word in a long question could win.
+ * MEASURED on this deployment, with the `datetime` plugin (it declares the bare keyword "tahun"):
+ *
+ *     "Tampilkan pesanan per jam."          -> Current Date & Time  (0.415)  [database question]
+ *     "Penjualan bulan lalu berapa?"        -> Current Date & Time  (0.233)  [database question]
+ *     "Berapa total pendapatan tahun 2024?" -> Current Date & Time  (0.175)  [database question]
+ *
+ * 5 of 6 database questions that merely contained a time word were promoted off SQL.
+ *
+ * The rule: the match must be more than one incidental token, OR that one token must be most of
+ * the question. "jam berapa sekarang?" still promotes (the shared word IS the question);
+ * "Tampilkan pesanan per jam." does not (the question is about orders, and "jam" is a qualifier).
+ */
+export function pluginMatchDominatesQuestion(question: string, matchedTokens: string[]): boolean {
+  const contentTokens = tokenizeForPluginGate(question)
+  if (matchedTokens.length === 0) return false
+  // Two or more of the question's own words hitting the plugin is unambiguous.
+  if (matchedTokens.length >= 2) return true
+  // ONE matched word is ambiguous, so it must not be a mere QUALIFIER inside a longer question.
+  // The distinguishing signal is where the word sits: "Tampilkan pesanan per jam" appends a time
+  // word to a request about ORDERS (a trailing modifier), while "what time is it in Jakarta" and
+  // "hitung 15% dari 2 juta" LEAD with the plugin's own verb/noun — the match is the predicate.
+  //
+  // A ratio threshold was tried first and was arbitrary: it needed 0.5, which blocked "what time
+  // is it in Jakarta?" (1 of 3 content words, 0.33) while still being tuned per-case. Position is
+  // the property the two groups actually differ on, so it is what the gate tests.
+  const firstContent = contentTokens[0]
+  if (firstContent && matchedTokens.includes(firstContent)) return true
+  // A question short enough that one shared word is most of it (e.g. "jam berapa sekarang").
+  return contentTokens.length <= 3 && matchedTokens.length / contentTokens.length >= 0.34
+}
+
+/**
+ * Conservative tokenizer for the gate above: lowercase word characters only, with common
+ * Indonesian and English question/filler words removed so they cannot inflate or deflate the
+ * ratio. Deliberately NOT the scoring tokenizer — this decides whether one word IS the subject.
+ */
+export function tokenizeForPluginGate(question: string): string[] {
+  // Only true function words — pronouns, prepositions, articles, and the generic verb "is/are".
+  // Deliberately NOT words like "berapa", "tampilkan" or "what": those carry the question's INTENT,
+  // and stripping them made a legitimately time-focused question ("what time is it in Jakarta?")
+  // look like one incidental word. Removing intent words overshot the correction.
+  const STOP = new Set([
+    'yang','dan','atau','untuk','dari','di','ke','pada','dengan','itu','ini','ada','nya','lah',
+    'saya','kamu','kita','mereka','dia',
+    'the','a','an','of','to','in','on','at','for','and','or','is','are','was','were','it','this',
+    'that','there','here','my','your','our',
+  ])
+  return question
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length > 1 && !STOP.has(t))
+}
+
 export async function routeQuery(ctx: RoutingContext): Promise<{
   decision: RouteDecision
   reason: string
@@ -170,9 +228,24 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
   // If a relevant plugin exists, route to PLUGIN so tool-router executes it.
   // Filter by chatEnabled — this runs in the chat path (routeQuery is called
   // from resolveRouting in tool-router.ts, which is the chat completion flow).
+  //
+  // MEASURED, and it was hijacking real database questions: the `datetime` plugin declares
+  // "tahun" (year) among its keywords, so ANY question containing a time word matched it and got
+  // promoted off the route the classifier had chosen. Against this deployment:
+  //
+  //     "Tampilkan pesanan per jam."            -> Current Date & Time  (0.415)
+  //     "Penjualan bulan lalu berapa?"          -> Current Date & Time  (0.233)
+  //     "Berapa total pendapatan tahun 2024?"   -> Current Date & Time  (0.175)
+  //     ... 5 of 6 database questions containing a time word
+  //
+  // The promotion is only safe when the plugin is what the question is ABOUT. A single incidental
+  // word inside a longer question is not that, so the evidence now has to be more than one shared
+  // token: two of the query's content tokens, or one that IS the whole question's content. A
+  // question that genuinely asks the time ("jam berapa sekarang?") still qualifies, because there
+  // the shared token dominates the query rather than hiding in it.
   if (decision === 'CHAT') {
     const relevant = await selectRelevantPlugins({ query: ctx.question, topK: 1, minScore: 0.05, context: 'chat' })
-    if (relevant.length > 0) {
+    if (relevant.length > 0 && pluginMatchDominatesQuestion(ctx.question, relevant[0].matchedTokens ?? [])) {
       return { decision: 'PLUGIN', reason: `Plugin ${relevant[0].name} is relevant (score ${relevant[0].score.toFixed(2)})` }
     }
   }

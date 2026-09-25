@@ -11,6 +11,14 @@ export interface ScoredPlugin {
   chatEnabled: boolean
   agenticEnabled: boolean
   score: number
+  /**
+   * Query tokens that actually hit this plugin (its keywords, name or description).
+   *
+   * Surfaced so the ROUTING gate can judge the QUALITY of the match, not just its score: a single
+   * incidental word inside a long question can clear the score threshold while the question is
+   * plainly about something else. See the plugin-promotion comment in `ai.ts` for the measurements.
+   */
+  matchedTokens?: string[]
 }
 
 const STOP_WORDS = new Set([
@@ -224,6 +232,8 @@ export async function selectRelevantPlugins(args: {
 
     const score = jaccard * 0.4 + phrase * 0.3 + catBoost * 0.3 + numeric
 
+    const matchedTokens = [...queryTokenSet].filter((t) => pluginTokenSet.has(t))
+
     return {
       id: p.id,
       toolId: p.toolId,
@@ -235,6 +245,7 @@ export async function selectRelevantPlugins(args: {
       chatEnabled: p.chatEnabled,
       agenticEnabled: p.agenticEnabled,
       score,
+      matchedTokens,
     }
   })
 

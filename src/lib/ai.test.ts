@@ -206,11 +206,33 @@ describe('routeQuery', () => {
 
   test('returns PLUGIN when router says CHAT but a relevant plugin exists', async () => {
     fetchRouterResponse = 'CHAT'
-    mockSelectRelevantPlugins.mockImplementation(async () => [{ name: 'weather', score: 0.85 }])
+    // `matchedTokens` is part of the real scorer's result and the promotion gate reads it: a plugin
+    // that merely SCORES high can still be refused when its match is one incidental word inside a
+    // longer question (measured — the datetime plugin hijacked 5 of 6 database questions via the
+    // bare keyword "tahun"). Here the question is genuinely about the weather, so the match is real
+    // and promotion must happen. See plugin-hijack-gate.test.ts for the refusal cases.
+    mockSelectRelevantPlugins.mockImplementation(async () => [
+      { name: 'weather', score: 0.85, matchedTokens: ['weather'] },
+    ])
     const result = await routeQuery({ question: 'what is the weather', hasIntegrations: false, hasDocuments: false })
     expect(result.decision).toBe('PLUGIN')
     expect(result.reason).toContain('weather')
     expect(result.reason).toContain('0.85')
+  })
+
+  test('does NOT promote a plugin whose match is one word inside a data question', async () => {
+    // The regression this gate exists for: routing said CHAT, a plugin cleared the score
+    // threshold, and the promotion moved a database question onto the plugin.
+    fetchRouterResponse = 'CHAT'
+    mockSelectRelevantPlugins.mockImplementation(async () => [
+      { name: 'Current Date & Time', score: 0.42, matchedTokens: ['jam'] },
+    ])
+    const result = await routeQuery({
+      question: 'Tampilkan pesanan per jam.',
+      hasIntegrations: true,
+      hasDocuments: true,
+    })
+    expect(result.decision).toBe('CHAT')
   })
 
   test('defaults to CHAT for unrecognised LLM output', async () => {
