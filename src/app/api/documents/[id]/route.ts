@@ -79,6 +79,12 @@ export async function GET(
         updatedAt: doc.updatedAt,
         chunkCount: doc._count.chunks,
         chunkPreview: doc.chunks,
+        // These two were SELECTED but never mapped into the response, so they were silently
+        // dropped on the way out: the detail dialog had no way to show why a document produced no
+        // searchable content. Both are in the select list above and in Prisma, and the list route
+        // returns them — only this mapping was missing.
+        cognifyStatus: doc.cognifyStatus,
+        cognifyError: doc.cognifyError,
       },
     })
   } catch (e) {

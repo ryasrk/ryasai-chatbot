@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
         category: true,
         description: true,
         cognifyStatus: true,
+        cognifyError: true,
         createdAt: true,
         _count: { select: { chunks: true } },
       },
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
       category: d.category,
       description: d.description,
       cognifyStatus: d.cognifyStatus,
+      cognifyError: d.cognifyError,
       createdAt: d.createdAt,
       chunkCount: d._count.chunks,
     }))

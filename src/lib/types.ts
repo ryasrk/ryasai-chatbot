@@ -54,6 +54,15 @@ export interface DocumentItem {
   category: string | null
   description: string | null
   cognifyStatus?: string | null
+  /**
+   * Why memory indexing failed, when it did.
+   *
+   * The document row already recorded this (`Document.cognifyError`) and the API already returned
+   * `cognifyStatus`, but nothing in the UI read either — so a document whose embedding/cognify step
+   * failed looked identical to a healthy one, and the customer had no signal and no way to act.
+   * `chunkCount === 0` is the visible symptom, but it does not say WHY.
+   */
+  cognifyError?: string | null
   createdAt: string
   chunkCount: number
 }

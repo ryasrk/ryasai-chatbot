@@ -167,6 +167,28 @@ describe('GET /api/documents/[id]', () => {
     expect(body.document.chunkCount).toBe(7)
     expect((body.document.chunkPreview as unknown[]).length).toBe(1)
     expect(body.document.contextPrompt).toBe('ctx')
+    // The fixture above already carried these, and the route already SELECTED them — but it never
+    // mapped them into the response, so they were silently dropped on the way out and the detail
+    // dialog had no way to explain a document with no searchable content. A selected field that is
+    // not mapped is a field the API does not actually return.
+    expect(body.document.cognifyStatus).toBe('DONE')
+    expect(body.document.cognifyError).toBeNull()
+  })
+
+  test('a FAILED indexing status and its reason reach the client', async () => {
+    // This is what makes the failure visible to a customer instead of looking like a healthy
+    // document with an empty chunk list.
+    docExisting = {
+      id: 'doc-bad', name: 'bad.pdf', type: 'PDF', sizeBytes: 10, mimeType: 'application/pdf',
+      status: 'READY', isEnabled: true, category: null, description: null,
+      cognifyStatus: 'failed', cognifyError: 'Embedding API error (HTTP 401)', cognifiedAt: null,
+      contentText: '', contextPrompt: null, createdAt: 'c1', updatedAt: 'u1',
+      chunks: [], _count: { chunks: 0 },
+    }
+    const res = await get('doc-bad')
+    const body = await res.json() as { document: Record<string, unknown> }
+    expect(body.document.cognifyStatus).toBe('failed')
+    expect(body.document.cognifyError).toBe('Embedding API error (HTTP 401)')
   })
 
   test('requests only the first 3 chunks, in order', async () => {

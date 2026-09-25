@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { FileText, Loader2, Layers, AlertCircle, History, RotateCcw, Plus, Lock } from 'lucide-react'
+import { FileText, Loader2, Layers, AlertCircle, AlertTriangle, History, RotateCcw, Plus, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Delayed, DetailSkeleton } from '@/components/ui/view-states'
 
@@ -141,6 +141,32 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
         <p className="text-xs text-muted-foreground italic">
           “{detail.description}”
         </p>
+      )}
+
+      {/*
+        Memory-indexing status. `Document.cognifyStatus` / `cognifyError` were already recorded by
+        the job worker and already returned by GET /api/documents, but nothing in the UI read them —
+        so a document whose embedding/cognify step failed looked exactly like a healthy one. The
+        customer's only clue was an empty chunk list, which does not say why or what to do.
+      */}
+      {detail.cognifyStatus === 'failed' && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Indexing failed for memory search</AlertTitle>
+          <AlertDescription className="space-y-1">
+            <p>
+              This document's content could not be indexed, so it will not be found by chat
+              searches.
+              {detail.cognifyError ? ` Reason: ${detail.cognifyError}` : ''}
+            </p>
+            <p className="text-[11px]">
+              Check the AI provider configuration in Settings, then use Reprocess to try again.
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+      {detail.cognifyStatus === 'processing' && (
+        <p className="text-xs text-muted-foreground">Indexing for memory search…</p>
       )}
 
       <DocContextPromptEditor docId={id} initial={detail.contextPrompt ?? ''} />
