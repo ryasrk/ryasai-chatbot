@@ -483,6 +483,35 @@ log match this exactly: the captured `input_value` for the recent failures is `'
 **I did not isolate which element of that prompt triggers it**, and the prompt lives inside the
 server, so this is recorded as the boundary rather than guessed past.
 
+**A LATENCY FIX I ATTEMPTED, MEASURED, AND RETRACTED.** Reasoning from the empty-reply
+isolation (long schema-bearing prompt → empty string), I capped the text
+`rememberChatTurn` sends to cognee at 4000 chars, expecting oversized turns to stop paying
+repeated extraction cost. Then I measured it, five consecutive writes against the org store:
+
+| payload | elapsed |
+|---|---|
+| short (20 chars) | 47.8 s |
+| long (20000 chars, capped to 4000) | 92.1 s |
+| short (20 chars) | **124.8 s** |
+| long (20000 chars, capped to 4000) | **41.0 s** |
+| short (20 chars) | **168.3 s** |
+
+The LONG writes were faster than the short ones. Payload size is not the driver, and the spread
+(41 s to 168 s for similar work) says the variance is elsewhere — and the retry counters agree:
+the same 12-minute window that contained those five slow writes logged only **8** validation
+errors and **zero** empty payloads. So the latency is not retry-driven either.
+
+The cap is KEPT because it bounds what a single turn contributes to a graph — a long answer
+should not become an unbounded extraction job — but it is NOT claimed to improve latency, and
+the numbers above are why. The earlier sentence in this document reading "writes measured
+228s/135s/117s versus 8.9s for a small one" was a small-sample comparison across different times
+and datasets; stated as if payload size explained it, which this table refutes.
+
+**What the latency actually is remains unlocated.** Candidates not yet separated: provider
+queueing (the same endpoint answering a plain 6-request burst in under a second), cognee's own
+per-write pipeline work, and the `SessionTurnAnalysis`-class LLM calls that
+AUTO_FEEDBACK=false was already measured to remove once.
+
 **Retries are NOT wasted, so do not "fix" this by removing them.** Counted over one
 container's log:
 

@@ -40,16 +40,17 @@ export const MEMORY_CONTEXT_MAX_CHARS = 2000
  * routinely several thousand characters), and the write path runs cognee's graph extraction
  * over whatever it is given.
  *
- * MEASURED, and the reason this is a latency fix rather than tidiness: the extraction call is
- * prompt-sensitive in a way I isolated directly — the same endpoint and model return clean
- * JSON for a short extraction prompt, and an EMPTY STRING for a long schema-bearing one. A
- * validation failure is then retried up to three times before succeeding, so an oversized turn
- * is paid for repeatedly: writes on a fresh dataset measured 228s, 135s and 117s, against 8.9s
- * for a small one.
+ * WHAT THIS IS NOT: a latency fix. I added it expecting one — reasoning from an isolation
+ * showing the extraction call returns an empty string for a long schema-bearing prompt — and
+ * then measured five consecutive writes: short 47.8s, long 92.1s, short 124.8s, long 41.0s,
+ * short 168.3s. The LONG writes were faster. Payload size is not the driver (see
+ * docs/cognee-http-migration.md for the table and the retry counters that agree).
  *
- * 4000 chars keeps a full turn's substance (both messages plus tool summary) while keeping the
- * extraction input near the sizes that were observed to succeed. Truncation is marked so a
- * reader of the stored memory can see it happened.
+ * WHAT IT IS: a bound on what one turn contributes to a graph. A document-grounded answer is
+ * routinely thousands of characters, and without a cap a single turn becomes an unbounded
+ * extraction job on the write path. 4000 chars keeps a turn's substance — both messages plus
+ * the tool summary — and truncation is MARKED, because stored memory is read back verbatim
+ * into future prompts and a reader must be able to tell a clipped turn from a short one.
  */
 export const MEMORY_WRITE_MAX_CHARS = 4000
 

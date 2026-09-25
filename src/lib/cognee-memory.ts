@@ -19,11 +19,10 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
   if (serverOpts) {
     // ponytail: graceful degradation — fire-and-forget, memory loss is never fatal
     try {
-      // BOUNDED. See MEMORY_WRITE_MAX_CHARS for the measurement: cognee's extraction is
-      // prompt-sensitive (clean JSON for a short prompt, an empty string for a long
-      // schema-bearing one), a validation failure is retried up to 3x, and writes on a fresh
-      // dataset measured 228s/135s/117s versus 8.9s for a small one. Truncating here keeps
-      // each turn near the sizes observed to succeed.
+      // BOUNDED, and NOT claimed to be faster: measuring showed long writes sometimes beat
+      // short ones, so payload size is not the latency driver. See MEMORY_WRITE_MAX_CHARS for
+      // what this is (a cap on one turn's contribution to the graph) and what it is not (a
+      // latency fix).
       const text = capWritePayload(
         JSON.stringify({
           type: 'chat_turn',
