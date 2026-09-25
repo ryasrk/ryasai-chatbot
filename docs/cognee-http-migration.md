@@ -1066,3 +1066,22 @@ Observations, all three from the built code: empty ×2 then content → recovere
 gives up after 4 attempts (3.5s, no hang); normal answer → one call, 1ms.
 
 SCOPE: this fixes the app's own LLM calls. cognee's internal extraction calls are separate.
+
+### RETRACTION: I claimed the chat SSE path dropped the provider hint. It does not.
+
+While fixing `extractError` (which genuinely discarded `hint` for 48 callers), I inferred by
+pattern-matching that the chat SSE path must have the same bug, because
+`use-chat-send.ts` reads `data.message` and never touches `data.hint`.
+
+Checked before changing anything: `send/route.ts` builds that frame itself and already merges
+both halves —
+
+    const message = failure ? `${PROVIDER_ERROR_TEXT} ${failure.hint}` : ...
+
+with a comment explaining exactly why ("BYOK: a dead customer key is NOT 'provider not configured'").
+So the client has nothing to add, and `data.hint` does not exist on that frame because it is not
+needed. **No change was made, and the inference was wrong.**
+
+Recorded because the pattern — "the hint is dropped somewhere on the way to the user" — was real
+in one place and I had already started treating it as general. The general claim was not supported
+by the code, and checking cost one grep.
