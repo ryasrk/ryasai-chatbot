@@ -45,9 +45,28 @@ describe('invariant: single instrumentation file that starts the job worker', ()
     expect(existsSync(join(REPO_ROOT, 'instrumentation.js'))).toBe(false)
   })
 
-  test('src/instrumentation.ts exists and calls startJobWorker()', () => {
+  test('src/instrumentation.ts exists and CALLS startJobWorker()', () => {
     const src = readRepo('src/instrumentation.ts')
-    expect(src).toContain('startJobWorker')
+    // NEGATIVE-CONTROLLED. The first version of this guard was
+    // `expect(src).toContain('startJobWorker')`, which passed even when the CALL was deleted —
+    // the name survives in the `await import('@/lib/job-processor')` destructure directly above
+    // it. Verified by deleting the call: 49 pass, 0 fail, i.e. the guard proved nothing. That is
+    // this repo's most expensive known failure (40 jobs stuck 16+ hours), so the guard must match
+    // an INVOCATION, not the identifier.
+    //
+    // Strip comments first: otherwise `/* startJobWorker() */` satisfies the pattern. Then
+    // require the call on a non-comment line.
+    const code = src
+      .split('\n')
+      .filter((line) => {
+        const t = line.trim()
+        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*')
+      })
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(code).toMatch(/\bstartJobWorker\s*\(\s*\)/)
+    // And the import must still exist, or the call cannot resolve.
+    expect(code).toContain('job-processor')
   })
 })
 
