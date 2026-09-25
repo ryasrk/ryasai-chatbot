@@ -44,6 +44,26 @@ assertion (it documents the outage) and restructure your change.
    `endstream` resumption, noise-free empty) — extend them when touching the
    parser.
 
+**A guard must be NEGATIVE-CONTROLLED before you trust it.** Plant the violation, confirm the
+guard fails, restore byte-identical, confirm it passes. This is not ceremony: on 2026-09-25 the
+invariant #1 guard was found to assert only `expect(src).toContain('startJobWorker')`, so
+deliberately deleting the CALL left the suite at **49 pass, 0 fail** — the identifier survived in
+the `await import('@/lib/job-processor')` destructure one line above. A comment satisfied it too.
+It would not have caught a re-introduction of the very incident it documents. It now strips
+comments and requires an invocation.
+
+Audit of three guards, negative-controlled, with both directions observed:
+
+| guard | violation planted | result |
+|---|---|---|
+| #1 boot file | call deleted / call replaced by a comment | 48 pass, **1 fail** after the fix (was 0 fail) |
+| #2 cognee searchTypes | fake type appended to the fixture | 48 pass, **1 fail** |
+| SQL deny-list single-source | 4 `assertNoDangerousFunctions(sql)` calls renamed | 48 pass, **1 fail** |
+
+The SQL guard was already written against the INVOCATION (`calls.length >= 4`), which is why it
+held. **Prefer matching an invocation, a call count, or behaviour over a bare identifier** — a
+string match on a name is satisfied by an import, a comment, or an unrelated mention.
+
 **Verification ritual after touching any of the above**: `bun test src/lib/invariants.test.ts`
 plus the area's own test file. For ingestion changes, upload a REAL PDF
 (`test-data/coates.2025.book.1996.pdf`, 2.7MB) through `POST /api/documents`
