@@ -123,6 +123,37 @@ describe('rememberChatTurn', () => {
     expect(state.rememberCalls).toHaveLength(0)
   })
 
+  test('an OUTAGE during recall is distinguished from an EMPTY result', async () => {
+    // `cogneeRecall` returns null on an HTTP failure and never throws, so the surrounding `catch`
+    // never sees an outage — a dead server and an empty dataset both took the same `continue`
+    // branch. Recall is best-effort by design and stays non-fatal; what this pins is that the two
+    // are no longer the SAME code path, because "memory is down" is a deployment problem and "no
+    // relevant memory" is not.
+    state.serverOptions = { baseUrl: 'http://cognee:8000', timeoutMs: 1000 }
+    const warns: string[] = []
+    const realWarn = console.warn
+    console.warn = (...a: unknown[]) => { warns.push(a.map(String).join(' ')) }
+    try {
+      // null = transport failure (what an outage produces)
+      state.httpRecallImpl = async () => null
+      const onOutage = await recallContext({ query: 'stok gudang', sessionId: 's-out' })
+      expect(onOutage).toBe('')
+
+      // [] = the server answered and had nothing (the healthy case)
+      state.httpRecallImpl = async () => []
+      const onEmpty = await recallContext({ query: 'stok gudang', sessionId: 's-empty' })
+      expect(onEmpty).toBe('')
+    } finally {
+      console.warn = realWarn
+      state.httpRecallImpl = null
+    }
+
+    const outageWarnings = warns.filter((w) => w.includes('could NOT reach the server'))
+    expect(outageWarnings.length).toBeGreaterThan(0)
+    // The empty case must NOT warn — otherwise a healthy "no memory yet" is reported as an outage.
+    expect(warns.some((w) => w.includes('could NOT reach the server') && w.includes('s-empty'))).toBe(false)
+  })
+
   test('an OVERSIZED turn is truncated and MARKED before it reaches cognee', async () => {
     // Why this is pinned: it bounds what ONE turn contributes to the graph, and it marks the
     // truncation so stored memory is not silently clipped. NOT a latency fix — I first claimed

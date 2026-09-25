@@ -254,7 +254,19 @@ async function recallFromServer(
         topK: strategy.topK,
         sessionId,
       })
-      if (!hits?.length) continue
+      // `cogneeRecall` returns NULL on an HTTP failure and never throws, so the `catch` below
+      // never sees an outage. Without this distinction a dead server and an empty dataset both
+      // took the `continue` branch and the turn simply reviewed as "no memory" — the caller's
+      // `.catch(() => '')` then hides it further. Recall is best-effort by design, so this stays
+      // NON-FATAL; it just stops being SILENT, because "memory is down" and "no relevant memory"
+      // are different facts and only one of them is a deployment problem.
+      if (hits === null) {
+        console.warn(
+          `[cognee] recall strategy ${strategy.searchType} could NOT reach the server — treating as no memory, but this is an outage, not an empty result`,
+        )
+        continue
+      }
+      if (hits.length === 0) continue
       const text = hits.map((h) => h.text ?? '').filter(Boolean).join('\n')
       if (text) parts.push(text)
     } catch (e) {
