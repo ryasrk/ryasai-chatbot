@@ -250,7 +250,16 @@ services:
       - AUTO_FEEDBACK=${COGNEE_AUTO_FEEDBACK:-false}
       - IMPROVE_AUTO_ENABLED=${COGNEE_IMPROVE_AUTO:-false}
       - USAGE_LOGGING=false
+    # Applies tools/cognee-server/patch-fence-strip.sh, then runs the image's own
+    # entrypoint. The image ships an ANCHORED fence-stripper that only handles a fence
+    # wrapping the ENTIRE response, so prose before or after the block is rejected and
+    # retried — measured: 24 rejections in one container, and 228s for a first write on a
+    # fresh dataset versus 35.5s with the patch. A mount rather than an image rebuild, so
+    # the patch is visible here and deletable the moment upstream widens the regex; the
+    # script refuses to apply if the pattern is no longer anchored, which is how you know.
+    entrypoint: ["/bin/bash", "/opt/cognee-patch/entrypoint-with-patch.sh"]
     volumes:
+      - ./tools/cognee-server:/opt/cognee-patch:ro
       - cogneedata:/cognee-storage
     # NOTE: deliberately NO `ports:` — the app reaches this over the compose
     # network by name, so publishing would expose an unauthenticated memory API

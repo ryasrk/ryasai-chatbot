@@ -324,11 +324,63 @@ while the write resolved successfully.
   store, not from the first write. The same class of failure is why the session opened with a
   `Deserialization error: … Raw: This chunk is about:` in `pipeline_runs`.
 
-  **This is NOT fixed, and the fix is not in cognee.** The model CAN return clean JSON on this
-  endpoint — measured at 1.58s with an explicit "no prose, no fences" instruction — so the
-  lever is the instruction the extractor sends, which lives inside the server. Until it is
-  addressed, expect: a first write on a new dataset to take minutes, and graph extraction to
-  lose turns intermittently while the store still reports success.
+  **FIXED for the fence cases** — see "The fence defect, found and patched" below. The prose
+  cases remain: those are the mock LLM and, in production, a model answering instead of
+  extracting. There is nothing to patch for those; they need the extraction prompt or model
+  to change, which is a separate decision.
+
+### The fence defect, found and patched
+
+Root cause, established by reading the vendored code rather than guessing:
+
+`native_adapter.py` already ships `_strip_json_fence`, added for exactly this failure (its
+comment references ticket `CLO-596`). But its regex was anchored to the WHOLE response:
+
+    \A\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*\Z
+
+so it fires only when the fence is the entire message. Measured against the shapes this
+deployment actually produced:
+
+| model output | upstream strip |
+|---|---|
+| `` ```json … ``` `` (fence wraps everything) | works |
+| `` ```json … ``` `` + "Hope this helps!" | **falls through** |
+| "Here you go:" + `` ```json … ``` `` | **falls through** |
+| clean JSON, no fence | works (unchanged) |
+
+Two independent defects, both needed fixing: the pattern was anchored, AND the call site used
+`.match()` (position 0 only), so prose BEFORE the block was never examined even after the
+pattern was widened. Rejections in the log matched both shapes verbatim — one opened with
+`Fixed the field names (```json`.
+
+`tools/cognee-server/patch-fence-strip.sh` widens the pattern and switches the call to
+`.search()`. It is applied at container start, so it is visible here rather than buried in a
+Dockerfile layer, and it should be deleted when upstream widens the regex (the script refuses
+to patch if the pattern is no longer anchored, which is how you will know).
+
+**The script patches BOTH package copies.** The image ships the package twice
+(`/app/cognee` and `/app/.venv/lib/python3.12/site-packages/cognee`) and which one a process
+imports depends on how it was started. I patched one and tested the other and briefly
+believed the fix had failed — recorded because the next person will hit it too.
+
+It also carries a behavioural check, not just a syntax check: it exercises the four shapes
+above on the file it just wrote and refuses to report success if any fails.
+
+**Measured effect.** Identical write to a NEW dataset, which was the worst case:
+
+| | before | after |
+|---|---|---|
+| first write on a fresh dataset | **228 s** | **35.5 s** |
+| `ValidationError … KnowledgeGraph` of the fence kind, per container | 24 | **0** |
+
+The zero is verified by timestamp, not by a count: `docker logs` retains earlier containers'
+output, so the raw total was still 29. Filtering to the container that had the patch applied
+gives 0 fence rejections — the remaining one is prose.
+
+**Not fixed by this**: retrieval quality. The stored token is found by searching for the
+token itself, but NOT by a semantic query ("kode hub utama" returns nothing) — so a fact is
+stored and not recallable by meaning. That is a separate defect and is NOT documented as
+solved here.
 
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
   `646bbc9` with memory off, and again against the production standalone build. Its `signIn()`
@@ -544,6 +596,52 @@ It is NOT kept on a claim that it improves routing, because that was not establi
 table in "Attempt 1" is still the baseline; a future run must beat it, and the next
 measurement needs a harness that survives to print a summary — run it through
 `scripts/test.ts`-style isolation rather than a standalone probe.
+
+### Attempt 2 measured: framing is NEUTRAL, and the harness mystery was mine, not the repo's
+
+The measurement that "did not complete" now has, and its answer is that the framing changes
+nothing. Interleaved pairs, identical memory body, only the wrapper differs:
+
+| question (answer in a document) | old framing | new framing |
+|---|---|---|
+| "what is the primary distribution hub code?" | **14/15 RAG** | **14/15 RAG** |
+
+Identical. The 320 extra characters of framing buy nothing measurable. It is kept because it
+is harmless and makes the block self-describing, NOT because it helps — and anyone reaching
+for a third prompt variant should know that two have now been measured at zero effect.
+
+**Why the earlier runs died — and it was not the repository.** Three probes in a row had
+ended with no summary, and the working hypothesis was "standalone probes are unreliable
+here". That was wrong, and it was worth disproving rather than repeating: a diagnostic probe
+with incremental markers completed 60 LLM calls in **379 seconds** with a clean summary, and
+another completed 30 calls with `memoryContext` in 222s. The harness is fine.
+
+The actual defect was in MY probes, and it is a one-line lesson: they wrote their results
+**once, at the end**, so any interruption lost everything and left no evidence of how far they
+got. Writing each observation as it happened fixed it — every measurement above was produced
+that way. The earlier "inconclusive" verdict was accurate about the EVIDENCE but wrong about
+the CAUSE, and the difference matters because it was one edit away from being fixable.
+
+### Collateral damage: one case improved, one unchanged, and one pre-existing bug
+
+Same fixture (memory about a distribution hub), 10 interleaved pairs per question:
+
+| question | correct | without memory | with framed memory |
+|---|---|---|---|
+| greeting | CHAT | 10/10 | 10/10 |
+| "how many documents are uploaded?" | SQL | **10/10** | **7/10** |
+| "list the connected integrations" | SQL | **0/10** | **0/10** |
+
+- The greeting is unaffected, which is the main thing to check when adding text to a prompt.
+- The counting question is pulled OFF SQL by memory 3 times in 10 — the same direction seen
+  before, now with a smaller effect. Memory is not free here.
+- **The third row is not about memory at all**: that question routes wrongly with memory OFF.
+  It is a pre-existing router defect that this work happened to expose — `REST=5`, `CHAT=2`
+  and `NULL=3` with memory, and 0/10 without — and it is left as its own finding rather than
+  bundled into a memory change.
+
+Net: memory in the routing prompt is **mixed**, and no prompt-level variant measured so far
+removes the cost without giving up the benefit (0/10 -> 14/15 on the document question).
 
 **Two corrections to the test evidence for this change, both caught by re-reading rather
 than by trusting a summary.**

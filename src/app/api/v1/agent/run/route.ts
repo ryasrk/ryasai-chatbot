@@ -122,7 +122,14 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await rememberChatTurn({
+    // FIRE AND FORGET — the answer is already computed, so the memory write must not be on
+    // the path that returns it. MEASURED against the cognee v1.6.0 sidecar: one chat-turn
+    // write took 5.6-9.7s on a warm dataset and 228s on the first write of a NEW one while
+    // the pipeline compiles. This exact `await` kept an SSE stream open past a 30s test
+    // timeout (the UI sat on "Thinking..."), and the identical bug was already fixed in
+    // tool-router.ts and chat/sessions/[id]/send/route.ts. Errors are logged inside
+    // rememberChatTurn, so a memory failure stays visible and still never reaches the caller.
+    void rememberChatTurn({
       userMessage: question,
       aiMessage: answer,
       toolRuns: stepResults.map((r) => ({ type: r.type, status: r.status, latencyMs: r.latencyMs ?? 0 })),
