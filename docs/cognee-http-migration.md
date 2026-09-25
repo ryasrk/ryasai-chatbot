@@ -427,6 +427,46 @@ healthy, and neither was visible from the code.
    error naming the endpoint rather than the cause. Added
    `host.docker.internal:host-gateway`, which is Docker's portable alias.
 
+### The remaining `KnowledgeGraph` rejections: what they actually are
+
+Counted on a live sidecar after the fence patch: **58** rejections, **0** of them fence-shaped
+(the patch holds). Classified by the rejected input:
+
+    '**Turn 1**\n\n**User:** ...edia dan siap diproses.'
+    'Berikut contoh turn perc...lah yang ingin dipesan.'
+
+These are PROSE, and the important part is that prose is the *correct* answer for some of the
+calls that produce them — cognee routes summarisation through the same structured-output path
+as graph extraction, and a summarisation prompt legitimately wants a sentence back.
+
+**They do not block anything.** Writes were measured completing while these retries ran:
+
+| write | elapsed | status |
+|---|---|---|
+| 1 | 8.9 s | completed |
+| 2 | 117.3 s | completed |
+
+So this is a **latency** defect, not a data-loss one: the extraction is retried (up to
+`_MAX_VALIDATION_RETRIES`, with a 240s tenacity stop floor) and eventually succeeds. 117 s
+versus 9 s is the visible cost, and it is why a fresh-dataset write can take minutes.
+
+**Three framework choices were tested to remove it, and only one works on this endpoint:**
+
+| `STRUCTURED_OUTPUT_FRAMEWORK` | result |
+|---|---|
+| `litellm_native` (default) | works, with the latency above |
+| `instructor` | **BROKEN** — sends `tool_choice` as an OBJECT; this endpoint needs a string: `json: cannot unmarshal object into Go struct field Request.tool_choice`, HTTP 400 on every call |
+| `baml` | not installed in the image |
+
+**A fix I attempted and REVERTED.** I widened the patch to inject
+`response_format={"type": "json_object"}` into the json fallback, on the theory that cognee was
+asking for JSON only in prose. Reading the file showed cognee **already sends exactly that** in
+that call — so the insertion was a duplicate and did nothing. Reverted rather than left in:
+a patch that appears to fix something and does not is worse than no patch, because the next
+reader will trust it. The measured finding stands instead: this endpoint DOES honour
+`json_object` (verified with an extraction-shaped prompt returning clean JSON), so the prose
+comes from calls that were never going to answer in JSON.
+
 **Retrieval by meaning: WORKS — an earlier claim of mine that it did not is RETRACTED.**
 
 I reported that a stored token was findable only by searching the token itself and not by a
