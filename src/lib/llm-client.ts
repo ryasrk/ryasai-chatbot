@@ -23,6 +23,8 @@ import { buildAnthropicBody } from './llm-client-anthropic'
 import {
   LLM_TIMEOUT_MS,
   LLM_STREAM_TIMEOUT_MS,
+  LLM_MAX_RETRIES,
+  LLM_RETRY_BACKOFF_BASE_MS,
   maxTokensForPurpose,
 } from '@/lib/constants'
 
@@ -54,29 +56,7 @@ export function withUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 
 /** Non-streaming completion. Returns trimmed content, or tool_calls when tools are provided. */
-export async function chatOnce(
-  cfg: LlmRuntimeConfig,
-  messages: LlmMessage[],
-  temperature?: number,
-  purpose?: string,
-): Promise<string>
-export async function chatOnce(
-  cfg: LlmRuntimeConfig,
-  messages: LlmMessage[],
-  temperature: number | undefined,
-  purpose: string | undefined,
-  tools: LlmToolDef[],
-  responseFormat?: LlmResponseFormat,
-): Promise<string | LlmToolCall[]>
-export async function chatOnce(
-  cfg: LlmRuntimeConfig,
-  messages: LlmMessage[],
-  temperature: number | undefined,
-  purpose: string | undefined,
-  tools: undefined,
-  responseFormat: LlmResponseFormat,
-): Promise<string>
-export async function chatOnce(
+async function chatOnceInner(
   cfg: LlmRuntimeConfig,
   messages: LlmMessage[],
   temperature: number = 0,
@@ -229,9 +209,143 @@ export async function chatOnce(
   }
 }
 
+/**
+ * Retry a completion that came back EMPTY.
+ *
+ * `fetchWithRetry` only retries 5xx and network failures, so a `200` carrying `content: ""` is
+ * returned straight to the caller — and an empty string is indistinguishable from a valid answer,
+ * which is how a provider hiccup becomes a blank chat message with no error anywhere.
+ *
+ * MEASURED, and why this is not speculative: against the shipped endpoint the identical
+ * extraction call returned an empty body intermittently (8/8 and 10/10 filled on other runs, and
+ * cognee's own log showed `ValidationError ... input_value=''` from the same cause). cognee's
+ * retry ladder absorbed it — 184 of 297 first-attempt validation failures eventually succeeded —
+ * and this is the equivalent guard on OUR side, where the empty reply reaches a user as an empty
+ * answer.
+ *
+ * Retries only when there is nothing to lose: a non-empty string, or any tool call, is returned
+ * unchanged on the first attempt. `finish_reason: 'length'` with empty content is also retried —
+ * truncation to nothing is not a usable answer either.
+ */
+async function withEmptyRetry<T>(run: () => Promise<T>, label: string): Promise<T> {
+  let last: T = undefined as unknown as T
+  for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+    last = await run()
+    const empty =
+      last === '' ||
+      (typeof last === 'string' && last.trim() === '')
+    if (!empty || attempt === LLM_MAX_RETRIES) {
+      if (empty) {
+        console.warn(
+          `[llm] ${label}: provider returned an EMPTY completion after ${LLM_MAX_RETRIES + 1} attempts — surfacing it rather than fabricating an answer`,
+        )
+      }
+      return last
+    }
+    await new Promise((r) => setTimeout(r, LLM_RETRY_BACKOFF_BASE_MS * 2 ** attempt))
+  }
+  return last
+}
+
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature?: number,
+  purpose?: string,
+): Promise<string>
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number | undefined,
+  purpose: string | undefined,
+  tools: LlmToolDef[],
+  responseFormat?: LlmResponseFormat,
+): Promise<string | LlmToolCall[]>
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number | undefined,
+  purpose: string | undefined,
+  tools: undefined,
+  responseFormat: LlmResponseFormat,
+): Promise<string>
+/**
+ * Public entry point. Delegates to the implementation and retries an EMPTY completion — see
+ * `withEmptyRetry` for why a `200` carrying no content is the one failure `fetchWithRetry`
+ * cannot see (it retries only 5xx and network errors).
+ */
+export async function chatOnce(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number = 0,
+  purpose: string = 'chat',
+  tools?: LlmToolDef[],
+  responseFormat?: LlmResponseFormat,
+): Promise<string | LlmToolCall[]> {
+  return withEmptyRetry(
+    () => chatOnceInner(cfg, messages, temperature, purpose, tools, responseFormat),
+    purpose,
+  )
+}
+
+
 /** Streaming completion. Yields token strings. */
 // ponytail: streaming tool calls not supported — text only, add when needed.
+/**
+ * Public streaming entry point. Wraps `chatStreamOnce` with a retry that is only taken when
+ * NOTHING has been yielded yet.
+ *
+ * Why the asymmetry with `chatOnce`: a generator cannot un-yield. If the provider sends tokens
+ * and then dies, the user has already seen text and a retry would duplicate it — so that case
+ * propagates. But an ATTEMPT THAT YIELDS ZERO TOKENS has shown the user nothing, so retrying it
+ * is free, and it is the streaming shape of the same provider hiccup `withEmptyRetry` handles for
+ * non-streaming calls. Without this, a `200` with an empty stream renders as a blank message.
+ *
+ * `onUsage` is forwarded only for the attempt that is actually accepted, so a retried attempt
+ * cannot double-report token counts.
+ */
 export async function* chatStream(
+  cfg: LlmRuntimeConfig,
+  messages: LlmMessage[],
+  temperature: number = 0,
+  purpose: string = 'chat',
+  tools?: LlmToolDef[],
+  onUsage?: (usage: LlmUsage) => void,
+): AsyncGenerator<string, void, unknown> {
+  for (let attempt = 0; ; attempt++) {
+    let yielded = 0
+    let usageFromAttempt: LlmUsage | undefined
+    const gen = chatStreamOnce(cfg, messages, temperature, purpose, tools, (u) => {
+      usageFromAttempt = u
+    })
+    try {
+      for await (const token of gen) {
+        yielded++
+        yield token
+      }
+    } catch (e) {
+      // Deliberately NOT retried here. `fetchWithRetry` already owns the retry ladder for 5xx and
+      // network failures, and retrying a thrown error again would DOUBLE that ladder — measured:
+      // it pushed an existing "non-ok response throws" test from ~3.5s to ~17.5s, past its timeout.
+      // A stream that ERRORED is not the defect this wrapper exists for; a stream that completed
+      // with zero tokens is. If tokens were already yielded the user has seen text, so propagate
+      // regardless.
+      throw e
+    }
+    if (yielded > 0 || attempt >= LLM_MAX_RETRIES) {
+      if (yielded === 0) {
+        console.warn(
+          `[llm] ${purpose}: provider sent an EMPTY stream after ${LLM_MAX_RETRIES + 1} attempts — surfacing it rather than retrying forever`,
+        )
+      }
+      if (usageFromAttempt) onUsage?.(usageFromAttempt)
+      return
+    }
+    await new Promise((r) => setTimeout(r, LLM_RETRY_BACKOFF_BASE_MS * 2 ** attempt))
+  }
+}
+
+async function* chatStreamOnce(
   cfg: LlmRuntimeConfig,
   messages: LlmMessage[],
   temperature: number = 0,

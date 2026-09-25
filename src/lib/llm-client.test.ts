@@ -88,6 +88,63 @@ describe('chatOnce', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test')
   })
 
+  test('an EMPTY reply is retried, and the recovered answer is returned', async () => {
+    // Why this exists: `fetchWithRetry` retries only 5xx and network errors, so a 200 carrying
+    // content:"" was handed straight back — and '' is indistinguishable from a valid answer, so a
+    // provider hiccup reached a user as a blank message with no error logged. MEASURED on the
+    // shipped endpoint: the identical extraction call returned an empty body intermittently.
+    let n = 0
+    const fetchMock = mock(() => {
+      n++
+      return Promise.resolve(jsonResponse({ choices: [{ message: { content: n <= 2 ? '' : 'REAL ANSWER' }, finish_reason: 'stop' }] }))
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(out).toBe('REAL ANSWER')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('a NON-empty reply is NOT retried — no added calls, no added cost', async () => {
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: 'fine' }, finish_reason: 'stop' }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(out).toBe('fine')
+    // The common path must stay exactly one call.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('a whitespace-only reply counts as empty and is retried', async () => {
+    // Trimming happens after the check, so '   ' would otherwise be returned as a blank answer.
+    let n = 0
+    const fetchMock = mock(() => {
+      n++
+      return Promise.resolve(jsonResponse({ choices: [{ message: { content: n === 1 ? '   \n  ' : 'ANSWER' }, finish_reason: 'stop' }] }))
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }])
+    expect(out).toBe('ANSWER')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  test('a tool call is never treated as empty (it is a legitimate reply)', async () => {
+    // Regression risk: the empty check runs on the return value, which can also be LlmToolCall[].
+    const fetchMock = mock(() =>
+      Promise.resolve(jsonResponse({ choices: [{ message: { content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'get_weather', arguments: '{}' } }] } }] })),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const out = await chatOnce(openaiCfg, [{ role: 'user', content: 'hi' }], 0, 'chat', [
+      { type: 'function', function: { name: 'get_weather', description: '', parameters: {} } },
+    ] as never)
+    expect(Array.isArray(out)).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   test('Anthropic → uses x-api-key header, returns content[].text', async () => {
     const fetchMock = mock(() =>
       Promise.resolve(jsonResponse({ content: [{ type: 'text', text: '  Hi there  ' }] })),
@@ -405,6 +462,48 @@ describe('chatStream', () => {
     }
 
     expect(tokens).toEqual(['Hel', 'lo'])
+  })
+
+  test('an entirely EMPTY stream is retried — nothing was shown, so a retry is free', async () => {
+    // The streaming shape of the same provider hiccup `chatOnce` retries. A 200 with an empty
+    // stream used to render as a blank message; here the retry is only taken while NOTHING has
+    // been yielded, because a generator cannot un-yield text the user has already seen.
+    let n = 0
+    global.fetch = mock(() => {
+      n++
+      return Promise.resolve(
+        n <= 2
+          ? sseResponse(['data: {"choices":[{"delta":{"content":""}}]}\n', 'data: [DONE]\n'])
+          : sseResponse(['data: {"choices":[{"delta":{"content":"REAL"}}]}\n', 'data: [DONE]\n']),
+      )
+    }) as unknown as typeof fetch
+
+    const tokens: string[] = []
+    for await (const t of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }])) tokens.push(t)
+    expect(tokens.join('')).toBe('REAL')
+    expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(3)
+  })
+
+  test('a FAILED stream is not retried a second time — the retry ladder belongs to fetchWithRetry', async () => {
+    // Bounds the blast radius of the empty-stream wrapper. `fetchWithRetry` already retries 5xx
+    // and network errors; retrying here as well would double the ladder. MEASURED when it did:
+    // the existing "non-ok response throws LLM stream error" test went from ~3.5s to ~17.5s and
+    // tripped its timeout. So this pins the SEPARATION — one fetch attempt, not four.
+    let n = 0
+    global.fetch = mock(() => {
+      n++
+      return Promise.reject(new Error('socket hang up'))
+    }) as unknown as typeof fetch
+
+    await expect(
+      (async () => {
+        for await (const _ of chatStream(openaiCfg, [{ role: 'user', content: 'hi' }])) {
+          /* drain */
+        }
+      })(),
+    ).rejects.toThrow()
+    // fetchWithRetry's own ladder is 4 attempts; the stream wrapper must add none.
+    expect(n).toBe(4)
   })
 
   test('Anthropic → yields from content_block_delta events', async () => {
