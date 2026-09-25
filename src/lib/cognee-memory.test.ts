@@ -124,10 +124,11 @@ describe('rememberChatTurn', () => {
   })
 
   test('an OVERSIZED turn is truncated and MARKED before it reaches cognee', async () => {
-    // Why this is pinned: cognee's graph extraction is prompt-sensitive — measured, the same
-    // endpoint returns clean JSON for a short extraction prompt and an EMPTY STRING for a long
-    // one — and a validation failure is retried up to 3x, so an oversized turn is paid for
-    // repeatedly (writes on a fresh dataset: 228s/135s/117s vs 8.9s for a small one).
+    // Why this is pinned: it bounds what ONE turn contributes to the graph, and it marks the
+    // truncation so stored memory is not silently clipped. NOT a latency fix — I first claimed
+    // that (thinking extraction was prompt-sensitive) and measurement refuted it: the same long
+    // prompt returned content 8/8 sequentially and 10/10 concurrently, and long writes were
+    // sometimes FASTER than short ones. See docs/cognee-http-migration.md.
     state.serverOptions = { baseUrl: 'http://cognee:8000', timeoutMs: 1000 }
     const huge = 'x'.repeat(MEMORY_WRITE_MAX_CHARS * 2)
     await rememberChatTurn({

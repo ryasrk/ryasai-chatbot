@@ -469,21 +469,31 @@ So this is a **latency** defect, not a data-loss one: the extraction is retried 
 `_MAX_VALIDATION_RETRIES`, with a 240s tenacity stop floor) and eventually succeeds. 117 s
 versus 9 s is the visible cost, and it is why a fresh-dataset write can take minutes.
 
-**Root cause narrowed by direct isolation.** Same endpoint, same model, same `json_object`,
-varying only the prompt:
+**Attempted isolation, and my earlier conclusion was WRONG — the empty reply is INTERMITTENT,
+not prompt-determined.** I first reported that a short prompt returns JSON while "cognee-style
+schema-in-prompt" returns an empty string, and treated it as a property of the prompt. Re-tested
+properly, the same schema-bearing prompt:
 
-| prompt | reply |
+| test | result |
 |---|---|
-| short ("Extract a graph. JSON only.") | clean JSON, 314 chars |
-| cognee-style schema-in-prompt | **empty string** |
-| cognee-style, WITHOUT `json_object` | **empty string** |
-| long filler system prompt (98-638 chars) | answered in every case |
+| the same prompt, 8 sequential calls | **8/8 returned content** (667-1193 chars) |
+| the same prompt, 10 CONCURRENT calls | **10/10 returned content** |
+| earlier one-shot comparisons | empty string, repeatedly |
 
-So it is neither `response_format` nor prompt LENGTH (filler up to 638 chars was answered
-fine) — it is something specific to the schema-bearing prompt. The empty replies in the live
-log match this exactly: the captured `input_value` for the recent failures is `''`, not prose.
-**I did not isolate which element of that prompt triggers it**, and the prompt lives inside the
-server, so this is recorded as the boundary rather than guessed past.
+And `max_tokens` is not the cause either: with the long schema prompt at unset / 2000 / 8000,
+the reply was 1248 / 2037 / 2529 chars, all `finish_reason=stop`.
+
+So the empty replies are **rare and transient**, most likely provider-side (the same endpoint
+is reached through a shared gateway), and they are NOT reproducible on demand from the prompt
+alone. That is a narrower and less actionable statement than my first one, and it is the correct
+one: `ValidationError … input_value=''` in the logs means the provider returned nothing for that
+call, not that this prompt shape is broken.
+
+**Retry is therefore load-bearing rather than wasteful** — it is what turns a transient empty
+reply into a stored fact. That is consistent with the retry counters below, where 184 of 297
+first-attempt failures eventually succeeded. The remaining unknown is WHY the gateway returns an
+empty body occasionally; it is outside this codebase and is recorded as such rather than guessed
+at a fourth time.
 
 **A LATENCY FIX I ATTEMPTED, MEASURED, AND RETRACTED.** Reasoning from the empty-reply
 isolation (long schema-bearing prompt → empty string), I capped the text
