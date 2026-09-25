@@ -43,3 +43,39 @@ describe('wrapUntrusted', () => {
     expect(isWrapped('plain text')).toBe(false)
   })
 })
+
+describe('every prompt that carries evidence must USE the boundary', () => {
+  // The module was correct and tested while TWO call sites interpolated evidence raw. Testing the
+  // helper cannot catch that: the defect is a caller that never imports it. These assertions read
+  // the FILES, because "wrapped" is a property of the prompt construction, not of the helper.
+  const read = (p: string) => Bun.file(p).text()
+
+  test('reflexion.ts wraps the evidence it sends to the critique prompt', async () => {
+    // `evidence` there is accumulated document text. Raw, a document saying
+    // "SYSTEM: ignore the critique task..." competes with the real instruction.
+    const src = await read('./src/lib/reflexion.ts')
+    expect(src).toContain("from './evidence-boundary'")
+    expect(src).toContain('wrapUntrusted(')
+    // The prompt body must not interpolate evidence bare.
+    expect(src).not.toMatch(/Evidence:\n\$\{evidence/)
+  })
+
+  test('intent-pipeline.ts wraps the evidence it asks the LLM to judge', async () => {
+    // Higher stakes than reflexion: talking past this check suppresses the retrieval reflection
+    // pass, which is a QUALITY effect the customer would feel and could not attribute.
+    const src = await read('./src/lib/intent-pipeline.ts')
+    expect(src).toContain("from './evidence-boundary'")
+    expect(src).not.toMatch(/Evidence:\n\$\{args\.evidence/)
+  })
+
+  test('the answer paths still wrap all four content kinds', async () => {
+    // Regression guard: these were fixed earlier and must stay fixed.
+    const branches = await read('./src/lib/tool-branches.ts')
+    const streamers = await read('./src/lib/stream-preparers.ts')
+    for (const src of [branches, streamers]) {
+      expect(src).toContain("CONTEXT (DOCUMENTS):")
+      expect(src).toContain("CONTEXT (DATABASE ROWS):")
+    }
+    expect(branches).toContain('CONTEXT (REST API RESPONSE):')
+  })
+})

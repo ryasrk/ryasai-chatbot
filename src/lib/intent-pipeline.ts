@@ -43,6 +43,7 @@ import { getRoleLlmConfig } from '@/lib/llm-config'
 import { retrieveRelevantChunks, selectTopRetrievedChunks, type RetrievedChunk } from '@/lib/rag'
 import { isPlaceholderChunk } from '@/lib/rag-chunking'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
+import { wrapUntrusted } from './evidence-boundary'
 
 export interface IntentAnalysis {
   /** Can we answer/retrieve with the information currently available? */
@@ -370,7 +371,12 @@ export async function evaluateEvidenceSufficiency(args: {
       { role: 'system', content: REFLECTION_SYSTEM_PROMPT },
       {
         role: 'user',
-        content: `Question: ${args.question}\n\nEvidence:\n${args.evidence.slice(0, 2000)}\n\nIs this evidence sufficient?`,
+        // Same treatment as the answer prompts: this evidence is CUSTOMER CONTENT, and a document
+        // asking to be declared sufficient sits in instruction position when interpolated raw.
+        // Higher stakes than the reflexion site — a document that talks its way past this check
+        // suppresses the retrieval reflection pass entirely, which is a QUALITY effect a customer
+        // would feel and could not attribute.
+        content: `Question: ${args.question}\n\n${wrapUntrusted('CONTEXT (EVIDENCE TO ASSESS):', args.evidence.slice(0, 2000))}\n\nIs the evidence above sufficient to answer the question?`,
       },
     ], 0, 'reflection')
 

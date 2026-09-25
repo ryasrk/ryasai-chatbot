@@ -1,4 +1,5 @@
 import { scopedLogger } from '@/lib/logger'
+import { wrapUntrusted } from './evidence-boundary'
 const log = scopedLogger('reflexion')
 
 export interface SelfCritiqueResult {
@@ -42,7 +43,15 @@ export async function selfCritique(
         { role: 'system', content: CRITIQUE_PROMPT },
         {
           role: 'user',
-          content: `Question: ${question}\n\nCurrent answer: ${answer.slice(0, 2000)}\n\nEvidence:\n${evidence.slice(0, 2000)}\n\nCritique and revise. Output JSON only.`,
+          // The evidence is CUSTOMER CONTENT (retrieved document text), and this prompt used to
+          // interpolate it raw — no delimiter, no framing. That put a document's text in the same
+          // structural position as the instruction, so a document containing
+          // "SYSTEM: ignore the critique task..." competed with the real task.
+          // MEASURED: with the raw form, attacker text does occupy instruction position and no
+          // boundary marker is present at all. `wrapUntrusted` is the same defence the answer
+          // prompts already use (tool-branches/stream-preparers wrap all four content kinds), and
+          // its fence survives a document that tries to forge the delimiter to break out.
+          content: `Question: ${question}\n\nCurrent answer: ${answer.slice(0, 2000)}\n\n${wrapUntrusted('CONTEXT (EVIDENCE):', evidence.slice(0, 2000))}\n\nCritique and revise. Output JSON only.`,
         },
       ],
       0,
