@@ -498,7 +498,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Twelve defects across seven rounds shared one shape: **the code reported success for work it had
+Thirteen defects across eight rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -600,6 +600,20 @@ gate), and report any model-in-the-loop number as the model's behaviour rather t
 effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
 tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
 
+13. **A mechanism fed nothing, because two different meanings shared one value.** `pg_class.reltuples`
+   returns -1 for a table that has never been ANALYZEd — the normal state for a freshly created or
+   freshly loaded table. The reflection query coerced that to 0, and the enrichment guard skipped
+   rowCount `<= 0` as empty. So on this deployment ALL 11 reflected tables were skipped and no
+   distinct values were ever collected — while `describeSchema` was perfectly able to render them
+   (`-- values: SDM, Keuangan, ...`) and simply had nothing to render. The user-visible result:
+   "Berapa jumlah karyawan di departemen HR?" answered "0 orang", because the model could not map
+   "HR" to the real value "SDM". A correct query against a wrong assumption.
+   **When one value carries two meanings ("unknown" and "empty"), check every comparison against
+   it.** Better: keep "unknown" distinct, so a guard cannot mistake it for a measurement. The
+   existing test that guarded this was right about the RISK (an unbounded `SELECT DISTINCT` is
+   expensive) and wrong about the remedy; the cost is now bounded by the pool's 30s `query_timeout`
+   plus `LIMIT 21`.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
@@ -624,6 +638,10 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
   role back to `'system'` left it green. Asserting the property you actually mean (the ROLE and the
   fence) is what made the control fail. A guard that cannot fail is worse than no guard, because it
   reports safety.
+- **Check what your PROBE returns before believing its verdict.** A probe that read `schema.tables`
+  off a function returning a plain array reported "no distinct values" for a function that had them,
+  and nearly sent me to fix the wrong layer. Assert the probe's own shape first: if the data source
+  is unexpectedly empty, suspect the reader.
 - **Sweep a suspected boundary; do not probe it once.** Stepping 1800 → 2000 → 2100 → 2200 located
   the system-message ceiling within one run. A single probe at 3033 reported the prompt as delivered.
 
