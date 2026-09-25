@@ -1008,3 +1008,61 @@ than by trusting a summary.**
    properties that are still worth guarding (filtering still applies, no memory means no
    block, the block is bounded, the preamble stays short) but they do NOT pin the framing.
    Stated because "5 tests cover the framing" would be false: one does.
+
+### RESOLVED: `resetCognee` reported success when the wipe FAILED
+
+Not a cognee defect — ours. On the server backend there is no local store in this process, so
+`forget({everything:true})` IS the reset, and it was wrapped like this:
+
+    try { await cogneeForget(serverOpts, { everything: true }) } catch {}
+    ...
+    return true
+
+The admin "reset memory" endpoint therefore answered `{ ok: true }`, wrote a `COGNEE_RESET` audit
+row, and cleared every document's `cognifyStatus` — **while the memory was still there**. For a
+privacy/GDPR "forget everything" action, reporting a wipe that did not happen is the worst
+available outcome, and the operator has no signal to notice.
+
+The module already knew the rule: `forgetAll` and `forgetKnowledgeGraph` both return `false` when
+the forget fails, and `forgetAll` carries the comment *"reporting true after a no-op wipe is the
+failure mode this whole area exists to avoid"*. `resetCognee` was the only one contradicting it.
+It now returns `false` and leaves `cognifyStatus` alone, so a failed wipe is retryable and visible.
+
+Kept distinct on purpose: the `updateMany` status sweep still swallows its own failure. If only
+that throws, the wipe really did happen and returning false would invite a needless retry.
+
+A test asserted the old behaviour, justified by *"the reset is a local-state operation that must
+succeed regardless of the remote store's health"* — reasoning from the removed in-process era.
+The assertion is reversed, and now also pins that statuses are NOT cleared on failure.
+
+### RESOLVED: an empty completion reached the user as a blank answer
+
+Measured against a server replying `200` with `content: ""`:
+
+| probe | result |
+|---|---|
+| `chatOnce(...)` | `""` (typeof string) |
+| `content: ""` with `finish_reason: 'length'` | `""` — truncation to nothing, also silent |
+| empty passed through without error | **YES** |
+
+`fetchWithRetry` retries only 5xx and network failures, so a `200` carrying no content was
+returned to the caller, and `''` is indistinguishable from a valid answer — a provider hiccup
+became an empty chat message with nothing in the logs.
+
+This is the same provider behaviour measured earlier in this document (the identical extraction
+call returned an empty body intermittently; cognee's log showed `input_value=''`). cognee absorbed
+it with its own retry ladder — 184 of 297 first-attempt validation failures eventually succeeded —
+and this is the equivalent guard on our side, where the reply is user-visible.
+
+Bounded deliberately:
+- a non-empty string, or any tool call, is returned on the FIRST attempt (no added calls or cost);
+- a whitespace-only reply counts as empty;
+- streaming retries ONLY while zero tokens have been emitted, because a generator cannot un-yield
+  text the user has already seen;
+- a THROWN error is not retried here — `fetchWithRetry` owns that ladder, and doubling it was
+  measured pushing an existing test from ~3.5s to ~17.5s, past its timeout.
+
+Observations, all three from the built code: empty ×2 then content → recovered; always empty →
+gives up after 4 attempts (3.5s, no hang); normal answer → one call, 1ms.
+
+SCOPE: this fixes the app's own LLM calls. cognee's internal extraction calls are separate.
