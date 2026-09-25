@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Seven defects across three rounds shared one shape: **the code reported success for work it had
+Eight defects across four rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -544,6 +544,20 @@ by reading the code.
    never throws, so a dead sidecar and an empty dataset took the same `if (!hits?.length) continue`
    branch, silently. Recall is best-effort and stays non-fatal; what changed is that an outage is
    now a different code path from an empty result, and only the outage warns.
+
+7. **A keyword list that hijacks a routing decision.** The `datetime` plugin declares the bare
+   keyword "tahun", so any question containing a time word scored above the promotion threshold and
+   was moved OFF the route the classifier had chosen. 5 of 6 database questions carrying a time word
+   were hijacked, and the WRONG answer scored higher than a right one ("Tampilkan pesanan per jam."
+   0.415 vs "Hitung 15% dari 2 juta." 0.383) — so a threshold could not separate them. Fixed with a
+   quality gate: a match must be the question's SUBJECT, not a qualifier inside it.
+
+**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
+5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
+change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
+gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
+effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
+tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
 
 **Rules that follow from these:**
 
