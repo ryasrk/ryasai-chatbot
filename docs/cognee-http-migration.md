@@ -502,7 +502,50 @@ So memory retrieval works by meaning, not only by literal token match. The lesso
 others in this document: a probe that pairs a dataset with the wrong container produces a
 confident false negative.
 
-### `03-knowledge-chat` fails ONLY with memory active: cause UNKNOWN, backend proven correct
+### RESOLVED: `03-knowledge-chat` — two independent defects, neither about memory
+
+It was never a memory bug. Memory only changed which test happened to be running when the real
+defects bit. Both are fixed, and `bun run e2e` is **16/16 with a sidecar configured** (was
+15/16), stable across two consecutive runs of the affected spec.
+
+**Defect 1 — the in-flight answer was being wiped, then dropped silently.**
+
+Traced rather than guessed, and the trace is the interesting part: the SSE `answer` frame
+carried `citations=2`; the store was confirmed to hold `user,ai` immediately after
+`addMessage`; and by assertion time the store read `[user, ai(previous), user]` — the new
+answer had nowhere to land. `finalizeLastAiMessage` saw its last row was not an AI row, took
+its early return, and discarded the answer and both citations.
+
+Cause: `selectSession` (`use-chat-sessions.ts`) did a plain `setMessages(msgs)` from the
+server, and the server returns PERSISTED rows only — so any local row not yet saved was wiped,
+including the streaming placeholder. It now preserves in-flight rows while server rows still
+win for everything persisted. The silent early return now logs what it drops, which is how the
+diagnosis was confirmed: the warning fired once, reporting "2 citation(s)", matching the frame.
+
+**Defect 2 — queued embed jobs were stuck, so a document had no vector.**
+
+After defect 1 was fixed the failure changed shape: `Sources (2)` rendered, but did not include
+`e2e-answer.txt`. The database showed why — two rows for that filename, one with a vector and
+one without, and `cognifyStatus` stuck at `processing`. Redis held **4 jobs on `wait` and 9 on
+`active` with no worker registered**.
+
+Clearing the queue made the spec pass. The underlying behaviour is not a bug — `active` orphans
+are recovered by BullMQ's stalled checker, which the worker configures, and that checker runs
+inside a live worker (hence a queue inspected while the app is stopped still shows them). The
+9 were bookkeeping from an e2e process killed mid-run. Confirmed by the fact that the same run's
+documents were fully embedded: 2/2 chunks for `e2e-answer.txt`, 1/1 for the others, zero
+documents failed.
+
+**Honest attribution.** The run that went 15/16 → 16/16 had BOTH fixes plus the queue clear.
+Defect 1 turned "no Sources at all" into "Sources rendering"; defect 2 accounts for the wrong
+document being cited. Neither alone explains the final result, so both are described rather
+than summarised as "fixed the test".
+
+**A naming defect found on the way.** `adoptStuckJobs` did not adopt anything — it counted the
+`wait` list and logged, which the function's own call-site comment admitted. Renamed to
+`reportQueuedJobsOnStartup`, with what actually recovers orphans documented at the definition.
+
+### (historical) the earlier hypothesis for this failure, disproved
 
 One spec fails when a sidecar is configured and passes 16/16 without one. Established by
 dumping the database after a failing run rather than by reading the UI:
