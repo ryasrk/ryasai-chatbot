@@ -16,6 +16,7 @@ import { chatOnce as llmChatOnce, chatStream as llmChatStream, type LlmUsage } f
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
 import { LlmNotConfiguredError } from '@/lib/errors'
+import { wrapUntrusted } from '@/lib/evidence-boundary'
 
 // ---------------------------------------------------------------------------
 // Backend resolution + shared completion helpers
@@ -132,6 +133,29 @@ export function tokenizeForPluginGate(question: string): string[] {
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter((t) => t.length > 1 && !STOP.has(t))
+}
+
+/**
+ * Memory context belongs in a USER message, and this is not a style preference.
+ *
+ * MEASURED twice, on the customer's provider: a SYSTEM message above ~2000 characters is
+ * DISCARDED rather than truncated — reported `prompt_tokens` at 1800 chars is 411, at 2100+ it is
+ * 44 (the user message alone), reproducible 3/3 with realistic content. The same text in a user
+ * message has no ceiling: 12000 characters reports 1558 tokens and its instruction is still obeyed.
+ *
+ * Recall from prior conversations routinely exceeds 2000 characters, so every one of these was
+ * being dropped on the floor while still costing the latency of the call that produced it.
+ *
+ * It is ALSO the safer role. This text is derived from earlier user turns, so it is untrusted
+ * input; a system message carries the highest authority, and wrapping it in the evidence fence
+ * would not change that. As a user message it is data the model reads, not a directive it obeys.
+ */
+function pushMemoryContext(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  memoryContext: string | undefined | null,
+): void {
+  if (!memoryContext) return
+  messages.push({ role: 'user', content: wrapUntrusted('Memory context from prior interactions:', memoryContext) })
 }
 
 export async function routeQuery(ctx: RoutingContext): Promise<{
@@ -280,45 +304,58 @@ export async function generateSql(args: {
         role: 'system',
         content:
           `You are an expert ${args.provider} Text-to-SQL specialist. ` +
-          'Your task: convert a natural language question into ONE valid & efficient SELECT query. ' +
-          'RULES:\n' +
-          '1. ONLY SELECT is allowed. INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE are FORBIDDEN.\n' +
-          '2. Always include LIMIT when relevant (maximum 100 rows).\n' +
-          '3. Use only tables & columns that exist in the following schema.\n' +
-          '4. Format your answer as JSON: {"sql": "...", "explanation": "..."}.\n' +
-          '5. Do not wrap with markdown code fence.\n' +
-          '6. When filtering by date, always cast string literals to the column type, e.g. WHERE order_date >= DATE \'2026-07-30\' or WHERE order_date::date = CURRENT_DATE. Never compare a date column directly to a bare string literal.\n' +
-          '7. "hari ini" / "today" means CURRENT_DATE. "kemarin" / "yesterday" means CURRENT_DATE - 1.\n' +
-          '8. If the question mentions a date but does not specify one, use CURRENT_DATE.\n' +
-          '9. IMPORTANT: Always double-quote table and column names to preserve case sensitivity. ' +
-          'For example, use "SELECT COUNT(*) FROM "participants" WHERE "IsDeleted" = false" ' +
-          'NOT "SELECT COUNT(*) FROM participants WHERE IsDeleted = false". ' +
-          'PostgreSQL lowercases unquoted identifiers, which causes "column does not exist" errors ' +
-          'when the actual column name has uppercase letters.\n' +
-          '10. Do NOT filter by "IsDeleted" or "DeletedAt" unless the user asks about deleted records. ' +
-          'Most count queries should count ALL rows (active + deleted) unless the user specifically ' +
-          'asks for "active" or "non-deleted" records.\n' +
-          '11. When asked for a TOTAL count, use SELECT COUNT(*) FROM "table" — do NOT add WHERE ' +
-          'clauses unless the user specifies a filter.\n' +
-          '12. Use the BUSINESS CONTEXT (if provided) to identify the correct table for domain ' +
-          'terms. If the business context maps a domain term to a specific table, use that table.\n' +
-          '13. String search is case-sensitive with =, LIKE, and IN — user data rarely is. When ' +
-          'searching text (names, titles, statuses, keywords), always match case-insensitively: ' +
-          'PostgreSQL: "name" ILIKE \'%john%\' (or LOWER("name") = LOWER(\'John\')); ' +
-          'MySQL: LOWER(name) LIKE \'%john%\'; ' +
-          'MSSQL: LOWER(name) LIKE \'%john%\'; ' +
-          'ClickHouse: positionCaseInsensitive(name, \'john\') > 0. ' +
-          'Never use bare = or case-sensitive LIKE for user-facing text search.\n' +
-          '14. If the search term itself can contain % or _ (e.g. searching for "50% off"), escape ' +
-          'the wildcards with an explicit ESCAPE clause (e.g. ... ILIKE \'%50^% off%\' ESCAPE \'^\'). ' +
-          'Do not strip user-supplied wildcards silently — the user may intend them as wildcards.\n' +
-          '15. NULL semantics: comparisons with NULL yield NULL (never true). Use IS NULL / ' +
-          'IS NOT NULL for null checks, never = NULL. Use COALESCE(col, default) when comparing ' +
-          'a nullable column for equality. LIKE/ILIKE on a NULL column returns NULL — add OR col IS NULL ' +
-          'only if the user explicitly wants missing values included.\n' +
-          '16. Prefer substring matches over exact matches when the user says "contains", "about", ' +
-          '"menyebut", "terkait", "tentang", or provides a partial value; use exact case-insensitive ' +
-          'equality (= with LOWER, or ILIKE without %) for "exactly", "persis", full identifiers.',
+          'Your task: convert a natural language question into ONE valid & efficient SELECT query, ' +
+          'following the RULES given in the next message. ',
+
+      },
+      {
+        // The RULES live in a USER message, not the system message.
+        //
+        // MEASURED: the customer's provider DISCARDS a system message above ~2000 characters
+        // rather than truncating it — reported `prompt_tokens` for an identical request at 1800
+        // chars is 411, at 2100+ it is 44 (the user message alone), reproducible 3/3. This prompt
+        // was 3033 characters, so the Text-to-SQL RULES — including rules 13-16 that encode real
+        // fixed bugs — never reached the model on any request. User messages have NO such ceiling:
+        // 12000 characters reports 1558 tokens and the instruction is still obeyed.
+        role: 'user',
+        content:
+                    '1. ONLY SELECT is allowed. INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE are FORBIDDEN.\n' +
+                    '2. Always include LIMIT when relevant (maximum 100 rows).\n' +
+                    '3. Use only tables & columns that exist in the following schema.\n' +
+                    '4. Format your answer as JSON: {"sql": "...", "explanation": "..."}.\n' +
+                    '5. Do not wrap with markdown code fence.\n' +
+                    '6. When filtering by date, always cast string literals to the column type, e.g. WHERE order_date >= DATE \'2026-07-30\' or WHERE order_date::date = CURRENT_DATE. Never compare a date column directly to a bare string literal.\n' +
+                    '7. "hari ini" / "today" means CURRENT_DATE. "kemarin" / "yesterday" means CURRENT_DATE - 1.\n' +
+                    '8. If the question mentions a date but does not specify one, use CURRENT_DATE.\n' +
+                    '9. IMPORTANT: Always double-quote table and column names to preserve case sensitivity. ' +
+                    'For example, use "SELECT COUNT(*) FROM "participants" WHERE "IsDeleted" = false" ' +
+                    'NOT "SELECT COUNT(*) FROM participants WHERE IsDeleted = false". ' +
+                    'PostgreSQL lowercases unquoted identifiers, which causes "column does not exist" errors ' +
+                    'when the actual column name has uppercase letters.\n' +
+                    '10. Do NOT filter by "IsDeleted" or "DeletedAt" unless the user asks about deleted records. ' +
+                    'Most count queries should count ALL rows (active + deleted) unless the user specifically ' +
+                    'asks for "active" or "non-deleted" records.\n' +
+                    '11. When asked for a TOTAL count, use SELECT COUNT(*) FROM "table" — do NOT add WHERE ' +
+                    'clauses unless the user specifies a filter.\n' +
+                    '12. Use the BUSINESS CONTEXT (if provided) to identify the correct table for domain ' +
+                    'terms. If the business context maps a domain term to a specific table, use that table.\n' +
+                    '13. String search is case-sensitive with =, LIKE, and IN — user data rarely is. When ' +
+                    'searching text (names, titles, statuses, keywords), always match case-insensitively: ' +
+                    'PostgreSQL: "name" ILIKE \'%john%\' (or LOWER("name") = LOWER(\'John\')); ' +
+                    'MySQL: LOWER(name) LIKE \'%john%\'; ' +
+                    'MSSQL: LOWER(name) LIKE \'%john%\'; ' +
+                    'ClickHouse: positionCaseInsensitive(name, \'john\') > 0. ' +
+                    'Never use bare = or case-sensitive LIKE for user-facing text search.\n' +
+                    '14. If the search term itself can contain % or _ (e.g. searching for "50% off"), escape ' +
+                    'the wildcards with an explicit ESCAPE clause (e.g. ... ILIKE \'%50^% off%\' ESCAPE \'^\'). ' +
+                    'Do not strip user-supplied wildcards silently — the user may intend them as wildcards.\n' +
+                    '15. NULL semantics: comparisons with NULL yield NULL (never true). Use IS NULL / ' +
+                    'IS NOT NULL for null checks, never = NULL. Use COALESCE(col, default) when comparing ' +
+                    'a nullable column for equality. LIKE/ILIKE on a NULL column returns NULL — add OR col IS NULL ' +
+                    'only if the user explicitly wants missing values included.\n' +
+                    '16. Prefer substring matches over exact matches when the user says "contains", "about", ' +
+                    '"menyebut", "terkait", "tentang", or provides a partial value; use exact case-insensitive ' +
+                    'equality (= with LOWER, or ILIKE without %) for "exactly", "persis", full identifiers.',
       },
       {
         role: 'user',
@@ -396,7 +433,7 @@ export async function generateAnswer(args: {
     messages.push({ role: 'system', content: args.systemPromptPrefix })
   }
   if (args.memoryContext) {
-    messages.push({ role: 'system', content: `Memory context from prior interactions:\n${args.memoryContext}` })
+    pushMemoryContext(messages, args.memoryContext)
   }
   if (args.chatHistory && args.chatHistory.length > 0) {
     messages.push(...historyToMessages(args.chatHistory))
@@ -646,7 +683,7 @@ export async function generateChat(
     messages.push({ role: 'system', content: systemPromptPrefix })
   }
   if (memoryContext) {
-    messages.push({ role: 'system', content: `Memory context from prior interactions:\n${memoryContext}` })
+    pushMemoryContext(messages, memoryContext)
   }
   messages.push({
     role: 'system',
@@ -755,7 +792,7 @@ export async function* streamAnswer(args: {
     messages.push({ role: 'system', content: args.systemPromptPrefix })
   }
   if (args.memoryContext) {
-    messages.push({ role: 'system', content: `Memory context from prior interactions:\n${args.memoryContext}` })
+    pushMemoryContext(messages, args.memoryContext)
   }
   if (args.chatHistory && args.chatHistory.length > 0) {
     messages.push(...historyToMessages(args.chatHistory))
@@ -804,7 +841,7 @@ export async function* streamChat(
     messages.push({ role: 'system', content: systemPromptPrefix })
   }
   if (memoryContext) {
-    messages.push({ role: 'system', content: `Memory context from prior interactions:\n${memoryContext}` })
+    pushMemoryContext(messages, memoryContext)
   }
   if (chatHistory && chatHistory.length > 0) {
     messages.push(...historyToMessages(chatHistory))

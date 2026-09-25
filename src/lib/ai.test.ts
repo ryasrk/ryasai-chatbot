@@ -396,21 +396,29 @@ describe('generateSql', () => {
   test('SQL prompt guides case-insensitive string search (ILIKE/LIKE per dialect)', async () => {
     fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
     await generateSql({ question: 'find john', schemaDescription: 'TABLE users(name)', provider: 'POSTGRESQL' })
-    const sysMsg = getSentMessages().find((m) => m.role === 'system')
-    expect(sysMsg).toBeDefined()
-    expect(sysMsg!.content).toContain('ILIKE')
-    expect(sysMsg!.content).toContain('LOWER(name) LIKE')
-    expect(sysMsg!.content).toContain('positionCaseInsensitive')
-    expect(sysMsg!.content).not.toContain("' +")
+    // The rules moved from the SYSTEM message to a USER message, and the reason is measured:
+    // the customer's provider DISCARDS a system message above ~2000 characters (1800 chars reports
+    // 411 prompt_tokens, 2100+ reports 44 — the user message alone, 3/3 reproducible). The
+    // Text-to-SQL prompt was 3033 characters, so these rules never reached the model at all. User
+    // messages have no such ceiling. The assertion's PURPOSE is unchanged: the model must receive
+    // the rules, so it checks every message rather than only the system one.
+    const allContent = getSentMessages().map((m) => m.content).join('\n')
+    expect(allContent).toContain('ILIKE')
+    expect(allContent).toContain('LOWER(name) LIKE')
+    expect(allContent).toContain('positionCaseInsensitive')
+    for (const m of getSentMessages()) expect(m.content).not.toContain("' +")
   })
 
   test('SQL prompt covers NULL semantics and wildcard escaping', async () => {
     fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
     await generateSql({ question: 'q', schemaDescription: 's', provider: 'POSTGRESQL' })
-    const sysMsg = getSentMessages().find((m) => m.role === 'system')
-    expect(sysMsg!.content).toContain('IS NULL')
-    expect(sysMsg!.content).toContain('COALESCE')
-    expect(sysMsg!.content).toContain('ESCAPE')
+    // Same move as above: the rules are in a USER message because a system message over ~2000
+    // characters is discarded by the provider. Checked across all messages so the guard keeps
+    // testing what it means to test — that the model RECEIVES these rules.
+    const allContent = getSentMessages().map((m) => m.content).join('\n')
+    expect(allContent).toContain('IS NULL')
+    expect(allContent).toContain('COALESCE')
+    expect(allContent).toContain('ESCAPE')
   })
 })
 
@@ -1023,7 +1031,9 @@ describe('generateSql — stale-profile fallback names the text columns', () => 
 
   test('a STALE profile gets the fallback, and it names the text columns', async () => {
     await generateSql({ ...base, businessContext: STALE, textColumns: ['nama', 'tipe_pelanggan'] })
-    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    // Concatenate the user messages: the RULES now occupy the first one, so the dialect/schema
+    // message is no longer `.find(role === 'user')`. See the note above on the provider's ceiling.
+    const user = getSentMessages().filter((m) => m.role === 'user').map((m) => m.content).join('\n')
     expect(user).toMatch(/No query hints are available/i)
     expect(user).toContain('nama')
     expect(user).toContain('tipe_pelanggan')
@@ -1032,15 +1042,65 @@ describe('generateSql — stale-profile fallback names the text columns', () => 
 
   test('a CURRENT profile gets NO fallback — it already carries query hints', async () => {
     await generateSql({ ...base, businessContext: `<!-- profile-version: 2 -->\n## QUERY HINTS\n- none`, textColumns: ['nama'] })
-    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    const user = getSentMessages().filter((m) => m.role === 'user').map((m) => m.content).join('\n')
     expect(user).not.toMatch(/No query hints are available/i)
   })
 
   test('with no text columns the fallback still appears, just without names', async () => {
     await generateSql({ ...base, businessContext: STALE })
-    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    const user = getSentMessages().filter((m) => m.role === 'user').map((m) => m.content).join('\n')
     expect(user).toMatch(/No query hints are available/i)
     expect(user).not.toMatch(/NOT status columns/i)
+  })
+})
+
+describe('provider system-message ceiling', () => {
+  // The provider DISCARDS a system message above ~2000 characters instead of truncating it.
+  // MEASURED: 1800 chars reports `prompt_tokens` 411, 2100+ reports 44 (the user message alone),
+  // 3/3 reproducible with realistic content. A dropped instruction fails SILENTLY and presents as
+  // a model that ignores its prompt, which is how the Text-to-SQL rules (3033 chars) and the intent
+  // prompt (2872 chars) both went unread. This guard keeps the two prompts that carry real rules
+  // under the ceiling, so the failure surfaces here rather than as odd model behaviour.
+  const CEILING = 2000
+
+  test('the SQL system prompt stays under the ceiling', async () => {
+    fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
+    await generateSql({ question: 'q', schemaDescription: 'TABLE t(c int)', provider: 'POSTGRESQL' })
+    const sys = getSentMessages().filter((m) => m.role === 'system').map((m) => m.content).join('')
+    expect(sys.length).toBeGreaterThan(0)
+    expect(sys.length).toBeLessThan(CEILING)
+  })
+
+  test('recall memory is FENCED and sent as a USER message, not a system one', async () => {
+    // This exercises `pushMemoryContext`, which generateAnswer/generateChat/streamAnswer/streamChat
+    // all route through. Two reasons it must not be a system message, and BOTH are load-bearing:
+    //
+    //  1. The provider DISCARDS a system message above ~2000 characters (measured: 1800 chars ->
+    //     411 prompt_tokens, 2100+ -> 44, 3/3 reproducible). Recall from prior turns regularly
+    //     exceeds that, so it was silently dropped while still costing the call that produced it.
+    //  2. It is UNTRUSTED input derived from earlier user text, and a system message carries the
+    //     highest authority. Fencing it does not fix that; the role does.
+    //
+    // Asserting only on the RENDERED SIZE would pass while the role is wrong — the first version of
+    // this test did exactly that and survived a negative control that flipped the role back. So it
+    // asserts the role AND the fence explicitly.
+    fetchChatResponse = 'ok'
+    await generateAnswer({
+      question: 'what is the leave policy?',
+      context: 'rows: []',
+      source: 'RAG',
+      memoryContext: 'earlier the user asked about CUTI. ' + 'x'.repeat(3000),
+    })
+    const msgs = getSentMessages()
+    const sys = msgs.filter((m) => m.role === 'system').map((m) => m.content).join('')
+    expect(sys).not.toContain('Memory context from prior interactions')
+    expect(sys.length).toBeLessThan(CEILING)
+
+    const carrier = msgs.find((m) => m.content.includes('Memory context from prior interactions'))
+    expect(carrier).toBeDefined()
+    expect(carrier!.role).toBe('user')
+    // The fence is what marks it as data rather than instructions.
+    expect(carrier!.content).toContain('<<<RYASAI-UNTRUSTED-DATA>>>')
   })
 })
 
