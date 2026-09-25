@@ -296,10 +296,53 @@ describe('fetchProviderModels', () => {
     global.fetch = originalFetch
   })
 
-  test('a non-2xx response throws with the status', async () => {
-    global.fetch = (async () => ({ ok: false, status: 401, json: async () => ({}) })) as any
-    await expect(fetchProviderModels({ baseUrl: 'https://x/v1', apiKey: 'k' })).rejects.toThrow('401')
-    global.fetch = originalFetch
+  test('a non-2xx response throws the CLASSIFIED error, not a bare status', async () => {
+    // This is the first feedback a customer's pasted credential ever gets — "sync models" is the
+    // button they press after typing a key. It used to throw `Failed to fetch models (HTTP 401)`
+    // and never read the response body, so `classifyProviderFailure` could not run and the
+    // actionable hint ("re-enter the key", "add credit", "pick a model your provider serves") was
+    // unreachable on this path even though `toTypedError` already forwards `hint` to the client.
+    const original = global.fetch
+    global.fetch = (async () => ({
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ error: { message: 'Incorrect API key provided: sk-abc***' } }),
+    })) as any
+    const { toTypedError } = await import('@/lib/errors')
+    let typed: ReturnType<typeof toTypedError> | null = null
+    try {
+      await fetchProviderModels({ baseUrl: 'https://x/v1', apiKey: 'k' })
+    } catch (e) {
+      typed = toTypedError(e)
+    }
+    global.fetch = original
+
+    expect(typed).not.toBeNull()
+    expect(typed!.code).toBe('LLM_ERROR')
+    // The customer must be told WHAT to do, not just that something failed.
+    expect(typed!.hint).toContain('rejected the API key')
+    // And the provider body must not leak the key prefix.
+    expect(JSON.stringify(typed)).not.toContain('sk-abc')
+  })
+
+  test('a quota failure is classified differently from a bad key', async () => {
+    const original = global.fetch
+    global.fetch = (async () => ({
+      ok: false,
+      status: 429,
+      text: async () => 'insufficient_quota: you exceeded your current quota',
+    })) as any
+    const { toTypedError } = await import('@/lib/errors')
+    let typed: ReturnType<typeof toTypedError> | null = null
+    try {
+      await fetchProviderModels({ baseUrl: 'https://x/v1', apiKey: 'k' })
+    } catch (e) {
+      typed = toTypedError(e)
+    }
+    global.fetch = original
+    // Distinct from the auth hint: this one is about the customer's provider balance.
+    expect(typed!.hint).toContain('out of credit')
+    expect(typed!.message).toContain('quota')
   })
 
   test('the key is sent as a Bearer token to the normalised /models URL', async () => {

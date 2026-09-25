@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 
 export interface LlmRuntimeConfig {
   id: string
@@ -401,7 +402,17 @@ export async function fetchProviderModels(args: {
   })
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch models (HTTP ${res.status}).`)
+    // Throw the CLASSIFIED error, not a bare status. `fetchProviderModels` is what a customer hits
+    // when they paste a key and press "sync models", so this is the first feedback their credential
+    // ever gets — and it used to discard the provider's body entirely, leaving us unable to say
+    // anything but "HTTP 401". `classifyProviderFailure` already turns that body into an actionable
+    // hint ("re-enter the key", "add credit", "pick a model your provider serves"), and
+    // `toTypedError` already forwards `hint` to the client, so the only missing piece was the body.
+    //
+    // The body is read here and NOT echoed to the caller: `LlmProviderError` redacts it before
+    // anyone sees it, because provider errors can echo the key prefix.
+    const body = await res.text().catch(() => '')
+    throw new LlmProviderError(res.status, body)
   }
 
   const payload = (await res.json()) as {
