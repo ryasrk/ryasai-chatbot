@@ -15,6 +15,7 @@ import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce, type LlmToolDef } from '@/lib/llm-client'
 import type { LlmMessage, LlmToolCall } from '@/lib/llm-client-types'
 import { recallContext } from '@/lib/cognee'
+import { routingMemoryBlock } from '@/lib/memory-routing'
 import {
   getUnifiedTools,
   toLlmToolDef,
@@ -111,7 +112,11 @@ export async function runAgentOrchestrator(
     '4. Once you have sufficient evidence, provide a thorough, accurate, and grounded final answer.',
     'CONFIRMATION RULE: High-impact actions (creating API keys, changing system prompts, installing/removing servers) require user confirmation. If a tool reports that confirmation is required, relay the prompt to the user and await their confirmation.',
     options.systemPromptPrefix ? `\n[Organization Guidance]\n${options.systemPromptPrefix}` : '',
-    memoryContext ? `\n[Prior Memory Context]\n${memoryContext}` : '',
+    // FRAMED. The rule directly above tells the agent to answer once it "has sufficient
+    // evidence", so a block of remembered conversation dropped here reads as that evidence
+    // and the ReAct loop can stop before calling any tool. Same mechanism, same fix as the
+    // tool selector — shared so the wording cannot diverge.
+    memoryContext ? `\n${routingMemoryBlock(memoryContext)}` : '',
   ].filter(Boolean).join('\n')
 
   // 4. Initialize message history

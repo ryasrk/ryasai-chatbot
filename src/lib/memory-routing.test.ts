@@ -129,3 +129,52 @@ describe('memoryForRouting — drops bookkeeping, keeps knowledge', () => {
     expect(out).toBe('HUB-99 is the primary hub code.')
   })
 })
+
+describe('routingMemoryBlock — frames memory as background, not as an answer', () => {
+  const REAL = `This chunk is about:
+- Systems: HUB-99
+- Topics: Primary distribution hubs
+
+Facts:
+- HUB-99 is the code for the primary distribution hub.
+- The session was identified as cmufrvxfp0036h8ha601qtv6l with timestamp 1790268912657.`
+
+  test('it states what the block IS, what it is NOT, and what it must not replace', () => {
+    const out = routingMemoryBlock(REAL)
+    // Without these three the block is just formatted memory again — the version measured
+    // NOT to change routing.
+    expect(out).toMatch(/background from earlier conversations/i)
+    expect(out).toMatch(/not an answer to the current question/i)
+    expect(out).toMatch(/call that tool/i)
+  })
+
+  test('it still filters — the framing does not replace the filtering', () => {
+    const out = routingMemoryBlock(REAL)
+    expect(out).toContain('HUB-99')
+    expect(out).not.toContain('cmufrvxfp0036h8ha601qtv6l')
+    expect(out).not.toContain('timestamp')
+  })
+
+  test('no memory means NO block at all, not an empty framed one', () => {
+    // A heading with nothing under it still tells the router "there was memory here", which
+    // is exactly the signal that biases it toward answering.
+    expect(routingMemoryBlock(undefined)).toBe('')
+    expect(routingMemoryBlock('')).toBe('')
+    expect(routingMemoryBlock('Facts:\n- timestamp 1790268912657')).toBe('')
+  })
+
+  test('the block is bounded, so it cannot crowd out the tool list', () => {
+    const huge = Array.from({ length: 400 }, (_, i) => `- Site ${i} uses hub code HUB-${i}.`).join('\n')
+    const out = routingMemoryBlock(huge)
+    expect(out.length).toBeLessThan(1200)
+  })
+
+  test('the framing is a constraint, not a discussion — it stays short', () => {
+    // A long preamble on a temperature-0 decision is just more prompt to weigh, and the
+    // failure mode being fixed is a decision that talks itself out of calling a tool.
+    const out = routingMemoryBlock(REAL)
+    const bodyLen = memoryForRouting(REAL).length
+    expect(out.length - bodyLen).toBeLessThan(500)
+  })
+})
+

@@ -445,10 +445,33 @@ question requires data — a document, a database, an API — call that tool eve
 background above looks like it already contains an answer.
 ```
 
-Used by `selectToolWithLlm` and `routeQuery`. The wording targets the measured mechanism
-directly: with memory present the selector chose to ANSWER rather than fetch (CHAT 10/14),
-which is what a block whose own text reads "The assistant replied …" invites when nothing
-says it is a record of PAST turns.
+The wording targets the measured mechanism directly: with memory present the selector
+chose to ANSWER rather than fetch (CHAT 10/14), which is what a block whose own text reads
+"The assistant replied …" invites when nothing says it is a record of PAST turns.
+
+**Four DECISION points, not two.** Grepping every `memoryContext` interpolation rather than
+trusting the two I had already found turned up two more, both decision prompts and both
+still receiving RAW memory under a bare heading:
+
+| site | kind | what it decides |
+|---|---|---|
+| `selectToolWithLlm` | decision | which single tool to call |
+| `routeQuery` | decision | SQL / RAG / REST / CHAT |
+| `planner.ts` (x2) | decision | which tools to run, and in what order |
+| `agent-orchestrator` | decision | the ReAct loop: whether to call a tool or answer |
+
+The last two are arguably more exposed than the first two. The planner decides how many
+steps to emit — a planner that believes it already has the answer emits zero — and the
+orchestrator's prompt says "Once you have sufficient evidence, provide a thorough, accurate
+and grounded final answer" immediately above the memory block, so remembered conversation
+reads as that evidence. All four now use the same shared block.
+
+**Deliberately NOT framed**, because there memory IS content rather than evidence:
+`generateSql` and `generateRestCall` (memory is an example of a query that worked), and
+`generateAnswer` / `generateChat` / `streamAnswer` / `streamChat` (memory is material for
+the answer). Those six sites keep the full unfiltered text and their existing headings;
+framing them as "background, not an answer" would be wrong. The split is by ROLE — decision
+prompt vs answer prompt — not by convenience.
 
 **What was measured, and what was not.**
 
@@ -486,3 +509,20 @@ It is NOT kept on a claim that it improves routing, because that was not establi
 table in "Attempt 1" is still the baseline; a future run must beat it, and the next
 measurement needs a harness that survives to print a summary — run it through
 `scripts/test.ts`-style isolation rather than a standalone probe.
+
+**Two corrections to the test evidence for this change, both caught by re-reading rather
+than by trusting a summary.**
+
+1. The framing tests were briefly LOST. Editing the test file to remove an unused helper
+   truncated everything after it, including the whole `routingMemoryBlock` describe, leaving
+   the symbol imported but untested. The suite still reported PASS — fewer tests, no
+   failures — which is exactly how a deleted test hides. Found by noticing the runner's file
+   and test counts had DROPPED (266 -> 265 files, 6824 -> 6818 tests) and asking why instead
+   of accepting a green run. Restored, and the counts are now accounted for: 265 is 268
+   `*.test.ts` files minus the 3 integration files the runner skips; the missing file was the
+   author's own temporary probe.
+2. Negative-controlling the restored framing tests shows **only 1 of the 5** fails when the
+   framing is reverted to the bare `Context from memory:` heading. The other four guard
+   properties that are still worth guarding (filtering still applies, no memory means no
+   block, the block is bounded, the preamble stays short) but they do NOT pin the framing.
+   Stated because "5 tests cover the framing" would be false: one does.

@@ -9,6 +9,7 @@
  * (SQL/RAG/REST/CHAT) based on the sub-question text.
  */
 import { generateAnswer, generateChat } from '@/lib/ai'
+import { routingMemoryBlock } from '@/lib/memory-routing'
 import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
@@ -145,10 +146,16 @@ export async function planQueryWithTools(args: {
       MCP_INSTALL_RULES +
       'WEB SEARCH: Use web_search for any request about current events, news, or searching the internet — NEVER use chat for these.'
 
+    // FRAMED. This is a DECISION prompt — it chooses which tools to run and in what order —
+    // so recalled memory must not read as an answer already in hand. A planner that believes
+    // the answer is known emits zero steps; the same mechanism was measured on the tool
+    // selector (CHAT chosen 10/14 times on a question whose answer was in a document).
+    // Filtering and framing are shared with the selector so the two cannot drift.
+    const memoryBlock = routingMemoryBlock(memoryContext)
     const userMessage =
       `Question: ${args.question}\n\n` +
       `Available tools:\n${toolList}\n\n` +
-      (memoryContext ? `Memory from prior interactions:\n${memoryContext}\n\n` : '') +
+      (memoryBlock ? `${memoryBlock}\n\n` : '') +
       (historyText ? `Prior conversation history:\n${historyText}\n\n` : '') +
       `Plan the steps.`
 
@@ -237,10 +244,12 @@ export async function planQuery(args: {
     ? args.chatHistory.slice(-10).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 2000)}`).join('\n')
     : ''
 
+  // FRAMED — see the note on the other planner prompt above.
+  const memoryBlock = routingMemoryBlock(memoryContext)
   const userMessage =
     `Question: ${args.question}\n\n` +
     `Available tools:\n${toolList}\n\n` +
-    (memoryContext ? `Memory from prior interactions:\n${memoryContext}\n\n` : '') +
+    (memoryBlock ? `${memoryBlock}\n\n` : '') +
     (historyText ? `Prior conversation history:\n${historyText}\n\n` : '') +
     `Provide the JSON plan.`
 
