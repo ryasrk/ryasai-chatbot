@@ -502,6 +502,38 @@ So memory retrieval works by meaning, not only by literal token match. The lesso
 others in this document: a probe that pairs a dataset with the wrong container produces a
 confident false negative.
 
+### `03-knowledge-chat` fails ONLY with memory active: the cause is the TEST MOCK
+
+One spec fails when a sidecar is configured and passes 16/16 without one. Established by
+dumping the database after a failing run rather than by reading the UI:
+
+| run | AI message for "What is the primary distribution hub code?" |
+|---|---|
+| memory ACTIVE (failing) | `citations` = full JSON, 769 chars, including `e2e-answer.txt` |
+| no sidecar (passing) | same shape |
+
+So retrieval, citation construction and persistence are all CORRECT with memory on. What fails
+is the rendering assertion, and the reason is in the harness:
+
+**`e2e/mock-llm.ts` has no one-shot guard on its configured tool call.** It emits the tool
+call on EVERY request that offers tools
+(`if (wantsToolCall && offersTools && !hasToolResult)`), and the chat path calls
+`selectToolWithLlm` **twice per turn** — `quickPick` (tool-router.ts:93) and the real routing
+call (tool-router.ts:428). Both offer tools. Enabling memory changes how often that pipeline
+runs, which changes which of the two consumes the tool call, which changes whether the RAG
+branch is taken at all.
+
+**I tried the obvious fix and it made things WORSE, which is the informative part.** Adding a
+`toolCallEmitted` flag (emit once, reset on a tool result) is correct in isolation, and with it
+the citations went from `ADA(769)` to **`KOSONG`** — because the first consumer is `quickPick`,
+so the real routing call then got a plain text reply and no citations at all. The mock cannot
+distinguish the two calls: both are identical HTTP requests offering the same tools.
+
+Reverted, and recorded as **an unresolved harness defect, not a product one**. Fixing it needs
+one of: a distinct marker the mock can key on (e.g. a header the routing call sets), or a mock
+that answers tool-call-shaped requests by position rather than by a global flag. Until then
+`bun run e2e` with a sidecar configured shows 15/16, and the failing spec is measuring the mock.
+
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
   `646bbc9` with memory off, and again against the production standalone build. Its `signIn()`
   helper times out waiting for either `#email` or the Dashboard heading.
