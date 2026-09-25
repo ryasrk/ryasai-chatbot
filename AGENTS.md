@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Eleven defects across six rounds shared one shape: **the code reported success for work it had
+Twelve defects across seven rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -595,6 +595,20 @@ gate), and report any model-in-the-loop number as the model's behaviour rather t
 effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
 tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
 
+12. **A rule set delivered in the wrong ROLE — and a single sample nearly hid it.** The provider
+   discards a system message above ~2000 characters (see 11). Auditing every system message the app
+   sends found TWO production prompts over the line: the Text-to-SQL specialist (3033 chars) and
+   memory context (2606 chars). So the SQL RULES — including rules 13-16 that encode real fixed bugs
+   — were discarded on EVERY request, and recall from prior turns was dropped while still costing
+   the call that produced it. Both moved to USER messages, where there is no ceiling (12000 chars
+   reports 1558 prompt_tokens and a system instruction is still obeyed). Memory context moved for a
+   second reason too: it is derived from earlier user turns, so it is untrusted input and a system
+   message gives it the highest authority — fencing alone would not have fixed that.
+   **Beware the lucky sample.** An early probe showed the 3033-char SQL prompt reporting 548
+   prompt_tokens, apparently delivered, which would have justified leaving the defect in place.
+   Re-running the same shape three times showed it dropped 3/3, and sweeping 1800/2000/2100/2200
+   located the boundary between 2000 and 2100. One favourable sample is not a measurement.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
@@ -614,6 +628,13 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
   optional (memory recall returning `''`); it is not for work whose completion you claim.
 - When one function in a family gets a rule right and a sibling does not, the outlier is the bug —
   check the family, not just the call site.
+- **A test whose negative control SURVIVES is vacuous — rewrite it, do not keep it.** The first
+  memory-context guard asserted only on the rendered size of the system message, so flipping the
+  role back to `'system'` left it green. Asserting the property you actually mean (the ROLE and the
+  fence) is what made the control fail. A guard that cannot fail is worse than no guard, because it
+  reports safety.
+- **Sweep a suspected boundary; do not probe it once.** Stepping 1800 → 2000 → 2100 → 2200 located
+  the system-message ceiling within one run. A single probe at 3033 reported the prompt as delivered.
 
 ## Conventions
 
