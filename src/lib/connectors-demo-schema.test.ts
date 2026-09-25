@@ -186,11 +186,25 @@ describe('describeSchema', () => {
     expect(out).toContain('total numeric NOT NULL')
   })
 
-  test('an unknown row count renders as ? rather than 0 or undefined', () => {
-    // rowCount is typed number|undefined, but a real reflection can yield null.
-    const out = describeSchema([{ tableName: 't', rowCount: null as unknown as undefined, columns: [{ name: 'a', type: 'int' }] }])
-    // "0 rows" would tell the model the table is empty and suppress a valid query.
-    expect(out).toContain('TABLE t (? rows)')
+  test('an unknown row count never renders as 0 or undefined', () => {
+    // rowCount is typed number|undefined, but a real reflection can yield null, and Postgres
+    // reports -1 for a table it has never ANALYZEd. All three mean "no estimate" and must NOT be
+    // rendered as a number: "0 rows" tells the model the table is empty and suppresses a valid
+    // query, while "-1 rows" is not a quantity at all.
+    const unknown = [
+      null as unknown as undefined,
+      undefined,
+      -1, // pg_class.reltuples for a never-ANALYZEd table
+    ]
+    for (const rowCount of unknown) {
+      const out = describeSchema([{ tableName: 't', rowCount, columns: [{ name: 'a', type: 'int' }] }])
+      expect(out).toContain('TABLE t (row count unknown)')
+      expect(out).not.toContain('0 rows')
+      expect(out).not.toContain('-1 rows')
+    }
+    // A real count still renders as a number — the fix must not swallow known values.
+    const known = describeSchema([{ tableName: 't', rowCount: 42, columns: [{ name: 'a', type: 'int' }] }])
+    expect(known).toContain('TABLE t (42 rows)')
   })
 
   test('a table name with UPPERCASE letters is quoted', () => {

@@ -124,7 +124,9 @@ describe('describeSchema — table descriptions in the SQL prompt', () => {
     const out = describeSchema([
       { tableName: 'x', columns: [{ name: 'a', type: 'int' }] },
     ])
-    expect(out).toContain('TABLE x (? rows)')
+    // No estimate is available, so the header says so rather than printing a number.
+    // Previously "? rows"; both are honest, and the assertion pins the current wording.
+    expect(out).toContain('TABLE x (row count unknown)')
     expect(out).not.toContain('--')
   })
 

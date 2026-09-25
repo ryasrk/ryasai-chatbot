@@ -185,7 +185,12 @@ export function describeSchema(tables: ReflectedTable[]): string {
       // column quoting below — PostgreSQL lowercases unquoted identifiers).
       const hasUpperName = /[A-Z]/.test(t.tableName)
       const tableLabel = hasUpperName ? `"${t.tableName}"` : t.tableName
-      const header = `TABLE ${tableLabel} (${t.rowCount ?? '?'} rows)${pkLabel}${desc}`
+      // -1 = the catalog has no estimate (never ANALYZEd). Say so rather than printing
+      // "-1 rows", which is not a quantity any reader — human or model — should act on.
+      const rowLabel = t.rowCount === undefined || t.rowCount === null || t.rowCount < 0
+        ? 'row count unknown'
+        : `${t.rowCount} rows`
+      const header = `TABLE ${tableLabel} (${rowLabel})${pkLabel}${desc}`
       const cols = t.columns
         .map((c) => {
           // ponytail: quote column names that contain uppercase letters.

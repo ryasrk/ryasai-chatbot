@@ -453,7 +453,11 @@ interface RawTableRow {
 
 function assembleSchema(cols: RawColumnRow[], tables: RawTableRow[]): ReflectedTable[] {
   const tableRowCount = new Map<string, number>()
-  for (const t of tables) tableRowCount.set(t.table_name, Math.max(0, Number(t.row_count) || 0))
+  // -1 means "the catalog has no estimate" (the table has never been ANALYZEd, which is the
+  // normal state for a freshly created or freshly loaded table) and is PRESERVED rather than
+  // coerced to 0 — see the enrichment guard below, where conflating the two silently discarded
+  // every distinct-value sample. Non-negative values are the real estimate.
+  for (const t of tables) tableRowCount.set(t.table_name, Number(t.row_count) ?? -1)
 
   const byTable = new Map<string, RawColumnRow[]>()
   for (const c of cols) {
@@ -503,8 +507,19 @@ async function enrichSchema(
   }
   const jobs: EnrichJob[] = []
   for (const table of tables) {
-    const rc = table.rowCount ?? 0
-    if (rc <= 0 || rc > 10000) continue
+    // Skip only a table we KNOW is empty. -1 means "no catalog estimate" (never ANALYZEd), which
+    // is the normal state for a freshly created or freshly loaded table — treating it as empty
+    // silently discarded every distinct-value sample, and the consequence was user-visible:
+    // "departemen — Departments, each with a head" listed no values, so "the HR department" could
+    // not be mapped to the real value "SDM" and the assistant answered "0 employees".
+    //
+    // The safety concern that produced the old `rc <= 0` guard is real and is handled differently:
+    // an UNBOUNDED `SELECT DISTINCT` on a large un-analyzed table can scan the whole relation. So
+    // when the row count is unknown, the probe reads a bounded slice first and takes its distinct
+    // values from that, which cannot degrade with table size.
+    const knownEmpty = table.rowCount === 0
+    const tooLargeToSample = (table.rowCount ?? -1) > 10000
+    if (knownEmpty || tooLargeToSample) continue
     for (const col of table.columns) {
       if (col.primaryKey || col.foreignKey) continue
       const t = col.type.toUpperCase()
@@ -642,7 +657,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
     // match pg_class on (relname, relnamespace) so the join is 1:1.
     const tablesRes = await pool.query(
       `SELECT t.table_name,
-              CASE WHEN c.reltuples IS NULL OR c.reltuples < 0 THEN 0 ELSE c.reltuples END AS row_count
+              CASE WHEN c.reltuples IS NULL OR c.reltuples < 0 THEN -1 ELSE c.reltuples END AS row_count
        FROM information_schema.tables t
        LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
        LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid

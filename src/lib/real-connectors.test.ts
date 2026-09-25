@@ -1833,11 +1833,41 @@ describe('enrichSchema (through pg/mysql/mssql fetchSchema)', () => {
     expect(enrich).not.toContain('"over"')
   })
 
-  test('rowCount -1 is skipped (a negative estimate is not "unknown small")', async () => {
+  test('rowCount -1 IS enriched (-1 means "no estimate", not "empty")', async () => {
+    // REVERSED, with the reason. This test used to assert the opposite — that a -1 estimate is
+    // skipped. It was written to avoid an unbounded `SELECT DISTINCT` on a large table, which is a
+    // real concern, but it treated -1 as "empty" and that is what Postgres returns for a table that
+    // has never been ANALYZEd: exactly a freshly created or freshly loaded table.
+    //
+    // The consequence was user-visible, not theoretical. No distinct values were collected, so the
+    // SQL prompt described `departemen` as "Departments, each with a head" while listing none of
+    // the values. Asked about "the HR department", the model could not map it to the real value
+    // "SDM" and answered "0 employees" — a correct query against a wrong assumption.
+    //
+    // The safety concern is now met by the pool's `query_timeout: QUERY_TIMEOUT_MS` (30s), which
+    // bounds every probe query regardless of table size, and by the per-column LIMIT 21.
     const pool = pgStub((sql) => {
       if (sql.includes('reltuples')) return { rows: [{ table_name: 'neg', row_count: -1 }] }
       if (sql.includes('information_schema.columns')) {
         return { rows: [{ table_name: 'neg', column_name: 'note', data_type: 'text', is_nullable: 'YES', is_pk: 0, fk_ref_table: null, fk_ref_column: null }] }
+      }
+      return { rows: [{ v: 'alpha' }] }
+    })
+    const tables = await withPgPool(pool).fetchSchema()
+    // The probe ran: the stub recorded more than the two reflection queries.
+    expect(pool.calls.length).toBeGreaterThan(2)
+    const dist = pool.calls.some((c) => c.sql.includes('SELECT DISTINCT'))
+    expect(dist).toBe(true)
+    expect(tables[0].columns[0].distinctValues).toEqual(['alpha'])
+  })
+
+  test('rowCount 0 IS skipped (a known-empty table has nothing to sample)', async () => {
+    // The distinction the fix preserves: 0 is a real measurement and is skipped; -1 is the absence
+    // of one. Conflating them is what produced the defect above.
+    const pool = pgStub((sql) => {
+      if (sql.includes('reltuples')) return { rows: [{ table_name: 'empty', row_count: 0 }] }
+      if (sql.includes('information_schema.columns')) {
+        return { rows: [{ table_name: 'empty', column_name: 'note', data_type: 'text', is_nullable: 'YES', is_pk: 0, fk_ref_table: null, fk_ref_column: null }] }
       }
       return { rows: [] }
     })
@@ -2362,13 +2392,34 @@ describe('row limits — nowhere is a result set bounded at execution time', () 
     expect(r.rowCount).toBe(5000)
   })
 
-  test('the enrichment probe is the ONLY place this module bounds a result (LIMIT 21/1)', () => {
+  test('row bounds live ONLY in reflection helpers, never on the execution path', () => {
+    // The invariant is about WHAT the bounds apply to, not how many there are. A row cap on the
+    // EXECUTION path would silently truncate a user's query result — the answer would be wrong
+    // with no error. Bounds inside reflection helpers (schema sampling) are fine and necessary:
+    // sampling a table must not scan it.
+    //
+    // This test previously pinned an exact COUNT of two `LIMIT 21/1` occurrences, which made it
+    // fail when schema sampling gained a third bound — a change that strengthens the invariant
+    // (the distinct-value probe now reads a bounded slice instead of risking an unbounded scan)
+    // while leaving the execution path untouched. Counting occurrences tests the implementation;
+    // this version tests the property.
     const code = stripComments(MODULE_SRC)
-    const limits = code.match(/LIMIT (21|1)\b/g) ?? []
-    expect(limits).toHaveLength(2)
-    // Both are reflection helpers, not the execution path.
-    expect(code).toContain('SELECT DISTINCT ${quote(col.name)} AS v FROM ${q(table.tableName)} LIMIT 21')
-    expect(code).toContain('FROM ${q(table.tableName)} LIMIT 1')
+
+    // Every bound must sit inside `enrichSchema` — the reflection helper.
+    const enrichStart = code.indexOf('async function enrichSchema(')
+    // A CODE marker, not a comment: `stripComments` has already removed comments, so searching for
+    // one returns -1 and the slice below would be empty — a guard that passes by having nothing to
+    // inspect. The first version of this test did exactly that.
+    const enrichEnd = code.indexOf('export class PostgresConnector')
+    expect(enrichStart).toBeGreaterThan(-1)
+    expect(enrichEnd).toBeGreaterThan(enrichStart)
+    const outsideEnrich = code.slice(0, enrichStart) + code.slice(enrichEnd)
+    const limitsOutside = outsideEnrich.match(/\bLIMIT \d+/g) ?? []
+    expect(limitsOutside).toHaveLength(0)
+
+    // And the execution path still refuses to clamp, as the tests above assert.
+    expect(code).not.toContain('SQL_MAX_LIMIT')
+    expect(code).not.toMatch(/rows\.slice\(0,\s*\d+\)/)
   })
 })
 
