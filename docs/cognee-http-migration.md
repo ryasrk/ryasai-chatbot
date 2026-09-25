@@ -545,6 +545,18 @@ it changes nothing, so an operator who sets it would see no effect and no error,
 worst shape for a config knob. Recorded so nobody sells the capability, and so the check is
 repeated if the sidecar is ever bumped.
 
+**WHAT THE LATENCY DOES AND DOES NOT AFFECT — measured, because it changes how this should be
+sold.** All four write sites call `rememberChatTurn` with `void`
+(`chat/sessions/[id]/send`, `tool-router`, `v1/agent/run`, `agent/dashboard`), so the answer is
+never blocked by it: an e2e chat turn completes in **9.5 s** while writes run apart from it.
+Every measured write eventually reports `status=completed`, including the 168 s one.
+
+So the cost is MEMORY FRESHNESS, not responsiveness and not correctness: a fact stored in a slow
+write is not searchable until that write finishes, which can be minutes. The next turn in the
+same session will not recall it. That is the honest description — a delay, not a failure — and it
+is why `runInBackground: false` stays: making it backgrounded would return before the data is
+searchable, which is the opposite trade (the call site documents this).
+
 **Retries are NOT wasted, so do not "fix" this by removing them.** Counted over one
 container's log:
 
