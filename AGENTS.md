@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Eight defects across four rounds shared one shape: **the code reported success for work it had
+Eleven defects across five rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -558,6 +558,29 @@ change under test. Pin fixes like this with a DETERMINISTIC test on the pure fun
 gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
 effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
 tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
+
+8. **A documented rule that a LATER guard silently overrides.** The intent prompt has always
+   listed two ambiguity cases requiring clarification, and a heuristic guard beneath it suppresses
+   clarification whenever the question contains 'berapa' / 'how many' — which is exactly what both
+   ambiguous shapes contain. So the rule never fired: "Berapa banyak itu?" was answered with a
+   confident "Jumlahnya 2.405 (total stok)" picked from one of three connected databases, and the
+   user could not tell it was a guess. When a prompt states a rule, check what happens AFTER it
+   returns — a downstream guard can make it unreachable.
+
+9. **A fix placed where it can never run.** The replacement rule was correct and detected all four
+   cases in isolation, and still changed nothing, because it was inserted inside the suppression's
+   own `if (parsed.needsClarification …)` block — and the model returns `needsClarification=false`
+   for precisely those questions. Test the PURE FUNCTION separately from the integration, or a
+   placement bug looks like a logic bug.
+
+10. **A branch on prose.** The clarification caller compared the human-readable `reason` string;
+   when that text gained a suffix the comparison stopped matching, and a TIME question was answered
+   with the COUNT clarification. Branch on a stable key; treat a `reason` field as documentation.
+
+**A prompt is not always the lever.** Rewriting the intent prompt — narrowing the conflicting rule
+and explaining the failure inline — changed the measurement by 0/4. The rule moved into code because
+a model cannot be relied on to gate itself. Try the prompt, but MEASURE it before believing it, and
+be willing to conclude that the enforcement belongs somewhere else.
 
 **Rules that follow from these:**
 
