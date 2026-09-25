@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Five defects across two rounds shared one shape: **the code reported success for work it had
+Seven defects across three rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -533,6 +533,17 @@ by reading the code.
    for an object carrying `hint: 'Check password'`), so the vague half was pinned in place.
    `fetchProviderModels` was worse: it threw `Failed to fetch models (HTTP 401)` without reading
    the body, so the classifier could not run at all on the first feedback a pasted key ever gets.
+
+5. **A defence that is correct and TESTED while callers bypass it.** `evidence-boundary.ts` had
+   the lowest line coverage in the repo (46.7%) and was the prompt-injection boundary. Its own
+   tests were good; the defect was that `reflexion.ts` and `intent-pipeline.ts` interpolated the
+   same untrusted document text RAW. Testing the wrapper proves the wrapper works, never that
+   anyone calls it — so the guard now reads the CALLER files.
+
+6. **A null that means two different things.** `cogneeRecall` returns `null` on HTTP failure and
+   never throws, so a dead sidecar and an empty dataset took the same `if (!hits?.length) continue`
+   branch, silently. Recall is best-effort and stays non-fatal; what changed is that an outage is
+   now a different code path from an empty result, and only the outage warns.
 
 **Rules that follow from these:**
 
