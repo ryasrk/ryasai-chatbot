@@ -1028,7 +1028,30 @@ corpus larger than 55 chunks, where ranking — and therefore the reranker — s
 than it does here.
 
 
+> **SUPERSEDED — 2026-09-25. Cross-session memory now WORKS. Read the correction first.**
+> The failure below was real and its diagnosis was correct: the in-process
+> `@cognee/cognee-ts` backend never populated the graph, so writes "succeeded" and recall
+> returned `''`. The fix was not in that backend — it was removed entirely in favour of the
+> cognee **v1.6.0 server** (one lineage, one writer; see `docs/cognee-http-migration.md`).
+> Re-measured after the migration on a seeded dataset:
+>
+> | step | result |
+> |---|---|
+> | backend | `server`, `version=1.6.0-local` |
+> | write | **9 s** warm, 67 s on a fresh dataset |
+> | recall from a DIFFERENT session | **0.21-0.35 s**, token FOUND |
+> | semantic recall ("kode hub distribusi utama") | FOUND, not just literal token match |
+>
+> Two further defects found and fixed along the way: the chat-turn write was `await`ed on
+> the response path (5.6-9.7 s, and 228 s on a fresh dataset), and `recallContext` had no
+> deadline at all across four call sites. Both are fixed; `bun run e2e` is 16/16.
+>
+> The text below is kept because the DIAGNOSIS is the reusable part — a write that resolves
+> while storing nothing is the failure shape to watch for, and it was only caught by writing
+> a sentinel token and reading it back from a second session.
+
 ### 2026-09-24: cross-session memory writes consistently FAIL, and recall is always empty
+*(historical — see the correction above)*
 
 Asked to check whether cross-session memory runs stably. It does not run at all, and the
 failure is silent — `rememberChatTurn` resolves without throwing, logs a warning, and the very
