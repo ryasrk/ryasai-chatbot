@@ -570,18 +570,6 @@ by reading the code.
    when that text gained a suffix the comparison stopped matching, and a TIME question was answered
    with the COUNT clarification. Branch on a stable key; treat a `reason` field as documentation.
 
-**A prompt is not always the lever.** Rewriting the intent prompt — narrowing the conflicting rule
-and explaining the failure inline — changed the measurement by 0/4. The rule moved into code because
-a model cannot be relied on to gate itself. Try the prompt, but MEASURE it before believing it, and
-be willing to conclude that the enforcement belongs somewhere else.
-
-**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
-5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
-change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
-gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
-effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
-tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
-
 11. **An instruction that is never DELIVERED, which looks like a model ignoring it.** The intent
    system prompt was 2872 characters and the provider DISCARDS a system message above ~2100 —
    measured: 1900 chars reports `prompt_tokens: 269`, 2300 reports `44` (the user message alone),
@@ -594,6 +582,18 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
 moved the ambiguity rule into code because a prompt rewrite changed nothing (0/4) — the right
 outcome, for a reason I did not know: there was nothing to ignore. When a prompt change has EXACTLY
 zero effect twice, suspect delivery before trying a third wording.
+
+**A prompt is not always the lever.** Rewriting the intent prompt — narrowing the conflicting rule
+and explaining the failure inline — changed the measurement by 0/4. The rule moved into code because
+a model cannot be relied on to gate itself. Try the prompt, but MEASURE it before believing it, and
+be willing to conclude that the enforcement belongs somewhere else.
+
+**A note on measuring a model-in-the-loop path.** The same routing suite read 8/10, then 15/21, then
+5/5 for a single question run alone. It was measuring the CUSTOMER'S classifier variance, not the
+change under test. Pin fixes like this with a DETERMINISTIC test on the pure function (scorer +
+gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
+effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
+tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
 
 **Rules that follow from these:**
 
