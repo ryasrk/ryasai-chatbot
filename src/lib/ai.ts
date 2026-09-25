@@ -11,7 +11,7 @@
  *   - streamAnswer(): token-by-token streaming for the HTTP SSE pipeline.
  */
 import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
-import { memoryForRouting } from '@/lib/memory-routing'
+import { routingMemoryBlock } from '@/lib/memory-routing'
 import { chatOnce as llmChatOnce, chatStream as llmChatStream, type LlmUsage } from '@/lib/llm-client'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
@@ -102,9 +102,10 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
   const docNames = documents.map((d) => (d.category ? `${d.name} [${d.category}]` : d.name))
   const apiPaths = restEndpoints.map((e) => e.path)
 
-  // Filtered once, before the prompt, rather than inline at the interpolation below — a
-  // routing prompt should not carry run ids, timestamps, latencies or tool bookkeeping.
-  const routingMemory = memoryForRouting(ctx.memoryContext)
+  // Built once, before the prompt, rather than inline at the interpolation below: it both
+  // filters the raw recall (run ids, timestamps, latencies, tool bookkeeping) and frames
+  // what remains as background from PAST turns rather than material for this one.
+  const routingBlock = routingMemoryBlock(ctx.memoryContext)
 
   const decisionRaw = await chatOnce(
     [
@@ -144,9 +145,11 @@ export async function routeQuery(ctx: RoutingContext): Promise<{
           (tableDescriptions.length > 0 ? `Table descriptions:\n${tableDescriptions.slice(0, 30).join('\n')}\n` : '') +
           (docNames.length > 0 ? `Documents: ${docNames.slice(0, 30).join(', ')}\n` : '') +
           (apiPaths.length > 0 ? `REST APIs: ${apiPaths.slice(0, 20).join(', ')}\n` : '') +
-          // FILTERED, for the same reason as tool-selector.ts: this is a ROUTING prompt, and
-          // raw recall output is mostly ids/timestamps/latencies. See memory-routing.ts.
-          (routingMemory ? `Memory from prior interactions:\n${routingMemory}\n` : '') +
+          // FRAMED, for the same reason as tool-selector.ts: this is a ROUTING prompt, and a
+          // block of remembered conversation read as material for THIS question makes the
+          // router answer instead of fetching. See memory-routing.ts for the measured
+          // mechanism.
+          (routingBlock ? `${routingBlock}\n` : '') +
           (hasHistory ? `Prior conversation history:\n${historyText}\n` : '') +
           `Answer only SQL / RAG / REST / CHAT / CONTEXTUAL_CHAT.`,
       },

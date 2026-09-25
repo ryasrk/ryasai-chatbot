@@ -138,11 +138,31 @@ export function memoryForRouting(
 }
 
 /**
- * Does this memory contain anything at all worth showing the router?
+ * Render the recalled memory for a ROUTING prompt, framed as background rather than answer.
  *
- * Callers use it to avoid emitting an empty "Context from memory:" heading, which reads as
- * "we remembered nothing" and wastes prompt space saying so.
+ * WHY THE FRAMING AND NOT JUST THE FILTER. Filtering the text was tried first and did not
+ * change routing at all (measured; see docs/cognee-http-migration.md). What the numbers
+ * showed instead was a mechanism: with memory present the selector increasingly chose to
+ * ANSWER (`CHAT`) instead of fetching — 10 of 14 on a question whose answer was in a
+ * document. That is the predictable result of dropping a block of remembered conversation
+ * into a prompt whose rules are about whether to answer or to call a tool: nothing in the
+ * block says it is a record of PAST turns rather than material for THIS one, and its own
+ * text ("The assistant replied …") reads like an answer already given.
+ *
+ * So the block now states what it is, what it is not, and what it must not be used for. The
+ * wording is deliberately blunt and short: this is a routing decision made at temperature 0
+ * and there is one question to answer, so the framing is a constraint, not a discussion.
  */
-export function hasRoutingMemory(memory: string | undefined | null): boolean {
-  return memoryForRouting(memory).length > 0
+export function routingMemoryBlock(memory: string | undefined | null): string {
+  const body = memoryForRouting(memory)
+  if (!body) return ''
+  return [
+    'Background from earlier conversations (NOT an answer to the current question, and',
+    'NOT a reason to skip a tool):',
+    body,
+    'Use this only to understand what the user is referring to. If answering the current',
+    'question requires data — a document, a database, an API — call that tool even when the',
+    'background above looks like it already contains an answer.',
+  ].join('\n')
 }
+

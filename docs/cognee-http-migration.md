@@ -428,7 +428,61 @@ rule — not a data-cleaning problem.
   document" — a routing hint handed to the router by the test. **That number is retracted.**
 
 The remaining candidate fixes are prompt-level (reframe memory as background rather than as an
-answer, or move it out of the decision prompt into the answer step only) and each needs its own
-measurement against the table above. Nothing further was changed here: the filter is kept because
-it is a strict reduction in prompt noise with its own tests, not because it was shown to improve
-routing.
+answer, or move it out of the decision prompt into the answer step only).
+
+---
+
+### Attempt 2 at that fix: reframe it. Implemented; outcome INCONCLUSIVE.
+
+`routingMemoryBlock()` now renders the filtered memory as explicit background:
+
+```
+Background from earlier conversations (NOT an answer to the current question, and
+NOT a reason to skip a tool):
+<body>
+Use this only to understand what the user is referring to. If answering the current
+question requires data — a document, a database, an API — call that tool even when the
+background above looks like it already contains an answer.
+```
+
+Used by `selectToolWithLlm` and `routeQuery`. The wording targets the measured mechanism
+directly: with memory present the selector chose to ANSWER rather than fetch (CHAT 10/14),
+which is what a block whose own text reads "The assistant replied …" invites when nothing
+says it is a record of PAST turns.
+
+**What was measured, and what was not.**
+
+One run completed (N=10 per condition, three conditions interleaved) on the
+document-answerable question whose answer WAS in the memory:
+
+| condition | RAG (correct) |
+|---|---|
+| no memory | 0/10 — all SQL |
+| with memory, this fixture | 8-10/10 |
+
+That run is **not usable as a comparison between framings**, and the reason is recorded
+rather than quietly dropped: both memory conditions were passed through
+`routingMemoryBlock`, so it compared two memory TEXTS under the SAME framing. The
+"old framing" branch of that probe was a harness bug, not a control.
+
+The controlled comparison — identical memory body, framing A vs framing B, and a second
+probe for whether the framing damages the greeting/SQL/RAG routes — **did not complete**.
+Both runs died mid-test with no summary (the log ends inside an MCP stdio failure), the same
+way standalone probes in this repo have failed before. They are not reported as results,
+because a run that produced no summary produced no evidence.
+
+**So this change ships UNVALIDATED on its own terms.** It is kept because:
+
+- The framing is strictly more informative than the bare `Context from memory:` heading it
+  replaces; it states what the block is and is not.
+- It targets the one mechanism the completed runs did point at (the router answering instead
+  of fetching).
+- It changes no other rule — in particular the "a message that refers to earlier turns"
+  clause is untouched, deliberately, because it is load-bearing for the CONTEXTUAL_CHAT
+  branch and editing it in the same pass would confound any measurement.
+- Its own tests cover the framing, the filtering, and the empty case.
+
+It is NOT kept on a claim that it improves routing, because that was not established. The
+table in "Attempt 1" is still the baseline; a future run must beat it, and the next
+measurement needs a harness that survives to print a summary — run it through
+`scripts/test.ts`-style isolation rather than a standalone probe.

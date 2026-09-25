@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { hasRoutingMemory, memoryForRouting } from './memory-routing'
+import { memoryForRouting, routingMemoryBlock } from './memory-routing'
 
 /**
  * The sample below is a REAL recall result, captured from this deployment against the
@@ -127,13 +127,5 @@ describe('memoryForRouting — drops bookkeeping, keeps knowledge', () => {
   test('whitespace is normalised and list markers stripped', () => {
     const out = memoryForRouting('Facts:\n-   HUB-99   is   the   primary   hub code.')
     expect(out).toBe('HUB-99 is the primary hub code.')
-  })
-})
-
-describe('hasRoutingMemory', () => {
-  test('false when the filter would produce nothing, true otherwise', () => {
-    expect(hasRoutingMemory('Facts:\n- timestamp 1790268912657')).toBe(false)
-    expect(hasRoutingMemory(REAL_RECALL)).toBe(true)
-    expect(hasRoutingMemory(undefined)).toBe(false)
   })
 })

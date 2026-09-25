@@ -219,13 +219,21 @@ describe('routeQuery', () => {
     expect(result.decision).toBe('CHAT')
   })
 
-  test('injects memoryContext into the router prompt', async () => {
+  test('injects memoryContext into the router prompt, FRAMED as background', async () => {
     fetchRouterResponse = 'SQL'
     await routeQuery({ question: 'show sales', hasIntegrations: true, hasDocuments: false, memoryContext: 'PREVIOUS INSIGHT: top product is SKU-902' })
     const messages = getSentMessages()
-    const userMsg = messages.find((m) => m.content.includes('Memory from prior interactions'))
+    // The heading changed from "Memory from prior interactions" to the framing in
+    // memory-routing.ts. Asserting the NEW framing, not just the presence of the text:
+    // a block of remembered conversation that does not say it is background is read as
+    // material for the current question, and a router that believes it already has the
+    // answer stops fetching. See the measured mechanism in docs/cognee-http-migration.md.
+    const userMsg = messages.find((m) => m.content.includes('Background from earlier conversations'))
     expect(userMsg).toBeDefined()
     expect(userMsg!.content).toContain('PREVIOUS INSIGHT: top product is SKU-902')
+    // The two constraints that make the framing do work.
+    expect(userMsg!.content).toMatch(/NOT an answer to the current question/i)
+    expect(userMsg!.content).toMatch(/call that tool/i)
   })
 
   test('injects chatHistory into the router prompt', async () => {
