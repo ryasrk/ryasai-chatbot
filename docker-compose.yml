@@ -178,13 +178,17 @@ services:
     networks:
       - ryasai-net
 
-  # Cognee memory + knowledge-graph API server (v1.5.4).
+  # Cognee memory + knowledge-graph API server (v1.6.0) — the ONLY memory backend.
   #
-  # WHY A SEPARATE SERVICE: the in-process @cognee/cognee-ts SDK's write path is
-  # not trustworthy — its newest release (0.2.0) reports success while storing
-  # nothing, then poisons the store. The Python server is the project's primary
-  # artifact and its write path is real (measured: 19.9s write, then a 4.3s recall
-  # that returned the stored token). See docs/cognee-http-migration.md.
+  # WHY A SEPARATE SERVICE, and why there is no longer a fallback: the in-process
+  # @cognee/cognee-ts bindings were REMOVED from this project on 2026-09-24. Their
+  # write path was not trustworthy (0.2.0 reported success while storing nothing,
+  # then poisoned the store with a "dataset completed" mark that survived a
+  # downgrade), and running two cognee lineages against one store produced a LanceDB
+  # collection sized 1536 while the configured embedder returned 384, plus a graph
+  # with 0 nodes after a write that reported success. One lineage, one version, one
+  # writer. Measured here: write 9s, recall 0.21s, and the stored token is FOUND.
+  # See docs/cognee-http-migration.md.
   #
   # PINNED, never :latest — a memory store whose format the app must read should
   # not change under a `docker compose pull`.

@@ -20,12 +20,15 @@ assertion (it documents the outage) and restructure your change.
    `src/`, which once left the BullMQ worker dead for 16+ hours while 40
    document jobs piled up unprocessed (docs uploaded but never embedded →
    "chatbot doesn't know my documents").
-2. **cognee searchTypes**: only literal names from the SDK's own
-   `SearchTypeString` union (`node_modules/@cognee/cognee-ts/lib/types.d.ts`).
-   `GRAPH_ENTITIES`/`GRAPH_RELATIONSHIPS` came from *Python* cognee docs and
-   were never valid in the TS SDK. When upgrading `@cognee/cognee-ts`, the
-   guard re-reads the union — fix any renamed literal THERE, not by deleting
-   the guard.
+2. **cognee searchTypes**: only names that exist in the PINNED SERVER's enum.
+   The authority is the cognee **v1.6.0 server's OpenAPI schema**, captured into
+   `src/lib/__fixtures__/cognee-search-types.json` by
+   `scripts/refresh-cognee-search-types.ts` (CI runs no cognee sidecar, so the
+   snapshot is what the guard reads). `GRAPH_ENTITIES`/`GRAPH_RELATIONSHIPS` came
+   from *Python* cognee docs and were never valid; the move to the server's enum
+   immediately caught a mirrored `FEEDBACK` that does not exist server-side. Fix a
+   renamed literal by refreshing the fixture and syncing `COGNEE_SEARCH_TYPES` —
+   never by deleting the guard.
 3. **DB drivers load through the static `DRIVER_LOADERS` map** in
    `real-connectors.ts` — `async () => import('pg')` literals, never
    `await import(variable)`. A variable specifier is invisible to Turbopack
@@ -133,11 +136,19 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
 - `src/lib/connectors.ts` + `src/lib/real-connectors.ts` — DB connector registry (Postgres/MySQL/MSSQL/ClickHouse via the STATIC `DRIVER_LOADERS` map — never a variable-specifier `import()`; see invariants #3).
 - `src/lib/cognee.ts` — barrel over `cognee-core.ts` (settings/backend selection/client cache), `cognee-memory.ts` (chat memory), `cognee-knowledge-graph.ts` (cognify/graph recall/forget), `cognee-http.ts` (transport to a cognee API server). No-op unless the per-org Settings toggle is on (`COGNEE_ENABLED=false` is only a process-wide kill switch); reuses the tenant's LLM config. Datasets are per-org (`org:<id>`, `org:<id>:kb`).
 
-  **Two backends, one switch.** `COGNEE_SERVER_URL` set → HTTP to a cognee v1.5.4 server (the `cognee` sidecar in `docker-compose.yml`; the SHIPPED default for compose installs). Unset → the in-process `@cognee/cognee-ts` SDK (fallback). `getCogneeBackend()` / `getCogneeServerOptions()` in `cognee-core.ts` are the single decision point, so a write and its matching read can never use different transports. The URL is read from the **environment only, never the per-org `AppConfig` row** — a per-org server address would let one org point memory at another org's server, which is exactly the cross-tenant leak this module already had to fix once.
+  **ONE backend, one version, one writer.** `COGNEE_SERVER_URL` set → HTTP to a cognee **v1.6.0** server (the `cognee` sidecar in `docker-compose.yml`; the SHIPPED default for compose installs). Unset → **memory is OFF**; there is no in-process fallback, because the `@cognee/cognee-ts` bindings were REMOVED from this project (2026-09-24). `getCogneeBackend()` / `getCogneeServerOptions()` in `cognee-core.ts` are the single decision point, so a write and its matching read can never use different transports.
+
+  **Do not add the bindings back alongside the server.** Two cognee lineages writing one store is a corruption mechanism, and this deployment already paid for it: a LanceDB collection sized 1536 while the configured embedder returned 384, and a graph holding 0 nodes after a write that reported success. Recorded with measurements in `docs/cognee-http-migration.md`; the earlier 0.2.0 evaluation is in `scripts/cognee-upgrade-check.md`.
+
+  **Server-side flags matter more than the client config.** `AUTO_FEEDBACK=false`, `IMPROVE_AUTO_ENABLED=false`, `USAGE_LOGGING=false` are set in compose and `install.sh` and are LOAD-BEARING: with them at their defaults one search measured **24-95s** (retrieval itself was 49ms — the cost was `SessionTurnAnalysis` calling the LLM and retrying on a schema-validation error). With them off: write 9s, search 0.21s. Re-enabling any of them means re-measuring, not assuming. The URL is read from the **environment only, never the per-org `AppConfig` row** — a per-org server address would let one org point memory at another org's server, which is exactly the cross-tenant leak this module already had to fix once.
 
   **Why the server is the default (measured):** a server write took 19.9s and the matching recall returned the stored token in 4.3s, and cross-session recall through `rememberChatTurn` → `recallContext` gave `FOUND=true`. Full contract in `docs/cognee-http-migration.md` (multipart `remember`; the embedding-dimension trap; `HYBRID_COMPLETION` returns ONE synthesized answer, so recall requests `CHUNKS`/`SUMMARIES` explicitly).
 
-  **In-process path otherwise unchanged.** Recall strategies use `SUMMARIES` → `CHUNKS` → a THIRD strategy that is **gated on the graph backend**: `NATURAL_LANGUAGE` on postgres, `CHUNKS_LEXICAL` on kuzu (the local default). `NATURAL_LANGUAGE` cannot run on kuzu — measured failing on every attempt (“generated Cypher that this graph backend rejected”, ~7s plus its own LLM call) — so on kuzu it was paid for and thrown away twice per turn. The gate is `supportsNaturalLanguageSearch(await getCogneeGraphProvider())` in `cognee-core.ts`; an UNREADABLE provider (`null`) stays optimistic rather than dropping a strategy. `GRAPH_COMPLETION` is NOT an alternative: measured failing after 193341 ms. `c.datasets.has()` is used **advisory only** — it reports a present dataset as missing, so a `false` must never suppress recall (see invariants #2). **Do not bump `@cognee/cognee-ts` without reading `scripts/cognee-upgrade-check.md`**: 0.2.0 makes `remember()` a false success AND leaves a persistent “dataset completed” mark that keeps breaking writes even after downgrading.
+  **Recall strategies** are `SUMMARIES` → `CHUNKS`, then a third gated on the graph backend (`NATURAL_LANGUAGE` on postgres, `CHUNKS_LEXICAL` on kuzu). That gate lived in the removed in-process client; on the v1.6.0 server both are valid, and `docs/cognee-http-migration.md` records which ones were actually measured returning separate hits. `GRAPH_COMPLETION` is NOT an alternative: measured failing after 193341 ms. `datasets.has()` is **advisory only** — it reports a present dataset as missing, so a `false` must never suppress recall (see invariants #2).
+
+  **The bindings themselves are gone**, so `@cognee/cognee-ts` is no longer a dependency and the old "do not bump it" fence is moot. It still applies to anyone PROPOSING to bring the bindings back: read `scripts/cognee-upgrade-check.md` first (0.2.0 makes `remember()` a false success AND leaves a persistent "dataset completed" mark that keeps breaking writes even after downgrading), then prove a WRITE-then-RECALL against a fresh store.
+
+  **`dbProvider`/`dbUrl` on the org row are INERT.** They used to select the in-process store (kuzu+lancedb vs pgvector); storage now belongs to the server and is set by compose. The fields are still readable and echoed to the UI, and changing them changes nothing — see the note in `cognee-core.ts` so the next reader does not spend an afternoon proving it.
 
 ### Chat session context & memory (why the bot can feel "confused" mid-session)
 

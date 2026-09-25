@@ -322,19 +322,22 @@ alternately** so provider drift lands on both sides equally. `routeQuery`-style 
 counted separately (`NULL` = the selector returned nothing, so routing fell through to the
 heuristic router).
 
-### 1. It clearly HELPS when the answer lives in a document
+### 1. ~~It clearly HELPS when the answer lives in a document~~ — RETRACTED, see below
+
+> **This result was invalid and is kept only so the retraction is legible.** The memory text
+> used here was written by the author of this note and contained the sentence *"the answer came
+> from the uploaded document e2e-answer.txt"* — that is a routing instruction handed to the
+> router by the test, not something the system produces. It measured the test's own hint. The
+> corrected measurement, with real recall output, is in "Attempt 1 at that fix" below: the
+> document question reached RAG 0/6 without memory and 0/6 WITH filtered memory.
 
 Question: *"What is the primary distribution hub code?"* — answerable from an uploaded
-document, so `RAG` is correct. 20 pairs:
+document, so `RAG` is correct. 20 pairs (INVALID — see the retraction above):
 
 | | SQL (wrong) | RAG (right) | NULL |
 |---|---|---|---|
 | without memory | **14/20** | 5/20 | 1/20 |
-| with memory | 0/20 | **20/20** | 0/20 |
-
-Without memory the router sends this to SQL two times in three and the document is never
-searched. This is the single biggest routing effect measured here, and it is a **strong
-argument for keeping memory in the prompt.**
+| with memory (author-written hint) | 0/20 | **20/20** | 0/20 |
 
 ### 2. It clearly HURTS when the memory is conversation-shaped
 
@@ -366,19 +369,66 @@ document-ish text pulls a counting question toward document search.
 
 ### What this means
 
-The honest summary is **mixed, and shape-dependent, not "good" or "bad"**:
+The honest summary, after the retraction above and the failed filter attempt:
 
-- Memory in the routing prompt is doing real work that the base prompt cannot do. On a
-  document-answerable question it moved routing from 5/20 to 20/20 correct. Removing it outright
-  would be a measurable regression.
-- But what gets injected is currently *whatever recall happens to return*, and recalled chat
-  turns are a poor routing signal: they pushed the selector to `NULL` 7/8.
+- **Memory in the routing prompt is currently more harmful than helpful in the runs measured
+  here.** It suppresses the RAG branch on a question whose answer is in a document (CHAT 10/14
+  with relevant memory), and it makes a counting question land on REST instead of SQL.
+- No measurement in this document shows memory improving a routing decision that the base
+  prompt would have got wrong. The one number that claimed otherwise is retracted.
+- The mechanism is visible in the outcomes: with memory present the router increasingly chooses
+  to ANSWER (CHAT) rather than to fetch, which is exactly what a block of remembered
+  conversation sitting under "reply in text only when…" would encourage.
 - The prompt placement compounds it: memory is rendered directly beneath *"Reply in text only
   when the question needs no data at all: … a message that refers to earlier turns."* A block of
   remembered conversation sitting under that instruction is an invitation to answer from memory
   instead of calling a tool.
 
-**The likely fix is not to remove memory from routing but to change WHAT is injected** — a
-distilled summary of remembered topic, or document-shaped recall only — and to measure it the
-same way. That is a prompt/behaviour change affecting every install, so it is recorded here
-rather than guessed at. The runs above are the baseline any change should beat.
+**The likely fix is not to remove memory from routing but to change WHAT is injected.**
+
+---
+
+### Attempt 1 at that fix: filter the memory. It did NOT work.
+
+`memoryForRouting` (`src/lib/memory-routing.ts`) strips run ids, timestamps, latencies, tool
+narration and the chat-turn envelope from the memory before it reaches a ROUTING prompt, and
+bounds it to 600 chars. Measured effect on the captured 2019-char real recall: **457 → 141
+chars**. It is used by `selectToolWithLlm` and `routeQuery` only; the ANSWER prompts still get
+the full text, because there a session id is harmless and dropping detail could cost the answer.
+
+Then it was measured, with the same interleaved harness, 6-14 pairs per condition:
+
+| question | expected | no memory | raw memory | filtered memory |
+|---|---|---|---|---|
+| greeting | CHAT | 6/6 | 6/6 | 6/6 |
+| "how many documents are uploaded?" | SQL | **6/6** | 4/6 | 4/6 |
+| "what is the primary distribution hub code?" | RAG | 0/6 | 1/6 | 0/6 |
+| same, with RELEVANT memory (14 pairs) | RAG | 1/14 | 2/14 | 2/14 |
+
+**Filtering changed nothing that matters.** It did not recover the counting question, and it did
+not make the document question reach RAG. The last row is the most damning for the whole idea:
+with memory that literally states *"HUB-99 is the code for the primary distribution hub"* — the
+answer to the question — the router went to RAG only 2 times in 14, and in the FULL-memory case
+it went to **CHAT 10/14**, i.e. it decided to answer from memory rather than from the document.
+
+So the defect is NOT the noise in the text. Removing the noise left the behaviour intact. What
+the raw-memory row shows is the real mechanism: **a block of remembered conversation in the
+routing prompt makes the router treat the question as already answered.** That is a prompt-design
+problem — where memory is placed and how it is framed relative to the "reply in text only when…"
+rule — not a data-cleaning problem.
+
+**What is actually established**, and what is not:
+
+- Established: memory in the routing prompt shifts routing in BOTH directions, it is
+  shape-sensitive, and it can suppress the RAG branch on a question whose answer is in a
+  document.
+- Established: filtering the text does not fix that.
+- NOT established: that memory helps. The earlier 5/20 → 20/20 headline came from memory text
+  written by the author of this note, containing the sentence "the answer came from the uploaded
+  document" — a routing hint handed to the router by the test. **That number is retracted.**
+
+The remaining candidate fixes are prompt-level (reframe memory as background rather than as an
+answer, or move it out of the decision prompt into the answer step only) and each needs its own
+measurement against the table above. Nothing further was changed here: the filter is kept because
+it is a strict reduction in prompt noise with its own tests, not because it was shown to improve
+routing.

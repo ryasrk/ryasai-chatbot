@@ -42,12 +42,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           # PINNED, not `latest`. Two reasons, both measured rather than theoretical:
-          #   1. `@cognee/cognee-ts` loads a native Neon binding. On Bun 1.3.14, importing
-          #      that binding while an AsyncLocalStorage context is active SEGFAULTS the
-          #      process (4-line repro: enterWith() then import('@cognee/cognee-ts')), which
-          #      surfaced as `Graph database error: std::bad_alloc` and made cognee memory
-          #      silently unavailable. Bun 1.4.2 is fine. A floating `latest` cannot
-          #      guarantee the version that actually works.
+          #   1. HISTORICAL, no longer applies: `@cognee/cognee-ts` loaded a native
+          #      Neon binding that SEGFAULTED the process under an active
+          #      AsyncLocalStorage context on Bun 1.3.14 (4-line repro: enterWith()
+          #      then import(...)), surfacing as `Graph database error: std::bad_alloc`
+          #      and making memory silently unavailable. Bun 1.4.2 was fine. The
+          #      package was REMOVED on 2026-09-24 (memory is the v1.6.0 HTTP server),
+          #      so this hazard is gone — recorded rather than deleted so nobody
+          #      re-adds the bindings assuming the crash was fixed.
+          #   2. The pinning RULE still stands:
+          #      a moving `latest` means the version CI tests is not the version
+          #      anyone develops on, so a green CI does not describe what shipped.
           #   2. A moving `latest` means the version CI tests is not the version anyone
           #      develops on, so a green CI does not describe the code that shipped.
           # Bump this deliberately, with the suite re-run, rather than on every push.
@@ -119,12 +124,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           # PINNED, not `latest`. Two reasons, both measured rather than theoretical:
-          #   1. `@cognee/cognee-ts` loads a native Neon binding. On Bun 1.3.14, importing
-          #      that binding while an AsyncLocalStorage context is active SEGFAULTS the
-          #      process (4-line repro: enterWith() then import('@cognee/cognee-ts')), which
-          #      surfaced as `Graph database error: std::bad_alloc` and made cognee memory
-          #      silently unavailable. Bun 1.4.2 is fine. A floating `latest` cannot
-          #      guarantee the version that actually works.
+          #   1. HISTORICAL, no longer applies: `@cognee/cognee-ts` loaded a native
+          #      Neon binding that SEGFAULTED the process under an active
+          #      AsyncLocalStorage context on Bun 1.3.14 (4-line repro: enterWith()
+          #      then import(...)), surfacing as `Graph database error: std::bad_alloc`
+          #      and making memory silently unavailable. Bun 1.4.2 was fine. The
+          #      package was REMOVED on 2026-09-24 (memory is the v1.6.0 HTTP server),
+          #      so this hazard is gone — recorded rather than deleted so nobody
+          #      re-adds the bindings assuming the crash was fixed.
+          #   2. The pinning RULE still stands:
+          #      a moving `latest` means the version CI tests is not the version
+          #      anyone develops on, so a green CI does not describe what shipped.
           #   2. A moving `latest` means the version CI tests is not the version anyone
           #      develops on, so a green CI does not describe the code that shipped.
           # Bump this deliberately, with the suite re-run, rather than on every push.

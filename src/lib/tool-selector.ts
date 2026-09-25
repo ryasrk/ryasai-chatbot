@@ -31,6 +31,7 @@
 import { chatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
 import { getUnifiedTools, toLlmToolDef, functionNameToToolId, SQL_TOOL } from '@/lib/unified-tools'
+import { memoryForRouting } from '@/lib/memory-routing'
 import type { RouteDecision } from '@/lib/ai'
 import { logSwallowed } from '@/lib/logger'
 import { db } from '@/lib/db'
@@ -192,6 +193,9 @@ export async function selectToolWithLlm(args: {
   // out of the tool SCHEMA deliberately: an `integrationId` argument would let
   // the model invent an id, whereas a closed list here cannot be hallucinated
   // past the lookup below.
+  // Computed once, before the prompt array, so the filter runs a single time per turn.
+  const routingMemory = memoryForRouting(args.memoryContext)
+
   const databases = args.needsDatabaseListing
     ? await db.integration.findMany({
         where: { status: 'active' },
@@ -279,7 +283,13 @@ export async function selectToolWithLlm(args: {
     '- Reply in text only when the question needs no data at all: a greeting, small',
     '  talk, an opinion, or a message that refers to earlier turns.',
     '',
-    args.memoryContext ? `\nContext from memory:\n${args.memoryContext}` : '',
+    // FILTERED for routing. `memoryContext` is raw recall output — mostly run ids,
+    // timestamps, latencies and tool bookkeeping, measured at 2019 characters of it per
+    // turn. See memory-routing.ts for the captured sample and the reasoning; the short
+    // version is that this block lands directly beneath the "reply in text only when…"
+    // rule above, and a large block that reads like remembered conversation sitting under
+    // that instruction biases the selector toward answering instead of calling a tool.
+    routingMemory ? `\nContext from memory:\n${routingMemory}` : '',
     databaseBlock,
   ].filter(Boolean).join('\n')
 

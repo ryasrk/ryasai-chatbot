@@ -62,8 +62,11 @@ const nextConfig: NextConfig = {
     ],
   },
   serverExternalPackages: [
-    "@cognee/cognee-ts",
-    "@cognee/neon-linux-x64-gnu",
+    // The @cognee/cognee-ts bindings and their Neon native module were listed here until
+    // 2026-09-24, when the in-process transport was removed and memory moved to the
+    // cognee v1.6.0 HTTP server. Listing a package that is no longer a dependency is not
+    // harmless tidiness: it claims a native module exists in the image, and the next
+    // person debugging a missing dependency starts by trusting the list.
     "ioredis",
     "bullmq",
     // ponytail: DB drivers are require()'d at runtime through loadDriver()'s
