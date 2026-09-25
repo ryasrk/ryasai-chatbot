@@ -309,9 +309,44 @@ while the write resolved successfully.
   (the selector returned NULL 7/8). So the answer is not "remove it" — it is "change what gets
   injected", which is a behaviour change that needs its own measurement and should beat the
   recorded baseline.
+- **The graph write path still rejects valid JSON.** Measured from the sidecar's own log over
+  the life of the current container: **160** `ValidationError: 1 validation error for
+  KnowledgeGraph` events. Classified by the rejected input, not by guesswork:
+
+  | rejected input | count | what it means |
+  |---|---|---|
+  | prose ("Halo! Saya asisten AI…", "Understood — I'll treat…") | 136 | the E2E **mock LLM** answering in sentences. Test artefact, not a production defect. |
+  | `\`\`\`json` … `\`\`\`` | **24** | a **real** model wrapping its JSON in a markdown fence. cognee does not strip it. |
+
+  The 24 are the real finding, and they cost real time: a rejected extraction is retried
+  (measured `Retrying … in 16.5 seconds`), and one write against a fresh dataset measured
+  **228 seconds** — a number I reported earlier as 9s because that figure came from a warm
+  store, not from the first write. The same class of failure is why the session opened with a
+  `Deserialization error: … Raw: This chunk is about:` in `pipeline_runs`.
+
+  **This is NOT fixed, and the fix is not in cognee.** The model CAN return clean JSON on this
+  endpoint — measured at 1.58s with an explicit "no prose, no fences" instruction — so the
+  lever is the instruction the extractor sends, which lives inside the server. Until it is
+  addressed, expect: a first write on a new dataset to take minutes, and graph extraction to
+  lose turns intermittently while the store still reports success.
+
 - `e2e/07-agentic.spec.ts` fails 2 tests. **Pre-existing and unrelated**: reproduced at commit
-  `646bbc9` with memory off. Its `signIn()` helper times out waiting for either `#email` or the
-  Dashboard heading.
+  `646bbc9` with memory off, and again against the production standalone build. Its `signIn()`
+  helper times out waiting for either `#email` or the Dashboard heading.
+
+### Verification status of everything above
+
+`tsc` 0 · `lint` 0 · `bun run test` 265/265 files, 6823 pass, 0 fail, 71 skip ·
+`bun run e2e` 13 passed / 3 failed (all pre-existing `07-agentic` + the cognee-active
+citation case) · `bun run build` succeeds and the standalone output contains **no** `@cognee`
+and still contains the traced DB drivers (invariant #3) · `bun run e2e:prod` **14 passed /
+2 failed**, the two being `07-agentic` only.
+
+`e2e:prod` is the check that had never been run against this work until now, and it is worth
+noting what changed by running it: `03-knowledge-chat` and `04-api-key` — both failing under
+the dev server with memory configured — **pass against the production build**. The dev-mode
+failures were real (a 90s request hang on the memory write, fixed in `tool-router.ts`), but
+the production artefact does not exhibit them.
 
 ---
 
