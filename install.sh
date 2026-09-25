@@ -177,7 +177,7 @@ WS_CORS_ORIGIN=http://localhost:$APP_PORT
 # COGNEE_SERVER_URL connects to the internal compose cognee sidecar
 COGNEE_SERVER_URL=http://cognee:8000
 CONTEXTUAL_RETRIEVAL=true
-NEXT_PUBLIC_APP_VERSION=0.5.0
+NEXT_PUBLIC_APP_VERSION=1.0.0
 NEXT_PUBLIC_WS_PORT=$WS_PORT
 
 # Bootstrap admin (sign up with these credentials after install)

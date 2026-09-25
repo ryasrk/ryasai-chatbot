@@ -289,7 +289,7 @@ export function Topbar({
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Version</span>
-              <span className="font-mono">{process.env.NEXT_PUBLIC_APP_VERSION || '0.4.0'}</span>
+              <span className="font-mono">{process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0'}</span>
             </div>
           </div>
         </DialogContent>

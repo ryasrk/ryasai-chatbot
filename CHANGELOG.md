@@ -5,7 +5,59 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-07-31
+## [1.0.0] - 2026-09-25
+
+First version offered for sale. Everything below `### Security` was already in the tree as
+`[Unreleased]`; the sections above it are the September work that made the product sellable.
+
+### Memory (cognee) — the whole integration was replaced
+
+- **The in-process `@cognee/cognee-ts` bindings were REMOVED** and memory now runs against a
+  pinned **cognee v1.6.0 API server**. Two cognee lineages writing one store is a corruption
+  mechanism, and this deployment had already produced a LanceDB collection sized 1536 while the
+  configured embedder returned 384, plus a graph holding 0 nodes after a write that reported
+  success. One lineage, one version, one writer.
+- **Cross-session memory works.** A fact written in one session and read from another:
+  write ~9s warm, recall **0.21-0.35s**, token found — and also found by a SEMANTIC query, not
+  only by literal token match. Before this, `rememberChatTurn` resolved "ok" after 83-95s while
+  the graph stayed empty and every recall returned ''.
+- **Two defects that held answers up, both fixed**: the chat-turn write was `await`ed on the
+  response path (5.6-9.7s, and 228s on a fresh dataset — it made an OpenAI-compatible endpoint
+  time out), and `recallContext` had no deadline across four call sites.
+- **Write latency is the customer's model, not our code** — measured: the same endpoint answers
+  "Say OK" in 1.3s and an entity-extraction request in 23.7s. Writes are fire-and-forget, so an
+  answer is never blocked; the cost is memory FRESHNESS.
+- **Server-side flags are load-bearing**: `AUTO_FEEDBACK=false`, `IMPROVE_AUTO_ENABLED=false`,
+  `USAGE_LOGGING=false`. With defaults, one search measured 24-95s; with them off, 0.21s.
+- A defect in cognee's markdown-fence handling that rejected valid JSON is patched at container
+  start (`tools/cognee-server/`), applied automatically by `install.sh` and compose.
+
+### Retrieval quality — measured, not asserted
+
+- **RAG ranking is now lexical-first with vector/KG appended** (`lex1`). On the app's own corpus:
+  BM25 order alone gives recall@10 1.0000 / MRR 0.9139; the previous RRF fusion gave 0.9752 /
+  0.6254. The change also fixed ties resolving arbitrarily, which had surfaced a policy document
+  for a training question.
+- **The chunker was the biggest defect and is fixed**: a heading was becoming its own chunk,
+  which turned one document into 114 fragments (57% under the minimum useful size). Now 55
+  chunks, 5% fragments, mean 244 chars. Retrieval 10/10 at rank 1.
+- **Head-to-head against a standard vector-RAG baseline** (same corpus, questions, top-k,
+  generation model; judge from a different model family): context precision **0.973 vs 0.925**,
+  answer relevance 0.933 vs 0.917, context recall 0.917 vs 0.917, faithfulness **0.983 vs 1.000**
+  — reported as a modest, MIXED result rather than a win.
+
+### Correctness and honesty fixes
+
+- RAGAS scorers returned a silent `0.5` on error, which produced a full table of exactly 0.500
+  under a rate-limited judge and was nearly reported as a real measurement. They now return
+  `NaN`, and the average excludes and counts unjudged rows.
+- The test runner's skip count **was always zero** — Bun prints pass/skip/fail on separate lines
+  and the runner read only the `pass` line, so 54 skipped tests reported as "0 skip". Extracted,
+  unit-tested, negative-controlled; it now reports 71.
+- Citation rendering: an in-flight answer could be discarded by a session reload and dropped
+  silently, so `Sources` never appeared. Fixed, and the drop now logs what it loses.
+- e2e now clears the BullMQ queue as well as Postgres between runs; orphaned jobs were leaving a
+  document without a vector and making a citation assertion fail.
 
 ### Security
 - **CRITICAL: Middleware unblocks external API endpoints** — `/api/v1/chat/completions`, `/api/v1/agent/run`, `/api/webhooks/incoming` added to `PUBLIC_API_PATHS` (were blocked by cookie gate, making Bearer auth endpoints completely non-functional)

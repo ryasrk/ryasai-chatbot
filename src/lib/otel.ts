@@ -40,7 +40,7 @@ export async function initOtel(): Promise<void> {
     const sdk = new NodeSDK({
       resource: resourceFromAttributes({
         [attrServiceName]: 'ryasai-chatbot',
-        [attrServiceVersion]: process.env.npm_package_version ?? '0.4.0',
+        [attrServiceVersion]: process.env.npm_package_version ?? '1.0.0',
       }),
       traceExporter: traceExporter as never,
       instrumentations: [new HttpInstrumentation(), new FetchInstrumentation()],
