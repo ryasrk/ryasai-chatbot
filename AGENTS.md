@@ -524,7 +524,30 @@ dropped data on the way out** — and every one was found by executing a probe, 
    looked like a healthy document. The field was in Prisma, in the `select`, in the client type,
    and in the sibling list route — and still never reached the client.
 
+4. **A classified error whose `hint` is dropped on the last hop.** `classifyProviderFailure`
+   produces the actionable half of a BYOK failure ("re-enter the key", "add credit", "pick a model
+   your provider serves"), `toTypedError` carries it across the wire — and `extractError` (48
+   callers) returned only `message`. A test asserted that as CORRECT (`toBe('Invalid credentials')`
+   for an object carrying `hint: 'Check password'`), so the vague half was pinned in place.
+   `fetchProviderModels` was worse: it threw `Failed to fetch models (HTTP 401)` without reading
+   the body, so the classifier could not run at all on the first feedback a pasted key ever gets.
+
+5. **A value that exists at every layer and is dropped by a hand-built response.** (Previous
+   round, kept here as one list: `GET /api/documents/[id]` selected `cognifyStatus`/`cognifyError`
+   and never mapped them.)
+
 **Rules that follow from these:**
+
+- Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
+  presence at the ends implies a path between them. All three of the above had the data correct at
+  both ends.
+- When a mechanism is built to produce an actionable message (a classifier, a hint field, a
+  `code`), grep for its CONSUMERS. A classifier nobody calls and a hint nobody displays are the
+  same defect as no classifier at all.
+- A test that asserts the current behaviour of a lossy stage can pin the loss in place. When
+  reversing one, state in the test why the old expectation was wrong — the next reader will
+  otherwise "fix" it back.
+
 
 - Assert on the **response body**, not on the query. 71 route tests already do; the 4 that assert on
   the `select` argument would pass while the mapping is missing. A field can be selected, typed and
