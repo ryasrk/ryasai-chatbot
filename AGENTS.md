@@ -462,8 +462,14 @@ redirects manually with per-hop SSRF checks; chat send has org rate limit
 document jobs have retry (`POST /api/documents/[id]/reprocess` + UI button); purchase
 flow is e2e-tested via mock Midtrans (:4547, `MIDTRANS_BASE_URL` test seam).
 
-**Remove before shipping a customer image:**
-- Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables, `test-data/` PDFs).
+**Remove before shipping a customer image — VERIFY, do not assume:**
+- Demo data paths (`scripts/migrate-demo-to-postgres.ts` demo DBs, `connectors.ts` demo tables,
+  `test-data/` PDFs). **Checked against the actual build:** `.dockerignore` excludes
+  `test-data/`, and `.next/standalone/` ships only `node_modules`, `public` and `server.js` —
+  so neither the PDF fixtures nor `scripts/` reach the customer image today. The remaining
+  exposure is `connectors.ts`'s `SQLITE_DEMO` provider, which IS compiled into the app and
+  would let a customer point an integration at demo tables. That is the real item, and it is
+  recorded here rather than the whole list being repeated as if nothing had been checked.
 - `helm/` chart lags docker-compose — `helm/README.md` carries a NOT-PRODUCTION-READY
   banner and a divergence table; don't point customers at it until reconciled (compose +
   `install.sh` are the supported path).
@@ -514,6 +520,16 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 - Schema enrichment (`SELECT DISTINCT` per text column) runs under a budget (150 queries, concurrency 6) so large managed DBs don't hang first-time reflection.
 
 ## Build & Deploy
+
+**KNOWN FORWARD-COMPAT WARNING, not a defect.** `bun run build` prints:
+
+    ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.
+
+`src/middleware.ts` is still supported and still runs (it carries the rate limiting and has its
+own test file), so this is a migration to schedule rather than a bug to fix — but it is recorded
+here because it appears on every build and an unexplained warning trains people to ignore build
+output. Migrating means renaming the file and re-checking the `matcher` config against Next's
+current `proxy.ts` semantics; do it deliberately, not as a drive-by during unrelated work.
 
 - **Build runs under real Node** (`node:22-slim`), not Bun — Turbopack breaks under Bun's node-compat shim (jsdom `patch.json` error). Prod runtime is Bun (`oven/bun:1-slim`).
 - `bun run build` produces `.next/standalone/`. The script also copies `.next/static` and `public/` into it.
