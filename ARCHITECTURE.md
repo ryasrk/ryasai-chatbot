@@ -2,7 +2,10 @@
 
 ## System Overview
 
-**Deployment Model:** Multi-tenant SaaS  
+**Deployment Model:** On-prem, one install per customer, licensed with a signed machine-bound
+key (multi-tenant within an install: several isolated `Organization` rows are supported). BYOK —
+the customer supplies their own LLM and embedding endpoints, so inference spend goes to their
+provider, not to us. There is no vendor cloud and no per-token metering.  
 **Framework:** Next.js 16 (Turbopack) + React 19 + TypeScript 5  
 **Runtime:** Bun + Node.js  
 **Database:** PostgreSQL 16 + pgvector + pg_trgm  
