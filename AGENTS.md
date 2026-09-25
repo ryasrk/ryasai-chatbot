@@ -507,7 +507,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing (2026-09-25)
 
-Ten defects across five rounds shared one shape: **the code reported success for work it had
+Eleven defects across six rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not
 by reading the code.
 
@@ -581,6 +581,19 @@ change under test. Pin fixes like this with a DETERMINISTIC test on the pure fun
 gate), and report any model-in-the-loop number as the model's behaviour rather than as the fix's
 effect. Chasing such numbers by tuning a prompt is how the over-correction happened here: the first
 tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matches.
+
+11. **An instruction that is never DELIVERED, which looks like a model ignoring it.** The intent
+   system prompt was 2872 characters and the provider DISCARDS a system message above ~2100 —
+   measured: 1900 chars reports `prompt_tokens: 269`, 2300 reports `44` (the user message alone),
+   3/3 identical in both directions. So `analyzeIntent` never received its own instructions, replied
+   in prose, failed to parse, and returned safe defaults after seconds of work. Every symptom
+   pointed at the model; the model was never told. **If a prompt seems ignored, verify it was
+   DELIVERED — check `prompt_tokens` against the text you sent, not just the code path.**
+
+**A local note that generalises:** three rounds of "the model ignores this rule" ended here. Round 7
+moved the ambiguity rule into code because a prompt rewrite changed nothing (0/4) — the right
+outcome, for a reason I did not know: there was nothing to ignore. When a prompt change has EXACTLY
+zero effect twice, suspect delivery before trying a third wording.
 
 **Rules that follow from these:**
 
