@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Stagger, StaggerItem } from '@/components/motion'
 
-import { describeCron, formatRelativeTime, previewNextRuns } from '@/lib/cron-describe'
+import { describeCron, formatRelativeTime, isScheduleOverdue, previewNextRuns } from '@/lib/cron-describe'
 
 import { MetricCard } from '@/components/ui/metric-card'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -601,6 +601,18 @@ export function SchedulesView() {
                         <div className="flex flex-col gap-0.5">
                           <span className="text-xs">{fmtDate(s.nextRunAt, s.timezone)}</span>
                           <span className="text-xs text-muted-foreground">{formatRelativeTime(s.nextRunAt)}</span>
+                          {/* A repeatable job stops rescheduling once it exhausts its attempts, and the
+                              row keeps isActive=true with a nextRunAt that simply stops moving — so a
+                              DEAD schedule renders identically to a healthy one. Measured: one died 41
+                              days before this was noticed. */}
+                          {isScheduleOverdue(s.nextRunAt, s.isActive) && (
+                            <span
+                              className="text-[11px] text-destructive"
+                              title="This schedule is active but its next run is in the past. It may have stopped running — check the run history for failures."
+                            >
+                              Overdue — may have stopped
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-xs py-2.5 px-3.5">

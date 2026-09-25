@@ -182,3 +182,29 @@ export const SCHEDULE_PRESETS: Array<{ expr: string; label: string; description:
   { expr: '0 0 1 * *', label: 'Start of month', description: 'On day 1 at 00:00' },
   { expr: '0 0 * * 0', label: 'Sunday night', description: 'Every Sunday at 00:00' },
 ]
+
+/**
+ * Is an ACTIVE schedule overdue — i.e. its next run is already in the past?
+ *
+ * A BullMQ repeatable job stops rescheduling after it exhausts its attempts, and nothing in the
+ * schema records that: the row keeps `isActive: true` and a `nextRunAt` that simply stops moving.
+ * MEASURED on this deployment: a daily 06:00 schedule died on 2026-09-11 because the embedding
+ * config pointed at a host the SSRF guard refuses; 41 days later `isActive` was still true,
+ * `nextRunAt` still 2026-08-15, and the UI rendered both as ordinary dates with a relative time.
+ * An admin would believe the daily report was running.
+ *
+ * The tolerance keeps a normal minor lag (job queued, worker busy, clock skew) from showing a
+ * warning: a schedule is only flagged once it is overdue by more than one full period, or by an
+ * hour when the period is unknown.
+ */
+export function isScheduleOverdue(
+  nextRunAt: string | null | undefined,
+  isActive: boolean,
+  now: Date = new Date(),
+  toleranceMs = 60 * 60 * 1000,
+): boolean {
+  if (!isActive || !nextRunAt) return false
+  const next = new Date(nextRunAt).getTime()
+  if (Number.isNaN(next)) return false
+  return now.getTime() - next > toleranceMs
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { describeCron, formatRelativeTime, previewNextRuns, SCHEDULE_PRESETS } from './cron-describe'
+import { describeCron, formatRelativeTime, isScheduleOverdue, previewNextRuns, SCHEDULE_PRESETS } from './cron-describe'
 
 describe('describeCron', () => {
   test('describes every minute', () => {
@@ -268,5 +268,37 @@ describe('describeCron — the two composers are reachable for single values too
     expect(out).toContain('Every hour at minute 30')
     // The invalid-cron guard does not fire, and the month is still reported.
     expect(out).not.toBe('Invalid cron expression')
+  })
+})
+
+describe('isScheduleOverdue', () => {
+  const NOW = new Date('2026-09-25T12:00:00Z')
+
+  test('an ACTIVE schedule whose next run is long past is flagged', () => {
+    // The real case: a daily 06:00 job died on 2026-09-11 and the row still said isActive=true
+    // with nextRunAt 2026-08-15. Nothing in the schema records the failure, so the flag is the
+    // only signal an admin gets without opening the run history.
+    expect(isScheduleOverdue('2026-08-15T06:00:00Z', true, NOW)).toBe(true)
+  })
+
+  test('a recently-passed next run is NOT flagged (normal lag must not cry wolf)', () => {
+    // A job queued or running, a busy worker, or clock skew all put nextRunAt slightly in the past.
+    for (const d of ['2026-09-25T11:30:00Z', '2026-09-25T11:59:00Z']) {
+      expect({ d, overdue: isScheduleOverdue(d, true, NOW) }).toEqual({ d, overdue: false })
+    }
+  })
+
+  test('an inactive schedule is never flagged — it is not supposed to run', () => {
+    expect(isScheduleOverdue('2026-08-15T06:00:00Z', false, NOW)).toBe(false)
+  })
+
+  test('a missing or unparseable next run is not flagged', () => {
+    for (const d of [null, undefined, '', 'not-a-date']) {
+      expect({ d, overdue: isScheduleOverdue(d as string | null, true, NOW) }).toEqual({ d, overdue: false })
+    }
+  })
+
+  test('a FUTURE next run is not flagged', () => {
+    expect(isScheduleOverdue('2026-09-26T06:00:00Z', true, NOW)).toBe(false)
   })
 })
