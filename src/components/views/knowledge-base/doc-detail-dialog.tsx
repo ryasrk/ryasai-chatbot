@@ -160,7 +160,8 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
               {detail.cognifyError ? ` Reason: ${detail.cognifyError}` : ''}
             </p>
             <p className="text-[11px]">
-              Check the AI provider configuration in Settings, then use Reprocess to try again.
+              Check the AI provider configuration in Settings, then close this dialog and use the
+              retry button on the document's card to try again.
             </p>
           </AlertDescription>
         </Alert>
