@@ -221,6 +221,55 @@ VALID compose with 8 services, the network and all four volumes. A extraction to
 truncates produces a confident finding about code that is fine — the same shape as the probe that
 read `.tables` off a function returning an array.
 
+
+20. **Two harnesses for the same suite, one of them configured differently.** `scripts/test.ts`
+   suppresses three ambient variables (`LLM_ALLOWED_HOSTS`, `LLM_ALLOW_BLOCKED_HOSTS`,
+   `E2E_TEST_MODE`) with a comment documenting the measurement, because `LLM_ALLOWED_HOSTS`
+   changes the DEFAULT SECURITY POSTURE of `isBlockedHost()`. `scripts/coverage.ts` runs the SAME
+   test files through the SAME per-file strategy and never got the same three lines. So every
+   coverage run inherited `.env`'s `LLM_ALLOWED_HOSTS=127.0.0.1,localhost`, six security test
+   files went red (~18 failures), and the MERGED denominator they inflated made 21 per-file
+   coverage floors read as breached — cognee.ts 54.79% against a floor of 73, smart-router 56.00
+   against 74, ai.ts 68.14 against 73.
+   **The gate was measuring the harness, not the code**, and `coverage.ts`'s own header states the
+   principle: "a suite that PASSES under test.ts and then reports degraded coverage under
+   coverage.ts measures the harness, not the code." It had been true of the file itself.
+   **When one entry point configures a shared suite, every other entry point is a copy that can
+   drift.** Grep for the second runner when you change the first.
+   Two consequences worth separating: the coverage numbers were WRONG (not merely conservative),
+   and the red CI was REAL — the gate did its job on bad input. The bad input was the defect.
+
+**A note on the tempting shortcut.** The 21 floors could have been lowered to match the merged
+figures, or the six files exempted like the three `mock.module` cases above. Both would have made
+CI green while deleting the signal: the floors were correct, and the six files pass under the
+runner they were written for. The measurement was fixed instead — which restored the numbers to
+86.8% / 199 gated modules, i.e. what it was before the drift.
+
+
+**A coda to class 20, earned while fixing it.** Three separate faults were stacked on the same red
+CI, and separating them mattered — the first two were fixed and CI was STILL red, because the third
+was a different thing wearing the same symptom:
+
+  1. the harness divergence (class 20 proper),
+  2. floors pinned to an 11-day-old measurement, and
+  3. a module that had silently stopped being exercised.
+
+For (2), comparing HIT and FOUND counts per file is what separated "the measurement surface grew"
+(10 files, hits rose: ai.ts 417/567 -> 462/678) from "coverage actually fell" (3 files, hits
+dropped because `smartRoute` and other code were DELETED). A percentage alone cannot tell those
+apart, and treating them the same would either have hidden a real regression or ratcheted noise.
+
+For (3), the gate reported `src/lib/plugin-seeds.ts` as a gated module MISSING from the report. The
+cause: its existing test does `readFileSync('./plugin-seeds.ts')` and asserts on the file's TEXT, so
+the module's only export was never instrumented. **Reading a module's source is not running it** —
+both checks are worth having, but only one of them is coverage. Exercising the real function raised
+it to 100.00% (147/147) and covered its idempotent UPDATE branch for the first time, which nothing
+had tested: a second seed run would have created duplicates.
+
+And the shortcut that was available at every step — lower the floors to whatever the number happened
+to be, or add the breached modules to the exemption list — would have made CI green while deleting
+the signal. The floors were right; the measurement was wrong.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
