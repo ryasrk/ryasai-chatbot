@@ -167,6 +167,37 @@ async function uploadDocument(page: Page, name: string, body: string): Promise<v
   // `.first()` — the name appears in both the document list and the dialog's own
   // contents while it is still mounted, and strict mode rejects the ambiguous match.
   await expect(page.getByText(name).first()).toBeVisible({ timeout: 30_000 })
+
+  // WAIT FOR THIS UPLOAD'S EMBEDDING, not merely for the name to be on screen.
+  //
+  // MEASURED ROOT CAUSE of an intermittently failing citation assertion. The name becomes visible
+  // as soon as the row exists — `POST /api/documents` sets `status: 'ready'` at upload and enqueues
+  // the embed job afterwards — so a caller could proceed while chunks were still being vectorised.
+  // Worse, this spec uploads `e2e-answer.txt` from TWO different tests, so the list can contain TWO
+  // documents with that name: one fully embedded from an earlier test, one still embedding. The
+  // retrieval assertion then passes or fails depending on which duplicate it ranks, which is exactly
+  // the run-to-run swing that was observed.
+  //
+  // `embeddedChunkCount` is the fact that actually matters (returned by GET /api/documents since
+  // this investigation), so wait for EVERY document with this name to be fully embedded. Relying on
+  // `status: 'ready'` would have been vacuous: measured, a document reports `ready` with 0 of its
+  // chunks embedded.
+  await expect(async () => {
+    const res = await page.request.get('/api/documents')
+    expect(res.ok()).toBe(true)
+    const body = (await res.json()) as {
+      documents: Array<{ name: string; chunkCount: number; embeddedChunkCount?: number }>
+    }
+    const mine = body.documents.filter((d) => d.name === name)
+    expect(mine.length, `${name} must be listed`).toBeGreaterThan(0)
+    for (const d of mine) {
+      expect(d.chunkCount, `${name} must be chunked`).toBeGreaterThan(0)
+      expect(
+        d.embeddedChunkCount,
+        `${name} must be fully embedded before the test proceeds (chunk ${d.embeddedChunkCount}/${d.chunkCount})`,
+      ).toBe(d.chunkCount)
+    }
+  }).toPass({ timeout: 90_000, intervals: [1_000, 2_000, 3_000] })
 }
 
 /**
@@ -211,39 +242,9 @@ test.describe('RAG citations', () => {
     await uploadDocument(page, DISTRACTOR.name, DISTRACTOR.body)
     await uploadDocument(page, ANSWER_DOC.name, ANSWER_DOC.body)
 
-    // WAIT FOR EMBEDDING TO FINISH before asking, on a signal that MEANS embedding finished.
-    //
-    // Embedding runs as a background job in the app's own worker — ONE JOB PER DOCUMENT, chunk by
-    // chunk — and the upload request returns before it runs. Asking immediately races it: a
-    // two-chunk document can be searched while only one chunk has a vector, so retrieval reads a
-    // corpus missing half the document and the citation assertion fails intermittently. That
-    // intermittency is the signature of a race, and it was confirmed against the database.
-    //
-    // THE FIRST TWO ATTEMPTS AT THIS WAIT WERE VACUOUS, and both were removed after checking:
-    //
-    //   1. Waiting for the card's `Ready` badge. `POST /api/documents` sets `status: 'ready'` at
-    //      upload, BEFORE embedding is even enqueued, so `Ready` is true the entire time. Measured:
-    //      a document with 1 of 2 chunks embedded still reported `ready`.
-    //   2. Waiting for a `Graph` badge (the cognify status). That field belongs to the COGNIFY job,
-    //      not the embed job; writing embed progress into it would give one value two meanings —
-    //      the defect this repo already documents as silent-failure class 13.
-    //
-    // So the API now exposes `embeddedChunkCount` (the count of chunks carrying a vector, alongside
-    // the existing `chunkCount`). That is a fact about embedding, it cannot be true early, and it is
-    // the same number the UI would need to show honest per-document progress.
-    await expect(async () => {
-      const res = await page.request.get('/api/documents')
-      expect(res.ok()).toBe(true)
-      const body = (await res.json()) as {
-        documents: Array<{ name: string; chunkCount: number; embeddedChunkCount?: number }>
-      }
-      const doc = body.documents.find((d) => d.name === ANSWER_DOC.name)
-      expect(doc, `${ANSWER_DOC.name} must be listed`).toBeTruthy()
-      expect(doc!.chunkCount).toBeGreaterThan(0)
-      // Fully embedded, not merely accepted.
-      expect(doc!.embeddedChunkCount).toBe(doc!.chunkCount)
-    }).toPass({ timeout: 90_000, intervals: [1_000, 2_000, 3_000] })
-
+    // Embedding is awaited INSIDE `uploadDocument` now — see the note there. It waits for every
+    // document with the uploaded name to be fully embedded, which also covers the duplicate this
+    // spec creates by uploading the same name from two tests.
     // Fixture guard: the answer code must appear in ONE document, or "the answering
     // document ranks first" is unsatisfiable (this is exactly how the first draft of this
     // test failed — two documents shared an answer and the assertion could never hold).
