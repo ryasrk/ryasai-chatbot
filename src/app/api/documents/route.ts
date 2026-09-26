@@ -62,6 +62,18 @@ export async function GET(req: NextRequest) {
         cognifyError: true,
         createdAt: true,
         _count: { select: { chunks: true } },
+        // EMBEDDING COMPLETENESS, which nothing exposed before.
+        //
+        // `POST /api/documents` sets `status: 'ready'` at upload, BEFORE the embed job is even
+        // enqueued, so the status badge cannot distinguish "accepted" from "searchable". Chunks
+        // are embedded by a background job — one job per document, chunk by chunk. MEASURED: a
+        // document can sit at `ready` with one of its two chunks vectorised and neither the API
+        // nor the UI could say so; retrieval then searched a corpus missing half the document,
+        // surfacing as an intermittently failing citation assertion rather than as an error.
+        //
+        // Counting vectorised chunks here makes the gap observable, so the UI can show real
+        // progress and a test can wait on the condition instead of on a timer.
+        chunks: { select: { embeddingJson: true } },
       },
     })
 
@@ -79,6 +91,7 @@ export async function GET(req: NextRequest) {
       cognifyError: d.cognifyError,
       createdAt: d.createdAt,
       chunkCount: d._count.chunks,
+      embeddedChunkCount: d.chunks.filter((c) => c.embeddingJson !== null).length,
     }))
 
     return NextResponse.json({ documents: data, total: data.length })

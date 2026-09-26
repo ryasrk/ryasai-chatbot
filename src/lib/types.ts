@@ -65,6 +65,14 @@ export interface DocumentItem {
   cognifyError?: string | null
   createdAt: string
   chunkCount: number
+  /**
+   * How many of those chunks actually carry a vector.
+   *
+   * `status: 'ready'` is set at UPLOAD, before the background embed job runs, so it does not mean
+   * "searchable". This is the only field that can distinguish a fully embedded document from one
+   * whose embedding is still in flight or partially failed.
+   */
+  embeddedChunkCount?: number
 }
 
 export interface ChatMessageItem {

@@ -349,6 +349,40 @@ export function startMockLlm(port = 4545): http.Server {
   return server
 }
 
+/**
+ * Resolve once the mock is actually ACCEPTING CONNECTIONS.
+ *
+ * `server.listen(port)` is asynchronous — it returns before the socket is bound. A caller that
+ * boots the app immediately afterwards can have the app's BullMQ worker dial the port and get
+ * `Unable to connect`. MEASURED: the production-build suite failed the RAG-citation spec with
+ * exactly that error on two consecutive runs, while the same spec passed on runs where the timing
+ * fell the other way. Awaiting this removes the coin flip.
+ */
+export function waitForMockLlm(port = 4545, timeoutMs = 10_000): Promise<void> {
+  const started = Date.now()
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const req = http.request(
+        { host: '127.0.0.1', port, path: '/v1/models', method: 'GET', timeout: 1_000 },
+        (res) => {
+          res.resume()
+          resolve()
+        },
+      )
+      req.on('error', () => {
+        if (Date.now() - started > timeoutMs) {
+          reject(new Error(`mock LLM on :${port} did not become ready within ${timeoutMs}ms`))
+          return
+        }
+        setTimeout(attempt, 50)
+      })
+      req.on('timeout', () => req.destroy())
+      req.end()
+    }
+    attempt()
+  })
+}
+
 // When run directly via bun
 if ((globalThis as Record<string, unknown>).Bun) {
   startMockLlm()
