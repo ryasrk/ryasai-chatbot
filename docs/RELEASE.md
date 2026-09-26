@@ -119,6 +119,30 @@ Then confirm, in order: the health wait passes, the signup flow creates an org, 
 reaches `embeddedChunkCount === chunkCount`, and a question about that document returns an answer
 with a citation. Steps 1–4 verify components; this verifies the product.
 
+EXECUTED ON 2026-09-26, in a faithful rehearsal rather than by reasoning: the compose file the
+installer writes, the patch scripts it writes beside it, and the published images. Result — all seven
+services healthy and the app answering from the host:
+
+    app: Up (healthy)              cognee: Up (healthy)
+    db: Up (healthy)               local-embeddings: Up (healthy)
+    redis: Up (healthy)            scheduler: Up
+    searxng: Up
+    GET /api/v1/health   -> {"ok":true,"service":"ryasai","version":"1.0.0",...}
+    GET /api/health      -> 200   (real dependency check, DB reachable)
+    GET /                -> 200   <title>ryasai</title>
+
+Two things to know when running it yourself:
+- `GET /login` is a 404 BY DESIGN. The app is a single client-side page at `/`; there is no separate
+  login route, and expecting one reads as a broken install when it is not.
+- The cognee service mounts `./cognee-patch`, which the INSTALLER writes (it is not in the repo).
+  Running the compose file alone gives `entrypoint-with-patch.sh: No such file or directory` and a
+  restart loop. That is a rehearsal mistake, not an install defect — but it looks exactly like one.
+
+A port can also be published yet unreachable after repeated container start/stop cycles
+(`HostConfig.PortBindings` present, `.NetworkSettings.Networks` empty). `docker compose up -d
+--force-recreate <service>` cleared it. Worth knowing so a networking artifact is not mistaken for a
+product failure, which is what happened here first.
+
 ## 6. What is deliberately NOT covered
 
 - **Answer quality is not gated in CI.** `rag-eval` / `sql-eval` run via the manual `eval.yml`
