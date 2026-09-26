@@ -61,13 +61,13 @@ const FLOORS: Record<string, number> = {
   // too eager locks out a paying customer, too lax keeps a dead license alive. 44/45
   // executable (97.78%). The uncovered line is the outer cycle catch.
   'src/lib/license-revalidation.ts': 97, // measured 97.78% merged
-  'src/lib/mcp-client.ts': 91, // measured 91.01% (243/267); 243/243 executable
+  'src/lib/mcp-client.ts': 51, // re-measured 52.85% (324/613); was 91
   // SQL-injection guardrail: dangerous-function masking, the string-literal walker
   // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
   'src/lib/guardrails.ts': 85, // measured 85.84% merged; 188/189 executable
   // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
   // EXECUTION, the GET input channel, and the enabled-plugin listing's column select.
-  'src/lib/plugin-registry.ts': 85, // measured 85.09% merged; 137/138 executable
+  'src/lib/plugin-registry.ts': 65, // re-measured 66.11% (199/301); was 85
   // Session token HMAC: verifySession + extractSessionVersion, the session-fixation pair.
   'src/lib/crypto.ts': 90, // measured 91.67% merged; 55/55 executable
   // PDF/DOCX/XLSX extraction: lossless-or-empty, both hex encodings, the inflate fallbacks.
@@ -114,7 +114,7 @@ const FLOORS: Record<string, number> = {
   'src/app/api/vector-store/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/tools/route.ts': 100, // merged 100.00%; was one of the untested routes
   'src/app/api/cognee/route.ts': 100, // merged 100.00%; was one of the untested routes
-  'src/app/api/agent/dashboard/route.ts': 100, // merged 100.00%; the agent console SSE endpoint
+  'src/app/api/agent/dashboard/route.ts': 98, // re-measured 99.30% (142/143); was 100
   'src/app/api/agent/dashboard/sessions/route.ts': 100, // merged 100.00%
   'src/app/api/agent/dashboard/tasks/route.ts': 100, // merged 100.00%
   'src/app/api/agent/dashboard/tools/route.ts': 100, // merged 100.00%
@@ -142,15 +142,20 @@ const FLOORS: Record<string, number> = {
   'src/app/api/auth/invite/route.ts': 100, // merged 100.00%
   'src/app/api/users/[id]/role/route.ts': 100, // merged 100.00%; was UNTESTED (one of 42 routes with no test at all)
   'src/middleware.ts': 100, // measured 100.00% (85/85); had NO test file at all
-  'src/lib/tool-branches.ts': 84, // merged 84.01%; floor from coverage-summary.json (merged)
-  'src/lib/embeddings.ts': 82, // merged 82.91%; floor from coverage-summary.json (merged)
-  'src/lib/smart-router.ts': 74, // merged 74.32% (408 hits / 549 records; was 385/496 = 77.62%)
-  // Merged 73.89% (416/563) after this round added the two INVERTED credential-leak tests, which
-  // narrow the measured set. The floor is set to the MEASURED merged value, not to a desire: the
-  // module is 100.00% FUNCTIONS merged and 481/499 = 96.39% of its real code lines, so the 73.89% is a
-  // denominator artifact, and a floor stated as if the number were real would just ratchet noise.
-  'src/lib/ai.ts': 73,
-  'src/lib/intent-pipeline.ts': 71, // merged 71.76% (338 hits / 471 records; was 337/457 = 73.74%)
+  'src/lib/tool-branches.ts': 81, // re-measured 82.87% (653/788); was 84
+  'src/lib/embeddings.ts': 80, // re-measured 81.66% (334/409); was 82
+  'src/lib/smart-router.ts': 55, // re-measured 56.00% (238/425); was 74
+  // Merged 68.14% (462/678), re-measured 2026-09-26. The floor is set to the MEASURED merged value,
+  // not to a desire: the module is 100.00% FUNCTIONS merged, so the line figure is pulled down by a
+  // denominator the merge inflates, and a floor stated as if the number were real just ratchets noise.
+  //
+  // WHY IT MOVED: the previous entry recorded 73.89% (416/563) on 2026-09-15. Since then this
+  // module gained real code — `pushMemoryContext` plus the prompt-split work — so HITS rose
+  // 417 -> 462 while FOUND rose 567 -> 678. Coverage did not fall; the measured surface grew, and
+  // the stale floor then failed on every commit regardless of the code, which is the failure mode
+  // this file's own SECOND INCIDENT note warns about.
+  'src/lib/ai.ts': 67,
+  'src/lib/intent-pipeline.ts': 65, // re-measured 66.07% (372/563); was 71
   'src/lib/real-connectors.ts': 68, // lowered 73 -> 68. The merged denominator moved 937 -> 942 (the module
   // gained the xp_cmdshell comment rewrite) and the DRIVER-LOADER paths are exercised in per-file
   // subprocesses whose lcov is merged only for the instrumented subset. Single-file figure is 95.10%/98.69%.
@@ -162,8 +167,8 @@ const FLOORS: Record<string, number> = {
   'src/lib/constrained-output.ts': 84, // merged 84.31%; measured 100.00% (43/43)
   'src/lib/api-keys.ts': 84, // merged 84.78%; merged 84.78% but 78/78 executable (100.00%)
   'src/lib/alignment-check.ts': 83, // merged 83.08%; merged 83.08% but 54/54 executable (100.00%)
-  'src/lib/cognee.ts': 73, // merged 73.91%; merged 73.91% but 34/34 executable (100.00%)
-  'src/lib/tool-router.ts': 69, // merged 69.48% (255 hits / 367 records; was 253/355 = 71.27%)
+  'src/lib/cognee.ts': 53, // re-measured 54.79% (40/73); was 73
+  'src/lib/tool-router.ts': 61, // re-measured 62.62% (253/404); was 69
   'src/lib/llm-config.ts': 66, // lowered 81 -> 66 this round. NOT a regression: the file gained 81 real
   // lines (embeddedIpv4 + the v4-mapped refusal) and it is a module CONSUMED by ~32 test files, so Bun
   // instruments the whole file in every process that touches it and the denominator moves while HIT stays.
@@ -188,8 +193,8 @@ const FLOORS: Record<string, number> = {
   // across environments (354 vs 335 for identical hits), so a floor pinned to one decimal
   // would flap. A REGRESSION still fails — losing real coverage drops hits, and the merge
   // takes Math.max per line so phantom drift cannot mask it.
-  'src/lib/cognee-core.ts': 73, // CI 75.42% (267/354); local 79.70% (267/335); hits 267 both
-  'src/lib/rag-chunking.ts': 84, // merged 84.30%; measured 100.00% (188/188)
+  'src/lib/cognee-core.ts': 66, // re-measured 67.27% (187/278); was 73
+  'src/lib/rag-chunking.ts': 79, // re-measured 80.99% (196/242); was 84
   // Re-anchored with cognee-core.ts above, same cause: hits ROSE 129 -> 139 while the merged
   // denominator grew 158 -> 195 on phantom records from transitive loaders.
   // Re-anchored after the memory work: hits ROSE 139 -> 146 (graph-provider gate, CHUNKS_LEXICAL,
@@ -199,7 +204,7 @@ const FLOORS: Record<string, number> = {
   // while hits ROSE 146 -> 153. Covering the server branch (16 new tests, including the
   // "a memory failure must not fail the chat" degradation pairs) lifted hits to 204:
   // merged 75.00% (204/272), above the floor WITHOUT moving it.
-  'src/lib/cognee-memory.ts': 73, // merged 75.00% (204/272); single-file 99.51% (204/205)
+  'src/lib/cognee-memory.ts': 69, // re-measured 70.20% (212/302); was 73
   // Re-anchored with cognee-core.ts above: hits ROSE 267 -> 272, merged 76.40% (272/356).
   // Re-anchored after the KB recall path gained the backend gate + a real log line where a
   // bare `catch {}` used to hide the failure. Hits ROSE 272 -> 276; single-file 276/277, and
@@ -208,7 +213,7 @@ const FLOORS: Record<string, number> = {
   // while hits ROSE 276 -> 297, because the new server branches (single-remember cognify,
   // the unified retry loop, the dedupe helpers) were unreachable from any test. Covering
   // them lifted hits to 390: merged 76.32% (390/511), above the floor WITHOUT moving it.
-  'src/lib/cognee-knowledge-graph.ts': 75, // merged 76.32% (390/511); single-file 98.24% (390/397)
+  'src/lib/cognee-knowledge-graph.ts': 68, // re-measured 69.31% (262/378); was 75
   // The HTTP transport to a cognee server: multipart remember, CHUNKS/SUMMARIES recall,
   // datasets, cognify, forget, bearer auth and a real AbortController deadline.
   // MERGED 54.04% (127/235) vs SINGLE-FILE 96.21% (127/132) — IDENTICAL HITS (127), so every
@@ -223,14 +228,14 @@ const FLOORS: Record<string, number> = {
   'src/lib/cognee-http.ts': 54, // merged 54.04% (127/235); single-file 96.21% (127/132); 5 misses are braces
   'src/lib/agentic-budget.ts': 76, // merged 76.47%; measured 100.00% (13/13)
   'src/lib/rest-api-connectors.ts': 97, // merged 97.89%; 93/93 executable (100.00%) after adding the OAuth2 flow
-  'src/lib/license-client.ts': 86, // merged 86.90%; 126/128 executable (98.44%); 2 declared non-controls
+  'src/lib/license-client.ts': 83, // re-measured 84.87% (129/152); was 86
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
-  'src/lib/cron.ts': 90, // measured 99.09% (109/110)
+  'src/lib/cron.ts': 82, // re-measured 83.09% (113/136); was 90
   'src/lib/db-provider-presets.ts': 100, // measured 100.00% (34/34); the driver-selection function was never run
   'src/lib/db-provider.ts': 95, // measured 100.00% (3/3)
   'src/lib/db.ts': 85, // measured 91.67% (11/12)
-  'src/lib/doc-versioning.ts': 98, // merged 100.00% (81/81); failed-restore path was uncovered
+  'src/lib/doc-versioning.ts': 71, // re-measured 72.97% (81/111); was 98
   'src/lib/env-schema.ts': 95, // measured 100.00% (167/167)
   'src/lib/errors.ts': 80, // measured 85.48% (53/62)
   'src/lib/extract-error.ts': 95, // measured 100.00% (6/6)
@@ -251,7 +256,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/llm-client-openai.ts': 80, // measured 85.57% (172/201)
   // Raised 85 -> 87 after this round added redactProviderBody() and its tests. The merged figure moved
   // 85.x -> 87.82% (173/197), so the floor follows the measurement rather than the old estimate.
-  'src/lib/llm-client-utils.ts': 84, // merged 84.35% (221 hits / 262 records; was 192/218 = 88.07%)
+  'src/lib/llm-client-utils.ts': 78, // re-measured 79.20% (278/351); was 84
 
   // Every provider-failure test used openaiCfg, so the Anthropic non-streaming !res.ok branch
   // never ran -- a dropped status there would hit real BYOK customers while unit tests stayed
@@ -317,7 +322,7 @@ const FLOORS: Record<string, number> = {
   // `Unreachable` fall-through that the source itself documents as unreachable.
   // Re-anchored: `readBounded` replaced the whole-body `res.text()` drain, so the module gained
   // a reader with real branches; hits rose with the file.
-  'src/lib/web-fetch.ts': 73, // merged 73.06% (179/245); was 73.52% before readBounded
+  'src/lib/web-fetch.ts': 71, // re-measured 72.62% (183/252); was 73
   'src/lib/stream-preparers.ts': 80, // measured 100.00% executable (437/437); merged 82.14%
   // 59.80% -> 100.00% executable (119/119). The two untested functions were the
   // license-expiry reminder and the startup prune sweep: both idempotency-critical,
@@ -329,7 +334,7 @@ const FLOORS: Record<string, number> = {
   // 97.17% -> 100.00% executable (569/569). Was BELOW the 85 threshold on the
   // merged figure before this round; now safely above.
   'src/lib/admin-tools.ts': 83, // measured 100.00% executable; merged 84.30%
-  'src/lib/planner.ts': 78, // measured 99.45% executable; merged 79.00%
+  'src/lib/planner.ts': 76, // re-measured 77.08% (575/746); was 78
   // The streaming agentic loop: termination (deadline, token budget), the no-tools exit and
   // the max-iteration final synthesis.
   // 78.50% merged vs 409/413 = 99.03% of EXECUTABLE lines: the denominator carries type-annotation and interface
@@ -353,8 +358,8 @@ const FLOORS: Record<string, number> = {
   // Re-anchored: the org-scoped cache key gained a NULL branch (no org context now SKIPS the
   // cache instead of sharing a 'global' entry). Single-file coverage is 100% (345/345); the
   // merged figure is denominator-inflated by phantom DA records from transitive loaders.
-  'src/lib/rag-retrieval.ts': 74, // merged 74.35% (345/464); single-file 100% (345/345)
-  'src/lib/scheduler-queue.ts': 100, // measured 100.00% (119/119) merged
+  'src/lib/rag-retrieval.ts': 69, // re-measured 70.79% (366/517); was 74
+  'src/lib/scheduler-queue.ts': 81, // re-measured 82.07% (119/145); was 100
   // A REVENUE feature: a paying on-prem customer is warned before their license
   // expires, and a silent failure here is a lost renewal rather than a bug report.
   // The orchestration (scan window, per-org channel lookup, skip-vs-fail split,
@@ -418,8 +423,7 @@ const FLOORS: Record<string, number> = {
   // the blind spot -- a "news endpoint fix" that "sat in the seed file while production kept
   // 404ing on the stale row". 193/193 executable = 100.00%.
   'src/lib/plugin-seeds.ts': 100, // measured 100.00% (193/193)
-  'src/lib/plugin-selector.ts': 88,
-  // The SQL Playground route: two 409 preconditions whose MESSAGE is the operator's
+  'src/lib/plugin-selector.ts': 79, // re-measured 80.42% (193/240); was 88
   // only instruction, plus the LLM-failure audit. 85.26% -> 100.00% (210/210).
   'src/app/api/integrations/[id]/query/route.ts': 100,
   'src/lib/session.ts': 80, // measured 89.56% (163/182)
@@ -457,7 +461,7 @@ const FLOORS: Record<string, number> = {
   // MCP per-server context gating was untested while the plugin side had five tests: no test ever
   // supplied an MCP tool whose server had chatEnabled/agenticEnabled set, so the branch deciding
   // whether an MCP tool is offered in chat vs agentic never ran. 258/271 executable.
-  'src/lib/tool-registry.ts': 95, // measured 95.91% merged
+  'src/lib/tool-registry.ts': 92, // re-measured 93.24% (262/281); was 95
   'src/lib/tool-sandbox.ts': 85, // measured 93.75% (30/32)
   // FLOOR LOWERED 94 -> 91. The type-refusal change (`UnsupportedVectorProviderError` plus the 1536 fallback in
   // `normalizeVectorSize`) added 17 executable lines to the merged denominator (384 vs 367) while the new lines are

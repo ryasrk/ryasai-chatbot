@@ -92,10 +92,48 @@ async function main() {
   // Keeping the two scripts in agreement matters more than the literal values: a
   // suite that PASSES under test.ts and then reports degraded coverage under
   // coverage.ts measures the harness, not the code.
+  /**
+   * Blank an ambient variable ONLY when it is already set.
+   *
+   * Bun does not override an env var that is already present, so an empty string is the only form
+   * that beats `.env` in the child. But ABSENT must stay absent: `E2E_TEST_MODE` is validated as
+   * `z.enum(['true','false']).optional()`, and `''` fails that enum while `undefined` passes.
+   * Applying the empty string unconditionally turned 8 env-schema tests red.
+   */
+  const blankIfPresent = (key: string): Record<string, string> =>
+    process.env[key] === undefined ? {} : { [key]: '' }
+
   const env = {
     ...process.env,
     ENCRYPTION_SECRET_KEY: process.env.ENCRYPTION_SECRET_KEY ?? 'deadbeef'.repeat(8),
     DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit_test_unreachable',
+    // Suppressed to the EMPTY STRING, matching scripts/test.ts exactly.
+    //
+    // MEASURED FAILURE this fixes: `run.ts` set these but `coverage.ts` did not, so every
+    // coverage run loaded `.env` and inherited `LLM_ALLOWED_HOSTS=127.0.0.1,localhost` — the
+    // documented setting that lets an install reach a loopback embedding server. That flips the
+    // DEFAULT SECURITY POSTURE of `isBlockedHost()`, and six test files that assert the default
+    // went red: llm-config, web-fetch, mcp-client, mcp-installer, plugin-registry,
+    // tool-branches-branches (~18 failures). Each of those files PASSES under `bun run test`
+    // and FAILED under `bun run coverage`, which is the divergence this file's own header warns
+    // about: "a suite that PASSES under test.ts and then reports degraded coverage under
+    // coverage.ts measures the harness, not the code."
+    //
+    // The cost was not just red CI: the failed files inflate the MERGED denominator, so 21
+    // per-file floors read as breached (cognee.ts 54.79% against a floor of 73, smart-router
+    // 56.00 against 74, ai.ts 68.14 against 73). The gate was measuring the harness.
+    //
+    // The empty-string form is deliberate and load-bearing — `delete` lets the child re-load
+    // `.env`, and `--no-env-file` is unreliable for `bun test`. Only the AMBIENT value is
+    // suppressed; a test that sets the allowlist itself still works.
+    // ONLY blank a key that is already present. `test.ts` guards this with
+    // `if (TEST_ENV[key] !== undefined)` and the guard is load-bearing, not cautious:
+    // `E2E_TEST_MODE` is `z.enum(['true','false']).optional()` in env-schema.ts, and setting it to
+    // the EMPTY STRING fails that enum — `optional()` permits `undefined`, not `''`. Blanking it
+    // unconditionally introduced 8 failures in env-schema.test.ts that did not exist before.
+    ...blankIfPresent('LLM_ALLOWED_HOSTS'),
+    ...blankIfPresent('LLM_ALLOW_BLOCKED_HOSTS'),
+    ...blankIfPresent('E2E_TEST_MODE'),
   }
   const queue = [...files]
   const lcovChunks: string[] = []
