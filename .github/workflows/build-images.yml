@@ -4,6 +4,21 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
+  # Manual trigger, because `push` alone cannot recover this situation: the published image set
+  # and the referenced image set can drift, and the drift is INVISIBLE until someone installs.
+  #
+  # MEASURED: the `:embeddings` build step was added on 2026-09-24 18:42, but the last workflow run
+  # was 2026-09-24 02:43 — 16 hours earlier. `install.sh` generates a compose file that pulls
+  # `ghcr.io/ryasrk/ryasai-chatbot:embeddings`, and that tag did not exist. Reproduced end to end
+  # through the installer's own artifacts: `docker compose pull` returned
+  # "failed to resolve reference ...:embeddings: not found", exit 1 — so `curl … | bash` failed with
+  # "Failed to pull prebuilt images" and no build fallback, i.e. NOBODY COULD INSTALL THE PRODUCT.
+  # Every other referenced image (app, scheduler, cognee, pgvector, redis, searxng) resolved; only
+  # this one was missing.
+  #
+  # With a manual trigger, publishing an image no longer requires a code change, so the gap between
+  # "a build step exists" and "the tag is reachable" can be closed deliberately.
+  workflow_dispatch:
 
 permissions:
   contents: read
