@@ -115,9 +115,34 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Redis, for the SAME reason the coverage job needs it — and the e2e job had it missing.
+      #
+      # MEASURED FAILURE this fixes: without a reachable Redis the app never becomes healthy under
+      # `next dev`, so Playwright's webServer wait expires at 120 s WITHOUT running a single test and
+      # the job's 30-minute cap turns it into a cancelled run. Reproduced locally by pointing
+      # REDIS_URL at a dead port: health never returned and no test started.
+      #
+      # Every observable signal said "the e2e suite hangs", which is what made this hard to see: the
+      # logs filled with `[ioredis] Unhandled error event: connect ECONNREFUSED` retries rather than
+      # a failure, because BullMQ's connection is configured to retry forever
+      # (`maxRetriesPerRequest: null`). Nothing failed; it waited.
+      #
+      # WHY CI AND NOT LOCAL: `.env` supplies `REDIS_URL=redis://localhost:6379`, and a developer
+      # machine usually has Redis running, so the divergence is invisible locally. CI has no `.env`
+      # and — until now — no Redis service in this job, only Postgres.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       E2E_DATABASE_URL: postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e
       ENCRYPTION_SECRET_KEY: cca10b7d1b0e1d1a2f99a3f4c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
 
