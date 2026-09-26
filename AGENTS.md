@@ -498,7 +498,7 @@ Resolved by the 2026-09 audit (kept here so they are not re-introduced):
 
 ## Silent-failure classes found by probing
 
-Nineteen defects across eleven rounds shared one shape: **the code reported success for work it had
+Twenty defects across twelve rounds shared one shape: **the code reported success for work it had
 not done, or dropped data on the way out** — and every one was found by executing a probe, not by
 reading the code. The full catalogue, with measurements and the reasoning for each fix, lives in
 **`docs/silent-failure-classes.md`**. Read it before trusting a guard, reversing a test's
@@ -525,6 +525,7 @@ expectation, or changing how a prompt is delivered.
 | 17 | a guard that cannot fail | ask "what would make this false?" before trusting it |
 | 18 | a fixture uploaded twice, asserted by ranking | a duplicate document makes a retrieval assertion non-deterministic |
 | 19 | a published artifact set drifting from the referenced set | "a build step exists" is not "the tag is reachable" |
+| 20 | two harnesses for one suite, configured differently | the gate measured the harness, not the code |
 
 **Rules that follow from these:**
 
