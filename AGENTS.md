@@ -523,7 +523,7 @@ expectation, or changing how a prompt is delivered.
 | 15 | the same input, two routes, one sample | a gate "fixed" on the strength of a single odd run |
 | 16 | a status meaning "accepted" read as "ready" | a document is searchable only in part, and nothing says so |
 | 17 | a guard that cannot fail | ask "what would make this false?" before trusting it |
-| 18 | a test-harness ordering guarantee that does not exist | `webServer` starts the app BEFORE `globalSetup` runs the mocks |
+| 18 | a fixture uploaded twice, asserted by ranking | a duplicate document makes a retrieval assertion non-deterministic |
 
 **Rules that follow from these:**
 

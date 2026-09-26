@@ -172,19 +172,25 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
    attempt (`embeddedChunkCount === chunkCount`) was verified against the database to differ from
    the naive value mid-run, so it can genuinely fail.
 
-18. **A test-environment ordering guarantee that does not exist.** `playwright.prod.config.ts` starts
-   the app under test via `webServer`, which Playwright launches BEFORE `globalSetup` runs. The app's
-   BullMQ worker therefore starts and dials the embedding endpoint before the mocks exist — visible
-   in the log as `[worker] job failed: document-embed Unable to connect` appearing ABOVE
-   `[global-setup] Starting mock LLM on :4545`. The job retries on BullMQ's schedule (30s backoff)
-   and usually recovers, which is why this presented as a flake rather than a failure. Adding
-   readiness waits to `global-setup` cannot fix it, because the app is already up by then; the fix
-   belongs on the app side or in how the harness launches it.
-   **Residual, recorded honestly:** the citation spec still flakes if a previous run was killed
-   mid-flight and left orphaned queue jobs. Six consecutive production-build runs: 16/16 when the
-   queue was clean at start, 15/16 when orphans were present. The seed clears the queue, but only at
-   the NEXT run's start, so a killed run poisons the one after it.
+18. **A test that uploads the same fixture twice, then asserts on a retrieval ranking.** The
+   citation spec uploads `e2e-answer.txt` from TWO tests. Both create a `Document` row with that
+   name, `uploadDocument` waited only for the NAME to be on screen, and one duplicate could still be
+   embedding while the other was fully embedded — so the assertion passed or failed depending on
+   which duplicate retrieval ranked. MEASURED from the database rather than from timing:
+   `chunks=2, distinct_chunkIndex=1`, two rows with the same name, one chunk vectorised and one not.
+   This also explains why PASSING runs showed only 3 of 4 chunks vectorised: the assertion does not
+   need every chunk, it needs the RIGHT chunk.
+   **A duplicate fixture makes a retrieval assertion non-deterministic**, and the fix is to make the
+   upload helper wait for the specific condition the assertion depends on — every document with that
+   name fully embedded.
 
+   **A RETRACTED intermediate finding, kept because the mistake is instructive.** An earlier version
+   of this entry asserted that `playwright.prod.config.ts` starts the app before `globalSetup` runs
+   the mocks, and blamed the flake on that ordering. The ordering IS real (visible in the log: the
+   worker reports before "[global-setup] Starting mock LLM"), but it was NOT the cause — the seed
+   cleared the queue, the job retried, and the genuine cause was the duplicate above. The lesson is
+   the one this catalogue keeps repeating: an observed irregularity that COULD explain a symptom is
+   not evidence that it does. After the real fix: 4 consecutive production-build runs, 16/16 each.
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
