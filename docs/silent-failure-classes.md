@@ -151,6 +151,40 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
    classes 7 and 12 were real, so the prior is strong and has to be checked against the current
    measurement, not assumed from it.
 
+
+16. **A status that means "accepted" while every reader assumes "ready".** `POST /api/documents` set
+   `status: 'ready'` at upload and THEN enqueued the embed job, so `ready` never meant "searchable".
+   Chunks embed in a background job, one job per document, chunk by chunk, and nothing marked the
+   transition. MEASURED: a document sat at `status=ready` with `embedded=0` of `chunk=1`, and
+   retrieval read a corpus missing half the document. No API field and no UI element could tell a
+   fully embedded document from one still in flight, so the only symptom was an intermittently
+   failing citation assertion — and flakiness is exactly how this class hides.
+   **When a status word has a weaker meaning than everyone assumes, either strengthen the writer or
+   expose the fact that actually matters** — here, `embeddedChunkCount` beside `chunkCount`.
+
+17. **A guard that cannot fail — twice in one sitting, from the same instinct.** The wait added for
+   class 16 was written, checked, and REMOVED twice:
+     - "the card shows `Ready`" — true from upload onwards, so it could never fail.
+     - "the card shows `Graph`" — implemented by writing embed progress into `cognifyStatus`, a field
+       owned by the COGNIFY job. That would have given one value two meanings (class 13), recreated
+       in the very act of fixing class 16.
+   Both were caught by asking "what would make this assertion FALSE?" before trusting it. The third
+   attempt (`embeddedChunkCount === chunkCount`) was verified against the database to differ from
+   the naive value mid-run, so it can genuinely fail.
+
+18. **A test-environment ordering guarantee that does not exist.** `playwright.prod.config.ts` starts
+   the app under test via `webServer`, which Playwright launches BEFORE `globalSetup` runs. The app's
+   BullMQ worker therefore starts and dials the embedding endpoint before the mocks exist — visible
+   in the log as `[worker] job failed: document-embed Unable to connect` appearing ABOVE
+   `[global-setup] Starting mock LLM on :4545`. The job retries on BullMQ's schedule (30s backoff)
+   and usually recovers, which is why this presented as a flake rather than a failure. Adding
+   readiness waits to `global-setup` cannot fix it, because the app is already up by then; the fix
+   belongs on the app side or in how the harness launches it.
+   **Residual, recorded honestly:** the citation spec still flakes if a previous run was killed
+   mid-flight and left orphaned queue jobs. Six consecutive production-build runs: 16/16 when the
+   queue was clean at start, 15/16 when orphans were present. The seed clears the queue, but only at
+   the NEXT run's start, so a killed run poisons the one after it.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
