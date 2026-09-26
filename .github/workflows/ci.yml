@@ -153,6 +153,26 @@ jobs:
 
       # The app build itself is validated by build-images.yml; this job proves
       # the e2e DB + mock stack works from a clean checkout.
+      # Clear Turbopack's dev cache and its lock before the suite.
+      #
+      # MEASURED FAILURE, and the reason this step exists even though CI starts from a clean
+      # checkout: `next dev` refuses to start when `.next/dev/lock` is present —
+      #   "Unable to acquire lock at .next/dev/lock, is another instance of next dev running?"
+      # — and Playwright then waits on the health URL until its own 120 s webServer timeout, with
+      # NO test ever running. The e2e job's 30-minute cap turns that into a cancelled run, which is
+      # what a red `e2e` job looked like on 2026-09-26.
+      #
+      # The cache can also CORRUPT rather than merely stale: observed Turbopack panicking with
+      # "Unable to open static sorted file 00008610.sst / No such file or directory" against a
+      # 952 MB `.next/dev` holding zero `.sst` files. A dev server that dies that way never serves
+      # health either, so it presents identically.
+      #
+      # Both modes are affected in sequence because the e2e job runs `bun run e2e` (next dev) and
+      # then `bun run e2e:prod` (standalone) in the SAME workspace; a lock left by the first blocks
+      # anything that needs Turbopack afterwards.
+      - name: Clear dev cache and lock
+        run: rm -rf .next/dev
+
       - name: Run e2e suite (dev server)
         run: bun run e2e
 
