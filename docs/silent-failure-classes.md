@@ -191,6 +191,36 @@ tokenizer dropped "berapa"/"what" as stop-words and broke legitimate plugin matc
    cleared the queue, the job retried, and the genuine cause was the duplicate above. The lesson is
    the one this catalogue keeps repeating: an observed irregularity that COULD explain a symptom is
    not evidence that it does. After the real fix: 4 consecutive production-build runs, 16/16 each.
+
+19. **A published artifact set that drifted from the referenced set, invisible until install.** The
+   `:embeddings` build step was added to `build-images.yml` on 2026-09-24 18:42; the last workflow
+   run was 2026-09-24 02:43, sixteen hours earlier. `install.sh` generates a compose file that pulls
+   `ghcr.io/ryasrk/ryasai-chatbot:embeddings`, and the tag did not exist — so `docker compose pull`
+   returned `not found`, exit 1, and the installer aborted with "Failed to pull prebuilt images" and
+   no build fallback. **NOBODY COULD INSTALL THE PRODUCT**, and nothing in the repo said so: the
+   YAML was correct, the Dockerfile was correct, the tag sets matched, and every local gate was
+   green.
+   **The tell is that "a build step EXISTS" and "the artifact is REACHABLE" are different facts**
+   and only the second one serves a customer. Guard the static half (every referenced tag is also a
+   build target) and keep the runtime half on a release checklist — and say in the guard which half
+   it cannot see, so it is not mistaken for proof of the other.
+   The image itself was fine, verified by building it: 1.85 GB CPU-only, healthy in 120s, 384-dim,
+   and it resolves the HR/SDM synonym pair at cosine 0.7357 versus -0.0779 for an unrelated topic.
+
+**A sub-lesson from the guard written against class 19.** Its negative control — renaming the build
+target to `:embeddings-disabled` — PASSED when it should have failed, because the workflow's
+explanatory COMMENT mentions `ghcr.io/ryasrk/ryasai-chatbot:embeddings` and the regex matched the
+prose. That is class 1 (a guard matching a WORD, not a CALL) reappearing inside the guard for a
+different class. Strip comments before matching a declarative file; a comment is not a build step.
+
+**A note on my own investigation, because it nearly produced a false bug report.** While reading
+`install.sh` I concluded the generated compose referenced `ryasai-net` without defining it, and was
+about to report a second blocker. It was wrong: the compose is assembled from THREE heredocs, and my
+extractor stopped at the first `EOF` (which belonged to a nested one). Assembling all three gave a
+VALID compose with 8 services, the network and all four volumes. A extraction tool that silently
+truncates produces a confident finding about code that is fine — the same shape as the probe that
+read `.tables` off a function returning an array.
+
 **Rules that follow from these:**
 
 - Trace a value from its SOURCE to its CONSUMER and check each hop, rather than assuming that
