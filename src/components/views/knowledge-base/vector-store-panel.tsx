@@ -52,14 +52,31 @@ export function VectorStorePanel() {
     fetch('/api/vector-store', { cache: 'no-store' })
       .then((res) => res.json())
       .then((json) => {
-        if (cancelled || !json.ok || !json.data) return
+        if (cancelled) return
+        /*
+         * ANY absence of a usable answer sets `loadError` — not just a thrown fetch.
+         *
+         * This used to `return` silently when `json.ok` was false, and `handleApiError` reports every
+         * server-side failure as exactly that (a 500 with `{ error }`). The component then rendered its
+         * DEFAULTS — INTERNAL, `ryasai_chunks`, 1536, Cosine — as though they were the org's saved
+         * configuration, with no banner and the Save button ENABLED. Pressing Save would write those
+         * placeholder values over a real Qdrant/Milvus/Pinecone/Chroma config, silently. The loadError
+         * banner exists precisely to stop this ("Saving may overwrite existing configuration"), and the
+         * one path that most needed it was the one path that skipped it.
+         */
+        if (!json?.ok || !json.data) {
+          setLoadError(true)
+          return
+        }
         setProvider(json.data.provider ?? 'INTERNAL')
         setBaseUrl(json.data.baseUrl ?? '')
         setCollectionName(json.data.collectionName ?? 'ryasai_chunks')
         setVectorSize(String(json.data.vectorSize ?? 1536))
         setDistance(json.data.distance ?? 'Cosine')
       })
-      .catch(() => { if (!cancelled) setLoadError(true) })
+      .catch(() => {
+        if (!cancelled) setLoadError(true)
+      })
     return () => {
       cancelled = true
     }

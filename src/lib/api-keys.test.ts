@@ -256,3 +256,66 @@ describe('requireExternalApiKey', () => {
     expect(mockApiRequestLogCount).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The AUTH path must carry the key's scope out to its callers.
+ *
+ * WHY THIS BLOCK EXISTS. `requireExternalApiKey` is the only place that reads the scope columns, and
+ * `identity.scope` is the only thing the transports enforce. Neither hop had a test: every existing
+ * test above builds a mock row with NO scope columns at all, so they would all still pass if the
+ * `allowedIntegrationIds`/`allowedDocumentIds`/`allowedTools` entries were deleted from the `select`.
+ * That is silent-failure class 3 (a field selected but never mapped) with the select removed: the
+ * caller would receive `scope: { allowedX: [] }`, every array empty, which this codebase defines as
+ * UNRESTRICTED — so a scoped key would be silently promoted to full access and nothing would error.
+ */
+describe('requireExternalApiKey — the key scope is transported, not dropped', () => {
+  function mockRow(scope: Record<string, unknown>) {
+    const key = generateApiKey()
+    mockApiKeyFindMany.mockImplementation(async () => [
+      {
+        id: 'key-scoped', label: 'scoped', keyHash: key.hash,
+        requestLimitPerMinute: null, dailyRequestLimit: null, ...scope,
+      },
+    ])
+    return key
+  }
+
+  test('a scoped key reports its restriction on the identity', async () => {
+    const key = mockRow({
+      allowedIntegrationIds: ['erp'],
+      allowedDocumentIds: ['doc-1'],
+      allowedTools: ['RAG'],
+    })
+    const identity = await requireExternalApiKey(
+      new NextRequest('http://localhost/', { headers: { Authorization: `Bearer ${key.plainText}` } }),
+    )
+    expect(identity.scope.allowedIntegrationIds).toEqual(['erp'])
+    expect(identity.scope.allowedDocumentIds).toEqual(['doc-1'])
+    expect(identity.scope.allowedTools).toEqual(['RAG'])
+  })
+
+  test('the SELECT actually requests the scope columns', async () => {
+    // Asserts on the query args, not on the row: a dropped `select` would otherwise be invisible
+    // because the mock returns whatever it is given. This is the hop that has no other guard.
+    const key = mockRow({ allowedDocumentIds: ['doc-1'] })
+    await requireExternalApiKey(
+      new NextRequest('http://localhost/', { headers: { Authorization: `Bearer ${key.plainText}` } }),
+    )
+    const args = mockApiKeyFindMany.mock.calls[0]?.[0] as { select?: Record<string, boolean> }
+    expect(args?.select?.allowedIntegrationIds).toBe(true)
+    expect(args?.select?.allowedDocumentIds).toBe(true)
+    expect(args?.select?.allowedTools).toBe(true)
+  })
+
+  test('a pre-feature key with no scope columns stays unrestricted', async () => {
+    // The migration promise: keys created before scoping existed must keep full access. Their rows have
+    // empty arrays, so the identity must report unrestricted rather than denied.
+    const key = mockRow({ allowedIntegrationIds: [], allowedDocumentIds: [], allowedTools: [] })
+    const identity = await requireExternalApiKey(
+      new NextRequest('http://localhost/', { headers: { Authorization: `Bearer ${key.plainText}` } }),
+    )
+    expect(identity.scope.allowedIntegrationIds).toEqual([])
+    expect(identity.scope.allowedDocumentIds).toEqual([])
+    expect(identity.scope.allowedTools).toEqual([])
+  })
+})

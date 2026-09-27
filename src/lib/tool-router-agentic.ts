@@ -222,8 +222,19 @@ export async function runAgenticLoop(
     budget?: TokenBudget
     skipClarification?: boolean
     systemPromptPrefix?: string
+    /**
+     * Retrieval scope, forwarded on EVERY iteration.
+     *
+     * WITHOUT THIS the loop re-enters with `documentIds: undefined`, which `retrieveRelevantChunks`
+     * documents as "every document" — so an API key scoped to one document set reads the WHOLE org from
+     * the second turn of a session onward. The route always passes `allowMultiStepDag: true` and
+     * `chatHistory` is non-empty from turn two, so the trigger is ordinary use, and the failure is
+     * fail-OPEN and invisible: answers look correct, they are just built from documents the key may not
+     * read.
+     */
+    documentIds?: string[] | null
   },
-  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string }) => Promise<CompletionResult>,
+  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null }) => Promise<CompletionResult>,
 ): Promise<AgenticIterationResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -263,6 +274,7 @@ export async function runAgenticLoop(
         chatHistory: args.chatHistory,
         skipClarification: args.skipClarification,
         systemPromptPrefix: args.systemPromptPrefix,
+        documentIds: args.documentIds,
       }))
     } catch (e) {
       if (e instanceof AgenticDeadlineError) {
@@ -364,6 +376,7 @@ export async function runAgenticLoop(
       chatHistory: args.chatHistory,
       skipClarification: args.skipClarification,
       systemPromptPrefix: args.systemPromptPrefix,
+      documentIds: args.documentIds,
     }))
   } catch (e) {
     if (e instanceof AgenticDeadlineError) {
@@ -388,8 +401,12 @@ export async function runStreamingAgenticLoop(
     systemPromptPrefix?: string
     budget?: TokenBudget
     onConfidence?: (info: { iteration: number; confidence: number; reason: string; confident: boolean }) => void
+    /** See `runAgenticLoop` — same contract, both transports. Omitting it here would leave the
+     *  streaming transport scoped while the non-streaming one was not, which is the kind of asymmetry
+     *  that makes a bug unreproducible from whichever transport you happen to test. */
+    documentIds?: string[] | null
   },
-  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string }) => Promise<StreamingCompletionResult>,
+  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null }) => Promise<StreamingCompletionResult>,
 ): Promise<StreamingCompletionResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -426,6 +443,7 @@ export async function runStreamingAgenticLoop(
           chatHistory: args.chatHistory,
           skipClarification: args.skipClarification,
           systemPromptPrefix: args.systemPromptPrefix,
+          documentIds: args.documentIds,
         }))
       } catch (e) {
         if (e instanceof AgenticDeadlineError) {
@@ -567,6 +585,7 @@ export async function runStreamingAgenticLoop(
         chatHistory: args.chatHistory,
         skipClarification: args.skipClarification,
         systemPromptPrefix: args.systemPromptPrefix,
+        documentIds: args.documentIds,
       }))
     } catch (e) {
       if (e instanceof AgenticDeadlineError) {

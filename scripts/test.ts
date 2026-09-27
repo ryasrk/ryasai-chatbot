@@ -67,7 +67,17 @@ const files: string[] = []
 // artifacts most likely to be quoted as findings, were the one thing with no
 // automated check. Both benchmark test files are fully mocked (no live Postgres,
 // no network, no cognee server), so this costs one subprocess each.
-for await (const f of new Bun.Glob('{src,benchmark}/**/*.test.ts').scan()) {
+//
+// `.tsx` IS INCLUDED, and this was a real hole rather than a nicety: the glob used to be
+// `**/*.test.ts`, which does NOT match `.test.tsx`. MEASURED: `cognee-diagnostics-render.test.tsx` was
+// collected by nothing and had NEVER RUN in CI. A component test that never runs is worse than no test —
+// it looks like coverage of a surface nothing checks. `scripts/coverage.ts` globs the same narrow pattern,
+// so such a file does not even show up as missing there.
+//
+// This is the SECOND instance of this shape inside one loop (`benchmark/` before, `.tsx` now), which is why
+// the fix belongs in the glob: renaming one file leaves the next one to fail the same way. A guard in
+// `release-images.test.ts` now asserts this glob covers both extensions.
+for await (const f of new Bun.Glob('{src,benchmark}/**/*.test.{ts,tsx}').scan()) {
   if (isIntegration(f) !== runIntegration) continue
   files.push(f)
 }

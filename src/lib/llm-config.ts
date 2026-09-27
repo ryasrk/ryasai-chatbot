@@ -291,24 +291,48 @@ export async function getAgentLlmConfig(): Promise<LlmRuntimeConfig | null> {
 
 export type LlmRole = 'extract' | 'query' | 'keyword' | 'vlm' | 'chat' | 'agent'
 
-const _roleCache = new Map<LlmRole, { config: LlmRuntimeConfig | null; ts: number }>()
+/*
+ * KEYED BY ORG **AND** ROLE. The org half is not optional.
+ *
+ * It was `Map<LlmRole, ...>` — one entry per role for the WHOLE PROCESS. MEASURED with two orgs holding
+ * different configs: org-A resolved `https://A.example/model-A`, and org-B then resolved
+ * `https://A.example/model-A` too — org A's endpoint AND API KEY, for up to 30 seconds, inside org B's
+ * request. Every caller of `getRoleLlmConfig` was exposed (intent-pipeline, hyde, knowledge-graph, rag
+ * rerank, embeddings, alignment-check, reflexion, simple-pipeline, source-init), including paths reached
+ * from the scoped external API.
+ *
+ * `getLlmRuntimeConfig` refuses to read without an org context; this cache bypassed that guard by short-
+ * circuiting before it. Putting the org in the key restores the same isolation, and a null key (no org
+ * context) skips the cache entirely rather than sharing one entry.
+ */
+const _roleCache = new Map<string, { config: LlmRuntimeConfig | null; ts: number }>()
 const ROLE_CACHE_TTL = 30_000 // 30s — config rarely changes mid-session
+
+/** Cache key, or null when there is no org context — in which case NO cache is used. */
+function roleCacheKey(role: LlmRole): string | null {
+  const orgId = getOrgContext()
+  return orgId ? `${orgId}:${role}` : null
+}
 
 export async function getRoleLlmConfig(role: LlmRole): Promise<LlmRuntimeConfig | null> {
   // Fast path: chat and agent use existing resolvers
   if (role === 'chat') return getLlmRuntimeConfig()
   if (role === 'agent') return getAgentLlmConfig()
 
-  // Check cache
-  const cached = _roleCache.get(role)
-  if (cached && Date.now() - cached.ts < ROLE_CACHE_TTL) return cached.config
+  // Check cache. A null key means there is no org context: skip the cache entirely rather than fall
+  // through to a shared entry, which is the cross-tenant bug this key exists to prevent.
+  const key = roleCacheKey(role)
+  if (key) {
+    const cached = _roleCache.get(key)
+    if (cached && Date.now() - cached.ts < ROLE_CACHE_TTL) return cached.config
+  }
 
   // Look for a role-specific config row
   const row = await db.llmConfig.findFirst({ where: { purpose: role } })
   if (!row) {
     // Fall back to chat config — role-specific is opt-in
     const fallback = await getLlmRuntimeConfig()
-    _roleCache.set(role, { config: fallback, ts: Date.now() })
+    if (key) _roleCache.set(key, { config: fallback, ts: Date.now() })
     return fallback
   }
 
@@ -319,7 +343,7 @@ export async function getRoleLlmConfig(role: LlmRole): Promise<LlmRuntimeConfig 
     apiKey: decryptApiKey(row.encryptedApiKey),
     model: row.model,
   }
-  _roleCache.set(role, { config, ts: Date.now() })
+  if (key) _roleCache.set(key, { config, ts: Date.now() })
   return config
 }
 

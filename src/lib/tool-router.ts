@@ -103,6 +103,11 @@ async function _runNonStreamingChatCompletion(args: {
       question: args.question, userId: args.userId, sessionId: args.sessionId,
       integrationId: args.integrationId, chatHistory: args.chatHistory,
       skipClarification: args.skipClarification, systemPromptPrefix: args.systemPromptPrefix,
+      // FORWARDED, and this line is load-bearing. The streaming sibling below spreads `...args` and so
+      // carried it by accident; this one builds an explicit object, and the omission made an API key's
+      // document scope fail OPEN from the second turn of a session onward — `undefined` means "every
+      // document" to retrieval, and the route always sets `allowMultiStepDag: true`.
+      documentIds: args.documentIds,
     }, runNonStreamingChatCompletion)
     return remember({ answer: result.answer, citations: result.citations, chartData: result.chartData, toolRuns: result.toolRuns })
   }

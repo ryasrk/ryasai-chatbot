@@ -203,3 +203,41 @@ describe('installer: the cognee healthcheck window must exceed its measured boot
     expect(sp + interval * retries).toBeGreaterThanOrEqual(300)
   })
 })
+
+describe('test harness: the runner and the coverage script must collect .tsx tests', () => {
+  /**
+   * MEASURED GAP: both scripts globbed only dot-test-dot-ts, which does NOT match the .tsx variant. So a component
+   * test could neither RUN (`scripts/test.ts`) nor appear in the coverage report as a file whose coverage
+   * was never measured (`scripts/coverage.ts`).
+   *
+   * `src/components/views/cognee-diagnostics-render.test.tsx` was in exactly that state — written, present
+   * in the tree, and executed by nothing. A test that never runs is worse than no test: it looks like
+   * coverage of a surface nothing actually checks, and its assertions can rot silently.
+   *
+   * Two narrow globs in two scripts is why this is guarded at the PATTERN rather than by renaming the file:
+   * the same shape had already occurred once in this loop for `benchmark/`, and renaming one file leaves
+   * the next `.tsx` to fail identically.
+   */
+  const repoRoot = join(import.meta.dir, '..', '..')
+
+  test('the runner collects both extensions', () => {
+    const runner = readFileSync(join(repoRoot, 'scripts', 'test.ts'), 'utf-8')
+    expect(runner).toContain('*.test.{ts,tsx}')
+  })
+
+  test('the coverage script collects both extensions', () => {
+    const cov = readFileSync(join(repoRoot, 'scripts', 'coverage.ts'), 'utf-8')
+    expect(cov).toContain('*.test.{ts,tsx}')
+  })
+
+  test('the glob actually matches a real .tsx test on disk', async () => {
+    // Behavioural, not textual: the pattern must FIND the file, so a future glob that looks right but
+    // resolves wrong still fails here.
+    const glob = new Bun.Glob('{src,benchmark}/**/*.test.{ts,tsx}')
+    const found: string[] = []
+    for await (const f of glob.scan()) found.push(f)
+    const tsx = found.filter((f) => f.endsWith('.tsx'))
+    expect(tsx.length).toBeGreaterThan(0)
+    expect(tsx.some((f) => f.includes('cognee-diagnostics-render'))).toBe(true)
+  })
+})

@@ -90,7 +90,25 @@ export function UploadDialog({
       const res = await fetch('/api/documents', { method: 'POST', body: fd })
       const json = await res.json()
       if (res.ok && json.document) {
-        toast.success('Document uploaded & processed.')
+        /*
+         * "Uploaded", not "uploaded & processed".
+         *
+         * The route creates the row with `status: 'ready'` at UPLOAD and then ENQUEUES the embed and
+         * cognify jobs (`jobsQueued: true` in its own audit detail); `status: 'ready'` is set before
+         * either has run, so nothing about the response means the text is searchable yet. Telling the
+         * user it was "processed" is the same unearned claim that produced the original complaint
+         * ("kenapa processing sangat lamaaa") — here it would send them straight to the chat expecting
+         * their document to be answerable while the embedding is still in flight.
+         *
+         * The chunk count IS known at this point, so it is reported when present rather than implied.
+         */
+        const chunks = typeof json.document.chunkCount === 'number' ? json.document.chunkCount : null
+        toast.success('Document uploaded', {
+          description:
+            chunks === null
+              ? 'Embedding and indexing have been queued.'
+              : `${chunks} chunk${chunks === 1 ? '' : 's'} queued for embedding and indexing.`,
+        })
         reset()
         onUploaded()
       } else if (res.status === 413) {

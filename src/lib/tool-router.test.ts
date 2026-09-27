@@ -103,7 +103,15 @@ const mockSelectToolWithLlm = mock(async (_args: {
   needsMultipleTools?: boolean
   reason: string
   llmUsed: boolean
-}> => {
+  /**
+   * `| null` matches the REAL signature (`Promise<ToolSelection | null>`).
+   *
+   * The mock declared a non-nullable return, so a test that legitimately exercises the no-LLM path —
+   * `selectToolWithLlm` returning null, the signal the fallback router keys off — could not typecheck.
+   * `tool-selector.ts` returns null in four places (`!cfg`, no tools, and two failure paths), so the
+   * mock's type was the thing that was wrong, not the branch under test.
+   */
+} | null> => {
   smartRouteOrder?.push('smartRoute')
   return { toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }
 })
@@ -2084,3 +2092,34 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     // comment nobody reads.
   })
 })
+  describe('no LLM available — the fail-closed fallback router is used', () => {
+    /**
+     * COVERAGE GATE FINDING, not a hypothetical: lines 481-482 of `tool-router.ts` were the only
+     * uncovered lines in this file, and they are the branch a deployment reaches when the provider is
+     * unconfigured or transiently failing.
+     *
+     * `selectToolWithLlm` returning null is the documented "no LLM" signal. The code then falls back to
+     * `routeQuery` rather than failing the request, because a hard failure here would take chat down for
+     * a deployment whose only problem is a provider blip.
+     *
+     * Untested, this branch could regress to a throw and nothing would notice — the failure would appear
+     * only on the installs least able to report it.
+     */
+    test('selectToolWithLlm === null routes through routeQuery and still answers', async () => {
+      mockSelectToolWithLlm.mockImplementationOnce(async () => null)
+      mockRouteQuery.mockImplementationOnce(async () => ({
+        decision: 'CHAT' as RouteDecision,
+        reason: 'no LLM configured',
+      }))
+
+      const res = await runNonStreamingChatCompletion({
+        question: 'hello',
+        userId: 'u1',
+        skipClarification: true,
+      })
+
+      // The fallback was consulted, and the answer came back rather than an error.
+      expect(mockRouteQuery).toHaveBeenCalled()
+      expect(res.answer).toBeTruthy()
+    })
+  })

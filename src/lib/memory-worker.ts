@@ -1,4 +1,4 @@
-import { Worker, type Job } from 'bullmq'
+import { Worker, UnrecoverableError, type Job } from 'bullmq'
 
 import { redis } from '@/lib/redis'
 import { enterWithOrg } from '@/lib/prisma-tenant'
@@ -50,7 +50,7 @@ export function resetMemoryWorkerForTest(): void {
 export async function performMemoryWrite(jobData: MemoryWriteJob): Promise<void> {
   const { getCogneeServerOptions } = await import('@/lib/cognee-core')
   const { cogneeRemember } = await import('@/lib/cognee-http')
-  const { datasetFor } = await import('@/lib/cognee-types')
+  const { datasetFor, writeNotStored, capWritePayload } = await import('@/lib/cognee-types')
   const { MEMORY_WRITE_MAX_CHARS } = await import('@/lib/constants')
 
   const opts = await getCogneeServerOptions()
@@ -62,14 +62,26 @@ export async function performMemoryWrite(jobData: MemoryWriteJob): Promise<void>
     return
   }
 
-  const text = JSON.stringify({
-    type: 'chat_turn',
-    user: jobData.userMessage,
-    assistant: jobData.aiMessage,
-    tools: jobData.toolRuns,
-    sessionId: jobData.sessionId,
-    ts: Date.now(),
-  }).slice(0, MEMORY_WRITE_MAX_CHARS)
+  /*
+   * THE SAME CAPPING RULE AS THE INLINE PATH, invoked rather than restated.
+   *
+   * This was `.slice(0, MEMORY_WRITE_MAX_CHARS)` — a SILENT clip, while the inline path went through
+   * `capWritePayload`, which appends a marker. MEASURED: a turn of twice the limit reached the sidecar
+   * clipped to exactly the limit and UNMARKED, so nothing could tell a clipped turn from one that ended
+   * there. `cognee-memory.ts`'s comment above the queue call asserted both paths called this function;
+   * they did not, which is exactly the divergence that comment existed to prevent.
+   */
+  const text = capWritePayload(
+    JSON.stringify({
+      type: 'chat_turn',
+      user: jobData.userMessage,
+      assistant: jobData.aiMessage,
+      tools: jobData.toolRuns,
+      sessionId: jobData.sessionId,
+      ts: Date.now(),
+    }),
+    MEMORY_WRITE_MAX_CHARS,
+  )
 
   const res = await cogneeRemember(opts, {
     texts: [text],
@@ -84,7 +96,7 @@ export async function performMemoryWrite(jobData: MemoryWriteJob): Promise<void>
   if (res.error) {
     throw new Error(`cognee rejected the write: ${res.error}`)
   }
-  if (res.status === 'running' || res.items_processed === 0) {
+  if (writeNotStored(res)) {
     /*
      * THE CONCURRENTLY-REFUSED CASE, and the reason this worker retries rather than ignores.
      *
@@ -93,9 +105,11 @@ export async function performMemoryWrite(jobData: MemoryWriteJob): Promise<void>
      * with exponential backoff, so the turn is written once the pipeline frees up instead of being
      * dropped — the decision taken for this product.
      *
-     * `rememberChatTurn` keeps its own detection for the inline path; this duplication is deliberate.
-     * The queue path must not depend on a function whose contract is "never throws" (it is
-     * fire-and-forget at its call sites), or every retry here would be invisible.
+     * The predicate is SHARED with the inline path and with document cognify (`writeNotStored` in
+     * cognee-types) rather than restated here: three copies of the same rule is how two of them came
+     * to be missing it. What must stay local is the DECISION — the queue path THROWS where the inline
+     * path only warns, because a throw is what makes BullMQ retry and a `rememberChatTurn` contract
+     * of "never throws" (it is fire-and-forget at its call sites) would swallow every retry.
      */
     throw new Error(
       `memory write not stored (status=${res.status ?? 'n/a'}, items_processed=${res.items_processed ?? 'n/a'}) — retrying`,
@@ -115,10 +129,28 @@ export function startMemoryWorker(): Worker<MemoryWriteJob> {
   _worker = new Worker<MemoryWriteJob>(
     MEMORY_QUEUE_NAME,
     async (job: Job<MemoryWriteJob>) => {
-      // The job carries its org, so no DB lookup is needed — but the CONTEXT still has to be entered,
-      // because `datasetFor()` reads it from AsyncLocalStorage rather than from an argument. Getting
-      // this wrong writes another tenant's turn into this dataset, which is the cross-tenant failure
-      // this module must not introduce.
+      /*
+       * The job carries its org, so no DB lookup is needed — but the CONTEXT still has to be entered,
+       * because `datasetFor()` reads it from AsyncLocalStorage rather than from an argument. Getting
+       * this wrong writes another tenant's turn into this dataset, which is the cross-tenant failure
+       * this module must not introduce.
+       *
+       * AN EMPTY ORG IS REFUSED, not entered. `enterWithOrg('')` sets the context to an EMPTY STRING,
+       * and `datasetFor()`'s `?? 'no-org'` fallback only fires on undefined — so the write resolved to
+       * the bare dataset `org:` and was reported as stored. Verified through this processor. The
+       * producer now refuses to enqueue such a job, and this is the second gate: a job that reached
+       * Redis before that fix (or from a future call site) must not silently create a shared dataset.
+       * An UNRECOVERABLE error, not a plain throw, so BullMQ fails it immediately instead of spending
+       * five attempts on a payload that cannot become valid.
+       */
+      if (!job.data.organizationId) {
+        log.warn('memory write refused: job carries no organizationId, so it has no dataset', {
+          jobId: job.id,
+        })
+        throw new UnrecoverableError(
+          'memory write job has no organizationId — refusing to write to a shared dataset',
+        )
+      }
       enterWithOrg(job.data.organizationId)
       await performMemoryWrite(job.data)
     },

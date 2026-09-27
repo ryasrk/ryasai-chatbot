@@ -25,6 +25,28 @@ import { formatSize } from './helpers'
 // Char cap matches the server-side limit on Document.contextPrompt (spec §API).
 const DOC_PROMPT_MAX = 4000
 
+/**
+ * What a versions response means.
+ *
+ * A pure function so the distinction can be TESTED — the component is a Dialog, and Radix's portal,
+ * focus-scope and dismissable-layer primitives need a real browsing context (`new CustomEvent` +
+ * `document.dispatchEvent` across jsdom's realm), which this suite's jsdom shim cannot provide. The
+ * decision that matters is here, where it can be exercised directly.
+ *
+ * `'failed'` exists because the two outcomes are NOT interchangeable: an empty list is a fact about the
+ * document, while a failed request is a fact about this request. Reporting the first when the second
+ * happened tells an admin there is nothing to restore when the history was merely unreadable.
+ */
+export function versionsOutcome(
+  ok: boolean,
+  payload: unknown,
+): { outcome: 'loaded'; versions: Array<{ id: string; version: number; createdAt: string }> } | { outcome: 'failed' } {
+  if (!ok) return { outcome: 'failed' }
+  const versions = (payload as { versions?: unknown } | null)?.versions
+  if (!Array.isArray(versions)) return { outcome: 'failed' }
+  return { outcome: 'loaded', versions: versions as Array<{ id: string; version: number; createdAt: string }> }
+}
+
 export function DocDetailDialog({
   doc,
   onClose,
@@ -219,15 +241,28 @@ function VersionHistory({ docId }: { docId: string }) {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  /**
+   * The version list could not be read.
+   *
+   * `load` swallowed every failure, so a 500 or a dropped connection rendered the SAME output as a
+   * document that genuinely has no snapshots: "No snapshots yet." That is a definite claim about the
+   * customer's data made from no evidence, and it is the reassuring direction — an admin who was told
+   * there is nothing to restore has no reason to retry or investigate.
+   */
+  const [loadFailed, setLoadFailed] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadFailed(false)
     try {
       const res = await fetch(`/api/documents/${docId}/versions`, { cache: 'no-store' })
-      const j = await res.json()
-      if (res.ok && Array.isArray(j.versions)) setVersions(j.versions)
+      const j = await res.json().catch(() => null)
+      // The decision is delegated so it can be tested without mounting a Dialog.
+      const result = versionsOutcome(res.ok, j)
+      if (result.outcome === 'loaded') setVersions(result.versions)
+      else setLoadFailed(true)
     } catch {
-      // silent fail — versions are optional
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -279,6 +314,21 @@ function VersionHistory({ docId }: { docId: string }) {
       {loading ? (
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
           <Loader2 className="h-3 w-3 animate-spin" /> Loading versions…
+        </div>
+      ) : loadFailed ? (
+        // Distinct from "none": one is a fact about the document, the other about this request.
+        <div className="flex items-center justify-between gap-2 py-1">
+          <p className="text-xs text-destructive">
+            Could not load snapshot history.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void load()}
+            className="h-6 text-xs"
+          >
+            Retry
+          </Button>
         </div>
       ) : versions.length === 0 ? (
         <p className="text-xs text-muted-foreground italic py-1">No snapshots yet.</p>

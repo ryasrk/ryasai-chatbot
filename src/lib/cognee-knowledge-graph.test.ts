@@ -859,6 +859,37 @@ describe('server backend — cognifyDocument issues ONE remember call', () => {
     expect(last.status).toBe('failed')
     expect(last.error).toBe('embedding dimension mismatch')
   })
+
+  test('a REFUSED write (HTTP 200, status running, 0 items) is FAILED, not completed', async () => {
+    /*
+     * THE false success this file was missing, and the reason the check now lives in ONE place.
+     *
+     * `res && !res.error` was the entire test here, so the sidecar's refusal shape —
+     * `{"status":"running","items_processed":0,"pipeline_run_id":null}`, returned with HTTP 200 while a
+     * dataset's pipeline is busy — fell through to `completed` and returned `true`. MEASURED before the
+     * fix: `cognifyDocument` returned `true` and pushed `cognifyStatus: 'completed'` for a document
+     * nothing had stored.
+     *
+     * WHY THIS ONE IS NOT COVERED BY THE WRITE QUEUE. The KB dataset is `org:<id>:kb`; the queue
+     * serialises the CHAT dataset (`org:<id>`). And a document wrongly marked `completed` is never
+     * retried, because `cognifyBatch`'s eligibility query excludes `completed` rows — so the document
+     * stays unsearchable forever with every surface reporting success.
+     *
+     * A refusal is also the ORDINARY case under load: any upload overlapping a chat turn hits it.
+     */
+    core.serverOptions = SERVER_OPTS
+    httpState.rememberResult = { status: 'running', items_processed: 0, pipeline_run_id: null }
+    expect(await cognifyDocument(docs[0])).toBe(false)
+    const last = core.updateCalls[core.updateCalls.length - 1]
+    expect(last.status).toBe('failed')
+    // The reason must be actionable: it names the two fields the sidecar used to say "nothing stored".
+    expect(last.error).toContain('items_processed=0')
+    // And the control: the same call with a stored result still completes.
+    core.updateCalls = []
+    httpState.rememberResult = { status: 'completed', items_processed: 1 }
+    expect(await cognifyDocument(docs[0])).toBe(true)
+    expect(core.updateCalls.map((c) => c.status)).toEqual(['processing', 'completed'])
+  })
 })
 
 describe('server backend — recall', () => {
@@ -1101,9 +1132,77 @@ describe('server backend — forget / reset', () => {
     expect(await forgetAll()).toBe(true)
     expect(httpState.forgetCalls).toHaveLength(1)
   })
+
+  test('resetCognee reports FAILURE when the sidecar ANSWERS false, not only when it throws', async () => {
+    /*
+     * THE MISSING HALF OF THE FIX ABOVE, and it was still live.
+     *
+     * The test above reversed the assertion for a THROWN forget and documents why a false success is the
+     * worst outcome for a GDPR wipe. But `cogneeForget` does not throw when the sidecar refuses — it
+     * returns `false` (its documented graceful-degradation contract), and `resetCognee` only handled the
+     * `catch`. So the exact failure the sibling test exists to prevent was still reachable through the
+     * OTHER failure shape: MEASURED with `cogneeForget -> false`, `resetCognee()` returned `true` and
+     * cleared every `cognifyStatus` while the memory was still there.
+     *
+     * `forgetAll` and `forgetKnowledgeGraph` both already checked the boolean — this function was the
+     * outlier, which is the "one function in a family gets the rule right, its sibling does not" pattern.
+     */
+    core.serverOptions = SERVER_OPTS
+    httpState.forgetResult = false
+    expect(await resetCognee()).toBe(false)
+    // The statuses must NOT be cleared, or the app would believe documents are unindexed.
+    expect(dbState.updateManyCalls).toHaveLength(0)
+  })
+
+  test('resetCognee on a stored payload still succeeds and clears statuses (the control)', async () => {
+    // Without this direction an unconditional `return false` would satisfy the test above.
+    core.serverOptions = SERVER_OPTS
+    httpState.forgetResult = true
+    expect(await resetCognee()).toBe(true)
+    expect(dbState.updateManyCalls).toHaveLength(1)
+  })
 })
 
 describe('server backend — cognifyBatch retry loop', () => {
+  test('a REFUSED batch is retried and never counted as processed', async () => {
+    /*
+     * The batch twin of the `cognifyDocument` defect, and the more damaging of the two: MEASURED before
+     * the fix, `cognifyBatch` returned `{processed: 1, failed: 0}` and marked every document `completed`
+     * for a write the sidecar had refused with HTTP 200 / `items_processed: 0`. The admin UI renders that
+     * count, so the corpus reported as fully cognified while none of it was stored.
+     *
+     * A refusal must also be treated as TRANSIENT here. It means the dataset's pipeline was busy, and the
+     * retry succeeds once it frees — that is the same reasoning the write queue is built on. Scripted so
+     * attempt 1 is refused and attempt 2 stores, which is the real sequence rather than an inference.
+     */
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    httpState.rememberScript = {
+      1: { status: 'running', items_processed: 0, pipeline_run_id: null },
+      2: { status: 'completed', items_processed: 1, pipeline_run_id: 'x' },
+    }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(2)
+    expect(res).toEqual({ processed: 1, failed: 0, skipped: 0 })
+    expect(core.updateCalls.map((c) => c.status)).toEqual(['processing', 'completed'])
+  }, 15000)
+
+  test('a batch refused on EVERY attempt is FAILED, never reported as processed', async () => {
+    // The other direction: without it, "retries and succeeds" would not distinguish a loop that
+    // eventually gives up correctly from one that reports success regardless of the outcome.
+    core.serverOptions = SERVER_OPTS
+    core.settings = { cognifyBatchSize: 5, cognifyMaxRetries: 3 }
+    httpState.rememberResult = { status: 'running', items_processed: 0, pipeline_run_id: null }
+    const res = await cognifyBatch({ documents: docs })
+    expect(httpState.rememberCalls).toHaveLength(3)
+    expect(res).toEqual({ processed: 0, failed: 1, skipped: 0 })
+    const statuses = core.updateCalls.map((c) => c.status)
+    expect(statuses).toContain('failed')
+    expect(statuses).not.toContain('completed')
+    const failed = core.updateCalls.find((c) => c.status === 'failed')
+    expect(failed!.error).toContain('did not store')
+  }, 15000)
+
   test('a batch of two documents rides ONE remember call', async () => {
     core.serverOptions = SERVER_OPTS
     core.settings = { cognifyBatchSize: 2, cognifyMaxRetries: 2 }

@@ -27,8 +27,17 @@ mock.module('@/lib/cognee-http', () => ({
   },
 }))
 
-mock.module('@/lib/cognee-types', () => ({
-  datasetFor: () => 'org:test',
+// `writeNotStored` is imported from the REAL cognee-types module rather than restated here: a second
+// copy of the refusal rule is the defect this run fixed, and a stub returning `false` would make every
+// refusal test below vacuous. Only its org lookup is stubbed, so `datasetFor()` resolves to a fixed
+// dataset without depending on AsyncLocalStorage.
+const tenantState = { entered: [] as string[] }
+mock.module('@/lib/prisma-tenant', () => ({
+  getOrgContext: () => 'test',
+  enterWithOrg: (orgId: string) => {
+    tenantState.entered.push(orgId)
+  },
+  bypassOrg: async (fn: () => Promise<unknown>) => fn(),
 }))
 
 mock.module('@/lib/constants', () => ({
@@ -120,5 +129,71 @@ describe('performMemoryWrite — the payload', () => {
     // Must be false: a backgrounded write returns before the data is searchable, so the very next
     // turn's recall would miss the fact we just "stored".
     expect(args.runInBackground).toBe(false)
+  })
+})
+
+/**
+ * The WORKER's own admission gate: an org-less job must be REFUSED, not written.
+ *
+ * `startMemoryWorker` is invoked here with `bullmq`'s Worker replaced by a class that captures the
+ * processor, so the assertions run against the REAL closure the worker registers rather than a copy of
+ * its two lines — a copy would keep passing if the guard were deleted from the original.
+ *
+ * WHY IT MATTERS. `enterWithOrg('')` sets the AsyncLocalStorage context to an EMPTY STRING, and
+ * `datasetFor()`'s `?? 'no-org'` fallback only fires on undefined, so an org-less job resolves to the
+ * bare dataset `org:`. Measured through this exact processor before the guard: the write went to `org:`
+ * and was reported as stored. Recall needs the same context, so that dataset is never read back — a
+ * silent loss, and every org-less caller appended to one shared dataset that grows without limit.
+ *
+ * `UnrecoverableError` rather than a plain throw: the condition cannot become true on retry, so BullMQ
+ * must fail the job immediately instead of spending all five attempts on it.
+ */
+describe('startMemoryWorker — the org-context admission gate', () => {
+  // Captured by the class below. Shared across the two tests in this block so the control can drive the
+  // SAME processor the refusal test captured, rather than re-registering and testing a second closure.
+  let processor: ((j: unknown) => Promise<unknown>) | null = null
+
+  test('an EMPTY organizationId is refused and nothing is written', async () => {
+    const { UnrecoverableError } = await import('bullmq')
+    mock.module('bullmq', () => ({
+      UnrecoverableError,
+      Worker: class {
+        constructor(_name: string, fn: (j: unknown) => Promise<unknown>) {
+          processor = fn
+        }
+        on() {
+          return this
+        }
+      },
+    }))
+    const { startMemoryWorker, resetMemoryWorkerForTest } = await import('./memory-worker')
+    resetMemoryWorkerForTest()
+    startMemoryWorker()
+    expect(processor).not.toBeNull()
+
+    state.calls = []
+    tenantState.entered = []
+    await expect(
+      (processor as unknown as (j: unknown) => Promise<unknown>)({
+        data: { ...job, organizationId: '' },
+        id: 'j1',
+      }),
+    ).rejects.toBeInstanceOf(UnrecoverableError)
+    // Neither the context nor the transport may be touched.
+    expect(tenantState.entered).toEqual([])
+    expect(state.calls).toHaveLength(0)
+  })
+
+  test('a real organizationId IS entered and the write proceeds (the control)', async () => {
+    // Without this direction, a processor that refused EVERY job would satisfy the test above.
+    state.rememberResult = { status: 'completed', items_processed: 1 }
+    state.calls = []
+    tenantState.entered = []
+    await (processor as unknown as (j: unknown) => Promise<unknown>)({
+      data: { ...job, organizationId: 'org-real' },
+      id: 'j2',
+    })
+    expect(tenantState.entered).toEqual(['org-real'])
+    expect(state.calls).toHaveLength(1)
   })
 })

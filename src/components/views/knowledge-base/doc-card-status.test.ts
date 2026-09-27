@@ -20,6 +20,19 @@ import { join } from 'node:path'
  * Asserting on the SOURCE rather than rendering, because the defect is about control flow (when does
  * polling stop) and a render of a static prop cannot observe a timer that never fires.
  */
+/*
+ * RENAMED FROM `.tsx` SO IT ACTUALLY RUNS.
+ *
+ * MEASURED: `scripts/test.ts` collects `{src,benchmark}/**\/*.test.ts`, and that glob does not match
+ * `.test.tsx`. This file (and `cognee-diagnostics-render.test.tsx`) were therefore absent from the
+ * runner's file set — they had NEVER RUN IN CI. A test the runner cannot see is worse than no test,
+ * because it reports safety. This file contains no JSX, so the extension was the only obstacle.
+ *
+ * The assertions below are still SOURCE-level, and two of them were negative-controlled this session:
+ * the ceiling and terminal-state guards do fail when their defect is planted. Where an assertion could
+ * not be made to fail (`null counts as UNSETTLED`), it has been rewritten to read the actual rule and the
+ * polling CONSEQUENCE is asserted by request count in `doc-card-polling.test.ts`.
+ */
 const src = readFileSync(join(import.meta.dir, 'doc-card.tsx'), 'utf-8')
 const viewSrc = readFileSync(join(import.meta.dir, '..', 'knowledge-base-view.tsx'), 'utf-8')
 
@@ -58,8 +71,19 @@ describe('doc card — polling must continue until the state is terminal', () =>
   })
 
   test('it stops at a TERMINAL state, not after a fixed number of looks', () => {
-    // Both terminal values, or a `failed` document would be polled forever.
-    expect(code).toMatch(/next\.cognifyStatus === 'completed' \|\| next\.cognifyStatus === 'failed'/)
+    /*
+     * ANCHORED ON THE INVOCATION PLUS THE `return` IT GUARDS, not on the inline comparison.
+     *
+     * The old expectation was `/next\.cognifyStatus === 'completed' \|\| next\.cognifyStatus === 'failed'/`
+     * — it pinned ONE SPELLING of the terminal rule rather than the behaviour, so centralising that rule
+     * into the exported `isCognifySettled()` predicate broke the assertion while the polling was still
+     * correct. Text that merely restates the implementation cannot survive the implementation moving,
+     * which is the same failure mode this file already documents for `8_000)`.
+     *
+     * The rule's TRUTH TABLE is asserted behaviourally, and negative-controlled, in
+     * `doc-card-polling.test.ts`. What is checked here is that the loop USES it and actually stops.
+     */
+    expect(code).toMatch(/if \(isCognifySettled\(next\.cognifyStatus\)\) \{[\s\S]{0,200}?return/)
   })
 
   test('the poll is bounded, so a job that never settles cannot spin forever', () => {
@@ -68,12 +92,28 @@ describe('doc card — polling must continue until the state is terminal', () =>
   })
 
   test('null counts as UNSETTLED, so a row with no status yet keeps polling', () => {
-    // Treating `null` as terminal is how the card would stop before a job even started: a row created
-    // before the cognify step was queued has no value at all.
-    const settled = code.slice(code.indexOf('const cognifySettled'))
-    expect(settled).toContain("=== 'completed'")
-    expect(settled).toContain("=== 'failed'")
-    expect(settled).not.toMatch(/cognifyStatus === null\)/)
+    /*
+     * REWRITTEN AFTER A NEGATIVE CONTROL SHOWED IT PROVED NOTHING.
+     *
+     * It used to slice the source from `const cognifySettled` and demand the two terminal comparisons be
+     * present in that slice. Adding `|| status === null` to the terminal rule — the exact defect the test
+     * names in its own title — left the suite at 10 pass / 0 fail. The slice began at the RENDER call
+     * site, but the rule had since been extracted into `isCognifySettled`, so the assertions were
+     * checking a region that could not contain what they claimed to guard. Third-recurrence of the
+     * weakness this file's header already documents for `8_000)`.
+     *
+     * The TRUTH TABLE is now asserted on the real predicate, and the POLLING CONSEQUENCE is asserted by
+     * request count in `doc-card-polling.test.ts` ("a NULL status keeps the poll going") — where planting
+     * `|| status === null` produces 1 fail. This assertion stays here only as a fast, local statement of
+     * the invariant.
+     */
+    const rule = code.slice(code.indexOf('export function isCognifySettled'))
+    const body = rule.slice(0, rule.indexOf('\n}'))
+    expect(body).toContain("=== 'completed'")
+    expect(body).toContain("=== 'failed'")
+    // A null check must NOT be part of the terminal rule.
+    expect(body).not.toMatch(/=== null/)
+    expect(body).not.toMatch(/!\s*status/)
   })
 })
 

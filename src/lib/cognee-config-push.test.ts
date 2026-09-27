@@ -258,14 +258,24 @@ describe('cognee provider push — the endpoint is DROPPED by the sidecar, and w
   test('a sidecar that DID store the endpoint gets a clean success', async () => {
     // Guards against the flag being hardcoded true: a future cognee that supports endpoints must not
     // keep telling operators to edit a file they no longer need to touch.
+    //
+    // The read-back echoes the PUSHED model. It used to answer `openai/x`, which is a DIFFERENT model
+    // from the one sent (`openai/cbcn/deepseek-v4.1-flash`) — the old code never looked at `stored.model`,
+    // so the fixture could be unrealistic and the test still passed. Now that a model mismatch is
+    // reported, this fixture must represent what the test claims to exercise: a sidecar that stored
+    // everything correctly. The mismatch case has its own tests below.
     state.respond = () =>
-      new Response(JSON.stringify({ llm: { model: 'openai/x', endpoint: 'https://proxy.example/v1' } }), {
-        status: 200,
-      })
+      new Response(
+        JSON.stringify({
+          llm: { model: 'openai/cbcn/deepseek-v4.1-flash', endpoint: 'https://proxy.example/v1' },
+        }),
+        { status: 200 },
+      )
     const r = await pushCogneeProviderConfig()
     expect(r.ok).toBe(true)
     expect(r.endpointNeedsEnv).toBeUndefined()
     expect(r.error).toBeUndefined()
+    expect(r.modelMismatch).toBeUndefined()
   })
 
   test('an unreadable read-back does not fabricate a warning', async () => {
@@ -280,5 +290,78 @@ describe('cognee provider push — the endpoint is DROPPED by the sidecar, and w
     const r = await pushCogneeProviderConfig()
     expect(r.ok).toBe(true)
     expect(r.endpointNeedsEnv).toBeUndefined()
+    // Same rule for the model: an unreadable sidecar must not be reported as holding the wrong model.
+    expect(r.modelMismatch).toBeUndefined()
+    expect(r.error).toBeUndefined()
+  })
+})
+
+describe('cognee provider push — the MODEL read-back was fetched and discarded', () => {
+  /**
+   * MEASURED before the fix, with a stubbed settings endpoint: a sidecar answering `{"llm":{"model":""}}`
+   * (it stored nothing) and one answering a DIFFERENT model both produced
+   * `ok: true, detail: "Shared openai/<the model we sent> at <endpoint>"`.
+   *
+   * `readCogneeProviderConfig()` was already being called — for its `endpoint` alone. `stored.model` was
+   * read and thrown away, so the reported detail and the audit row described the INTENT rather than what
+   * the sidecar kept. That is the module's own documented failure mode: a sidecar that silently extracts
+   * with the wrong model, while every surface says the push landed.
+   *
+   * `ok` stays true because provider and key were genuinely accepted; what is reported is the gap.
+   */
+  test('a sidecar holding a DIFFERENT model is reported, not claimed as shared', async () => {
+    state.respond = () =>
+      new Response(
+        JSON.stringify({ llm: { model: 'openai/gpt-4o', endpoint: 'https://proxy.example/v1' } }),
+        { status: 200 },
+      )
+    const r = await pushCogneeProviderConfig()
+    expect(r.ok).toBe(true)
+    expect(r.modelMismatch).toBe(true)
+    // The detail must name what the SIDECAR holds, so an operator reads reality not intent.
+    expect(r.detail).toContain('openai/gpt-4o')
+    expect(r.error).toContain('openai/gpt-4o')
+    // The remedy is stated, and the key still must not ride along.
+    expect(r.error).toMatch(/Push again/)
+    expect(JSON.stringify(r)).not.toContain('sk-secret-value')
+  })
+
+  test('a sidecar holding NO model is reported as such, not as a successful share', async () => {
+    // The restart case named in this module's docstring: cognee's settings are in-memory, so a restart
+    // empties them. `''` is what the endpoint returns then — and `!stored.model` must be treated as a
+    // mismatch, since an empty model is not the model we sent.
+    state.respond = () =>
+      new Response(JSON.stringify({ llm: { model: '', endpoint: 'https://proxy.example/v1' } }), {
+        status: 200,
+      })
+    const r = await pushCogneeProviderConfig()
+    expect(r.ok).toBe(true)
+    expect(r.modelMismatch).toBe(true)
+    expect(r.detail).toContain('(no model)')
+    expect(r.error).toContain('"')
+  })
+
+  test('an exactly-matching model is NOT flagged (the control)', async () => {
+    // Without this direction, `modelMismatch: true` unconditional would satisfy both tests above.
+    state.respond = () =>
+      new Response(
+        JSON.stringify({
+          llm: { model: 'openai/cbcn/deepseek-v4.1-flash', endpoint: 'https://proxy.example/v1' },
+        }),
+        { status: 200 },
+      )
+    const r = await pushCogneeProviderConfig()
+    expect(r.modelMismatch).toBeUndefined()
+    expect(r.detail).not.toContain('but the sidecar reports')
+  })
+
+  test('the endpoint gap and the model gap are reported TOGETHER, not mutually exclusive', async () => {
+    // Both are properties of the same read-back. An `else if` between them would hide one whenever the
+    // other fired — and on cognee 1.6.0 the endpoint is ALWAYS dropped, so that shape would mean the
+    // model mismatch could never be reported in production at all.
+    state.respond = () => new Response(JSON.stringify({ llm: { model: 'openai/gpt-4o', endpoint: '' } }), { status: 200 })
+    const r = await pushCogneeProviderConfig()
+    expect(r.endpointNeedsEnv).toBe(true)
+    expect(r.modelMismatch).toBe(true)
   })
 })

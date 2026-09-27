@@ -155,6 +155,55 @@ describe('getAgentLlmConfig — agent-purpose resolution', () => {
   })
 })
 
+describe('getRoleLlmConfig — the cache is per ORG, not per process', () => {
+  /**
+   * CROSS-TENANT LEAK, measured before the fix.
+   *
+   * `_roleCache` was `Map<LlmRole, ...>` — one entry per role for the WHOLE PROCESS. With two orgs
+   * holding different configs the resolution was: org-A got `https://a.example/v1`, and then org-B ALSO
+   * got org A's endpoint and API key, for up to the 30s TTL. `getLlmRuntimeConfig` refuses to read
+   * without an org context, but this cache short-circuited AHEAD of that guard, so the protection never
+   * applied to the role path. Every caller of `getRoleLlmConfig` was exposed: intent-pipeline, hyde,
+   * knowledge-graph, rag rerank, embeddings, alignment-check, reflection, simple-pipeline, source-init.
+   */
+  test('a config cached for one org is NOT served to another', async () => {
+    state.rows = [row({ purpose: 'chat', baseUrl: 'https://a.example/v1', model: 'model-A' })]
+    state.orgContext = 'org-A'
+    const first = await getRoleLlmConfig('extract')
+    expect(first?.baseUrl).toBe('https://a.example/v1')
+
+    // A DIFFERENT ORG with its own row. Without the org in the cache key this returned org A's endpoint
+    // from cache and never touched the database.
+    state.rows = [row({ purpose: 'chat', baseUrl: 'https://b.example/v1', model: 'model-B' })]
+    state.orgContext = 'org-B'
+    const second = await getRoleLlmConfig('extract')
+    expect(second?.baseUrl).toBe('https://b.example/v1')
+    expect(second?.model).toBe('model-B')
+  })
+
+  test('the SAME org still hits its own cache — the fix must not disable caching', async () => {
+    // The opposite direction. Keying by org is only correct if it still caches within one org, or the
+    // isolation would have been bought by removing the feature.
+    state.rows = [row({ purpose: 'chat', baseUrl: 'https://a.example/v1' })]
+    state.orgContext = 'org-A'
+    await getRoleLlmConfig('extract')
+    const afterFirst = state.findFirstCalls.length
+    await getRoleLlmConfig('extract')
+    expect(state.findFirstCalls.length).toBe(afterFirst)
+  })
+
+  test('no org context means NO cache: the read is refused, not shared', async () => {
+    // A cache entry created under a real org must not be reachable from a context-less call, which is the
+    // shape `bypassOrg` produces in background work.
+    state.rows = [row({ purpose: 'chat', baseUrl: 'https://a.example/v1' })]
+    state.orgContext = 'org-A'
+    await getRoleLlmConfig('extract')
+
+    state.orgContext = undefined
+    expect(await getRoleLlmConfig('extract')).toBeNull()
+  })
+})
+
 describe('getRoleLlmConfig — role overrides with cache', () => {
   test('chat and agent roles delegate to their resolvers', async () => {
     state.rows = [row({ purpose: 'chat', model: 'chat-model' })]

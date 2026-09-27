@@ -54,10 +54,23 @@ export const MEMORY_QUEUE_NAME = 'memory-write'
 /**
  * Attempts and backoff.
  *
- * 5 attempts over roughly 5 minutes. Chosen against the measured 45-148s write time: a write refused
- * at t=0 becomes acceptable once the pipeline finishes, so the first retry must be LATER than a
- * typical write, not sooner — a 2s retry would simply be refused again and burn an attempt. 30s
- * doubling reaches 8 minutes of total patience, which covers several queued turns draining in order.
+ * VERIFIED against BullMQ's own `Backoffs.calculate` (exponential, no jitter), not derived by hand: the
+ * four remaining-wait delays are 30s, 60s, 120s, 240s, so the five attempts START at t = 0s, 30s, 90s,
+ * 210s and 450s. That is **7.5 minutes of total patience**, and the second attempt lands INSIDE the
+ * measured 45-148s write window rather than after it — the earlier comment here claimed "roughly 5
+ * minutes", which is the sum of nothing in particular.
+ *
+ * WHAT THAT MEANS, measured against the 45-148s write time. A write refused at t=0 is refused because a
+ * dataset's pipeline is busy, so the useful retries are the LATE ones: attempt 4 at t=210s is past the
+ * longest measured write (148s), and attempt 5 at t=450s is past it by a wide margin even if attempt 4
+ * itself ran a full-length write. Attempts 2 and 3 (30s, 90s) will often be refused again and burn
+ * themselves against a pipeline that is still running — that cost is accepted rather than tuned away,
+ * because a refusal is cheap (an immediate HTTP 200 with no server-side work) while a longer first delay
+ * would delay every genuinely transient failure. The budget is therefore not "wasted": the last two
+ * attempts are the ones that recover the turn.
+ *
+ * A LONGER LOCK IS WHAT KEEPS THIS SAFE, not the backoff: the worker's `lockDuration` is 300s, above the
+ * 148s worst case, so a write that is actually running cannot be handed to a second worker mid-flight.
  */
 export const MEMORY_WRITE_ATTEMPTS = 5
 export const MEMORY_WRITE_BACKOFF_MS = 30_000
@@ -127,12 +140,46 @@ export async function enqueueMemoryWrite(
     return 'inline'
   }
 
+  /*
+   * THE CONNECTION IS CHECKED *BEFORE* THE ADD, and that ordering is the whole fix.
+   *
+   * The `catch` arm below CANNOT see a Redis outage, so on its own it was dead code and this function's
+   * promise — "if Redis is unavailable the write is attempted INLINE" — was false. MEASURED: with
+   * `REDIS_URL` pointing at a dead port, `enqueueMemoryWrite` had neither settled nor run its fallback
+   * after 30s (the probe waited 30s; BullMQ's own default is to wait indefinitely).
+   *
+   * WHY: `redis` is created with `maxRetriesPerRequest: null` — required by BullMQ, because its blocking
+   * commands must survive a reconnect — and ioredis' offline queue is on by default. So `add()` does not
+   * reject while the connection is down; it parks the command and retries it forever. The write is then
+   * lost for an unbounded time while the caller's promise never settles, which is strictly worse than the
+   * pre-queue behaviour it replaced (a direct HTTP call that failed and was logged).
+   *
+   * `status === 'ready'` is ioredis' own synchronous verdict — no round trip, and the only thing that
+   * reflects "a command sent NOW will be written to Redis rather than buffered". `checkRedisHealth()` is
+   * deliberately NOT used: it goes through the separate fail-fast `cmd` connection, which MEASURED
+   * returns `{connected: false}` even with Redis healthy and `queue.add` succeeding 8ms later — gating on
+   * it would push every write to the inline path on a working install.
+   *
+   * RESIDUAL RACE, stated rather than hidden: Redis can still die between this check and the `add()`, and
+   * that add would then park in the offline queue. Bounding it with a timeout was REJECTED as the fix —
+   * the parked job would later be delivered as well, so the turn would be written twice, which is the
+   * double-write this module already had to fix once. The window is milliseconds against an outage that
+   * lasts as long as Redis is down, and a boot-time `connecting` status only means the write takes the
+   * pre-queue inline path, which is a slow write rather than a loss.
+   */
+  if (redis.status !== 'ready') {
+    log.warn('Redis is not ready; attempting the memory write inline', { status: redis.status })
+    await inlineFallback(job)
+    return 'inline'
+  }
+
   try {
     await memoryWriteQueue().add('remember-turn', job)
     return 'queued'
   } catch (e) {
-    // Redis down, or the queue rejected the job. The chat has already been answered either way, so
-    // the only question is whether this write is attempted now or not at all.
+    // A rejected add — Redis went away between the status check and here, or the queue refused the job.
+    // The chat has already been answered either way, so the only question is whether this write is
+    // attempted now or not at all.
     log.warn('queueing the memory write failed; attempting it inline', {
       error: e instanceof Error ? e.message : String(e),
     })

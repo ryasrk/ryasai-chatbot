@@ -6,6 +6,7 @@ import {
   isApiKeyTool,
   readKeyScope,
   resolveScope,
+  ScopeConfigError,
   scopeAllowsTool,
   ScopeDeniedError,
 } from './api-key-scope'
@@ -160,5 +161,88 @@ describe('api key scope — describing it for the key list', () => {
   test('singular and plural are both handled', () => {
     expect(describeScope(readKeyScope({ allowedDocumentIds: ['a'] }))).toContain('1 document')
     expect(describeScope(readKeyScope({ allowedDocumentIds: ['a', 'b'] }))).toContain('2 documents')
+  })
+})
+
+/**
+ * Fail-CLOSED reading of a stored scope.
+ *
+ * `readKeyScope` used to answer a present-but-wrong-typed column exactly as it answered an absent
+ * one: `[]`, which this module defines as UNRESTRICTED. So `allowedDocumentIds: "doc-1"` widened a key
+ * from one document to every document in the org, and `allowedTools: ["rag"]` (a case error) widened
+ * it from "RAG only" to every tool. Both are worse than a denial: nothing errors, the answer looks
+ * fine, and it is built from sources the operator never granted.
+ *
+ * The convention that is load-bearing and must NOT be collateral damage: an ABSENT column is still
+ * `[]` = unrestricted, because every key created before this feature has empty arrays. The tests
+ * below pin both directions, since "fail closed" and "empty means all" pull against each other.
+ */
+describe('api key scope — an unreadable stored value must not become "all"', () => {
+  test('a bare string where a list is stored is REFUSED, not read as unrestricted', () => {
+    // The exact widening: stored "doc-1" (one document intended) previously resolved to null = every
+    // document in the org.
+    const s = readKeyScope({ allowedDocumentIds: 'doc-1' })
+    expect(s.malformed).toBeDefined()
+    expect(() => resolveScope(s)).toThrow(ScopeConfigError)
+  })
+
+  test('a non-list integration value is REFUSED too — same defect, other column', () => {
+    const s = readKeyScope({ allowedIntegrationIds: 'erp' })
+    expect(() => resolveScope(s)).toThrow(ScopeConfigError)
+  })
+
+  test('a tool list whose every entry is unrecognised is REFUSED', () => {
+    // Without this, the discard-unknown-names rule EMPTIES the list, and an empty list means every
+    // tool. Case errors and typos are the realistic shapes.
+    for (const stored of [['rag'], ['Rag'], ['SQLX'], ['rag', 'chat']]) {
+      const s = readKeyScope({ allowedTools: stored })
+      expect(s.allowedTools).toEqual([])
+      expect(() => resolveScope(s)).toThrow(ScopeConfigError)
+    }
+  })
+
+  test('a MIXED list still keeps its known names and is not treated as malformed', () => {
+    // `['RAG','EXECUTE_SHELL']` is a forward-compatibility case (a newer build wrote the second one),
+    // not a misconfiguration: the readable part is honoured and no problem is recorded.
+    const s = readKeyScope({ allowedTools: ['RAG', 'EXECUTE_SHELL'] })
+    expect(s.allowedTools).toEqual(['RAG'])
+    expect(s.malformed).toBeUndefined()
+    expect(resolveScope(s).tools).toEqual(['RAG'])
+  })
+
+  test('THE REGRESSION THAT MATTERS: absent/null columns stay unrestricted', () => {
+    // Every key created before this feature has empty arrays, and a pre-migration row or test double
+    // may omit the columns entirely. Treating "absent" as a fault would break all of them.
+    for (const row of [{}, { allowedIntegrationIds: null, allowedDocumentIds: null, allowedTools: null }]) {
+      const s = readKeyScope(row as never)
+      expect(s.malformed).toBeUndefined()
+      expect(resolveScope(s)).toEqual({ integrationIds: null, documentIds: null, tools: null })
+    }
+  })
+
+  test('an all-blank list is absent, not malformed', () => {
+    // `['']` is what a form submits when no checkbox is ticked — "no restriction configured", which is
+    // unrestricted. It must not be classified as an unreadable value.
+    const s = readKeyScope({ allowedDocumentIds: [''], allowedTools: ['   '] })
+    expect(s.malformed).toBeUndefined()
+    expect(resolveScope(s).documentIds).toBeNull()
+  })
+
+  test('an unreadable scope never RENDERS as "All sources"', () => {
+    // The key list is where an operator audits "which key can read what". Labelling the one row whose
+    // stored value could not be interpreted as "All sources" is the most misleading string available.
+    expect(describeScope(readKeyScope({ allowedDocumentIds: 'doc-1' }))).toContain('Unreadable')
+    expect(describeScope(readKeyScope({ allowedTools: ['rag'] }))).toContain('Unreadable')
+    expect(describeScope(readKeyScope({}))).toBe('All sources')
+  })
+
+  test('ScopeConfigError is distinguishable from ScopeDeniedError', () => {
+    // Different actors fix these: a denied SOURCE is the client's request, an unreadable SCOPE is the
+    // administrator's key record. Collapsing them would send the operator after the wrong problem.
+    const denied = (() => { try { resolveScope(readKeyScope({ allowedDocumentIds: ['a'] }), { documentIds: ['b'] }) } catch (e) { return e } })()
+    const unreadable = (() => { try { resolveScope(readKeyScope({ allowedDocumentIds: 'a' })) } catch (e) { return e } })()
+    expect(denied).toBeInstanceOf(ScopeDeniedError)
+    expect(unreadable).toBeInstanceOf(ScopeConfigError)
+    expect(unreadable).not.toBeInstanceOf(ScopeDeniedError)
   })
 })

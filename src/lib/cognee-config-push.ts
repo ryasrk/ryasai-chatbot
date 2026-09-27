@@ -60,6 +60,12 @@ export interface CogneeProviderPushResult {
   endpointNeedsEnv?: boolean
   /** The value the operator must put in `.env.cognee`. Safe to display: it is a URL, not a secret. */
   endpointValue?: string
+  /**
+   * True when the sidecar's read-back disagrees with the model that was pushed, so the push landed but
+   * the sidecar is not configured for the model we sent. `ok` is still true — provider and key were
+   * accepted — and `error` carries the operator-facing explanation.
+   */
+  modelMismatch?: boolean
 }
 
 const log = scopedLogger('cognee-config-push')
@@ -129,17 +135,53 @@ export async function pushCogneeProviderConfig(): Promise<CogneeProviderPushResu
     const stored = await readCogneeProviderConfig()
     const endpointDropped = stored !== null && !stored.endpoint && !!cfg.baseUrl
 
+    /*
+     * THE MODEL READ-BACK IS THE OTHER HALF, and it was DISCARDED.
+     *
+     * `stored` was read for its `endpoint` alone; `stored.model` was fetched and thrown away, so this
+     * function reported `Shared <model> at <endpoint>` whenever the POST returned 2xx — regardless of what
+     * the sidecar actually kept. MEASURED against a stubbed settings endpoint: a sidecar answering
+     * `{"llm":{"model":""}}` (nothing stored) and one answering a DIFFERENT model both produced
+     * `ok: true, detail: "Shared openai/<the model we sent> at <endpoint>"`.
+     *
+     * That is this module's own stated failure mode — "a deployment that only pushed once would work until
+     * the first `docker compose restart` and then silently stop extracting" — and it is the one an operator
+     * cannot see: the toast and the COGNEE_PROVIDER_SHARED audit row both say the push landed, while the
+     * sidecar extracts with the wrong model or none at all.
+     *
+     * `null` (unreadable) stays a clean success, deliberately: the tests below pin that, and inventing a
+     * warning for a sidecar that merely did not answer the GET would fire on every push.
+     */
+    const modelMismatch = stored !== null && stored.model !== body.llm.model
+
     // Never echo the key. Naming the model and host is enough for an operator to confirm the push
     // landed, and a key in a log or a toast is a credential leak.
-    const detail = `Shared ${body.llm.model} at ${cfg.baseUrl}`
+    // The detail names what the SIDECAR holds when it disagrees, so the reported state is reality rather
+    // than intent — the same rule this module applies to the endpoint.
+    const detail = modelMismatch
+      ? `Shared ${body.llm.model}, but the sidecar reports ${stored.model || '(no model)'}`
+      : `Shared ${body.llm.model} at ${cfg.baseUrl}`
     log.info('pushed provider config to cognee', {
       model: body.llm.model,
       endpoint: cfg.baseUrl,
       endpointDropped,
+      modelMismatch,
     })
     return {
       ok: true,
       detail,
+      ...(modelMismatch
+        ? {
+            modelMismatch: true,
+            // NOT `ok: false`: the provider and key were accepted, so calling this a failed push would
+            // send an operator to retry a step that already worked. What is broken is the MODEL, which the
+            // same settings API carries — so the fix is a retry or a sidecar restart, not an env var.
+            error:
+              `The sidecar reports model "${stored.model || ''}" after a push that sent "${body.llm.model}". ` +
+              `It may have restarted (cognee keeps these settings in memory), or normalised the string. ` +
+              `Push again, and check the sidecar's LLM configuration if it persists.`,
+          }
+        : {}),
       ...(endpointDropped
         ? {
             endpointNeedsEnv: true,

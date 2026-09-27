@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test'
+import { DEFAULT_SQL_RULES_PROMPT, defaultSqlRulesPrompt, resolveSqlRulesPrompt } from './prompt-settings'
 
 /**
  * `getPromptSettings` had SEVEN production consumers (prompt-tools/route, tool-branches,
@@ -131,5 +132,38 @@ describe('getPromptSettings — the stored org prompt is read and parsed', () =>
 
     const reread = await getPromptSettings(stubDb)
     expect(reread.ragContextPrompt).toBe('Cite only.')
+  })
+})
+
+describe('resolveSqlRulesPrompt — the org text wins, whitespace does not', () => {
+  /**
+   * Both `tool-branches.ts` (non-streaming) and `stream-preparers.ts` (streaming) call this on EVERY
+   * SQL request, and it had no direct test — the coverage gate caught that, which is how it was found.
+   *
+   * The whitespace rule is the one that matters: a field holding a stray newline must NOT replace the
+   * built-in rules with nothing. Sending a Text-to-SQL prompt with no rules at all fails in a way that
+   * looks like a model problem, so the operator would debug the model instead of the empty field.
+   */
+  it('returns the org text when one is set', () => {
+    expect(resolveSqlRulesPrompt('Always use ILIKE.')).toBe('Always use ILIKE.')
+  })
+
+  it('preserves the text BYTE-FOR-BYTE, not trimmed', () => {
+    // Trimming the returned value would silently rewrite the operator's prompt. The trim exists only to
+    // DECIDE emptiness, never to alter what is sent.
+    const text = '  Line one.\n  Line two.  '
+    expect(resolveSqlRulesPrompt(text)).toBe(text)
+  })
+
+  it('falls back to the built-in default for empty, whitespace-only, null and undefined', () => {
+    for (const empty of ['', '   ', '\n\t ', null, undefined]) {
+      expect(resolveSqlRulesPrompt(empty)).toBe(DEFAULT_SQL_RULES_PROMPT)
+      // The default must actually be non-empty, or this test would pass for a broken default too.
+      expect(resolveSqlRulesPrompt(empty).length).toBeGreaterThan(100)
+    }
+  })
+
+  it('the fallback IS the exported default, so the two cannot drift', () => {
+    expect(defaultSqlRulesPrompt()).toBe(DEFAULT_SQL_RULES_PROMPT)
   })
 })

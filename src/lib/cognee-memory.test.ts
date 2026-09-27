@@ -671,6 +671,41 @@ describe('session cache — TTL and capacity', () => {
     await recallContext({ query: 'q', sessionId: 'drop' })
     expect(state.searchCalls.length).toBeGreaterThan(before)
   })
+
+  test('the number of SESSIONS is capped too, not just the entries within one', async () => {
+    /*
+     * THE MAP THAT GREW WITHOUT LIMIT. The test above pins `SESSION_CACHE_MAX` (100 entries in ONE
+     * session) and it passes, which is what hid this: the OUTER map is keyed by sessionId and had no
+     * bound at all, and `getSessionCache` creates an entry on the READ path too — so every recall with a
+     * sessionId, hit or miss, permanently added a session. `clearSessionCache(id)` runs only from the
+     * session DELETE route, which does nothing for a session a user merely abandons.
+     *
+     * MEASURED (rss, validated by a control that the instrument sees a known 3.88MiB retention): a
+     * session at its full 100-entry cap costs ~1.4MiB because each entry holds a recall result already
+     * capped at MEMORY_CONTEXT_MAX_CHARS. 500 full sessions ≈ 688MiB, 2000 ≈ 2.75GiB, in a long-lived
+     * server process. `SESSION_CACHE_MAX_SESSIONS` is 500.
+     *
+     * Asserted BEHAVIOURALLY rather than by reading the map: the OLDEST session must miss after the cap
+     * is passed, while a recent one still hits. A source scan would not show that the eviction is in the
+     * path that actually runs.
+     */
+    state.client = fakeClient()
+    state.searchImpl = (q: string) => [`answer for ${q}`]
+    const CAP = 500 // SESSION_CACHE_MAX_SESSIONS — not exported, so pinned by value.
+    for (let i = 0; i < CAP; i++) {
+      await recallContext({ query: 'q', sessionId: `s-${i}` })
+    }
+    // The newest session is cached (nothing evicted it).
+    const beforeRecent = state.searchCalls.length
+    await recallContext({ query: 'q', sessionId: `s-${CAP - 1}` })
+    expect(state.searchCalls.length).toBe(beforeRecent)
+
+    // One more session pushes past the cap, evicting the OLDEST.
+    await recallContext({ query: 'q', sessionId: 's-extra' })
+    const afterInsert = state.searchCalls.length
+    await recallContext({ query: 'q', sessionId: 's-0' })
+    expect(state.searchCalls.length).toBeGreaterThan(afterInsert)
+  }, 30000)
 })
 
 describe('recallFromSession — degradation', () => {
@@ -1008,8 +1043,26 @@ describe('rememberChatTurn — a REJECTED concurrent write must be visible, not 
       .split('\n')
       .map((l) => (l.trimStart().startsWith('//') || l.trimStart().startsWith('*') || l.trimStart().startsWith('/*') ? '' : l))
       .join('\n')
-    expect(src).toMatch(/res\.items_processed === 0/)
-    expect(src).toMatch(/res\.status === 'running'/)
+    /*
+     * REWRITTEN 2026-09-28, and the old expectation was WRONG — it pinned a LITERAL where the rule
+     * now lives in a SHARED function.
+     *
+     * It used to require `/res\.items_processed === 0/` and `/res\.status === 'running'/` in THIS file.
+     * That inlined copy is exactly the defect found this round: `cognifyDocument` and `cognifyBatch`
+     * had no such check at all, so a refused write was reported as completed, and nothing could catch
+     * the divergence because each file was only ever checked against itself.
+     *
+     * The rule moved to `writeNotStored()` in cognee-types.ts. Keeping the old assertion would have
+     * FORCED a copy back into this file, so it now asserts the INVOCATION and pins the rule itself in
+     * cognee-types.test.ts (which is what "prefer an invocation over a bare identifier" means here).
+     */
+    expect(src).toMatch(/writeNotStored\(res\)/)
+    // The check must be an `else if` arm AFTER the error arms: reordering it above `res.error` would
+    // report a server-supplied reason as a mere concurrency refusal.
+    const errorArm = src.indexOf('} else if (res.error) {')
+    const notStoredArm = src.indexOf('} else if (writeNotStored(res)) {')
+    expect(errorArm).toBeGreaterThan(-1)
+    expect(notStoredArm).toBeGreaterThan(errorArm)
     // And it must say the turn was NOT stored, so an operator reading the log knows what was lost.
     expect(src).toMatch(/NOT stored/)
   })

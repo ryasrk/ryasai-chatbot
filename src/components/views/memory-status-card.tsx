@@ -29,11 +29,25 @@ export function MemoryStatusCard() {
     diagnostics: CogneeDiagnostics | null
   } | null>(null)
   const [loading, setLoading] = useState(true)
+  /**
+   * The status request did not produce a usable answer.
+   *
+   * WHY THIS IS ITS OWN STATE. The card used to render its failure as the SAME branch as a deliberately
+   * disabled install: the "Off" badge plus the sentence "documents are searchable by keyword and
+   * embeddings, without cross-session memory". So a 500 from `/api/cognee`, or a dropped connection,
+   * told the operator — in the affirmative — that their memory layer is off and their documents are
+   * being indexed by the fallback path. That is the one statement this card exists to make, and it was
+   * being made from no evidence. The comment here used to claim "the card simply does not render" on
+   * failure; it rendered, and it said something false.
+   *
+   * Not knowing is a legitimate thing to display. Reporting a definite negative you cannot observe is not.
+   */
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     fetch('/api/cognee', { cache: 'no-store' })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         if (cancelled) return
         if (j?.ok) {
@@ -42,10 +56,14 @@ export function MemoryStatusCard() {
             connected: !!j.data?.connected,
             diagnostics: j.data?.diagnostics ?? null,
           })
+        } else {
+          // A non-OK response or an `ok: false` body carries no usable verdict either way.
+          setFailed(true)
         }
       })
       .catch(() => {
-        // Non-fatal: the card simply does not render, and the link is absent rather than wrong.
+        if (cancelled) return
+        setFailed(true)
       })
       .finally(() => !cancelled && setLoading(false))
     return () => {
@@ -80,7 +98,13 @@ export function MemoryStatusCard() {
       <CardContent className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
         <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="font-medium">AI Memory</span>
-        {!state?.enabled ? (
+        {failed ? (
+          // Unknown, said plainly. Not a red badge: nothing was measured, and the request failing says
+          // nothing about the memory layer itself — the operator's action is to retry, not to fix.
+          <Badge variant="outline" className="text-[10px]">
+            Status unknown
+          </Badge>
+        ) : !state?.enabled ? (
           <Badge variant="outline" className="text-[10px]">
             Off
           </Badge>
@@ -96,11 +120,13 @@ export function MemoryStatusCard() {
           </Badge>
         )}
         <span className="text-[10px] text-muted-foreground">
-          {!state?.enabled
-            ? '— documents are searchable by keyword and embeddings, without cross-session memory'
-            : llmBroken
-              ? '— the memory model is not usable; configure it in AI Configuration'
-              : '— cross-session memory and knowledge graph are running'}
+          {failed
+            ? '— could not read the memory status; reload the view to try again'
+            : !state?.enabled
+              ? '— documents are searchable by keyword and embeddings, without cross-session memory'
+              : llmBroken
+                ? '— the memory model is not usable; configure it in AI Configuration'
+                : '— cross-session memory and knowledge graph are running'}
         </span>
         <Button
           size="sm"

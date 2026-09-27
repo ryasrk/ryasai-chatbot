@@ -3,7 +3,7 @@
  * Depends on: cognee-types, cognee-core.
  */
 import type { ChatTurnMemory } from './cognee-types'
-import { datasetFor } from './cognee-types'
+import { datasetFor, writeNotStored, capWritePayload } from './cognee-types'
 import { MEMORY_CONTEXT_MAX_CHARS, MEMORY_WRITE_MAX_CHARS } from '@/lib/constants'
 import { isCogneeEnabled, getCogneeClient, getCogneeOwnerId, formatSearchResponse, withDeadline, getCogneeGraphProvider, supportsNaturalLanguageSearch, getCogneeServerOptions } from './cognee-core'
 import { cogneeRemember, cogneeRecall } from './cognee-http'
@@ -57,7 +57,7 @@ export async function rememberChatTurn(args: ChatTurnMemory): Promise<void> {
      * shape. If they ever diverge, the queue's retry semantics and the inline path would store
      * different things, and this comment is the place to look.
      */
-    async () => writeTurnInline(args, serverOpts, capWritePayload, cogneeRemember, datasetFor),
+    async () => writeTurnInline(args, serverOpts, capTurnPayload, cogneeRemember, datasetFor),
   )
 
   /*
@@ -112,7 +112,7 @@ async function writeTurnInline(
         console.warn('[cognee] remember failed: server unreachable or rejected the write')
       } else if (res.error) {
         console.warn('[cognee] remember failed:', res.error)
-      } else if (res.status === 'running' || res.items_processed === 0) {
+      } else if (writeNotStored(res)) {
         /*
          * A REJECTED CONCURRENT WRITE REPORTS HTTP 200. MEASURED on the production sidecar: when a
          * second write arrives while a dataset's cognify pipeline is still running, the answer is
@@ -122,6 +122,11 @@ async function writeTurnInline(
          * produced EIGHT "already running" rejections and only TWO of the four turns reached memory.
          * The other two were lost silently — and `items_processed: 0` is the only signal, which is why
          * it is checked here rather than left in the response type.
+         *
+         * WARN only, never throw: this is the INLINE path, the one taken when Redis is down, and
+         * `rememberChatTurn` is fire-and-forget at every call site — a throw here would be swallowed by
+         * their `.catch(() => {})` and reach nobody. The queue path (`performMemoryWrite`) throws on the
+         * same condition to get a retry. The PREDICATE is shared; the reaction deliberately differs.
          */
         console.warn(
           '[cognee] remember SKIPPED: the dataset pipeline was already running, so this turn was NOT stored ' +
@@ -153,6 +158,30 @@ async function writeTurnInline(
 
 const SESSION_CACHE_TTL = 60000 // 1 minute
 const SESSION_CACHE_MAX = 100 // max entries per session
+
+/**
+ * Upper bound on the number of SESSIONS held, and why there needs to be one.
+ *
+ * `SESSION_CACHE_MAX` bounds one session's entries but nothing bounded the number of sessions, so the
+ * outer map was an unbounded cache keyed by a value that only ever grows: one entry per session that
+ * ever ran a recall — `getSessionCache` creates the entry on the READ path too, so a miss also adds one
+ * — each holding up to 100 results.
+ *
+ * MEASURED (rss, with a control proving the instrument sees a known 3.88MiB retention): a session at its
+ * full 100-entry cap costs ~1.4MiB, because each entry holds a recall result already capped at
+ * MEMORY_CONTEXT_MAX_CHARS (2000 chars). 500 such sessions ≈ 688MiB; 2000 ≈ 2.75GiB. This is a
+ * long-lived Next.js server on an on-prem box, so that heap grows until a restart — and
+ * `clearSessionCache(id)` is called from ONE place (the session DELETE route), which does nothing for
+ * the sessions a user merely abandons.
+ *
+ * 500 is chosen against the measurement rather than for roundness: it caps the map at ~700MiB WORST
+ * CASE (every held session at its full per-session cap, which needs 100 distinct uncached questions in
+ * each within the 1-minute TTL), and a warm session in practice holds a handful of entries. Eviction
+ * drops the OLDEST session, whose next recall simply goes to the sidecar — a cache miss, never stale or
+ * wrong data.
+ */
+const SESSION_CACHE_MAX_SESSIONS = 500
+
 const _sessionCache = new Map<string, Map<string, { result: string; ts: number }>>()
 
 function sessionCacheKey(query: string): string {
@@ -163,6 +192,12 @@ function sessionCacheKey(query: string): string {
 function getSessionCache(sessionId: string): Map<string, { result: string; ts: number }> {
   let cache = _sessionCache.get(sessionId)
   if (!cache) {
+    // Evict the oldest SESSION when at capacity (Map preserves insertion order). Deleting rather than
+    // refusing to insert: a miss costs one sidecar round trip and can never return a stale answer.
+    if (_sessionCache.size >= SESSION_CACHE_MAX_SESSIONS) {
+      const oldestSession = _sessionCache.keys().next().value
+      if (oldestSession) _sessionCache.delete(oldestSession)
+    }
     cache = new Map()
     _sessionCache.set(sessionId, cache)
   }
@@ -203,15 +238,15 @@ export function clearSessionCache(sessionId?: string): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Bound what one chat turn contributes to cognee's write path.
+ * Local binding of the shared capping rule, for the inline path's dependency-injected call.
  *
- * Truncation is MARKED rather than silent: the stored memory is read back verbatim into future
- * prompts, so a reader (human or model) should be able to tell that a turn was clipped instead
- * of assuming the conversation ended there.
+ * The implementation moved to `cognee-types.capWritePayload` because the QUEUE path must use the same
+ * one: it was doing a bare `.slice()` with no marker while this file's comment claimed both paths called
+ * this function. Kept as a one-line adapter rather than changing `writeTurnInline`'s signature, so the
+ * injection point the tests rely on stays where it is.
  */
-function capWritePayload(text: string): string {
-  if (text.length <= MEMORY_WRITE_MAX_CHARS) return text
-  return `${text.slice(0, MEMORY_WRITE_MAX_CHARS)}\n[memory truncated for extraction]`
+function capTurnPayload(text: string): string {
+  return capWritePayload(text, MEMORY_WRITE_MAX_CHARS)
 }
 
 /**

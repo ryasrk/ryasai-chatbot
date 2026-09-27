@@ -32,8 +32,22 @@ export class ScopeSourceMissingError extends Error {
   }
 }
 
-/** At most this many ids per category are resolved in one query batch. */
+/**
+ * At most this many ids are resolved in ONE query batch; longer scope lists are batched.
+ *
+ * This was a hard `.slice(0, MAX_SCOPE_IDS)`, which is not a bound on query size but a bound on
+ * VALIDATION: the 501st id on a key was never resolved, so a source that had been deleted was
+ * reported as present and the key kept working against a scope the operator believed was checked.
+ * The cap is a batching constant, so the fix is to batch rather than to truncate.
+ */
 const MAX_SCOPE_IDS = 500
+
+/** Split an id list into query-sized batches, preserving order for stable error messages. */
+function batch<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
 
 /**
  * Check a key's scope against the database and throw when any named source is unusable.
@@ -48,23 +62,44 @@ export async function validateKeyScopeSources(
 ): Promise<string[]> {
   const problems: string[] = []
 
-  const integrationIds = scope.allowedIntegrationIds.slice(0, MAX_SCOPE_IDS)
-  const documentIds = scope.allowedDocumentIds.slice(0, MAX_SCOPE_IDS)
+  // An UNREADABLE scope is reported as a problem here, which is what closes the create-time hole.
+  //
+  // The admin POST resolves the submitted body through `readKeyScope` and then persists
+  // `scope.allowedDocumentIds` / `scope.allowedTools` verbatim. For a malformed submission those are
+  // `[]` — and `[]` means UNRESTRICTED — so an operator who submitted `allowedDocumentIds: "doc-1"`
+  // (one document intended) got a key that could read EVERY document, with a success response and no
+  // warning. MEASURED before this check: the route persisted `{"allowedDocumentIds":[],"allowedTools":[]}`.
+  //
+  // This function is already the pre-save gate (`describeScopeProblems`), so reporting the unreadable
+  // fields HERE refuses the create with a form message instead of minting a wider key than requested.
+  // The runtime path reports the same fields, so a row that is already in the table still fails closed.
+  if (scope.malformed && scope.malformed.length > 0) {
+    problems.push(`scope is unreadable: ${scope.malformed.join('; ')}`)
+  }
+
+  const integrationIds = scope.allowedIntegrationIds
+  const documentIds = scope.allowedDocumentIds
 
   if (integrationIds.length > 0) {
     // Integrations and REST connectors share the scope field but live in separate tables, so both
     // are resolved and a name counts as present in EITHER. Looking only at `Integration` would
     // report every REST-scoped key as broken.
-    const [integrations, connectors] = await Promise.all([
-      db.integration.findMany({
-        where: { id: { in: integrationIds } },
-        select: { id: true, name: true, status: true },
-      }),
-      db.restApiConnector.findMany({
-        where: { id: { in: integrationIds } },
-        select: { id: true, name: true, isActive: true },
-      }),
-    ])
+    const integrations: Array<{ id: string; name: string; status: string }> = []
+    const connectors: Array<{ id: string; name: string; isActive: boolean }> = []
+    for (const ids of batch(integrationIds, MAX_SCOPE_IDS)) {
+      const [i, c] = await Promise.all([
+        db.integration.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, status: true },
+        }),
+        db.restApiConnector.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, isActive: true },
+        }),
+      ])
+      integrations.push(...i)
+      connectors.push(...c)
+    }
 
     const usable = new Set<string>()
     for (const i of integrations) {
@@ -90,15 +125,22 @@ export async function validateKeyScopeSources(
   }
 
   if (documentIds.length > 0) {
-    const docs = await db.document.findMany({
-      where: { id: { in: documentIds } },
-      select: { id: true, name: true, status: true, isEnabled: true },
-    })
+    const docs: Array<{ id: string; name: string; status: string; isEnabled: boolean }> = []
+    for (const ids of batch(documentIds, MAX_SCOPE_IDS)) {
+      docs.push(
+        ...(await db.document.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, status: true, isEnabled: true },
+        })),
+      )
+    }
     const usable = new Set(docs.filter((d) => d.status === 'ready' && d.isEnabled).map((d) => d.id))
     const missing = documentIds.filter((id) => !usable.has(id))
     if (missing.length > 0) {
-      const names = docs.filter((d) => missing.includes(d.id)).map((d) => d.name)
-      const labels = missing.map((id) => docs.find((d) => d.id === id)?.name ?? id)
+      // Index by id once. A `docs.find(...)` per missing id is O(n*m), which a large scope makes
+      // expensive on a path that runs on every request; the labels are identical either way.
+      const nameById = new Map(docs.map((d) => [d.id, d.name]))
+      const labels = missing.map((id) => nameById.get(id) ?? id)
       problems.push(
         `${labels.length === 1 ? 'Document' : 'Documents'} no longer available: ${labels.join(', ')}`,
       )
@@ -118,5 +160,10 @@ export async function validateKeyScopeSources(
 /** Convenience for the admin UI: does this scope resolve cleanly right now? */
 export async function describeScopeProblems(scope: KeyScope): Promise<string | null> {
   const problems = await validateKeyScopeSources(scope, { dryRun: true })
-  return problems.length > 0 ? `${problems.join('; ')} — ${describeScope(scope)}` : null
+  if (problems.length === 0) return null
+  // The scope's own description is useful context for a MISSING-SOURCE problem ("which key is this?"),
+  // but for an UNREADABLE one it repeats the field list already in `problems` — `describeScope` renders
+  // a malformed scope as "Unreadable scope", so appending it there says the same thing twice.
+  if (scope.malformed && scope.malformed.length > 0) return problems.join('; ')
+  return `${problems.join('; ')} — ${describeScope(scope)}`
 }

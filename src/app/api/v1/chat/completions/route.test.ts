@@ -126,6 +126,23 @@ mock.module('@/lib/prisma-tenant', () => ({
 }))
 mock.module('@/lib/metrics', () => ({ inc: () => {}, observe: () => {} }))
 
+/**
+ * Memory is mocked so the STREAMING path's write can be OBSERVED.
+ *
+ * WHY THIS EXISTS. `stream: true` used to write no memory at all, and the guard for the fix asserted
+ * only that the source CONTAINED an invocation — a text check that cannot prove the write is reached at
+ * runtime, nor that it carries the right payload. Covering it here executes the branch that assembles
+ * the turn (toolRuns mapped to type/status/latencyMs), which is also the four lines the coverage gate
+ * was reporting as uncovered.
+ */
+const memoryCalls: Array<Record<string, unknown>> = []
+mock.module('@/lib/cognee', () => ({
+  rememberChatTurn: async (args: Record<string, unknown>) => {
+    memoryCalls.push(args)
+  },
+  recallContext: async () => '',
+}))
+
 // Swappable, because the interesting cases are the FAILING completions and the
 // ones that return tool runs — neither expressible with a single fixed stub.
 const defaultRouter: {
@@ -156,6 +173,7 @@ beforeEach(() => {
   rateLimitState.limits = []
   routerState.nonStreaming = defaultRouter.nonStreaming
   routerState.streaming = defaultRouter.streaming
+  memoryCalls.length = 0
   dbState.history = []
   dbState.apiLogs = []
   dbState.toolRunCreates = 0
@@ -361,6 +379,40 @@ describe('POST /api/v1/chat/completions — SSE streaming', () => {
     // The terminator is what tells an OpenAI client the stream ended; without it
     // the client hangs open.
     expect(text.trim().endsWith('data: [DONE]')).toBe(true)
+  })
+
+  test('the streaming transport REMEMBERS the turn, with the answer and tool runs', async () => {
+    /*
+     * Behavioural coverage for a defect that shipped: `stream: true` wrote NO memory, because the
+     * streaming preparers never call `rememberChatTurn` — the web chat covers itself in its own route
+     * and this one had no equivalent. The two transports were indistinguishable from outside.
+     *
+     * This drives the real branch, so it fails if the call is removed, if it gets the wrong answer, or
+     * if the tool-run mapping breaks.
+     */
+    // REAL tool runs. The default mock returns `toolRuns: []`, so `.map()` never iterates and the
+    // mapping that builds each entry is never executed — which is exactly why the first version of
+    // this test added no coverage for the lines it was written for. A non-empty array is the point.
+    routerState.streaming = async () => ({
+      stream: (async function* () { yield 'Hello'; yield ' world' })(),
+      citations: [],
+      chartData: null,
+      toolRuns: [{ type: 'SQL', status: 'success', latencyMs: 42 }],
+      integrationId: null,
+    })
+
+    const res = await post({ stream: true, messages: [{ role: 'user', content: 'remember me' }] })
+    await drainSse(res)
+    // Fire-and-forget (`void`) lands on a microtask — give it a tick rather than assuming it ran.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(memoryCalls.length).toBeGreaterThan(0)
+    const call = memoryCalls[0]!
+    // The ASSEMBLED answer, not the request text: what the user saw is what must be remembered.
+    expect(call.aiMessage).toBe('Hello world')
+    expect(call.userMessage).toBe('remember me')
+    // The MAPPED shape, asserted field by field: a generic `Array.isArray` would pass for `[{}]`, which
+    // is what a broken mapping produces.
+    expect(call.toolRuns).toEqual([{ type: 'SQL', status: 'success', latencyMs: 42 }])
   })
 
   test('each chunk carries a delta and a null finish_reason', async () => {

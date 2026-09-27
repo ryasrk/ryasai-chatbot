@@ -93,13 +93,30 @@ describe('model picker — a choice must survive navigation', () => {
     expect(viewSrc).not.toMatch(/onValueChange=\{setModel\}/)
   })
 
-  test('a saved model is written with ONLY the model field', () => {
-    // Sending the whole form would resend baseUrl / embeddingModel / keys from local state, so choosing
-    // a model could overwrite a concurrent edit to another field.
+  test('a saved model sends the CONFIG, never a bare { model } that would wipe baseUrl', () => {
+    /*
+     * REVERSED, and the reason matters. The first version of this test demanded the payload be EXACTLY
+     * `{ model: next }`, on the theory that sending more could overwrite a concurrent edit. That theory
+     * was wrong about this route: `PUT` resolves `baseUrl` as `normalizeBaseUrl(body.baseUrl ?? '')`, so
+     * an OMITTED field is written as an EMPTY STRING.
+     *
+     * Measured consequence: picking a model deleted the Base URL, the embedding endpoint and the model
+     * names on a working BYOK install — reducing it to an unreachable one — and the response was applied
+     * to `cfg` only, so the form kept SHOWING the old URL while the database held an empty one.
+     *
+     * The payload therefore carries the provider, the base URL and the embedding trio, read from the
+     * SERVER's last known config (`cfg`) rather than from the form inputs — so a half-typed Base URL in a
+     * field cannot be smuggled into storage by a model pick. The two key fields stay OUT: omitted means
+     * "keep the stored key", so a model pick can never rotate or clear a credential.
+     */
     const fn = viewSrc.slice(viewSrc.indexOf('async function persistModel'))
     const body = fn.slice(0, fn.indexOf('async function handleFetchModels'))
-    expect(body).toMatch(/body: JSON\.stringify\(\{ model: next \}\)/)
-    expect(body).not.toMatch(/bodyUrl|baseUrl,/)
+    expect(body).toMatch(/body: JSON\.stringify\(modelPatchPayload\(/)
+    // The key fields must NOT be in the patch helper's output.
+    const helper = viewSrc.slice(viewSrc.indexOf('export function modelPatchPayload'))
+    const helperBody = helper.slice(0, helper.indexOf('\n}'))
+    expect(helperBody).not.toMatch(/apiKey/)
+    expect(helperBody).not.toMatch(/encrypted/)
   })
 
   test('a FAILED write is surfaced and the value is not presented as saved', () => {

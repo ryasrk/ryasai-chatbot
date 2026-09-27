@@ -176,3 +176,82 @@ describe('scope source validation — dry run for the admin UI', () => {
     expect(await describeScopeProblems(readKeyScope({ allowedIntegrationIds: ['erp'] }))).toBeNull()
   })
 })
+
+/**
+ * The id cap is a QUERY-BATCHING bound, not a validation bound.
+ *
+ * `validateKeyScopeSources` used to resolve `scope.allowedDocumentIds.slice(0, 500)`, so the 501st id
+ * was never looked up: a document deleted from a large scope was reported as present, the request was
+ * allowed through, and the operator's key silently kept a dead source. That is this module's own
+ * fail-closed promise (see the header) broken by an unrelated-looking constant — and it is invisible
+ * at any realistic size, because 500 ids is when it starts.
+ */
+describe('scope source validation — a scope larger than one query batch is still fully validated', () => {
+  test('a missing document at index 500 is FOUND, not skipped by the cap', async () => {
+    // 500 valid ids + one deleted id past the old slice boundary.
+    const ids = Array.from({ length: 500 }, (_, i) => `ok-${i}`)
+    state.documents = ids.map((id) => ({ id, name: id, status: 'ready', isEnabled: true }))
+    const scope = readKeyScope({ allowedDocumentIds: [...ids, 'deleted-past-the-cap'] })
+
+    // Every id must reach the database. The mock filters by `where.id.in`, so an id that was sliced
+    // off is simply never queried and cannot be reported missing.
+    await expect(validateKeyScopeSources(scope, { dryRun: true })).resolves.toEqual([
+      'Document no longer available: deleted-past-the-cap',
+    ])
+  })
+
+  test('a missing INTEGRATION past the cap is found too', async () => {
+    const ids = Array.from({ length: 500 }, (_, i) => `ok-${i}`)
+    state.integrations = ids.map((id) => ({ id, name: id, status: 'active' }))
+    const scope = readKeyScope({ allowedIntegrationIds: [...ids, 'gone-past-the-cap'] })
+    await expect(validateKeyScopeSources(scope, { dryRun: true })).resolves.toEqual([
+      'Source no longer available: gone-past-the-cap',
+    ])
+  })
+
+  test('batching must not LOSE work: 501 valid ids all resolve clean', async () => {
+    // Guards the wrong fix that drops the cap for one enormous `IN`. Asserted on the observable
+    // outcome rather than a call count: an id in the SECOND batch is not misreported as missing, so
+    // batching cannot turn a valid source into a spurious failure.
+    const ids = Array.from({ length: 501 }, (_, i) => `ok-${i}`)
+    state.documents = ids.map((id) => ({ id, name: id, status: 'ready', isEnabled: true }))
+    const scope = readKeyScope({ allowedDocumentIds: ids })
+    await expect(validateKeyScopeSources(scope)).resolves.toEqual([])
+  })
+})
+
+/**
+ * The admin UI's pre-save gate must also refuse a scope that could not be READ.
+ *
+ * `readKeyScope` resolves a malformed submission (e.g. `allowedDocumentIds: "doc-1"`) to `[]`, and the
+ * create route persists those arrays verbatim. `[]` means UNRESTRICTED in this module, so without the
+ * check below an operator who asked for ONE document receives a 201 and a key that can read EVERY
+ * document — a wider grant than requested, with no warning anywhere.
+ *
+ * MEASURED before the check: the create path persisted `{"allowedDocumentIds":[],"allowedTools":[]}`
+ * for exactly that input.
+ */
+describe('scope source validation — an unreadable scope is refused before it is saved', () => {
+  test('a malformed submission yields a problem, so the POST refuses instead of widening the key', async () => {
+    const scope = readKeyScope({ allowedDocumentIds: 'doc-1', allowedTools: ['rag'] })
+    const problem = await describeScopeProblems(scope)
+    expect(problem).not.toBeNull()
+    expect(problem).toContain('unreadable')
+    // The message must name the offending field, or an operator cannot fix the form.
+    expect(problem).toContain('allowedDocumentIds')
+  })
+
+  test('a legitimately unrestricted key is still accepted — this must not become a blanket refusal', async () => {
+    // The opposite error: treating every EMPTY scope as a fault would break the create path for the
+    // common "all sources" key, which is the default and the value every pre-feature key holds.
+    expect(await describeScopeProblems(readKeyScope({}))).toBeNull()
+    expect(await describeScopeProblems(readKeyScope({ allowedDocumentIds: [], allowedTools: [] }))).toBeNull()
+  })
+
+  test('enforcement refuses the same scope the create gate refuses', async () => {
+    // Both layers must agree: a row that reached the table by any other route (seed, migration, direct
+    // SQL) still fails closed at request time.
+    const scope = readKeyScope({ allowedDocumentIds: 'doc-1' })
+    await expect(validateKeyScopeSources(scope)).rejects.toBeInstanceOf(ScopeSourceMissingError)
+  })
+})

@@ -37,6 +37,46 @@ import { extractError } from '@/lib/extract-error'
 import { CogneeCard } from '@/components/views/cognee-card'
 
 /**
+ * Build the PUT body for a model change.
+ *
+ * WHY A MODEL CHANGE MUST SEND MORE THAN THE MODEL — MEASURED, not assumed.
+ *
+ * `PUT /api/llm-config` is a whole-row upsert whose every field has a DEFAULT, and
+ * `normalizeBaseUrl('')` returns `''` rather than throwing. So `{ model: 'x' }` does not mean "change
+ * only the model"; it means "set provider to OPENAI_COMPATIBLE, baseUrl to '', embeddingProvider to
+ * OPENAI_COMPATIBLE, embeddingBaseUrl to '', embeddingModel to the built-in default, and the model to
+ * x". Probed against the real route on a row configured as
+ * `{provider: 'ANTHROPIC_COMPATIBLE', baseUrl: 'https://real.example.com/v1', embeddingModel: 'bge-m3'}`:
+ *
+ *   { model: 'new-model' }  ->  {"provider":"OPENAI_COMPATIBLE","baseUrl":"","model":"new-model",
+ *                                "embeddingProvider":"OPENAI_COMPATIBLE","embeddingBaseUrl":"",
+ *                                "embeddingModel":"text-embedding-3-small"}
+ *
+ * That is a working BYOK install reduced to an unreachable one, by picking a model from the dropdown —
+ * the very action this view exists to make safe. And the response is applied only to `cfg`, not to the
+ * `baseUrl` form field, so the screen keeps SHOWING the old URL while the database holds an empty one:
+ * navigate away and back and the URL is gone, which is the reported symptom's shape in a second field.
+ *
+ * The values are read from the SERVER's own view of the row (`cfg`), not from the editable form state,
+ * so a half-typed Base URL in the input cannot be smuggled into storage by a model pick. The two key
+ * fields are omitted on purpose: omitted means "keep the stored key" (the route only re-encrypts when
+ * a non-empty `apiKey` is sent), so a model pick can never rotate or clear a credential.
+ */
+export function modelPatchPayload(
+  cfg: PublicLlmConfig | null,
+  next: string,
+): Record<string, string> {
+  const body: Record<string, string> = { model: next }
+  if (!cfg) return body
+  body.provider = cfg.provider
+  body.baseUrl = cfg.baseUrl
+  body.embeddingProvider = cfg.embeddingProvider
+  body.embeddingBaseUrl = cfg.embeddingBaseUrl
+  body.embeddingModel = cfg.embeddingModel
+  return body
+}
+
+/**
  * AI Configuration view — provider, model, and embedding settings.
  * Moved here from the Settings view's "AI / LLM" tab so Settings stays
  * focused on org/admin/API-keys while AI configuration is a first-class view.
@@ -70,6 +110,15 @@ export function AIConfigurationView() {
    */
   const [modelUnsaved, setModelUnsaved] = useState(false)
   /**
+   * The message for the last FAILED model write, or null.
+   *
+   * A separate string from the boolean, because the boolean is also set while a write is merely in
+   * flight (it means "the control is ahead of the server") whereas the message must only appear for a
+   * write that genuinely failed. Rendering a permanent failure sentence during every normal, successful
+   * save was the first version of this banner, and it was a lie the user had no way to check.
+   */
+  const [modelSaveFailed, setModelSaveFailed] = useState<string | null>(null)
+  /**
    * The value to rescue if this view unmounts mid-edit, and whether a write is still owed.
    *
    * WHY A REF AND AN UNMOUNT EFFECT, rather than relying on blur: on the free-text path a user can type
@@ -82,15 +131,55 @@ export function AIConfigurationView() {
    * unload, which is a different case and not what was reported.
    */
   const pendingModelRef = useRef<{ value: string; owed: boolean }>({ value: '', owed: false })
+  /**
+   * The last config the SERVER told us about, for the unmount rescue below.
+   *
+   * The cleanup closure cannot read `cfg` directly — it captures the value from the render it was
+   * created in, which is the FIRST one. A ref updated by an effect always holds the current value.
+   */
+  const cfgRef = useRef<PublicLlmConfig | null>(null)
+  /**
+   * Ordering for model writes.
+   *
+   * A statement number: only the newest write may apply its response. Without it, two commits were two
+   * concurrent whole-row PUTs, and the slower one — the model the user had already moved OFF — could
+   * land last and become the stored value while the control displayed the newer one.
+   */
+  const modelWriteSeq = useRef(0)
+  /**
+   * The value of the model write currently on the wire, if any.
+   *
+   * Used by the unmount cleanup to tell "a write for this value is already running" from "this value
+   * has never been sent" — the first needs no rescue (the in-flight request completes on a client-side
+   * navigation), the second does.
+   */
+  const inFlightValueRef = useRef<string | null>(null)
+  useEffect(() => {
+    cfgRef.current = cfg
+  }, [cfg])
   useEffect(() => {
     return () => {
       const pending = pendingModelRef.current
       if (!pending.owed || !pending.value.trim()) return
+      /*
+       * Adopt an in-flight write instead of racing it.
+       *
+       * If `persistModel` already started for this exact value, the write is on its way and a second
+       * PUT from here would duplicate it. The sequence is bumped so the departing component's own
+       * response handler is superseded (it has nothing left to set), and the request keeps its own
+       * promise — switching views is a client-side route change, so it still completes and still
+       * persists the value. That rescue path is what the unmount effect exists for; this covers the
+       * narrower case where the write had ALREADY begun when the user navigated away.
+       */
+      if (inFlightValueRef.current === pending.value.trim()) return
       // Fire and forget: the component is going away, so nothing can await this.
       void fetch('/api/llm-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: pending.value.trim() }),
+        // The SAME complete payload the interactive path sends. A bare `{ model }` here does not mean
+        // "change only the model" — see `modelPatchPayload`; it resets every other field, silently,
+        // from a cleanup that no one can see the result of.
+        body: JSON.stringify(modelPatchPayload(cfgRef.current, pending.value.trim())),
       }).catch(() => null)
     }
   }, [])
@@ -163,17 +252,34 @@ export function AIConfigurationView() {
   async function persistModel(next: string) {
     setModel(next)
     setModelUnsaved(true)
+    // Cleared as the attempt begins: the destructive message below must only ever describe a write
+    // that has actually failed, never one that is merely still open. Leaving the previous failure's
+    // text on screen during a retry would report the old outcome as the new one's.
+    setModelSaveFailed(null)
     pendingModelRef.current = { value: next, owed: true }
+    /*
+     * Order model writes by INTENT, not by arrival.
+     *
+     * `modelWriteSeq` is a statement number: only the newest write may apply its response. Without it,
+     * two commits were two concurrent whole-row PUTs, and the slower one — the model the user had
+     * already moved OFF — could land last and become the stored value while the control displayed the
+     * newer one. The sequence makes the last click the winner, which is what the user sees.
+     */
+    const write = ++modelWriteSeq.current
+    inFlightValueRef.current = next
     try {
       const res = await fetch('/api/llm-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: next }),
+        body: JSON.stringify(modelPatchPayload(cfgRef.current, next)),
       })
       const json = await res.json().catch(() => null)
+      // A superseded write must not touch state at all — not the flag, not the toast, not `cfg`.
+      if (write !== modelWriteSeq.current) return
       if (!res.ok || !json?.ok) {
         throw new Error(extractError(json?.error, 'Could not save the model.'))
       }
+      inFlightValueRef.current = null
       setModelUnsaved(false)
       pendingModelRef.current = { value: '', owed: false }
       if (json.data) setCfg(json.data)
@@ -181,6 +287,9 @@ export function AIConfigurationView() {
     } catch (e) {
       // The selection STAYS in the control and the unsaved flag stays set, so a failed write is never
       // presented as a successful one.
+      if (write !== modelWriteSeq.current) return
+      inFlightValueRef.current = null
+      setModelSaveFailed(e instanceof Error ? e.message : 'Could not save the model.')
       toast.error('Could not save the model', {
         description: e instanceof Error ? e.message : undefined,
       })
@@ -201,8 +310,17 @@ export function AIConfigurationView() {
       }
       const list: string[] = json.data.models ?? []
       setModels(list)
-      // Reconcile: if the saved/current model isn't in the fresh list, snap to the first.
-      if (list.length > 0 && !list.includes(model)) setModel(list[0])
+      /*
+       * Reconcile: if the current model is not in the fresh list, snap to the first — and PERSIST it.
+       *
+       * This used to be a bare `setModel(list[0])`, which is the original reported defect exactly:
+       * local state changed, nothing was written, so the selection reverted the moment the user left
+       * the view. A model the provider does not serve is not merely unsaved, it cannot work, so
+       * leaving the row pointing at it is worse than the empty selection it looks like on a revisit.
+       */
+      if (list.length > 0 && !list.includes(model) && list[0]) {
+        void persistModel(list[0])
+      }
       toast.success(`${list.length} models found`, {
         description: baseUrl ? `From ${baseUrl}` : undefined,
       })
@@ -241,6 +359,12 @@ export function AIConfigurationView() {
         setApiKey('')
         setEmbeddingApiKey('')
       }
+      // This write covers every field the model pick could have left outstanding, so the "not saved
+      // yet" warning is now false and must go. Leaving it up after a successful Save would tell the
+      // user their model is still unsaved while the row holds it.
+      setModelUnsaved(false)
+      setModelSaveFailed(null)
+      pendingModelRef.current = { value: '', owed: false }
       toast.success('LLM configuration saved')
     } catch (e) {
       toast.error('Failed to save configuration', {
@@ -414,12 +538,18 @@ export function AIConfigurationView() {
                       className="font-mono text-xs"
                     />
                   )}
-                  {modelUnsaved && (
-                    // Shown only when a write FAILED. Normally the choice is committed immediately and
-                    // there is nothing to warn about; silence here would leave the control displaying a
-                    // value the server does not have.
-                    <p className="text-xs text-destructive">
-                      This model is not saved yet — storing it failed. Press Save, or choose again.
+                  {modelSaveFailed !== null && (
+                    /*
+                     * Shown only when a write FAILED, and showing WHY. Silence would leave the control
+                     * displaying a value the server does not have.
+                     *
+                     * `role="status"` + `aria-live="polite"`: this paragraph APPEARS in response to an
+                     * action, and a newly-inserted element is not announced by a screen reader on its
+                     * own — the user who picked a model and got a failure would otherwise be told
+                     * nothing at all, which is precisely the "it silently did not save" complaint.
+                     */
+                    <p className="text-xs text-destructive" role="status" aria-live="polite">
+                      This model is not saved yet — {modelSaveFailed} Press Save, or choose again.
                     </p>
                   )}
                   {models.length === 0 && (

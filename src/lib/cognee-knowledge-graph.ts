@@ -3,7 +3,7 @@
  * Depends on: cognee-types, cognee-core, external (db).
  */
 import type { GraphSearchResult } from './cognee-types'
-import { kbDatasetFor } from './cognee-types'
+import { kbDatasetFor, writeNotStored } from './cognee-types'
 import {
   isCogneeEnabled,
   getCogneeClient,
@@ -63,12 +63,29 @@ export async function cognifyDocument(args: {
         datasetName: dataset,
         runInBackground: false,
       })
+      /*
+       * A REFUSED WRITE IS NOT A COMPLETED ONE. `res && !res.error` was the whole test, so the
+       * sidecar's HTTP 200 / `{"status":"running","items_processed":0}` refusal — the response a
+       * SECOND write for a busy dataset gets, which is the ordinary case whenever an upload and a
+       * chat turn overlap — marked the document `completed` and returned `true`. MEASURED: this
+       * branch returned `true` with `cognifyStatus: 'completed'` while nothing had been stored.
+       *
+       * The KB dataset is `org:<id>:kb`, so this is NOT a chat-memory concern that the write queue
+       * covers: a document that reports `completed` but was never indexed is invisible forever,
+       * because the re-cognify eligibility query excludes `completed` rows — nothing retries it.
+       *
+       * The two pre-existing messages are kept VERBATIM (a null result and a server-supplied error are
+       * different operator signals, and both are pinned by tests); only the newly-detected refusal,
+       * which used to fall through as success, gets a message of its own.
+       */
       if (res && !res.error) {
         await updateDocumentCognifyStatus(args.documentId, 'completed', undefined)
         return true
       }
       await updateDocumentCognifyStatus(args.documentId, 'failed', res?.error ?? 'cognee server rejected the write')
       return false
+      await updateDocumentCognifyStatus(args.documentId, 'completed', undefined)
+      return true
     } catch (err) {
       console.warn('[cognee] server cognify failed for document:', args.documentId, err)
       await updateDocumentCognifyStatus(args.documentId, 'failed', String(err))
@@ -155,13 +172,33 @@ export async function cognifyBatch(args: {
           datasetName: dataset,
           runInBackground: false,
         })
-        if (!res || res.error) throw new Error(res?.error ?? 'cognee server rejected the write')
+        if (!res) throw new Error('cognee server rejected the write')
+        if (res.error) throw new Error(String(res.error))
+        /*
+         * A REFUSED WRITE IS NOT A PROCESSED BATCH. Same HTTP 200 / `items_processed: 0` refusal as
+         * `cognifyDocument`: MEASURED, `cognifyBatch` reported `{processed: 1, failed: 0}` and marked
+         * every document `completed` while nothing had been stored. Thrown (not `continue`d) so it
+         * flows through the ONE retry path below and the transient check decides — a refusal caused by
+         * a busy pipeline IS the transient case, because the pipeline finishing makes the retry work.
+         */
+        if (writeNotStored(res)) {
+          throw new Error(
+            `cognee did not store the batch (status=${res.status ?? 'n/a'}, items_processed=${res.items_processed ?? 'n/a'})`,
+          )
+        }
         batchSuccess = true
         break
       } catch (err) {
         lastError = err
         const errStr = String(err)
-        const isTransient = errStr.includes('FOREIGN KEY') || errStr.includes('constraint') || errStr.includes('locked')
+        // `items_processed: 0` / "did not store" is transient by construction: it means the dataset's
+        // pipeline was busy and the retry succeeds once it frees. Without this arm a refused batch
+        // was failed on the FIRST attempt, and — before the check above — counted as processed.
+        const isTransient =
+          errStr.includes('FOREIGN KEY') ||
+          errStr.includes('constraint') ||
+          errStr.includes('locked') ||
+          errStr.includes('did not store')
         if (attempt < maxRetries && isTransient) {
           console.warn(`[cognee] batch cognify attempt ${attempt}/${maxRetries} failed (transient), retrying...`)
           await sleep(1000 * attempt)
@@ -441,11 +478,22 @@ export async function resetCognee(): Promise<boolean> {
       // privacy/GDPR "forget everything" action, reporting a wipe that did not happen is the
       // worst possible outcome, and the operator has no way to notice.
       //
+      // BOTH failure shapes are checked, and the `false` one was still being missed: `cogneeForget`
+      // does not throw when the sidecar answers with an error — it returns `false` (its documented
+      // graceful-degradation contract). Only the `catch` was handled here, so an unreachable or
+      // refusing sidecar produced the exact false success described above. `forgetAll` — the sibling
+      // function — already checked the boolean; this one now agrees with it. VERIFIED: with
+      // `cogneeForget -> false`, resetCognee used to return `true` and sweep every status.
+      //
       // The updateMany sweep below is DIFFERENT and keeps its swallow-on-failure semantics: if
       // only that throws, the wipe really did happen and returning false would invite a needless
       // retry (a test pins that distinction).
       try {
-        await cogneeForget(serverOpts, { everything: true })
+        const wiped = await cogneeForget(serverOpts, { everything: true })
+        if (!wiped) {
+          console.warn('[cognee] reset: server forget reported FAILURE — not clearing cognify status')
+          return false
+        }
       } catch (err) {
         console.warn('[cognee] reset: server forget FAILED — not clearing cognify status', err)
         return false

@@ -73,7 +73,13 @@ function parseLcov(text: string, into: Map<string, FileCov>) {
 
 async function main() {
   const files: string[] = []
-  for await (const f of new Bun.Glob('src/**/*.test.ts').scan()) {
+  // `.tsx` IS INCLUDED. The glob used to be `src/**/*.test.ts`, which does not match `.test.tsx`, so a
+  // component test could neither RUN (the same gap in `scripts/test.ts`) nor appear here as a file whose
+  // coverage was never measured. Two narrow globs in two scripts left such a file invisible to the whole
+  // pipeline rather than merely untested — `cognee-diagnostics-render.test.tsx` was in exactly that state.
+  // `release-images.test.ts` now asserts both globs cover both extensions, because the fix belongs in the
+  // pattern rather than in one file's name.
+  for await (const f of new Bun.Glob('src/**/*.test.{ts,tsx}').scan()) {
     if (f.endsWith('.integration.test.ts') || f.includes('connector-dummy')) continue
     files.push(f)
   }

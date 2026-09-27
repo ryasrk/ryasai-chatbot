@@ -42,7 +42,7 @@ import { MemoryStatusCard } from '@/components/views/memory-status-card'
 import { extractError } from '@/lib/extract-error'
 import { StatCard } from './knowledge-base/stat-card'
 import { CatTab } from './knowledge-base/cat-tab'
-import { DocCard } from './knowledge-base/doc-card'
+import { DocCard, isCognifySettled } from './knowledge-base/doc-card'
 import { UploadDialog } from './knowledge-base/upload-dialog'
 import { DocDetailDialog } from './knowledge-base/doc-detail-dialog'
 import { VectorStorePanel } from './knowledge-base/vector-store-panel'
@@ -91,24 +91,47 @@ export function KnowledgeBaseView() {
     return () => window.removeEventListener('navigate-view', onNavigate as EventListener)
   }, [])
 
-  const fetchDocs = useCallback(async () => {
-    setLoading(true)
-    setLoadError(false)
+  /**
+   * Load the document list.
+   *
+   * `quiet` distinguishes a POLL from a user-visible load, and it is not cosmetic.
+   *
+   * The poll below reused this function as-is, so every 5 seconds it set `loading`, and the render
+   * branch for `loading` swaps the card grid for `CardGridSkeleton` (or, before the 200ms delayed
+   * skeleton threshold, for nothing at all). Each swap UNMOUNTS every `DocCard` — discarding each
+   * card's optimistic override, its `elapsed` counter and its own poll chain — and then mounts a fresh
+   * set that has forgotten a reprocess was in flight and shows whatever the last list said. The
+   * documents appeared to flicker to skeleton and back, the elapsed counter restarted from 0, and the
+   * card-level poll could never outlive one 5-second tick. A status screen that blanks itself while it
+   * is working is its own kind of dishonest.
+   *
+   * So a poll refreshes the DATA without announcing a load: `loading` and `loadError` are the
+   * user-facing states of an initial load / explicit retry, and a failed background poll must not
+   * replace a perfectly good list with a full-page error either.
+   */
+  const fetchDocs = useCallback(async (opts?: { quiet?: boolean }) => {
+    const quiet = opts?.quiet === true
+    if (!quiet) {
+      setLoading(true)
+      setLoadError(false)
+    }
     try {
       const res = await fetch('/api/documents', { cache: 'no-store' })
       const json = await res.json()
       if (res.ok && Array.isArray(json.documents)) {
         setDocs(json.documents as DocumentItem[])
-      } else {
+      } else if (!quiet) {
         setLoadError(true)
         toast.error(extractError(json.error, 'Failed to load document list.'))
       }
     } catch (e) {
-      setLoadError(true)
-      toast.error('Network error while loading documents.')
-      console.error(e)
+      if (!quiet) {
+        setLoadError(true)
+        toast.error('Network error while loading documents.')
+        console.error(e)
+      }
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [])
 
@@ -131,8 +154,18 @@ export function KnowledgeBaseView() {
    * stops it claiming to make progress on a document that never settles. A poll that runs forever is a
    * battery drain on a phone and a dead-socket risk behind a flaky connection.
    */
+  /*
+   * Is ANY document still settling?
+   *
+   * Deliberately NOT `!isCognifySettled(...)` for a null status. `null` means "this row never had a
+   * cognify status at all" — for a document uploaded before memory was switched on, or on an install
+   * where it is off, that is permanent, and treating it as pending would poll this list forever. The
+   * card's own rule is the opposite for the same input, and both are correct for their question: the
+   * card is asking "did the job I just queued report back?" (no → keep looking), while this is asking
+   * "is there anything worth watching?" (no → stop).
+   */
   const anyPending = docs.some(
-    (d) => d.status === 'processing' || (d.cognifyStatus != null && d.cognifyStatus !== 'completed' && d.cognifyStatus !== 'failed'),
+    (d) => d.status === 'processing' || (d.cognifyStatus != null && !isCognifySettled(d.cognifyStatus)),
   )
 
   useEffect(() => {
@@ -145,7 +178,9 @@ export function KnowledgeBaseView() {
         clearInterval(t)
         return
       }
-      void fetchDocs()
+      // Quiet: refresh the data ONLY. See `fetchDocs` — a poll that sets `loading` unmounts and resets
+      // every card on every tick.
+      void fetchDocs({ quiet: true })
     }, POLL_INTERVAL_MS)
     return () => clearInterval(t)
   }, [anyPending, fetchDocs])
@@ -347,7 +382,7 @@ export function KnowledgeBaseView() {
       {loading ? (
         showSkeleton ? <CardGridSkeleton count={6} /> : null
       ) : loadError ? (
-        <ErrorState message="Failed to load documents." onRetry={fetchDocs} />
+        <ErrorState message="Failed to load documents." onRetry={() => void fetchDocs()} />
       ) : docs.length === 0 ? (
         <Card>
           <CardContent className="p-0">

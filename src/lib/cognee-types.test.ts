@@ -11,8 +11,10 @@
  * — a wrong name is a cross-tenant memory leak, not a cosmetic bug.
  */
 import { describe, expect, test, afterEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { enterWithOrg, bypassOrg } from './prisma-tenant'
-import { datasetFor, kbDatasetFor, isValidSearchType, COGNEE_SEARCH_TYPES } from './cognee-types'
+import { datasetFor, kbDatasetFor, isValidSearchType, COGNEE_SEARCH_TYPES, writeNotStored, capWritePayload } from './cognee-types'
 
 afterEach(async () => {
   // Leave no org context behind for the next test in this file.
@@ -106,8 +108,7 @@ describe('kbDatasetFor — the per-org knowledge-graph dataset', () => {
   })
 })
 
-describe('isValidSearchType — the SDK literal guard', () => {
-  test('accepts the literals the module lists', () => {
+describe('isValidSearchType — the SDK literal guard', () => {  test('accepts the literals the module lists', () => {
     for (const t of COGNEE_SEARCH_TYPES) expect(isValidSearchType(t)).toBe(true)
   })
 
@@ -130,5 +131,120 @@ describe('isValidSearchType — the SDK literal guard', () => {
     expect(isValidSearchType('summaries')).toBe(false)
     expect(isValidSearchType('')).toBe(false)
     expect(isValidSearchType('NOPE')).toBe(false)
+  })
+})
+
+/**
+ * `writeNotStored` — the single "did the sidecar actually store this?" rule.
+ *
+ * MEASURED on the production sidecar: a write refused because the dataset's cognify pipeline is busy
+ * answers **HTTP 200** with `{"status":"running","items_processed":0,"pipeline_run_id":null}` — no
+ * error, no non-2xx. A real write holds that pipeline for 45-148s, so under concurrent load this is the
+ * ordinary response, not an edge case (four simultaneous chats produced eight refusals and only two
+ * turns reached memory).
+ *
+ * Having ONE definition is the point. Before this, the check existed inline in the chat-memory write
+ * and in the queue worker but NOT in `cognifyDocument`/`cognifyBatch`, which tested only
+ * `res && !res.error` and therefore reported `completed` — and `processed: 1` — for refused document
+ * writes. Three sites, two of them wrong, is what a single predicate prevents.
+ */
+describe('writeNotStored — HTTP 200 is not evidence that anything was stored', () => {
+  test('THE production refusal shape counts as NOT stored', () => {
+    expect(writeNotStored({ status: 'running', items_processed: 0, pipeline_run_id: null })).toBe(true)
+  })
+
+  test('EITHER signal alone is enough', () => {
+    // The sidecar has been seen to send them together, but a guard that required both would treat a
+    // future response carrying only one as a success. `items_processed: 0` is the LOAD-BEARING half:
+    // it means "the pipeline processed nothing".
+    expect(writeNotStored({ status: 'running' })).toBe(true)
+    expect(writeNotStored({ items_processed: 0 })).toBe(true)
+  })
+
+  test('a genuinely stored write is NOT flagged (the control)', () => {
+    // Without this direction the predicate could be `return true` and every other test would pass.
+    expect(writeNotStored({ status: 'completed', items_processed: 1 })).toBe(false)
+    expect(writeNotStored({ status: 'PipelineRunCompleted', items_processed: 3 })).toBe(false)
+    expect(writeNotStored({ items_processed: 2 })).toBe(false)
+  })
+
+  test('a null result is "not stored" — the transport-failure shape', () => {
+    // `cogneeRemember` returns null when the server is unreachable or answers non-2xx. Both write paths
+    // already treat null as failure; folding it in here keeps ONE rule instead of a separate `!res`.
+    expect(writeNotStored(null)).toBe(true)
+  })
+
+  test('an ABSENT items_processed is not read as 0', () => {
+    // `undefined === 0` is false, but a sloppy `!res.items_processed` would be TRUE and would flag every
+    // response from a sidecar version that reports progress some other way — failing writes that worked.
+    expect(writeNotStored({ status: 'completed' })).toBe(false)
+    expect(writeNotStored({})).toBe(false)
+  })
+
+  test('every write path in the subsystem calls it, rather than restating the rule', () => {
+    // The defect this guards is DIVERGENCE, and behaviour tests cannot see it: a fourth call site could
+    // re-implement the check slightly differently and pass its own tests. So the shared predicate must be
+    // what the write paths invoke. Comments are stripped first because this repo's fix comments QUOTE
+    // the old expressions, and a raw scan matches the prose instead of the implementation.
+    const read = (f: string) =>
+      readFileSync(join(import.meta.dir, f), 'utf-8')
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join('\n')
+    for (const f of ['cognee-memory.ts', 'cognee-knowledge-graph.ts', 'memory-worker.ts']) {
+      const src = read(f)
+      expect(src).toContain('writeNotStored(')
+      // And no file may keep a private copy of the comparison.
+      expect(src).not.toMatch(/items_processed === 0/)
+    }
+  })
+})
+
+/**
+ * `capWritePayload` — bound a turn, and MARK the clip.
+ *
+ * The marker is not decoration: the stored text is read back verbatim into future prompts, so a clipped
+ * turn that looks complete reads to the model as "the user stopped there" — a different conversation.
+ */
+describe('capWritePayload — a truncated turn must not look complete', () => {
+  test('a turn under the limit is returned untouched', () => {
+    const text = '{"user":"hi"}'
+    expect(capWritePayload(text, 4000)).toBe(text)
+  })
+
+  test('a turn over the limit is clipped AND carries the marker', () => {
+    const out = capWritePayload('x'.repeat(5000), 4000)
+    // Clipped to the limit, then the marker appended — the marker is deliberately OUTSIDE the budget so
+    // the marker itself can never be cut off, which would defeat the whole point.
+    expect(out.startsWith('x'.repeat(4000))).toBe(true)
+    expect(out).toContain('[memory truncated for extraction]')
+    expect(out.length).toBeGreaterThan(4000)
+  })
+
+  test('a turn EXACTLY at the limit is not marked', () => {
+    // The boundary. `<=` matters: marking a turn that lost nothing would put a false
+    // "truncated" signal into memory and into every future prompt that reads it.
+    const exact = 'y'.repeat(4000)
+    expect(capWritePayload(exact, 4000)).toBe(exact)
+    expect(capWritePayload(exact, 4000)).not.toContain('truncated')
+  })
+
+  test('BOTH write paths cap identically, because both invoke this one function', () => {
+    // MEASURED divergence this guards: the queue worker did a bare `.slice(0, MEMORY_WRITE_MAX_CHARS)`
+    // while the inline path used this function, so a queue-path turn arrived clipped and UNMARKED — and
+    // `cognee-memory.ts`'s comment claimed both called this function. A behaviour test on one path cannot
+    // see that, so the call sites are asserted directly. Comments stripped: the fix comments quote the
+    // old `.slice(...)`.
+    const read = (f: string) =>
+      readFileSync(join(import.meta.dir, f), 'utf-8')
+        .split('\n')
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join('\n')
+    for (const f of ['cognee-memory.ts', 'memory-worker.ts']) {
+      const src = read(f)
+      expect(src).toContain('capWritePayload(')
+      // No bare slice of the write budget may remain in either path.
+      expect(src).not.toMatch(/\.slice\(0,\s*MEMORY_WRITE_MAX_CHARS\)/)
+    }
   })
 })
