@@ -325,6 +325,20 @@ export async function cogneeRecall(
     onlyContext?: boolean
     /** Chat turns are short; a long recall must not stall the response. */
     timeoutMs?: number
+    /**
+     * Restrict results to these node sets — the `node_set` values passed to `remember`.
+     *
+     * THIS IS THE ONLY WAY TO SCOPE A KNOWLEDGE-GRAPH READ. MEASURED need: a recall restricted to one
+     * document still returned graph relations from OTHER documents, because the graph leg is a text
+     * completion with no per-document metadata in its response — and `KgRelation` carries a `chunkId` but no
+     * `documentId`, so nothing downstream could filter it either. Those relations reached the answer prompt
+     * via `CONTEXT (KNOWLEDGE GRAPH)`, so a scoped API key could read another document's facts.
+     *
+     * Verified against cognee v1.6.0's own OpenAPI rather than assumed: the recall body's `node_name` is
+     * documented as "Restrict results to these node sets (the node_set values passed to /v1/add or
+     * /v1/remember). Omit to search all nodes."
+     */
+    nodeNames?: string[]
   },
 ): Promise<CogneeSearchHit[] | null> {
   const payload: Record<string, unknown> = {
@@ -335,6 +349,10 @@ export async function cogneeRecall(
   if (args.searchType) payload.searchType = args.searchType
   if (args.sessionId) payload.sessionId = args.sessionId
   if (args.onlyContext !== undefined) payload.onlyContext = args.onlyContext
+  // OMITTED when empty, never sent as an empty list: "no node sets" would restrict the search to nothing,
+  // while an absent field means "all nodes" — the opposite meaning, and the correct default for the many
+  // callers that do not scope.
+  if (args.nodeNames && args.nodeNames.length > 0) payload.node_name = args.nodeNames
 
   const res = await fetchWithDeadline(
     apiUrl(opts.baseUrl, '/recall'),

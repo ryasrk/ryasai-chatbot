@@ -132,6 +132,16 @@ export async function runMultiStepDag(args: {
   userId: string
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
+  /**
+   * The API-key document scope, forwarded into EVERY plan step.
+   *
+   * This path was the THIRD unscoped entry the review found: it builds its own plan and calls
+   * `runNonStreamingChatCompletion` per step, so without this field a plan could read documents the key was
+   * scoped away from — `undefined` means "every document" to retrieval. The chat route sets
+   * `allowMultiStepDag: true`, so this is reached by ordinary use whenever the selector reports multiple tools
+   * or fails to choose.
+   */
+  documentIds?: string[] | null
 }): Promise<CompletionResult | null> {
   try {
     const availableTools = await getAvailableTools(args.question, 'chat')
@@ -154,6 +164,8 @@ export async function runMultiStepDag(args: {
       sessionId: args.sessionId,
       // runMultiStepDag uses 'chat' context — admin tools are never offered here.
       isAdmin: false,
+      // Threaded so no step can read outside the key's scope. Omitted would mean "every document".
+      documentIds: args.documentIds,
     })
 
     const answer = await synthesizeAnswer({

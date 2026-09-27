@@ -146,7 +146,7 @@ export async function retrieveRelevantChunks(args: {
 
   const [kgResult, cogneeGraphContext] = await Promise.all([
     dualLevelRetrieval({ query: args.query, topK: args.topK }),
-    recallGraphContext(args.query),
+    recallGraphContext(args.query, args.documentIds),
   ])
 
   // The knowledge graph contributes candidates after the lexical head, alongside the
@@ -398,10 +398,21 @@ async function retrieveAndFuse(args: {
   }
 }
 
-async function recallGraphContext(query: string): Promise<string> {
+async function recallGraphContext(query: string, documentIds?: string[] | null): Promise<string> {
   try {
     const { recallKnowledgeGraph } = await import('@/lib/cognee')
-    return await recallKnowledgeGraph({ query, topK: 5 })
+    /*
+     * `documentIds` is forwarded as cognee `nodeNames`, and this is the ONLY place the graph leg can be
+     * scoped: the recall returns TEXT with no per-document metadata, and `KgRelation` carries a `chunkId` but
+     * no `documentId`, so nothing downstream can filter it.
+     *
+     * MEASURED NEED: a recall restricted to one document still returned relations from OTHER documents, and
+     * those reached the answer prompt as `CONTEXT (KNOWLEDGE GRAPH)` — so a scoped API key could read another
+     * document's facts. The document-chunk legs were already scoped at the query; this was the one that leaked.
+     *
+     * `null`/absent means unrestricted, matching every other use of this argument.
+     */
+    return await recallKnowledgeGraph({ query, topK: 5, nodeNames: documentIds ?? undefined })
   } catch {
     return ''
   }

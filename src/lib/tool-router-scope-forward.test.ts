@@ -92,8 +92,74 @@ describe('the router forwards the API-key document scope into the agentic loops'
     // One forward per internal call site: two for runCompletion, two for runStreaming.
     const forwards = agentic.match(/documentIds: args\.documentIds/g) ?? []
 
-    expect(declarations.length).toBe(4) // 2 loops x (args object + callback type)
-    expect(callbackDecls.length).toBe(2) // both callback types
-    expect(forwards.length).toBe(4) // every internal re-entry
+    // Counts are MEASURED, never guessed: an earlier version of this guard asserted numbers from before the
+    // multi-step DAG was scoped and failed against correct code.
+    expect(declarations.length).toBe(5) // 2 agentic loops x args + callback, plus runMultiStepDag's own args
+    expect(callbackDecls.length).toBe(2) // both inline callback types
+    expect(forwards.length).toBe(5) // 4 internal re-entries + runMultiStepDag -> executePlan
+  })
+})
+
+describe('the MULTI-STEP DAG also carries the document scope', () => {
+  /**
+   * THE THIRD UNSCOPED ENTRY, found by adversarial review of this branch after the first two were fixed.
+   *
+   * `runMultiStepDag` builds its own plan and calls `runNonStreamingChatCompletion` per step, so it needed the
+   * scope as its own argument — the chat route sets `allowMultiStepDag: true`, which reaches this whenever the
+   * selector reports multiple tools or fails to choose.
+   *
+   * Counted rather than matched, for the same reason as the block above: a `toContain` is satisfied by a
+   * comment naming the field, and the fix's own comments DO name it.
+   */
+  test('runMultiStepDag declares documentIds and forwards it into executePlan', () => {
+    const agentic = stripComments(readFileSync(join(import.meta.dir, 'tool-router-agentic.ts'), 'utf-8'))
+    const dag = agentic.slice(agentic.indexOf('export async function runMultiStepDag'))
+    // Take a generous window rather than cutting at the first `\n}` — the function's first closing brace is at
+    // depth 1, so slicing there excluded the `executePlan` call the assertion is about. That is why this test
+    // failed against code that was already correct.
+    const body = dag.slice(0, 3000)
+    expect(body).toMatch(/documentIds\?: string\[\] \| null/)
+    expect(body).toMatch(/documentIds: args\.documentIds/)
+  })
+
+  test('executePlan and executeStep both carry it, and selfCorrect does too', () => {
+    /*
+     * The chain is four hops, and every one has to hold: executePlan -> executeStep -> the router call, plus
+     * the self-correction retry. A break ANYWHERE restores the fail-open behaviour, and the retry is the
+     * subtlest — a correction that escaped the scope would be a route to other documents, reached by failing
+     * first.
+     */
+    const planner = stripComments(readFileSync(join(import.meta.dir, 'planner.ts'), 'utf-8'))
+    const planFn = planner.slice(planner.indexOf('export async function executePlan'))
+    const planBody = planFn.slice(0, planFn.indexOf('\n}'))
+    expect(planBody).toMatch(/documentIds\?: string\[\] \| null/)
+
+    const stepFn = planner.slice(planner.indexOf('async function executeStep'))
+    expect(stepFn.slice(0, 400)).toMatch(/documentIds\?: string\[\] \| null/)
+
+    const selfFn = planner.slice(planner.indexOf('async function selfCorrect'))
+    expect(selfFn.slice(0, 500)).toMatch(/documentIds\?: string\[\] \| null/)
+
+    // Both router calls must pass it — the step call AND the corrected retry.
+    /*
+     * ASSERTED BY LOCATION, not by a total.
+     *
+     * A bare count of 3 SURVIVED the negative control that deleted the `selfCorrect` forward: the other two
+     * call sites still supplied the count, so the guard could not fail for the hop it was written for. Each
+     * hop is now named, which is the only form that fails when that SPECIFIC link is removed.
+     */
+    const selfCall = planner.slice(planner.indexOf('const corrected = await selfCorrect({'))
+    expect(selfCall.slice(0, 400)).toMatch(/documentIds: args\.documentIds/)
+
+    // executeStep's router call: the block between its own `runNonStreamingChatCompletion(` and the
+    // `hasFailedTool` check that follows it.
+    const stepAt = planner.indexOf('const completion = await runNonStreamingChatCompletion({\n      question,')
+    expect(stepAt).toBeGreaterThan(-1)
+    expect(planner.slice(stepAt, stepAt + 220)).toMatch(/documentIds: args\.documentIds/)
+
+    // selfCorrect's router call.
+    const fixAt = planner.indexOf('question: fixedQuestion.trim(),')
+    expect(fixAt).toBeGreaterThan(-1)
+    expect(planner.slice(fixAt, fixAt + 160)).toMatch(/documentIds: args\.documentIds/)
   })
 })

@@ -1397,3 +1397,62 @@ describe.skip('server backend — the SDK path is still used when no server is c
     expect(httpState.rememberCalls).toHaveLength(0)
   })
 })
+
+describe('the knowledge-graph read is SCOPED by node_set, and the write TAGS it', () => {
+  /**
+   * THE ONE LEG THAT LEAKED. MEASURED by an audit: a recall restricted to `documentIds: ['allowed-doc']`
+   * returned the correct document chunks but a `graphContext` string containing relations from OTHER
+   * documents — and `src/lib/tool-branches.ts` injects that string into the answer prompt as
+   * `CONTEXT (KNOWLEDGE GRAPH)`. So a scoped API key could read another document's facts.
+   *
+   * It could not be filtered downstream: the recall returns TEXT with no per-document metadata, and
+   * `KgRelation` carries a `chunkId` but no `documentId`. cognee's own `node_name` filter is the only place it
+   * can be applied — verified against the v1.6.0 OpenAPI rather than assumed.
+   *
+   * THE FILTER AND THE TAG ARE ONE MECHANISM. Sending `node_name` while never writing `node_set` would match
+   * NOTHING, converting a cross-document leak into a silently empty knowledge graph for exactly the keys the
+   * feature exists to protect. Both halves are pinned below, using the file's own recording seam
+   * (`httpState.recallCalls` / `httpState.rememberCalls`) so the assertions read the REAL arguments the
+   * transport built rather than a mock's return value.
+   */
+  test('recall forwards nodeNames to the sidecar as node_name', async () => {
+    // Opt into the SERVER branch. `beforeEach` sets `core.serverOptions = null` on purpose, so that a leaked
+    // serverOptions cannot silently move every other test off the SDK branch it exists to cover — and
+    // `recallKnowledgeGraph` returns '' immediately when there is no server. My first version of these three
+    // tests omitted this line and failed with an empty `recallCalls`, which is the same trap the file's own
+    // comment warns about.
+    core.serverOptions = { baseUrl: 'http://cognee:8000' }
+    httpState.recallCalls.length = 0
+    await recallKnowledgeGraph({ query: 'merger', topK: 3, nodeNames: ['doc-allowed'] })
+
+    expect(httpState.recallCalls.length).toBeGreaterThan(0)
+    for (const c of httpState.recallCalls) {
+      // Cognee's own field name, not ours: the transport must translate.
+      expect(c.args.nodeNames).toEqual(['doc-allowed'])
+    }
+  })
+
+  test('an UNSCOPED recall passes no nodeNames, so it still sees every node', async () => {
+    // The opposite direction, and the one that would break every existing install: an empty list means
+    // "restrict to nothing" while an absent field means "all nodes". They are opposites.
+    core.serverOptions = { baseUrl: 'http://cognee:8000' }
+    httpState.recallCalls.length = 0
+    await recallKnowledgeGraph({ query: 'merger' })
+    expect(httpState.recallCalls.length).toBeGreaterThan(0)
+    for (const c of httpState.recallCalls) expect(c.args.nodeNames).toBeUndefined()
+  })
+
+  test('a document WRITE is tagged with its own id, which is what the filter selects on', async () => {
+    // Without this half the filter matches nothing. The tag is the DOCUMENT ID because that is what the scope
+    // stores (`allowedDocumentIds`), so no mapping is needed in either direction.
+    core.serverOptions = { baseUrl: 'http://cognee:8000' }
+    httpState.rememberCalls.length = 0
+    await cognifyDocument({
+      documentId: 'doc-xyz',
+      documentName: 'policy.txt',
+      chunks: [{ content: 'Annual leave is 12 days.', chunkIndex: 0 }],
+    })
+    expect(httpState.rememberCalls.length).toBeGreaterThan(0)
+    expect(httpState.rememberCalls[0]!.args.nodeSet).toEqual(['doc-xyz'])
+  })
+})

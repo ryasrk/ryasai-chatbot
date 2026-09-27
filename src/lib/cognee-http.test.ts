@@ -288,3 +288,39 @@ describe('cognee-http — deadlines and auth', () => {
     globalThis.fetch = realFetch
   })
 })
+
+describe('cogneeRecall — the node_name filter is sent ONLY when scoped', () => {
+  /**
+   * The transport half of the knowledge-graph scope fix, and the half a negative control proved missing.
+   *
+   * Deleting `node_name` from the request, and writing a document WITHOUT `node_set`, are both caught by the
+   * caller's tests — but a transport that ALWAYS sent `node_name` (even as an empty list) survived all of them.
+   * `[]` does not mean "unrestricted" to cognee: the field is documented as "restrict results to these node
+   * sets", so an empty list restricts to NOTHING and the knowledge graph silently disappears for every
+   * existing install. The two meanings are opposites and only one is the default.
+   *
+   * Uses this file's own `fetchState.calls` recorder, so the assertions read the request the transport really
+   * sent.
+   */
+  const lastBody = (): { node_name?: string[] } =>
+    JSON.parse(fetchState.calls.at(-1)!.init.body as string)
+
+  test('a scoped recall sends the list under cognee\'s own field name', async () => {
+    fetchState.calls.length = 0
+    await cogneeRecall(OPTS, { query: 'q', datasets: ['d'], nodeNames: ['doc-a', 'doc-b'] })
+    // Cognee's field name, not ours — the transport must translate.
+    expect(lastBody().node_name).toEqual(['doc-a', 'doc-b'])
+  })
+
+  test('an UNSCOPED recall OMITS the field, which is what means "all nodes"', async () => {
+    fetchState.calls.length = 0
+    await cogneeRecall(OPTS, { query: 'q', datasets: ['d'] })
+    expect(lastBody().node_name).toBeUndefined()
+
+    // An explicitly EMPTY list must behave the same way. A caller producing `[]` (rather than undefined) must
+    // not silently switch the meaning from "everything" to "nothing".
+    fetchState.calls.length = 0
+    await cogneeRecall(OPTS, { query: 'q', datasets: ['d'], nodeNames: [] })
+    expect(lastBody().node_name).toBeUndefined()
+  })
+})

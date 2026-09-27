@@ -62,6 +62,18 @@ export async function cognifyDocument(args: {
         texts: [text],
         datasetName: dataset,
         runInBackground: false,
+        /*
+         * TAG THE DOCUMENT, or the scope filter has nothing to match.
+         *
+         * `node_set` is what cognee's recall `node_name` filter selects on. Without it every document is
+         * untagged, so a scoped recall would match NOTHING — turning a cross-document leak into a silently
+         * empty knowledge graph for exactly the keys the feature exists to protect. The filter and the tag are
+         * one mechanism and had to land together.
+         *
+         * The tag is the DOCUMENT ID, which is what the scope stores (`allowedDocumentIds`), so no mapping is
+         * needed in either direction.
+         */
+        nodeSet: [args.documentId],
       })
       /*
        * A REFUSED WRITE IS NOT A COMPLETED ONE. `res && !res.error` was the whole test, so the
@@ -176,6 +188,21 @@ export async function cognifyBatch(args: {
           texts: texts.map((t) => t.text),
           datasetName: dataset,
           runInBackground: false,
+          /*
+           * EVERY document in this batch is tagged, because the batch is sent as ONE concatenated text and
+           * cognee attributes node sets per REMEMBER CALL, not per segment. A relation extracted here can
+           * therefore only be attributed to the whole batch.
+           *
+           * THAT IS COARSER THAN THE SCOPE, and the direction matters: tagging with all ids means a key scoped
+           * to ANY ONE of them can read relations drawn from the others IN THE SAME BATCH. Still strictly
+           * better than the previous state — no tag at all, so a scoped recall matched nothing while an
+           * unscoped one matched everything — and it fails toward "too much" only within a batch written
+           * together, never across documents that were never cognified together.
+           *
+           * The precise fix is one call per document, which `cognifyDocument` already does; this batch path
+           * exists for throughput, so the limitation is described here rather than silently changed.
+           */
+          nodeSet: batch.map((doc) => doc.documentId),
         })
         if (!res) throw new Error('cognee server rejected the write')
         if (res.error) throw new Error(String(res.error))
@@ -294,6 +321,18 @@ function warnUnreliableHas(dataset: string): void {
 export async function recallKnowledgeGraph(args: {
   query: string
   topK?: number
+  /**
+   * Restrict the read to these node sets — i.e. these source documents.
+   *
+   * Threaded down from the API-key scope, and this is the ONE leg that leaked without it: a recall limited to
+   * a single document still returned graph relations from OTHER documents, and they were injected into the
+   * answer prompt as `CONTEXT (KNOWLEDGE GRAPH)`. The document-chunk legs were already scoped at the query.
+   *
+   * `node_name` is cognee's own filter (verified against the v1.6.0 OpenAPI), applied server-side — the only
+   * place it CAN be applied, because the response is text with no per-document metadata and `KgRelation` has
+   * a `chunkId` but no `documentId`.
+   */
+  nodeNames?: string[]
 }): Promise<string> {
   if (!(await isCogneeEnabled())) return ''
 
@@ -314,6 +353,9 @@ export async function recallKnowledgeGraph(args: {
           datasets: [kbDatasetFor()],
           searchType: strategy.searchType,
           topK: strategy.topK,
+          // The scope reaches cognee's own `node_name` filter — the only place it can be applied, since the
+          // response is text without per-document metadata.
+          nodeNames: args.nodeNames,
         })
         const text = (hits ?? []).map((h) => h.text ?? '').filter(Boolean).join('\n')
         if (text) results.push(text)

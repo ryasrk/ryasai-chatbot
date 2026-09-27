@@ -477,6 +477,14 @@ export async function executePlan(args: {
   sessionId?: string
   onStatus?: (stepId: string, tool: string, status: StepStatus) => void
   isAdmin?: boolean
+  /**
+   * The API-key document scope, forwarded to EVERY step's completion call.
+   *
+   * Without this the multi-step path re-entered the router unscoped, and `undefined` means "every document"
+   * to retrieval — so a plan step could read documents the key was scoped away from. An audit measured this
+   * by driving `executePlan` with a `rag` step: the router received `{question, userId}` and no `documentIds`.
+   */
+  documentIds?: string[] | null
 }): Promise<PlanStepResult[]> {
   const results: PlanStepResult[] = []
   const sorted = topoSort(args.plan.steps)
@@ -574,7 +582,7 @@ function groupByLevel(sorted: PlanStep[]): PlanStep[][] {
 
 async function executeStep(
   step: PlanStep,
-  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean },
+  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean; documentIds?: string[] | null },
   isConfirmed: boolean,
 ): Promise<PlanStepResult> {
   const started = Date.now()
@@ -771,6 +779,7 @@ async function executeStep(
     const completion = await runNonStreamingChatCompletion({
       question,
       userId: args.userId,
+      documentIds: args.documentIds,
     })
     const hasFailedTool = completion.toolRuns.some(
       (tr) => tr.status === 'error' || tr.status === 'blocked',
@@ -802,6 +811,9 @@ async function executeStep(
     // G10: self-correction — ask LLM to fix the input, retry once
     const corrected = await selfCorrect({
       step, error, userId: args.userId,
+      // The corrected retry runs the SAME step, so it must stay inside the same scope — a
+      // self-correction that escaped it would be a route to documents the key may not see.
+      documentIds: args.documentIds,
     })
     if (corrected) {
       args.onStatus?.(step.id, step.tool, 'done')
@@ -826,6 +838,8 @@ async function selfCorrect(args: {
   step: PlanStep
   error: string
   userId: string
+  /** See `executePlan` — a corrected retry must stay inside the same scope, not escape it. */
+  documentIds?: string[] | null
 }): Promise<string | null> {
   try {
     const originalQuestion =
@@ -838,6 +852,7 @@ async function selfCorrect(args: {
     const completion = await runNonStreamingChatCompletion({
       question: fixedQuestion.trim(),
       userId: args.userId,
+      documentIds: args.documentIds,
     })
     return completion.answer
   } catch (e) {
