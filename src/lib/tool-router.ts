@@ -143,7 +143,7 @@ async function _runNonStreamingChatCompletion(args: {
     // suffices: the DAG runs only when the model reports that several are
     // needed. MEASURED cost of getting this wrong: two planner calls per turn on
     // a BYOK key, where the customer pays for both.
-    const [, intCountForPrompt] = await loadDbData()
+    const [, intCountForPrompt] = await loadDbData(args)
     const quickPick = await selectToolWithLlm({
       question: args.question, context: 'chat', isAdmin: false,
       memoryContext: undefined, chatHistory: args.chatHistory,
@@ -338,6 +338,16 @@ async function loadIntentPipeline(args: {
   question: string
   chatHistory?: ChatHistoryEntry[]
   sessionId?: string
+  /**
+   * Declared so the scope survives this boundary.
+   *
+   * Both call sites pass the full `args` object, so these values ALREADY arrived at runtime while this type named
+   * neither — which is why `loadDbData(args)` below could not read them and the routing prompt was built from
+   * every source in the org. Same "the spread carries it, the type discards it" shape that hid the streaming
+   * `documentIds` gap.
+   */
+  integrationIds?: string[] | null
+  documentIds?: string[] | null
 }): Promise<[string, Awaited<ReturnType<typeof loadDbData>>, string]> {
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
   // ponytail: recall + rewrite do semantic/string matching — the session
@@ -348,7 +358,7 @@ async function loadIntentPipeline(args: {
     hasHistory
       ? rewriteQuery({ question: cleanQuestion, chatHistory: args.chatHistory! })
       : Promise.resolve(cleanQuestion),
-    loadDbData(),
+    loadDbData(args),
     recallContext({ query: cleanQuestion, sessionId: args.sessionId }).catch(() => ''),
   ])
   if (hasHistory) {
@@ -357,20 +367,32 @@ async function loadIntentPipeline(args: {
   return [effectiveQuestion, dbData, memoryContext]
 }
 
-async function loadDbData() {
+/**
+ * The DB context the ROUTER prompt is built from.
+ *
+ * `scope` is threaded in because these counts and name lists go INTO the routing prompt. Unscoped, the model was
+ * told about databases the key may not read — so it could choose one and the branch would then refuse (a
+ * confusing outcome for the caller), and the org's source NAMES and schema descriptions leaked to a key with no
+ * access to them.
+ */
+async function loadDbData(scope?: { integrationIds?: string[] | null; documentIds?: string[] | null }) {
+  // `null`/absent means unrestricted, so both filters are spread CONDITIONALLY. An empty `in: []` would match
+  // nothing and lock out every key created before these axes existed.
+  const intScope = scope?.integrationIds && scope.integrationIds.length > 0 ? { id: { in: scope.integrationIds } } : {}
+  const docScope = scope?.documentIds && scope.documentIds.length > 0 ? { id: { in: scope.documentIds } } : {}
   const queries = Promise.all([
-    db.document.count({ where: { status: 'ready', isEnabled: true } }),
-    db.integration.count({ where: { status: 'active' } }),
+    db.document.count({ where: { status: 'ready', isEnabled: true, ...docScope } }),
+    db.integration.count({ where: { status: 'active', ...intScope } }),
     // ponytail: description included — the LLM first-scan (source-init) writes
     // it when the uploader doesn't. "invoice_sop_2024.pdf — Refund policy for
     // enterprise customers…" routes RAG questions far better than a file name.
     db.document.findMany({
-      where: { status: 'ready', isEnabled: true },
+      where: { status: 'ready', isEnabled: true, ...docScope },
       select: { name: true, category: true, description: true },
       take: 20,
     }),
-    db.integration.findMany({ where: { status: 'active' }, select: { name: true }, take: 20 }),
-    db.integrationSchema.findMany({ where: { integration: { status: 'active' }, description: { not: null } }, select: { tableName: true, description: true, integration: { select: { name: true } } }, take: 40 }),
+    db.integration.findMany({ where: { status: 'active', ...intScope }, select: { name: true }, take: 20 }),
+    db.integrationSchema.findMany({ where: { integration: { status: 'active', ...intScope }, description: { not: null } }, select: { tableName: true, description: true, integration: { select: { name: true } } }, take: 40 }),
     // ponytail: endpoint descriptions too — same first-scan rationale; they
     // tell the router which REST source answers which question.
     db.restApiEndpoint.findMany({

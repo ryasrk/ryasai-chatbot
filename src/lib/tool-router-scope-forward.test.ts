@@ -208,3 +208,33 @@ describe('the TOOL EXECUTORS carry the document scope — the last unscoped entr
     expect(call).toMatch(/documentIds: resolveScope\(identity\.scope\)\.documentIds/)
   })
 })
+
+describe('the integration axis: EVERY source-selection query in the chat path is scoped', () => {
+  /**
+   * A STRUCTURAL AUDIT, deliberately, because per-site assertions were the wrong shape here.
+   *
+   * The integration axis took FOUR passes to close: first `runSqlBranch`, then `prepareSqlStream` (whose five
+   * lookups included a COUNT I only found by auditing with a script), then `tool-router`'s prompt context. Each
+   * pass fixed the sites I remembered, and the next audit found more. A test that names the sites it knows about
+   * cannot catch the site nobody remembered — and an unscoped lookup is invisible at runtime: the query simply
+   * returns more rows than the key is allowed to see.
+   *
+   * So this enumerates EVERY `db.integration*` query in the three files that build a chat answer, and requires
+   * the scope filter on each. A new lookup added without one fails here by name.
+   */
+  const FILES = ['tool-router.ts', 'tool-branches.ts', 'stream-preparers.ts']
+
+  for (const file of FILES) {
+    const src = stripComments(readFileSync(join(import.meta.dir, file), 'utf-8'))
+
+    test(`${file}: every integration query applies a scope filter`, () => {
+      // Match the query plus its `where:` object, up to the first closing brace — enough to see the filter.
+      const queries = [...src.matchAll(/db\.integration(?:Schema)?\.\w+\(\{?\s*\n?\s*where: \{[^}]*\}/g)].map((m) => m[0])
+      expect(queries.length).toBeGreaterThan(0)
+
+      const unscoped = queries.filter((q) => !/\.\.\.(inScope|intScope)\b/.test(q))
+      // Named in the failure so the message points at the site rather than at a count.
+      expect(unscoped.map((q) => q.replace(/\s+/g, ' ').slice(0, 110))).toEqual([])
+    })
+  }
+})
