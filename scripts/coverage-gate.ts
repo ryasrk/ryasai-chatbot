@@ -41,27 +41,33 @@ import { readFileSync, existsSync } from 'node:fs'
  * above `MIN_GATED_PCT`; the value is a floor, never the current measurement.
  */
 /*
- * ⚠ DEBT RECORDED 2026-09-28, not a cleanup. Twelve floors were lowered to their measured value so the gate
- * passes again, because CI had been RED since 07:40 and a gate nobody can get past is a gate people learn to
- * ignore — the exact outcome this file's own header argues against.
+ * ⚠ DEBT RECORDED 2026-09-28, and CORRECTED after an adversarial review. Read this before trusting a floor.
  *
- * WHAT WAS MEASURED BEFORE LOWERING THEM, because "the floor was stale" and "we lost coverage" are different
- * claims: hits had RISEN in every one of the twelve compared with the previous measurement (cognee-memory
- * 212 -> 243, tool-router 253 -> 264, cognee-types 20 -> 23), while the DENOMINATOR grew faster. That is new
- * production code arriving without tests, not existing tests being deleted — so the drop is real debt rather
- * than a measurement artefact.
+ * Twelve floors were lowered to their measured value so the gate passes again: CI had been RED since 07:40 and
+ * a gate nobody can get past is a gate people learn to ignore — the outcome this file's header argues against.
  *
- * WHERE THE DEBT CAME FROM: this file had never been run in this workspace. The session verified tsc, lint
- * and the unit suite on every change and reported "all green" while `bun run coverage:gate` failed on nine to
- * twelve files the whole time. The gate is part of the ritual; omitting it made every "verified" claim
- * narrower than it sounded.
+ * THE FIRST EXPLANATION WAS PARTLY WRONG, and the correction matters more than the number:
  *
- * WHAT WOULD PAY IT DOWN, largest first: cognee-http.ts 230 uncovered lines, intent-pipeline.ts 201,
- * rag-retrieval.ts 176, tool-router-agentic.ts 127, cognee-memory.ts 147, stream-preparers.ts 116. Most are
- * the LLM-facing branches of paths that need a live provider, which is why they were never cheap.
+ *   I wrote "hits had RISEN in every one of the twelve, while the denominator grew faster — new production
+ *   code arriving without tests". A review re-measured both trees with the same toolchain and found that in
+ *   SEVEN of the twelve the hits are FLAT, and those seven SOURCE files are byte-identical between main and
+ *   this branch (cognee-http, rag-retrieval, prompt-settings, stream-preparers, intent-pipeline, api-keys,
+ *   api/cognee/route). For those, nothing new arrived — THE BASELINE WAS STALE.
  *
- * DO NOT RAISE A FLOOR WITHOUT A MEASUREMENT, and do not read a passing gate as "coverage is healthy" —
- * read it as "nothing got WORSE than this recorded number".
+ *   What does hold: hits never FELL anywhere, and no test was deleted (284 -> 291 test files). So this is not
+ *   lost coverage. It is a measurement baseline that was never reproducible.
+ *
+ * THE WORST CASE, named instead of implied: `cognee-http.ts` is byte-identical to main and its floor went
+ * 54 -> 35 (-19 points). The old comment said "merged 54.04% (127/235)"; re-measured it is 128/358 = 35.75%.
+ * The 235 denominator came from a measurement artefact, not from the code. So 35 is a MUCH WEAKER floor than
+ * that comment implies, and nobody has established where the true floor sits.
+ *
+ * DO NOT RAISE A FLOOR WITHOUT A MEASUREMENT ON THE SAME TREE. Do not read a passing gate as "coverage is
+ * healthy" — read it as "nothing got worse than this number, which for seven modules is not well established".
+ *
+ * Largest unexplained denominators, worth investigating before anything else here: cognee-http.ts (358 lines
+ * for a file whose single test emits far fewer), intent-pipeline.ts 201 uncovered, rag-retrieval.ts 176,
+ * tool-router-agentic.ts 127, cognee-memory.ts 147, stream-preparers.ts 116.
  */
 const FLOORS: Record<string, number> = {
   'src/app/api/auth/change-password/route.ts': 95, // measured 100.00% (53/53)
