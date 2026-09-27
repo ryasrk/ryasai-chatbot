@@ -228,11 +228,36 @@ export async function prepareSqlStream(args: {
   systemPromptPrefix?: string
   memoryContext?: string
   chatHistory?: ChatHistoryEntry[]
+  /**
+   * The API-key document scope, declared here because the router passes `branchArgs` by SPREAD — the value
+   * already arrived at runtime, and without this declaration it was discarded at the type boundary.
+   *
+   * Exactly the shape this review kept finding: `...args` carrying a field the callee's type never named, so
+   * the argument is dropped silently and nothing reports it.
+   */
+  documentIds?: string[] | null
+  /**
+   * The API-key scope's allowed integrations, or `null` for every source.
+   *
+   * The streaming sibling of `runSqlBranch`'s parameter. Both transports auto-select an integration when the
+   * question does not name one, so both must be filtered — and this path has FIVE such lookups, which is why
+   * the axis could not be corrected in one place.
+   */
+  integrationIds?: string[] | null
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
+  /*
+   * The scope filter, applied to ALL FIVE lookups in this branch.
+   *
+   * `null` means unrestricted — what every key created before this axis resolves to — so it is spread in
+   * CONDITIONALLY rather than sent as `in: []`, which would match nothing and lock out every existing key.
+   */
+  const scopeIds = args.integrationIds && args.integrationIds.length > 0 ? args.integrationIds : null
+  const inScope = scopeIds ? { id: { in: scopeIds } } : {}
+
   let integration = args.integrationId
     ? await db.integration.findFirst({
-        where: { id: args.integrationId, status: 'active' },
+        where: { id: args.integrationId, status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     : null
@@ -245,25 +270,33 @@ export async function prepareSqlStream(args: {
   // fallbacks silently took the OLDEST source instead of refusing. Now delegated
   // to resolveIntegrationForQuestion so there is exactly one implementation.
   if (!integration) {
-    const available = await db.integration.count({ where: { status: 'active' } })
+    /*
+     * SCOPED, and this one changes BEHAVIOUR rather than only safety.
+     *
+     * `available` decides whether the single-source fast path or the "ambiguous — ask which" path is taken. An
+     * unscoped count let a key restricted to ONE database count every database in the org, so it was asked to
+     * disambiguate between sources it may not read: the operator would be shown a list of names the key cannot
+     * access, and the single-source fast path it legitimately qualified for never ran.
+     */
+    const available = await db.integration.count({ where: { status: 'active', ...inScope } })
     if (available > 1) {
       const choice = await resolveIntegrationForQuestion(tokenize(args.question), args.question, 'refuse')
       if (!choice) {
         // Refuse to guess in a streaming turn too, and name the candidates.
         const names = await db.integration.findMany({
-          where: { status: 'active' },
+          where: { status: 'active', ...inScope },
           orderBy: { name: 'asc' },
           select: { name: true },
         })
         return prepareChatStreamWithNote(args, ambiguousStreamNote(names.map((n) => n.name)), started)
       }
       integration = await db.integration.findFirst({
-        where: { id: choice.integrationId, status: 'active' },
+        where: { id: choice.integrationId, status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     } else {
       integration = await db.integration.findFirst({
-        where: { status: 'active' },
+        where: { status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     }

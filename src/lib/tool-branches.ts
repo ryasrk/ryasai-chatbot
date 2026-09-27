@@ -239,6 +239,16 @@ export async function runSqlBranch(args: {
   systemPromptPrefix?: string
   memoryContext?: string
   chatHistory?: ChatHistoryEntry[]
+  /**
+   * The API-key scope's allowed integrations, or `null`/absent for every source.
+   *
+   * WITHOUT THIS the axis was computed and DROPPED: the route resolved `effectiveScope.integrationIds` and
+   * passed only `documentIds` onward, so a key restricted to one database could be routed to another one
+   * whenever the question's keywords scored against a different schema. The document axis was enforced while
+   * this one was not, which is the same "stored, validated, displayed, enforces nothing" shape the tool-family
+   * axis had before it was fixed.
+   */
+  integrationIds?: string[] | null
 }): Promise<CompletionResult> {
   const started = Date.now()
   // ponytail: when the router did not resolve a specific integration, ASK
@@ -251,9 +261,23 @@ export async function runSqlBranch(args: {
   // strictly better than a confident answer from the wrong database.
   // The streaming path had a second, different heuristic — both now go through
   // resolveIntegrationForQuestion so they cannot drift again.
+  /*
+   * The scope's integration filter, applied to EVERY lookup in this branch.
+   *
+   * `null` means unrestricted, which is what every key created before this axis existed resolves to — so
+   * the filter is spread in CONDITIONALLY rather than sent as `in: []`, which would match nothing and lock
+   * out every existing key. That distinction is the whole convention the scope module documents.
+   */
+  const scopeIds = args.integrationIds && args.integrationIds.length > 0 ? args.integrationIds : null
+  const inScope = scopeIds ? { id: { in: scopeIds } } : {}
+
   let integration = args.integrationId
     ? await db.integration.findFirst({
-        where: { id: args.integrationId, status: 'active' },
+        // A CLIENT-NAMED integration outside the scope resolves to null here, so the branch reports "no data
+        // source" rather than answering from a database the key may not read. Fail-closed on purpose: a refusal
+        // reads as a configuration problem an operator can fix, while silently answering from another database
+        // reads as a correct answer.
+        where: { id: args.integrationId, status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     : null
@@ -261,14 +285,15 @@ export async function runSqlBranch(args: {
   let integrationUnverified = false
   if (!integration) {
     const active = await db.integration.findMany({
-      where: { status: 'active' },
+      // Scoped, or a key restricted to one database would be offered every other one to choose from.
+      where: { status: 'active', ...inScope },
       orderBy: { name: 'asc' },
       select: { name: true },
     })
     if (active.length === 1) {
       // Exactly one source configured — nothing to disambiguate.
       integration = await db.integration.findFirst({
-        where: { status: 'active' },
+        where: { status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
     } else if (active.length > 1) {
@@ -282,7 +307,7 @@ export async function runSqlBranch(args: {
         return ambiguousDataSourceResult('SQL', args.question, active.map((n) => n.name), started)
       }
       integration = await db.integration.findFirst({
-        where: { id: choice.integrationId, status: 'active' },
+        where: { id: choice.integrationId, status: 'active', ...inScope },
         include: { schemas: { orderBy: { tableName: 'asc' } } },
       })
       integrationUnverified = choice.unverified

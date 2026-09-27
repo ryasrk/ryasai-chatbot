@@ -206,6 +206,9 @@ export async function POST(req: NextRequest) {
         chatHistory,
         // The resolved scope reaches retrieval, which applies it at the query.
         documentIds: effectiveScope.documentIds,
+        // The OTHER axis of the same scope — resolved and then dropped, so a key
+        // restricted to one database could still be routed to another by keyword scoring.
+        integrationIds: effectiveScope.integrationIds,
       })
 
       const completionId = `chatcmpl_${session.id}_${started}`
@@ -407,6 +410,9 @@ export async function POST(req: NextRequest) {
       chatHistory,
       allowMultiStepDag: true,
       documentIds: effectiveScope.documentIds,
+      // The OTHER axis of the same scope — resolved and then dropped, so a key
+      // restricted to one database could still be routed to another by keyword scoring.
+      integrationIds: effectiveScope.integrationIds,
     })
 
     const aiMessage = await db.chatMessage.create({

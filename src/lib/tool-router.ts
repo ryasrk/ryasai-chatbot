@@ -58,6 +58,14 @@ export async function runNonStreamingChatCompletion(args: {
    * forgetting a field. Returning to the caller is what makes the API-key scope reach retrieval.
    */
   documentIds?: string[] | null
+  /**
+   * The API-key scope's allowed integrations, or `null` for every source.
+   *
+   * Companion to `documentIds` on the same axis. Without it the SQL branch auto-selected from EVERY active
+   * integration, so a key restricted to one database could be routed to another by keyword scoring — the
+   * "computed and dropped" shape `effectiveScope.integrationIds` had.
+   */
+  integrationIds?: string[] | null
 }): Promise<CompletionResult> {
   return withUsageTracking(() => _runNonStreamingChatCompletion(args))
 }
@@ -73,6 +81,14 @@ async function _runNonStreamingChatCompletion(args: {
   systemPromptPrefix?: string
   signal?: AbortSignal
   documentIds?: string[] | null
+  /**
+   * The API-key scope's allowed integrations, or `null` for every source.
+   *
+   * Companion to `documentIds` on the same axis. Without it the SQL branch auto-selected from EVERY active
+   * integration, so a key restricted to one database could be routed to another by keyword scoring — the
+   * "computed and dropped" shape `effectiveScope.integrationIds` had.
+   */
+  integrationIds?: string[] | null
 }): Promise<CompletionResult> {
   /**
    * Remember the turn, then return the answer — ONE exit point for the memory write.
@@ -225,6 +241,14 @@ export async function runStreamingChatCompletion(args: {
   systemPromptPrefix?: string
   /** See `runNonStreamingChatCompletion` — same contract, both transports. */
   documentIds?: string[] | null
+  /**
+   * The API-key scope's allowed integrations, or `null` for every source.
+   *
+   * Companion to `documentIds` on the same axis. Without it the SQL branch auto-selected from EVERY active
+   * integration, so a key restricted to one database could be routed to another by keyword scoring — the
+   * "computed and dropped" shape `effectiveScope.integrationIds` had.
+   */
+  integrationIds?: string[] | null
 }): Promise<StreamingCompletionResult> {
   return withUsageTracking(() => _runStreamingChatCompletion(args))
 }
@@ -240,6 +264,14 @@ async function _runStreamingChatCompletion(args: {
   systemPromptPrefix?: string
   /** See `runNonStreamingChatCompletion` — same contract, both transports. */
   documentIds?: string[] | null
+  /**
+   * The API-key scope's allowed integrations, or `null` for every source.
+   *
+   * Companion to `documentIds` on the same axis. Without it the SQL branch auto-selected from EVERY active
+   * integration, so a key restricted to one database could be routed to another by keyword scoring — the
+   * "computed and dropped" shape `effectiveScope.integrationIds` had.
+   */
+  integrationIds?: string[] | null
 }): Promise<StreamingCompletionResult> {
   if (args.allowMultiStepDag && args.chatHistory && args.chatHistory.length > 0) {
     return runStreamingAgenticLoop({
