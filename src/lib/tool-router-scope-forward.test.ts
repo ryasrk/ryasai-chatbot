@@ -163,3 +163,48 @@ describe('the MULTI-STEP DAG also carries the document scope', () => {
     expect(planner.slice(fixAt, fixAt + 160)).toMatch(/documentIds: args\.documentIds/)
   })
 })
+
+describe('the TOOL EXECUTORS carry the document scope — the last unscoped entry', () => {
+  /**
+   * Found by adversarial review after four other entries were closed. `SQL_TOOL`, `RAG_TOOL` and `REST_TOOL`
+   * each call `runNonStreamingChatCompletion` themselves, and none passed a scope — so on `/api/v1/agent/run` a
+   * key whose `allowedDocumentIds` named one document still retrieved across the whole org. The orchestration
+   * around the tools was scoped; the executors were not.
+   *
+   * TWO SEPARATE GUARANTEES, and this file guards both because they fail independently:
+   *   - `allowedTools` filters which families are OFFERED (a filter on the list),
+   *   - `documentIds` filters what a permitted tool may READ (a filter on the query).
+   * A family can be allowed AND scoped, so scoping the list does not scope the tool.
+   */
+  const unified = stripComments(readFileSync(join(import.meta.dir, 'unified-tools.ts'), 'utf-8'))
+  const orch = stripComments(readFileSync(join(import.meta.dir, 'agent-orchestrator.ts'), 'utf-8'))
+  const route = stripComments(
+    readFileSync(join(import.meta.dir, '..', 'app', 'api', 'v1', 'agent', 'run', 'route.ts'), 'utf-8'),
+  )
+
+  test('the context carries the scope and all THREE router calls consume it', () => {
+    const ctx = unified.slice(unified.indexOf('export interface ToolExecutionContext'))
+    expect(ctx.slice(0, 900)).toMatch(/documentIds\?: string\[\] \| null/)
+    // Counted because the three executors are near-identical: a per-site assertion would be three copies of the
+    // same line, and a count fails loudly if one is dropped while the others stay.
+    const uses = unified.match(/documentIds: context\.documentIds/g) ?? []
+    expect(uses.length).toBe(3)
+  })
+
+  test('the orchestrator builds the context WITH the scope, not without it', () => {
+    // The context being able to carry it is useless if the constructor omits it — the same "declared but not
+    // forwarded" shape as the agentic loop that started this whole review.
+    const at = orch.indexOf('const toolExecutionContext: ToolExecutionContext = {')
+    expect(at).toBeGreaterThan(-1)
+    expect(orch.slice(at, at + 600)).toMatch(/documentIds: options\.documentIds/)
+    expect(orch).toMatch(/documentIds\?: string\[\] \| null/)
+  })
+
+  test('the route sets BOTH axes from the resolved scope', () => {
+    const at = route.indexOf('runAgentOrchestrator({')
+    expect(at).toBeGreaterThan(-1)
+    const call = route.slice(at, at + 1200)
+    expect(call).toMatch(/allowedTools: resolveScope\(identity\.scope\)\.tools/)
+    expect(call).toMatch(/documentIds: resolveScope\(identity\.scope\)\.documentIds/)
+  })
+})

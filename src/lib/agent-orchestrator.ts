@@ -49,6 +49,14 @@ export interface AgentOrchestratorOptions {
    * model offered a tool chooses it. The scope was stored, validated and DISPLAYED while enforcing nothing.
    */
   allowedTools?: string[] | null
+  /**
+   * The API-key DOCUMENT scope, threaded to the tool executors.
+   *
+   * Separate from `allowedTools` on purpose: that one decides which tool families are OFFERED (a filter on the
+   * list), while this decides what a permitted tool may READ (a filter on the query). A family can be allowed
+   * and still be scoped, and the two mechanisms fail independently.
+   */
+  documentIds?: string[] | null
   sessionId?: string
   context?: 'chat' | 'agentic'
   isAdmin?: boolean
@@ -176,6 +184,11 @@ export async function runAgentOrchestrator(
         organizationId: options.organizationId,
         sessionId: options.sessionId,
         isAdmin: options.isAdmin,
+        // The scope reaches the EXECUTORS, not only the tool LIST. The filter above keeps a forbidden family
+        // out of the surface, but `SQL_TOOL`, `RAG_TOOL` and `REST_TOOL` each build their own router call — so
+        // without this a permitted tool still ran unscoped. Removing a tool and scoping a tool are two
+        // different guarantees, and this is the second one.
+        documentIds: options.documentIds,
       }
 
       const executionPromises = toolCalls.map(async (call) => {

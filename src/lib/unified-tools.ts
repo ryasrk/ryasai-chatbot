@@ -37,6 +37,15 @@ export interface ToolExecutionContext {
   sessionId?: string
   isAdmin?: boolean
   isConfirmed?: boolean
+  /**
+   * The API-key document scope, forwarded to the router by the tools that call it.
+   *
+   * WITHOUT THIS the tool path was the LAST unscoped entry: `SQL_TOOL`, `RAG_TOOL` and `REST_TOOL` each call
+   * `runNonStreamingChatCompletion` themselves, and none passed a scope — so a key whose `allowedDocumentIds`
+   * named one document still retrieved across the whole org, reached from `/api/v1/agent/run`. The
+   * orchestration around these tools was scoped; the executors were not.
+   */
+  documentIds?: string[] | null
 }
 
 export interface ToolExecutionResult {
@@ -156,6 +165,7 @@ export const SQL_TOOL: UnifiedTool = {
         question,
         userId: context.userId,
         sessionId: context.sessionId,
+        documentIds: context.documentIds,
       })
       const failed = completion.toolRuns.find((tr) => tr.status === 'error' || tr.status === 'blocked')
       if (failed) {
@@ -206,6 +216,7 @@ export const RAG_TOOL: UnifiedTool = {
         question: query,
         userId: context.userId,
         sessionId: context.sessionId,
+        documentIds: context.documentIds,
       })
       return { ok: true, output: completion.answer, latencyMs: Date.now() - start }
     } catch (e) {
@@ -243,6 +254,7 @@ export const REST_TOOL: UnifiedTool = {
         question,
         userId: context.userId,
         sessionId: context.sessionId,
+        documentIds: context.documentIds,
       })
       return { ok: true, output: completion.answer, latencyMs: Date.now() - start }
     } catch (e) {

@@ -123,6 +123,9 @@ export async function POST(req: NextRequest) {
        * as "unrestricted" — the same convention the chat route uses.
        */
       allowedTools: resolveScope(identity.scope).tools,
+      // The DOCUMENT scope, so the tools that run are scoped and not merely filtered. Without it a granted
+      // tool could still read documents the key was restricted away from — measured reachable on this route.
+      documentIds: resolveScope(identity.scope).documentIds,
     })
 
     const answer = orchestratorResult.answer
