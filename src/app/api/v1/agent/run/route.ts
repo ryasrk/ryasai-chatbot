@@ -5,7 +5,7 @@ import { handleApiError, writeAudit } from '@/lib/session'
 import { runAgentOrchestrator } from '@/lib/agent-orchestrator'
 import { rememberChatTurn } from '@/lib/cognee'
 import { rateLimit } from '@/lib/redis'
-import { getOrgContext } from '@/lib/prisma-tenant'
+import { enterWithOrg, getOrgContext } from '@/lib/prisma-tenant'
 import { logSwallowed } from '@/lib/logger'
 
 async function writeApiLog(args: {
@@ -41,6 +41,24 @@ export async function POST(req: NextRequest) {
   try {
     const identity = await requireExternalApiKey(req)
     apiKeyId = identity.apiKeyId
+
+    /*
+     * ENTER THE ORG HERE, explicitly.
+     *
+     * `requireExternalApiKey` calls `enterWithOrg` internally, but `AsyncLocalStorage.enterWith()` does NOT
+     * propagate back to the caller's frame — MEASURED by the audit with a standalone probe: a route that
+     * never enters resolves `undefined`, while one that does resolves its own org. So every DB query in THIS
+     * handler ran with no org context, and the tenant extension skips injection entirely when the context is
+     * empty (`prisma-tenant.ts`: `if (!orgId) return query(args)`).
+     *
+     * CONSEQUENCE, proven on the live database inside a transaction the audit rolled back: a FOREIGN org's
+     * document was returned by the unscoped query here. That is a cross-tenant read, not merely a missing
+     * scope — and `db.user.findFirst` below had the same exposure, which is why it could pick another
+     * tenant's user as the run's actor.
+     *
+     * `src/app/api/v1/chat/completions/route.ts` already did this; the two routes had diverged.
+     */
+    enterWithOrg(identity.organizationId)
 
     // ponytail: Redis burst-protection rate limit — falls back to DB-based limiting
     // in requireExternalApiKey when Redis is down (rateLimit returns null).

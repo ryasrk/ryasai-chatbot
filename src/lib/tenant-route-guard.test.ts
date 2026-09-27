@@ -34,7 +34,7 @@ function listRouteFiles(dir: string): string[] {
   return out
 }
 
-describe('tenant isolation: every getActiveUser route enters org context', () => {
+describe('tenant isolation: every authenticated route enters org context', () => {
   const routes = listRouteFiles(API_ROOT)
 
   test('found route files to check', () => {
@@ -45,8 +45,22 @@ describe('tenant isolation: every getActiveUser route enters org context', () =>
     const rel = file.slice(file.indexOf('src/app'))
     test(rel, () => {
       const src = readFileSync(file, 'utf8')
-      const usesGetActiveUser = /\bgetActiveUser\s*\(/.test(src)
-      if (!usesGetActiveUser) return // nothing to guard
+      /*
+       * BOTH auth mechanisms, and the second one is why this guard was incomplete.
+       *
+       * It tested only `getActiveUser()` (session auth). The `src/app/api/v1/**` routes authenticate with
+       * `requireExternalApiKey()` instead, so they were NEVER CHECKED — and `/api/v1/agent/run` ran its DB
+       * queries with no org context for exactly that reason. Measured consequence on the live database
+       * (inside a transaction the audit rolled back): a FOREIGN org's document was returned.
+       *
+       * `requireExternalApiKey` does call `enterWithOrg` internally, which is why this looks safe when read
+       * quickly — but `AsyncLocalStorage.enterWith()` does not propagate back to the caller's frame, so the
+       * route's own queries stay unscoped. The route must enter the org itself, which is the rule this guard
+       * now enforces for both families.
+       */
+      const needsOrgContext =
+        /\bgetActiveUser\s*\(/.test(src) || /\brequireExternalApiKey\s*\(/.test(src)
+      if (!needsOrgContext) return // nothing to guard
 
       const entersOrg =
         /\benterWithOrg\s*\(/.test(src) || /\bbypassOrg\s*\(/.test(src)
