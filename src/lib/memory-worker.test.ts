@@ -155,7 +155,27 @@ describe('startMemoryWorker — the org-context admission gate', () => {
 
   test('an EMPTY organizationId is refused and nothing is written', async () => {
     const { UnrecoverableError } = await import('bullmq')
+    /*
+     * SPREAD THE REAL MODULE, overriding only `Worker` and `UnrecoverableError`.
+     *
+     * WHY, given I could NOT reproduce the failure this is meant to avoid — stated plainly because an
+     * unreproducible fix is a belief, not a repair. An adversarial review reported that with an ENUMERATED mock
+     * (`{ UnrecoverableError, Worker }`) a process shared with `scheduler-queue.test.ts` reports
+     * `Export named 'Queue' not found` and that file drops to 20 pass / 10 fail.
+     *
+     * I TRIED TO REPRODUCE IT AND COULD NOT: `bun test memory-worker.test.ts scheduler-queue.test.ts` gives
+     * 25 pass / 0 fail, in BOTH orders, with the enumerated mock restored. Local bun is 1.3.14 while CI pins
+     * 1.4.2, and mock.module merge semantics differ between them — so the report is plausible and unverified
+     * HERE, and I am not going to claim a reproduction I did not observe.
+     *
+     * The change stands on a simpler argument that needs no reproduction: an enumerated mock must be updated
+     * for every future import, and an omission fails at COLLECTION time — the file does not run at all rather
+     * than failing one assertion. Spreading makes the mock complete by construction. That is worth doing even
+     * if the specific failure never occurs.
+     */
+    const actualBullmq = await import('bullmq')
     mock.module('bullmq', () => ({
+      ...actualBullmq,
       UnrecoverableError,
       Worker: class {
         constructor(_name: string, fn: (j: unknown) => Promise<unknown>) {
