@@ -495,7 +495,18 @@ function applyToolGating(
 }
 
 async function resolveRouting(
-  args: { question: string; integrationId?: string; chatHistory?: ChatHistoryEntry[] },
+  args: {
+    question: string
+    integrationId?: string
+    chatHistory?: ChatHistoryEntry[]
+    /**
+     * The key's allowed sources. This function DECIDES which database answers a SQL question, so an unscoped
+     * selection here reaches the customer: the branch would run generated SQL against a source the key was never
+     * granted. The two selectors below are the LAST resort when the model chose no integration, which is exactly
+     * when a scoped key is most likely to be sent somewhere it may not read.
+     */
+    integrationIds?: string[] | null
+  },
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
@@ -548,11 +559,11 @@ async function resolveRouting(
     // embedding API which can be slow/unavailable. Try keyword matching first
     // (fast, no API call), then fall back to pickBestIntegration.
     const tokens = tokenize(effectiveQuestion)
-    const kwId = await pickBestIntegrationByKeywords(tokens)
+    const kwId = await pickBestIntegrationByKeywords(tokens, args.integrationIds)
     if (kwId) {
       resolvedIntegrationId = kwId
     } else {
-      resolvedIntegrationId = await pickBestIntegration(tokens) ?? undefined
+      resolvedIntegrationId = (await pickBestIntegration(tokens, undefined, args.integrationIds)) ?? undefined
     }
   }
 

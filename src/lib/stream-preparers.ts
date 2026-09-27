@@ -280,7 +280,7 @@ export async function prepareSqlStream(args: {
      */
     const available = await db.integration.count({ where: { status: 'active', ...inScope } })
     if (available > 1) {
-      const choice = await resolveIntegrationForQuestion(tokenize(args.question), args.question, 'refuse')
+      const choice = await resolveIntegrationForQuestion(tokenize(args.question), args.question, 'refuse', args.integrationIds)
       if (!choice) {
         // Refuse to guess in a streaming turn too, and name the candidates.
         const names = await db.integration.findMany({

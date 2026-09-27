@@ -301,6 +301,8 @@ export async function runSqlBranch(args: {
         tokenize(args.question),
         args.question,
         'refuse',
+        // The key's allowed sources, so the scorer cannot pick one the key may not read.
+        args.integrationIds,
       )
       if (!choice) {
         // Refuse rather than guess, and name the candidates so the user can pick.

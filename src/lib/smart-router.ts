@@ -167,12 +167,28 @@ function keywordScoreForTool(
   }
 }
 
+/**
+ * The API-key scope's allowed integrations, in the shape Prisma needs.
+ *
+ * `undefined` means unrestricted — what every key created before this axis resolves to — and it is what keeps
+ * every existing caller working: an empty `in: []` would match NOTHING and lock out every install. Each selector
+ * below spreads this in CONDITIONALLY rather than always passing a filter.
+ *
+ * WHY THE SELECTORS NEED IT AT ALL. They choose WHICH database answers a question. Unscoped, a key restricted to
+ * one database could be routed to another by keyword scoring, and `resolveIntegrationForQuestion`'s no-match
+ * fallback takes the OLDEST integration in the whole org — for a scoped key, a source it may not read at all.
+ */
+function integrationScopeFilter(allowIds?: string[] | null): { id: { in: string[] } } | Record<string, never> {
+  return allowIds && allowIds.length > 0 ? { id: { in: allowIds } } : {}
+}
+
 async function detectMentionedIntegration(
   question: string,
   tokens: string[],
+  allowIds?: string[] | null,
 ): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
-    where: { status: 'active' },
+    where: { status: 'active', ...integrationScopeFilter(allowIds) },
     include: { schemas: { select: { tableName: true, columns: true } } },
   })
   if (integrations.length === 0) return undefined
@@ -262,9 +278,10 @@ async function detectMentionedIntegration(
 export async function pickBestIntegrationWithAmbiguity(
   tokens: string[],
   question: string,
+  allowIds?: string[] | null,
 ): Promise<{ integrationId?: string; ambiguous?: AmbiguousIntegration[] } | undefined> {
   const integrations = await db.integration.findMany({
-    where: { status: 'active' },
+    where: { status: 'active', ...integrationScopeFilter(allowIds) },
     // `businessContext` is REQUIRED here because it carries the domain glossary. It was
     // not loaded, so the glossary path existed in `detectMentionedIntegration` but not
     // in THIS picker -- and this picker is the one the SQL branch calls.
@@ -433,8 +450,9 @@ async function resolveIntegrationForQuestion(
   tokens: string[],
   question: string,
   onNoMatch: 'refuse' | 'oldest' = 'refuse',
+  allowIds?: string[] | null,
 ): Promise<IntegrationChoice | null> {
-  const picked = await pickBestIntegrationWithAmbiguity(tokens, question)
+  const picked = await pickBestIntegrationWithAmbiguity(tokens, question, allowIds)
   if (picked?.integrationId) {
     return { integrationId: picked.integrationId, unverified: false }
   }
@@ -443,7 +461,9 @@ async function resolveIntegrationForQuestion(
   // oldest (unattended), and if we take the oldest we MARK it — callers can then
   // tell the user, or log it, rather than presenting a guess as a match.
   const all = await db.integration.findMany({
-    where: { status: 'active' },
+    // SCOPED, and this is the subtlest one: "take the oldest" is a guess, and for a scoped key the oldest
+    // integration in the ORG may be one it may not read at all.
+    where: { status: 'active', ...integrationScopeFilter(allowIds) },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   })
@@ -457,8 +477,9 @@ export { resolveIntegrationForQuestion }
 export async function pickBestIntegration(
   tokens: string[],
   question?: string,
+  allowIds?: string[] | null,
 ): Promise<string | undefined> {
-  const result = await pickBestIntegrationWithAmbiguity(tokens, question ?? '')
+  const result = await pickBestIntegrationWithAmbiguity(tokens, question ?? '', allowIds)
   return result?.integrationId
 }
 
@@ -468,9 +489,9 @@ export async function pickBestIntegration(
  * unavailable or too slow. Filters generic schema tokens (id, name, etc.)
  * to avoid false matches on app-internal tables.
  */
-export async function pickBestIntegrationByKeywords(tokens: string[]): Promise<string | undefined> {
+export async function pickBestIntegrationByKeywords(tokens: string[], allowIds?: string[] | null): Promise<string | undefined> {
   const integrations = await db.integration.findMany({
-    where: { status: 'active' },
+    where: { status: 'active', ...integrationScopeFilter(allowIds) },
     include: { schemas: { select: { tableName: true, columns: true } } },
   })
   if (integrations.length === 0) return undefined

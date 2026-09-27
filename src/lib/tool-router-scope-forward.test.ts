@@ -222,7 +222,10 @@ describe('the integration axis: EVERY source-selection query in the chat path is
    * So this enumerates EVERY `db.integration*` query in the three files that build a chat answer, and requires
    * the scope filter on each. A new lookup added without one fails here by name.
    */
-  const FILES = ['tool-router.ts', 'tool-branches.ts', 'stream-preparers.ts']
+  // `smart-router.ts` is included because it is where the SELECTION actually happens: its four pickers choose
+  // which database answers a SQL question, and `resolveIntegrationForQuestion`'s no-match fallback takes the
+  // OLDEST integration in the org — for a scoped key, a source it may not read.
+  const FILES = ['tool-router.ts', 'tool-branches.ts', 'stream-preparers.ts', 'smart-router.ts']
 
   for (const file of FILES) {
     const src = stripComments(readFileSync(join(import.meta.dir, file), 'utf-8'))
@@ -232,7 +235,7 @@ describe('the integration axis: EVERY source-selection query in the chat path is
       const queries = [...src.matchAll(/db\.integration(?:Schema)?\.\w+\(\{?\s*\n?\s*where: \{[^}]*\}/g)].map((m) => m[0])
       expect(queries.length).toBeGreaterThan(0)
 
-      const unscoped = queries.filter((q) => !/\.\.\.(inScope|intScope)\b/.test(q))
+      const unscoped = queries.filter((q) => !/\.\.\.(inScope|intScope|integrationScopeFilter)/.test(q))
       // Named in the failure so the message points at the site rather than at a count.
       expect(unscoped.map((q) => q.replace(/\s+/g, ' ').slice(0, 110))).toEqual([])
     })
