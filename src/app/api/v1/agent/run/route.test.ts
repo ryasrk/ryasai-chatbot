@@ -12,7 +12,27 @@ const mockRequireExternalApiKey = mock(async (req: Request) => {
   const raw = req.headers.get('authorization') ?? ''
   const token = raw.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
   if (!token) throw new MockUnauthorizedError('API key must be sent as Bearer token.')
-  return { apiKeyId: 'key1', label: 'test', requestLimitPerMinute: 60 }
+  /*
+   * `organizationId` and `scope` are BOTH required by the real identity shape, and omitting either produced a
+   * bare 500 rather than a failure naming the cause.
+   *
+   * `organizationId` — the route now calls `enterWithOrg(identity.organizationId)` itself, because
+   * `AsyncLocalStorage.enterWith()` inside `requireExternalApiKey` does NOT propagate to the caller's frame.
+   * Without that call every DB query in the handler ran with no org context, which was a measured
+   * cross-tenant read.
+   *
+   * `scope` — the route passes `resolveScope(identity.scope).tools` so the key's tool restriction is ENFORCED
+   * instead of only stored. `resolveScope(undefined)` throws.
+   *
+   * Empty arrays on every axis mean UNRESTRICTED, so these tests keep their original behaviour.
+   */
+  return {
+    apiKeyId: 'key1',
+    label: 'test',
+    organizationId: 'org1',
+    requestLimitPerMinute: 60,
+    scope: { allowedIntegrationIds: [], allowedDocumentIds: [], allowedTools: [] },
+  }
 })
 const mockRateLimit = mock(async (): Promise<{ allowed: boolean; remaining: number } | null> => null) // null = Redis down → DB fallback
 const mockWriteAudit = mock(async () => undefined)
@@ -20,7 +40,14 @@ const mockUserFindFirst = mock(async () => ({ id: 'admin1' }))
 const mockAgentRunCreate = mock(async () => ({ id: 'run1' }))
 const mockAgentRunUpdate = mock(async () => ({}))
 const mockApiRequestLogCreate = mock(async () => ({}))
-const mockRunAgentOrchestrator = mock(async () => ({
+/**
+ * The parameter is DECLARED, because a mock that takes none makes its call arguments unobservable: `tsc`
+ * rejected `mock.calls.at(-1)?.[0]` with "Tuple type '[]' of length '0' has no element at index '0'".
+ *
+ * Recording the args is the point — the route's tool scope reaches the orchestrator through this call, and a
+ * test that cannot see the arguments cannot prove it was forwarded.
+ */
+const mockRunAgentOrchestrator = mock(async (_opts: { allowedTools?: string[] | null }) => ({
   answer: 'final answer',
   toolRuns: [{ type: 'CHAT' as const, status: 'success' as const, latencyMs: 10 }],
   iterations: 1,
@@ -117,5 +144,47 @@ describe('POST /api/v1/agent/run', () => {
   test('empty string question → 400', async () => {
     const res = await POST(makeReq({ question: '   ' }) as any)
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /api/v1/agent/run — the key tool scope is ENFORCED, not just stored', () => {
+  /**
+   * CLOSES THE GAP the api-key audit measured: this route read neither `identity.scope` nor
+   * `validateKeyScopeSources`, so a key created with `allowedTools: ['RAG']` was stored, validated and
+   * DISPLAYED in the admin UI while enforcing nothing on the agentic path.
+   *
+   * The assertion is on what reaches the ORCHESTRATOR, because that is the call that decides which tools the
+   * model may choose from. A test on the route's own variables would pass while the value went no further.
+   */
+  test('the scope reachable from the identity is forwarded as allowedTools', async () => {
+    mockRunAgentOrchestrator.mockClear()
+    mockRequireExternalApiKey.mockImplementationOnce(async (req: Request) => {
+      const raw = req.headers.get('authorization') ?? ''
+      if (!/^Bearer\s+.+$/i.test(raw)) throw new MockUnauthorizedError('API key must be sent as Bearer token.')
+      return {
+        apiKeyId: 'key-scoped',
+        label: 'rag only',
+        organizationId: 'org1',
+        requestLimitPerMinute: 60,
+        scope: { allowedIntegrationIds: [], allowedDocumentIds: [], allowedTools: ['RAG'] },
+      } as never
+    })
+
+    const res = await POST(makeReq({ question: 'What does the policy say?' }) as never)
+    expect(res.status).toBe(200)
+
+    const args = mockRunAgentOrchestrator.mock.calls.at(-1)?.[0] as { allowedTools?: string[] | null }
+    // `resolveScope` returns the key's list; the ROUTE must pass it on or the filter never sees it.
+    expect(args.allowedTools).toEqual(['RAG'])
+  })
+
+  test('an unrestricted key forwards null, so the filter leaves the surface alone', async () => {
+    // The opposite direction: empty arrays mean "all tools", and a route that turned that into `[]` would make
+    // the filter remove EVERY family — locking out every key created before scoping existed.
+    mockRunAgentOrchestrator.mockClear()
+    const res = await POST(makeReq({ question: 'hello' }) as never)
+    expect(res.status).toBe(200)
+    const args = mockRunAgentOrchestrator.mock.calls.at(-1)?.[0] as { allowedTools?: string[] | null }
+    expect(args.allowedTools).toBeNull()
   })
 })

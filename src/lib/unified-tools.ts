@@ -706,6 +706,20 @@ export async function getUnifiedTools(args: {
   query: string
   context: 'chat' | 'agentic'
   isAdmin?: boolean
+  /**
+   * An API key's allowed tool families (`SQL | RAG | REST | CHAT`), or `null`/absent for every tool.
+   *
+   * WHY THE FILTER LIVES HERE. This function is the single place the tool surface is ASSEMBLED, so it is the
+   * only place a family can be removed before anything can choose it. `scopeAllowsTool` existed in
+   * `api-key-scope.ts` with ZERO production callers — the scope was stored, validated and displayed while
+   * enforcing nothing, so a key restricted to `['RAG']` could still run SQL. An audit measured that.
+   *
+   * REMOVING RATHER THAN REFUSING, deliberately: a tool the key may not use must not appear in the list the
+   * model chooses from, because a model offered a tool will eventually pick it. The refusal for an EXPLICIT
+   * request lives in the transport (`ScopeDeniedError`), which is a different question from "what may I
+   * offer".
+   */
+  allowedTools?: string[] | null
 }): Promise<UnifiedTool[]> {
   const tools: UnifiedTool[] = getCoreBuiltInTools()
 
@@ -733,6 +747,58 @@ export async function getUnifiedTools(args: {
   tools.push(...pluginTools)
   tools.push(...mcpTools)
   tools.push(...mcpSurfaceTools)
+
+  /*
+   * Apply the API-key tool scope LAST, after every family has been added.
+   *
+   * LAST is load-bearing: filtering earlier would leave the plugins/MCP pushes below able to re-introduce a
+   * family the key may not use, which is the shape of bypass this whole review kept finding. One filter at
+   * the exit cannot be bypassed by a new family added above it.
+   */
+  const allowed = args.allowedTools
+  if (allowed && allowed.length > 0) {
+    const permitted = new Set(allowed.map((t) => t.toUpperCase()))
+    return tools.filter((t) => {
+      /*
+       * MAP category -> SCOPE FAMILY, because the two vocabularies differ and pretending otherwise is how a
+       * filter silently matches nothing (or everything).
+       *
+       * `UnifiedTool.category` is 'database' | 'knowledge' | 'api' | 'plugin' | 'mcp' | 'admin' | 'web' | 'chat'.
+       * The API-key scope speaks 'SQL' | 'RAG' | 'REST' | 'CHAT' (API_KEY_TOOLS).
+       *
+       * UNMAPPED categories (plugin, mcp, admin, web and anything added later) are governed by CHAT: with
+       * `allowedTools: ['CHAT']` they are removed, because a web-search or an MCP server is a capability an
+       * operator restricting a partner key to "conversation only" does not expect to grant. That is the
+       * fail-closed direction, and it is why this is a whitelist rather than a blacklist.
+       */
+      const familiesFor = (category: string): string[] => {
+        switch (category) {
+          case 'database': return ['SQL']
+          case 'knowledge': return ['RAG']
+          case 'api': return ['REST']
+          case 'chat': return ['CHAT']
+          /*
+           * EVERY OTHER FAMILY NEEDS ITS OWN EXPLICIT GRANT.
+           *
+           * This arm first returned `['CHAT', 'PLUGIN', 'MCP']`, which was WRONG and the test caught it: with
+           * `allowedTools: ['CHAT']` a `web` tool SURVIVED, because 'CHAT' was in its permitted set. Measured
+           * after the fix: `['CHAT']` yields category `chat` alone, while `null` still yields all five.
+           *
+           * The rule an operator expects: "conversation only" does not grant a web search, an MCP server, a
+           * plugin or an admin tool. The default is therefore FAIL-CLOSED (nothing permitted) rather than a
+           * guess at permissiveness — an unknown future category must be granted deliberately, not by omission.
+           */
+          case 'web': return ['WEB']
+          case 'plugin': return ['PLUGIN']
+          case 'mcp': return ['MCP']
+          case 'admin': return ['ADMIN']
+          default: return ['UNKNOWN']
+        }
+      }
+      const families = familiesFor(t.category)
+      return families.some((f) => permitted.has(f))
+    })
+  }
 
   return tools
 }

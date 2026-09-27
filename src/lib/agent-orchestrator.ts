@@ -41,6 +41,14 @@ export interface AgentOrchestratorOptions {
   question: string
   userId: string
   organizationId?: string
+  /**
+   * An API key's allowed tool families (`SQL | RAG | REST | CHAT`), or null/absent for every tool.
+   *
+   * Threaded in so the scope reaches the ONE place the tool surface is assembled. Before this, nothing on
+   * this path carried the restriction: a key limited to `['RAG']` still had SQL offered to the model, and a
+   * model offered a tool chooses it. The scope was stored, validated and DISPLAYED while enforcing nothing.
+   */
+  allowedTools?: string[] | null
   sessionId?: string
   context?: 'chat' | 'agentic'
   isAdmin?: boolean
@@ -82,6 +90,10 @@ export async function runAgentOrchestrator(
     query: options.question,
     context,
     isAdmin: options.isAdmin,
+    // The key's tool scope, applied at the ASSEMBLY point so a family the key may not use is never offered to
+    // the model. A model offered a tool will eventually choose it, which is why this REMOVES rather than
+    // refuses — the refusal for an explicit request lives in the transport.
+    allowedTools: options.allowedTools,
   })
   const llmToolDefs: LlmToolDef[] = tools.map(toLlmToolDef)
 

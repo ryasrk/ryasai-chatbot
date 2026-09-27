@@ -187,3 +187,88 @@ describe('the two tool catalogues agree on web_search', () => {
     }
   })
 })
+
+describe('getUnifiedTools — an API key tool scope REMOVES families it may not use', () => {
+  /**
+   * CLOSES A FALSE-SAFETY GAP found by the api-key scoping audit. `scopeAllowsTool` in
+   * `src/lib/api-key-scope.ts` had ZERO production callers, and nothing read `effectiveScope.tools` either:
+   * a key created with `allowedTools: ['RAG']` was stored, validated, and DISPLAYED in the admin UI while
+   * enforcing nothing — SQL could still be offered to the model and run.
+   *
+   * The filter lives HERE because this is the single place the tool surface is assembled, and it runs LAST so
+   * a family pushed by the plugin/MCP builders cannot re-introduce what was just removed.
+   *
+   * REMOVE, NOT REFUSE: a tool the key may not use must not appear in the list the model chooses from, because
+   * a model offered a tool will eventually pick it. The refusal for an EXPLICIT request is a separate rule in
+   * the transport.
+   */
+  const cats = async (allowed: string[] | null): Promise<string[]> => {
+    const { getUnifiedTools } = await import('./unified-tools')
+    const tools = await getUnifiedTools({
+      query: 'berapa penjualan bulan lalu',
+      context: 'chat',
+      isAdmin: false,
+      allowedTools: allowed,
+    })
+    return [...new Set(tools.map((t) => t.category))].sort()
+  }
+
+  test('null leaves the surface untouched — the pre-feature default', async () => {
+    // Every key created before scoping has empty arrays, which resolve to null. A filter that treated null as
+    // "nothing allowed" would lock out every existing integration.
+    const all = await cats(null)
+    expect(all.length).toBeGreaterThan(0)
+    const empty = await cats([])
+    expect(empty).toEqual(all)
+  })
+
+  test('a CHAT-only key gets no database or knowledge tool', async () => {
+    const c = await cats(['CHAT'])
+    expect(c).not.toContain('database')
+    expect(c).not.toContain('knowledge')
+  })
+
+  test('a RAG-only key keeps knowledge and loses database', async () => {
+    const c = await cats(['RAG'])
+    expect(c).toContain('knowledge')
+    expect(c).not.toContain('database')
+  })
+
+  test('a SQL-only key keeps database and loses knowledge', async () => {
+    // The opposite direction, so a filter that simply removed everything cannot pass both.
+    const c = await cats(['SQL'])
+    expect(c).toContain('database')
+    expect(c).not.toContain('knowledge')
+  })
+
+  test('a CHAT-only key cannot reach web, plugin, mcp or admin', async () => {
+    /*
+     * TWO-SIDED, and the first version was one-sided in a way that hid a bug I had just written.
+     *
+     * It asserted only `not.toContain('web')`. With CHAT the `web` category is ABSENT from the result, so that
+     * passed even while the mapping was wrong — a `default` arm returning `['CHAT', 'PLUGIN', 'MCP']` meant a
+     * `web` tool would SURVIVE `allowedTools: ['CHAT']`, since 'CHAT' was in its permitted set. The assertion
+     * could not fail for the defect it was written for; a negative control proved it.
+     *
+     * So the surface is checked BOTH ways: with no scope the categories are all present (proving the tools
+     * exist to be filtered at all), and with CHAT they are gone.
+     */
+    const unscoped = await cats(null)
+    expect(unscoped).toContain('web') // the tool is really there, so its absence below means something
+
+    const c = await cats(['CHAT'])
+    expect(c).not.toContain('web')
+    expect(c).not.toContain('plugin')
+    expect(c).not.toContain('mcp')
+    expect(c).not.toContain('admin')
+  })
+
+  test('listing a family explicitly DOES keep it, so the filter is not refusing everything', async () => {
+    // The opposite direction. Without this, a filter that removed the whole surface for any scope would pass
+    // every assertion above.
+    const c = await cats(['CHAT', 'WEB'])
+    expect(c).toContain('chat')
+    expect(c).toContain('web')
+    expect(c).not.toContain('database')
+  })
+})

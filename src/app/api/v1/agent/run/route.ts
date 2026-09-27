@@ -6,6 +6,7 @@ import { runAgentOrchestrator } from '@/lib/agent-orchestrator'
 import { rememberChatTurn } from '@/lib/cognee'
 import { rateLimit } from '@/lib/redis'
 import { enterWithOrg, getOrgContext } from '@/lib/prisma-tenant'
+import { resolveScope } from '@/lib/api-key-scope'
 import { logSwallowed } from '@/lib/logger'
 
 async function writeApiLog(args: {
@@ -113,6 +114,15 @@ export async function POST(req: NextRequest) {
       sessionId: body.sessionId,
       context: 'agentic',
       isAdmin: false,
+      /*
+       * The key's tool scope, finally enforced on THIS path.
+       *
+       * It was stored, validated and rendered in the admin UI while nothing consulted it: `scopeAllowsTool`
+       * had zero production callers, so a key created with `allowedTools: ['RAG']` could still be handed SQL
+       * and run it. `resolveScope` runs first so a malformed stored value fails CLOSED instead of being read
+       * as "unrestricted" — the same convention the chat route uses.
+       */
+      allowedTools: resolveScope(identity.scope).tools,
     })
 
     const answer = orchestratorResult.answer
