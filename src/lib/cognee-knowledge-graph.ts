@@ -78,12 +78,17 @@ export async function cognifyDocument(args: {
        * different operator signals, and both are pinned by tests); only the newly-detected refusal,
        * which used to fall through as success, gets a message of its own.
        */
-      if (res && !res.error) {
-        await updateDocumentCognifyStatus(args.documentId, 'completed', undefined)
-        return true
+      const reason = !res
+        ? 'cognee server rejected the write'
+        : res.error
+          ? String(res.error)
+          : writeNotStored(res)
+            ? `cognee did not store the document (status=${res.status ?? 'n/a'}, items_processed=${res.items_processed ?? 'n/a'})`
+            : null
+      if (reason !== null) {
+        await updateDocumentCognifyStatus(args.documentId, 'failed', reason)
+        return false
       }
-      await updateDocumentCognifyStatus(args.documentId, 'failed', res?.error ?? 'cognee server rejected the write')
-      return false
       await updateDocumentCognifyStatus(args.documentId, 'completed', undefined)
       return true
     } catch (err) {

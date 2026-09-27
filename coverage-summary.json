@@ -1,14 +1,14 @@
 {
-  "linePct": 77.72,
-  "linesHit": 24920,
-  "linesFound": 32062,
-  "reachableLinePct": 88.24,
-  "reachableLinesHit": 21607,
-  "reachableLinesFound": 24488,
-  "fnPct": 89.74,
-  "fnsHit": 2222,
-  "fnsFound": 2476,
-  "filesMeasured": 234,
+  "linePct": 76.45,
+  "linesHit": 25014,
+  "linesFound": 32718,
+  "reachableLinePct": 86.45,
+  "reachableLinesHit": 21733,
+  "reachableLinesFound": 25138,
+  "fnPct": 89.1,
+  "fnsHit": 2232,
+  "fnsFound": 2505,
+  "filesMeasured": 240,
   "failedTestFiles": [],
   "files": [
     {
@@ -30,12 +30,39 @@
       "fPct": 50
     },
     {
+      "file": "src/components/views/_shared/prompt-editor.tsx",
+      "hit": 8,
+      "found": 164,
+      "pct": 4.878048780487805,
+      "fHit": 0,
+      "fFound": 1,
+      "fPct": 0
+    },
+    {
       "file": "src/components/views/memory-provider-panel.tsx",
       "hit": 7,
       "found": 142,
       "pct": 4.929577464788732,
       "fHit": 0,
       "fFound": 1,
+      "fPct": 0
+    },
+    {
+      "file": "src/components/views/knowledge-base/doc-detail-dialog.tsx",
+      "hit": 22,
+      "found": 425,
+      "pct": 5.176470588235294,
+      "fHit": 1,
+      "fFound": 7,
+      "fPct": 14.285714285714285
+    },
+    {
+      "file": "src/components/ui/dialog.tsx",
+      "hit": 6,
+      "found": 93,
+      "pct": 6.451612903225806,
+      "fHit": 0,
+      "fFound": 10,
       "fPct": 0
     },
     {
@@ -57,12 +84,30 @@
       "fPct": 8.333333333333332
     },
     {
-      "file": "src/lib/memory-queue.ts",
-      "hit": 18,
-      "found": 97,
-      "pct": 18.556701030927837,
-      "fHit": 2,
-      "fFound": 4,
+      "file": "src/components/ui/textarea.tsx",
+      "hit": 3,
+      "found": 16,
+      "pct": 18.75,
+      "fHit": 0,
+      "fFound": 1,
+      "fPct": 0
+    },
+    {
+      "file": "src/hooks/use-active-user.ts",
+      "hit": 4,
+      "found": 18,
+      "pct": 22.22222222222222,
+      "fHit": 0,
+      "fFound": 1,
+      "fPct": 0
+    },
+    {
+      "file": "src/store/useActiveUserStore.ts",
+      "hit": 9,
+      "found": 29,
+      "pct": 31.03448275862069,
+      "fHit": 1,
+      "fFound": 2,
       "fPct": 50
     },
     {
@@ -91,15 +136,6 @@
       "fHit": 0,
       "fFound": 3,
       "fPct": 0
-    },
-    {
-      "file": "src/lib/memory-worker.ts",
-      "hit": 42,
-      "found": 95,
-      "pct": 44.21052631578947,
-      "fHit": 2,
-      "fFound": 4,
-      "fPct": 50
     },
     {
       "file": "src/components/ui/select.tsx",
@@ -136,6 +172,15 @@
       "fHit": 21,
       "fFound": 34,
       "fPct": 61.76470588235294
+    },
+    {
+      "file": "src/lib/memory-queue.ts",
+      "hit": 48,
+      "found": 97,
+      "pct": 49.48453608247423,
+      "fHit": 5,
+      "fFound": 6,
+      "fPct": 83.33333333333334
     },
     {
       "file": "src/lib/profile-version.ts",
@@ -193,18 +238,18 @@
     },
     {
       "file": "src/lib/tool-router.ts",
-      "hit": 261,
+      "hit": 264,
       "found": 439,
-      "pct": 59.453302961275625,
+      "pct": 60.13667425968109,
       "fHit": 34,
       "fFound": 39,
       "fPct": 87.17948717948718
     },
     {
       "file": "src/lib/cognee-memory.ts",
-      "hit": 295,
-      "found": 478,
-      "pct": 61.71548117154811,
+      "hit": 243,
+      "found": 390,
+      "pct": 62.30769230769231,
       "fHit": 27,
       "fFound": 28,
       "fPct": 96.42857142857143
@@ -226,24 +271,6 @@
       "fHit": 4,
       "fFound": 7,
       "fPct": 57.14285714285714
-    },
-    {
-      "file": "src/lib/cognee-types.ts",
-      "hit": 20,
-      "found": 31,
-      "pct": 64.51612903225806,
-      "fHit": 5,
-      "fFound": 5,
-      "fPct": 100
-    },
-    {
-      "file": "src/components/views/cognee-diagnostics.tsx",
-      "hit": 154,
-      "found": 238,
-      "pct": 64.70588235294117,
-      "fHit": 6,
-      "fFound": 8,
-      "fPct": 75
     },
     {
       "file": "src/lib/intent-pipeline.ts",
@@ -289,6 +316,15 @@
       "fHit": 2,
       "fFound": 3,
       "fPct": 66.66666666666666
+    },
+    {
+      "file": "src/lib/cognee-types.ts",
+      "hit": 23,
+      "found": 34,
+      "pct": 67.64705882352942,
+      "fHit": 6,
+      "fFound": 6,
+      "fPct": 100
     },
     {
       "file": "src/lib/passwords.ts",
@@ -361,6 +397,15 @@
       "fHit": 98,
       "fFound": 103,
       "fPct": 95.14563106796116
+    },
+    {
+      "file": "src/components/views/cognee-diagnostics.tsx",
+      "hit": 171,
+      "found": 238,
+      "pct": 71.84873949579831,
+      "fHit": 6,
+      "fFound": 8,
+      "fPct": 75
     },
     {
       "file": "src/lib/web-fetch.ts",
@@ -820,6 +865,15 @@
       "fHit": 15,
       "fFound": 17,
       "fPct": 88.23529411764706
+    },
+    {
+      "file": "src/lib/memory-worker.ts",
+      "hit": 72,
+      "found": 80,
+      "pct": 90,
+      "fHit": 6,
+      "fFound": 8,
+      "fPct": 75
     },
     {
       "file": "src/lib/citation-trail.ts",
@@ -1939,8 +1993,8 @@
     },
     {
       "file": "src/lib/cognee-config-push.ts",
-      "hit": 98,
-      "found": 98,
+      "hit": 109,
+      "found": 109,
       "pct": 100,
       "fHit": 4,
       "fFound": 7,
