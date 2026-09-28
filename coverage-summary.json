@@ -1,14 +1,14 @@
 {
-  "linePct": 75.92,
-  "linesHit": 25093,
-  "linesFound": 33051,
-  "reachableLinePct": 86.43,
-  "reachableLinesHit": 21802,
-  "reachableLinesFound": 25225,
-  "fnPct": 89.15,
-  "fnsHit": 2242,
-  "fnsFound": 2515,
-  "filesMeasured": 240,
+  "linePct": 75.91,
+  "linesHit": 25149,
+  "linesFound": 33129,
+  "reachableLinePct": 86.45,
+  "reachableLinesHit": 21855,
+  "reachableLinesFound": 25281,
+  "fnPct": 89.19,
+  "fnsHit": 2252,
+  "fnsFound": 2525,
+  "filesMeasured": 241,
   "failedTestFiles": [],
   "files": [
     {
@@ -22,9 +22,9 @@
     },
     {
       "file": "src/components/views/ai-configuration-view.tsx",
-      "hit": 29,
-      "found": 649,
-      "pct": 4.468412942989214,
+      "hit": 30,
+      "found": 662,
+      "pct": 4.531722054380665,
       "fHit": 1,
       "fFound": 2,
       "fPct": 50
@@ -705,6 +705,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/guardrails.ts",
+      "hit": 212,
+      "found": 253,
+      "pct": 83.79446640316206,
+      "fHit": 9,
+      "fFound": 9,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/admin-tools.ts",
       "hit": 569,
       "found": 675,
@@ -774,15 +783,6 @@
       "pct": 85.9375,
       "fHit": 3,
       "fFound": 3,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/guardrails.ts",
-      "hit": 195,
-      "found": 226,
-      "pct": 86.28318584070797,
-      "fHit": 6,
-      "fFound": 6,
       "fPct": 100
     },
     {
@@ -1146,15 +1146,6 @@
       "fPct": 91.66666666666666
     },
     {
-      "file": "src/lib/incoming-webhook.ts",
-      "hit": 68,
-      "found": 69,
-      "pct": 98.55072463768117,
-      "fHit": 7,
-      "fFound": 8,
-      "fPct": 87.5
-    },
-    {
       "file": "src/app/api/mcp/servers/[id]/route.ts",
       "hit": 137,
       "found": 139,
@@ -1162,6 +1153,15 @@
       "fHit": 9,
       "fFound": 9,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/incoming-webhook.ts",
+      "hit": 71,
+      "found": 72,
+      "pct": 98.61111111111111,
+      "fHit": 7,
+      "fFound": 8,
+      "fPct": 87.5
     },
     {
       "file": "src/lib/rag-eval.ts",
@@ -1237,8 +1237,8 @@
     },
     {
       "file": "src/app/api/analytics/route.ts",
-      "hit": 138,
-      "found": 138,
+      "hit": 140,
+      "found": 140,
       "pct": 100,
       "fHit": 7,
       "fFound": 7,
@@ -1246,8 +1246,8 @@
     },
     {
       "file": "src/app/api/audit/route.ts",
-      "hit": 43,
-      "found": 43,
+      "hit": 45,
+      "found": 45,
       "pct": 100,
       "fHit": 3,
       "fFound": 3,
@@ -1615,8 +1615,8 @@
     },
     {
       "file": "src/app/api/monitoring/route.ts",
-      "hit": 72,
-      "found": 72,
+      "hit": 74,
+      "found": 74,
       "pct": 100,
       "fHit": 3,
       "fFound": 3,
@@ -1858,8 +1858,8 @@
     },
     {
       "file": "src/app/api/users/[id]/route.ts",
-      "hit": 90,
-      "found": 90,
+      "hit": 94,
+      "found": 94,
       "pct": 100,
       "fHit": 7,
       "fFound": 7,
@@ -1894,17 +1894,17 @@
     },
     {
       "file": "src/app/api/vector-store/route.ts",
-      "hit": 97,
-      "found": 97,
+      "hit": 105,
+      "found": 105,
       "pct": 100,
-      "fHit": 7,
-      "fFound": 7,
+      "fHit": 9,
+      "fFound": 9,
       "fPct": 100
     },
     {
       "file": "src/app/api/webhooks/incoming/route.ts",
-      "hit": 26,
-      "found": 26,
+      "hit": 27,
+      "found": 27,
       "pct": 100,
       "fHit": 2,
       "fFound": 2,
@@ -1944,6 +1944,15 @@
       "pct": 100,
       "fHit": 1,
       "fFound": 1,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/session-guard.ts",
+      "hit": 16,
+      "found": 16,
+      "pct": 100,
+      "fHit": 5,
+      "fFound": 5,
       "fPct": 100
     },
     {
