@@ -24,6 +24,8 @@
  * the bottom proves the real guardrail is the one under test.
  */
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 type Row = Record<string, unknown>
 let integrations: Row[] = []
@@ -701,5 +703,40 @@ describe('streaming failure paths that had never run', () => {
     const r = await prepareSqlStream({ question: 'q', userId: 'u1', integrationId: 'int-1' })
     expect(connectorAttempts).toBe(2)
     expect(r.toolRuns[0].status).not.toBe('success')
+  })
+})
+
+describe('the streaming SQL path must forward the generator\'s stated QUERY SCOPE', () => {
+  /**
+   * MEASURED IN UAT, and the reason this test exists in THIS file: `/send` — the path the chat UI actually uses —
+   * streams through `stream-preparers.ts`, NOT through `tool-branches.ts`. A fix applied only to the non-streaming
+   * branch changed nothing a user could see, which a probe confirmed (the branch's log line never fired while the chat
+   * kept answering). Only `candidate.sql` was used; `explanation` was dropped.
+   *
+   * WHY IT MATTERS: rule 17 tells the SQL generator to name the population it measured, because two questions in one
+   * session silently used different filters and reported Rp 1.240.000 vs Rp 1.620.000 for the same customer with
+   * neither answer mentioning it. The rule writes that into `explanation` — so dropping the field discards the rule's
+   * entire output.
+   *
+   * Verified end to end after the fix: the same question now answers "dihitung dari pesanan berstatus 'selesai' saja".
+   */
+  const src = readFileSync(join(import.meta.dir, 'stream-preparers.ts'), 'utf8')
+
+  test('the explanation is captured from the SQL candidate', () => {
+    expect(src).toMatch(/sqlExplanation = typeof candidate\.explanation === 'string'/)
+  })
+
+  test('it reaches the answer context as QUERY SCOPE, inside the untrusted wrapper', () => {
+    // The label must be present so the model can tell scope from rows...
+    expect(src).toMatch(/QUERY SCOPE \(what the SQL measured\)/)
+    // ...and it must be concatenated BEFORE the wrapped rows, so it cannot be mistaken for data.
+    expect(src).toMatch(/sqlExplanation \? `QUERY SCOPE/)
+  })
+
+  test('the NON-streaming path carries it too, so the two transports cannot diverge', () => {
+    // This pair has drifted before (businessContext reached one path and not the other), so both are asserted.
+    const branches = readFileSync(join(import.meta.dir, 'tool-branches.ts'), 'utf8')
+    expect(branches).toMatch(/QUERY SCOPE \(what the SQL measured\)/)
+    expect(branches).toMatch(/sqlExplanation = typeof candidate\.explanation === 'string'/)
   })
 })

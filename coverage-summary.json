@@ -1,10 +1,10 @@
 {
-  "linePct": 75.69,
-  "linesHit": 25212,
-  "linesFound": 33311,
+  "linePct": 75.62,
+  "linesHit": 25220,
+  "linesFound": 33351,
   "reachableLinePct": 86.41,
-  "reachableLinesHit": 21910,
-  "reachableLinesFound": 25357,
+  "reachableLinesHit": 21918,
+  "reachableLinesFound": 25365,
   "fnPct": 89.21,
   "fnsHit": 2256,
   "fnsFound": 2529,
@@ -435,6 +435,24 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 669,
+      "found": 907,
+      "pct": 73.75964718853363,
+      "fHit": 34,
+      "fFound": 36,
+      "fPct": 94.44444444444444
+    },
+    {
+      "file": "src/lib/stream-preparers.ts",
+      "hit": 457,
+      "found": 619,
+      "pct": 73.82875605815832,
+      "fHit": 28,
+      "fFound": 39,
+      "fPct": 71.7948717948718
+    },
+    {
       "file": "src/lib/llm-config.ts",
       "hit": 250,
       "found": 337,
@@ -451,24 +469,6 @@
       "fHit": 30,
       "fFound": 31,
       "fPct": 96.7741935483871
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 665,
-      "found": 886,
-      "pct": 75.05643340857789,
-      "fHit": 34,
-      "fFound": 36,
-      "fPct": 94.44444444444444
-    },
-    {
-      "file": "src/lib/stream-preparers.ts",
-      "hit": 453,
-      "found": 600,
-      "pct": 75.5,
-      "fHit": 28,
-      "fFound": 39,
-      "fPct": 71.7948717948718
     },
     {
       "file": "src/lib/rag-metrics.ts",

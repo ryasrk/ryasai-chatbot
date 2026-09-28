@@ -432,6 +432,18 @@ export async function runSqlBranch(args: {
   const attemptedSql: string[] = []
   let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
   let finalSql = ''
+  /*
+   * THE SQL GENERATOR'S OWN EXPLANATION, which used to be discarded.
+   *
+   * MEASURED IN UAT: rule 17 tells the SQL generator to NAME THE POPULATION it measured — "based on completed orders",
+   * "all statuses included" — because two questions in one session silently used different filters and reported
+   * different totals for the same customer (Rp 1.240.000 vs Rp 1.620.000). But only `candidate.sql` was used; the
+   * `explanation` field it wrote was dropped, so the answer generator never saw the filter and could not state it.
+   *
+   * Verified by asking the question after adding rule 17: the answer still said nothing about the population, because
+   * the field carrying it never reached the prompt. Threading it through is what makes the rule observable to a user.
+   */
+  let sqlExplanation = ''
 
   for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
     const feedback = attempt > 0
@@ -457,6 +469,8 @@ export async function runSqlBranch(args: {
       // transport to pass rules and another to forget them.
       sqlRules,
     })
+    // Captured BEFORE the guard so a repaired retry replaces it, matching the SQL that finally runs.
+    sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
     const guard = validateAndSanitizeLlmSql(candidate.sql)
     if (!guard.ok) {
       // Guardrail rejection is retryable — the model often just needs to be
@@ -590,7 +604,14 @@ export async function runSqlBranch(args: {
       : ''
   const answer = await generateAnswer({
     question: args.question,
-    context: wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2)),
+    /*
+     * The measured population travels WITH the rows, in the untrusted wrapper (it is model-generated text about the
+     * data, so it must not acquire system authority). Without it the answer cannot say which rows it counted, which is
+     * the whole point of rule 17.
+     */
+    context:
+      (sqlExplanation ? `QUERY SCOPE (what the SQL measured): ${sqlExplanation}\n\n` : '') +
+      wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2)),
     source: 'SQL',
     systemPromptPrefix: crossSourceNote + (effectiveSystemPromptPrefix ?? ''),
     memoryContext: args.memoryContext,

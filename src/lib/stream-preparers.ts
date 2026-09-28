@@ -337,6 +337,8 @@ export async function prepareSqlStream(args: {
   const attemptedSql: string[] = []
   let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
   let finalSql = ''
+  /** The SQL generator's stated scope, forwarded to the answer so it can name the population it measured. */
+  let sqlExplanation = ''
 
   for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
     const feedback = attempt > 0
@@ -367,6 +369,15 @@ export async function prepareSqlStream(args: {
       attemptedSql.push(`<generation failed: ${lastSqlError}>`)
       continue
     }
+    /*
+     * The generator's own EXPLANATION, kept because rule 17 puts the measured population there.
+     *
+     * MEASURED IN UAT: `/send` — the path the chat UI uses — streams through HERE, not through `tool-branches.ts`. A
+     * fix applied only to the non-streaming branch therefore changed nothing a user could see, which a probe
+     * confirmed: the branch's log line never fired while the chat kept answering normally. Only `candidate.sql` was
+     * used here; `explanation` was dropped, so the answer generator never learned which rows the SQL had counted.
+     */
+    sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
     const guard = validateAndSanitizeLlmSql(candidate.sql)
     if (!guard.ok) {
       lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
@@ -422,7 +433,15 @@ export async function prepareSqlStream(args: {
   }
 
   const result = executed
-  const context = wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
+  /*
+   * The measured population travels WITH the rows, inside the untrusted wrapper (it is model-generated text ABOUT the
+   * data, so it must not acquire system authority). Without it the answer cannot say which rows it counted — which is
+   * the entire point of rule 17, and the reason two questions in one UAT session reported Rp 1.240.000 and Rp 1.620.000
+   * for the same customer without either answer mentioning a filter.
+   */
+  const context =
+    (sqlExplanation ? `QUERY SCOPE (what the SQL measured): ${sqlExplanation}\n\n` : '') +
+    wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
   const chartData = buildChartDataFromRows(result.rows)
   let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
