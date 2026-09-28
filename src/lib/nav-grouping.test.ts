@@ -241,3 +241,51 @@ describe('memory: BOTH transports of the external API write the turn', () => {
     expect(v1Src).not.toMatch(/await rememberChatTurn\(/)
   })
 })
+
+describe('sidebar layout: every menu stays REACHABLE, which a clip used to prevent', () => {
+  /**
+   * MEASURED BUG, found from a user screenshot showing the sidebar ending at "Integration API" with "Settings" cut
+   * off. Playwright at the user's own viewport width (1907) showed the cause was NOT a missing entry — `Settings` is in
+   * NAV_GROUPS and always was:
+   *
+   *     viewport 620px:  shell ended at y=620, the nav inside it ended at y=669 (49px LOWER),
+   *                      and "Settings" sat at y=625..661 — permanently below the fold.
+   *     the nav reported `scrollHeight === clientHeight`, so there was nothing to scroll: the overflow was created
+   *     ONE LEVEL UP by `h-full` on a wrapper that shares the shell with a header, and `overflow-hidden` on the shell
+   *     then discarded the excess instead of making it reachable.
+   *
+   * So the assertions below are about the two properties that made it unreachable, and about the entries a reviewer
+   * would notice missing.
+   */
+  const src = readFileSync(join(import.meta.dir, '..', 'app', 'page.tsx'), 'utf8')
+
+  test('the nav wrapper uses flex-1 + min-h-0, not h-full', () => {
+    // `h-full` = 100% of the shell, which the header already occupies part of -> the pair overflows the shell.
+    // `min-h-0` is the load-bearing half: a flex child defaults to min-height:auto and refuses to shrink below its
+    // content, so `flex-1` alone cannot constrain the nav and nothing becomes scrollable.
+    expect(src).toMatch(/flex flex-col flex-1 min-h-0/)
+    expect(src).not.toMatch(/flex flex-col h-full/)
+  })
+
+  test('the nav is the scroll container, so a short viewport scrolls instead of clipping', () => {
+    // MEASURED after the fix: nav bottom == shell bottom at every height tested (876 down to 500), and Settings is
+    // reachable at all of them (visible above ~660, scrollable below).
+    expect(src).toMatch(/<nav className="flex-1 min-h-0 p-2 overflow-y-auto">/)
+  })
+
+  test('Settings is still in the navigation, so a layout fix cannot have dropped it', () => {
+    // The user's report was "Settings is not visible"; the cheapest wrong fix would have been to remove it.
+    expect(src).toMatch(/key: 'settings', label: 'Settings'/)
+    expect(VIEW_KEYS).toContain('settings')
+  })
+
+  test('the compact row height is a measured value, not a preference', () => {
+    /*
+     * py-2 (36px/row) instead of py-2.5 (40px): MEASURED, twelve rows so 48px reclaimed, which is what moved the
+     * sidebar's requirement from 640px of content down to 564px and put Settings back inside a laptop's fold without
+     * shrinking the icon or the label.
+     */
+    expect(src).toMatch(/rounded-md px-3 py-2 text-left transition-colors/)
+    expect(src).not.toMatch(/rounded-md px-3 py-2\.5 text-left transition-colors/)
+  })
+})

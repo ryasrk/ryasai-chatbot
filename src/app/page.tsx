@@ -475,6 +475,17 @@ export default function Home() {
               ease: [0.23, 1, 0.32, 1] 
             }}
             data-sidebar-shell
+            /*
+             * OVERFLOW-Y-AUTO, NOT HIDDEN, and this is a measured bug rather than a preference. MEASURED at 1907x620:
+             * the shell ended at y=620 (the viewport) while the nav inside it ended at y=669 — 49px LOWER — and
+             * "overflow-hidden" clipped that excess with no way to scroll. The result was that "Settings" sat at
+             * y=625..661, permanently outside the viewport and unreachable, even though the nav reported nothing to
+             * scroll (its scrollHeight equalled clientHeight because the clip happened ONE LEVEL UP).
+             *
+             * The nav keeps its own overflow-y-auto for the tall-content case; this makes the SHELL scrollable too, so
+             * the excess is reachable instead of discarded. Nothing changes on a viewport where everything already
+             * fits: with no overflow there is no scrollbar and no layout shift.
+             */
             className="hidden md:flex shrink-0 flex-col border-r bg-background sticky top-14 h-[calc(100vh-3.5rem)] overflow-hidden"
             suppressHydrationWarning
           >
@@ -689,7 +700,14 @@ function SidebarContent({
           <button
             onClick={() => setView(item.key)}
             className={cn(
-              'relative w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+              /*
+               * COMPACT BY MEASUREMENT, not by taste. MEASURED with Playwright at the user's own viewport width: the
+               * sidebar needs 640px of content, and the menu is CUT OFF below ~700px of viewport height (36px missing at
+               * 660, 56px at 640) — "Settings", the entry an admin needs to manage their team, was the casualty. py-2.5
+               * made every row 40px; py-2 reclaims 48px across the twelve rows, which is what puts Settings back inside
+               * the fold on a laptop. The icon and label stay h-5/text-sm, so nothing becomes harder to read or click.
+               */
+              'relative w-full flex items-center gap-3 rounded-md px-3 py-2 text-left transition-colors',
               active ? 'text-primary-foreground' : 'hover:bg-muted text-foreground',
             )}
             aria-label={item.label}
@@ -723,17 +741,28 @@ function SidebarContent({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <nav className="flex-1 p-2 overflow-y-auto">
+    /*
+     * `min-h-0` + `flex-1`, NOT `h-full`. MEASURED at 1907x620: `h-full` makes this wrapper 100% of the sidebar shell,
+     * but the shell ALSO contains the header above it — so the two together overflowed the shell by 49px, and the nav
+     * (and the "Settings" entry at its end) was pushed below the viewport. The shell's `overflow-hidden` then clipped it
+     * with nothing to scroll, because the nav itself reported no overflow: the excess was created at THIS level.
+     *
+     * `min-h-0` is the part that matters: a flex child defaults to `min-height: auto`, which refuses to shrink below its
+     * content, so `flex-1` alone cannot constrain the nav. With both, the wrapper takes the space the header leaves and
+     * the nav scrolls INSIDE it — which is what the `overflow-y-auto` on the nav has always intended.
+     */
+    <div className="flex flex-col flex-1 min-h-0">
+      <nav className="flex-1 min-h-0 p-2 overflow-y-auto">
         {groups.map((group, gi) => (
-          <div key={group.title} className={gi > 0 ? 'mt-3' : undefined}>
+          <div key={group.title} className={gi > 0 ? 'mt-2' : undefined}>
             {collapsed ? (
               // Collapsed: a hairline separator. A text header cannot fit in 72px, and dropping the
               // grouping entirely would make collapsing the sidebar also collapse the information
               // architecture — the grouping is the point, not decoration.
               gi > 0 && <div className="mx-2 mb-2 border-t border-border/60" />
             ) : (
-              <div className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              // pt-0.5 instead of pt-1: with FOUR groups this is 8px, and it is spacing no one reads as structure.
+              <div className="px-3 pb-0.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                 {group.title}
               </div>
             )}
