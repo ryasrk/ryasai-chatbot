@@ -144,6 +144,16 @@ const MockWebhookAuthError = class WebhookAuthError extends Error {
   }
 }
 
+/**
+ * The not-configured class, mirrored for the same reason the auth class is: `mock.module` replaces the module for
+ * the ROUTE's graph too, so the class the route does `instanceof` against must be the SAME object the test throws.
+ * If these were two different classes the route would fall through to its 500 branch and the 503 assertion would
+ * pass or fail for the wrong reason.
+ */
+class MockWebhookNotConfiguredError extends Error {
+  readonly code = 'WEBHOOK_NOT_CONFIGURED'
+}
+
 mock.module('@/lib/incoming-webhook', () => ({
   /**
    * Re-declared so `instanceof WebhookAuthError` INSIDE THE ROUTE matches what the test throws. The route imports
@@ -151,6 +161,7 @@ mock.module('@/lib/incoming-webhook', () => ({
    * same reasoning as the error classes in the mcp-client block below.
    */
   WebhookAuthError: MockWebhookAuthError,
+  WebhookNotConfiguredError: MockWebhookNotConfiguredError,
 
   /** The real exported verifier, for the block that exercises the scheme end to end. */
   verifyWebhookSignature: (rawBody: string, signature: string, secret: string) =>
@@ -172,7 +183,7 @@ mock.module('@/lib/incoming-webhook', () => ({
       // WITHOUT hashing), then the HMAC over the raw body.
       // Typed on purpose: the ROUTE now decides 401 from `instanceof WebhookAuthError`, so a plain Error here
       // would (correctly) become a 500 and every signature-rejection test would fail for the wrong reason.
-      if (!configuredSecret) throw new MockWebhookAuthError('INCOMING_WEBHOOK_SECRET not configured')
+      if (!configuredSecret) throw new MockWebhookNotConfiguredError('INCOMING_WEBHOOK_SECRET not configured')
       if (verifyThrows !== undefined) throw verifyThrows
       verifyRuns += 1
       event('verifyWebhookSignature')
@@ -682,10 +693,18 @@ describe('POST /api/webhooks/incoming — fail-closed paths', () => {
     configuredSecret = undefined
     const raw = rawBodyFor({ query: 'q' })
     const res = await call(raw, { 'x-webhook-signature': sign(raw) })
-    // Without the `!secret` half, an unconfigured install would compare against nothing and accept
-    // forged RAG requests. Fail-closed, and the status is 401 because "INCOMING_WEBHOOK_SECRET not
-    // configured" matches /secret/i.
-    expect(res.status).toBe(401)
+    /*
+     * WITHOUT the `!secret` half an unconfigured install would compare against nothing and accept forged RAG
+     * requests, so it must reject — that half is unchanged and is what this test exists for.
+     *
+     * THE STATUS CHANGED FROM 401 TO 503, and the old expectation was WRONG rather than merely stale: the comment
+     * here used to justify 401 with "'INCOMING_WEBHOOK_SECRET not configured' matches /secret/i" — the very
+     * TEXT-MATCHING rule this route removed, because it classified an unrelated upstream error containing the word
+     * "secret" as an authentication failure. An operator's missing `.env` line is not the caller's bad signature:
+     * 401 sends an integrator to regenerate a signature for a secret that does not exist, while 503 says the
+     * capability is switched off. MEASURED on the deployed server: it answered 401, which is what surfaced this.
+     */
+    expect(res.status).toBe(503)
     expect(verifyRuns).toBe(0)
     expect(chatCalls).toHaveLength(0)
     expect(audits).toHaveLength(0)
@@ -731,5 +750,39 @@ describe('POST /api/webhooks/incoming — fail-closed paths', () => {
     await call(rawBodyFor({ query: 'q' }))
     expect(processArgs[0]).toHaveLength(3)
     expect(processArgs[0]!.every((a) => a !== undefined)).toBe(true)
+  })
+})
+
+describe('POST /api/webhooks/incoming — an unconfigured webhook is 503, not 401', () => {
+  /**
+   * MEASURED against the deployed server before this fix: the endpoint answered 401 when no secret was configured,
+   * which tells the caller their signature is wrong. An integrator would then regenerate a signature for a secret
+   * that does not exist, while the actual fix is one `.env` line the OPERATOR owns.
+   *
+   * Asserting the STATUS the route produces, because that is the contract a caller sees — the error type is only
+   * the mechanism.
+   */
+  test('no secret configured -> 503, naming the operator-side fix', async () => {
+    // `mode` decides whether the mock runs its verifier at all; without it the processor is stubbed out and the
+    // test would assert a status produced by a path the real server never takes.
+    mode = 'verify'
+    configuredSecret = undefined
+    const raw = rawBodyFor({ query: 'tes' })
+    const res = await call(raw, { 'x-webhook-signature': 'whatever' })
+    expect(res.status).toBe(503)
+    // The BODY is asserted separately from the status, because a 503 alone does not tell an integrator WHICH
+    // server-side condition they hit. The message is what `handleApiError` renders for a non-AppError.
+    const body = (await res.text())
+    expect(body.length).toBeGreaterThan(0)
+  })
+
+  test('a WRONG signature with a secret SET -> 401, so the two are not interchangeable', async () => {
+    // The opposite direction. Without it, folding not-configured into the auth error would still pass the 503 test
+    // only if the mock disagreed with the route — which is exactly the confusion this file's comments warn about.
+    mode = 'verify'
+    configuredSecret = HMAC_SECRET
+    const raw = rawBodyFor({ query: 'tes' })
+    const res = await call(raw, { 'x-webhook-signature': 'bad-signature' })
+    expect(res.status).toBe(401)
   })
 })

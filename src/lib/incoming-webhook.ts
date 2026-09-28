@@ -62,6 +62,19 @@ export function verifyWebhookSignature(
 }
 
 /**
+ * Raised when the operator has NOT ENABLED the webhook (no `INCOMING_WEBHOOK_SECRET`).
+ *
+ * SEPARATE FROM `WebhookAuthError` ON PURPOSE, and this is the distinction the route previously collapsed.
+ * MEASURED against the deployed server: calling the endpoint with no secret configured answered **401**, which
+ * tells the CALLER their signature was wrong — so an integrator would go and regenerate a signature for a secret
+ * that does not exist, while the actual fix is one `.env` line the operator owns. It is a SERVER misconfiguration,
+ * not an authentication failure, and 503 (this capability is switched off) is the honest status.
+ */
+export class WebhookNotConfiguredError extends Error {
+  readonly code = 'WEBHOOK_NOT_CONFIGURED'
+}
+
+/**
  * Raised when the webhook cannot be AUTHENTICATED (missing or mismatched signature/secret). Typed so the route
  * can answer 401 without sniffing message text: `/signature|secret/i.test(msg)` classified an unrelated upstream
  * error containing the word "secret" as a 401 (a proven false positive).
@@ -76,7 +89,8 @@ export async function processIncomingWebhook(
   rawBody: string,
 ): Promise<WebhookResult> {
   const secret = process.env.INCOMING_WEBHOOK_SECRET
-  if (!secret) throw new WebhookAuthError('INCOMING_WEBHOOK_SECRET not configured')
+  // Not-configured is its own type so the route can answer 503 rather than blaming the caller's signature.
+  if (!secret) throw new WebhookNotConfiguredError('INCOMING_WEBHOOK_SECRET not configured')
   if (!verifyWebhookSignature(rawBody, signature, secret)) {
     throw new WebhookAuthError('Invalid webhook signature')
   }

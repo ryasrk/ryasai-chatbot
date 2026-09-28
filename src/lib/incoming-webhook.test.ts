@@ -4,6 +4,8 @@ import {
   verifyWebhookSignature,
   processIncomingWebhook,
   resolveWebhookOrganizationId,
+  WebhookNotConfiguredError,
+  WebhookAuthError,
   type WebhookPayload,
 } from './incoming-webhook'
 
@@ -228,5 +230,45 @@ describe('the webhook ENTERS its org context before it queries', () => {
     expect(orgAt).toBeGreaterThan(-1) // the context was set at all
     expect(userAt).toBeGreaterThan(-1) // and the query really ran
     expect(orgAt).toBeLessThan(userAt) // BEFORE it — the whole point
+  })
+})
+
+describe('an UNCONFIGURED webhook is a server problem, not the caller\'s signature', () => {
+  /**
+   * MEASURED against the deployed server: with no `INCOMING_WEBHOOK_SECRET` the endpoint answered 401, so an
+   * integrator would regenerate a signature for a secret that does not exist — while the real fix is one `.env`
+   * line the OPERATOR owns. A 503 says "this capability is switched off"; a 401 says "you are wrong".
+   *
+   * The distinction is carried by the ERROR TYPE, matching this route's existing rule that statuses are decided by
+   * type and never by matching message text (a regex on `/signature|secret/i` once classified an unrelated
+   * upstream failure as 401).
+   */
+  const original = process.env.INCOMING_WEBHOOK_SECRET
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.INCOMING_WEBHOOK_SECRET
+    else process.env.INCOMING_WEBHOOK_SECRET = original
+  })
+
+  test('no secret throws WebhookNotConfiguredError, NOT WebhookAuthError', async () => {
+    delete process.env.INCOMING_WEBHOOK_SECRET
+    const body = JSON.stringify({ query: 'q' })
+    // Asserting the TYPE, because the route maps type -> 503/401 and the two must not be interchangeable here.
+    await expect(processIncomingWebhook({ query: 'q' } as WebhookPayload, sign(body), body)).rejects.toBeInstanceOf(
+      WebhookNotConfiguredError,
+    )
+    await expect(
+      processIncomingWebhook({ query: 'q' } as WebhookPayload, sign(body), body),
+    ).rejects.not.toBeInstanceOf(WebhookAuthError)
+  })
+
+  test('a WRONG signature stays a WebhookAuthError (401), so the two are genuinely distinct', async () => {
+    // The opposite direction: if not-configured had simply been folded into the auth error, this would pass
+    // vacuously. With a secret SET and a bad signature, the caller really is at fault.
+    process.env.INCOMING_WEBHOOK_SECRET = SECRET
+    const body = JSON.stringify({ query: 'q' })
+    await expect(
+      processIncomingWebhook({ query: 'q' } as WebhookPayload, sign(body, 'wrong-secret'), body),
+    ).rejects.toBeInstanceOf(WebhookAuthError)
   })
 })
