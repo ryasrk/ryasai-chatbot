@@ -51,10 +51,21 @@ export async function POST(req: NextRequest) {
       // Nothing usable to match — return empty rather than scanning all chunks.
       return NextResponse.json({ results: [], queryTokens: [], topK })
     }
+    /*
+     * `rerankScore` and `rank` are surfaced because the ORDER and the `score` field describe two different rankings
+     * once a reranker has run. MEASURED IN UAT: this endpoint returned `[0.3333, 1, 0.5, 0.1111]` — a correctly
+     * ordered array whose visible scores contradict that order — while the Chat UI labelled the same list
+     * "Match #1…#4" with the best chunk at #3. A consumer had no way to know which ranking the product used.
+     *
+     * `score` keeps its retrieval meaning (citation-trail and the dedup paths depend on it); the reranker's own
+     * judgement travels beside it, and `rank` is the position in the array as returned.
+     */
     const top = retrieval.chunks.map((chunk) => ({
       ...chunk,
       contentHits: chunk.scoreBreakdown.contentHits,
       keywordHits: chunk.scoreBreakdown.keywordHits,
+      rerankScore: chunk.rerankScore ?? null,
+      rank: chunk.rank ?? null,
     }))
 
     await writeAudit({
@@ -76,6 +87,15 @@ export async function POST(req: NextRequest) {
       queryTokens: retrieval.queryTokens,
       topK,
       candidatesScanned: retrieval.candidatesScanned,
+      /*
+       * WHY THESE TWO TRAVEL WITH THE RESULTS. MEASURED IN UAT: `semanticSimilarity` was 0 on every result of
+       * every query, and nothing in the response explained it. The cause was a stored-vs-configured embedding
+       * mismatch (384-dimensional chunks vs a 1536-dimensional query model) that turned semantic scoring off
+       * silently. `vectorAttempted: true` beside a large `embeddingMismatch` IS that condition, so a caller can
+       * finally distinguish "no semantic match" from "no semantic leg".
+       */
+      embeddingMismatch: retrieval.embeddingMismatch ?? 0,
+      embeddingModelUsed: retrieval.embeddingModelUsed ?? null,
     })
   } catch (e) {
     // An unsupported vector store provider is an operator error, not a server fault, and the old behaviour hid it

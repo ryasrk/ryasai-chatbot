@@ -149,8 +149,28 @@ export async function runRagBranch(args: {
     : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
   // ponytail: if reflection says evidence is insufficient after multi-turn retrieval,
   // note it in the context so the LLM doesn't hallucinate beyond the evidence.
+  /*
+   * THE NOTE MUST NOT TURN A RETRIEVAL MISS INTO A CLAIM OF ABSENCE.
+   *
+   * MEASURED IN UAT, on two separate topics: asked "Bagaimana prosedur mengembalikan uang ke pelanggan yang
+   * komplain?", the answer asserted "## Tidak ada prosedur pengembalian uang (refund) dalam sumber yang tersedia"
+   * and enumerated specific sub-details as NOT FOUND — while `02-sop-layanan-pelanggan.md` chunk#2 contains the
+   * refund procedure verbatim (7 hari kerja, 30 hari kalender, biaya 2%, minimal Rp25.000). The same chunk WAS found
+   * by other phrasings of the same question, so the document was reachable and the retrieval simply missed.
+   *
+   * The old wording said "if the evidence doesn't contain the answer, say so" — which instructs the model to report
+   * the ABSENCE OF A POLICY when the truth is ABSENCE FROM ITS OWN SEARCH. Those are different claims and only one
+   * of them is safe: a knowledge officer acting on "there is no refund procedure" would tell a customer so.
+   *
+   * The distinction is now explicit, and the model is told to report the LIMIT OF ITS SEARCH rather than a fact about
+   * the documents. It still refuses to invent an answer — the point is to name the uncertainty honestly.
+   */
   const reflectionNote = !retrieval.reflection.sufficient && retrieval.retrievalPasses >= 2
-    ? `\n\n[Note: The retrieved evidence may not fully address the question. Answer based only on the evidence above. If the evidence doesn't contain the answer, say so.]`
+    ? `\n\n[Note: The retrieved evidence may not fully address the question. Answer based only on the evidence above.` +
+      ` If the answer is not in the evidence, say that YOUR SEARCH did not find it — phrase it as "saya tidak` +
+      ` menemukan ini dalam dokumen yang terambil" — and do NOT claim the document or policy does not exist,` +
+      ` because the search may simply have missed it. Never state that a procedure or figure is absent from the` +
+      ` documents; state only what you did not find.]`
     : ''
   // Source guidance block (per-doc + org ragContextPrompt). Empty prompts
   // inject nothing. Fetch per-doc contextPrompts for the distinct contributing

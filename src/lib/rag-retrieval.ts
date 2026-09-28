@@ -81,7 +81,17 @@ export async function retrieveRelevantChunks(args: {
    * the reflection step before being dropped.
    */
   documentIds?: string[] | null
-}): Promise<{ chunks: RetrievedChunk[]; queryTokens: string[]; candidatesScanned: number; graphContext: string; citationTrail?: CitationTrail[] }> {
+}): Promise<{
+  chunks: RetrievedChunk[]
+  queryTokens: string[]
+  candidatesScanned: number
+  graphContext: string
+  citationTrail?: CitationTrail[]
+  /** Chunks skipped for semantic scoring because their embedding model differs from the query's. */
+  embeddingMismatch?: number
+  /** The embedding model the QUERY used, or null when no embedding was resolved at all. */
+  embeddingModelUsed?: string | null
+}> {
   const queryTokens = tokenize(args.query)
   if (queryTokens.length === 0) {
     return { chunks: [], queryTokens: [], candidatesScanned: 0, graphContext: '' }
@@ -165,6 +175,16 @@ export async function retrieveRelevantChunks(args: {
   const finalChunks = rerankEnabled
     ? await dispatchRerank(args.query, mergedChunks, args.topK)
     : selectTopRetrievedChunks(mergedChunks, args.topK)
+
+  /*
+   * Stamp the 1-based position in the order actually RETURNED. The UI labels these "Match #N" from array
+   * position, and MEASURED IN UAT that position and the displayed score described two different rankings, so
+   * a reader could not tell which one the product used. Written here, where the order is final, the label and
+   * the order cannot drift apart again.
+   */
+  finalChunks.forEach((chunk, i) => {
+    chunk.rank = i + 1
+  })
 
   const citationTrail = buildCitationTrail(args.query, kgResult, finalChunks)
 
@@ -253,7 +273,13 @@ async function rerankWithLlm(
     for (const item of scored) {
       if (used.has(item.index)) continue
       used.add(item.index)
-      reranked.push(chunks[item.index])
+      /*
+       * Carry the RERANKER's judgement on the chunk. MEASURED IN UAT: without it this array was ordered by the
+       * LLM while every chunk still reported its RETRIEVAL score, so `POST /api/documents/search` returned
+       * `[0.3333, 1, 0.5, 0.1111]` — an array that is correctly ordered and a visible score that contradicts it.
+       * The UI then labelled it "Match #1…#4", with the best chunk shown as Match #3.
+       */
+      reranked.push({ ...chunks[item.index], rerankScore: item.score })
       if (reranked.length >= topK) break
     }
     if (reranked.length < topK) {
@@ -305,6 +331,16 @@ async function retrieveAndFuse(args: {
    */
   vectorHits: number
   vectorAttempted: boolean
+  /**
+   * Chunks skipped for semantic scoring because their stored embedding model differs from the query's.
+   *
+   * The comment above names this subsystem's signature failure — "the dimension mismatch … produced a
+   * healthy-looking answer with the leg silently empty". This count is that failure made legible: MEASURED IN UAT,
+   * `semanticSimilarity` was 0 on every result of every query because 384-dimensional vectors were being compared
+   * against a 1536-dimensional query. `vectorAttempted: true` with a large `embeddingMismatch` is the exact shape.
+   */
+  embeddingMismatch?: number
+  embeddingModelUsed?: string | null
 }> {
   const { queryTokens, topK } = args
   const poolSize = Math.max(topK * 8, 24)
@@ -359,15 +395,23 @@ async function retrieveAndFuse(args: {
   const fused = lexicalFirst(toRanking(bm25), [...vectorRanking, ...(args.kgRanking ?? [])])
 
   const scored: RetrievedChunk[] = []
+  /*
+   * Chunks skipped for semantic scoring because their stored embedding model differs from the query's.
+   *
+   * MEASURED IN UAT, twice: `semanticSimilarity` was 0 on EVERY result of EVERY query. The stored vectors are
+   * 384-dimensional (`paraphrase-multilingual-MiniLM-L12-v2`) while the configured model is `text-embedding-3-small`
+   * (1536). The comparison inside the loop is where that becomes a silent zero: retrieval falls back to lexical-only
+   * and nothing anywhere says so. Counting it here makes the condition observable instead of invisible.
+   */
+  let embeddingMismatched = 0
   for (const { id, score } of fused) {
     const chunk = byId.get(id)
     if (!chunk) continue
     const lexicalScore = scoreChunk(queryTokens, chunk)
     const vectorScore = vectorScores.get(id)
-    const chunkEmbedding =
-      queryEmbedding && chunk.embeddingModel === queryEmbedding.model
-        ? parseEmbeddingJson(chunk.embeddingJson)
-        : null
+    const embeddingUsable = Boolean(queryEmbedding && chunk.embeddingModel === queryEmbedding.model)
+    if (queryEmbedding && !embeddingUsable) embeddingMismatched += 1
+    const chunkEmbedding = embeddingUsable ? parseEmbeddingJson(chunk.embeddingJson) : null
     // The breakdown stays populated for the UI and the search-tester. It is
     // reporting only — `score` is the fused rank, which is what orders results.
     const similarity =
@@ -395,6 +439,10 @@ async function retrieveAndFuse(args: {
     candidatesScanned: candidates.length,
     vectorHits: vectorRanking.length,
     vectorAttempted: Boolean(queryEmbedding),
+    // Non-zero means semantic scoring was INERT for this query — reported rather than left to be inferred from a
+    // wall of `semanticSimilarity: 0` values.
+    embeddingMismatch: embeddingMismatched,
+    embeddingModelUsed: queryEmbedding?.model ?? null,
   }
 }
 

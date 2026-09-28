@@ -131,6 +131,27 @@ export interface RetrievedChunk {
   content: string
   score: number
   scoreBreakdown: RetrievalScore
+  /**
+   * The score the RERANKER gave this chunk, when a reranker ran.
+   *
+   * WHY THIS EXISTS. MEASURED IN UAT: `POST /api/documents/search` returned scores in the order
+   * `[0.3333, 1, 0.5, 0.1111]` — clearly not descending — while the Chat UI labelled the same list
+   * "Match #1, #2, #3…". The cause was not a missing sort: `dispatchRerank` DOES order the array by the LLM's
+   * relevance judgement, but it reuses the retrieved objects unchanged, so each chunk still carried its RETRIEVAL
+   * score. The array order and the `score` field therefore described two different rankings, and a reader had no way
+   * to tell which one the product was using. The best-matching chunk appeared as "Match #3".
+   *
+   * `score` is deliberately NOT overwritten: `citation-trail.ts` derives a relevance number from it and `hyde.ts`
+   * plus `intent-pipeline.ts` dedupe by comparing it, so replacing it with an LLM 0-10 would change those meanings
+   * silently. The reranker's own number is recorded ALONGSIDE instead, which is what the caller needs to explain
+   * the order it was given.
+   */
+  rerankScore?: number
+  /**
+   * 1-based position in the order actually returned, so a consumer can label "Match #N" truthfully without
+   * re-deriving it from a field that may describe a different ranking.
+   */
+  rank?: number
 }
 
 export function sortRetrievedChunks<T extends { score: number; chunkIndex: number }>(

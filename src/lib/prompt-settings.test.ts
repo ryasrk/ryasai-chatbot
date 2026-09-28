@@ -167,3 +167,42 @@ describe('resolveSqlRulesPrompt — the org text wins, whitespace does not', () 
     expect(defaultSqlRulesPrompt()).toBe(DEFAULT_SQL_RULES_PROMPT)
   })
 })
+
+describe('the SQL rules must make the answer DISCLOSE what it measured', () => {
+  /**
+   * MEASURED IN UAT, twice on the same session: "Siapa 5 pelanggan dengan pembelian terbesar?" was answered from
+   * `WHERE status = 'selesai'`, and the very next question used `WHERE status <> 'dibatalkan'`. Two questions about
+   * the same customers reported different totals (Rp 1.240.000 vs Rp 1.620.000 for one customer), the 3rd-largest
+   * customer vanished from the top-5, and NOTHING in either answer said which rows were counted. An analyst writes
+   * those numbers into a report without ever learning the population.
+   *
+   * A SEPARATE measurement from the same round: a 126-row result truncated to 100 reported its total as "105 baris",
+   * a figure inferred from the last visible row — so 26 rows disappeared behind an invented denominator.
+   *
+   * Both are prompt-level rules because the choice of filter is the model's, not the code's.
+   */
+  const rules = DEFAULT_SQL_RULES_PROMPT
+
+  it('a rule requires the population to be NAMED when a filter is used', () => {
+    expect(rules).toContain('STATE THE POPULATION YOU MEASURED')
+    // The concrete failure must be named, so the rule cannot be read as generic advice.
+    expect(rules).toMatch(/Siapa 5 pelanggan/)
+    // And the remedy: say which subset in the explanation.
+    expect(rules).toMatch(/explanation.*MUST name/i)
+  })
+
+  it('a rule forbids deriving a total from TRUNCATED output', () => {
+    expect(rules).toContain('COUNT ROWS HONESTLY')
+    expect(rules).toMatch(/105 baris/)
+    // The instruction must be "count separately or say nothing", never "estimate".
+    expect(rules).toMatch(/Never derive a total from truncated output/)
+  })
+
+  it('the earlier rules survive — this is an append, not a rewrite', () => {
+    // Rule 13-16 were each written after a measured defect; a rewrite that dropped one would be silent.
+    expect(rules).toContain('ILIKE')
+    expect(rules).toContain('ESCAPE')
+    expect(rules).toContain('IS NULL')
+    expect(rules).toMatch(/substring matches over exact matches/)
+  })
+})

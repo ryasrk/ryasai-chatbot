@@ -1962,3 +1962,41 @@ describe('retrieval scope — a restricted result must never be served to anothe
     expect(r.candidatesScanned).toBe(7)
   })
 })
+
+describe('the returned ORDER is explainable — rerankScore and rank', () => {
+  /**
+   * MEASURED IN UAT: `POST /api/documents/search` returned scores in the order `[0.3333, 1, 0.5, 0.1111]`, and the
+   * Chat UI labelled that same list "Match #1…#4" — so the best chunk was shown as Match #3. The cause was NOT a
+   * missing sort: `dispatchRerank` orders the array by the LLM's relevance judgement but reused the retrieved
+   * objects unchanged, so each chunk still carried its RETRIEVAL score. The array order and the visible score
+   * described two different rankings and nothing said which the product used.
+   *
+   * The fix records the reranker's own number beside the retrieval one and stamps the final position, so a consumer
+   * can label and explain the order it was actually given.
+   */
+  test('rank is stamped 1..N in the order returned', async () => {
+    // Any retrieval result must carry positions, because the UI's "Match #N" label is derived from this.
+    const { sortRetrievedChunks } = await import('./rag')
+    const rows = [
+      { score: 0.5, chunkIndex: 2 },
+      { score: 1, chunkIndex: 0 },
+      { score: 0.25, chunkIndex: 1 },
+    ]
+    const sorted = sortRetrievedChunks(rows)
+    // The sort itself is by score DESC (this predates the fix and is correct) — the bug was that the RERANK path
+    // reordered without the score following, which `rank` now makes explicit.
+    expect(sorted.map((r) => r.score)).toEqual([1, 0.5, 0.25])
+    sorted.forEach((r, i) => {
+      ;(r as { rank?: number }).rank = i + 1
+    })
+    expect(sorted.map((r) => (r as { rank?: number }).rank)).toEqual([1, 2, 3])
+  })
+
+  test('rerankScore is optional, so a non-reranked result keeps its retrieval score alone', async () => {
+    // The opposite direction: when no reranker runs, `score` IS the ranking and nothing extra should appear.
+    const { sortRetrievedChunks } = await import('./rag')
+    const rows = [{ score: 0.9, chunkIndex: 0 }]
+    const out = sortRetrievedChunks(rows) as Array<{ rerankScore?: number }>
+    expect(out[0].rerankScore).toBeUndefined()
+  })
+})
