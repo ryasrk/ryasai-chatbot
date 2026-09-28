@@ -10,6 +10,12 @@ interface RouteContext {
 interface ProfileBody {
   name?: string
   avatarColor?: string
+  /**
+   * A member's role. Admin-only, and never your own — see the guards in PATCH. MEASURED IN UAT: this was ABSENT from
+   * both the UI and the API, so a team could not promote a colleague at all; the finding was filed as "no UI path"
+   * when the capability was missing one layer deeper.
+   */
+  role?: 'admin' | 'analyst' | 'viewer'
 }
 
 /**
@@ -29,11 +35,38 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     }
 
     const body = (await req.json().catch(() => ({}))) as ProfileBody
-    const data: { name?: string; avatarColor?: string } = {}
+    const data: { name?: string; avatarColor?: string; role?: 'admin' | 'analyst' | 'viewer' } = {}
 
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
     if (typeof body.avatarColor === 'string' && body.avatarColor.trim()) {
       data.avatarColor = body.avatarColor.trim()
+    }
+    /*
+     * ROLE CHANGE, and it was genuinely absent: MEASURED IN UAT, a team with a new analyst had no way to make them
+     * one — PATCH accepted only `name` and `avatarColor`, so the API could not do it either, and the finding was filed
+     * as "no UI path" when the capability was missing one layer deeper.
+     *
+     * TWO GUARDS, because an unguarded role change is a privilege-escalation foot-gun:
+     *   - only an ADMIN may set a role. `requireRole(user,'admin')` above runs only when the caller edits SOMEONE
+     *     ELSE, which is exactly this case, so it already covers it;
+     *   - an admin cannot change their OWN role. Otherwise the last admin locks the whole organisation out of user
+     *     management with one request and no way back in. Self-service edits of name/avatar stay allowed.
+     */
+    if (body.role !== undefined) {
+      const ROLES = ['admin', 'analyst', 'viewer'] as const
+      if (typeof body.role !== 'string' || !(ROLES as readonly string[]).includes(body.role)) {
+        return NextResponse.json(
+          { ok: false, error: `Invalid role. Expected one of: ${ROLES.join(', ')}.` },
+          { status: 400 },
+        )
+      }
+      if (user.userId === id) {
+        return NextResponse.json(
+          { ok: false, error: 'You cannot change your own role. Ask another admin.' },
+          { status: 400 },
+        )
+      }
+      data.role = body.role as 'admin' | 'analyst' | 'viewer'
     }
 
     if (Object.keys(data).length === 0) {

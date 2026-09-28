@@ -142,11 +142,39 @@ describe('PATCH /api/users/[id] — self-service vs admin-only', () => {
     expect(updateArgs[0]!.data).toEqual({ name: 'Renamed' })
   })
 
-  test('only name and avatarColor are forwarded — unknown fields are dropped', async () => {
-    // `data` is built field by field, so a `{ role: 'admin' }` smuggled into a profile PATCH must NOT
-    // reach the update. Without this the profile endpoint is a privilege-escalation hole.
-    await patch('target-1', { name: 'A', role: 'admin', isActive: false, organizationId: 'org-2' })
-    expect(updateArgs[0]!.data).toEqual({ name: 'A' })
+  test('unknown fields are dropped; `role` is NOT, and only for an admin editing someone else', async () => {
+    /*
+     * THE RULE CHANGED, and the reason is worth keeping visible because this assertion used to protect a real hole.
+     *
+     * BEFORE: `data` was built field by field and `role` was not among the fields, so a smuggled `{ role: 'admin' }`
+     * could not reach the update. That was correct at the time — the endpoint served self-service profile edits.
+     *
+     * NOW: `role` is deliberately accepted, because MEASURED IN UAT a team had NO WAY to promote a colleague — the
+     * capability was missing from the API as well as the UI. The escalation hole is closed by a DIFFERENT guard that
+     * this test now pins: `requireRole(user,'admin')` runs whenever the caller edits someone else, and PATCH refuses
+     * a self-role-change outright (the last admin could otherwise lock the org out). `isActive` and `organizationId`
+     * remain dropped — neither has any legitimate path through this endpoint.
+     */
+    await patch('target-1', { name: 'A', role: 'analyst', isActive: false, organizationId: 'org-2' })
+    expect(updateArgs[0]!.data).toEqual({ name: 'A', role: 'analyst' })
+  })
+
+  test('an ADMIN cannot change their OWN role', async () => {
+    // Otherwise the last admin demotes themselves and nobody can manage users again. The refusal must be explicit,
+    // not a silent no-op, or the admin believes the change landed.
+    // `activeUser.userId` must actually EQUAL the target id, or this exercises the admin-edits-someone-else path and
+    // passes for the wrong reason — which is exactly how the first version of this test reported 200.
+    activeUser = { ...adminUser, userId: 'self-1', role: 'admin' }
+    existingUser = { id: 'self-1' }
+    const res = await patch('self-1', { role: 'viewer' })
+    expect(res.status).toBe(400)
+    expect(updateArgs).toHaveLength(0)
+  })
+
+  test('an invalid role is 400 with the accepted values named', async () => {
+    const res = await patch('target-1', { role: 'superuser' })
+    expect(res.status).toBe(400)
+    expect(updateArgs).toHaveLength(0)
   })
 
   test('an empty or whitespace-only field set is 400, not a pointless write', async () => {
