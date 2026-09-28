@@ -89,6 +89,20 @@ export function ChatView() {
    * Fetched lazily and kept small: the picker only needs id + name. Loading it here (rather than in
    * the composer) means one fetch for the whole view instead of one per keystroke.
    */
+  /*
+   * KNOWING LIMIT, recorded so it is not rediscovered: this picker offers only the connected DATABASES.
+   *
+   * MEASURED IN UAT: a knowledge officer who knew the answer was in a policy document could not pin the retriever to
+   * documents — the one control that makes retrieval deterministic, missing for exactly the questions where a
+   * semantic miss cannot be recovered by rewording.
+   *
+   * WHY IT IS STILL DATABASES ONLY: pinning a document set needs support this path does not have. `/send` resolves
+   * `integrationId` against `Integration` (400 when it does not match) and has no `documentIds` concept; and
+   * `integrationIds: []` is UNRESTRICTED by design (`intScope` resolves an empty list to `{}`), so an empty list does
+   * NOT exclude the databases. A "Documents" option was written, checked against those facts, and removed — a control
+   * that silently changes nothing is worse than an absent one, because the user believes they constrained the search.
+   * Doing it properly means threading a scope through `/send` and the router's decision step.
+   */
   const [chatSources, setChatSources] = useState<{ id: string; name: string }[]>([])
   const [pinnedSource, setPinnedSource] = useState('')
 
