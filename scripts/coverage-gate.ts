@@ -63,18 +63,34 @@ import { readFileSync, existsSync } from 'node:fs'
  * that comment implies, and nobody has established where the true floor sits.
  *
  *
- * ENVIRONMENT OFFSET, MEASURED — and the reason ten of these floors are now 5-10 points LOOSER than their
- * measurement. CI measures LOWER than a local run for the same tree: recorded pairs are
- * cognee-knowledge-graph local 65.66% vs CI 60.47% (-5.19), cognee-http 35.75 vs 34.31 (-1.44),
- * tool-router-agentic 76.48 vs 75.00 (-1.48), rag-retrieval 68.46 vs 67.14 (-1.32), planner 77.08 vs 75.95
- * (-1.13). A floor one point under the LOCAL number is therefore guaranteed to fail in CI — which is exactly
- * what happened when these floors were first set to `floor(measured)`: a green local gate and a red CI gate on
- * the same commit.
+ * A "CI MEASURES LOWER THAN LOCAL" CLAIM THAT WAS WRONG, AND WHAT WAS ACTUALLY HAPPENING.
  *
- * So the floors are set against the WORST-CASE (CI) value with the file's own 5-point tolerance on top. That
- * catches a genuine collapse and stops failing on environment noise. It is also a real loss of sensitivity in
- * the 5-10 point band, accepted deliberately and recorded here rather than discovered later.
+ * I recorded an environment offset here: "cognee-knowledge-graph local 65.66% vs CI 60.47%, cognee-http 35.75 vs
+ * 34.31, tool-router-agentic 76.48 vs 75.00, rag-retrieval 68.46 vs 67.14, planner 77.08 vs 75.95". Then ten
+ * floors were loosened by 5-10 points to absorb it. That was a MISDIAGNOSIS and the loosening was not justified
+ * by it.
  *
+ * MEASURED, by installing the pinned bun 1.4.2 alongside the local 1.3.14 and running the SAME tree through both:
+ * every one of those twelve figures is identical across the two versions, to the line.
+ *
+ *     1.3.14: 25093/33051 = 75.92%
+ *     1.4.2 : 25093/33051 = 75.92%      (delta 0.00 on all 240 files, not just the totals)
+ *
+ * The real cause was a STALE BASELINE and the repo already says so in its own header — the gate compares floors
+ * against `coverage-summary.json`, which is a COMMITTED artifact. When source lines are added without refreshing
+ * it, `found` stays old while the floor is compared against it:
+ *
+ *     cognee-knowledge-graph   d16a778: found=431 hit=283 (65.66%)   source 566 lines, +42 vs 1414647
+ *     cognee-knowledge-graph   fe9432b: found=473 hit=286 (60.47%)   refresh picked the 42 lines up
+ *
+ * So the file grew 42 lines while the summary did not move, and the first number was measured against a tree that
+ * no longer existed. CI was not measuring a different environment — it was measuring the SAME tree as a local run
+ * does today, and my local number was the stale one.
+ *
+ * WHAT THIS DOES NOT CHANGE: the floors are still set from a measurement of the CURRENT tree, which is the only
+ * defensible basis, and the twelve figures above are reproducible under both bun versions. What it corrects is the
+ * JUSTIFICATION for loosening ten of them by 5-10 points. Re-run `bun run coverage` before comparing anything here,
+ * and never compare a fresh measurement against the committed summary — they can describe different trees.
  *
  * SECOND CAUSE, MEASURED 2026-09-28 AND WORTH KNOWING BEFORE "fixing" A FLOOR: COMMENTS COUNT.
  *

@@ -646,7 +646,21 @@ describe('the response envelope and the audit record', () => {
     const plain = await bodyOf(await post({ cases: [{ question: 'q' }] }))
     const withHeader = await bodyOf(await post({ cases: [{ question: 'q' }] }, { 'x-fusion-k': '1' }))
     expect(withHeader.rankingVersion).toBe(plain.rankingVersion)
-    expect(withHeader.summary).toEqual(plain.summary)
+    /*
+     * COMPARED EXCLUDING `avgLatencyMs`, because that field IS A DURATION and two identical calls do not
+     * produce the same one. MEASURED: this assertion failed once under the 8-way parallel runner with
+     * `avgLatencyMs: 1` vs `0`, passed on re-run, and passed 3/3 in isolation — a FLAKY ASSERTION, not a
+     * version difference (bun 1.3.14 and the pinned 1.4.2 reproduce it equally).
+     *
+     * The invariant this test exists for is that the HEADER DOES NOT CHANGE THE RANKING. A duration is not
+     * part of that claim, and including it made the guard fail for a difference that is SUPPOSED to exist.
+     * A flaky guard is worse than no guard: it teaches people to re-run instead of read.
+     */
+    const { avgLatencyMs: _plainMs, ...plainRest } = plain.summary as Record<string, unknown>
+    const { avgLatencyMs: _headerMs, ...headerRest } = withHeader.summary as Record<string, unknown>
+    expect(headerRest).toEqual(plainRest)
+    // The field is still part of the response contract, so assert it EXISTS rather than ignoring it entirely.
+    expect(typeof (plain.summary as Record<string, unknown>).avgLatencyMs).toBe('number')
   })
 
   test('the audit never carries the question text', async () => {
@@ -674,5 +688,25 @@ describe('the response envelope and the audit record', () => {
     const body = await bodyOf(await post({ cases: [{ question: 'q' }] }))
     expect(Object.keys(body)).toEqual(['error'])
     expect(JSON.stringify(body)).not.toContain('boom')
+  })
+})
+
+describe('the summary comparison is not silently defeating itself', () => {
+  /**
+   * Guards the FIX, because the fix's failure mode is subtle: the test now destructures `avgLatencyMs` away, so if
+   * that field ever disappears from the contract the comparison would pass while asserting less than it appears to.
+   * The `typeof` check inside the inert-header test covers presence; this covers the CONTRACT at its source.
+   *
+   * MEASURED reason this matters: the original assertion compared two identical requests INCLUDING `avgLatencyMs`
+   * and failed once under the 8-way parallel runner with `1` vs `0`, passing on re-run and 3/3 in isolation. A guard
+   * that fails for a difference that is SUPPOSED to exist trains people to re-run instead of read.
+   */
+  test('the response contract still declares avgLatencyMs', async () => {
+    retrievalChunks = [{ chunkId: 'c1', documentName: 'a.md', content: 'x', score: 1 }]
+    const body = await bodyOf(await post({ cases: [{ question: 'q' }] }))
+    const summary = body.summary as Record<string, unknown>
+    // Present AND numeric — so destructuring it out of ONE comparison cannot hide its removal from the contract.
+    expect(typeof summary.avgLatencyMs).toBe('number')
+    expect(Object.keys(summary)).toContain('avgLatencyMs')
   })
 })

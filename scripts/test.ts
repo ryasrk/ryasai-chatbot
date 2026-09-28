@@ -4,7 +4,48 @@
 // Each test file gets its own bun process for perfect mock isolation.
 // Revert to `bun test src/` when Bun fixes mock.module cross-file isolation.
 
+import { readFileSync } from 'node:fs'
 import { parseBunSummary } from './test-summary'
+
+/*
+ * THE BUN VERSION IS CHECKED, because verifying on a different runtime than CI is a silent way to be wrong.
+ *
+ * MEASURED COST of not doing this: this repo pins `packageManager: bun@1.4.2` and `engines.bun >= 1.4.2`, CI pins
+ * `bun-version: 1.4.2`, while the machine that produced this session's earlier measurements was running 1.3.14.
+ * That mismatch produced a recorded "CI measures lower than local" offset which the gate file justified loosening
+ * ten coverage floors by 5-10 points for. Running the SAME tree through BOTH versions showed the numbers are
+ * IDENTICAL to the line (25093/33051 = 75.92% on each) — so the offset never existed, the baseline was stale, and
+ * the loosening was justified by a misdiagnosis.
+ *
+ * A WARNING, not a hard failure: a contributor on a newer patch release should not be blocked, but they should know
+ * that "it passes locally" was measured somewhere the gate does not run. CI is authoritative and always pins.
+ */
+function checkBunVersion(): void {
+  const pinned = (() => {
+    try {
+      const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+        packageManager?: string
+      }
+      return pkg.packageManager?.split('@')[1] ?? null
+    } catch {
+      return null
+    }
+  })()
+  if (!pinned) return
+  const running = Bun.version
+  if (running === pinned) return
+  // A DIFFERENT MINOR is the case that bit us, so it is called out as such.
+  const sameMinor = running.split('.').slice(0, 2).join('.') === pinned.split('.').slice(0, 2).join('.')
+  console.warn(
+    `[test] WARNING: running bun ${running} but package.json pins ${pinned}` +
+      (sameMinor ? ' (same minor, different patch — usually fine)' : ' (DIFFERENT MINOR — CI pins this version)') +
+      '.\n[test] CI pins it for a reason; re-run with the pinned version before trusting a comparison.',
+  )
+}
+
+// Called at module scope so it runs before any test output can be mistaken for a
+// clean verification. Cheap (one small file read) and it cannot fail the run.
+checkBunVersion()
 
 const CONCURRENCY = 8
 
