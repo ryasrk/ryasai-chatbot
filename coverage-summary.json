@@ -1,13 +1,13 @@
 {
-  "linePct": 75.9,
-  "linesHit": 25067,
-  "linesFound": 33025,
-  "reachableLinePct": 86.42,
-  "reachableLinesHit": 21783,
-  "reachableLinesFound": 25206,
-  "fnPct": 89.13,
-  "fnsHit": 2238,
-  "fnsFound": 2511,
+  "linePct": 75.92,
+  "linesHit": 25093,
+  "linesFound": 33051,
+  "reachableLinePct": 86.43,
+  "reachableLinesHit": 21802,
+  "reachableLinesFound": 25225,
+  "fnPct": 89.15,
+  "fnsHit": 2242,
+  "fnsFound": 2515,
   "filesMeasured": 240,
   "failedTestFiles": [],
   "files": [
@@ -1101,15 +1101,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/incoming-webhook.ts",
-      "hit": 42,
-      "found": 43,
-      "pct": 97.67441860465115,
-      "fHit": 3,
-      "fFound": 4,
-      "fPct": 75
-    },
-    {
       "file": "src/lib/license-revalidation.ts",
       "hit": 44,
       "found": 45,
@@ -1153,6 +1144,15 @@
       "fHit": 11,
       "fFound": 12,
       "fPct": 91.66666666666666
+    },
+    {
+      "file": "src/lib/incoming-webhook.ts",
+      "hit": 68,
+      "found": 69,
+      "pct": 98.55072463768117,
+      "fHit": 7,
+      "fFound": 8,
+      "fPct": 87.5
     },
     {
       "file": "src/app/api/mcp/servers/[id]/route.ts",
