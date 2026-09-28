@@ -256,6 +256,15 @@ export async function runSqlBranch(args: {
   question: string
   userId: string
   integrationId?: string
+  /**
+   * Every active integration name in the org, so the answer can name what it did NOT include.
+   *
+   * MEASURED IN UAT: "Bandingkan jumlah pengiriman dengan jumlah pesanan" was answered entirely from Logistics and
+   * reported "Jumlah pesanan (total) | 8" while Sales held TWELVE orders — 8 is the shipment count relabelled. A
+   * prompt rule forbidding one-sided comparisons could not help, because the model did not know a second source
+   * existed. Passing the names through is what makes that rule actionable.
+   */
+  integrationNames?: string[]
   systemPromptPrefix?: string
   memoryContext?: string
   chatHistory?: ChatHistoryEntry[]
@@ -554,11 +563,36 @@ export async function runSqlBranch(args: {
   })
 
   const truncated = result.rowCount >= SQL_MAX_LIMIT
+  /*
+   * TELL THE MODEL WHICH OTHER SOURCES EXIST.
+   *
+   * MEASURED IN UAT: "Bandingkan jumlah pengiriman dengan jumlah pesanan" was answered entirely from Logistics — it
+   * reported "Jumlah pesanan (total) | 8" when the Sales database held TWELVE orders, because 8 is the shipment count
+   * relabelled. A prompt rule against one-sided comparisons cannot fix that on its own: the model had no way to know a
+   * second source existed, so it had nothing to name as missing. Verified that the rule alone was insufficient — the
+   * mislabelling survived it.
+   *
+   * The authoritative list is the org's active integrations. The SQL branch does not otherwise need it, so it is
+   * fetched here rather than threaded through every call site: one query, only on the SQL path, only when an answer is
+   * about to be generated, and a failure to fetch simply omits the note rather than failing the turn.
+   */
+  // The list comes from `loadDbData`, which the router ALREADY ran, rather than a second query here. That matters
+  // beyond tidiness: `tool-branches.test.ts` pins that an explicit `integrationId` performs NO candidate listing (it
+  // is the disambiguation path's job), and a fresh `db.integration.findMany` broke exactly that assertion.
+  const otherSources = (args.integrationNames ?? []).filter((n) => n !== integration.name)
+  const crossSourceNote =
+    otherSources.length > 0
+      ? `Other connected data sources in this workspace: ${otherSources.join(', ')}. ` +
+        `If the question asks you to compare or combine this result with something those sources would hold, say ` +
+        `plainly that THIS ANSWER COVERS ONLY ${integration.name} and name what was not included. Never present a ` +
+        `figure from this source as if it described another one.` +
+        '\n\n'
+      : ''
   const answer = await generateAnswer({
     question: args.question,
     context: wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2)),
     source: 'SQL',
-    systemPromptPrefix: effectiveSystemPromptPrefix,
+    systemPromptPrefix: crossSourceNote + (effectiveSystemPromptPrefix ?? ''),
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,

@@ -1,13 +1,13 @@
 {
-  "linePct": 75.75,
-  "linesHit": 25180,
-  "linesFound": 33240,
+  "linePct": 75.69,
+  "linesHit": 25202,
+  "linesFound": 33296,
   "reachableLinePct": 86.42,
-  "reachableLinesHit": 21880,
-  "reachableLinesFound": 25318,
-  "fnPct": 89.19,
-  "fnsHit": 2253,
-  "fnsFound": 2526,
+  "reachableLinesHit": 21900,
+  "reachableLinesFound": 25342,
+  "fnPct": 89.21,
+  "fnsHit": 2256,
+  "fnsFound": 2529,
   "filesMeasured": 241,
   "failedTestFiles": [],
   "files": [
@@ -201,15 +201,6 @@
       "fPct": 67.85714285714286
     },
     {
-      "file": "src/lib/tool-router.ts",
-      "hit": 266,
-      "found": 496,
-      "pct": 53.62903225806451,
-      "fHit": 34,
-      "fFound": 39,
-      "fPct": 87.17948717948718
-    },
-    {
       "file": "src/lib/simple-pipeline.ts",
       "hit": 123,
       "found": 228,
@@ -217,6 +208,15 @@
       "fHit": 13,
       "fFound": 18,
       "fPct": 72.22222222222221
+    },
+    {
+      "file": "src/lib/tool-router.ts",
+      "hit": 282,
+      "found": 518,
+      "pct": 54.440154440154444,
+      "fHit": 36,
+      "fFound": 41,
+      "fPct": 87.8048780487805
     },
     {
       "file": "src/lib/agent-orchestrator.ts",
@@ -453,6 +453,15 @@
       "fPct": 96.7741935483871
     },
     {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 665,
+      "found": 886,
+      "pct": 75.05643340857789,
+      "fHit": 34,
+      "fFound": 36,
+      "fPct": 94.44444444444444
+    },
+    {
       "file": "src/lib/stream-preparers.ts",
       "hit": 453,
       "found": 600,
@@ -505,15 +514,6 @@
       "fHit": 16,
       "fFound": 16,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 659,
-      "found": 852,
-      "pct": 77.34741784037558,
-      "fHit": 33,
-      "fFound": 35,
-      "fPct": 94.28571428571428
     },
     {
       "file": "src/lib/guardrails.ts",

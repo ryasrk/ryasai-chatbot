@@ -215,7 +215,18 @@ async function _runNonStreamingChatCompletion(args: {
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
-  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: mergedPrefix, memoryContext, chatHistory: args.chatHistory ?? [] }
+  const branchArgs = {
+    ...args,
+    question: effectiveQuestion,
+    integrationId: resolvedIntegrationId,
+    systemPromptPrefix: mergedPrefix,
+    memoryContext,
+    chatHistory: args.chatHistory ?? [],
+    // The names `loadDbData` already loaded, so the SQL answer can state which OTHER sources it did not include.
+    // MEASURED IN UAT: without this, a comparison question was answered from one database and the other source's
+    // rows were relabelled as its own.
+    integrationNames: intNames.map((i) => i.name),
+  }
 
   let result: CompletionResult
   if (effectiveDecision === 'SQL') result = await runSqlBranch(branchArgs)
@@ -322,7 +333,18 @@ async function _runStreamingChatCompletion(args: {
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
-  const branchArgs = { ...args, question: effectiveQuestion, integrationId: resolvedIntegrationId, systemPromptPrefix: mergedPrefix, memoryContext, chatHistory: args.chatHistory ?? [] }
+  const branchArgs = {
+    ...args,
+    question: effectiveQuestion,
+    integrationId: resolvedIntegrationId,
+    systemPromptPrefix: mergedPrefix,
+    memoryContext,
+    chatHistory: args.chatHistory ?? [],
+    // The names `loadDbData` already loaded, so the SQL answer can state which OTHER sources it did not include.
+    // MEASURED IN UAT: without this, a comparison question was answered from one database and the other source's
+    // rows were relabelled as its own.
+    integrationNames: intNames.map((i) => i.name),
+  }
 
   if (effectiveDecision === 'SQL') {
     return await prepareSqlStream(branchArgs)

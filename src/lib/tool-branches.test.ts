@@ -1024,3 +1024,69 @@ describe('runSqlBranch — the integration scope reaches the QUERY, not just the
     expect(args?.where).not.toHaveProperty('id')
   })
 })
+
+describe('runSqlBranch — the answer must be TOLD which other sources exist', () => {
+  /**
+   * MEASURED IN UAT: "Bandingkan jumlah pengiriman dengan jumlah pesanan" was answered entirely from Logistics and
+   * reported "Jumlah pesanan (total) | 8" while the Sales database held TWELVE orders — 8 is the shipment count
+   * relabelled as orders. The second half of the comparison vanished and the first half was renamed.
+   *
+   * A PROMPT RULE ALONE DID NOT FIX IT, and that was verified before this test existed: with the rule in place the
+   * mislabelled table was still produced, because the model had no way to know a second source existed and therefore
+   * nothing it could name as missing. After passing the names through, the same question answers "Jumlah pesanan tidak
+   * ada dalam hasil ini" and refuses to substitute the stock-row count for it.
+   */
+  test('the integration names reach generateAnswer as a system-prompt note', async () => {
+    // Both mocks must be set: `beforeEach` resets them, and a reset `findFirst` returns null — which makes the branch
+    // answer "Data source unavailable." and NEVER reach generateAnswer. MEASURED with a probe: zero calls, so the
+    // first version of this test asserted against an empty list and failed for a reason unrelated to the note.
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'int-1', name: 'Logistics Database', provider: 'POSTGRESQL', encryptedConfig: {},
+      schemas: [{ tableName: 'pengiriman', columns: '[]', rowCount: 8, sampleRow: null, description: null }],
+    }))
+    mockValidateSql.mockImplementation(() => ({ ok: true, sanitized: 'SELECT COUNT(*) FROM pengiriman LIMIT 100' }))
+    mockGenerateAnswer.mockClear()
+    await runSqlBranch({
+      question: 'Bandingkan pengiriman dengan pesanan',
+      userId: 'u1',
+      integrationNames: ['Sales Database', 'HR Database', 'Logistics Database'],
+    })
+    const calls = mockGenerateAnswer.mock.calls
+    expect(calls.length).toBeGreaterThan(0)
+    const system = JSON.stringify(calls.at(-1)?.[0] ?? {})
+    // The OTHER source is named, so the model can say what this answer did not include.
+    expect(system).toContain('Sales Database')
+    expect(system).toContain('HR Database')
+    // The instruction must be specific enough to act on, not generic caution.
+    expect(system).toMatch(/THIS ANSWER COVERS ONLY/)
+    expect(system).toMatch(/Never present a figure from this source as if it described another one/)
+  })
+
+  test('the source being answered FROM is excluded from the list of others', async () => {
+    // Both mocks must be set: `beforeEach` resets them, and a reset `findFirst` returns null — which makes the branch
+    // answer "Data source unavailable." and NEVER reach generateAnswer. MEASURED with a probe: zero calls, so the
+    // first version of this test asserted against an empty list and failed for a reason unrelated to the note.
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'int-1', name: 'Logistics Database', provider: 'POSTGRESQL', encryptedConfig: {},
+      schemas: [{ tableName: 'pengiriman', columns: '[]', rowCount: 8, sampleRow: null, description: null }],
+    }))
+    mockValidateSql.mockImplementation(() => ({ ok: true, sanitized: 'SELECT COUNT(*) FROM pengiriman LIMIT 100' }))
+    mockGenerateAnswer.mockClear()
+    await runSqlBranch({
+      question: 'Bandingkan pengiriman dengan pesanan',
+      userId: 'u1',
+      integrationNames: ['Logistics Database', 'Sales Database'],
+    })
+    const system = JSON.stringify(mockGenerateAnswer.mock.calls.at(-1)?.[0] ?? {})
+    expect(system).toContain('Sales Database')
+    // It is the source being answered FROM, so calling it "other" would be nonsense.
+    expect(system).not.toMatch(/workspace: Logistics Database/)
+  })
+
+  test('with NO other sources the note is absent, so a single-database install sees no noise', async () => {
+    mockGenerateAnswer.mockClear()
+    await runSqlBranch({ question: 'Berapa jumlah pelanggan?', userId: 'u1', integrationNames: ['Only DB'] })
+    const system = JSON.stringify(mockGenerateAnswer.mock.calls.at(-1)?.[0] ?? {})
+    expect(system).not.toContain('Other connected data sources')
+  })
+})
