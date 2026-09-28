@@ -124,7 +124,20 @@ export async function DELETE(_req: NextRequest, ctx: RouteContext) {
       detail: { userId: id },
     })
 
-    return NextResponse.json({ ok: true })
+    /*
+     * The response SAYS WHAT HAPPENED. MEASURED IN UAT: this endpoint deactivates (a deliberate soft delete with its
+     * own `USER_DEACTIVATED` audit action) but replied with a bare `{ ok: true }` — so a caller reading a 200 on a
+     * DELETE verb as "the row is gone" was wrong.
+     *
+     * The row is NOT deleted, for a reason worth stating: `User.email` is `@unique` GLOBALLY, so a hard delete is the
+     * only way to free an address for re-invite — and hard-deleting a user would orphan their audit history, chat
+     * sessions and tool runs. Deactivation is the safer trade; the defect was the silence about it.
+     */
+    return NextResponse.json({
+      ok: true,
+      deactivated: true,
+      note: 'The account is deactivated, not deleted: the row is kept so its audit history stays intact, and the email stays reserved.',
+    })
   } catch (e) {
     return handleApiError(e, 'Failed to deactivate user.')
   }

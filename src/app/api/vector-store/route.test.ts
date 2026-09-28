@@ -171,8 +171,19 @@ mock.module('@/lib/errors', () => {
   return { AppError }
 })
 
+let storedEmbeddingRows: Array<{ dims: number | null; model: string | null }> = []
+
 mock.module('@/lib/db', () => ({
   db: {
+    /*
+     * The route reads the ACTUAL stored embedding dimension with `$queryRaw` so it can report "configured 1536,
+     * stored 384" instead of a hardcoded number. MEASURED: that hardcoded 1536 was what made a silent embedding
+     * mismatch invisible — every semantic score was 0 and retrieval quietly fell back to lexical only.
+     *
+     * Empty here so the route takes its "no embeddings yet" path, which is what a fresh install has. Individual
+     * tests set `storedEmbeddingRows` when they need a concrete dimension.
+     */
+    $queryRaw: async () => storedEmbeddingRows,
     vectorStoreConfig: {
       findFirst: async (args: Record<string, unknown> = {}) => {
         calls.push({ model: 'vectorStoreConfig', op: 'findFirst', args })
@@ -241,7 +252,16 @@ describe('GET', () => {
       baseUrl: '',
       apiKeyMasked: null,
       collectionName: 'ryasai_chunks',
+      // The CONFIGURED value the form seeds from.
       vectorSize: 1536,
+      /*
+       * The MEASURED values — null because no chunk has an embedding in this fixture. `vectorSize` was a hardcoded
+       * 1536 while the stored vectors were 384-dimensional, which hid a silent mismatch: retrieval requires
+       * `chunk.embeddingModel === queryEmbedding.model`, so every semantic score was 0 and search quietly fell back
+       * to lexical only. Null is the honest answer for "nothing stored yet" rather than another invented number.
+       */
+      storedVectorSize: null,
+      storedEmbeddingModel: null,
       distance: 'Cosine',
       updatedAt: null,
     })
@@ -350,6 +370,8 @@ describe('GET', () => {
       'collectionName',
       'distance',
       'provider',
+      'storedEmbeddingModel',
+      'storedVectorSize',
       'updatedAt',
       'vectorSize',
     ])
@@ -648,6 +670,8 @@ describe('the PUT response is the GET response', () => {
       'collectionName',
       'distance',
       'provider',
+      'storedEmbeddingModel',
+      'storedVectorSize',
       'updatedAt',
       'vectorSize',
     ])
@@ -726,5 +750,33 @@ describe('internal failures', () => {
     const res = await put({ provider: 'INTERNAL' })
     expect(res.status).toBe(500)
     expect(auditWrites).toHaveLength(0)
+  })
+})
+
+describe('the MEASURED stored embedding is reported, so a silent mismatch cannot hide', () => {
+  /**
+   * MEASURED IN UAT: the config asked for `text-embedding-3-small` (1536) while the chunks held
+   * `paraphrase-multilingual-MiniLM-L12-v2` (384). `retrieveRelevantChunks` requires
+   * `chunk.embeddingModel === queryEmbedding.model`, so EVERY semantic score was 0 and search quietly fell back to
+   * lexical only — while this endpoint reported a hardcoded 1536, a number describing the configured INTENT rather
+   * than the stored reality. Nothing anywhere said the two disagreed.
+   */
+  test('a 384-dimensional store reports 384, even when the config says 1536', async () => {
+    storedEmbeddingRows = [{ dims: 384, model: 'paraphrase-multilingual-MiniLM-L12-v2' }]
+    row = null as never
+    const body = (await (await GET()).json()) as { data: Record<string, unknown> }
+    expect(body.data.vectorSize).toBe(1536) // the configured value the form seeds from, unchanged
+    expect(body.data.storedVectorSize).toBe(384) // the TRUTH, which the old response could not express
+    expect(body.data.storedEmbeddingModel).toBe('paraphrase-multilingual-MiniLM-L12-v2')
+    storedEmbeddingRows = []
+  })
+
+  test('no stored embedding yet reports null, not a made-up dimension', async () => {
+    // A fresh install has no chunks; inventing a number there would recreate the same defect one level down.
+    storedEmbeddingRows = []
+    row = null as never
+    const body = (await (await GET()).json()) as { data: Record<string, unknown> }
+    expect(body.data.storedVectorSize).toBeNull()
+    expect(body.data.storedEmbeddingModel).toBeNull()
   })
 })

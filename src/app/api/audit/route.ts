@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, handleApiError } from '@/lib/session'
+import { getActiveUser, handleApiError, requireRole } from '@/lib/session'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
 const DEFAULT_AUDIT_PAGE_SIZE = 20
@@ -22,7 +22,19 @@ export function parseAuditPagination(searchParams: URLSearchParams) {
  */
 export async function GET(req: NextRequest) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+
+    enterWithOrg(user.organizationId)
+
+    // ADMIN ONLY. This exposes the organization audit log (who did what, when) and ran with NO role check, so a viewer or analyst could read it
+
+    // while writes to the same resources were correctly 403. MEASURED: an analyst got HTTP 200 here before
+
+    // this gate. Reading the org's credential inventory and audit trail is the reconnaissance half of the
+
+    // operation that changing it would be — it is not a lesser privilege.
+
+    requireRole(user, 'admin')
     const { searchParams } = req.nextUrl
     const severity = searchParams.get('severity') || undefined
     const action = searchParams.get('action') || undefined

@@ -105,6 +105,57 @@ const DANGEROUS_PATTERNS: Array<{ re: RegExp; label: string }> = [
  */
 const BARE_PROBE_RE = /^\s*SELECT\s+(version|user|current_user|session_user|system_user|database|schema|pg_version)\s*\(\s*\)\s*(;\s*)?$/i
 
+/**
+ * A SELECT whose projection is ONLY literal constants, with no FROM clause.
+ *
+ * MEASURED IN UAT, and it is the worst shape this file has had to handle: asked for data that does not exist
+ * ("berapa jumlah supplier?" against three databases with no supplier table), the model produced
+ *
+ *     SELECT 0 AS "jumlah_supplier" LIMIT 100
+ *
+ * and that ran. It reads NOTHING, yet the answer was rendered to the user under a DATABASE citation with a
+ * `query_used` field — so a fabricated number arrived dressed as a data-backed one, with a SQL statement as the
+ * evidence. That is worse than an empty answer: it is an invented fact with a receipt.
+ *
+ * WHY NOT SIMPLY "NO FROM": `SELECT 1` is the connectivity probe this codebase runs against every connector
+ * (`connectors.ts`), and `SELECT now()` is a legitimate clock check. Both must keep working. The distinguishing
+ * feature of the fabricated case is not "no table" but **a LITERAL GIVEN A BUSINESS NAME** — `0 AS "jumlah_supplier"`.
+ * An unaliased `SELECT 1` claims nothing; an aliased literal asserts a fact about a quantity the query never read.
+ *
+ * So the rule is: a NUMERIC bare-literal projection, with no FROM, where at least one item carries an ALIAS — the
+ * shape `0 AS "jumlah_supplier"` takes. It blocks every fabricated answer observed while leaving the probes intact.
+ *
+ * WHY NUMERIC ONLY, and a test settled this rather than my judgement: the first version also rejected
+ * `SELECT 'pg_read_file(' AS note`, which the guardrails suite already covers as a LEGITIMATE admin note. A numeric
+ * literal with a business alias asserts a QUANTITY the query never read (`0 AS "jumlah_supplier"` is a claim about
+ * how many suppliers exist); a string literal with an alias is a label, and labels are not measurements.
+ *
+ * Returns the offending text so the caller can report it, or null when the query is fine.
+ */
+export function detectFabricatedConstantSelect(sql: string): string | null {
+  const trimmed = sql.trim()
+  // Must be a single SELECT with no FROM at all. Anything touching a table is out of scope here -- the existing
+  // checks cover those.
+  if (!/^select\b/i.test(trimmed)) return null
+  if (/\bfrom\b/i.test(trimmed)) return null
+  // Strip a trailing LIMIT so `SELECT 0 AS x LIMIT 100` still matches.
+  const withoutLimit = trimmed.replace(/\s*limit\s+\d+\s*;?\s*$/i, '')
+  const projection = withoutLimit.replace(/^select\s+/i, '').replace(/\s*;\s*$/, '')
+  if (!projection) return null
+  // Every item must be a NUMERIC literal, and at least one must be ALIASED. The alias is what turns a number into
+  // a claim (`0 AS "jumlah_supplier"`); an unaliased `SELECT 1` is the health probe this codebase relies on, and a
+  // STRING literal is a label rather than a measurement, so neither is touched.
+  const items = projection.split(',').map((raw) => raw.trim())
+  let sawAlias = false
+  const allNumericLiterals = items.every((item) => {
+    const m = item.match(/^(.*?)\s+as\s+(.+)$/i)
+    if (m) sawAlias = true
+    const value = (m ? m[1] : item).trim()
+    return /^-?\d+(\.\d+)?$/.test(value)
+  })
+  return allNumericLiterals && sawAlias ? trimmed : null
+}
+
 const INJECTION_SHAPES: Array<{ re: RegExp; label: string }> = [
   // Tautology / always-true predicates. The `\b` on the operator keeps
   // `WHERE tag = 'orderby'` and column names such as `android` out.
@@ -247,6 +298,11 @@ export function detectDangerousFunctions(sql: string): string[] {
   if (tautology.test(sql)) found.push('string tautology')
   // Standalone fingerprint probe — structural, not lexical (see BARE_PROBE_RE).
   if (BARE_PROBE_RE.test(sql.trim())) found.push('bare fingerprint probe')
+  /*
+   * A projection of nothing but literals, with no FROM. Runs in the same pre-scan as the other structural checks so
+   * it is reported through the existing block path and audit row, rather than needing a second mechanism.
+   */
+  if (detectFabricatedConstantSelect(sql)) found.push('constant SELECT with no table (fabricated answer)')
   return found
 }
 

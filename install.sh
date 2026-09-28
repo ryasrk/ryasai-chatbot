@@ -77,12 +77,6 @@ WEB_PORT=${APP_PORT:-}
 
 # Security
 ENCRYPTION_SECRET_KEY=${ENC_KEY:-}
-# The incoming-webhook HMAC secret. GENERATED, never typed and never hardcoded: a value an operator
-# invents is usually short, reused, or committed, and this one authenticates machine callers that run
-# UNATTENDED -- a guessed secret means forged RAG requests against the customer's data. Left EMPTY
-# only when generation was skipped (an existing .env), and empty means the endpoint answers 503
-# rather than accepting anything: fail-closed, so an unconfigured install cannot be talked into work.
-INCOMING_WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
 AUTH_DEMO_FALLBACK=false
 DB_QUERY_LOG=false
 WS_CORS_ORIGIN=http://localhost:${APP_PORT:-}
@@ -310,10 +304,6 @@ if [ ! -f .env ]; then
   info "Generating .env with unique port configuration..."
   ENC_KEY=$(openssl rand -hex 32)
   ADMIN_PASS=$(openssl rand -hex 8)
-  # 32 bytes, matching ENC_KEY. One secret per INSTALL, not per org: this endpoint is one route on one
-  # deployment, and a per-org secret would need a lookup BEFORE authentication -- i.e. before knowing
-  # which org is asking, which is the wrong order for an auth check.
-  WEBHOOK_SECRET=$(openssl rand -hex 32)
   render_env > .env
   chmod 600 .env
   warn "Generated admin password: $ADMIN_PASS  (saved to .env; NOT a login — see the end of this output)"

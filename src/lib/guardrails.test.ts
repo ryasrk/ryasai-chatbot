@@ -440,3 +440,46 @@ describe('guardrails — string-literal awareness in the scans', () => {
       .not.toContain('LIMIT 100 LIMIT')
   })
 })
+
+describe('validateAndSanitizeLlmSql — a fabricated constant SELECT is blocked', () => {
+  /**
+   * MEASURED IN UAT: asked for data that does not exist ("berapa jumlah supplier?" against three databases with no
+   * supplier table), the model produced `SELECT 0 AS "jumlah_supplier" LIMIT 100` — which RAN, reads nothing, and
+   * reached the user under a `DATABASE` citation with a `query_used` field. A fabricated number with a receipt.
+   */
+  test('a numeric literal ALIASED as a business quantity is rejected', () => {
+    for (const sql of [
+      'SELECT 0 AS "jumlah_supplier" LIMIT 100',
+      'SELECT 0 AS jumlah_supplier',
+      'SELECT 1 AS a, 2 AS b',
+    ]) {
+      expect(`${sql} -> ${validateAndSanitizeLlmSql(sql).ok}`).toBe(`${sql} -> false`)
+    }
+  })
+
+  test('the probes this codebase runs still PASS, which is why the rule is narrow', () => {
+    // `SELECT 1` is the connectivity probe in connectors.ts; `now()` is a call, not a literal; a STRING alias is a
+    // label rather than a measurement (the admin-note case already pinned by this suite).
+    for (const sql of [
+      'SELECT 1',
+      'SELECT now()',
+      "SELECT 'pg_read_file(' AS note",
+      "SELECT 'tidak ada' AS jawaban",
+      'SELECT 1 AS x FROM pelanggan LIMIT 100',
+      'SELECT COUNT(*) FROM gudang LIMIT 100',
+    ]) {
+      expect(`${sql} -> ${validateAndSanitizeLlmSql(sql).ok}`).toBe(`${sql} -> true`)
+    }
+  })
+
+  test('a semicolon followed by a NON-WORD character reaches the second layer', () => {
+    /*
+     * The DANGEROUS_PATTERNS pre-scan matches `/;\s*\w+/` — a semicolon followed by a WORD — so a semicolon followed
+     * by a quote or symbol slips past the first layer, and this branch is what refuses it. That is what makes the
+     * defence-in-depth assertion reachable at all: the chaining tests above never get here.
+     */
+    const r = validateAndSanitizeLlmSql("SELECT a FROM t; 'x'")
+    expect(r.ok).toBe(false)
+    expect((r as { detectedNodes?: string[] }).detectedNodes).toEqual([';'])
+  })
+})

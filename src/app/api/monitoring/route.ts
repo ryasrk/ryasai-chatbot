@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getActiveUser, handleApiError } from '@/lib/session'
+import { getActiveUser, handleApiError, requireRole } from '@/lib/session'
 import { checkRedisHealth } from '@/lib/redis'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
@@ -14,7 +14,19 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
  */
 export async function GET() {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+
+    enterWithOrg(user.organizationId)
+
+    // ADMIN ONLY. This exposes system monitoring for the whole organization and ran with NO role check, so a viewer or analyst could read it
+
+    // while writes to the same resources were correctly 403. MEASURED: an analyst got HTTP 200 here before
+
+    // this gate. Reading the org's credential inventory and audit trail is the reconnaissance half of the
+
+    // operation that changing it would be — it is not a lesser privilege.
+
+    requireRole(user, 'admin')
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const [toolRuns, failedApiRequests, restApiErrors, blockedSql, toolRunCount24h, latencyAgg, failedApiCount24h, llmUsage24h, llmUsageByPurpose] =

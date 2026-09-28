@@ -21,6 +21,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { handleSessionFailure } from '@/lib/session-guard'
 
 import { Button } from '@/components/ui/button'
 import { CardGridSkeleton, EmptyState, ErrorState } from '@/components/ui/view-states'
@@ -117,6 +118,13 @@ export function KnowledgeBaseView() {
     }
     try {
       const res = await fetch('/api/documents', { cache: 'no-store' })
+      /*
+       * A DEAD SESSION IS NOT AN EMPTY CORPUS. MEASURED IN UAT: with an expired session this rendered
+       * "0 Total Documents … Failed to load documents" beside a Try Again button that could never succeed, because
+       * every retry carried the same dead cookie. A knowledge officer reasonably reads that as "my documents are
+       * gone". Telling the store makes the shell show the login screen, which is the truthful explanation.
+       */
+      if (await handleSessionFailure(res)) return
       const json = await res.json()
       if (res.ok && Array.isArray(json.documents)) {
         setDocs(json.documents as DocumentItem[])

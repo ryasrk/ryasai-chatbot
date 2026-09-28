@@ -34,6 +34,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { PublicLlmConfig } from '@/lib/types'
 import { extractError } from '@/lib/extract-error'
+import { handleSessionFailure } from '@/lib/session-guard'
 import { CogneeCard } from '@/components/views/cognee-card'
 
 /**
@@ -209,9 +210,21 @@ export function AIConfigurationView() {
   useEffect(() => {
     let cancelled = false
     fetch('/api/llm-config', { cache: 'no-store' })
-      .then((r) => r.json())
+      .then(async (r) => {
+        /*
+         * A DEAD SESSION MUST NOT RENDER AS AN EMPTY FORM.
+         *
+         * MEASURED IN UAT: with an expired session this returns 401, `llm?.ok` is falsy, `setCfg` is never called,
+         * and the form below renders from UNSET state — an empty model field, no message, and a header that still
+         * shows a logged-in user. A real user reported exactly this as "the model I picked disappeared". Surfacing
+         * it makes the shell show the login screen, which is the truthful explanation.
+         */
+        if (await handleSessionFailure(r)) return null
+        return r.json()
+      })
       .then((llm) => {
         if (cancelled) return
+        if (!llm) return // a session failure was recorded by the guard above
         if (llm?.ok && llm.data) {
           setCfg(llm.data)
           setProvider(llm.data.provider || 'OPENAI_COMPATIBLE')
