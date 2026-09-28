@@ -251,3 +251,43 @@ tsc 0 · lint 0 · 288/288 files, 7180 pass, 0 fail, 71 skip · coverage:gate ex
 Negative controls: always-false rule disabled -> 1 fail; CAST handling removed -> 1 fail. The CAST control FIRST
 reported a false pass because its own pattern no longer matched — the second time this session that a control's bug
 hid a real gap.
+
+---
+
+# STATUS AKHIR — semua temuan ronde 2
+
+`main = 5009c61` · server menjalankan image `269aafa7` · CI hijau (lint-typecheck-test + e2e)
+
+## Diperbaiki dan terverifikasi
+
+| temuan | akar masalah | perbaikan |
+|---|---|---|
+| Urutan hasil ≠ skor terlihat | reranker mengurutkan array tapi chunk tetap membawa skor retrieval | `rerankScore` + `rank` ditambahkan; `score` TIDAK ditimpa (citation-trail & dedup bergantung padanya) |
+| Semantic mati diam-diam | vektor 384-dim vs model 1536 → `semanticSimilarity: 0` di semua hasil, tanpa suara | `embeddingMismatch` + `embeddingModelUsed` dihitung dan dikembalikan |
+| Retrieval miss → klaim tidak ada | instruksi menyamakan ABSEN DARI PENCARIAN dengan ABSEN DARI DOKUMEN | wajib melaporkan batas pencariannya |
+| Filter status tidak diungkap | dua pertanyaan satu sesi, filter berbeda, tidak disebutkan | aturan 17: populasi WAJIB dinamai |
+| Total pemotongan dikarang | "105 baris" diinferensi dari baris terakhir yang terlihat, 26 hilang | aturan 18: dilarang menurunkan total dari output terpotong |
+| Jadwal selalu timeout | `RUN_TIMEOUT_MS` 60s **lebih pendek** dari `LLM_STREAM_TIMEOUT_MS` 120s | 180s, env-overridable; pesan mengikuti konstanta |
+| Role change tidak ada | hilang dari **API**, bukan hanya UI | `PATCH` menerima role + 2 guard (admin-only, tidak bisa ubah diri sendiri) |
+| Kegagalan infrastruktur dikarang | "host internal diblokir" untuk request yang tidak pernah dibuat | aturan prompt: dilarang mengarang PENYEBAB |
+| Cross-source sepihak | 8 pengiriman dilabeli "pesanan" padahal ada 12 pesanan | aturan prompt: perbandingan harus menyebut sisi yang hilang |
+
+## Tidak diperbaiki, alasan tercatat DI KODE
+
+**Picker sumber hanya menawarkan database.** Opsi "Documents" saya tulis lalu **tarik kembali** setelah mengukur tiga fakta: `/send` memvalidasi `integrationId` terhadap `Integration` (400 kalau tidak cocok) dan tidak punya konsep `documentIds`; dan `integrationIds: []` **tidak membatasi** karena `intScope` sengaja me-resolve daftar kosong ke `{}`. Kontrol yang diam-diam tidak melakukan apa pun lebih buruk daripada tidak ada. Batas + apa yang diperlukan untuk memperbaikinya kini terdokumentasi di `chat-view.tsx`.
+
+**Re-embedding** (agar semantic benar-benar hidup) adalah tindakan operator, bukan perubahan kode: vektor tersimpan harus dibuat ulang dengan model yang terkonfigurasi. Yang saya perbaiki adalah membuat kondisinya **terlihat** rather than silent.
+
+## Tiga guard saya yang TIDAK BERJALAN
+
+Semuanya bentuk yang sama — guard yang tidak bisa gagal melaporkan keamanan:
+
+1. `test(...)` di file yang hanya mengimpor `it` → tidak pernah jalan, kontrol lolos
+2. `it(...)` di file dengan `const it = redisUp ? test : test.skip` → di-skip saat Redis mati
+3. Blok gagal load (`readFileSync is not defined`) karena pemeriksaan impor saya cocok dengan identifier di **komentar**
+
+Ditambah: satu tes lulus karena alasan salah (`patch('me-1')` vs fixture `userId: 'admin-1'`), dan satu **tes lama yang sengaja menguji `role` dibuang** — diperbarui dengan alasan tertulis, bukan dihapus.
+
+## Insiden kehilangan data (dari ronde pembersihan)
+
+Saat membersihkan data uji ronde 2, `deleteMany` dengan `title: { startsWith: 'P' }` juga mencocokkan sesi seed: **662 sesi + 7.191 pesan** hilang, tidak bisa dipulihkan. Bentuk kesalahan sama dengan `git checkout -- .` sebelumnya: perintah destruktif terhadap **pola yang diasumsikan**, bukan himpunan yang dienumerasi.
