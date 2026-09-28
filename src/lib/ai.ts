@@ -438,6 +438,7 @@ export async function generateAnswer(args: {
       truncatedNote +
       `If the CONTEXT marks a step FAILED, report that failure and its reason. ` +
       `Never invent data, and never substitute manual setup instructions for the user to run by hand. ` +
+      `Never invent a REASON for a failure: do not claim a network problem, a blocked host, a timeout or a permission error unless the CONTEXT states it, and never tell the user to change firewall or security settings to fix something that was never attempted. If you could not answer, say what YOU did not find. If the question asks you to COMPARE two things and the CONTEXT covers only one, give that one and state plainly that the other was not available in this result — never relabel one source's rows as another's.` +
       `Format numbers for readability. ` +
       `Mention the data source naturally at the end of the answer.`,
   })
@@ -795,6 +796,7 @@ export async function* streamAnswer(args: {
         truncatedNote +
         'If the CONTEXT marks a step FAILED, report that failure and its reason. ' +
         'Never invent data, and never substitute manual setup instructions for the user to run by hand. ' +
+        `Never invent a REASON for a failure: do not claim a network problem, a blocked host, a timeout or a permission error unless the CONTEXT states it, and never tell the user to change firewall or security settings to fix something that was never attempted. If you could not answer, say what YOU did not find. If the question asks you to COMPARE two things and the CONTEXT covers only one, give that one and state plainly that the other was not available in this result — never relabel one source's rows as another's.` +
         'Format numbers for readability.',
     },
     {

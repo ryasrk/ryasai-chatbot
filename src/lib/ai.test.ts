@@ -1,4 +1,6 @@
 import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ---------------------------------------------------------------------------
 // Mocks registered before importing ai.ts.
@@ -1756,5 +1758,44 @@ describe('DEFECT: provider body carrying the API key reaches GET /api/traces', (
     expect(typed.message).toContain('authentication failed')
     // The hint must be actionable for a BYOK customer.
     expect(typed.hint).toContain('AI Configuration')
+  })
+})
+
+describe('the answer prompts must never invite a FABRICATED CAUSE or a one-sided comparison', () => {
+  /**
+   * MEASURED IN UAT, two findings on the same prompt:
+   *
+   * 1. Asked about support tickets — a topic with no connected source and NO tool call at all — the answer asserted
+   *    "Permintaan ke sistem (REST API) gagal karena kendala jaringan, endpoint mengarah ke host internal yang
+   *    diblokir", then told the user to whitelist a host at their firewall. There was no request, no endpoint and no
+   *    failure. A fabricated CAUSE is worse than a fabricated number: the number is checkable, while an invented
+   *    infrastructure fault reads as diagnosis and sends people to the wrong team.
+   *
+   * 2. "Bandingkan jumlah pengiriman dengan jumlah pesanan" returned ONE source and relabelled its shipment counts as
+   *    "pesanan" — reporting "8 pesanan" when Sales held 12 orders. The second half of the comparison vanished and the
+   *    first half was renamed, so a reader compares the wrong things entirely.
+   *
+   * Both prompts are asserted, because `generateAnswer` and `streamAnswer` diverge silently otherwise — this file
+   * already documents that class of drift.
+   */
+  const src = readFileSync(join(import.meta.dir, 'ai.ts'), 'utf8')
+
+  test('both prompts forbid inventing a cause for a failure', () => {
+    const hits = src.match(/Never invent a REASON for a failure/g) ?? []
+    expect(hits.length).toBe(2)
+    // The specific lies the model told must be named, so the rule cannot read as generic caution.
+    expect(src).toMatch(/blocked host/)
+    expect(src).toMatch(/never tell the user to change firewall/)
+  })
+
+  test('both prompts require a comparison to state which side was missing', () => {
+    const hits = src.match(/never relabel one source/g) ?? []
+    expect(hits.length).toBe(2)
+    expect(src).toMatch(/COMPARE/)
+  })
+
+  test('the pre-existing honesty rule survives — this is an append, not a rewrite', () => {
+    // "Never invent data" was already there and caught neither defect, but removing it would be a regression.
+    expect((src.match(/Never invent data/g) ?? []).length).toBe(2)
   })
 })
