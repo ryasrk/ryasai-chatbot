@@ -24,6 +24,17 @@ export function VectorStorePanel() {
   const [apiKey, setApiKey] = useState('')
   const [collectionName, setCollectionName] = useState('ryasai_chunks')
   const [vectorSize, setVectorSize] = useState('1536')
+  /*
+   * The dimension the CHUNKS actually hold, and the model they were embedded with.
+   *
+   * MEASURED IN UAT: this panel showed the CONFIGURED 1536 while the stored vectors were 384-dimensional
+   * (`paraphrase-multilingual-MiniLM-L12-v2`). Retrieval only compares a chunk whose embedding model matches the
+   * query's, so every semantic score was 0 and search silently fell back to lexical-only — while this panel, the one
+   * place an admin would fix it, advertised a single consistent-looking number. The API was changed to report both;
+   * showing only one here would leave the divergence invisible exactly where it matters.
+   */
+  const [storedVectorSize, setStoredVectorSize] = useState<number | null>(null)
+  const [storedModel, setStoredModel] = useState<string | null>(null)
   const [distance, setDistance] = useState('Cosine')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -72,6 +83,8 @@ export function VectorStorePanel() {
         setBaseUrl(json.data.baseUrl ?? '')
         setCollectionName(json.data.collectionName ?? 'ryasai_chunks')
         setVectorSize(String(json.data.vectorSize ?? 1536))
+        setStoredVectorSize(typeof json.data.storedVectorSize === 'number' ? json.data.storedVectorSize : null)
+        setStoredModel(typeof json.data.storedEmbeddingModel === 'string' ? json.data.storedEmbeddingModel : null)
         setDistance(json.data.distance ?? 'Cosine')
       })
       .catch(() => {
@@ -198,6 +211,30 @@ export function VectorStorePanel() {
               onChange={(e) => setVectorSize(e.target.value)}
               inputMode="numeric"
             />
+            {/*
+              * THE DIVERGENCE, SHOWN WHERE IT CAN BE FIXED. MEASURED IN UAT: this field read 1536 while the stored
+              * vectors were 384-dimensional, so semantic scoring was silently inert — every score 0, search quietly
+              * lexical-only — and this panel was the one place an admin would notice. It advertised a single
+              * consistent-looking number instead. The text below states the measured truth whenever it disagrees with
+              * the configured value, including WHAT the chunks were embedded with, because that is what the operator
+              * needs in order to re-embed them.
+              */}
+            {storedVectorSize !== null && storedVectorSize !== Number(vectorSize) ? (
+              <p className="text-[11px] leading-snug text-amber-600">
+                Stored vectors are <strong>{storedVectorSize}-dimensional</strong>
+                {storedModel ? ` (${storedModel})` : ''} — not {vectorSize}. Semantic scoring is inert until the
+                documents are re-embedded: retrieval only compares a chunk whose embedding model matches the query&apos;s,
+                so every similarity is currently 0 and search is lexical-only.
+              </p>
+            ) : storedVectorSize !== null ? (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Stored vectors: {storedVectorSize}-dimensional{storedModel ? ` (${storedModel})` : ''}.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                No chunks embedded yet, so the stored dimension is unknown.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Distance</Label>

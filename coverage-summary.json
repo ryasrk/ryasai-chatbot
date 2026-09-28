@@ -1,10 +1,10 @@
 {
   "linePct": 75.69,
-  "linesHit": 25202,
-  "linesFound": 33296,
-  "reachableLinePct": 86.42,
-  "reachableLinesHit": 21900,
-  "reachableLinesFound": 25342,
+  "linesHit": 25212,
+  "linesFound": 33311,
+  "reachableLinePct": 86.41,
+  "reachableLinesHit": 21910,
+  "reachableLinesFound": 25357,
   "fnPct": 89.21,
   "fnsHit": 2256,
   "fnsFound": 2529,
@@ -408,6 +408,15 @@
       "fPct": 75
     },
     {
+      "file": "src/components/views/knowledge-base/vector-store-panel.tsx",
+      "hit": 154,
+      "found": 213,
+      "pct": 72.30046948356808,
+      "fHit": 5,
+      "fFound": 15,
+      "fPct": 33.33333333333333
+    },
+    {
       "file": "src/lib/web-fetch.ts",
       "hit": 183,
       "found": 252,
@@ -415,15 +424,6 @@
       "fHit": 13,
       "fFound": 15,
       "fPct": 86.66666666666667
-    },
-    {
-      "file": "src/components/views/knowledge-base/vector-store-panel.tsx",
-      "hit": 144,
-      "found": 198,
-      "pct": 72.72727272727273,
-      "fHit": 5,
-      "fFound": 15,
-      "fPct": 33.33333333333333
     },
     {
       "file": "src/lib/doc-versioning.ts",
