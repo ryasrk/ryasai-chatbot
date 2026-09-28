@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { createConnection } from 'net'
+import { readFileSync } from 'node:fs'
 import { parseCron, nextRun, normalizeTimezone } from './cron'
 import {
   syncSchedule,
@@ -383,5 +384,41 @@ describe('scheduler-queue — one failure must not abort the whole sweep', () =>
     await removeSchedule(goodId)
     await removeSchedule(badId)
     dbState.runs = []
+  })
+})
+
+describe('the scheduled-run timeout must OUTLAST the LLM budget it wraps', () => {
+  /**
+   * MEASURED IN UAT: every scheduled run failed and the TIMEOUT was the cause, not the model. RUN_TIMEOUT_MS was
+   * 60_000 while LLM_STREAM_TIMEOUT_MS is 120_000, so a run was aborted at half the time the LLM layer itself was
+   * willing to wait. Recorded failures include "LLM transport error: The operation timed out" at 44.9s and 52.9s —
+   * the provider was still working.
+   *
+   * The relation is the invariant, not the numbers: an outer guard SHORTER than the inner budget is not a guard, it
+   * is a second, tighter copy of it. This test reads both values from source so a future change to either one fails
+   * here rather than in a customer's scheduled report.
+   */
+  const scheduler = readFileSync('mini-services/scheduler/index.ts', 'utf8')
+  const constants = readFileSync('src/lib/constants.ts', 'utf8')
+
+  function numericConst(src: string, name: string): number | null {
+    const m = src.match(new RegExp(`${name}\\s*=\\s*Number\\(process\\.env\\.[A-Z_]+\\s*\\?\\?\\s*([0-9_]+)\\)`))
+    if (m) return Number(m[1].replace(/_/g, ''))
+    const plain = src.match(new RegExp(`${name}\\s*=\\s*([0-9_]+)`))
+    return plain ? Number(plain[1].replace(/_/g, '')) : null
+  }
+
+  test('the run timeout exceeds the LLM stream timeout', () => {
+    const run = numericConst(scheduler, 'RUN_TIMEOUT_MS')
+    const llm = numericConst(constants, 'LLM_STREAM_TIMEOUT_MS')
+    expect(run).not.toBeNull()
+    expect(llm).not.toBeNull()
+    expect(run!).toBeGreaterThan(llm!)
+  })
+
+  test('the timeout MESSAGE derives the number from the constant, so it cannot go stale', () => {
+    // The literal "(60s)" survived the 60s timeout itself; a message that contradicts the code is worse than none.
+    expect(scheduler).not.toMatch(/Scheduled run timeout \(60s\)'/)
+    expect(scheduler).toMatch(/Scheduled run timeout \(\$\{Math\.round\(RUN_TIMEOUT_MS \/ 1000\)\}s\)/)
   })
 })

@@ -46,7 +46,22 @@ import { bypassOrg, enterWithOrg } from '../../src/lib/prisma-tenant'
 import { validateLicense, generateMachineId, getLockdownReason } from '../../src/lib/license-client'
 import { runLicenseExpiryReminders } from '../../src/lib/license-reminder'
 
-const RUN_TIMEOUT_MS = 60_000
+/*
+ * HOW LONG A SCHEDULED RUN MAY TAKE.
+ *
+ * MEASURED IN UAT: every scheduled run failed, and the timeout was the cause rather than the model. This was 60s
+ * while `LLM_STREAM_TIMEOUT_MS` is 120_000 — so a run was ABORTED at half the time the LLM layer itself was willing
+ * to wait, and the failure surfaced as "Scheduled run timeout (60s)" on a run whose provider was still working.
+ * Recorded failures included "LLM transport error: The operation timed out" at 44.9s and 52.9s.
+ *
+ * The inner budget must be the SMALLER one, or the outer guard is just a shorter copy of it. 180s gives the LLM its
+ * full 120s plus room for retrieval, SQL execution and synthesis in front of it, and matches the sidecar's own
+ * COGNEE_CALL_TIMEOUT_MS ceiling so no single stage can outlast the run.
+ *
+ * Env-overridable for the same reason `LLM_TIMEOUT_MS` is: a customer on a slower provider needs to raise it
+ * without a rebuild, and the operator can see the number in one place.
+ */
+const RUN_TIMEOUT_MS = Number(process.env.SCHEDULED_RUN_TIMEOUT_MS ?? 180_000)
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 // ponytail: dedup marker TTL must outlive the run timeout + BullMQ lockDuration
 // so a re-queued stalled job is skipped until the original would have finished.
@@ -290,7 +305,9 @@ async function processJob(job: ScheduleJob): Promise<void> {
         signal: abortController.signal,
       }),
       RUN_TIMEOUT_MS,
-      'Scheduled run timeout (60s)',
+      // The number comes from the CONSTANT, never a literal. A hardcoded "(60s)" outlived the 60s timeout itself and
+      // would have kept reporting the old budget after the change above — the same drift the healthcheck message had.
+      `Scheduled run timeout (${Math.round(RUN_TIMEOUT_MS / 1000)}s)`,
     )
 
     success = true
