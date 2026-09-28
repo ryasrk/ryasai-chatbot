@@ -1,0 +1,77 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Integration API
+
+API keys and request logs
+
+Documentation
+Test
+API Keys
+Request Logs
+All Request Logs
+Latest request logs from all API keys (max 100)
+Endpoint	Status	Latency	Time	Error
+POST /api/v1/chat/completions	200	9465ms	28 Sep 16:26:29	—
+POST /api/v1/chat/completions	200	10347ms	28 Sep 16:26:03	—
+POST /api/v1/chat/completions	200	9442ms	28 Sep 16:26:02	—
+POST /api/v1/chat/completions	200	9318ms	28 Sep 16:26:02	—
+POST /api/v1/chat/completions	200	9102ms	28 Sep 16:26:02	—
+POST /api/v1/chat/completions	200	8977ms	28 Sep 16:26:02	—
+POST /api/v1/agent/run	500	32781ms	28 Sep 16:24:49	LlmProviderError: LLM transport error: The operation timed out.
+POST /api/v1/chat/completions	200	16450ms	28 Sep 16:23:58	—
+POST /api/v1/agent/run	400	5ms	28 Sep 16:23:30	question is required.
+POST /api/v1/chat/completions	400	6ms	28 Sep 16:23:30	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	7ms	28 Sep 16:23:30	messages must contain at least one role=user.
+POST /api/v1/chat/completions	200	9834ms	28 Sep 16:23:19	—
+POST /api/v1/chat/completions	200	12069ms	28 Sep 16:23:02	—
+POST /api/v1/chat/completions	200	8835ms	28 Sep 16:22:45	—
+POST /api/v1/chat/completions	200	4977ms	28 Sep 12:37:22	—
+POST /api/v1/chat/completions	200	10296ms	28 Sep 12:14:37	—
+POST /api/v1/chat/completions	400	4ms	28 Sep 12:14:09	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	5ms	28 Sep 12:14:09	messages must contain at least one role=user.
+POST /api/v1/chat/completions	200	15837ms	28 Sep 12:01:59	—
+POST /api/v1/chat/completions	200	10922ms	28 Sep 12:01:40	—
+POST /api/v1/chat/completions	200	13141ms	28 Sep 12:01:20	—
+POST /api/v1/chat/completions	200	13368ms	28 Sep 12:00:59	—
+POST /api/v1/chat/completions	200	13435ms	28 Sep 12:00:39	—
+POST /api/v1/chat/completions	200	14810ms	28 Sep 12:00:16	—
+POST /api/v1/chat/completions	200	11436ms	28 Sep 11:59:52	—
+POST /api/v1/chat/completions	200	38917ms	28 Sep 11:59:36	—
+POST /api/v1/chat/completions	200	87446ms	28 Sep 11:54:58	—
+POST /api/v1/chat/completions	400	5ms	28 Sep 11:52:26	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	5ms	28 Sep 11:52:26	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	7ms	28 Sep 11:52:26	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	5ms	28 Sep 11:51:22	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	6ms	28 Sep 11:51:22	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	7ms	28 Sep 11:51:21	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	7ms	28 Sep 11:48:27	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	4ms	28 Sep 11:48:17	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	4ms	28 Sep 11:48:17	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	4ms	28 Sep 11:48:17	messages must contain at least one role=user.
+POST /api/v1/chat/completions	400	7ms	28 Sep 11:48:17	messages must contain at least one role=user.
+POST /api/v1/chat/completions	200	19725ms	28 Sep 11:48:10	—
+POST /api/v1/chat/completions	200	9373ms	28 Sep 11:47:50	—
+POST /api/v1/chat/completions	200	8357ms	28 Sep 11:47:37	—
+POST /api/v1/chat/completions	200	9695ms	28 Sep 11:47:24	—
+POST /api/v1/chat/completions	200	11284ms	28 Sep 11:47:09	—

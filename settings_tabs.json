@@ -1,0 +1,59 @@
+{
+ "Profile": {
+  "api": [],
+  "panel": "PV\nP9 Viewer (limited)\nuat-p9-viewer@test.local\nChange Password\nChange Password",
+  "disabledOrReadonly": [
+   "BUTTON[disabled=true,aria=null,ro=undefined] \"Change Password\""
+  ],
+  "editable": [
+   "EDITABLE INPUT \"Current password\"",
+   "EDITABLE INPUT \"New password (min. 8)\"",
+   "EDITABLE INPUT \"Confirm new password\""
+  ]
+ },
+ "Theme": {
+  "api": [],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ },
+ "Security": {
+  "api": [],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ },
+ "System": {
+  "api": [],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ },
+ "Team": {
+  "api": [
+   "200 GET /api/me -> {\"userId\":\"cmul184ky000hh8v6yejs8mmf\",\"name\":\"P9 Viewer (limited)\",\"email\":\"uat-p9-viewer@test.local\",\"role\":\"viewer\",\"organizationId\":\"cmsst1wd20000h8h2k8bp70s4\",\"plan\":\"enterprise\"}",
+   "200 GET /api/users -> {\"items\":[{\"id\":\"cmsst1web0002h8h2hpnminx3\",\"name\":\"E2E Admin\",\"email\":\"e2e@test.local\",\"role\":\"admin\",\"avatarColor\":\"oklch(0.55 0.18 250)\",\"isActive\":true,\"createdAt\":\"2026-08-14T10:29:25.956Z\"},{\"id\":\"cmul184e90001h8v6lcgk3bf7\",\"name\":\"P1 First-Run Admin\",\"e"
+  ],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ },
+ "Organization": {
+  "api": [
+   "200 GET /api/me -> {\"userId\":\"cmul184ky000hh8v6yejs8mmf\",\"name\":\"P9 Viewer (limited)\",\"email\":\"uat-p9-viewer@test.local\",\"role\":\"viewer\",\"organizationId\":\"cmsst1wd20000h8h2k8bp70s4\",\"plan\":\"enterprise\"}",
+   "200 GET /api/org -> {\"ok\":true,\"organization\":{\"id\":\"cmsst1wd20000h8h2k8bp70s4\",\"name\":\"PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\",\"slug\":\"e2e-1786703365908\",\"brandingJson\":null,\"licensePlan\":\"enterprise\",\"licenseStatus\":\"valid\",\"licenseExpiresAt\":nu",
+   "200 GET /api/org/license -> {\"ok\":true,\"license\":{\"key\":null,\"plan\":\"enterprise\",\"status\":\"valid\",\"validatedAt\":null,\"expiresAt\":null}}"
+  ],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ },
+ "Notifications": {
+  "api": [
+   "200 GET /api/notifications -> {\"ok\":true,\"configs\":[{\"id\":\"cmst2vytn0013h88dcl0nz57c\",\"name\":\"Alerts Tim Operasional Produksi Shift Malam Regional Timur\",\"type\":\"telegram\",\"isActive\":true,\"lastUsedAt\":null,\"createdAt\":\"2026-08-14T15:04:45.323Z\",\"updatedAt\":\"2026-08-14T15:04:45.323Z\",\"confi"
+  ],
+  "panel": "",
+  "disabledOrReadonly": [],
+  "editable": []
+ }
+}

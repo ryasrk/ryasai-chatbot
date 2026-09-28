@@ -1,10 +1,10 @@
 {
-  "linePct": 75.91,
-  "linesHit": 25149,
-  "linesFound": 33129,
+  "linePct": 75.87,
+  "linesHit": 25151,
+  "linesFound": 33150,
   "reachableLinePct": 86.45,
-  "reachableLinesHit": 21855,
-  "reachableLinesFound": 25281,
+  "reachableLinesHit": 21857,
+  "reachableLinesFound": 25283,
   "fnPct": 89.19,
   "fnsHit": 2252,
   "fnsFound": 2525,
@@ -507,6 +507,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/guardrails.ts",
+      "hit": 214,
+      "found": 274,
+      "pct": 78.1021897810219,
+      "fHit": 9,
+      "fFound": 9,
+      "fPct": 100
+    },
+    {
       "file": "src/components/views/knowledge-base/doc-card.tsx",
       "hit": 222,
       "found": 282,
@@ -700,15 +709,6 @@
       "hit": 192,
       "found": 230,
       "pct": 83.47826086956522,
-      "fHit": 9,
-      "fFound": 9,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/guardrails.ts",
-      "hit": 212,
-      "found": 253,
-      "pct": 83.79446640316206,
       "fHit": 9,
       "fFound": 9,
       "fPct": 100

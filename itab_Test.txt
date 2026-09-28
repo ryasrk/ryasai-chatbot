@@ -1,0 +1,46 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Integration API
+
+API keys and request logs
+
+Documentation
+Test
+API Keys
+Request Logs
+Request Builder
+Build and send HTTP requests to test the API
+GET
+Bearer Token (optional)
+Headers
+
+No rows yet.
+
+Add
+Query Parameters
+
+No rows yet.
+
+Add
+Send Request

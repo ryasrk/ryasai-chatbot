@@ -1,0 +1,59 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Schedules
+
+Automated scheduled runs
+
+1
+Total Schedules
+1
+Active
+0%
+Success Rate
+1
+Failed
+Execution Schedules
+Automate prompt execution based on cron schedules. Each schedule runs in its own configured timezone.
+Add Schedule
+All
+Name	Cron	Prompt	Next Execution	Last Execution	Last Status	Status	Actions
+
+Laporan Penjualan Harian Regional Utara dan Analisis Anomali
+	
+Every day at 06:00
+0 6 * * *
+UTC
+	
+
+Ringkas semua penjualan regional utara, bandingkan dengan rata-rata 30 hari terakhir, dan jelaskan anomali yang ditemukan secara detail beserta rekomendasi tindak lanjut untuk manajer regional
+
+	
+28 Sept 2026 06:00
+3 hours ago
+Overdue — may have stopped
+	
+25 Sept 2026 16:48
+3 days ago
+	
+Failed	Active	

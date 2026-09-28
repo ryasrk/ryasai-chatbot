@@ -1,0 +1,50 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Integration API
+
+API keys and request logs
+
+Documentation
+Test
+API Keys
+Request Logs
+ryasai Chatbot API
+OpenAI-style API integration to embed into your website or system
+Base URL
+http://localhost:3000/api/v1
+Copy
+Authentication
+Every request must include a Bearer token
+POST
+/api/v1/chat/completions
+OpenAI-compatible chat completion
+POST
+/api/v1/agent/run
+Multi-step agent execution (planner + tool registry)
+Embedding Guide
+Copy-paste examples to embed the chatbot into your website
+Rate Limits
+Request limits per API key, configured at key creation
+Error Codes
+List of HTTP status codes that may be returned

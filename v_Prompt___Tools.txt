@@ -1,0 +1,44 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Prompt & Tools
+
+System prompt and routing
+
+Prompt & Tools
+Guardrails
+Library
+System Prompt & Tools
+Configure the default system instructions and enable/disable tools used by the router.
+System Prompt
+
+Read-only. Ask an admin to edit the system prompt.
+
+Tool Routing
+Knowledge / RAG
+Find answers from uploaded documents.
+SQL (read-only)
+Query connected databases with a read-only guardrail.
+REST API
+Call whitelisted REST endpoints.
+Save

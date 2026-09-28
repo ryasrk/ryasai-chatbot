@@ -1,0 +1,129 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Integration API
+
+API keys and request logs
+
+Documentation
+Test
+API Keys
+Request Logs
+Create New API Key
+Generate a Bearer token to integrate the chatbot with other systems
+API Key Name
+Rate Limit (req/min)
+Daily Limit (req/day)
+Allowed Sources
+
+Nothing selected = this key can read EVERY source, like a key created before scoping existed.
+
+Databases & APIs
+Select all
+Logistics Database
+POSTGRESQL
+HR Database
+POSTGRESQL
+Sales Database
+POSTGRESQL
+Documents
+Select all
+uat9-denied.txt
+Uncategorized
+09-panduan-pelatihan-karyawan.md
+SDM
+08-kebijakan-perjalanan-dinas.md
+Umum
+07-sop-penanganan-gangguan-ti.md
+TI
+06-panduan-manajemen-risiko.md
+Risiko
+05-kebijakan-pengadaan-barang.md
+Pengadaan
+04-panduan-keamanan-data.md
+Keamanan
+03-panduan-onboarding.md
+HR
+02-sop-layanan-pelanggan.md
+Operasional
+01-kebijakan-cuti.md
+HR
+Allowed Tools
+
+Nothing selected = every tool family (SQL, RAG, REST, Chat).
+
+SQL
+RAG
+REST
+CHAT
+Generate API Key
+API Keys List
+Manage all active and inactive API keys
+Name	Key	Status	Access	Rate Limit	Last Used	Created		
+
+P7-RateLimit1
+	ryas_1NduzMuh...	Revoked	All sources	1/min
+5/day	28 Sep 16:26	28 Sep 2026	
+	
+
+
+P7-SalesOnly-DocumentedBody
+	ryas_hilshRI7...	Active	All sources	∞/min
+∞/day	28 Sep 16:23	28 Sep 2026	
+	
+
+
+P7-Cuti-Doc-Only
+	ryas_xCS3SrTl...	Active	All sources	∞/min
+∞/day	28 Sep 16:25	28 Sep 2026	
+	
+
+
+P7-Unrestricted-Key
+	ryas_uVwLep6X...	Active	All sources	∞/min
+∞/day	Never used	28 Sep 2026	
+	
+
+
+probe
+	ryas_SZRLYeiG...	Active	All sources	60/min
+1000/day	Never used	25 Sep 2026	
+	
+
+
+K
+	ryas_NfWqAp38...	Active	All sources	∞/min
+∞/day	Never used	14 Aug 2026	
+	
+
+
+Monitoring Agent With An Extremely Long Organizational Department Label
+	ryas_0AXDAbQh...	Active	All sources	∞/min
+∞/day	Never used	14 Aug 2026	
+	
+
+
+ERP Backend Production Integration Very Long Name
+	ryas_4pSFQN5R...	Active	All sources	∞/min
+∞/day	Never used	14 Aug 2026	
+	

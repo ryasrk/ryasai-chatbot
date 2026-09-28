@@ -134,9 +134,28 @@ const BARE_PROBE_RE = /^\s*SELECT\s+(version|user|current_user|session_user|syst
  */
 export function detectFabricatedConstantSelect(sql: string): string | null {
   const trimmed = sql.trim()
-  // Must be a single SELECT with no FROM at all. Anything touching a table is out of scope here -- the existing
-  // checks cover those.
   if (!/^select\b/i.test(trimmed)) return null
+
+  /*
+   * THREE SHAPES, all measured in UAT round 2, and the first version of this function caught only the first:
+   *
+   *   1. `SELECT 0 AS "jumlah_supplier" LIMIT 100`                        no FROM, literal alias
+   *   2. `SELECT 0::bigint AS "jumlah_supplier" LIMIT 100`                the same with a CAST
+   *   3. `SELECT COUNT(*) AS "jumlah_pemasok" FROM "gudang" WHERE 1 = 0`  a real table, negated predicate
+   *
+   * Bypass 2 shipped in the first fix because the numeric check accepted only a bare integer, so `0::bigint` was
+   * invisible to it. Bypass 3 shipped because the function returned early on ANY `FROM`, leaving every predicate to
+   * the other guards -- none of which object to `WHERE FALSE`.
+   *
+   * All three produce a result that CANNOT depend on the data and is then presented as a database fact. That is the
+   * defect, regardless of which route the SQL takes to get there.
+   */
+
+  // --- Shape 3: a predicate that is provably false, so the query's result is independent of the data. ---
+  const FALSY = /\bwhere\s+(?:1\s*=\s*0|1\s*!=\s*1|false|0\s*=\s*1|true\s*=\s*false)\b/i
+  if (FALSY.test(trimmed)) return trimmed
+
+  // --- Shapes 1 and 2: no FROM at all, projecting a LITERAL (optionally CAST) with an alias. ---
   if (/\bfrom\b/i.test(trimmed)) return null
   // Strip a trailing LIMIT so `SELECT 0 AS x LIMIT 100` still matches.
   const withoutLimit = trimmed.replace(/\s*limit\s+\d+\s*;?\s*$/i, '')
@@ -150,7 +169,9 @@ export function detectFabricatedConstantSelect(sql: string): string | null {
   const allNumericLiterals = items.every((item) => {
     const m = item.match(/^(.*?)\s+as\s+(.+)$/i)
     if (m) sawAlias = true
-    const value = (m ? m[1] : item).trim()
+    // Trim a PostgreSQL CAST so `0::bigint` is recognised as the bare literal it is. MEASURED bypass: the first
+    // version accepted only `0`, so `0::bigint AS "jumlah_supplier"` walked straight through.
+    const value = (m ? m[1] : item).trim().replace(/::\s*[a-z0-9_\[\] ]+$/i, '').trim()
     return /^-?\d+(\.\d+)?$/.test(value)
   })
   return allNumericLiterals && sawAlias ? trimmed : null
@@ -302,7 +323,7 @@ export function detectDangerousFunctions(sql: string): string[] {
    * A projection of nothing but literals, with no FROM. Runs in the same pre-scan as the other structural checks so
    * it is reported through the existing block path and audit row, rather than needing a second mechanism.
    */
-  if (detectFabricatedConstantSelect(sql)) found.push('constant SELECT with no table (fabricated answer)')
+  if (detectFabricatedConstantSelect(sql)) found.push('fabricated answer (query result cannot depend on the data)')
   return found
 }
 

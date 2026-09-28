@@ -1,0 +1,53 @@
+Jumlah karyawan di departemen IT adalah 3 orang.
+
+Sources (1)
+DATABASE
+HR Database.karyawan
+▸
+View SQL query
+Source: HR Database
+16:30
+Query SQL
+Running SQL query...
+Success
+04:30:14 PM
+Analysis
+→
+Query SQL
+→
+Answer
+Answer from:
+Auto — let the router choose
+Logistics Database
+HR Database
+Sales Database
+
+Berapa jumlah karyawan di departemen IT?
+kurang dari 1 menit lalu
+Berapa jumlah karyawan di departemen IT?
+16:30
+Database
+
+Jumlah karyawan di departemen IT adalah 3 orang.
+
+Sources (1)
+DATABASE
+HR Database.karyawan
+▸
+View SQL query
+Source: HR Database
+16:30
+Query SQL
+Running SQL query...
+Success
+04:30:14 PM
+Analysis
+→
+Query SQL
+→
+Answer
+Answer from:
+Auto — let the router choose
+Logistics Database
+HR Database
+Sales Database

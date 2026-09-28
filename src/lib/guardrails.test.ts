@@ -472,6 +472,42 @@ describe('validateAndSanitizeLlmSql — a fabricated constant SELECT is blocked'
     }
   })
 
+  test('the THREE fabricated shapes measured across both UAT rounds are all blocked', () => {
+    /*
+     * UAT round 2 found the first fix INCOMPLETE, and these are its exact bypasses — each one produced a result that
+     * cannot depend on the data, then presented it as a database fact:
+     *
+     *   1. `SELECT 0 AS "jumlah_supplier"`                         — blocked by round 1's fix
+     *   2. `SELECT 0::bigint AS "jumlah_supplier"`                 — NOT blocked: the numeric test accepted only a
+     *                                                                bare integer, so a CAST was invisible
+     *   3. `SELECT COUNT(*) AS "jumlah_pemasok" FROM "gudang"
+     *       WHERE 1 = 0`                                            — NOT blocked: the function returned early on ANY
+     *                                                                `FROM`, and no other guard objects to `WHERE FALSE`
+     *
+     * Both bypasses are pinned here so a future narrow re-implementation fails loudly.
+     */
+    for (const sql of [
+      'SELECT 0 AS "jumlah_supplier" LIMIT 100',
+      'SELECT 0::bigint AS "jumlah_supplier" LIMIT 100',
+      'SELECT NULL::bigint AS "jumlah_pemasok" FROM "gudang" WHERE FALSE LIMIT 1',
+      'SELECT COUNT(*) AS "jumlah_pemasok" FROM "gudang" WHERE 1 = 0 LIMIT 100',
+      'SELECT COUNT(*) AS n FROM gudang WHERE 1 != 1 LIMIT 1',
+    ]) {
+      expect(`${sql} -> ${validateAndSanitizeLlmSql(sql).ok}`).toBe(`${sql} -> false`)
+    }
+  })
+
+  test('an ORDINARY filter still passes, so the always-false rule is not over-broad', () => {
+    // The direction that would make this a nuisance: a real predicate must not trip the check.
+    for (const sql of [
+      "SELECT COUNT(*) AS n FROM pelanggan WHERE status = 'selesai' LIMIT 100",
+      'SELECT COUNT(*) AS n FROM pesanan WHERE total > 0 LIMIT 100',
+      "SELECT COUNT(*) AS n FROM gudang WHERE kota ILIKE '%surabaya%' LIMIT 100",
+    ]) {
+      expect(`${sql} -> ${validateAndSanitizeLlmSql(sql).ok}`).toBe(`${sql} -> true`)
+    }
+  })
+
   test('a semicolon followed by a NON-WORD character reaches the second layer', () => {
     /*
      * The DANGEROUS_PATTERNS pre-scan matches `/;\s*\w+/` — a semicolon followed by a WORD — so a semicolon followed

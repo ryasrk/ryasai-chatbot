@@ -1,0 +1,81 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Data Sources
+
+Databases and REST APIs
+
+3
+Total Databases
+3
+Active
+0
+Error / Inactive
+Database
+REST API
+Add Database
+Logistics Database
+POSTGRESQL
+DATABASE
+Active
+ACTIVE
+Last tested:
+14 days ago
+Indexed tables:
+3 tables
+Configuration (encrypted)
+Test Connection
+Init Context
+Schema
+Query
+Delete
+HR Database
+POSTGRESQL
+DATABASE
+Active
+ACTIVE
+Last tested:
+14 days ago
+Indexed tables:
+4 tables
+Configuration (encrypted)
+Test Connection
+Init Context
+Schema
+Query
+Delete
+Sales Database
+POSTGRESQL
+DATABASE
+Active
+ACTIVE
+Last tested:
+about 5 hours ago
+Indexed tables:
+4 tables
+Configuration (encrypted)
+Test Connection
+Init Context
+Schema
+Query
+Delete

@@ -1,0 +1,172 @@
+{
+ "Dashboard": {
+  "clickErr": null,
+  "api": [],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nDashboard\n\nOperational overview\n\nFailed to load analytics data.\nTry Again"
+ },
+ "Chat": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/chat/sessions"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/integrations"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nChat\n\nInternal assistant\n\nSessions\n0 sessions\nSessions Baru\nNo sessions yet.\nStart a conversation with ryasai\nAsk about company data, documents, policies, or operational status. The router will choose RAG, SQL, REST API, or general chat.\nWhat is the total stock of product SKU-902 in the main warehouse?\nShow 5 customers with the highest total spending\nWhat are the payment terms for Enterprise customers?\nList invoices with overdue status\nAnalysis\n→\nTool\n→\nAnswer\nAnswer from:\nAuto — let the router choose\nLogistics Database\nHR Database\nSales Database"
+ },
+ "Data Sources": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/integrations"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/data-sources/rest-connectors"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nData Sources\n\nDatabases and REST APIs\n\n3\nTotal Databases\n3\nActive\n0\nError / Inactive\nDatabase\nREST API\nAdd Database\nLogistics Database\nPOSTGRESQL\nDATABASE\nActive\nACTIVE\nLast tested:\n14 days ago\nIndexed tables:\n3 tables\nConfiguration (encrypted)\nTest Connection\nInit Context\nSchema\nQuery\nDelete\nHR Database\nPOSTGRESQL\nDATABASE\nActive\nACTIVE\nLast tested:\n14 days ago\nIndexed tables:\n4 tables\nConfiguration (encrypted)\nTest Connection\nInit Context\nSchema\nQuery\nDelete\nSales Database\nPOSTGRESQL\nDATABASE\nActive\nACTIVE\nLast tested:\nabout 5 hours ago\nIndexed tables:\n4 tables\nConfiguration (encrypted)\nTest Connection\nInit Context\nSchema\nQuery\nDelete"
+ },
+ "Knowledge": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/documents"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/cognee"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nKnowledge\n\nDocuments, vector store and AI Memory\n\n10\nTotal Documents\n56\nTotal Chunks\n10\nReady\n0\nError / Processing\nDocuments\nVector Store\nUpload\nAI Memory\nUnreachable\n— cross-session memory and knowledge graph are running\nConfigure\nAll\n10\nHR\n2\nKeamanan\n1\nOperasional\n1\nPengadaan\n1\nRisiko\n1\nSDM\n1\nTI\n1\nUmum\n1\nUncategorized\n1\nuat9-denied.txt\nUncategorized\nReady\nfailed\nKnowledge graph build failed.\nON\nRetry Processing\nDetails\nDelete\n09-panduan-pelatihan-karyawan.md\nSDM\nReady\nON\nDetails\nDelete\n08-kebijakan-perjalanan-dinas.md\nUmum\nReady\nON\nDetails\nDelete\n07-sop-penanganan-gangguan-ti.md\nTI\nReady\nON\nDetails\nDelete\n06-panduan-manajemen-risiko.md\nRisiko\nReady\nON\nDetails\nDelete\n05-kebijakan-pengadaan-barang.md\nPengadaan\nReady\nON\nDetails\nDelete\n04-panduan-keamanan-data.md\nKeamanan\nReady\nON\nDetails\nDelete\n03-panduan-onboarding.md\nHR\nReady\nON\nDetails\nDelete\n02-sop-layanan-pelanggan.md\nOperasional\nReady\nON\nDetails\nDelete\n01-kebijakan-cuti.md\nHR\nReady\nON\nDetails\nDelete"
+ },
+ "AI Configuration": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/llm-config"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nAI Configuration\n\nProvider, model, embedding and memory\n\nLLM\nEmbedding\nAI Memory\nLLM Configuration\nConnect an LLM provider. Choose OpenAI-Compatible or Anthropic-Compatible. Models are selected from a list fetched from the API endpoint.\nConfigured\nsk-f••••••552e\nModels synced 28 Sep 2026, 16:21\nProvider\nOpenAI-Compatible\nBase URL\nAPI Key\nModel\nFetch Models\ncbcn/glm-5.3-flash\nSave Configuration"
+ },
+ "Prompt & Tools": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/prompt-tools"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/data-sources/rest-connectors"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nPrompt & Tools\n\nSystem prompt and routing\n\nPrompt & Tools\nGuardrails\nLibrary\nSystem Prompt & Tools\nConfigure the default system instructions and enable/disable tools used by the router.\nSystem Prompt\n\nRead-only. Ask an admin to edit the system prompt.\n\nTool Routing\nKnowledge / RAG\nFind answers from uploaded documents.\nSQL (read-only)\nQuery connected databases with a read-only guardrail.\nREST API\nCall whitelisted REST endpoints.\nSave"
+ },
+ "Tools": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/mcp/servers"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nTools\n\nMCP servers and custom tools\n\nTools & Integrations\n\nMCP servers and custom webhook tools.\n\nMCP Servers\nCustom Tools\nConnect\nAdd Server\n\ndynamic-probe\n\nSTDIO\n\nadds a tool at runtime and announces list_changed\n\nnode [\"/tmp/mcp-dynamic/server.mjs\"]\nEdit\nDelete"
+ },
+ "Schedules": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/schedules"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/integrations"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/notifications"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nSchedules\n\nAutomated scheduled runs\n\n1\nTotal Schedules\n1\nActive\n0%\nSuccess Rate\n1\nFailed\nExecution Schedules\nAutomate prompt execution based on cron schedules. Each schedule runs in its own configured timezone.\nAdd Schedule\nAll\nName\tCron\tPrompt\tNext Execution\tLast Execution\tLast Status\tStatus\tActions\n\nLaporan Penjualan Harian Regional Utara dan Analisis Anomali\n\t\nEvery day at 06:00\n0 6 * * *\nUTC\n\t\n\nRingkas semua penjualan regional utara, bandingkan dengan rata-rata 30 hari terakhir, dan jelaskan anomali yang ditemukan secara detail beserta rekomendasi tindak lanjut untuk manajer regional\n\n\t\n28 Sept 2026 06:00\n3 hours ago\nOverdue — may have stopped\n\t\n25 Sept 2026 16:48\n3 days ago\n\t\nFailed\tActive\t"
+ },
+ "Monitoring": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 403,
+    "method": "GET",
+    "url": "/api/audit?page=1&pageSize=20"
+   },
+   {
+    "status": 403,
+    "method": "GET",
+    "url": "/api/monitoring"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nMonitoring\n\nAudit and guardrails\n\n0\nTool Runs (24h)\n0 ms\nAvg Latency (24h)\n0\nFailed API (24h)\n0\nLLM Tokens (24h)\n0\nLLM Calls (24h)\n0\nAvg Tokens/Call\nRecent LLM Traces\n0 in buffer\nAudit Log\nTool Runs\nFailed Requests\nBlocked SQL\nAudit Log\nAll\nCritical\nWarning\nInfo\nFailed to load audit log."
+ },
+ "Integration API": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/settings/api-keys"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/settings/api-keys/logs"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/integrations"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/data-sources/rest-connectors"
+   },
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/documents"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nIntegration API\n\nAPI keys and request logs\n\nDocumentation\nTest\nAPI Keys\nRequest Logs\nryasai Chatbot API\nOpenAI-style API integration to embed into your website or system\nBase URL\nhttp://localhost:3000/api/v1\nCopy\nAuthentication\nEvery request must include a Bearer token\nPOST\n/api/v1/chat/completions\nOpenAI-compatible chat completion\nPOST\n/api/v1/agent/run\nMulti-step agent execution (planner + tool registry)\nEmbedding Guide\nCopy-paste examples to embed the chatbot into your website\nRate Limits\nRequest limits per API key, configured at key creation\nError Codes\nList of HTTP status codes that may be returned"
+ },
+ "Settings": {
+  "clickErr": null,
+  "api": [
+   {
+    "status": 200,
+    "method": "GET",
+    "url": "/api/me"
+   }
+  ],
+  "text": "PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia\nENTERPRISE\nuat-p9-viewer@test.local\nGuardrails\nPV\nP9 Viewer (limited)\nViewer\nOrganization\nWORKSPACE\nDashboard\nChat\nDATA & KNOWLEDGE\nData Sources\nKnowledge\nAI & AUTOMATION\nAI Configuration\nPrompt & Tools\nTools\nSchedules\nSYSTEM\nMonitoring\nIntegration API\nSettings\nSettings\n\nProfile, team and system\n\nProfile\nTheme\nSecurity\nSystem\nTeam\nOrganization\nNotifications\nPV\nP9 Viewer (limited)\nuat-p9-viewer@test.local\nChange Password\nChange Password"
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "responses": [
+  {
+   "status": 401,
+   "method": "GET",
+   "url": "http://localhost:3000/api/me"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/setup/status"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/auth/sso/status"
+  },
+  {
+   "status": 200,
+   "method": "POST",
+   "url": "http://localhost:3000/api/auth/login"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/me"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/setup/status"
+  },
+  {
+   "status": 403,
+   "method": "GET",
+   "url": "http://localhost:3000/api/analytics"
+  },
+  {
+   "status": 403,
+   "method": "GET",
+   "url": "http://localhost:3000/api/monitoring"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/schedules"
+  },
+  {
+   "status": 200,
+   "method": "GET",
+   "url": "http://localhost:3000/api/org"
+  }
+ ],
+ "consoles": [
+  "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+  "error: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+  "error: Failed to load resource: the server responded with a status of 403 (Forbidden)"
+ ]
+}

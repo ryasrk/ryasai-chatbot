@@ -1,0 +1,51 @@
+PT Maju Bersama Sejahtera Abadi Nusantara Enterprise Holdings Indonesia
+ENTERPRISE
+uat-p9-viewer@test.local
+Guardrails
+PV
+P9 Viewer (limited)
+Viewer
+Organization
+WORKSPACE
+Dashboard
+Chat
+DATA & KNOWLEDGE
+Data Sources
+Knowledge
+AI & AUTOMATION
+AI Configuration
+Prompt & Tools
+Tools
+Schedules
+SYSTEM
+Monitoring
+Integration API
+Settings
+Monitoring
+
+Audit and guardrails
+
+0
+Tool Runs (24h)
+0 ms
+Avg Latency (24h)
+0
+Failed API (24h)
+0
+LLM Tokens (24h)
+0
+LLM Calls (24h)
+0
+Avg Tokens/Call
+Recent LLM Traces
+0 in buffer
+Audit Log
+Tool Runs
+Failed Requests
+Blocked SQL
+Audit Log
+All
+Critical
+Warning
+Info
+Failed to load audit log.
