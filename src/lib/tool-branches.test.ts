@@ -31,7 +31,15 @@ const mockDocumentFindMany = mock(async (): Promise<unknown> => [])
 const mockIntegrationFindFirst = mock(async (): Promise<unknown> => null)
 // Single active integration keeps the disambiguation path out of these tests;
 // the ambiguity behaviour has its own tests in integration-selection.test.ts.
-const mockIntegrationFindMany = mock(async (): Promise<unknown> => [{ name: 'Only Source' }])
+/**
+ * The parameter is DECLARED so call arguments are observable.
+ *
+ * A zero-argument mock makes `mock.calls.at(-1)?.[0]` permanently `undefined`, and `tsc` rejects the tuple access
+ * (`Tuple type '[]' of length '0'`) — which is how this was caught. Worse than the type error: an assertion like
+ * `expect(args?.where).toMatchObject({...})` against `undefined` can pass vacuously, so a test written to prove the
+ * scope reaches the QUERY would have proven nothing.
+ */
+const mockIntegrationFindMany = mock(async (_args?: { where?: Record<string, unknown> }): Promise<unknown> => [{ name: 'Only Source' }])
 const mockConnectorExecuteQuery = mock(async (): Promise<unknown> => ({ rows: [{ id: 1 }], rowCount: 1, executionMs: 1 }))
 const mockValidateSql = mock((): unknown => ({ ok: true, sanitized: 'SELECT 1 LIMIT 100' }))
 const mockAuditLogCreate = mock(async () => ({}))
@@ -974,5 +982,45 @@ describe('runRagBranch — a crashing knowledge backend degrades to plain chat',
       userId: 'u1',
     } as unknown as Parameters<typeof runRagBranch>[0])
     expect(result).toBeDefined()
+  })
+})
+
+describe('runSqlBranch — the integration scope reaches the QUERY, not just the signature', () => {
+  /**
+   * MEASURED GAP this pins: the API-key integration axis was resolved by the route and then dropped, so a key
+   * restricted to one database could be routed to another. The fix adds `integrationIds` to this branch and scopes
+   * every lookup it makes.
+   *
+   * The assertion is on the `where` object the branch actually passed to Prisma, because a parameter that reaches
+   * the function but not the query is the exact shape of the defect — `integrationIds` was already being computed
+   * (and discarded) before this work.
+   */
+  test('a scoped key queries ONLY its allowed sources', async () => {
+    mockIntegrationFindMany.mockClear()
+    await runSqlBranch({
+      question: 'berapa total penjualan?',
+      userId: 'u1',
+      integrationIds: ['allowed-db'],
+    })
+    const args = mockIntegrationFindMany.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(args?.where).toMatchObject({ status: 'active', id: { in: ['allowed-db'] } })
+  })
+
+  test('an UNSCOPED key sends NO id filter, so existing keys keep working', async () => {
+    // The opposite direction, and the direction that matters for every install in the field: `in: []` would match
+    // nothing and lock out every key created before this axis existed.
+    mockIntegrationFindMany.mockClear()
+    await runSqlBranch({ question: 'berapa total penjualan?', userId: 'u1' })
+    const args = mockIntegrationFindMany.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(args?.where).toMatchObject({ status: 'active' })
+    expect(args?.where).not.toHaveProperty('id')
+  })
+
+  test('an EMPTY list behaves as unrestricted, not as "nothing allowed"', async () => {
+    // `readKeyScope` produces `[]` for a key with no restriction, so this is the common case, not an edge one.
+    mockIntegrationFindMany.mockClear()
+    await runSqlBranch({ question: 'berapa total penjualan?', userId: 'u1', integrationIds: [] })
+    const args = mockIntegrationFindMany.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(args?.where).not.toHaveProperty('id')
   })
 })

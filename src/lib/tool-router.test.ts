@@ -6,14 +6,22 @@ import { join } from 'node:path'
 
 type RouteDecision = 'CHAT' | 'SQL' | 'RAG' | 'REST' | 'PLUGIN' | 'CONTEXTUAL_CHAT'
 
-const mockIntegrationCount = mock(async () => 0)
+/**
+ * These mocks DECLARE their argument, and that is not cosmetic.
+ *
+ * A zero-argument mock makes `mock.calls.at(-1)?.[0]` permanently `undefined`, so
+ * `expect(args?.where).toMatchObject({...})` can pass VACUOUSLY — a test written to prove the scope reaches the
+ * query would have proven nothing. `tsc` rejects the tuple access (`Tuple type '[]' of length '0'`), which is how
+ * this was caught, in both this file and tool-branches.test.ts.
+ */
+const mockIntegrationCount = mock(async (_args?: { where?: Record<string, unknown> }) => 0)
 const mockDocumentCount = mock(async () => 0)
 const mockDocumentFindMany = mock(async () => [] as unknown[])
 const mockRestEndpointCount = mock(async () => 0)
 const mockRestEndpointFindMany = mock(async () => [] as Array<{ method: string; path: string; description: string | null }>)
 const mockIntegrationFindFirst = mock(async () => null as unknown)
-const mockIntegrationFindMany = mock(async () => [] as Array<{ name: string }>)
-const mockIntegrationSchemaFindMany = mock(async () => [] as Array<{ tableName: string; description: string | null; integration: { name: string } }>)
+const mockIntegrationFindMany = mock(async (_args?: { where?: Record<string, unknown> }) => [] as Array<{ name: string }>)
+const mockIntegrationSchemaFindMany = mock(async (_args?: { where?: Record<string, unknown> }) => [] as Array<{ tableName: string; description: string | null; integration: { name: string } }>)
 const mockToolRunFindMany = mock(async () => [] as unknown[])
 const mockAuditLogCreate = mock(async () => ({}))
 const mockQueryHistoryCreate = mock(async () => ({}))
@@ -2123,3 +2131,63 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
       expect(res.answer).toBeTruthy()
     })
   })
+
+describe('the routing context is SCOPED — the prompt must not name sources the key may not read', () => {
+  /**
+   * MEASURED GAP, found by the coverage gate rather than by reading: `loadDbData` takes a scope and filters five
+   * queries, but NOTHING exercised the scoped path, so the whole branch was dead in the test suite — 13 uncovered
+   * lines in one file, which is how a "fix" that never runs survives review.
+   *
+   * WHY IT MATTERS BEYOND A LEAK: these counts and name lists are serialised INTO the routing prompt. Unscoped, the
+   * model is told about databases the key has no access to, so it can CHOOSE one and the branch then refuses — a
+   * confusing outcome for the caller — and the org's source names and schema descriptions reach a key that should
+   * not see them.
+   */
+  test('a scoped key filters the integration queries that build the prompt', async () => {
+    mockIntegrationCount.mockClear()
+    mockIntegrationFindMany.mockClear()
+    mockIntegrationSchemaFindMany.mockClear()
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockDocumentCount.mockImplementation(async () => 0)
+    mockRestEndpointCount.mockImplementation(async () => 0)
+    mockIntegrationFindMany.mockImplementation(async () => [{ name: 'Allowed' }])
+    mockIntegrationSchemaFindMany.mockImplementation(async () => [])
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true,
+    }))
+
+    await runNonStreamingChatCompletion({
+      question: 'berapa total penjualan?',
+      userId: 'user-1',
+      integrationIds: ['allowed-db'],
+      documentIds: ['allowed-doc'],
+    })
+
+    // The COUNT decides `hasIntegrations` in the routing prompt, so it must be scoped too — not only the lists.
+    const countWhere = mockIntegrationCount.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(countWhere?.where).toMatchObject({ status: 'active', id: { in: ['allowed-db'] } })
+
+    const listWhere = mockIntegrationFindMany.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(listWhere?.where).toMatchObject({ status: 'active', id: { in: ['allowed-db'] } })
+
+    // Schema descriptions carry the most detail of anything in the prompt.
+    const schemaWhere = mockIntegrationSchemaFindMany.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(schemaWhere?.where).toMatchObject({ integration: { status: 'active', id: { in: ['allowed-db'] } } })
+  })
+
+  test('an UNSCOPED key filters nothing, keeping every existing install working', async () => {
+    mockIntegrationCount.mockClear()
+    mockIntegrationCount.mockImplementation(async () => 1)
+    mockDocumentCount.mockImplementation(async () => 0)
+    mockRestEndpointCount.mockImplementation(async () => 0)
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: null, decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true,
+    }))
+
+    await runNonStreamingChatCompletion({ question: 'berapa total penjualan?', userId: 'user-1' })
+    const where = mockIntegrationCount.mock.calls.at(-1)?.[0] as { where?: Record<string, unknown> } | undefined
+    expect(where?.where).toMatchObject({ status: 'active' })
+    // `in: []` would match NOTHING and lock out every key created before these axes existed.
+    expect(where?.where).not.toHaveProperty('id')
+  })
+})
