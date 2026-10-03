@@ -204,7 +204,30 @@ export async function runMultiStepDag(args: {
         errorMessage: r.error,
       }))
 
-    return { answer, citations: [], chartData: null, toolRuns }
+    /*
+     * THE STEPS' CITATIONS, COLLECTED — this was `citations: []` unconditionally.
+     *
+     * MEASURED DEFECT (found by a cross-source test agent, reproduced in the database): a compound question ran a RAG
+     * step and a SQL step, both `success`, and the persisted assistant message carried `citations: []` while the answer
+     * stated a figure from each source. The sources existed at every point except the one that mattered — `executeStep`
+     * built its result without them, and this line then shipped an empty array as if the turn had cited nothing.
+     *
+     * Deduplicated on `source` + `query_used`, because two steps can legitimately retrieve the same document and the
+     * UI would otherwise show the same source twice. That is not an assumption the callers make elsewhere (the
+     * single-source path does its own per-branch dedupe), so it is done here where the union is actually formed.
+     */
+    const citations: Citation[] = []
+    const seenCitation = new Set<string>()
+    for (const r of results) {
+      for (const c of r.citations ?? []) {
+        const key = `${c.source}\u0000${c.query_used ?? ''}`
+        if (seenCitation.has(key)) continue
+        seenCitation.add(key)
+        citations.push(c)
+      }
+    }
+
+    return { answer, citations, chartData: null, toolRuns }
   } catch (e) {
     log.warn('multi-step DAG failed, falling back to single-tool', { error: e instanceof Error ? e.message : String(e) })
     return null

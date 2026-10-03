@@ -116,6 +116,46 @@ describe('runMultiStepDag', () => {
     expect(r?.toolRuns[0].latencyMs).toBe(12)
   })
 
+  /*
+   * THE STEPS' CITATIONS MUST REACH THE CALLER — this was `citations: []` unconditionally.
+   *
+   * MEASURED DEFECT (found by a cross-source test agent, confirmed in the database afterwards): a compound question
+   * ran a RAG step and a SQL step, both `success`, and the persisted assistant message carried `citations: []` while
+   * the answer stated one figure from each source. The sources existed at every point except the one that mattered.
+   */
+  test('citations from the STEPS are collected and returned', async () => {
+    state.results = [
+      step({ stepId: 's1', tool: 'rag', citations: [{ type: 'DOCUMENT', source: 'a.md', snippet: 'x' }] }),
+      step({ stepId: 's2', tool: 'sql', citations: [{ type: 'DATABASE', source: 'HR.karyawan', query_used: 'SELECT 1' }] }),
+    ]
+    const r = await runMultiStepDag({ question: 'compound', userId: 'u1' })
+    expect(r?.citations).toHaveLength(2)
+    expect(r?.citations.map((c) => c.source).sort()).toEqual(['HR.karyawan', 'a.md'])
+  })
+
+  test('a step with NO citations contributes nothing, and does not break the others', async () => {
+    state.results = [step({ stepId: 's1', tool: 'chat' }), step({ stepId: 's2', tool: 'sql', citations: [{ type: 'DATABASE', source: 'HR.karyawan' }] })]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1' })
+    expect(r?.citations).toHaveLength(1)
+    expect(r?.citations[0].source).toBe('HR.karyawan')
+  })
+
+  test('the SAME source from two steps is deduplicated, so the UI cannot show it twice', async () => {
+    state.results = [
+      step({ stepId: 's1', tool: 'rag', citations: [{ type: 'DOCUMENT', source: 'same.md' }] }),
+      step({ stepId: 's2', tool: 'rag', citations: [{ type: 'DOCUMENT', source: 'same.md' }] }),
+    ]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1' })
+    expect(r?.citations).toHaveLength(1)
+  })
+
+  test('a FAILED step still contributes its citations — half an answer still has a source', async () => {
+    state.results = [step({ ok: false, error: 'boom', citations: [{ type: 'DATABASE', source: 'HR.cuti' }] })]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1' })
+    expect(r?.citations).toHaveLength(1)
+    expect(r?.citations[0].source).toBe('HR.cuti')
+  })
+
   test('a FAILED step becomes an error ToolRun carrying its message', async () => {
     state.results = [step({ ok: false, error: 'syntax error near FROM' })]
     const r = await runMultiStepDag({ question: 'q', userId: 'u1' })

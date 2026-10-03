@@ -9,6 +9,7 @@
  * (SQL/RAG/REST/CHAT) based on the sub-question text.
  */
 import { generateAnswer, generateChat } from '@/lib/ai'
+import type { Citation } from '@/lib/types'
 import { routingMemoryBlock } from '@/lib/memory-routing'
 import { runNonStreamingChatCompletion } from '@/lib/tool-router'
 import { recallContext } from '@/lib/cognee'
@@ -51,6 +52,15 @@ export interface PlanStepResult {
   output: string
   error?: string
   latencyMs: number
+  /**
+   * The step's own citations, CARRIED rather than dropped.
+   *
+   * MEASURED DEFECT: a compound question ("40 jam pelatihan AND total gaji") ran a RAG step and a SQL step, both
+   * `success`, and the persisted assistant message carried `citations: []` — so the answer stated two figures from
+   * two sources and the UI showed no source for either. `executeStep` built its result without this field, so the
+   * citations `runNonStreamingChatCompletion` had just produced were discarded one frame later.
+   */
+  citations?: Citation[]
 }
 
 export type StepStatus = 'running' | 'done' | 'error'
@@ -841,6 +851,9 @@ async function executeStep(
         ok: false,
         output: completion.answer,
         error: failedRun?.errorMessage ?? 'Tool execution failed',
+        // A PARTIAL answer still has a source: if one step of a compound question failed and the other succeeded,
+        // its citations are exactly what should be shown next to the half that was answered.
+        citations: completion.citations,
         latencyMs: Date.now() - started,
       }
     }
@@ -850,6 +863,9 @@ async function executeStep(
       tool: step.tool,
       ok: true,
       output: completion.answer,
+      // Carried, not dropped: without this the DAG's own return (`citations: []`) was the whole story, and a correct
+      // two-source answer reached the user with no sources to show for it.
+      citations: completion.citations,
       latencyMs: Date.now() - started,
     }
   } catch (e) {

@@ -289,6 +289,44 @@ describe('executePlan', () => {
     expect(results.map((r) => r.stepId)).toEqual(['a', 'b', 'c'])
   })
 
+  /*
+   * THE STEP'S CITATIONS MUST SURVIVE executeStep — the defect that made a two-source answer cite nothing.
+   *
+   * MEASURED: a compound question ran a RAG step and a SQL step, both `success`; the persisted assistant message
+   * carried `citations: []` while the answer stated a figure from each. `executeStep` built its result without the
+   * field, so `completion.citations` — just produced one frame earlier — was discarded. This test lives HERE, not in
+   * the DAG suite, because that suite mocks `executePlan` and therefore could not fail when this was reverted (proven
+   * by a negative control: removing the carry left every DAG test green).
+   */
+  test('a step carries the citations its tool run produced', async () => {
+    mockRunNonStreaming.mockImplementationOnce(async () => ({
+      answer: 'answered',
+      citations: [{ type: 'DOCUMENT', source: 'policy.md', snippet: 's' }],
+      chartData: null,
+      toolRuns: [{ status: 'success' }],
+      integrationId: null,
+    }))
+    const plan: Plan = { steps: [{ id: 'a', tool: 'chat', input: { message: 'q' } }], needsSynthesis: false }
+    const results = await executePlan({ plan, userId: 'u1' })
+    expect(results[0].ok).toBe(true)
+    expect(results[0].citations).toHaveLength(1)
+    expect(results[0].citations?.[0].source).toBe('policy.md')
+  })
+
+  test('a FAILED step keeps its citations too: half an answer still has a source', async () => {
+    mockRunNonStreaming.mockImplementationOnce(async () => ({
+      answer: 'partial',
+      citations: [{ type: 'DATABASE', source: 'HR.cuti' }],
+      chartData: null,
+      toolRuns: [{ status: 'error', errorMessage: 'SQL failed' }],
+      integrationId: null,
+    }))
+    const plan: Plan = { steps: [{ id: 'a', tool: 'chat', input: { message: 'q' } }], needsSynthesis: false }
+    const results = await executePlan({ plan, userId: 'u1' })
+    expect(results[0].ok).toBe(false)
+    expect(results[0].citations?.[0].source).toBe('HR.cuti')
+  })
+
   test('error in one step → others still continue', async () => {
     mockRunNonStreaming.mockImplementationOnce(async () => ({
       answer: 'fail',

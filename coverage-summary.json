@@ -1,10 +1,10 @@
 {
-  "linePct": 75.44,
-  "linesHit": 27807,
-  "linesFound": 36860,
-  "reachableLinePct": 87.97,
-  "reachableLinesHit": 24253,
-  "reachableLinesFound": 27569,
+  "linePct": 75.41,
+  "linesHit": 27819,
+  "linesFound": 36889,
+  "reachableLinePct": 87.98,
+  "reachableLinesHit": 24263,
+  "reachableLinesFound": 27579,
   "fnPct": 89.4,
   "fnsHit": 2488,
   "fnsFound": 2783,
@@ -525,10 +525,19 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/tool-router-agentic.ts",
+      "hit": 425,
+      "found": 576,
+      "pct": 73.78472222222221,
+      "fHit": 30,
+      "fFound": 31,
+      "fPct": 96.7741935483871
+    },
+    {
       "file": "src/lib/planner.ts",
-      "hit": 581,
-      "found": 775,
-      "pct": 74.96774193548387,
+      "hit": 583,
+      "found": 781,
+      "pct": 74.64788732394366,
       "fHit": 49,
       "fFound": 49,
       "fPct": 100
@@ -541,15 +550,6 @@
       "fHit": 5,
       "fFound": 7,
       "fPct": 71.42857142857143
-    },
-    {
-      "file": "src/lib/tool-router-agentic.ts",
-      "hit": 415,
-      "found": 553,
-      "pct": 75.04520795660035,
-      "fHit": 30,
-      "fFound": 31,
-      "fPct": 96.7741935483871
     },
     {
       "file": "src/lib/llm-client-utils.ts",
