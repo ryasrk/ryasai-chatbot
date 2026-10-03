@@ -1,7 +1,7 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Last updated 2026-10-01. Version 2.0.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
+> Last updated 2026-10-01. Version 2.1.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
 >
 > **Counts and versions in this file drift.** Section 1 and 8 describe CURRENT state — run the
 > command rather than trusting a number written here; section 9 (Progress Log) is HISTORICAL and
@@ -19,8 +19,8 @@
 | Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · PostgreSQL 16 (pgvector + pg_trgm) · Bun · Tailwind 4 · shadcn/ui |
 | Runtime | Bun for dev/test, Node standalone for prod build |
 | Domain | Multi-tenant AI assistant deployed **on-prem per customer**, licensed with a signed machine-bound key: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
-| Status | **Release 2.0.0** (2026-10-01). Latency + security. Verified by execution, not assertion: `tsc` 0 · `lint` 0 · `bun run test` 322/322 files, 7938 pass, 0 fail · coverage:gate exit 0 · `e2e` and `e2e:prod` both 19 passed |
-| Version | 2.0.0 |
+| Status | **Release 2.1.0** (2026-10-03). Latency. Verified by execution, not assertion: `tsc` 0 · `lint` 0 · `bun run test` 323/323 files, 7983 pass, 0 fail · coverage:gate exit 0 · `e2e` and `e2e:prod` both 19 passed |
+| Version | 2.1.0 |
 | Language | English (standardized — all UI, errors, system prompts, comments in English) |
 
 ---
@@ -391,6 +391,29 @@ property ACCESS through a Proxy installed before the import, and the old form fa
 
 **Verified:** tsc 0 · lint 0 errors · 313 files, 7664 pass, 0 fail · coverage:gate OK · e2e 19 ·
 build · e2e:prod 19.
+
+### 2026-10-03 (b) — v2.1.0: retrieval stops waiting for the routing verdict
+
+**Median first token 7.8 s -> 5.5 s on document questions (-31%); full eval 63/63, the best recorded.**
+The 8 s decomposed into four stages, two of which (retrieval+rerank 2.2 s, reflection 1.7 s) waited for a routing
+verdict they never read. `speculative-retrieval.ts` starts retrieval alongside intent analysis on both transports and
+cancels it when the turn routes away; `retrieveWithReflection` and `retrieveRelevantChunks` take an AbortSignal and
+check it BEFORE each model call (reflection, rerank, second pass).
+
+**The cancellation depth was the whole fix, and the first version got it wrong.** Checking only between stages left an
+unused rerank running (3.1-3.6 s), and the compound/DAG path measured 22.5 s -> **46.7 s** — slower with speculation
+ON. After threading the signal into the retrieval: 43.2 s -> 23.0 s on that path, SQL turns level (9.248 -> 9.245 s),
+and the compound question went 5/8 -> **8/8** correct. Scope safety is asserted, not assumed: a speculative result is
+reused only for the exact request (question, topK, document set) and a cancelled one is never reused.
+`SPECULATIVE_RETRIEVAL=false` restores the serial order.
+
+Also: two floors the PR #45 merge left behind (`mcp-client` 51 vs 84.50% measured, `plugin-registry` 65 vs 77.08% —
+the PR's tests were committed without the floors they earn, caught by `coverage-floor-consistency.test.ts`), and
+`intent-pipeline` 64 -> 63 (denominator grew 574 -> 609, hits 373 -> 388).
+
+Verified: tsc 0 · lint 0 · 323 files, 7,983 pass, 0 fail · coverage gate OK (209 modules) · build · e2e 19 ·
+e2e:prod 19 · eval 63/63. One negative control FAILED to fail (inner-retrieval signal threading had no test) and one
+wiring guard was missing entirely (non-streaming transport) — both found by running the controls, both now covered.
 
 ### 2026-10-03 — v2.0.0: security architecture
 

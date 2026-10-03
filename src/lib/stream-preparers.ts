@@ -17,6 +17,7 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
+import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { resolveIntegrationForQuestion, tokenize } from '@/lib/smart-router'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import { matchEndpoint } from '@/lib/rest-api-connectors'
@@ -116,11 +117,14 @@ export async function prepareRagStream(args: {
   chatHistory?: ChatHistoryEntry[]
   /** Retrieval scope from the caller's API key and request. `null`/absent = every document. */
   documentIds?: string[] | null
+  /** Retrieval the router started alongside intent analysis; reused only when it was started for exactly this request. */
+  speculativeRetrieval?: SpeculativeRetrieval | null
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
   let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
   try {
-    retrieval = await retrieveWithReflection({ query: args.question, topK: 4, documentIds: args.documentIds })
+    const request = { query: args.question, topK: RAG_ANSWER_TOP_K, documentIds: args.documentIds }
+    retrieval = await settleRetrieval(args.speculativeRetrieval, request, () => retrieveWithReflection(request))
   } catch (e) {
     /*
      * Same recording as the non-streaming twin: the fallback is correct, but it must not be SILENT. The

@@ -141,7 +141,11 @@ const FLOORS: Record<string, number> = {
   // too eager locks out a paying customer, too lax keeps a dead license alive. 44/45
   // executable (97.78%). The uncovered line is the outer cycle catch.
   'src/lib/license-revalidation.ts': 97, // measured 97.78% merged
-  'src/lib/mcp-client.ts': 51, // re-measured 52.42% (325/620); was 91
+  // 51 -> 84 after PR #45's test files landed. The merge RESOLVED this file to dev's side (its hunks collided with the
+  // same floor entries), so the tests that arrived WITH the pull request were committed while the floors they earned
+  // were not — leaving a floor 33.5 points below reality, which `coverage-floor-consistency.test.ts` caught by refusing
+  // to let a floor stop guarding. MEASURED 84.50% (529/626).
+  'src/lib/mcp-client.ts': 84,
   // SQL-injection guardrail: dangerous-function masking, the string-literal walker
   // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
   /*
@@ -189,7 +193,9 @@ const FLOORS: Record<string, number> = {
   'src/lib/guardrails.ts': 59, // re-measured 60.09% after the v1.6.0 fixes grew this file; floor was 78
   // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
   // EXECUTION, the GET input channel, and the enabled-plugin listing's column select.
-  'src/lib/plugin-registry.ts': 65, // re-measured 66.11% (199/301); was 85
+  // Same merge artefact as mcp-client above: `plugin-registry-mcp-stdio.test.ts` landed without the floor it earns.
+  // MEASURED 77.08% (232/301).
+  'src/lib/plugin-registry.ts': 76,
   // Session token HMAC: verifySession + extractSessionVersion, the session-fixation pair.
   'src/lib/crypto.ts': 90, // measured 91.67% merged; 55/55 executable
   // PDF/DOCX/XLSX extraction: lossless-or-empty, both hex encodings, the inflate fallbacks.
@@ -288,7 +294,10 @@ const FLOORS: Record<string, number> = {
   // the stale floor then failed on every commit regardless of the code, which is the failure mode
   // this file's own SECOND INCIDENT note warns about.
   'src/lib/ai.ts': 54, // re-measured 55.66% after the v1.6.0 fixes grew this file; floor was 67
-  'src/lib/intent-pipeline.ts': 64, // re-measured 64.98% (373/574); was 71
+  // 64 -> 63. The module gained the `signal` plumbing for speculative retrieval (three checks plus the threaded
+  // parameter), so the merged denominator moved 574 -> 609 while hit rose 373 -> 388; the floor follows the MEASUREMENT
+  // rather than the old estimate, which is the convention this file records for grown modules.
+  'src/lib/intent-pipeline.ts': 63, // re-measured 63.71% (388/609); was 64
   'src/lib/real-connectors.ts': 68, // lowered 73 -> 68. The merged denominator moved 937 -> 942 (the module
   // gained the xp_cmdshell comment rewrite) and the DRIVER-LOADER paths are exercised in per-file
   // subprocesses whose lcov is merged only for the instrumented subset. Single-file figure is 95.10%/98.69%.
@@ -299,6 +308,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/distributed-rate-limit.ts': 82, // merged 83.67% (41/49)
   'src/lib/org-budget.ts': 92, // merged 93.90% (77/82)
   'src/lib/audit-chain.ts': 99, // merged 100.00% (92/92)
+  'src/lib/speculative-retrieval.ts': 68, // merged 68.63% (35/51); the uncovered lines are the debug-log branches
   'src/lib/tool-policy.ts': 80, // merged 100.00% (81/81) — floor left at 80 because the module is
   // not yet consumed by the router (adoption is a deliberate follow-up), and a 100 floor on a layer
   // with no caller would lock in shape changes that adoption itself will require.

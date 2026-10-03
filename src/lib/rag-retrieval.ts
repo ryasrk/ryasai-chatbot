@@ -95,6 +95,13 @@ export async function retrieveRelevantChunks(args: {
    * the reflection step before being dropped.
    */
   documentIds?: string[] | null
+  /**
+   * Aborted when the caller stops needing this retrieval. Checked before the RERANK, which is the stage that costs a
+   * model call: a speculative retrieval cancelled after routing sent the turn to SQL would otherwise still pay for the
+   * rerank before the abort reached the reflection loop. MEASURED: on compound/DAG turns that unused rerank was
+   * 3.1-3.6 s and made those turns SLOWER than not speculating at all.
+   */
+  signal?: AbortSignal
 }): Promise<{
   chunks: RetrievedChunk[]
   queryTokens: string[]
@@ -193,6 +200,8 @@ export async function retrieveRelevantChunks(args: {
   const mergedChunks = retrievalResult.chunks
   const graphContext = kgResult.graphContext || cogneeGraphContext
 
+  // Before the rerank, which is the next model call. Fusion above is local work and is not interrupted.
+  args.signal?.throwIfAborted()
   const finalChunks = skipRerank
     ? mergedChunks
     : rerankEnabled

@@ -1,14 +1,14 @@
 {
-  "linePct": 75.06,
-  "linesHit": 27461,
-  "linesFound": 36586,
-  "reachableLinePct": 87.26,
-  "reachableLinesHit": 23938,
-  "reachableLinesFound": 27433,
-  "fnPct": 88.98,
-  "fnsHit": 2455,
-  "fnsFound": 2759,
-  "filesMeasured": 258,
+  "linePct": 75.65,
+  "linesHit": 27762,
+  "linesFound": 36698,
+  "reachableLinePct": 88,
+  "reachableLinesHit": 24209,
+  "reachableLinesFound": 27509,
+  "fnPct": 89.39,
+  "fnsHit": 2485,
+  "fnsFound": 2780,
+  "filesMeasured": 259,
   "failedTestFiles": [],
   "files": [
     {
@@ -211,21 +211,12 @@
     },
     {
       "file": "src/lib/tool-router.ts",
-      "hit": 339,
-      "found": 667,
-      "pct": 50.82458770614693,
+      "hit": 363,
+      "found": 698,
+      "pct": 52.00573065902579,
       "fHit": 45,
       "fFound": 51,
       "fPct": 88.23529411764706
-    },
-    {
-      "file": "src/lib/mcp-client.ts",
-      "hit": 325,
-      "found": 620,
-      "pct": 52.41935483870967,
-      "fHit": 38,
-      "fFound": 56,
-      "fPct": 67.85714285714286
     },
     {
       "file": "src/lib/simple-pipeline.ts",
@@ -274,9 +265,9 @@
     },
     {
       "file": "src/lib/rag-retrieval.ts",
-      "hit": 398,
-      "found": 677,
-      "pct": 58.78877400295421,
+      "hit": 399,
+      "found": 686,
+      "pct": 58.16326530612245,
       "fHit": 55,
       "fFound": 56,
       "fPct": 98.21428571428571
@@ -345,6 +336,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/intent-pipeline.ts",
+      "hit": 388,
+      "found": 609,
+      "pct": 63.71100164203612,
+      "fHit": 33,
+      "fFound": 35,
+      "fPct": 94.28571428571428
+    },
+    {
       "file": "src/lib/source-guidance.ts",
       "hit": 55,
       "found": 86,
@@ -352,24 +352,6 @@
       "fHit": 2,
       "fFound": 2,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/intent-pipeline.ts",
-      "hit": 384,
-      "found": 598,
-      "pct": 64.21404682274247,
-      "fHit": 33,
-      "fFound": 35,
-      "fPct": 94.28571428571428
-    },
-    {
-      "file": "src/lib/plugin-registry.ts",
-      "hit": 199,
-      "found": 301,
-      "pct": 66.11295681063123,
-      "fHit": 13,
-      "fFound": 15,
-      "fPct": 86.66666666666667
     },
     {
       "file": "src/lib/doc-versioning.ts",
@@ -417,6 +399,15 @@
       "fPct": 73.52941176470588
     },
     {
+      "file": "src/lib/speculative-retrieval.ts",
+      "hit": 35,
+      "found": 51,
+      "pct": 68.62745098039215,
+      "fHit": 10,
+      "fFound": 10,
+      "fPct": 100
+    },
+    {
       "file": "src/components/views/knowledge-base/vector-store-panel.tsx",
       "hit": 114,
       "found": 166,
@@ -445,12 +436,12 @@
     },
     {
       "file": "src/lib/stream-preparers.ts",
-      "hit": 554,
-      "found": 800,
-      "pct": 69.25,
-      "fHit": 40,
-      "fFound": 49,
-      "fPct": 81.63265306122449
+      "hit": 556,
+      "found": 804,
+      "pct": 69.15422885572139,
+      "fHit": 41,
+      "fFound": 50,
+      "fPct": 82
     },
     {
       "file": "src/lib/rag-fts.ts",
@@ -480,6 +471,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 686,
+      "found": 958,
+      "pct": 71.60751565762004,
+      "fHit": 35,
+      "fFound": 37,
+      "fPct": 94.5945945945946
+    },
+    {
       "file": "src/lib/real-connectors.ts",
       "hit": 701,
       "found": 977,
@@ -487,15 +487,6 @@
       "fHit": 98,
       "fFound": 103,
       "fPct": 95.14563106796116
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 688,
-      "found": 958,
-      "pct": 71.81628392484343,
-      "fHit": 34,
-      "fFound": 36,
-      "fPct": 94.44444444444444
     },
     {
       "file": "src/lib/web-fetch.ts",
@@ -586,6 +577,15 @@
       "fHit": 15,
       "fFound": 24,
       "fPct": 62.5
+    },
+    {
+      "file": "src/lib/plugin-registry.ts",
+      "hit": 232,
+      "found": 301,
+      "pct": 77.0764119601329,
+      "fHit": 13,
+      "fFound": 17,
+      "fPct": 76.47058823529412
     },
     {
       "file": "src/components/views/knowledge-base/doc-card.tsx",
@@ -802,6 +802,15 @@
       "fHit": 5,
       "fFound": 5,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/mcp-client.ts",
+      "hit": 529,
+      "found": 626,
+      "pct": 84.50479233226838,
+      "fHit": 56,
+      "fFound": 63,
+      "fPct": 88.88888888888889
     },
     {
       "file": "src/lib/document-parsers.ts",

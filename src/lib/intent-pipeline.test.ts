@@ -778,6 +778,83 @@ describe('evaluateEvidenceSufficiency', () => {
 // --- Async tests: retrieveWithReflection ---
 
 describe('retrieveWithReflection', () => {
+  /*
+   * `signal` — a retrieval the router started speculatively and then no longer needs. The point of the signal is the
+   * REFLECTION CALL: it is an LLM call on the customer's own key, and a turn routed to SQL has no use for its verdict.
+   * Each test below fails if the check it names is removed.
+   */
+  const evidenceMock = () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: [makeChunk({ chunkId: `c-${args.query}-${args.topK}`, content: 'E'.repeat(100) })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+  }
+
+  test('an ALREADY-aborted signal stops before the reflection call: no model call is made', async () => {
+    evidenceMock()
+    mockChatOnce.mockClear()
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ sufficient: true, reason: 'ok', confidence: 1 }))
+    const ctl = new AbortController()
+    ctl.abort()
+    await expect(retrieveWithReflection({ query: 'leave', topK: 5, signal: ctl.signal })).rejects.toThrow()
+    expect(mockChatOnce).not.toHaveBeenCalled()
+  })
+
+  test('aborting WHILE the first retrieval runs still prevents the reflection call', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockClear()
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ sufficient: true, reason: 'ok', confidence: 1 }))
+    const ctl = new AbortController()
+    const signalsSeen: Array<AbortSignal | undefined> = []
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number; signal?: AbortSignal }) => {
+      signalsSeen.push(args.signal)
+      ctl.abort() // the router decided mid-flight that this turn does not need the documents
+      return { chunks: [makeChunk({ chunkId: `c-${args.query}`, content: 'E'.repeat(100) })], queryTokens: [args.query], candidatesScanned: 1, graphContext: '' }
+    })
+    await expect(retrieveWithReflection({ query: 'leave', topK: 5, signal: ctl.signal })).rejects.toThrow()
+    expect(mockChatOnce).not.toHaveBeenCalled()
+    /*
+     * THE SIGNAL MUST REACH THE INNER RETRIEVAL, not just be consulted between stages. That inner call is where the
+     * RERANK happens — a model call — so a signal that stops at this function's own checks would still pay for it on
+     * every turn that speculates and then routes away. MEASURED 3.1-3.6 s per such turn.
+     */
+    expect(signalsSeen.length).toBeGreaterThan(0)
+    expect(signalsSeen.every((sig) => sig === ctl.signal)).toBe(true)
+  })
+
+  test('aborting during the reflection call prevents the SECOND retrieval pass', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    const ctl = new AbortController()
+    let passes = 0
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => {
+      passes += 1
+      return { chunks: [makeChunk({ chunkId: `c-${args.query}-${args.topK}`, content: 'E'.repeat(100) })], queryTokens: [args.query], candidatesScanned: 1, graphContext: '' }
+    })
+    mockChatOnce.mockImplementation(async () => {
+      ctl.abort()
+      return JSON.stringify({ sufficient: false, reason: 'insufficient', confidence: 0.9 })
+    })
+    await expect(retrieveWithReflection({ query: 'leave', topK: 5, signal: ctl.signal })).rejects.toThrow()
+    const firstPassOnly = passes
+    expect(firstPassOnly).toBe(3) // the three expansions of the FIRST pass, and no 2x-topK pass after them
+  })
+
+  test('NO signal behaves exactly as before: reflection runs and a second pass happens when insufficient', async () => {
+    evidenceMock()
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ sufficient: false, reason: 'insufficient', confidence: 0.9 }))
+    const result = await retrieveWithReflection({ query: 'leave', topK: 5 })
+    expect(result.retrievalPasses).toBe(2)
+  })
+
+  test('a signal that is never aborted changes nothing', async () => {
+    evidenceMock()
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ sufficient: true, reason: 'ok', confidence: 1 }))
+    const result = await retrieveWithReflection({ query: 'leave', topK: 5, signal: new AbortController().signal })
+    expect(result.retrievalPasses).toBe(1)
+    expect(result.reflection.sufficient).toBe(true)
+  })
+
   test('returns merged chunks from expanded queries', async () => {
     mockGetLlmRuntimeConfig.mockImplementation(async () => null)
     mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({

@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
 import { pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
+import { cancelSpeculativeRetrieval, startSpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { selectToolWithLlm } from '@/lib/tool-selector'
 import { analyzeIntent, rewriteQuery } from '@/lib/intent-pipeline'
 import { getPromptSettings } from '@/lib/prompt-settings'
@@ -189,6 +190,14 @@ async function _runNonStreamingChatCompletion(args: {
 
   // Started BEFORE intent analysis so the two LLM calls overlap; see `startSpeculativeRouting`.
   const speculativeRouting = startSpeculativeRouting(args, effectiveQuestion, dbData, memoryContext)
+  // Retrieval joins them: it reads the question and the document scope, not the routing verdict. See speculative-retrieval.ts.
+  const speculativeRetrieval = startSpeculativeRetrieval({
+    question: effectiveQuestion,
+    documentIds: args.documentIds,
+    documentCount: docCount,
+    ragToolEnabled: promptSettings.tools.rag,
+    pinnedIntegration: Boolean(args.integrationId),
+  })
 
   const intent = await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
@@ -206,6 +215,7 @@ async function _runNonStreamingChatCompletion(args: {
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
+    cancelSpeculativeRetrieval(speculativeRetrieval)
     // Remembered like any other turn: the user SEES this question, so a session that omitted it would
     // leave a gap in the conversation memory — a later "what were we discussing?" would miss the very
     // turn where the assistant asked what they meant.
@@ -213,6 +223,7 @@ async function _runNonStreamingChatCompletion(args: {
   }
 
   if (!intent.needsRetrieval) {
+    cancelSpeculativeRetrieval(speculativeRetrieval)
     // THE PATH THAT MADE MEMORY LOOK BROKEN. A plain conversation turn returns here, above the branch
     // dispatch where the write used to live — so the most common kind of turn never reached memory.
     return remember(await runChatBranch({ ...args, question: effectiveQuestion, memoryContext, chatHistory: args.chatHistory ?? [] }))
@@ -227,6 +238,9 @@ async function _runNonStreamingChatCompletion(args: {
     { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
     promptSettings.tools,
   )
+  // Only a RAG verdict uses the retrieval. (This transport has no multi-source DAG branch, so `extraToolIds` never
+  // diverts a RAG verdict away from it.)
+  if (effectiveDecision !== 'RAG') cancelSpeculativeRetrieval(speculativeRetrieval)
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
@@ -241,6 +255,7 @@ async function _runNonStreamingChatCompletion(args: {
     // MEASURED IN UAT: without this, a comparison question was answered from one database and the other source's
     // rows were relabelled as its own.
     integrationNames: intNames.map((i) => i.name),
+    speculativeRetrieval,
   }
 
   let result: CompletionResult
@@ -326,6 +341,13 @@ async function _runStreamingChatCompletion(args: {
 
   // Same overlap as the non-streaming path; both sites must start it or the transports diverge.
   const speculativeRouting = startSpeculativeRouting(args, effectiveQuestion, dbData, memoryContext)
+  const speculativeRetrieval = startSpeculativeRetrieval({
+    question: effectiveQuestion,
+    documentIds: args.documentIds,
+    documentCount: docCount,
+    ragToolEnabled: promptSettings.tools.rag,
+    pinnedIntegration: Boolean(args.integrationId),
+  })
 
   const intent = await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
@@ -343,11 +365,13 @@ async function _runStreamingChatCompletion(args: {
   })
 
   if (intent.needsClarification && intent.clarificationQuestion && !args.skipClarification) {
+    cancelSpeculativeRetrieval(speculativeRetrieval)
     async function* clarifyStream() { yield intent.clarificationQuestion! }
     return { stream: clarifyStream(), toolRuns: [], citations: [], chartData: null }
   }
 
   if (!intent.needsRetrieval) {
+    cancelSpeculativeRetrieval(speculativeRetrieval)
     return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: args.systemPromptPrefix, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
 
@@ -358,6 +382,12 @@ async function _runStreamingChatCompletion(args: {
     { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
     promptSettings.tools,
   )
+  // Only a RAG verdict uses the retrieval — unless the multi-source DAG will run, which plans and retrieves for itself.
+  // The DAG condition must mirror the branch below EXACTLY (`extraToolIds.length > 0 && args.allowMultiStepDag`): cancelling
+  // for `extraToolIds` alone would abort a retrieval the single-source RAG branch still needs, and a cancelled result
+  // re-throws into that branch's degrade-to-chat handling — a silent quality loss with no error to find.
+  const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag)
+  if (effectiveDecision !== 'RAG' || dagWillRun) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   // DEBUG: trace routing decisions
 
@@ -374,6 +404,7 @@ async function _runStreamingChatCompletion(args: {
     // MEASURED IN UAT: without this, a comparison question was answered from one database and the other source's
     // rows were relabelled as its own.
     integrationNames: intNames.map((i) => i.name),
+    speculativeRetrieval,
   }
 
   /*

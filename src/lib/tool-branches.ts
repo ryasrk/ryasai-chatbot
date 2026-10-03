@@ -17,6 +17,7 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
+import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { getPromptSettings, resolveSqlRulesPrompt } from '@/lib/prompt-settings'
 import { buildSourceGuidance } from '@/lib/source-guidance'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
@@ -133,15 +134,14 @@ export async function runRagBranch(args: {
   chatHistory?: ChatHistoryEntry[]
   /** Retrieval scope from the caller's API key and request. `null`/absent = every document. */
   documentIds?: string[] | null
+  /** Retrieval the router started alongside intent analysis; reused only when it was started for exactly this request. */
+  speculativeRetrieval?: SpeculativeRetrieval | null
 }): Promise<CompletionResult> {
   const started = Date.now()
   let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
   try {
-    retrieval = await retrieveWithReflection({
-      query: args.question,
-      documentIds: args.documentIds,
-      topK: 4,
-    })
+    const request = { query: args.question, documentIds: args.documentIds, topK: RAG_ANSWER_TOP_K }
+    retrieval = await settleRetrieval(args.speculativeRetrieval, request, () => retrieveWithReflection(request))
   } catch (e) {
     /*
      * RAG is best-effort — if the knowledge backend is down, degrade to plain chat instead of failing the

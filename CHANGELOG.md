@@ -5,6 +5,100 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-03
+
+### Latency: the retrieval no longer waits for the routing verdict
+
+**Median time to first token 7.8 s -> 5.5 s on document questions (-31%), and the compound question
+improved from 5/8 to 8/8 correct.** No accuracy loss anywhere else: the full evaluation is 63/63,
+the best it has ever measured.
+
+**What the 8 seconds was.** Decomposed from 36 document turns: [intent analysis + tool selection]
+2.3 s (already overlapped), then retrieval + rerank 2.2 s, then the sufficiency reflection 1.7 s,
+then the answer's first token 2.2 s. The middle stages waited for a routing verdict they never read —
+`retrieveWithReflection` takes the question and the document scope, nothing else.
+
+**Retrieval now starts alongside intent analysis** (`speculative-retrieval.ts`). A turn routes to SQL
+or chat instead? The retrieval is cancelled — and cancellation reaches INTO the retrieval, so an
+unused turn does not pay for the rerank either. That depth mattered: the first version only checked
+between stages, so an unused rerank still ran (3.1-3.6 s), and the compound/DAG path measured
+**slower** with speculation on (22.5 s -> 46.7 s median). Measured again after the fix: 43.2 s -> 23.0 s
+on the same path, and SQL turns are level (9.248 s -> 9.245 s, i.e. inside the noise).
+
+**The price, stated:** a turn that routes away spends a retrieval, and its rerank unless the cancel
+beats it there (MEASURED: the rerank still fires on about half of them). `SPECULATIVE_RETRIEVAL=false`
+restores the serial order.
+
+**Scope safety, not assumed:** a speculative result is reused only for the exact request it was
+started for — same question, same `topK`, same document scope (order-insensitive). A mismatch
+discards it and runs a fresh retrieval, because serving a result from another scope would be a
+cross-context leak with no error to find. A cancelled retrieval is never reused either: the branch
+runs the real one rather than re-throwing an AbortError into its degrade-to-chat handling.
+
+**Also in this release**
+
+- Two coverage floors the PR #45 merge left behind: the pull request's new tests were committed while
+  the floors they earn were not (the merge resolved `coverage-gate.ts` to dev's side), leaving
+  `mcp-client.ts` floored at 51 against a measured 84.50% and `plugin-registry.ts` at 65 against
+  77.08%. `coverage-floor-consistency.test.ts` — which refuses to let a floor stop guarding — caught it.
+- `intent-pipeline.ts`'s floor re-derived 64 -> 63: the module gained the `signal` plumbing, so the
+  denominator moved 574 -> 609 while hits rose 373 -> 388.
+
+### Verified
+- tsc 0 · lint 0 errors · 323 files, 7,983 pass, 0 fail · coverage gate OK (209 modules) · build ·
+  e2e 19 · e2e:prod 19 · evaluation **63/63** (was 61/63), first-token median 5.7 s, p95 46.1 s.
+- Every new guard negative-controlled with both directions observed. One control **failed to fail**
+  (the inner-retrieval signal threading had no test), and one wiring guard was absent entirely (the
+  non-streaming transport) — both were found by running the controls and are now covered.
+- 19 new tests across three modules; `speculative-retrieval.ts` gated at 68% against a measured 68.63%.
+
+## [2.1.0] - 2026-10-03
+
+### Latency: the retrieval no longer waits for the routing verdict
+
+**Median time to first token 7.8 s -> 5.5 s on document questions (-31%), and the compound question
+improved from 5/8 to 8/8 correct.** No accuracy loss anywhere else: the full evaluation is 63/63,
+the best it has ever measured.
+
+**What the 8 seconds was.** Decomposed from 36 document turns: [intent analysis + tool selection]
+2.3 s (already overlapped), then retrieval + rerank 2.2 s, then the sufficiency reflection 1.7 s,
+then the answer's first token 2.2 s. The middle stages waited for a routing verdict they never read —
+`retrieveWithReflection` takes the question and the document scope, nothing else.
+
+**Retrieval now starts alongside intent analysis** (`speculative-retrieval.ts`). A turn routes to SQL
+or chat instead? The retrieval is cancelled — and cancellation reaches INTO the retrieval, so an
+unused turn does not pay for the rerank either. That depth mattered: the first version only checked
+between stages, so an unused rerank still ran (3.1-3.6 s), and the compound/DAG path measured
+**slower** with speculation on (22.5 s -> 46.7 s median). Measured again after the fix: 43.2 s -> 23.0 s
+on the same path, and SQL turns are level (9.248 s -> 9.245 s, i.e. inside the noise).
+
+**The price, stated:** a turn that routes away spends a retrieval, and its rerank unless the cancel
+beats it there (MEASURED: the rerank still fires on about half of them). `SPECULATIVE_RETRIEVAL=false`
+restores the serial order.
+
+**Scope safety, not assumed:** a speculative result is reused only for the exact request it was
+started for — same question, same `topK`, same document scope (order-insensitive). A mismatch
+discards it and runs a fresh retrieval, because serving a result from another scope would be a
+cross-context leak with no error to find. A cancelled retrieval is never reused either: the branch
+runs the real one rather than re-throwing an AbortError into its degrade-to-chat handling.
+
+**Also in this release**
+
+- Two coverage floors the PR #45 merge left behind: the pull request's new tests were committed while
+  the floors they earn were not (the merge resolved `coverage-gate.ts` to dev's side), leaving
+  `mcp-client.ts` floored at 51 against a measured 84.50% and `plugin-registry.ts` at 65 against
+  77.08%. `coverage-floor-consistency.test.ts` — which refuses to let a floor stop guarding — caught it.
+- `intent-pipeline.ts`'s floor re-derived 64 -> 63: the module gained the `signal` plumbing, so the
+  denominator moved 574 -> 609 while hits rose 373 -> 388.
+
+### Verified
+- tsc 0 · lint 0 errors · 323 files, 7,983 pass, 0 fail · coverage gate OK (209 modules) · build ·
+  e2e 19 · e2e:prod 19 · evaluation **63/63** (was 61/63), first-token median 5.7 s, p95 46.1 s.
+- Every new guard negative-controlled with both directions observed. One control **failed to fail**
+  (the inner-retrieval signal threading had no test), and one wiring guard was absent entirely (the
+  non-streaming transport) — both were found by running the controls and are now covered.
+- 19 new tests across three modules; `speculative-retrieval.ts` gated at 68% against a measured 68.63%.
+
 ## [2.0.0] - 2026-10-03
 
 ### Security architecture (why this is a major)

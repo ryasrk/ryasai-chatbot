@@ -215,6 +215,8 @@ let intentOrder: string[] | null = null
 // When set, the mocked analyzeIntent waits on it before answering — lets a test hold intent analysis open while it
 // inspects what ELSE has started. Null means "answer immediately", which is every pre-existing test.
 let intentGate: Promise<void> | null = null
+// Every speculative retrieval the router started (see the recording wrapper above the router import).
+const specLog: Array<{ controller: AbortController }> = []
 let smartRouteOrder: string[] | null = null
 let preparerOrder: string[] | null = null
 
@@ -368,6 +370,8 @@ function withOrg<T>(fn: () => Promise<T> | T): Promise<T> {
 // --- Setup / teardown ---
 
 beforeEach(() => {
+  specLog.length = 0
+  delete process.env.SPECULATIVE_RETRIEVAL
   intentState.value = { needsClarification: false, needsRetrieval: true }
   effectiveQuestionValue = 'REWRITTEN-QUESTION'
   rewriteCalls = 0
@@ -1535,6 +1539,24 @@ mock.module('@/lib/llm-client', () => ({
   getLastLlmUsage: () => undefined,
 }))
 
+// Records every speculative retrieval the router starts (with its controller) while still running the REAL module.
+//
+// The real functions are CAPTURED INTO LOCALS before `mock.module` replaces the module. The first version spread and
+// called `realSpec.startSpeculativeRetrieval` AFTER the mock was registered, and the namespace object then resolved to
+// the mock itself: the wrapper called the wrapper until the stack overflowed ("Maximum call stack size exceeded"),
+// failing every test in the file — including ones that never touch speculation.
+const realSpec = await import('./speculative-retrieval')
+const realStart = realSpec.startSpeculativeRetrieval
+const realRest = { ...realSpec }
+mock.module('@/lib/speculative-retrieval', () => ({
+  ...realRest,
+  startSpeculativeRetrieval: (a: Parameters<typeof realStart>[0]) => {
+    const spec = realStart(a)
+    if (spec) specLog.push(spec)
+    return spec
+  },
+}))
+
 const { runStreamingChatCompletion, formatSchemaForIntent, formatSchemasForIntent } = await import('./tool-router')
 
 /** Pull every chunk out of a StreamingCompletionResult. */
@@ -1560,6 +1582,184 @@ async function withSequentialRouting<T>(fn: () => Promise<T>): Promise<T> {
     else process.env.SPECULATIVE_ROUTING = prev
   }
 }
+
+describe('runStreamingChatCompletion — speculative RETRIEVAL', () => {
+  /*
+   * Observed through seams that ALREADY exist, not by replacing `retrieveWithReflection`: the real function runs here
+   * (the non-streaming RAG test above depends on that), and its first act is the FTS lookup. `mockSearchFtsChunkIds`
+   * being called therefore means "a retrieval started", and the object handed to the RAG preparer shows WHICH request.
+   */
+  const ragTurn = () => {
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockSearchFtsChunkIds.mockClear()
+    mockSearchFtsChunkIds.mockImplementation(async () => [])
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+  }
+  const until = async (cond: () => boolean, ms = 800) => {
+    const t0 = Date.now()
+    while (!cond() && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 5))
+    return cond()
+  }
+  const started = () => mockSearchFtsChunkIds.mock.calls.length > 0
+
+  test('retrieval STARTS while intent analysis is still parked: the two genuinely overlap', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      let release!: () => void
+      intentGate = new Promise<void>((r) => { release = r })
+      try {
+        const turn = runStreamingChatCompletion({ question: 'Berapa hari cuti?', userId: 'u1' })
+        // Intent is held open, so a retrieval can exist only if the router started it WITHOUT waiting for intent.
+        const sawIt = await until(started)
+        release()
+        await turn
+        expect(sawIt).toBe(true)
+      } finally { intentGate = null; release?.() }
+    })
+  })
+
+  test('with the flag OFF the retrieval waits: nothing starts while intent analysis is parked', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      process.env.SPECULATIVE_RETRIEVAL = 'false'
+      let release!: () => void
+      intentGate = new Promise<void>((r) => { release = r })
+      try {
+        const turn = runStreamingChatCompletion({ question: 'Berapa hari cuti?', userId: 'u1' })
+        const startedEarly = await until(started, 150)
+        release()
+        await turn
+        expect(startedEarly).toBe(false)
+      } finally { intentGate = null; release?.() }
+    })
+  })
+
+  test('the RAG branch is handed the speculative retrieval, started for that exact request', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      await runStreamingChatCompletion({ question: 'Berapa hari cuti?', userId: 'u1', documentIds: ['d1'] })
+      const spec = ragStreamArgs[0].speculativeRetrieval as { request: Record<string, unknown> } | null
+      expect(spec).not.toBeNull()
+      // No chat history, so there is no rewrite: the effective question IS the question asked.
+      expect(spec!.request).toMatchObject({ query: 'Berapa hari cuti?', topK: 4, documentIds: ['d1'] })
+    })
+  })
+
+  test('an org with NO documents starts no retrieval', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      mockDocumentCount.mockImplementation(async () => 0)
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(started()).toBe(false)
+    })
+  })
+
+  test('the RAG tool switched OFF starts no retrieval', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      mockGetPromptSettings.mockImplementationOnce(async () => ({ systemPrompt: '', tools: { rag: false, sql: true, restApi: true } }))
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(started()).toBe(false)
+    })
+  })
+
+  test('a user-pinned database starts no retrieval', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1', integrationId: 'int-1' })
+      expect(started()).toBe(false)
+    })
+  })
+
+  test('SPECULATIVE_RETRIEVAL=false hands the branch null', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      process.env.SPECULATIVE_RETRIEVAL = 'false'
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(ragStreamArgs[0].speculativeRetrieval).toBeNull()
+    })
+  })
+
+  /*
+   * CANCELLATION, observed through the REAL signal. `startSpeculativeRetrieval` is wrapped (not replaced) so every
+   * retrieval the router starts is recorded together with its controller; the tests then read `signal.aborted` after
+   * the turn. A test that only checked "the SQL branch ran" could not fail when the cancel call was deleted.
+   */
+  const startedSpecs = (): Array<{ controller: AbortController }> => specLog
+
+  test('a SQL verdict ABORTS the speculative retrieval it started', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      mockIntegrationCount.mockImplementation(async () => 1)
+      mockIntegrationFindFirst.mockImplementation(async () => ({
+        id: 'int-1', name: 'Warehouse', provider: 'POSTGRESQL', encryptedConfig: 'enc',
+        schemas: [{ tableName: 'orders', columns: '[]', rowCount: 10, sampleRow: null }],
+      }))
+      mockSelectToolWithLlm.mockImplementation(async () => ({
+        toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true,
+      }))
+      await runStreamingChatCompletion({ question: 'how many orders?', userId: 'u1' })
+      expect(streamCalls.map((c) => c.name)).toEqual(['prepareSqlStream'])
+      expect(startedSpecs()).toHaveLength(1)
+      expect(startedSpecs()[0].controller.signal.aborted).toBe(true)
+    })
+  })
+
+  test('a RAG verdict does NOT abort it — the branch still needs it', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      await runStreamingChatCompletion({ question: 'Berapa hari cuti?', userId: 'u1' })
+      expect(startedSpecs()).toHaveLength(1)
+      expect(startedSpecs()[0].controller.signal.aborted).toBe(false)
+    })
+  })
+
+  test('a plain-chat turn (needsRetrieval=false) ABORTS it', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      intentState.value = { needsClarification: false, needsRetrieval: false }
+      await runStreamingChatCompletion({ question: 'halo', userId: 'u1' })
+      expect(streamCalls.map((c) => c.name)).toEqual(['prepareChatStream'])
+      expect(startedSpecs()[0].controller.signal.aborted).toBe(true)
+    })
+  })
+
+  test('a clarification turn ABORTS it', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      intentState.value = { needsClarification: true, clarificationQuestion: 'Which one?', needsRetrieval: true }
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(startedSpecs()[0].controller.signal.aborted).toBe(true)
+    })
+  })
+
+  test('a RAG verdict that falls to CHAT because the RAG tool is OFF never starts one at all', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      mockGetPromptSettings.mockImplementationOnce(async () => ({ systemPrompt: '', tools: { rag: false, sql: true, restApi: true } }))
+      await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(startedSpecs()).toHaveLength(0)
+    })
+  })
+
+  test('a turn intent analysis ENDS discards the retrieval without an unhandled rejection', async () => {
+    return withOrg(async () => {
+      ragTurn()
+      intentState.value = { needsClarification: true, clarificationQuestion: 'Which one?', needsRetrieval: true }
+      mockSearchFtsChunkIds.mockImplementation(async () => { throw new Error('vector store down') })
+      const seen: unknown[] = []
+      const onUnhandled = (e: unknown) => seen.push(e)
+      process.on('unhandledRejection', onUnhandled)
+      try {
+        await runStreamingChatCompletion({ question: 'q', userId: 'u1' })
+        await new Promise((r) => setTimeout(r, 60))
+        expect(ragStreamArgs).toHaveLength(0)
+        expect(seen).toEqual([])
+      } finally { process.off('unhandledRejection', onUnhandled) }
+    })
+  })
+})
 
 describe('runStreamingChatCompletion — speculative routing', () => {
   const setupRouted = () => {
@@ -2397,5 +2597,108 @@ describe('runStreamingChatCompletion — a compound question is not reduced to i
     mockPlanQuery.mockClear()
     await runStreamingChatCompletion({ question: 'dua hal sekaligus', userId: 'u1' })
     expect(mockPlanQuery.mock.calls.length).toBe(0)
+  })
+
+  /*
+   * THE CANCEL CONDITION MUST MIRROR THE DAG BRANCH EXACTLY. `extraToolIds.length > 0` alone is not "the DAG will
+   * run" — the branch also requires `allowMultiStepDag`. A caller that did not opt in still gets the single-source RAG
+   * branch, which needs the speculative retrieval; cancelling it there would hand that branch an aborted retrieval.
+   * These two tests are the pair: same compound verdict, only the opt-in differs, and the outcome must differ with it.
+   */
+  const compoundVerdict = () => {
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockIntegrationCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true,
+      extraTools: [{ toolId: 'sql', args: {} }],
+    }))
+  }
+
+  test('compound verdict WITHOUT opt-in: the single-source RAG branch keeps its retrieval (NOT aborted)', async () => {
+    return withOrg(async () => {
+      compoundVerdict()
+      await runStreamingChatCompletion({ question: 'dua hal sekaligus', userId: 'u1' })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(false)
+      expect(ragStreamArgs).toHaveLength(1)
+    })
+  })
+
+  test('compound verdict WITH opt-in: the DAG plans and retrieves for itself, so the speculative one IS aborted', async () => {
+    return withOrg(async () => {
+      compoundVerdict()
+      mockPlanQuery.mockImplementation(async () => ({ steps: [{ id: 's1', tool: 'sql', input: { question: 'gaji' } }], needsSynthesis: true }))
+      mockExecutePlan.mockImplementation(async () => [{ stepId: 's1', tool: 'sql', ok: true, output: 'gaji data', latencyMs: 5 }])
+      mockSynthesizeAnswer.mockImplementation(async () => 'COMBINED')
+      await runStreamingChatCompletion({ question: 'dua hal sekaligus', userId: 'u1', allowMultiStepDag: true })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(true)
+      expect(ragStreamArgs).toHaveLength(0)
+    })
+  })
+})
+
+describe('runNonStreamingChatCompletion — speculative retrieval cancellation', () => {
+  /*
+   * The non-streaming transport is a SEPARATE implementation of the same router (the repo has been bitten by this
+   * transport drift three times), so the wiring is asserted here as well — not inferred from the streaming twin.
+   */
+  const docTurn = () => {
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockIntegrationCount.mockImplementation(async () => 0)
+    mockRestEndpointCount.mockImplementation(async () => 0)
+    mockSearchFtsChunkIds.mockImplementation(async () => [])
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+  }
+
+  test('a plain-chat turn ABORTS the retrieval it started', async () => {
+    return withOrg(async () => {
+      docTurn()
+      intentState.value = { needsClarification: false, needsRetrieval: false }
+      mockGenerateChat.mockImplementation(async () => 'halo')
+      await runNonStreamingChatCompletion({ question: 'halo', userId: 'u1' })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(true)
+    })
+  })
+
+  test('a clarification turn ABORTS it', async () => {
+    return withOrg(async () => {
+      docTurn()
+      intentState.value = { needsClarification: true, clarificationQuestion: 'Which one?', needsRetrieval: true }
+      await runNonStreamingChatCompletion({ question: 'q', userId: 'u1' })
+      expect(specLog[0].controller.signal.aborted).toBe(true)
+    })
+  })
+
+  test('a RAG verdict does NOT abort it', async () => {
+    return withOrg(async () => {
+      docTurn()
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      mockGenerateChat.mockImplementation(async () => 'fallback chat')
+      await runNonStreamingChatCompletion({ question: 'Berapa hari cuti?', userId: 'u1' })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(false)
+    })
+  })
+
+  test('a SQL verdict ABORTS it', async () => {
+    return withOrg(async () => {
+      docTurn()
+      mockIntegrationCount.mockImplementation(async () => 1)
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true }))
+      mockIntegrationFindFirst.mockImplementation(async () => ({
+        id: 'int-1', name: 'Test DB', provider: 'POSTGRESQL', encryptedConfig: 'encrypted',
+        schemas: [{ tableName: 'users', columns: '[]', rowCount: 10, sampleRow: null }],
+      }))
+      mockGenerateSql.mockImplementation(async () => ({ sql: 'SELECT * FROM users LIMIT 10', explanation: 'all users' }))
+      mockValidateSql.mockImplementation(() => ({ ok: true, sanitized: 'SELECT * FROM users LIMIT 10' }))
+      mockExecuteQuery.mockImplementation(async () => ({ rows: [{ id: 1, name: 'Alice' }], rowCount: 1, executionMs: 5 }))
+      mockGenerateAnswer.mockImplementation(async () => 'ok')
+      await runNonStreamingChatCompletion({ question: 'Show me all users', userId: 'u1' })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(true)
+    })
   })
 })

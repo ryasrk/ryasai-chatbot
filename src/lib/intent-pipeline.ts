@@ -770,6 +770,13 @@ export async function retrieveWithReflection(args: {
    * trace, because the answer still reads as plausible and its citations are all real.
    */
   documentIds?: string[] | null
+  /**
+   * Aborted when the caller no longer needs this retrieval. Used by the speculative start (speculative-retrieval.ts):
+   * a turn the router sends to SQL, REST, a plugin or plain chat has no use for a sufficiency verdict, and that
+   * verdict is an LLM call on the customer's own key. Checked BEFORE the reflection call and before the second pass
+   * — the points where the next step costs a model call. Stages already in flight (the rerank) are not interrupted.
+   */
+  signal?: AbortSignal
 }): Promise<RetrievalResult & {
   reflection: ReflectionResult
   retrievalPasses: number
@@ -788,9 +795,10 @@ export async function retrieveWithReflection(args: {
     expansions.length > 1 && typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
   const allResults = await Promise.all(
     expansions.map((q) =>
-      retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank }),
+      retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal }),
     ),
   )
+  args.signal?.throwIfAborted()
   let merged = mergeRetrievalResults(allResults)
   if (canDeferRerank) {
     // The pool is capped at the size ONE retrieval would have handed the reranker, so the prompt does not grow with
@@ -810,6 +818,7 @@ export async function retrieveWithReflection(args: {
   // judge a 46-char string and inject "if the evidence doesn't contain the
   // answer, say so" — so the bot disclaimed knowledge it never received. See
   // `isPlaceholderChunk` for the full trace.
+  args.signal?.throwIfAborted()
   const evidenceChunks = merged.chunks.slice(0, args.topK).filter((c) => !isPlaceholderChunk(c.content))
   const evidence = evidenceChunks.map((c) => c.content).join('\n\n')
   const reflection = await evaluateEvidenceSufficiency({
@@ -819,9 +828,11 @@ export async function retrieveWithReflection(args: {
 
   // 4. Multi-turn: if reflection says insufficient, do one more pass with 2x topK
   if (!reflection.sufficient && merged.chunks.length > 0) {
+    args.signal?.throwIfAborted()
     const secondPass = await retrieveRelevantChunks({
       query: args.query,
       topK: args.topK * 2,
+      signal: args.signal,
       // Same scope as the first pass. Omitting it here is the subtle form of the bug: the first pass
       // would respect the scope and the reflection pass would quietly widen it back out.
       documentIds: args.documentIds,

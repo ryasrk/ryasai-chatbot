@@ -54,6 +54,12 @@ const EnvSchema = z.object({
   CONTEXTUAL_RETRIEVAL: z.enum(['true', 'false']).optional(),
   RAG_LLM_RERANK: z.enum(['true', 'false']).optional(),
   SPECULATIVE_ROUTING: z.enum(['true', 'false']).optional(),
+  /**
+   * Start document retrieval alongside intent analysis instead of after it. Default ON; `false` restores the serial
+   * order. See speculative-retrieval.ts for the measurement and the price (a turn that routes away spends one
+   * retrieval, and its rerank unless the cancel reaches it first).
+   */
+  SPECULATIVE_RETRIEVAL: z.enum(['true', 'false']).optional(),
   REDIS_URL: z.string().url().optional(),
 
   // --- Agentic / RAG tuning (optional, sensible defaults in code) ---

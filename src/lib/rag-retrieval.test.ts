@@ -693,6 +693,39 @@ async function rerankViaLlm(candidates: number, topK: number): Promise<unknown[]
   return r.chunks
 }
 
+describe('retrieveRelevantChunks — a cancelled retrieval does not pay for the rerank', () => {
+  /*
+   * MEASURED as the reason this exists: a speculative retrieval cancelled because the router sent the turn to SQL still
+   * ran the rerank (3.1-3.6 s of model time) before the abort reached the reflection loop, which made compound/DAG turns
+   * SLOWER than not speculating (22.5 s -> 46.7 s median first token). The check has to sit BEFORE the rerank, and this
+   * test fails if it is moved or removed.
+   */
+  test('an aborted signal throws before the rerank makes its model call', async () => {
+    llmAnswer = '[{"index":0,"score":9}]'
+    llmCfgValue = { id: 'r1' }
+    ftsIds = ['c0', 'c1']
+    dbChunkRows = [dbChunkRow('c0', 'content 0'), dbChunkRow('c1', 'content 1')]
+    rerankValue = null // cross-encoder yields nothing, so the LLM reranker would run
+    llmPrompts.length = 0
+    const ctl = new AbortController()
+    ctl.abort()
+    await expect(retrieveRelevantChunks({ query: 'invoices', topK: 1, signal: ctl.signal })).rejects.toThrow()
+    expect(llmPrompts).toHaveLength(0)
+  })
+
+  test('a signal that is never aborted changes nothing: the rerank runs as before', async () => {
+    llmAnswer = '[{"index":0,"score":9}]'
+    llmCfgValue = { id: 'r1' }
+    ftsIds = ['c0', 'c1']
+    dbChunkRows = [dbChunkRow('c0', 'content 0'), dbChunkRow('c1', 'content 1')]
+    rerankValue = null
+    llmPrompts.length = 0
+    const r = await retrieveRelevantChunks({ query: 'invoices', topK: 1, signal: new AbortController().signal })
+    expect(r.chunks).toHaveLength(1)
+    expect(llmPrompts.length).toBeGreaterThan(0)
+  })
+})
+
 describe('rerankWithLlm', () => {
   test('the model response decides the ORDER, not the original ranking', async () => {
     // Score c2 highest so it must come first, proving the order came from the LLM.
