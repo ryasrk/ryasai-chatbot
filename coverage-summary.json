@@ -1,13 +1,13 @@
 {
-  "linePct": 75.65,
-  "linesHit": 27762,
-  "linesFound": 36698,
-  "reachableLinePct": 88,
-  "reachableLinesHit": 24209,
-  "reachableLinesFound": 27509,
-  "fnPct": 89.39,
-  "fnsHit": 2485,
-  "fnsFound": 2780,
+  "linePct": 75.53,
+  "linesHit": 27774,
+  "linesFound": 36772,
+  "reachableLinePct": 87.97,
+  "reachableLinesHit": 24220,
+  "reachableLinesFound": 27531,
+  "fnPct": 89.43,
+  "fnsHit": 2487,
+  "fnsFound": 2781,
   "filesMeasured": 259,
   "failedTestFiles": [],
   "files": [
@@ -318,6 +318,15 @@
       "fPct": 96.875
     },
     {
+      "file": "src/app/api/documents/route.ts",
+      "hit": 185,
+      "found": 298,
+      "pct": 62.08053691275168,
+      "fHit": 5,
+      "fFound": 11,
+      "fPct": 45.45454545454545
+    },
+    {
       "file": "src/components/ui/button.tsx",
       "hit": 96,
       "found": 153,
@@ -426,15 +435,6 @@
       "fPct": 75
     },
     {
-      "file": "src/app/api/documents/route.ts",
-      "hit": 185,
-      "found": 269,
-      "pct": 68.77323420074349,
-      "fHit": 5,
-      "fFound": 11,
-      "fPct": 45.45454545454545
-    },
-    {
       "file": "src/lib/stream-preparers.ts",
       "hit": 556,
       "found": 804,
@@ -496,6 +496,15 @@
       "fHit": 13,
       "fFound": 15,
       "fPct": 86.66666666666667
+    },
+    {
+      "file": "src/lib/document-parsers.ts",
+      "hit": 160,
+      "found": 220,
+      "pct": 72.72727272727273,
+      "fHit": 30,
+      "fFound": 30,
+      "fPct": 100
     },
     {
       "file": "src/lib/knowledge-graph.ts",
@@ -811,15 +820,6 @@
       "fHit": 56,
       "fFound": 63,
       "fPct": 88.88888888888889
-    },
-    {
-      "file": "src/lib/document-parsers.ts",
-      "hit": 149,
-      "found": 176,
-      "pct": 84.6590909090909,
-      "fHit": 28,
-      "fFound": 29,
-      "fPct": 96.55172413793103
     },
     {
       "file": "src/lib/llm-client-openai.ts",
@@ -2191,8 +2191,8 @@
     },
     {
       "file": "src/lib/env-schema.ts",
-      "hit": 171,
-      "found": 171,
+      "hit": 172,
+      "found": 172,
       "pct": 100,
       "fHit": 10,
       "fFound": 10,

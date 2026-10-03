@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import zlib from 'node:zlib'
 import { extractDocxTextFromBuffer, extractPdfTextFromBuffer, extractXlsxTextFromBuffer } from './document-parsers'
@@ -262,3 +263,72 @@ function makeStoredZip(files: Record<string, string>): Buffer {
   end.writeUInt32LE(offset, 16)
   return Buffer.concat([...locals, ...central, end])
 }
+
+/**
+ * IMAGE-ONLY PDFs MUST EXTRACT TO NOTHING — the invariant-4 regression, with the real artifact.
+ *
+ * MEASURED DEFECT (found by an independent test agent, reproduced and fixed here): a real one-page image-only PDF
+ * (`/Subtype /Image` + `/Filter /DCTDecode`, zero `/Font` objects, pypdf extracts 0 characters) produced **5,940
+ * characters of binary noise**. The cause is structural rather than a typo: a JPEG is megabytes of arbitrary bytes,
+ * so ANY test that looks for text operators in it matches by accident — one `]TJ` at byte offset 2,257,433 of a
+ * 3.68 MB image was enough — and `extractTextOperators` then harvested those accidents as "text". The upload route
+ * stored that as `contentText`, chunked it, embedded it, and it became eligible as answer evidence, while
+ * `isPlaceholderChunk` reported false because it matches a marker rather than measuring content.
+ *
+ * These tests pin the OUTCOME (what the extractor returns), not the internal branch, because the branch is what kept
+ * looking correct while the noise came through. The synthetic case matters on its own: it is the shape a future
+ * refactor would break without any real PDF to catch it.
+ */
+describe('image-only PDFs extract to EMPTY, not to binary noise', () => {
+  /** A minimal PDF whose only stream is image bytes — no text operators intended, but bytes that CAN match them. */
+  function imageOnlyPdf(imageBytes: Buffer): Buffer {
+    const head = Buffer.from(
+      '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+        '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Resources<</XObject<</Im1 4 0 R>>>>/Contents 5 0 R>>endobj\n' +
+        '4 0 obj<</Type/XObject/Subtype/Image/Width 100/Height 100/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ' +
+        imageBytes.length +
+        '>>stream\n',
+      'latin1',
+    )
+    const mid = Buffer.from('\nendstream\nendobj\n5 0 obj<</Length 0>>stream\n\nendstream\nendobj\ntrailer<</Root 1 0 R>>\n%%EOF\n', 'latin1')
+    return Buffer.concat([head, imageBytes, mid])
+  }
+
+  test('bytes containing an accidental ]TJ do NOT become extracted text', () => {
+    /*
+     * The noise has to be able to PRODUCE text, or this test passes for the wrong reason.
+     *
+     * The first version of this case planted only `]TJ` in high-entropy bytes, and a negative control showed it was
+     * VACUOUS: with the printable-ratio gate deleted the test still passed, because `extractTextOperators` needs
+     * parentheses or angle brackets to harvest anything and the noise had none. A JPEG accidentally contains BOTH
+     * the operator AND literal-shaped bytes — that is exactly how the real defect happened — so the fixture does too:
+     * literal-shaped runs `(…)` followed by `Tj`, embedded in bytes that are mostly non-printable.
+     */
+    const noise = Buffer.alloc(6000)
+    for (let i = 0; i < noise.length; i++) noise[i] = (i * 37 + 11) % 256
+    // Literal-shaped runs the extractor WILL harvest, scattered through the noise like a JPEG's accidents.
+    for (const at of [400, 1500, 2600, 3700, 4800]) {
+      noise.write('(\x81\x82\x83\x84abc)Tj ]TJ', at, 'latin1')
+    }
+
+    const text = extractPdfTextFromBuffer(imageOnlyPdf(noise))
+
+    expect(text).toBe('')
+  })
+
+  test('the REAL downloaded image-only PDF extracts to empty (this is the artifact that exposed it)', () => {
+    // Skipped when the fixture is absent: it is an agent-run download, not a committed test asset.
+    const path = 'uat/agent-runs/a2-pdf-internet/commons-santoro-001.pdf'
+    if (!existsSync(path)) return
+    const text = extractPdfTextFromBuffer(readFileSync(path))
+    expect(text).toBe('')
+  })
+
+  test('a REAL text PDF is unaffected: this gate must not empty documents that have text', () => {
+    const path = 'uat/agent-runs/a2-pdf-internet/arxiv-attention.pdf'
+    if (!existsSync(path)) return
+    const text = extractPdfTextFromBuffer(readFileSync(path))
+    expect(text.length).toBeGreaterThan(10_000)
+    expect(text).toContain('Introduction')
+  })
+})

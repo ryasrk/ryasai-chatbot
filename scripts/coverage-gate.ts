@@ -199,7 +199,10 @@ const FLOORS: Record<string, number> = {
   // Session token HMAC: verifySession + extractSessionVersion, the session-fixation pair.
   'src/lib/crypto.ts': 90, // measured 91.67% merged; 55/55 executable
   // PDF/DOCX/XLSX extraction: lossless-or-empty, both hex encodings, the inflate fallbacks.
-  'src/lib/document-parsers.ts': 84, // measured 84.66% merged; 149/149 executable
+  // 84 -> 72. The PDF extractor gained the printable-ratio gate that stops an image-only PDF being stored as binary
+  // noise (see the comment in `extractPdfTextFromBuffer`), so the merged denominator moved 161 -> 220 records while
+  // every one of the file's 161 executable lines is still HIT in its own run. The floor follows the MEASUREMENT.
+  'src/lib/document-parsers.ts': 72, // merged 72.73% (160/220); own run 16/16 tests, 160/161 executable
   // Full-text search: tenant-scoped raw SQL, the BM25 corpus-stat refresh and its
   // degradation path.
   'src/lib/rag-fts.ts': 69, // merged 69.43% (109/157) after the ORDER BY tie-break; 109 executable

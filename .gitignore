@@ -166,3 +166,9 @@ start.bat
 /settings_tabs.json
 /stage1.json
 /a11y_monitoring.json
+
+# Agent-run artefacts: 34 MB of downloaded PDFs and scratch scripts, not product code.
+# The REPORTS are the point of a run, so they stay tracked; everything else does not.
+uat/agent-runs/**
+!uat/agent-runs/*/
+!uat/agent-runs/*/REPORT.md

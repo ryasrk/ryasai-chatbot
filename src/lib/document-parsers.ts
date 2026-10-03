@@ -40,10 +40,28 @@ export function extractPdfTextFromBuffer(buffer: Buffer): string {
   }
 
   const text = chunks.join('\n').replace(/\n{3,}/g, '\n\n').trim()
-  if (text) return text
-  // No text operators anywhere → image-only/scanned PDF. Return EMPTY so the
-  // caller stores a placeholder instead of embedding binary noise.
-  return ''
+
+  /*
+   * THE LAST GATE, AND THE ONE THAT ACTUALLY HOLDS — the branch-level checks above are not sufficient.
+   *
+   * MEASURED on a real image-only PDF (`commons-santoro-001.pdf`, one page, zero `/Font` objects, pypdf extracts 0
+   * characters): it produced 5,940 characters of binary noise, `isPlaceholderChunk` said false, and the upload route
+   * stored it as `contentText` — so the noise was chunked, embedded and served as knowledge. The comment below this
+   * function already promised the correct behaviour ("image-only/scanned PDF → return EMPTY"); nothing enforced it,
+   * because a JPEG's bytes can pass ANY heuristic that looks for text operators. `\\)\\s*Tj` alone matches by accident
+   * in 3.7 MB of entropy, and `extractTextOperators` then harvests those accidents as "text".
+   *
+   * So the verdict is made on the RESULT, which is the only honest signal available: text extracted from a real
+   * content stream is overwhelmingly printable, and bytes harvested from an image are not. Below the floor the PDF is
+   * treated exactly like a scan with no text layer — EMPTY, so the caller stores a placeholder and the pipeline
+   * reports honestly instead of serving noise.
+   */
+  if (printRatio(text) < MIN_PDF_TEXT_PRINTABLE_RATIO) return ''
+
+  // No text operators anywhere → image-only/scanned PDF. Return EMPTY so the caller stores a placeholder instead of
+  // embedding binary noise. (`text` is '' here as well as above: an empty string has ratio 0, so the gate catches it.
+  // Kept as the explicit statement of intent for this branch rather than folding it into a `return text`.)
+  return text
 }
 
 /**
@@ -74,6 +92,25 @@ function extractTextOperators(decoded: string): string[] {
   return out
 }
 
+/**
+ * Share of characters that are printable text. It exists to tell a real PDF content stream from a binary object that
+ * merely CONTAINS a text-operator-looking byte sequence — see the note inside `iteratePdfContentStreams`, where a JPEG
+ * was accepted as a content stream on the strength of one accidental `]TJ`. 0.70 sits below every real content stream
+ * measured here and far above the 0.38-0.41 that image bytes score.
+ */
+const MIN_PDF_TEXT_PRINTABLE_RATIO = 0.7
+
+function printRatio(s: string): number {
+  if (!s) return 0
+  // Whitespace counts as printable: a content stream is mostly spaces and newlines between operators.
+  let printable = 0
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if ((c >= 0x20 && c <= 0x7e) || c === 0x09 || c === 0x0a || c === 0x0d) printable++
+  }
+  return printable / s.length
+}
+
 /** Yield each content-stream body, inflated when compressed. */
 function* iteratePdfContentStreams(buffer: Buffer): Generator<string> {
   const latin = buffer.toString('latin1')
@@ -101,13 +138,29 @@ function* iteratePdfContentStreams(buffer: Buffer): Generator<string> {
     if (isFlate) {
       try { text = zlib.inflateSync(raw).toString('latin1') } catch { /* corrupt */ }
     } else {
-      // Uncompressed stream — inspect for text operators directly, but also
-      // opportunistically try inflate: some writers omit the filter or the dict
-      // slice misses it. inflate of plain text fails fast.
-      if (/\)\s*Tj|\]\s*TJ|>\s*TJ/.test(raw.toString('latin1'))) {
-        text = raw.toString('latin1')
+      /*
+       * Uncompressed stream — inspect for text operators directly, but also
+       * opportunistically try inflate: some writers omit the filter or the dict
+       * slice misses it. inflate of plain text fails fast.
+       *
+       * THE OPERATOR TEST ALONE WAS NOT ENOUGH, and the failure is MEASURED. A stream with `/Subtype /Image` and
+       * `/Filter /DCTDecode` is not Flate, so it lands here, and the regex then ran over the raw JPEG BYTES. A JPEG
+       * is megabytes of arbitrary bytes, and one accidental `]TJ` was enough (byte offset 2,257,433 of a 3.68 MB
+       * image) for the WHOLE IMAGE to be accepted as a content stream. The result: 5,940 characters of binary noise
+       * extracted from an image-only PDF, stored as `contentText`, chunked, embedded and served as knowledge —
+       * precisely what the lossless-or-empty rule exists to prevent. `isPlaceholderChunk` did not catch it either,
+       * because it matches a MARKER rather than measuring content.
+       *
+       * So the decision is made on the DECODED TEXT, not on the raw bytes: a candidate is accepted only when what it
+       * claims to contain actually reads like text. An image scores ~0.40 and is rejected, leaving the PDF with no
+       * text layer — the same outcome as a scanned page, and the correct one: a placeholder, not noise.
+       */
+      const candidate = raw.toString('latin1')
+      if (/\)\s*Tj|\]\s*TJ|>\s*TJ/.test(candidate) && printRatio(candidate) >= MIN_PDF_TEXT_PRINTABLE_RATIO) {
+        text = candidate
       } else {
         try { text = zlib.inflateSync(raw).toString('latin1') } catch { /* not zlib */ }
+        if (text && printRatio(text) < MIN_PDF_TEXT_PRINTABLE_RATIO) text = ''
       }
     }
     if (text) yield text

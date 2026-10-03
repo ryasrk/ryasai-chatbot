@@ -14,7 +14,7 @@ import { enqueueOrSync } from '@/lib/job-processor'
 import { mapWithConcurrency } from '@/lib/bounded-concurrency'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { indexChunkKnowledgeGraph } from '@/lib/knowledge-graph'
-import { enterWithOrg } from '@/lib/prisma-tenant'
+import { enterWithOrg, requireOrgContext } from '@/lib/prisma-tenant'
 import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 import { getKnowledgeStorageChoice } from '@/lib/vector-stores'
 import { AppError } from '@/lib/errors'
@@ -75,9 +75,37 @@ export async function GET(req: NextRequest) {
         //
         // Counting vectorised chunks here makes the gap observable, so the UI can show real
         // progress and a test can wait on the condition instead of on a timer.
+        // `embedding` is `Unsupported("vector(384)")` in the schema, so Prisma cannot SELECT it through the typed
+        // API — the vectorised count is read with one raw aggregate below, keyed by document id.
         chunks: { select: { embeddingJson: true } },
       },
     })
+
+    /*
+     * How many chunks have a VECTOR, read with raw SQL because the column is `Unsupported(...)` to Prisma.
+     *
+     * `embeddedChunkCount` used to count `embeddingJson !== null`, which made the field a PROXY for a column a
+     * DIFFERENT code path writes. MEASURED on a real install: a 1536-dim embedder beside the schema's
+     * `vector(384)` column wrote 500 `embeddingJson` values and ZERO vector values — pgvector search fully disabled —
+     * while this count reported 500/500 and the document read as "fully embedded" to the UI and to every test
+     * waiting on it. The dimension mismatch was logged server-side and never reached the operator.
+     *
+     * The vector column is what retrieval actually searches, so it is what this count reports. The JSON-only
+     * remainder stays visible as its own field: real information (a mismatched install still ranks lexically), but
+     * never mistakable for searchability.
+     */
+    const vectorCounts = new Map<string, number>()
+    try {
+      const rows = await db.$queryRaw<Array<{ documentId: string; n: bigint }>>`
+        SELECT "documentId", COUNT(*) AS n
+        FROM "DocumentChunk"
+        WHERE "organizationId" = ${requireOrgContext()} AND embedding IS NOT NULL
+        GROUP BY "documentId"
+      `
+      for (const row of rows) vectorCounts.set(row.documentId, Number(row.n))
+    } catch {
+      // A vector-less install (no pgvector) must still list documents; the count then reads 0, which is TRUE.
+    }
 
     const data = docs.map((d) => ({
       id: d.id,
@@ -93,7 +121,8 @@ export async function GET(req: NextRequest) {
       cognifyError: d.cognifyError,
       createdAt: d.createdAt,
       chunkCount: d._count.chunks,
-      embeddedChunkCount: d.chunks.filter((c) => c.embeddingJson !== null).length,
+      embeddedChunkCount: vectorCounts.get(d.id) ?? 0,
+      embeddedJsonOnlyChunkCount: d.chunks.filter((c) => c.embeddingJson !== null).length - (vectorCounts.get(d.id) ?? 0),
     }))
 
     return NextResponse.json({ documents: data, total: data.length })
