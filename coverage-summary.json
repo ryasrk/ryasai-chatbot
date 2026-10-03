@@ -1,13 +1,13 @@
 {
-  "linePct": 75.5,
-  "linesHit": 27793,
-  "linesFound": 36814,
-  "reachableLinePct": 87.98,
-  "reachableLinesHit": 24239,
-  "reachableLinesFound": 27550,
+  "linePct": 75.44,
+  "linesHit": 27807,
+  "linesFound": 36860,
+  "reachableLinePct": 87.97,
+  "reachableLinesHit": 24253,
+  "reachableLinesFound": 27569,
   "fnPct": 89.4,
-  "fnsHit": 2487,
-  "fnsFound": 2782,
+  "fnsHit": 2488,
+  "fnsFound": 2783,
   "filesMeasured": 259,
   "failedTestFiles": [],
   "files": [
@@ -381,6 +381,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/stream-preparers.ts",
+      "hit": 566,
+      "found": 834,
+      "pct": 67.86570743405275,
+      "fHit": 42,
+      "fFound": 51,
+      "fPct": 82.35294117647058
+    },
+    {
       "file": "src/lib/passwords.ts",
       "hit": 17,
       "found": 25,
@@ -435,15 +444,6 @@
       "fPct": 75
     },
     {
-      "file": "src/lib/stream-preparers.ts",
-      "hit": 556,
-      "found": 804,
-      "pct": 69.15422885572139,
-      "fHit": 41,
-      "fFound": 50,
-      "fPct": 82
-    },
-    {
       "file": "src/lib/rag-fts.ts",
       "hit": 109,
       "found": 157,
@@ -471,6 +471,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/tool-branches.ts",
+      "hit": 690,
+      "found": 974,
+      "pct": 70.84188911704312,
+      "fHit": 35,
+      "fFound": 37,
+      "fPct": 94.5945945945946
+    },
+    {
       "file": "src/lib/llm-config.ts",
       "hit": 293,
       "found": 413,
@@ -478,15 +487,6 @@
       "fHit": 30,
       "fFound": 34,
       "fPct": 88.23529411764706
-    },
-    {
-      "file": "src/lib/tool-branches.ts",
-      "hit": 686,
-      "found": 958,
-      "pct": 71.60751565762004,
-      "fHit": 35,
-      "fFound": 37,
-      "fPct": 94.5945945945946
     },
     {
       "file": "src/lib/real-connectors.ts",

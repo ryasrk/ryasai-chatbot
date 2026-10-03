@@ -644,12 +644,28 @@ export async function runSqlBranch(args: {
   // beyond tidiness: `tool-branches.test.ts` pins that an explicit `integrationId` performs NO candidate listing (it
   // is the disambiguation path's job), and a fresh `db.integration.findMany` broke exactly that assertion.
   const otherSources = (args.integrationNames ?? []).filter((n) => n !== integration.name)
+  /*
+   * TWO RULES, and the second one is the one that was missing.
+   *
+   * The first covers a question that asks to COMPARE with another source. The second covers a question about
+   * "everything" / "the system" / how much data exists — a scope the ONE chosen source cannot satisfy, because the
+   * router picked it out of several. MEASURED with three databases connected: "Berapa banyak data yang tersimpan di
+   * sistem?" was answered with "total 45 baris data yang tersebar di empat tabel utama" from ONE of them (citation:
+   * `ZZ Sales.pelanggan`), while the three databases hold 104 rows across 12 tables. The user asked about the system,
+   * got a confident strict subset, and nothing in the answer said the other sources were not consulted. A confident
+   * subset presented as the whole is the same class as a fabricated figure: the reader cannot tell them apart.
+   */
   const crossSourceNote =
     otherSources.length > 0
       ? `Other connected data sources in this workspace: ${otherSources.join(', ')}. ` +
-        `If the question asks you to compare or combine this result with something those sources would hold, say ` +
+        `This answer uses ${integration.name} ONLY. Two rules follow, and BOTH apply:\n` +
+        `1. If the question asks you to compare or combine this result with something those sources would hold, say ` +
         `plainly that THIS ANSWER COVERS ONLY ${integration.name} and name what was not included. Never present a ` +
-        `figure from this source as if it described another one.` +
+        `figure from this source as if it described another one.\n` +
+        `2. If the question asks about "all", "every", "the system", "the workspace", or the TOTAL amount of data, ` +
+        `then this source CANNOT answer it alone: state that the figure covers only ${integration.name}, name the ` +
+        `other sources (${otherSources.join(', ')}) that were NOT included, and offer to run it per source. Never ` +
+        `present a count from ${integration.name} as the count for the workspace.` +
         '\n\n'
       : ''
   const answer = await generateAnswer({

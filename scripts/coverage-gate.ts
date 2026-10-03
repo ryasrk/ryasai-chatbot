@@ -499,7 +499,11 @@ const FLOORS: Record<string, number> = {
   // 70 -> 69. The SQL→documents fallback added 110 lines, 42 of them comment. MEASURED on the block itself: all of
   // its executable lines are hit by stream-preparsers.test.ts (9 tests, each negative-controlled), and the merged
   // figure moved because the denominator grew, not because a path went untested.
-  'src/lib/stream-preparers.ts': 69, // re-measured 69.63% (532/764); was 70
+  // 70 -> 69, then 69 -> 67. The SQL→documents fallback added 110 lines, 42 of them comment. Then this transport
+  // gained the CROSS-SOURCE note it was missing (`integrationNames` + the two-rule prompt prefix): the block is
+  // covered by two new tests in stream-preparers.test.ts whose rule-2 assertions were tightened after a negative
+  // control exposed the first version as VACUOUS, and the merged denominator grew again. MEASURED 67.87%.
+  'src/lib/stream-preparers.ts': 67, // re-measured 67.87%; was 69
   // 59.80% -> 100.00% executable (119/119). The two untested functions were the
   // license-expiry reminder and the startup prune sweep: both idempotency-critical,
   // and a wrong prune silently drops a live job.

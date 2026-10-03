@@ -170,10 +170,31 @@ mock.module('@/lib/cognee', () => ({
 }))
 
 // In-memory Redis mock — rag.ts imports cacheGet/cacheSet/cacheDel
+/*
+ * `redisCmd` IS PART OF THIS MOCK on purpose, and its absence was a real test-isolation defect.
+ *
+ * `tool-branches.ts` calls `checkToolRateLimit('sql', orgId)`, which increments `ratelimit:tool:sql:<org>` through
+ * `redisCmd` — a SHARED Redis counter with a 10-per-minute ceiling. The mock exported only the cache functions, so
+ * the limiter reached the REAL Redis, the counter accumulated across every run, and this suite started failing at
+ * whatever point the total crossed 10: MEASURED, the same file at the same commit reported 123 pass / 0 fail, then
+ * 122/1, then 119/4 as the counter refilled. `checkToolRateLimit` counts each call, and these tests make more than
+ * ten, so once the window had been used the SQL assertions saw "Rate limit exceeded for SQL queries" instead of the
+ * behaviour under test.
+ *
+ * Nothing about the product is wrong here — a shared limiter is the point of it. A unit test must not depend on an
+ * external counter's state, so the limiter is granted (allowed: true) here, which is also the documented Redis-down
+ * behaviour of that function.
+ */
 mock.module('@/lib/redis', () => ({
   cacheGet: async () => null,
   cacheSet: async () => {},
   cacheDel: async () => {},
+  redisCmd: {
+    get: async () => null,
+    set: async () => 'OK',
+    incr: async () => 1,
+    expire: async () => 1,
+  },
 }))
 
 // KG mock — dual-level retrieval returns empty in tests

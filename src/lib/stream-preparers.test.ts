@@ -596,6 +596,51 @@ describe('prepareSqlStream — integration selection', () => {
     expect(executedSql.length).toBe(1)
   })
 
+  /*
+   * THE CROSS-SOURCE NOTE ON THE STREAMING TRANSPORT — it did not exist here at all.
+   *
+   * The non-streaming twin has carried a `crossSourceNote` for a while; this transport never did, and this is the one
+   * the web chat uses. MEASURED with three databases connected: "Berapa banyak data yang tersimpan di sistem?" was
+   * answered "total 45 baris data ... di empat tabel utama" from ONE database while the three hold 104 rows across 12
+   * tables — a confident strict subset presented as the whole. These tests fail if the note is dropped again.
+   */
+  test('the answer prompt names the OTHER sources and forbids presenting a subset as the whole', async () => {
+    integrationCount = 1
+    integrations = [{ id: 'int-1', name: 'ZZ Sales', status: 'active', schemas: [{ tableName: 'orders', columns: '[]', sampleRow: null, description: null }] }]
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    await prepareSqlStream({
+      question: 'Berapa banyak data yang tersimpan di sistem?',
+      userId: 'u1',
+      integrationId: 'int-1',
+      integrationNames: ['ZZ Sales', 'ZZ HR', 'ZZ Logistics'],
+    })
+    const prefix = String(streamAnswerArgs?.systemPromptPrefix ?? '')
+    // The chosen source is named...
+    expect(prefix).toContain('ZZ Sales ONLY')
+    // ...the others are named as NOT included...
+    expect(prefix).toContain('ZZ HR')
+    expect(prefix).toContain('ZZ Logistics')
+    /*
+     * RULE 2 IS ASSERTED BY ITS CONSEQUENCE, not by two words that survive a crude cut. A negative control showed an
+     * earlier version of these assertions was VACUOUS for rule 2: deleting the whole rule still passed, because
+     * "Never" also appears in rule 1. Rule 2 is the one the defect needed — a question about the workspace answered
+     * from one source — so it is pinned by the claims that only it makes: the source CANNOT answer alone, the others
+     * were NOT included, and the answer should offer a per-source run.
+     */
+    expect(prefix).toContain('TOTAL amount of data')
+    expect(prefix).toContain('CANNOT answer it alone')
+    expect(prefix).toContain('were NOT included')
+    expect(prefix).toContain('offer to run it per source')
+  })
+
+  test('a SINGLE source gets no note — there is nothing to disambiguate', async () => {
+    integrationCount = 1
+    integrations = [{ id: 'int-1', name: 'Only One', status: 'active', schemas: [{ tableName: 'orders', columns: '[]', sampleRow: null, description: null }] }]
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1', integrationNames: ['Only One'] })
+    expect(String(streamAnswerArgs?.systemPromptPrefix ?? '')).not.toContain('Other connected data sources')
+  })
+
   test('falls back without executing when the named integration does not exist', async () => {
     integrations = []
     integrationCount = 0

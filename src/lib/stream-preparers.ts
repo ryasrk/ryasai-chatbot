@@ -328,6 +328,18 @@ export async function prepareSqlStream(args: {
   userPinnedIntegration?: boolean
   /** Injected for tests; production uses the model-backed judge below. */
   relevanceJudge?: RelevanceJudge
+  /**
+   * The org's OTHER active data sources, so the answer can say which source it used.
+   *
+   * The non-streaming twin has carried this as `crossSourceNote` for a while; THIS transport never did, and this is
+   * the transport the web chat uses. MEASURED consequence with three databases connected: "Berapa banyak data yang
+   * tersimpan di sistem?" was answered "total 45 baris data ... di empat tabel utama" from ONE database (citation:
+   * `ZZ Sales.pelanggan`) while the three hold 104 rows across 12 tables — a confident strict subset presented as the
+   * whole, with nothing in the answer saying the other sources were not consulted. Declared, not inferred: the router
+   * passes `branchArgs` by SPREAD, so a field the callee's type never names is dropped silently (the shape this file
+   * has already been bitten by on this exact axis).
+   */
+  integrationNames?: string[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
   /*
@@ -563,12 +575,30 @@ export async function prepareSqlStream(args: {
     (sqlExplanation ? `QUERY SCOPE (what the SQL measured): ${sqlExplanation}\n\n` : '') +
     wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
   const chartData = buildChartDataFromRows(result.rows)
+  /*
+   * The same two-rule note as the non-streaming twin (see `crossSourceNote` in tool-branches.ts for the measurement
+   * and both rules). Kept as a deliberate duplicate: the two transports have drifted on shared wording before, and a
+   * shared helper would hide that this path was MISSING the note entirely rather than wording it differently.
+   */
+  const otherSources = (args.integrationNames ?? []).filter((n) => n !== integration.name)
+  const crossSourceNote =
+    otherSources.length > 0
+      ? `Other connected data sources in this workspace: ${otherSources.join(', ')}. ` +
+        `This answer uses ${integration.name} ONLY. Two rules follow, and BOTH apply:\n` +
+        `1. If the question asks you to compare or combine this result with something those sources would hold, say ` +
+        `plainly that THIS ANSWER COVERS ONLY ${integration.name} and name what was not included. Never present a ` +
+        `figure from this source as if it described another one.\n` +
+        `2. If the question asks about "all", "every", "the system", "the workspace", or the TOTAL amount of data, ` +
+        `then this source CANNOT answer it alone: state that the figure covers only ${integration.name}, name the ` +
+        `other sources (${otherSources.join(', ')}) that were NOT included, and offer to run it per source. Never ` +
+        `present a count from ${integration.name} as the count for the workspace.\n\n`
+      : ''
   let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context,
     source: 'SQL',
-    systemPromptPrefix: args.systemPromptPrefix,
+    systemPromptPrefix: crossSourceNote + (args.systemPromptPrefix ?? ''),
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,
