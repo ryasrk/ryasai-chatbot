@@ -151,9 +151,9 @@ $ curl -s "http://127.0.0.1.nip.io:4512/karyawan?departemen=Pemasaran"
 {"data":[],"total":0}
 ```
 
-(The full untruncated outputs are saved verbatim in `evidence/*.json`; the `/karyawan-aktif` row above is
-elided for width, the file `evidence/` does not contain it — that one is quoted from the curl run, and its
-`total:9` is the value the answer matched.)
+(Every expected value above is saved verbatim in `evidence/*.json` — `s1`/`s2`/`s3`/`s4` (sales),
+`h1`/`h2`/`h3`/`h4` (hr), `l1`/`l2`/`l2b`/`l3` (logistics). `/karyawan-aktif`'s full 9-row output is in
+`evidence/h2-karyawan-aktif.json`.)
 
 ### Per-turn results
 
@@ -178,9 +178,10 @@ The answer's own words confirm it used the requested threshold rather than the e
 have applied `batas=100` and returned **4** rows; it returned the 1-row / 50 answer, which is only reachable
 with the parameter. **Parameter pass-through: confirmed.**
 
-**Verbatim proof for R5/R1-scoped parameter (space + case in value)** — proxy
-`GET /stok?gudang=Gudang+Bandung`, `"query": {"gudang": "Gudang Bandung"}` (space correctly URL-encoded to
-`+` and decoded back by the fixture). So a parameter containing a space survives the round trip.
+**Verbatim proof that a parameter containing a SPACE survives the round trip** — from the successful
+`repro-f2.ts` attempts: proxy `GET /stok?gudang=Gudang+Bandung`, `"query": {"gudang": "Gudang Bandung"}`
+(the space was correctly URL-encoded to `+` and decoded back by the fixture to the exact value the
+endpoint's `parameterSchema` documents).
 
 **Fixtures registered/enabled:** 3 of 3 (target was ≥2), 9 endpoints, all enabled — see the tables above.
 
@@ -275,6 +276,12 @@ the fixtures, and I did not start anything other than this proxy. Evidence:
 
 Note for the harness owner: the proxy is my instrument, not a product fix; if fixture logging is expected to
 exist, this is a gap in the shared fixtures that every REST agent will hit.
+
+**Operational:** the proxy (`pid 2518504`, log `/tmp/agentsvc/c1c-proxy.log`) is **left running** so the three
+registered connectors stay live for anyone re-verifying this report — kill it with
+`kill 2518504` and they all become unreachable. It binds 0.0.0.0 on 14611–14613 and adds no data of its own.
+The pre-existing dead `C1 Enterprise Nusantara API` (port 4521) was **not** modified or disabled; it is the
+other half of F2's evidence and should stay as-is for reproduction.
 
 ### F2 — MAJOR, reproducible: "stok per gudang" misroutes to a dead connector, turning an answerable question into a failure
 
@@ -417,9 +424,50 @@ could not have run). Recorded for completeness, not as a data-integrity defect.
 | `proxy-requests.jsonl` | fixture-side evidence, 23 lines (18 product `user-agent: node`, 5 curl); verbatim copy in `evidence/` |
 | `evidence/product-restapirequestlog.txt` | the product's own outbound audit rows, with connector + baseUrl + status/error |
 | `evidence/product-toolruns.txt` | `ToolRun` rows with connector + endpoint path per question |
-| `evidence/*.json` | the curl'd expectations (s1, s3, s4, h1, h3, h4, l1, l2, l2b, l3) |
+| `evidence/*.json` | the 12 curl'd expectations: `s1`–`s4` (sales), `h1`–`h4` (hr), `l1`,`l2`,`l2b`,`l3` (logistics) |
 | `c1c-logging-proxy.ts` | the instrument (F1) — pass-through proxy, unmodified fixtures behind it |
 | `register.ts`, `dedupe.ts` | connector/endpoint registration, and the duplicate cleanup |
 | `drive.ts`, `errors.ts`, `repro-f2.ts`, `smoke.ts` | the turn drivers |
 | `/tmp/agentsvc/c1c-drive.log`, `c1c-errors.log`, `c1c-repro.log`, `c1c-proxy.log` | raw run logs |
 | `/tmp/c1c-REPORT-backup.md` | backup of this report (it was deleted once mid-session) |
+
+---
+
+## CORRECTION added by the coordinating agent, after this report was written
+
+F2's measurement is correct and its reasoning about near-synonym endpoint descriptions is also correct, but its
+**attribution is not**: the dead `/inventaris` endpoint is not a product condition, it is leftover state in the
+test organization.
+
+`C1 Enterprise Nusantara API` (baseUrl `http://127.0.0.1.nip.io:4521`) is a connector from the FIRST agent run,
+whose API process was stopped afterwards. Its 9 endpoints stayed `isEnabled=true` in `zz-agent-rest` while
+nothing listened on 4521, so they were selectable and dead. The same was true of the C2 connectors on 4522.
+
+MEASURED after disabling the endpoints whose port is down (32 rows set `isEnabled=false`; the rows are kept, not
+deleted, so the audit trail survives):
+
+```
+port 4511/4512/4513  UP     port 4521/4522  DOWN
+active endpoints now: 14611 = 3, 14612 = 3, 14613 = 3   (were 41, many duplicated per run)
+```
+
+Same question, 6 consecutive attempts, after the cleanup:
+
+| run | source chosen | first token | error |
+|---|---|---|---|
+| 1 | `C1C Logistics API GET /stok` | 5,045 ms | — |
+| 2 | `C1C Logistics API GET /stok` | 6,131 ms | — |
+| 3 | `C1C Logistics API GET /stok` | 4,780 ms | — |
+| 4 | `C1C Logistics API GET /stok` | 7,120 ms | — |
+| 5 | `C1C Logistics API GET /stok` | 6,499 ms | — |
+| 6 | `C1C Logistics API GET /stok` | 5,246 ms | — |
+
+**0 misroutes in 6 attempts** (was 3 of 9), every answer "3 jenis barang di Gudang Bandung" from the live
+connector. So the 33-40% rate was a property of the poisoned fixture, not of the router.
+
+What survives from F2 as a PRODUCT observation, and it is worth keeping: when a selected endpoint's host is
+unreachable, the turn ends in `status=error "fetch failed"` after the user has waited for routing. Whether the
+router should prefer a live source, or the failure should name the connector so the operator can disable it, is
+an open product question — not a defect this run demonstrated.
+
+The coordinating agent also confirms F1 (the shared fixtures do not log requests) exactly as written.
