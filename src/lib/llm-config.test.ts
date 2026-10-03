@@ -152,6 +152,33 @@ describe('isBlockedHost', () => {
       expect(await isBlockedHostAsync('127.0.0.1')).toBe(false)
     })
 
+    /*
+     * THE EXEMPTION BYPASS — the allowlist must not be re-applied to the RESOLVED address.
+     *
+     * `isBlockedHostAsync` asked `isBlockedHost(resolvedAddress)` — and that function consults the operator allowlist
+     * FIRST. So for the documented self-hosted topology the question became "is the ADDRESS allowlisted", and the
+     * answer is yes: `LLM_ALLOWED_HOSTS=127.0.0.1` (or the shipped `localhost,127.0.0.1`) allowlists exactly what a
+     * wildcard-DNS name resolves to. MEASURED before the fix, independently reproduced:
+     *
+     *   allowlist "127.0.0.1"           -> isBlockedHostAsync('lvh.me')               = false  (dialled!)
+     *   allowlist "localhost,127.0.0.1" -> isBlockedHostAsync('c2.127.0.0.1.nip.io')  = false  (dialled!)
+     *
+     * Every name an attacker can point at loopback therefore inherited the exemption, which is precisely what the
+     * DNS step exists to stop. `lvh.me` and `*.nip.io` are public, resolve to 127.0.0.1, and need no DNS control.
+     */
+    test('SECURITY: a NON-allowlisted name resolving to an allowlisted loopback address is BLOCKED', async () => {
+      // The operator has allowlisted the address (a normal self-hosted setting) but NOT this name.
+      process.env.LLM_ALLOWED_HOSTS = '127.0.0.1'
+      // The name resolves to 127.0.0.1 (public wildcard DNS, no attacker-controlled domain needed).
+      expect(await isBlockedHostAsync('lvh.me')).toBe(true)
+      expect(await isBlockedHostAsync('c2.127.0.0.1.nip.io')).toBe(true)
+      // The address itself, named directly, IS allowlisted and must still be permitted.
+      expect(await isBlockedHostAsync('127.0.0.1')).toBe(false)
+      // And an allowlisted NAME that resolves to that address stays permitted (no false positive).
+      process.env.LLM_ALLOWED_HOSTS = '127.0.0.1,127.0.0.1.nip.io'
+      expect(await isBlockedHostAsync('127.0.0.1.nip.io')).toBe(false)
+    })
+
     test('NOTHING is allowlisted by default, and private names stay blocked', async () => {
       delete process.env.LLM_ALLOWED_HOSTS
       expect(await isBlockedHostAsync('localhost')).toBe(true)

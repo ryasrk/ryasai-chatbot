@@ -1,13 +1,13 @@
 {
-  "linePct": 75.53,
-  "linesHit": 27774,
-  "linesFound": 36772,
-  "reachableLinePct": 87.97,
-  "reachableLinesHit": 24220,
-  "reachableLinesFound": 27531,
-  "fnPct": 89.43,
+  "linePct": 75.5,
+  "linesHit": 27793,
+  "linesFound": 36814,
+  "reachableLinePct": 87.98,
+  "reachableLinesHit": 24239,
+  "reachableLinesFound": 27550,
+  "fnPct": 89.4,
   "fnsHit": 2487,
-  "fnsFound": 2781,
+  "fnsFound": 2782,
   "filesMeasured": 259,
   "failedTestFiles": [],
   "files": [
@@ -471,6 +471,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/llm-config.ts",
+      "hit": 293,
+      "found": 413,
+      "pct": 70.94430992736078,
+      "fHit": 30,
+      "fFound": 34,
+      "fPct": 88.23529411764706
+    },
+    {
       "file": "src/lib/tool-branches.ts",
       "hit": 686,
       "found": 958,
@@ -514,15 +523,6 @@
       "fHit": 21,
       "fFound": 21,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/llm-config.ts",
-      "hit": 274,
-      "found": 371,
-      "pct": 73.8544474393531,
-      "fHit": 30,
-      "fFound": 33,
-      "fPct": 90.9090909090909
     },
     {
       "file": "src/lib/planner.ts",

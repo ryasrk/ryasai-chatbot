@@ -149,6 +149,36 @@ export function isBlockedHost(hostname: string): boolean {
 }
 
 /**
+ * Is this ADDRESS private, loopback, link-local or otherwise not a public destination?
+ *
+ * Split out of `isBlockedHost` for the DNS step in `isBlockedHostAsync`, which must judge a RESOLVED ADDRESS without
+ * re-consulting the operator allowlist. Asking `isBlockedHost` that question gave the wrong answer: that function
+ * checks `allowedHosts().includes(h)` first, so an address the operator had allowlisted came back "not blocked", and
+ * every hostname resolving to it inherited the exemption. Being a pure address predicate, this function has no
+ * allowlist and no test hatch — callers decide which names or addresses are exempt.
+ */
+export function isPrivateAddress(address: string): boolean {
+  const h = address.toLowerCase().replace(/^\[|\]$/g, '')
+  if (h === 'localhost') return true
+  if (h === '::1' || h === '::') return true
+  const v4mapped = embeddedIpv4(h)
+  if (v4mapped) return isPrivateAddress(v4mapped)
+  if (h === 'metadata.google.internal') return true
+  if (h === 'metadata.aws.internal') return true
+  if (h === 'metadata.azure.com') return true
+  if (/^127\./.test(h)) return true
+  if (/^0\.0\.0\.0$/.test(h)) return true
+  if (/^169\.254\./.test(h)) return true
+  if (/^10\./.test(h)) return true
+  if (/^192\.168\./.test(h)) return true
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(h)) return true
+  if (/^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./.test(h)) return true
+  if (/^fd[0-9a-f]/.test(h)) return true
+  if (/^fe[89ab][0-9a-f]/.test(h)) return true
+  return false
+}
+
+/**
  * Test escape hatch for the SSRF blocklist. Reads env lazily so tests can set
  * it after import. NEVER enable in production — env-schema rejects the
  * combination explicitly.
@@ -198,6 +228,8 @@ export async function isBlockedHostAsync(hostname: string): Promise<boolean> {
   // a user set the host, saved it, and every request failed with "Base URL points
   // to a blocked internal host" with no hint that the allowlist had been ignored.
   const h = hostname.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
+  // The allowlist exempts the NAME the operator wrote. It must NOT be consulted again for the RESOLVED address —
+  // see the `isPrivateAddress` call below for why that distinction is the whole defence.
   if (allowedHosts().includes(h)) return false
   if (isBlockedHost(hostname)) return true
   // Skip DNS for IP literals — already checked by isBlockedHost
@@ -205,7 +237,28 @@ export async function isBlockedHostAsync(hostname: string): Promise<boolean> {
   try {
     const { lookup } = await import('node:dns/promises')
     const results = await lookup(hostname, { all: true })
-    return results.some((r) => isBlockedHost(r.address))
+    /*
+     * `isPrivateAddress`, NOT `isBlockedHost` — and this is THE fix for a live exemption bypass.
+     *
+     * `isBlockedHost` consults the operator allowlist FIRST (line ~120: `if (allowedHosts().includes(h)) return false`).
+     * Calling it with the RESOLVED ADDRESS therefore asks "is this address allowlisted", and for the documented
+     * self-hosted topology the answer is yes: an operator who sets `LLM_ALLOWED_HOSTS=127.0.0.1` — or simply keeps the
+     * shipped `localhost,127.0.0.1` — has allowlisted exactly the address that every `*.nip.io` / `lvh.me` name
+     * resolves to. MEASURED, verified independently of the agent that found it:
+     *
+     *   allowlist "127.0.0.1"            -> isBlockedHostAsync('lvh.me')              = false   (dialled)
+     *   allowlist "127.0.0.1,localhost"  -> isBlockedHostAsync('c2.127.0.0.1.nip.io') = false   (dialled)
+     *   (cloud metadata via the same wildcard DNS still correctly blocks — `isPrivateAddress` is not the only layer)
+     *
+     * The consequence: any hostname an attacker can point at a private address (`lvh.me`, `<anything>.nip.io`,
+     * `<anything>.sslip.io`, a DNS-rebinding name) inherits the exemption and the request is dialled — which is
+     * exactly what this DNS step exists to stop. The allowlist is a statement about a NAME, so it is applied to the
+     * name and never re-applied to what that name resolves to.
+     *
+     * The name-is-allowlisted case returns above, so a legitimately configured self-hosted endpoint is unaffected:
+     * `localhost` and `127.0.0.1.nip.io` are still exempt when the operator listed them.
+     */
+    return results.some((r) => isPrivateAddress(r.address))
   } catch {
     // DNS resolution failed — fail open (let the transport try and fail)
     return false
