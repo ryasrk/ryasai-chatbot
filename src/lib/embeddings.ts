@@ -388,6 +388,12 @@ export async function embedDocumentChunks(args: {
     }
   }
 
+  // The writes below are raw SQL, which the tenant extension does not scope. The read above already was, so these ids
+  // are this org's — but ownership is bound in each WHERE as well, as every other raw write does (rag-fts.ts), so a
+  // chunk id that arrived any other way cannot be updated across organizations. No context never reaches here:
+  // `getEmbeddingRuntimeConfig` refuses without one.
+  const orgId = getOrgContext()
+
   let embedded = 0
   const batchSize = Math.max(1, args.batchSize ?? 16)
   for (let start = 0; start < chunks.length; start += batchSize) {
@@ -424,7 +430,7 @@ export async function embedDocumentChunks(args: {
                 "embeddingModel" = ${config.model},
                 "embeddedAt" = NOW(),
                 "contextPrefix" = COALESCE(${contextPrefix || null}::text, "contextPrefix")
-            WHERE id = ${chunk.id}
+            WHERE id = ${chunk.id} AND "organizationId" = ${orgId}
           `
         : db.$executeRaw`
             UPDATE "DocumentChunk"
@@ -433,7 +439,7 @@ export async function embedDocumentChunks(args: {
                 "embeddingModel" = ${config.model},
                 "embeddedAt" = NOW(),
                 "contextPrefix" = COALESCE(${contextPrefix || null}::text, "contextPrefix")
-            WHERE id = ${chunk.id}
+            WHERE id = ${chunk.id} AND "organizationId" = ${orgId}
           `
       writes.push({ chunkId: chunk.id, run })
     }

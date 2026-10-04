@@ -744,6 +744,36 @@ describe('the embedding column dimension gate', () => {
     expect(vectorWritesSince(callBase)).toBe(true)
   })
 
+  test('BOTH raw write shapes bind the organization, not only the chunk id', async () => {
+    // Raw SQL bypasses the tenant extension; the scoped read makes the ids this org's, and the WHERE must say so too.
+    for (const width of ['vector(3)', 'vector(1536)']) {
+      coltype = width
+      resetEmbeddingColumnDimension()
+      oneChunk()
+      const from = mockExecuteRaw.mock.calls.length
+      await embedDocumentChunks({ documentId: 'd1' })
+      const writes = (mockExecuteRaw.mock.calls.slice(from) as unknown as unknown[][])
+        .filter((c) => (c[0] as string[]).join('?').includes('UPDATE "DocumentChunk"'))
+      expect(writes).toHaveLength(1)
+      expect((writes[0][0] as string[]).join('?')).toMatch(/WHERE id = \? AND "organizationId" = \?/)
+      expect(writes[0].slice(1)).toContain('test-org')
+    }
+  })
+
+  test('no organization context: no raw write at all', async () => {
+    coltype = 'vector(3)'
+    oneChunk()
+    const from = mockExecuteRaw.mock.calls.length
+    orgContext.value = undefined
+    try {
+      const result = await embedDocumentChunks({ documentId: 'd1' })
+      expect(result.embedded).toBe(0)
+    } finally {
+      orgContext.value = 'test-org'
+    }
+    expect(mockExecuteRaw.mock.calls.length).toBe(from)
+  })
+
   test('a MISMATCHED column width refuses the vector column but still stores JSON', async () => {
     coltype = 'vector(1536)'
     oneChunk()
