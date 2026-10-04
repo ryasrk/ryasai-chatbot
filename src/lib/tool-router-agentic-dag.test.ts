@@ -101,6 +101,14 @@ describe('runMultiStepDag', () => {
     expect(state.executeCalls).toHaveLength(1)
   })
 
+  test('BOTH scope axes reach executePlan (found by the 2026-10-04 live eval)', async () => {
+    // A key scoped to one database was answered from another: the DAG forwarded documentIds but not integrationIds,
+    // so every plan step re-entered the router with "every source".
+    await runMultiStepDag({ question: 'q', userId: 'u1', documentIds: ['d1'], integrationIds: ['int-erp'] })
+    expect(state.executeCalls[0].documentIds).toEqual(['d1'])
+    expect(state.executeCalls[0].integrationIds).toEqual(['int-erp'])
+  })
+
   test('executePlan is called with isAdmin FALSE', async () => {
     await runMultiStepDag({ question: 'q', userId: 'u1' })
     // Admin tools must never be reachable through the chat DAG.

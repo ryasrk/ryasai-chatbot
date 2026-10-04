@@ -126,6 +126,9 @@ export async function POST(req: NextRequest) {
       // The DOCUMENT scope, so the tools that run are scoped and not merely filtered. Without it a granted
       // tool could still read documents the key was restricted away from — measured reachable on this route.
       documentIds: resolveScope(identity.scope).documentIds,
+      // The INTEGRATION scope too — it was computed for this key and never forwarded, so a key restricted to one
+      // database could query every database through this route (found by the 2026-10-04 live eval).
+      integrationIds: resolveScope(identity.scope).integrationIds,
     })
 
     const answer = orchestratorResult.answer

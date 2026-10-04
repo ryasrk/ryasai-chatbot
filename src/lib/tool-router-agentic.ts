@@ -159,6 +159,7 @@ export async function runMultiStepDag(args: {
    * or fails to choose.
    */
   documentIds?: string[] | null
+  integrationIds?: string[] | null
 }): Promise<CompletionResult | null> {
   try {
     const availableTools = await getAvailableTools(args.question, 'chat')
@@ -183,6 +184,7 @@ export async function runMultiStepDag(args: {
       isAdmin: false,
       // Threaded so no step can read outside the key's scope. Omitted would mean "every document".
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     })
 
     const answer = await synthesizeAnswer({
@@ -285,8 +287,9 @@ export async function runAgenticLoop(
      * read.
      */
     documentIds?: string[] | null
+    integrationIds?: string[] | null
   },
-  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null }) => Promise<CompletionResult>,
+  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null }) => Promise<CompletionResult>,
 ): Promise<AgenticIterationResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -327,6 +330,7 @@ export async function runAgenticLoop(
         skipClarification: args.skipClarification,
         systemPromptPrefix: args.systemPromptPrefix,
         documentIds: args.documentIds,
+        integrationIds: args.integrationIds,
       }))
     } catch (e) {
       if (e instanceof AgenticDeadlineError) {
@@ -429,6 +433,7 @@ export async function runAgenticLoop(
       skipClarification: args.skipClarification,
       systemPromptPrefix: args.systemPromptPrefix,
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     }))
   } catch (e) {
     if (e instanceof AgenticDeadlineError) {
@@ -457,8 +462,9 @@ export async function runStreamingAgenticLoop(
      *  streaming transport scoped while the non-streaming one was not, which is the kind of asymmetry
      *  that makes a bug unreproducible from whichever transport you happen to test. */
     documentIds?: string[] | null
+    integrationIds?: string[] | null
   },
-  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null }) => Promise<StreamingCompletionResult>,
+  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null }) => Promise<StreamingCompletionResult>,
 ): Promise<StreamingCompletionResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -496,6 +502,7 @@ export async function runStreamingAgenticLoop(
           skipClarification: args.skipClarification,
           systemPromptPrefix: args.systemPromptPrefix,
           documentIds: args.documentIds,
+          integrationIds: args.integrationIds,
         }))
       } catch (e) {
         if (e instanceof AgenticDeadlineError) {
@@ -638,6 +645,7 @@ export async function runStreamingAgenticLoop(
         skipClarification: args.skipClarification,
         systemPromptPrefix: args.systemPromptPrefix,
         documentIds: args.documentIds,
+        integrationIds: args.integrationIds,
       }))
     } catch (e) {
       if (e instanceof AgenticDeadlineError) {

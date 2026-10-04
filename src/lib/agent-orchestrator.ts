@@ -57,6 +57,8 @@ export interface AgentOrchestratorOptions {
    * and still be scoped, and the two mechanisms fail independently.
    */
   documentIds?: string[] | null
+  /** The INTEGRATION scope, on the same terms as `documentIds`: without it a SQL step could read any database. */
+  integrationIds?: string[] | null
   sessionId?: string
   context?: 'chat' | 'agentic'
   isAdmin?: boolean
@@ -189,6 +191,7 @@ export async function runAgentOrchestrator(
         // without this a permitted tool still ran unscoped. Removing a tool and scoping a tool are two
         // different guarantees, and this is the second one.
         documentIds: options.documentIds,
+        integrationIds: options.integrationIds,
       }
 
       const executionPromises = toolCalls.map(async (call) => {

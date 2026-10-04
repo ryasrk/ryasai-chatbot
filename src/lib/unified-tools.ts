@@ -46,6 +46,8 @@ export interface ToolExecutionContext {
    * orchestration around these tools was scoped; the executors were not.
    */
   documentIds?: string[] | null
+  /** The API-key integration scope, forwarded the same way: without it a step could query any database in the org. */
+  integrationIds?: string[] | null
 }
 
 export interface ToolExecutionResult {
@@ -181,6 +183,7 @@ export const SQL_TOOL: UnifiedTool = {
         userId: context.userId,
         sessionId: context.sessionId,
         documentIds: context.documentIds,
+        integrationIds: context.integrationIds,
       })
       const failed = completion.toolRuns.find((tr) => tr.status === 'error' || tr.status === 'blocked')
       if (failed) {
@@ -235,6 +238,7 @@ export const RAG_TOOL: UnifiedTool = {
         userId: context.userId,
         sessionId: context.sessionId,
         documentIds: context.documentIds,
+        integrationIds: context.integrationIds,
       })
       return { ok: true, output: completion.answer, latencyMs: Date.now() - start }
     } catch (e) {
@@ -273,6 +277,7 @@ export const REST_TOOL: UnifiedTool = {
         userId: context.userId,
         sessionId: context.sessionId,
         documentIds: context.documentIds,
+        integrationIds: context.integrationIds,
       })
       return { ok: true, output: completion.answer, latencyMs: Date.now() - start }
     } catch (e) {

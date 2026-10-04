@@ -541,6 +541,8 @@ export async function executePlan(args: {
    * by driving `executePlan` with a `rag` step: the router received `{question, userId}` and no `documentIds`.
    */
   documentIds?: string[] | null
+  /** The API-key integration scope, forwarded beside `documentIds` for the same reason: `undefined` means every source. */
+  integrationIds?: string[] | null
 }): Promise<PlanStepResult[]> {
   const results: PlanStepResult[] = []
   const sorted = topoSort(args.plan.steps)
@@ -638,7 +640,7 @@ function groupByLevel(sorted: PlanStep[]): PlanStep[][] {
 
 async function executeStep(
   step: PlanStep,
-  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean; documentIds?: string[] | null },
+  args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean; documentIds?: string[] | null; integrationIds?: string[] | null },
   isConfirmed: boolean,
 ): Promise<PlanStepResult> {
   const started = Date.now()
@@ -836,6 +838,7 @@ async function executeStep(
       question,
       userId: args.userId,
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     })
     const hasFailedTool = completion.toolRuns.some(
       (tr) => tr.status === 'error' || tr.status === 'blocked',
@@ -876,6 +879,7 @@ async function executeStep(
       // The corrected retry runs the SAME step, so it must stay inside the same scope — a
       // self-correction that escaped it would be a route to documents the key may not see.
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     })
     if (corrected) {
       args.onStatus?.(step.id, step.tool, 'done')
@@ -902,6 +906,7 @@ async function selfCorrect(args: {
   userId: string
   /** See `executePlan` — a corrected retry must stay inside the same scope, not escape it. */
   documentIds?: string[] | null
+  integrationIds?: string[] | null
 }): Promise<string | null> {
   try {
     const originalQuestion =
@@ -915,6 +920,7 @@ async function selfCorrect(args: {
       question: fixedQuestion.trim(),
       userId: args.userId,
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     })
     return completion.answer
   } catch (e) {

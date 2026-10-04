@@ -36,6 +36,16 @@ import { filterSchemaForPolicy, loadSqlAccessPolicy, resolveUserRole } from '@/l
 
 const log = scopedLogger('sql-pipeline')
 
+/**
+ * SQL turns per minute per organization. Default 10 (the limit the non-streaming path always had); since both chat
+ * transports share this pipeline it also bounds the web chat, so an install with many concurrent users raises it
+ * with `TOOL_RATE_LIMIT_SQL_PER_MINUTE`. An invalid value falls back to the default rather than to "unlimited".
+ */
+export function sqlRateLimitPerMinute(): number {
+  const n = Number(process.env.TOOL_RATE_LIMIT_SQL_PER_MINUTE)
+  return Number.isInteger(n) && n > 0 ? n : 10
+}
+
 /** Connection-level failures worth ONE immediate retry; a SQL error is the repair loop's job, not this. */
 const TRANSIENT_DB_ERROR = /ECONNRESET|ETIMEDOUT|EPIPE|socket hang up/i
 
@@ -178,7 +188,7 @@ export async function runSqlPipeline(args: SqlPipelineArgs): Promise<SqlPipeline
   // Rate-limit BEFORE burning LLM calls: the repair loop can make up to SQL_REPAIR_ATTEMPTS+1 generations.
   const orgId = getOrgContext()
   if (orgId) {
-    const rl = await checkToolRateLimit('sql', orgId)
+    const rl = await checkToolRateLimit('sql', orgId, sqlRateLimitPerMinute())
     if (!rl.allowed) return { kind: 'rate_limited', integration: ref }
   }
 

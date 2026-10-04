@@ -152,6 +152,7 @@ async function _runNonStreamingChatCompletion(args: {
       // document scope fail OPEN from the second turn of a session onward — `undefined` means "every
       // document" to retrieval, and the route always sets `allowMultiStepDag: true`.
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     }, runNonStreamingChatCompletion)
     return remember({ answer: result.answer, citations: result.citations, chartData: result.chartData, toolRuns: result.toolRuns })
   }
@@ -441,6 +442,7 @@ async function _runStreamingChatCompletion(args: {
       sessionId: args.sessionId,
       chatHistory: args.chatHistory,
       documentIds: args.documentIds,
+      integrationIds: args.integrationIds,
     })
     // A planner that declines (single chat step, or any failure) leaves the single-source decision intact: the
     // first source still answers, which is exactly the behaviour before this change rather than a lost turn.

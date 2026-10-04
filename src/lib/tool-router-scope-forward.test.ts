@@ -245,3 +245,33 @@ describe('the integration axis: EVERY source-selection query in the chat path is
     })
   }
 })
+
+describe('the integration axis travels WITH the document axis through every delegation', () => {
+  /*
+   * MEASURED 2026-10-04 by the live SQL eval: a request scoped to the ERP database was answered from Chinook. The
+   * multi-step DAG, the planner's steps and self-correction, the unified tools and /api/v1/agent/run each forwarded
+   * `documentIds` and silently dropped `integrationIds` — the same "computed and dropped" shape, one axis over.
+   * Structural, so a NEW delegation that forwards one axis and forgets the other fails by name.
+   */
+  const FILES = [
+    'tool-router.ts', 'tool-router-agentic.ts', 'planner.ts', 'unified-tools.ts', 'agent-orchestrator.ts',
+    '../app/api/v1/agent/run/route.ts',
+  ]
+  for (const file of FILES) {
+    test(`${file}: every object that forwards documentIds also forwards integrationIds`, () => {
+      const code = stripComments(readFileSync(join(import.meta.dir, file), 'utf-8'))
+      const lines = code.split('\n')
+      const misses: string[] = []
+      lines.forEach((line, i) => {
+        const m = line.match(/^\s*documentIds: ([\w.()]+?)\.documentIds,\s*$/)
+        if (!m) return
+        // Look within the same object literal: a few lines either side.
+        const window = lines.slice(Math.max(0, i - 8), i + 8).join('\n')
+        // Document-only consumers (speculative retrieval reads documents and nothing else) are exempt by name.
+        if (/startSpeculativeRetrieval\(/.test(window)) return
+        if (!/integrationIds:/.test(window)) misses.push(`${file}:${i + 1}: ${line.trim()}`)
+      })
+      expect(misses).toEqual([])
+    })
+  }
+})
