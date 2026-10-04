@@ -118,7 +118,9 @@ async function judge(prompt: string): Promise<Record<string, unknown> | null> {
   return null
 }
 
-const selected = questions.slice(0, limit)
+// `--ids q1,q2` re-runs chosen questions (e.g. to confirm a fix on the ones that failed) without the full set.
+const ids = arg('--ids')?.split(',')
+const selected = (ids ? questions.filter((q) => ids.includes(q.id)) : questions).slice(0, limit)
 console.log(`running ${selected.length} questions against ${base}; judge ${JUDGE}`)
 let done = 0
 const results = await mapLimit(selected, 4, async (q) => {
