@@ -30,6 +30,8 @@ import { connectorRegistry } from '@/lib/connectors'
 import { safeParseColumns, safeParseSampleRow } from '@/lib/tool-utils'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 import { readFileSync, writeFileSync } from 'fs'
+import { qualityGateFailures } from '@/lib/quality-gates'
+import { resultAccuracy, firstRowHasValue } from './sql-eval-metrics'
 
 interface SqlEvalQuestion {
   id: string
@@ -40,6 +42,8 @@ interface SqlEvalQuestion {
   expectedRowCount?: number
   /** Expected substring of a value in the first row (loose value check). */
   expectedFirstRowContains?: string
+  /** Exact scalar value in the first row, independent of SQL aliases and extra fields. */
+  expectedFirstRowValue?: string | number | boolean | null
 }
 
 const DEFAULT_SQL_EVAL_QUESTIONS: SqlEvalQuestion[] = [
@@ -131,6 +135,9 @@ async function main() {
     ? (JSON.parse(readFileSync(opts.file, 'utf8')) as SqlEvalQuestion[])
     : DEFAULT_SQL_EVAL_QUESTIONS
   const selected = opts.limit > 0 ? questions.slice(0, opts.limit) : questions
+  if (process.argv.includes('--ci') && selected.some(q => q.expectedRowCount === undefined || (q.expectedFirstRowContains === undefined && q.expectedFirstRowValue === undefined))) {
+    throw new Error('Every SQL golden case needs expected row count and first-row values')
+  }
 
   const connector = connectorRegistry.getConnector(
     integration.id,
@@ -182,7 +189,9 @@ async function main() {
         keywordHits,
         keywordTotal: q.expectedKeywords?.length ?? 0,
         rowCountMatch: q.expectedRowCount === undefined ? undefined : exec.rowCount === q.expectedRowCount,
-        firstRowMatch: q.expectedFirstRowContains === undefined ? undefined : firstRowStr.toLowerCase().includes(q.expectedFirstRowContains.toLowerCase()),
+        firstRowMatch: q.expectedFirstRowValue !== undefined
+          ? firstRowHasValue(firstRow, q.expectedFirstRowValue)
+          : q.expectedFirstRowContains === undefined ? undefined : firstRowStr.toLowerCase().includes(q.expectedFirstRowContains.toLowerCase()),
         latencyMs: Date.now() - t0,
       })
     } catch (e) {
@@ -195,10 +204,8 @@ async function main() {
   const executed = results.filter((r) => r.executed).length
   const keywordChecks = results.filter((r) => r.keywordTotal > 0)
   const keywordPassed = keywordChecks.filter((r) => r.keywordHits >= r.keywordTotal).length
-  const rowCountChecks = results.filter((r) => r.rowCountMatch !== undefined)
-  const rowCountPassed = rowCountChecks.filter((r) => r.rowCountMatch).length
-  const firstRowChecks = results.filter((r) => r.firstRowMatch !== undefined)
-  const firstRowPassed = firstRowChecks.filter((r) => r.firstRowMatch).length
+  const rowCountChecks = results.filter((r) => r.expectedRowCount !== undefined)
+  const firstRowChecks = results.filter((r) => (r.expectedFirstRowContains !== undefined || r.expectedFirstRowValue !== undefined))
 
   const summary = {
     integration: integration.name,
@@ -206,8 +213,8 @@ async function main() {
     total,
     executionAccuracy: total ? executed / total : 0,
     keywordAccuracy: keywordChecks.length ? keywordPassed / keywordChecks.length : null,
-    rowCountAccuracy: rowCountChecks.length ? rowCountPassed / rowCountChecks.length : null,
-    firstRowAccuracy: firstRowChecks.length ? firstRowPassed / firstRowChecks.length : null,
+    rowCountAccuracy: resultAccuracy(results, r => r.expectedRowCount !== undefined, r => r.rowCountMatch),
+    firstRowAccuracy: resultAccuracy(results, r => (r.expectedFirstRowContains !== undefined || r.expectedFirstRowValue !== undefined), r => r.firstRowMatch),
     avgLatencyMs: total ? results.reduce((a, r) => a + r.latencyMs, 0) / total : 0,
   }
 
@@ -224,9 +231,23 @@ async function main() {
     writeFileSync(opts.out, JSON.stringify({ summary, results }, null, 2))
     console.log(`\nResults written to ${opts.out}`)
   }
+
+  if (process.argv.includes('--ci')) {
+    if (rowCountChecks.length !== total || firstRowChecks.length !== total) throw new Error('Every SQL golden case needs expected row count and first-row values')
+    const failures = qualityGateFailures({
+      samples: total, minimumSamples: 40,
+      metrics: {
+        executionAccuracy: {value: summary.executionAccuracy, minimum: Number(process.env.SQL_MIN_EXECUTION_ACCURACY ?? 0.95)},
+        rowCountAccuracy: {value: summary.rowCountAccuracy ?? NaN, minimum: Number(process.env.SQL_MIN_RESULT_ACCURACY ?? 0.90)},
+        firstRowAccuracy: {value: summary.firstRowAccuracy ?? NaN, minimum: Number(process.env.SQL_MIN_RESULT_ACCURACY ?? 0.90)},
+      },
+    })
+    if (failures.length) throw new Error(failures.join('; '))
+  }
+
 }
 
-main().catch((e) => {
+main().then(() => process.exit(0)).catch((e) => {
   console.error('sql-eval failed:', e)
   process.exit(1)
 })

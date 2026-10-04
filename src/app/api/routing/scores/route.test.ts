@@ -55,6 +55,7 @@ let perfData: Record<string, { successRate: number; avgLatencyMs: number; total:
 let perfThrows: Error | null = null
 
 mock.module('@/lib/prisma-tenant', () => ({
+  bypassOrg: async (fn: () => Promise<unknown>) => fn(),
   requireOrgContext: () => 'org-mock',
   enterWithOrg: (orgId: string) => {
     events.push(`enterWithOrg:${orgId}`)

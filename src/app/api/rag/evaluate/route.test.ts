@@ -551,7 +551,8 @@ describe('the summary is computed by summarizeRagEval over the results', () => {
     // Absolute values, so a change to the scorer shows up rather than being
     // mirrored by the expectation: hit rate 1/2, recall mean (1 + 0)/2 = 0.5,
     // MRR mean (1 + 0)/2 = 0.5, grounded rate 1/2.
-    expect(body.summary.precisionAtK).toBe(0.5)
+    expect(body.summary.precisionAtK).toBe(0.25)
+    expect(body.summary.hitRateAtK).toBe(0.5)
     expect(body.summary.recallAtK).toBe(0.5)
     expect(body.summary.mrr).toBe(0.5)
     expect(body.summary.groundedRate).toBe(0.5)
@@ -602,6 +603,7 @@ describe('the response envelope and the audit record', () => {
     expect(Object.keys(body.summary as object).sort()).toEqual([
       'avgLatencyMs',
       'groundedRate',
+      'hitRateAtK',
       'mrr',
       'precisionAtK',
       'recallAtK',

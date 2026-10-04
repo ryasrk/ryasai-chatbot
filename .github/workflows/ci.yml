@@ -9,6 +9,7 @@ on:
   pull_request:
   # Lets a run be started by hand for any ref, which is what to use if a push is ever missed again.
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

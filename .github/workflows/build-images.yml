@@ -25,7 +25,20 @@ permissions:
   packages: write
 
 jobs:
+  quality-checks:
+    uses: ./.github/workflows/ci.yml
+
+  live-quality:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/eval.yml
+    secrets: inherit
+
   build-push:
+    needs: [quality-checks, live-quality]
+    # Moving images require application CI; versioned releases also require live quality evidence.
+    if: >-
+      always() && needs.quality-checks.result == 'success' &&
+      (needs.live-quality.result == 'success' || needs.live-quality.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

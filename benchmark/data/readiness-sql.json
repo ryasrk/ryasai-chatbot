@@ -1,0 +1,282 @@
+[
+  {
+    "id": "readiness-sql-01",
+    "question": "How many employees are in the directory?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "8"
+  },
+  {
+    "id": "readiness-sql-02",
+    "question": "How many employees are active?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE active",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "6"
+  },
+  {
+    "id": "readiness-sql-03",
+    "question": "How many employees are inactive?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE NOT active",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "2"
+  },
+  {
+    "id": "readiness-sql-04",
+    "question": "How many departments are there?",
+    "referenceSQL": "SELECT count(*) AS value FROM departments",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "4"
+  },
+  {
+    "id": "readiness-sql-05",
+    "question": "What is the total annual salary of all employees?",
+    "referenceSQL": "SELECT sum(salary) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "600000"
+  },
+  {
+    "id": "readiness-sql-06",
+    "question": "What is the total annual salary of active employees?",
+    "referenceSQL": "SELECT sum(salary) AS value FROM employees WHERE active",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "480000"
+  },
+  {
+    "id": "readiness-sql-07",
+    "question": "What is the highest annual salary?",
+    "referenceSQL": "SELECT max(salary) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 110000
+  },
+  {
+    "id": "readiness-sql-08",
+    "question": "What is the lowest annual salary?",
+    "referenceSQL": "SELECT min(salary) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 40000
+  },
+  {
+    "id": "readiness-sql-09",
+    "question": "What is the average annual salary?",
+    "referenceSQL": "SELECT avg(salary) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "75000.000000000000"
+  },
+  {
+    "id": "readiness-sql-10",
+    "question": "How many employees have no department?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE department_id IS NULL",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "1"
+  },
+  {
+    "id": "readiness-sql-11",
+    "question": "How many employees have a department?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE department_id IS NOT NULL",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "7"
+  },
+  {
+    "id": "readiness-sql-12",
+    "question": "How many employees work in Engineering?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Engineering'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "3"
+  },
+  {
+    "id": "readiness-sql-13",
+    "question": "How many employees work in Finance?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Finance'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "2"
+  },
+  {
+    "id": "readiness-sql-14",
+    "question": "How many employees work in Support?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Support'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "2"
+  },
+  {
+    "id": "readiness-sql-15",
+    "question": "How many employees work in Legal?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Legal'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "0"
+  },
+  {
+    "id": "readiness-sql-16",
+    "question": "What is the total salary in Engineering?",
+    "referenceSQL": "SELECT sum(e.salary) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Engineering'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "290000"
+  },
+  {
+    "id": "readiness-sql-17",
+    "question": "What is the total salary in Finance?",
+    "referenceSQL": "SELECT sum(e.salary) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Finance'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "160000"
+  },
+  {
+    "id": "readiness-sql-18",
+    "question": "What is the total salary in Support?",
+    "referenceSQL": "SELECT sum(e.salary) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Support'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "110000"
+  },
+  {
+    "id": "readiness-sql-19",
+    "question": "How many active employees work in Finance?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Finance' AND e.active",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "1"
+  },
+  {
+    "id": "readiness-sql-20",
+    "question": "How many inactive employees work in Support?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees e JOIN departments d ON e.department_id=d.id WHERE d.name='Support' AND NOT e.active",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "1"
+  },
+  {
+    "id": "readiness-sql-21",
+    "question": "What is Alice's annual salary?",
+    "referenceSQL": "SELECT salary AS value FROM employees WHERE name='Alice'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 100000
+  },
+  {
+    "id": "readiness-sql-22",
+    "question": "What is Bob's annual salary?",
+    "referenceSQL": "SELECT salary AS value FROM employees WHERE name='Bob'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 80000
+  },
+  {
+    "id": "readiness-sql-23",
+    "question": "What is Carla's annual salary?",
+    "referenceSQL": "SELECT salary AS value FROM employees WHERE name='Carla'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 90000
+  },
+  {
+    "id": "readiness-sql-24",
+    "question": "What is Hana's annual salary?",
+    "referenceSQL": "SELECT salary AS value FROM employees WHERE name='Hana'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 110000
+  },
+  {
+    "id": "readiness-sql-25",
+    "question": "What department does Alice work in?",
+    "referenceSQL": "SELECT d.name AS value FROM departments d JOIN employees e ON e.department_id=d.id WHERE e.name='Alice'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Engineering"
+  },
+  {
+    "id": "readiness-sql-26",
+    "question": "What department does Ema work in?",
+    "referenceSQL": "SELECT d.name AS value FROM departments d JOIN employees e ON e.department_id=d.id WHERE e.name='Ema'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Support"
+  },
+  {
+    "id": "readiness-sql-27",
+    "question": "Who is the highest-paid employee?",
+    "referenceSQL": "SELECT name AS value FROM employees ORDER BY salary DESC LIMIT 1",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Hana"
+  },
+  {
+    "id": "readiness-sql-28",
+    "question": "Who is the lowest-paid employee?",
+    "referenceSQL": "SELECT name AS value FROM employees ORDER BY salary ASC LIMIT 1",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Gus"
+  },
+  {
+    "id": "readiness-sql-29",
+    "question": "Who was hired earliest?",
+    "referenceSQL": "SELECT name AS value FROM employees ORDER BY hire_date ASC LIMIT 1",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Diego"
+  },
+  {
+    "id": "readiness-sql-30",
+    "question": "Who was hired most recently?",
+    "referenceSQL": "SELECT name AS value FROM employees ORDER BY hire_date DESC LIMIT 1",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "Gus"
+  },
+  {
+    "id": "readiness-sql-31",
+    "question": "How many employees earn more than USD 80000 annually?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE salary>80000",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "3"
+  },
+  {
+    "id": "readiness-sql-32",
+    "question": "How many employees earn at least USD 80000 annually?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE salary>=80000",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "4"
+  },
+  {
+    "id": "readiness-sql-33",
+    "question": "How many employees earn less than USD 60000 annually?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE salary<60000",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "2"
+  },
+  {
+    "id": "readiness-sql-34",
+    "question": "How many employees earn between USD 60000 and USD 90000 inclusive?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE salary BETWEEN 60000 AND 90000",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "4"
+  },
+  {
+    "id": "readiness-sql-35",
+    "question": "How many employees were hired before 2021?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE hire_date<'2021-01-01'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "3"
+  },
+  {
+    "id": "readiness-sql-36",
+    "question": "How many employees were hired during 2020?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE hire_date>='2020-01-01' AND hire_date<'2021-01-01'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "2"
+  },
+  {
+    "id": "readiness-sql-37",
+    "question": "How many employees were hired on or after 2023-01-01?",
+    "referenceSQL": "SELECT count(*) AS value FROM employees WHERE hire_date>='2023-01-01'",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "3"
+  },
+  {
+    "id": "readiness-sql-38",
+    "question": "How many departments have no employees?",
+    "referenceSQL": "SELECT count(*) AS value FROM departments d WHERE NOT EXISTS(SELECT 1 FROM employees e WHERE e.department_id=d.id)",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "1"
+  },
+  {
+    "id": "readiness-sql-39",
+    "question": "How many distinct departments employ at least one employee?",
+    "referenceSQL": "SELECT count(DISTINCT department_id) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": "3"
+  },
+  {
+    "id": "readiness-sql-40",
+    "question": "What is the difference between the highest and lowest annual salary?",
+    "referenceSQL": "SELECT max(salary)-min(salary) AS value FROM employees",
+    "expectedRowCount": 1,
+    "expectedFirstRowValue": 70000
+  }
+]

@@ -117,6 +117,11 @@ import { readFileSync, existsSync } from 'node:fs'
  * tool-router-agentic.ts 127, cognee-memory.ts 147, stream-preparers.ts 116.
  */
 const FLOORS: Record<string, number> = {
+  'src/lib/quality-gates.ts': 95,
+  'src/lib/migration-baseline.ts': 95,
+  'src/lib/postgres-backup.ts': 95,
+  'src/lib/background-license.ts': 95, // measured 10/10 lines; real lockdown predicate across valid, missing and grace cases
+  'src/lib/cognee-document-pipeline.ts': 85, // measured merged 92/98 lines (93.88%); exact-run and own-file controls fail when removed
   'src/app/api/auth/change-password/route.ts': 95, // measured 100.00% (53/53)
   'src/app/api/auth/signup/route.ts': 90, // measured 96.26% (103/107)
   'src/app/api/billing/orders/[id]/route.ts': 100, // measured 100.00% (27/27); catch was uncovered

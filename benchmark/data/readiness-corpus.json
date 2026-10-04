@@ -1,0 +1,279 @@
+{
+  "description": "Synthetic demonstration policies with explicit ground truth; does not establish customer-corpus quality.",
+  "documents": [
+    {
+      "name": "Payment policy",
+      "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest is 1 percent monthly, capped at 5 percent of the invoice.\n\nFinance sends the first reminder 7 days after the invoice due date."
+    },
+    {
+      "name": "Leave policy",
+      "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests require 7 calendar days of advance notice.\n\nPaid parental leave lasts 16 weeks for the primary caregiver."
+    },
+    {
+      "name": "Procurement policy",
+      "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security reviews are repeated every 12 months.\n\nA purchase order must be issued before goods are ordered."
+    },
+    {
+      "name": "Security policy",
+      "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents must be reported within 60 minutes.\n\nService credentials are rotated at least every 90 days."
+    },
+    {
+      "name": "Recovery policy",
+      "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are retained for 30 days.\n\nA populated database restore drill is performed quarterly."
+    },
+    {
+      "name": "Travel policy",
+      "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after return.\n\nBusiness-class flights require an itinerary longer than 8 hours.\n\nTrain travel reimbursement requires an itemized receipt."
+    },
+    {
+      "name": "Support policy",
+      "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity 3 support incidents are acknowledged within 1 business day.\n\nScheduled support maintenance begins on Sundays at 02:00 UTC."
+    },
+    {
+      "name": "Data governance policy",
+      "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer approves exports of personal data.\n\nProduction personal data is prohibited in development databases."
+    }
+  ],
+  "questions": [
+    {
+      "id": "readiness-01-01",
+      "question": "How long are Enterprise invoice payment terms?",
+      "expectedAnswer": "30 calendar days after issue",
+      "expectedSource": "Payment policy"
+    },
+    {
+      "id": "readiness-01-02",
+      "question": "How long are SMB invoice payment terms?",
+      "expectedAnswer": "14 calendar days after issue",
+      "expectedSource": "Payment policy"
+    },
+    {
+      "id": "readiness-01-03",
+      "question": "What deposit must a new customer pay before work starts?",
+      "expectedAnswer": "50 percent",
+      "expectedSource": "Payment policy"
+    },
+    {
+      "id": "readiness-01-04",
+      "question": "What is the monthly late-payment interest and its maximum?",
+      "expectedAnswer": "1 percent monthly, capped at 5 percent",
+      "expectedSource": "Payment policy"
+    },
+    {
+      "id": "readiness-01-05",
+      "question": "When does Finance send the first overdue invoice reminder?",
+      "expectedAnswer": "7 days after the invoice due date",
+      "expectedSource": "Payment policy"
+    },
+    {
+      "id": "readiness-02-01",
+      "question": "How many paid annual leave days do full-time employees receive?",
+      "expectedAnswer": "18",
+      "expectedSource": "Leave policy"
+    },
+    {
+      "id": "readiness-02-02",
+      "question": "What is the maximum annual leave rollover?",
+      "expectedAnswer": "5 days",
+      "expectedSource": "Leave policy"
+    },
+    {
+      "id": "readiness-02-03",
+      "question": "When must rolled-over leave be used?",
+      "expectedAnswer": "January 31",
+      "expectedSource": "Leave policy"
+    },
+    {
+      "id": "readiness-02-04",
+      "question": "How much advance notice is required for annual leave?",
+      "expectedAnswer": "7 calendar days",
+      "expectedSource": "Leave policy"
+    },
+    {
+      "id": "readiness-02-05",
+      "question": "How long is paid parental leave for the primary caregiver?",
+      "expectedAnswer": "16 weeks",
+      "expectedSource": "Leave policy"
+    },
+    {
+      "id": "readiness-03-01",
+      "question": "Who approves purchases below USD 5000?",
+      "expectedAnswer": "Department managers",
+      "expectedSource": "Procurement policy"
+    },
+    {
+      "id": "readiness-03-02",
+      "question": "Who approves purchases of at least USD 25000?",
+      "expectedAnswer": "The CFO",
+      "expectedSource": "Procurement policy"
+    },
+    {
+      "id": "readiness-03-03",
+      "question": "How many supplier quotes are required above USD 10000?",
+      "expectedAnswer": "three written supplier quotes",
+      "expectedSource": "Procurement policy"
+    },
+    {
+      "id": "readiness-03-04",
+      "question": "How often are active supplier security reviews repeated?",
+      "expectedAnswer": "every 12 months",
+      "expectedSource": "Procurement policy"
+    },
+    {
+      "id": "readiness-03-05",
+      "question": "When must a purchase order be issued?",
+      "expectedAnswer": "before goods are ordered",
+      "expectedSource": "Procurement policy"
+    },
+    {
+      "id": "readiness-04-01",
+      "question": "How long can a user session remain idle?",
+      "expectedAnswer": "30 minutes",
+      "expectedSource": "Security policy"
+    },
+    {
+      "id": "readiness-04-02",
+      "question": "How long are security audit logs retained?",
+      "expectedAnswer": "180 days",
+      "expectedSource": "Security policy"
+    },
+    {
+      "id": "readiness-04-03",
+      "question": "Which accounts must use multi-factor authentication?",
+      "expectedAnswer": "Administrator accounts",
+      "expectedSource": "Security policy"
+    },
+    {
+      "id": "readiness-04-04",
+      "question": "How quickly must suspected security incidents be reported?",
+      "expectedAnswer": "within 60 minutes",
+      "expectedSource": "Security policy"
+    },
+    {
+      "id": "readiness-04-05",
+      "question": "How often must service credentials be rotated?",
+      "expectedAnswer": "at least every 90 days",
+      "expectedSource": "Security policy"
+    },
+    {
+      "id": "readiness-05-01",
+      "question": "When do database backups run?",
+      "expectedAnswer": "daily at 02:00 UTC",
+      "expectedSource": "Recovery policy"
+    },
+    {
+      "id": "readiness-05-02",
+      "question": "What is the database recovery point objective?",
+      "expectedAnswer": "24 hours",
+      "expectedSource": "Recovery policy"
+    },
+    {
+      "id": "readiness-05-03",
+      "question": "What is the database recovery time objective?",
+      "expectedAnswer": "4 hours",
+      "expectedSource": "Recovery policy"
+    },
+    {
+      "id": "readiness-05-04",
+      "question": "How long are daily database backups retained?",
+      "expectedAnswer": "30 days",
+      "expectedSource": "Recovery policy"
+    },
+    {
+      "id": "readiness-05-05",
+      "question": "How often is a populated database restore drill performed?",
+      "expectedAnswer": "quarterly",
+      "expectedSource": "Recovery policy"
+    },
+    {
+      "id": "readiness-06-01",
+      "question": "What is the standard hotel reimbursement ceiling?",
+      "expectedAnswer": "USD 150 per night",
+      "expectedSource": "Travel policy"
+    },
+    {
+      "id": "readiness-06-02",
+      "question": "What is the daily meal reimbursement limit during approved travel?",
+      "expectedAnswer": "USD 40 per day",
+      "expectedSource": "Travel policy"
+    },
+    {
+      "id": "readiness-06-03",
+      "question": "When must travel expense claims be submitted after return?",
+      "expectedAnswer": "within 10 calendar days",
+      "expectedSource": "Travel policy"
+    },
+    {
+      "id": "readiness-06-04",
+      "question": "What flight duration permits business-class travel?",
+      "expectedAnswer": "longer than 8 hours",
+      "expectedSource": "Travel policy"
+    },
+    {
+      "id": "readiness-06-05",
+      "question": "What document is required for train travel reimbursement?",
+      "expectedAnswer": "an itemized receipt",
+      "expectedSource": "Travel policy"
+    },
+    {
+      "id": "readiness-07-01",
+      "question": "How quickly are Severity 1 support incidents acknowledged?",
+      "expectedAnswer": "within 15 minutes",
+      "expectedSource": "Support policy"
+    },
+    {
+      "id": "readiness-07-02",
+      "question": "What is the workaround deadline for Severity 1 support incidents?",
+      "expectedAnswer": "within 4 hours",
+      "expectedSource": "Support policy"
+    },
+    {
+      "id": "readiness-07-03",
+      "question": "How quickly are Severity 2 support incidents acknowledged?",
+      "expectedAnswer": "within 1 hour",
+      "expectedSource": "Support policy"
+    },
+    {
+      "id": "readiness-07-04",
+      "question": "How quickly are Severity 3 support incidents acknowledged?",
+      "expectedAnswer": "within 1 business day",
+      "expectedSource": "Support policy"
+    },
+    {
+      "id": "readiness-07-05",
+      "question": "When does scheduled support maintenance begin?",
+      "expectedAnswer": "on Sundays at 02:00 UTC",
+      "expectedSource": "Support policy"
+    },
+    {
+      "id": "readiness-08-01",
+      "question": "How long are customer financial records retained?",
+      "expectedAnswer": "7 years",
+      "expectedSource": "Data governance policy"
+    },
+    {
+      "id": "readiness-08-02",
+      "question": "How quickly are deletion requests acknowledged?",
+      "expectedAnswer": "within 3 business days",
+      "expectedSource": "Data governance policy"
+    },
+    {
+      "id": "readiness-08-03",
+      "question": "What is the deadline for completing deletion requests?",
+      "expectedAnswer": "within 30 calendar days",
+      "expectedSource": "Data governance policy"
+    },
+    {
+      "id": "readiness-08-04",
+      "question": "Who approves exports of personal data?",
+      "expectedAnswer": "The Data Protection Officer",
+      "expectedSource": "Data governance policy"
+    },
+    {
+      "id": "readiness-08-05",
+      "question": "Is production personal data allowed in development databases?",
+      "expectedAnswer": "prohibited",
+      "expectedSource": "Data governance policy"
+    }
+  ]
+}

@@ -24,7 +24,9 @@ import { generateAnswer } from '@/lib/ai'
 import { postLangfuseScore } from '@/lib/observability'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 import { readFileSync } from 'fs'
-import { writeFileSync } from 'fs'
+import { writeFileSync, mkdirSync } from 'fs'
+import { qualityGateFailures } from '@/lib/quality-gates'
+import { contextAveragePrecision } from './context-precision'
 
 // ---------------------------------------------------------------------------
 // Separate judge config (RAGAS_JUDGE_* env) — defaults to the query-role LLM.
@@ -64,7 +66,8 @@ interface RagasResult {
   metrics: {
     faithfulness: number // 0-1: answer grounded in context
     answerRelevance: number // 0-1: answer addresses question
-    contextPrecision: number // 0-1: retrieved context is relevant
+    contextPrecision: number // 0-1: relevant chunks ranked before irrelevant chunks
+    contextDensity: number // diagnostic: relevance of the combined context
     contextRecall: number // 0-1: context contains needed info
   }
   latencyMs: number
@@ -147,7 +150,7 @@ Output ONLY a number 0.0-1.0.`
 
   try {
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-faithfulness')
-    return clampScore(parseFloat(raw.trim()))
+    return parseJudgeScore(raw)
   } catch {
     // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
     // indistinguishable from a real assessment, and the average below used to include it —
@@ -173,7 +176,7 @@ Output ONLY a number 0.0-1.0.`
 
   try {
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-relevance')
-    return clampScore(parseFloat(raw.trim()))
+    return parseJudgeScore(raw)
   } catch {
     // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
     // indistinguishable from a real assessment, and the average below used to include it —
@@ -184,7 +187,7 @@ Output ONLY a number 0.0-1.0.`
   }
 }
 
-async function scoreContextPrecision(
+async function scoreContextDensity(
   question: string,
   context: string,
   cfg: NonNullable<Awaited<ReturnType<typeof getRoleLlmConfig>>>,
@@ -199,7 +202,7 @@ Output ONLY a number 0.0-1.0.`
 
   try {
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-precision')
-    return clampScore(parseFloat(raw.trim()))
+    return parseJudgeScore(raw)
   } catch {
     // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
     // indistinguishable from a real assessment, and the average below used to include it —
@@ -208,6 +211,26 @@ Output ONLY a number 0.0-1.0.`
     // Averaging now SKIPS these and reports how many were skipped.
     return Number.NaN
   }
+}
+
+async function scoreContextPrecision(
+  question: string,
+  reference: string,
+  chunks: string[],
+  cfg: NonNullable<Awaited<ReturnType<typeof getRoleLlmConfig>>>,
+): Promise<number> {
+  const verdicts = await Promise.all(chunks.map(async context => {
+    const prompt = `Judge whether this retrieved chunk contains information useful for answering the question, compared with the reference answer. Other information in the same chunk does not make useful evidence irrelevant.
+Question: ${question}
+Reference answer: ${reference}
+Retrieved chunk: ${context}
+Output ONLY 1 if useful, otherwise 0.`
+    try {
+      const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-chunk-precision')
+      return raw.trim() === '1' ? 1 : raw.trim() === '0' ? 0 : Number.NaN
+    } catch { return Number.NaN }
+  }))
+  return contextAveragePrecision(verdicts)
 }
 
 async function scoreContextRecall(
@@ -227,7 +250,7 @@ Output ONLY a number 0.0-1.0.`
 
   try {
     const raw = await chatOnce(cfg, [{ role: 'user', content: prompt }], 0, 'ragas-recall')
-    return clampScore(parseFloat(raw.trim()))
+    return parseJudgeScore(raw)
   } catch {
     // NaN = NOT JUDGED, deliberately not 0.5. A mid-score for a failed call is
     // indistinguishable from a real assessment, and the average below used to include it —
@@ -238,9 +261,10 @@ Output ONLY a number 0.0-1.0.`
   }
 }
 
-function clampScore(n: number): number {
-  if (Number.isNaN(n)) return 0.5
-  return Math.max(0, Math.min(1, n))
+function parseJudgeScore(raw: string): number {
+  // An invalid judgement is missing evidence, never a manufactured mid-score or perfect score.
+  const value = raw.trim() ? Number(raw.trim()) : Number.NaN
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : Number.NaN
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +272,9 @@ function clampScore(n: number): number {
 // ---------------------------------------------------------------------------
 
 async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promise<void> {
+  const orgId = process.env.EVAL_ORG_ID
+  if (!orgId) throw new Error('EVAL_ORG_ID is required')
+  enterWithOrg(orgId)
   const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     console.error('No LLM configured — cannot run RAGAS evaluation.')
@@ -257,12 +284,8 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
   // Separate judge when configured; otherwise the same model (flagged in the
   // report so nobody mistakes a self-judged run for an independent one).
   const judge = await getJudgeConfig()
-  const judgeIsGenerator = !process.env.RAGAS_JUDGE_BASE_URL
-
-  // Org context — retrieval + generation are org-scoped; without this the eval
-  // ran unscoped (empty or cross-tenant results depending on the fallback).
-  const orgId = process.env.EVAL_ORG_ID
-  if (orgId) enterWithOrg(orgId)
+  const judgeIsGenerator = !judge || (judge.baseUrl.replace(/\/$/, '') === cfg.baseUrl.replace(/\/$/, '') && judge.model === cfg.model)
+  if (ciMode && judgeIsGenerator) throw new Error('CI requires an independent judge before evaluation starts')
 
   // Question set: --golden=<file> (generated by golden-set.ts) or the
   // built-in 8. The golden file is the meaningful sample size (40+).
@@ -311,11 +334,12 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
     })
 
     // Score with LLM-as-judge
-    const [faithfulness, answerRelevance, contextPrecision, contextRecall] = await Promise.all([
+    const [faithfulness, answerRelevance, contextPrecision, contextRecall, contextDensity] = await Promise.all([
       scoreFaithfulness(q.question, answer, context, judge ?? cfg),
       scoreAnswerRelevance(q.question, answer, judge ?? cfg),
-      scoreContextPrecision(q.question, context, judge ?? cfg),
+      scoreContextPrecision(q.question, q.expectedAnswer, retrieval.chunks.map(c => c.content), judge ?? cfg),
       scoreContextRecall(q.question, q.expectedAnswer, context, judge ?? cfg),
+      scoreContextDensity(q.question, context, judge ?? cfg),
     ])
 
     const result: RagasResult = {
@@ -328,7 +352,7 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
         score: c.score,
         documentName: c.documentName,
       })),
-      metrics: { faithfulness, answerRelevance, contextPrecision, contextRecall },
+      metrics: { faithfulness, answerRelevance, contextPrecision, contextRecall, contextDensity },
       latencyMs: Date.now() - t0,
     }
 
@@ -381,52 +405,47 @@ async function runRagEvaluation(limit?: number, ciMode: boolean = false): Promis
     timestamp: new Date().toISOString(),
     meta: {
       questionCount: results.length,
+      contextPrecisionDefinition: 'rank-aware average precision over binary chunk usefulness against reference answer',
+      contextPrecisionSource: 'https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/context_precision/',
+      contextDensityDefinition: 'legacy scalar judge over combined context; not comparable with contextPrecision',
       questionSource: goldenPath ?? 'builtin-8',
       judgeIndependent: !judgeIsGenerator,
       judgeModel: judge?.model ?? 'unconfigured',
       orgId: orgId ?? '(unscoped)',
     },
   }
+  mkdirSync('benchmark/results', { recursive: true })
   writeFileSync('benchmark/results/ragas-report.json', JSON.stringify(report, null, 2))
   console.log('\nReport saved to benchmark/results/ragas-report.json')
 
-  if (ciMode) checkCIThresholds(summary)
+  if (ciMode) {
+    const failures = qualityGateFailures({
+      samples: summary.questions, minimumSamples: 40,
+      skipped: summary.judgedFaithfulness + summary.judgedAnswerRelevance + summary.judgedContextPrecision + summary.judgedContextRecall,
+      independentJudge: !judgeIsGenerator,
+      metrics: {
+        faithfulness: { value: summary.avgFaithfulness, minimum: Number(process.env.RAGAS_MIN_FAITHFULNESS ?? 0.85) },
+        answerRelevance: { value: summary.avgAnswerRelevance, minimum: Number(process.env.RAGAS_MIN_ANSWER_RELEVANCE ?? 0.80) },
+        contextPrecision: { value: summary.avgContextPrecision, minimum: Number(process.env.RAGAS_MIN_CONTEXT_PRECISION ?? 0.80) },
+        contextRecall: { value: summary.avgContextRecall, minimum: Number(process.env.RAGAS_MIN_CONTEXT_RECALL ?? 0.80) },
+      },
+    })
+    if (failures.length) throw new Error(failures.join('; '))
+    console.log('Quality thresholds passed')
+  }
 }
 
+/** Validate score thresholds for callers that already checked sample provenance. */
 function checkCIThresholds(summary: {
-  avgFaithfulness: number
-  avgAnswerRelevance: number
-  avgContextPrecision: number
-  avgContextRecall: number
+  avgFaithfulness: number; avgAnswerRelevance: number; avgContextPrecision: number; avgContextRecall: number
 }): void {
-  const thresholds = {
-    faithfulness: Number(process.env.RAGAS_MIN_FAITHFULNESS ?? 0.85),
-    answerRelevance: Number(process.env.RAGAS_MIN_ANSWER_RELEVANCE ?? 0.80),
-    contextPrecision: Number(process.env.RAGAS_MIN_CONTEXT_PRECISION ?? 0.80),
-    contextRecall: Number(process.env.RAGAS_MIN_CONTEXT_RECALL ?? 0.80),
-  }
-
-  const failures: string[] = []
-  if (summary.avgFaithfulness < thresholds.faithfulness) {
-    failures.push(`Faithfulness ${summary.avgFaithfulness.toFixed(3)} < ${thresholds.faithfulness}`)
-  }
-  if (summary.avgAnswerRelevance < thresholds.answerRelevance) {
-    failures.push(`Answer Relevance ${summary.avgAnswerRelevance.toFixed(3)} < ${thresholds.answerRelevance}`)
-  }
-  if (summary.avgContextPrecision < thresholds.contextPrecision) {
-    failures.push(`Context Precision ${summary.avgContextPrecision.toFixed(3)} < ${thresholds.contextPrecision}`)
-  }
-  if (summary.avgContextRecall < thresholds.contextRecall) {
-    failures.push(`Context Recall ${summary.avgContextRecall.toFixed(3)} < ${thresholds.contextRecall}`)
-  }
-
-  if (failures.length > 0) {
-    console.error('\n❌ CI threshold check FAILED:')
-    for (const f of failures) console.error(`  - ${f}`)
-    process.exit(1)
-  }
-
-  console.log('\n✅ CI threshold check passed')
+  const failures = qualityGateFailures({ samples: 1, minimumSamples: 1, metrics: {
+    faithfulness: {value: summary.avgFaithfulness, minimum: Number(process.env.RAGAS_MIN_FAITHFULNESS ?? 0.85)},
+    answerRelevance: {value: summary.avgAnswerRelevance, minimum: Number(process.env.RAGAS_MIN_ANSWER_RELEVANCE ?? 0.80)},
+    contextPrecision: {value: summary.avgContextPrecision, minimum: Number(process.env.RAGAS_MIN_CONTEXT_PRECISION ?? 0.80)},
+    contextRecall: {value: summary.avgContextRecall, minimum: Number(process.env.RAGAS_MIN_CONTEXT_RECALL ?? 0.80)},
+  }})
+  if (failures.length) { console.error(failures.join('; ')); process.exit(1) }
 }
 
 // CLI entry
@@ -436,10 +455,10 @@ if (import.meta.main) {
   const limit = limitArg ? parseInt(limitArg.split('=')[1]) : undefined
   const ciMode = args.includes('--ci')
 
-  runRagEvaluation(limit, ciMode).catch((e) => {
+  runRagEvaluation(limit, ciMode).then(() => process.exit(0)).catch((e) => {
     console.error('RAG evaluation failed:', e)
     process.exit(1)
   })
 }
 
-export { runRagEvaluation, checkCIThresholds, scoreFaithfulness, scoreAnswerRelevance, scoreContextPrecision, scoreContextRecall }
+export { runRagEvaluation, checkCIThresholds, scoreFaithfulness, scoreAnswerRelevance, scoreContextPrecision, scoreContextDensity, scoreContextRecall }

@@ -110,7 +110,7 @@ export async function runComparison(args: {
     const j = async (answer: string, contexts: string[]) => ({
       faithfulness: await scoreFaithfulness(item.question, answer, contexts.join('\n\n'), judgeCfg),
       answerRelevance: await scoreAnswerRelevance(item.question, answer, judgeCfg),
-      contextPrecision: await scoreContextPrecision(item.question, contexts.join('\n\n'), judgeCfg),
+      contextPrecision: await scoreContextPrecision(item.question, item.expectedAnswer, contexts, judgeCfg),
       contextRecall: await scoreContextRecall(item.question, item.expectedAnswer, contexts.join('\n\n'), judgeCfg),
     })
 
