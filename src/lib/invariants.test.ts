@@ -862,9 +862,9 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     // class as the alignment bypass above, so it gets the same kind of guard:
     // assert the ARGUMENT is present at each call site, not that the string
     // "businessContext" exists somewhere.
+    // Both chat transports call generateSql from ONE place since 2026-10-04: the shared SQL pipeline.
     const callers = [
-      'src/lib/stream-preparers.ts',
-      'src/lib/tool-branches.ts',
+      'src/lib/pipelines/sql-pipeline.ts',
       'src/app/api/integrations/[id]/query/route.ts',
     ]
     for (const rel of callers) {
@@ -950,7 +950,8 @@ describe('invariant: streaming preparers never leak an LLM failure', () => {
   // operator misconfiguration. Found by stream-preparers.test.ts, the first test
   // that had ever exercised this path.
   test('every prepare*Stream wraps its LLM call', () => {
-    const src = readRepo('src/lib/stream-preparers.ts')
+    // generateSql moved into the shared pipeline (2026-10-04), which serves the streaming transport too.
+    const src = readRepo('src/lib/pipelines/sql-pipeline.ts')
 
     // The specific regression: a bare `await generateSql(` with no enclosing try.
     // Assert the call site is preceded by a `try {` before any other statement
@@ -964,15 +965,16 @@ describe('invariant: streaming preparers never leak an LLM failure', () => {
     // The same class of bug in the other preparers: an `await` of an LLM helper
     // must not sit outside a try. `generateRestCall` already was guarded; keep it
     // that way.
-    const restIdx = src.indexOf('generateRestCall(')
+    const preparers = readRepo('src/lib/stream-preparers.ts')
+    const restIdx = preparers.indexOf('generateRestCall(')
     if (restIdx > -1) {
-      const restBefore = src.slice(Math.max(0, restIdx - 400), restIdx)
+      const restBefore = preparers.slice(Math.max(0, restIdx - 400), restIdx)
       expect(restBefore).toMatch(/try\s*\{/)
     }
   })
 
   test('a thrown generateSql is retried, not propagated', () => {
-    const src = readRepo('src/lib/stream-preparers.ts')
+    const src = readRepo('src/lib/pipelines/sql-pipeline.ts')
     // The catch must feed the message into lastSqlError and continue, so the
     // repair loop can recover from a transient provider blip.
     expect(src).toMatch(/catch\s*\(e\)\s*\{\s*\/\/[^\n]*\n[^\n]*lastSqlError\s*=/)

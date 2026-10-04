@@ -89,6 +89,13 @@ let promptSettingsRow: { promptSettings: string | null } | null = null
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let generateSqlArgs: any = null
+let auditActions: string[] = []
+let queryHistorySuccess: boolean[] = []
+let sqlRateLimitAllowed = true
+
+mock.module('@/lib/tool-rate-limit', () => ({
+  checkToolRateLimit: async () => ({ allowed: sqlRateLimitAllowed, remaining: sqlRateLimitAllowed ? 9 : 0 }),
+}))
 
 async function* gen(text: string): AsyncGenerator<string> {
   for (const ch of text.split('')) yield ch
@@ -117,7 +124,20 @@ mock.module('@/lib/db', () => ({
       },
       findMany: async () => integrations.map((i) => ({ name: i.name })),
     },
-    auditLog: { create: async () => ({ id: 'audit-1' }) },
+    auditLog: {
+      create: async (q: { data: { action: string; severity: string } }) => {
+        auditActions.push(`${q.data.action}:${q.data.severity}`)
+        return { id: 'audit-1' }
+      },
+    },
+    // Written by the shared SQL pipeline. This transport wrote NONE before the pipeline was unified, which is the
+    // drift the audit assertions below pin.
+    queryHistory: {
+      create: async (q: { data: { success: boolean } }) => {
+        queryHistorySuccess.push(q.data.success)
+        return { id: 'qh-1' }
+      },
+    },
     plugin: { findFirst: async () => pluginRow },
     restApiConnector: { findMany: async () => restConnectors },
     // Read by prepareSqlStream for the org's editable Text-to-SQL rules (see promptSettingsRow).
@@ -287,6 +307,9 @@ async function drain(stream: AsyncGenerator<string>): Promise<string> {
 }
 
 beforeEach(() => {
+  auditActions = []
+  queryHistorySuccess = []
+  sqlRateLimitAllowed = true
   // `schemas` must be non-empty or prepareSqlStream short-circuits to
   // prepareChatStream (`!integration || integration.schemas.length === 0`), and
   // every SQL test would silently assert CHAT behaviour instead — which is
@@ -826,17 +849,45 @@ describe('the guardrail used by the repair loop is the real one', () => {
   })
 })
 
-describe('streaming SQL path divergences from the non-streaming path', () => {
-  // AGENTS.md documents these as known gaps. Encoding them as tests means a
-  // future change to them is deliberate rather than accidental.
-  test('the streaming path does not import withToolSandbox', async () => {
-    const src = await Bun.file(new URL('./stream-preparers.ts', import.meta.url).pathname).text()
-    expect(src).not.toContain('withToolSandbox')
+describe('the streaming SQL path records and limits exactly like the non-streaming one', () => {
+  /*
+   * MEASURED 2026-10-04: this transport — the one the web chat uses — wrote no GUARDRAIL_BLOCK / SQL_EXECUTE audit
+   * rows and no queryHistory, had no SQL tool rate limit and dropped the integration's contextPrompt. The tests that
+   * stood here pinned those gaps as "known divergences". Both transports now run `runSqlPipeline`, so the behaviour
+   * is asserted instead.
+   */
+  test('a guardrail rejection is audited as critical, and the repaired query is recorded', async () => {
+    generateSqlResults = [{ sql: 'DROP TABLE orders' }, { sql: 'SELECT total FROM orders LIMIT 10' }]
+    const r = await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1' })
+    expect(r.toolRuns[0].status).toBe('success')
+    expect(auditActions).toEqual(['GUARDRAIL_BLOCK:critical', 'SQL_EXECUTE:info'])
+    expect(queryHistorySuccess).toEqual([true])
   })
 
-  test('the streaming path uses withSqlConcurrency for the SQL call', async () => {
-    const src = await Bun.file(new URL('./stream-preparers.ts', import.meta.url).pathname).text()
-    expect(src).toContain('withSqlConcurrency')
+  test('a failed execution is recorded in queryHistory and audited as a warning', async () => {
+    generateSqlResults = [{ sql: 'SELECT nope FROM orders LIMIT 10' }, { sql: 'SELECT total FROM orders LIMIT 10' }]
+    connectorErrors = [new Error('column "nope" does not exist')]
+    const r = await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1' })
+    expect(r.toolRuns[0].status).toBe('success')
+    expect(queryHistorySuccess).toEqual([false, true])
+    expect(auditActions).toContain('SQL_EXECUTE_ERROR:warning')
+  })
+
+  test('the SQL tool rate limit applies before any SQL is generated', async () => {
+    sqlRateLimitAllowed = false
+    generateSqlArgs = null
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    const r = await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1' })
+    expect(r.toolRuns[0].status).toBe('blocked')
+    expect(generateSqlArgs).toBeNull()
+    expect(executedSql).toEqual([])
+  })
+
+  test("the integration's admin contextPrompt reaches SQL generation", async () => {
+    integrations = integrations.map((i) => ({ ...i, contextPrompt: 'Fiscal year starts in April.' }))
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1' })
+    expect(String(generateSqlArgs?.systemPromptPrefix)).toContain('Fiscal year starts in April.')
   })
 })
 
@@ -1018,8 +1069,11 @@ describe('the streaming SQL path must forward the generator\'s stated QUERY SCOP
    */
   const src = readFileSync(join(import.meta.dir, 'stream-preparers.ts'), 'utf8')
 
-  test('the explanation is captured from the SQL candidate', () => {
-    expect(src).toMatch(/sqlExplanation = typeof candidate\.explanation === 'string'/)
+  test('the explanation is captured from the SQL candidate and reaches the answer', async () => {
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10', explanation: 'completed orders only' }]
+    const r = await prepareSqlStream({ question: 'show totals', userId: 'u1', integrationId: 'int-1' })
+    await drain(r.stream)
+    expect(String(streamAnswerArgs?.context)).toContain('QUERY SCOPE (what the SQL measured): completed orders only')
   })
 
   test('it reaches the answer context as QUERY SCOPE, inside the untrusted wrapper', () => {
@@ -1030,11 +1084,12 @@ describe('the streaming SQL path must forward the generator\'s stated QUERY SCOP
   })
 
   test('the NON-streaming path carries it too, so the two transports cannot diverge', () => {
-    // This pair has drifted before (businessContext reached one path and not the other), so both are asserted.
+    // The explanation is captured once, in the shared pipeline; both adapters render it as QUERY SCOPE.
     const branches = readFileSync(join(import.meta.dir, 'tool-branches.ts'), 'utf8')
+    const pipeline = readFileSync(join(import.meta.dir, 'pipelines/sql-pipeline.ts'), 'utf8')
     expect(branches).toMatch(/QUERY SCOPE \(what the SQL measured\)/)
-    expect(branches).toMatch(/sqlExplanation = typeof candidate\.explanation === 'string'/)
-  })
+    expect(pipeline).toMatch(/sqlExplanation = typeof candidate\.explanation === 'string'/)
+})
 })
 
 describe('prepareSqlStream — the documents fallback when the database did not answer', () => {

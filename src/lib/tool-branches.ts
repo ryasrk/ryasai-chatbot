@@ -1,27 +1,20 @@
 import { db } from '@/lib/db'
 import { scopedLogger } from '@/lib/logger'
-import { getOrgContext, requireOrgContext } from '@/lib/prisma-tenant'
+import { requireOrgContext } from '@/lib/prisma-tenant'
 import { decryptConfig } from '@/lib/crypto'
-import {
-  connectorRegistry,
-  describeSchema,
-} from '@/lib/connectors'
-import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
-import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT , SQL_REPAIR_MIN_REMAINING_MS, SQL_REPAIR_TOTAL_BUDGET_MS } from '@/lib/constants'
+import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT } from '@/lib/constants'
 import {
   generateAnswer,
   generateChat,
   generateRestCall,
-  generateSql,
   type RestCallPlan,
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
 import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
-import { getPromptSettings, resolveSqlRulesPrompt } from '@/lib/prompt-settings'
+import { getPromptSettings } from '@/lib/prompt-settings'
 import { buildSourceGuidance } from '@/lib/source-guidance'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
-import { resolveIntegrationForQuestion, tokenize } from '@/lib/smart-router'
 import {
   buildAuthHeaders,
   buildEndpointUrl,
@@ -30,20 +23,16 @@ import {
 } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
-import { withToolSandbox } from '@/lib/tool-sandbox'
-import { checkToolRateLimit } from '@/lib/tool-rate-limit'
+import { runSqlPipeline, buildCrossSourceNote } from '@/lib/pipelines/sql-pipeline'
 import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
-  withSqlConcurrency,
   buildChartDataFromRows,
   buildDocumentCitation,
   sanitizeSqlError,
   summarize,
   unavailableDataSourceResult,
   ambiguousDataSourceResult,
-  safeParseColumns,
-  safeParseSampleRow,
   extractTableName,
   jsonRowsToChart,
   safeJson,
@@ -314,376 +303,62 @@ export async function runSqlBranch(args: {
   integrationIds?: string[] | null
 }): Promise<CompletionResult> {
   const started = Date.now()
-  // ponytail: when the router did not resolve a specific integration, ASK
-  // WHICH ONE — do not take the oldest. `findFirst({ orderBy: { createdAt: 'asc' } })`
-  // used to pick the oldest active integration without looking at the question,
-  // so a Sales question could be answered from the HR database. That failed
-  // SILENTLY: if both schemas happen to share a table name the generated SQL is
-  // valid and the answer is simply wrong, with no error and no log
-  // (proven at runtime, trial/25-wrong-db-proof.ts). A clarifying question is
-  // strictly better than a confident answer from the wrong database.
-  // The streaming path had a second, different heuristic — both now go through
-  // resolveIntegrationForQuestion so they cannot drift again.
-  /*
-   * The scope's integration filter, applied to EVERY lookup in this branch.
-   *
-   * `null` means unrestricted, which is what every key created before this axis existed resolves to — so
-   * the filter is spread in CONDITIONALLY rather than sent as `in: []`, which would match nothing and lock
-   * out every existing key. That distinction is the whole convention the scope module documents.
-   */
-  const scopeIds = args.integrationIds && args.integrationIds.length > 0 ? args.integrationIds : null
-  const inScope = scopeIds ? { id: { in: scopeIds } } : {}
+  const outcome = await runSqlPipeline(args)
 
-  let integration = args.integrationId
-    ? await db.integration.findFirst({
-        // A CLIENT-NAMED integration outside the scope resolves to null here, so the branch reports "no data
-        // source" rather than answering from a database the key may not read. Fail-closed on purpose: a refusal
-        // reads as a configuration problem an operator can fix, while silently answering from another database
-        // reads as a correct answer.
-        where: { id: args.integrationId, status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
-    : null
-
-  let integrationUnverified = false
-  if (!integration) {
-    const active = await db.integration.findMany({
-      // Scoped, or a key restricted to one database would be offered every other one to choose from.
-      where: { status: 'active', ...inScope },
-      orderBy: { name: 'asc' },
-      select: { name: true },
-    })
-    if (active.length === 1) {
-      // Exactly one source configured — nothing to disambiguate.
-      integration = await db.integration.findFirst({
-        where: { status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
-    } else if (active.length > 1) {
-      const choice = await resolveIntegrationForQuestion(
-        tokenize(args.question),
-        args.question,
-        'refuse',
-        // The key's allowed sources, so the scorer cannot pick one the key may not read.
-        args.integrationIds,
-      )
-      if (!choice) {
-        // Refuse rather than guess, and name the candidates so the user can pick.
-        return ambiguousDataSourceResult('SQL', args.question, active.map((n) => n.name), started)
-      }
-      integration = await db.integration.findFirst({
-        where: { id: choice.integrationId, status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
-      integrationUnverified = choice.unverified
-    }
-  }
-
-  if (!integration || integration.schemas.length === 0) {
-    return unavailableDataSourceResult('SQL', args.question, started)
-  }
-  void integrationUnverified
-
-  // ponytail: integration.contextPrompt is admin-edited business guidance for
-  // SQL answer synthesis (spec §Injection → SQL). It's appended to BOTH the
-  // SQL-generation step and the final answer step so prose respects it too.
-  // Capped at 2000 chars so a runaway prompt can't eat the whole context. We
-  // append to the effective prefix only — args.systemPromptPrefix itself is
-  // left untouched (callers' contract unchanged).
-  const intPrompt = integration.contextPrompt && integration.contextPrompt.trim()
-    ? `\n\nContext guidance:\n${integration.contextPrompt!.slice(0, 2000)}`
-    : ''
-  const effectiveSystemPromptPrefix = args.systemPromptPrefix
-    ? `${args.systemPromptPrefix}${intPrompt}`
-    : intPrompt
-      ? intPrompt.replace(/^\s+/, '')
-      : undefined
-
-  /*
-   * The org's editable Text-to-SQL rules, resolved ONCE per branch rather than per repair attempt —
-   * the retry loop below calls `generateSql` up to three times, and re-reading the row each time
-   * would be three identical queries for a value that cannot change mid-request.
-   *
-   * Resolved here rather than inside `generateSql` so `ai.ts` keeps no DB dependency and the
-   * "empty means default" rule lives in exactly one function.
-   */
-  const sqlRules = resolveSqlRulesPrompt((await getPromptSettings(db)).sqlRulesPrompt)
-
-  const schemaTables = integration.schemas.map((schema) => ({
-    tableName: schema.tableName,
-    columns: safeParseColumns(schema.columns),
-    rowCount: schema.rowCount ?? undefined,
-    sampleRow: safeParseSampleRow(schema.sampleRow),
-    description: schema.description,
-  }))
-  const schemaDescription = describeSchema(schemaTables)
-  // Free-text columns, for the stale-profile fallback. Derived from the reflected
-  // schema rather than hardcoded: they are what the model wrongly filters on when
-  // no query hints tell it otherwise.
-  const textColumns = [
-    ...new Set(
-      schemaTables
-        .flatMap((t) => t.columns)
-        .filter((c) => /char|text|string/i.test(String(c.type)) && !c.primaryKey)
-        .map((c) => c.name),
-    ),
-  ]
-  // ponytail: rate-limit BEFORE burning LLM calls — the repair loop can make
-  // up to 3 generation calls per turn.
-  const orgId = getOrgContext()
-  if (orgId) {
-    const rl = await checkToolRateLimit('sql', orgId)
-    if (!rl.allowed) {
-      return {
-        answer: 'Rate limit exceeded for SQL queries. Please try again in a minute.',
-        citations: [],
-        chartData: null,
-        integrationId: integration.id,
-        toolRuns: [
-          {
-            type: 'SQL',
-            status: 'blocked',
-            latencyMs: Date.now() - started,
-            inputSummary: summarize(args.question),
-            errorMessage: 'SQL rate limit exceeded.',
-          },
-        ],
-      }
-    }
-  }
-
-  const connector = connectorRegistry.getConnector(
-    integration.id,
-    integration.provider,
-    decryptConfig(integration.encryptedConfig),
-  )
-
-  // ponytail: SQL error-correction loop — a failed execution used to be a
-  // dead end ("Sorry, the database query failed to execute"). Common failures
-  // (wrong column name, type mismatch, dialect quirk, guardrail rejection)
-  // are fixable when the error is fed back to generateSql for a retry.
-  let lastSqlError = ''
-  const attemptedSql: string[] = []
-  let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
-  let finalSql = ''
-  /*
-   * THE SQL GENERATOR'S OWN EXPLANATION, which used to be discarded.
-   *
-   * MEASURED IN UAT: rule 17 tells the SQL generator to NAME THE POPULATION it measured — "based on completed orders",
-   * "all statuses included" — because two questions in one session silently used different filters and reported
-   * different totals for the same customer (Rp 1.240.000 vs Rp 1.620.000). But only `candidate.sql` was used; the
-   * `explanation` field it wrote was dropped, so the answer generator never saw the filter and could not state it.
-   *
-   * Verified by asking the question after adding rule 17: the answer still said nothing about the population, because
-   * the field carrying it never reached the prompt. Threading it through is what makes the rule observable to a user.
-   */
-  let sqlExplanation = ''
-
-  for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
-    /*
-     * TIME BUDGET BEFORE EVERY RETRY (attempt 0 runs unconditionally: a check before the first attempt
-     * would mean a turn that started late answers nothing at all). One attempt is an LLM call plus a query,
-     * each ~30s worst case; the loop previously counted only attempts, so attempt 3 could start at t=100s
-     * on a turn whose 120s deadline was already gone — the user got a timeout instead of the failure this
-     * branch had already diagnosed. Breaking out here hands the turn to the answer with the failure
-     * recorded in `lastSqlError`, which is the honest outcome.
-     */
-    if (attempt > 0 && Date.now() - started + SQL_REPAIR_MIN_REMAINING_MS() > SQL_REPAIR_TOTAL_BUDGET_MS()) {
-      log.warn('sql repair loop: not enough budget left for another attempt', {
-        elapsedMs: Date.now() - started,
-        budgetMs: SQL_REPAIR_TOTAL_BUDGET_MS(),
-        attemptsDone: attempt,
-      })
-      break
-    }
-    const feedback = attempt > 0
-      ? `The previous SQL was:\n${attemptedSql[attemptedSql.length - 1]}\nIt failed with error:\n${lastSqlError}`
-      : undefined
-    const candidate = await generateSql({
-      question: args.question,
-      schemaDescription,
-      provider: integration.provider,
-      memoryContext: args.memoryContext,
-      systemPromptPrefix: effectiveSystemPromptPrefix,
-      repairFeedback: feedback,
-      textColumns,
-      // ponytail: admin-authored business context (integration settings) must
-      // reach BOTH SQL calls. `ai.ts` renders it into the prompt, and the
-      // streaming path has always passed it (stream-preparers.ts) — but nothing
-      // on the non-streaming path did, so the exact same question produced a
-      // different SQL/answer depending on transport (scheduled runs, the agentic
-      // loop and /api/v1 all take this branch). Keep the two in sync.
-      businessContext: integration.businessContext,
-      // The org's editable rules. `resolveSqlRulesPrompt` already fell back to the built-in default
-      // when the field is empty, so this line is unconditional — no branch here means no way for one
-      // transport to pass rules and another to forget them.
-      sqlRules,
-    })
-    // Captured BEFORE the guard so a repaired retry replaces it, matching the SQL that finally runs.
-    sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
-    const guard = validateAndSanitizeLlmSql(candidate.sql)
-    if (!guard.ok) {
-      // Guardrail rejection is retryable — the model often just needs to be
-      // told the system only allows SELECT. Log it and let the loop retry.
-      lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
-      attemptedSql.push(candidate.sql)
-      await db.auditLog.create({
-        data: {
-          organizationId: requireOrgContext(),
-          userId: args.userId,
-          action: 'GUARDRAIL_BLOCK',
-          severity: 'critical',
-          detail: JSON.stringify({
-            integrationId: integration.id,
-            naturalQuery: args.question,
-            generatedSql: candidate.sql,
-            reason: guard.reason,
-            detectedNodes: guard.detectedNodes,
-            attempt,
-          }),
-        },
-      })
-      continue
-    }
-    const sanitizedSql = guard.sanitized
-    try {
-      const result = await withSqlConcurrency(integration.id, () =>
-        withToolSandbox('sql', () => connector.executeQuery(sanitizedSql)),
-      )
-      executed = result
-      finalSql = sanitizedSql
-      break
-    } catch (e) {
-      lastSqlError = e instanceof Error ? e.message : String(e)
-      attemptedSql.push(sanitizedSql)
-      await db.queryHistory.create({
-        data: {
-          organizationId: requireOrgContext(),
-          integrationId: integration.id,
-          userId: args.userId,
-          naturalQuery: args.question,
-          generatedSql: sanitizedSql,
-          success: false,
-          errorMessage: `attempt ${attempt + 1}: ${lastSqlError}`,
-        },
-      })
-      await db.auditLog.create({
-        data: {
-          organizationId: requireOrgContext(),
-          userId: args.userId,
-          action: 'SQL_EXECUTE_ERROR',
-          severity: 'warning',
-          detail: JSON.stringify({ integrationId: integration.id, sql: sanitizedSql, error: lastSqlError, attempt }),
-        },
-      })
-    }
-  }
-
-  if (!executed) {
+  if (outcome.kind === 'ambiguous') return ambiguousDataSourceResult('SQL', args.question, outcome.candidates, started)
+  if (outcome.kind === 'unavailable') return unavailableDataSourceResult('SQL', args.question, started)
+  if (outcome.kind === 'rate_limited') {
     return {
-      answer: `Sorry, the database query failed after ${SQL_REPAIR_ATTEMPTS + 1} attempts.\n\nLast error: ${sanitizeSqlError(lastSqlError)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
+      answer: 'Rate limit exceeded for SQL queries. Please try again in a minute.',
       citations: [],
       chartData: null,
-      integrationId: integration.id,
+      integrationId: outcome.integration.id,
+      toolRuns: [
+        {
+          type: 'SQL',
+          status: 'blocked',
+          latencyMs: Date.now() - started,
+          inputSummary: summarize(args.question),
+          errorMessage: 'SQL rate limit exceeded.',
+        },
+      ],
+    }
+  }
+  if (outcome.kind === 'failed') {
+    return {
+      answer: `Sorry, the database query failed after ${SQL_REPAIR_ATTEMPTS + 1} attempts.\n\nLast error: ${sanitizeSqlError(outcome.lastError)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
+      citations: [],
+      chartData: null,
+      integrationId: outcome.integration.id,
       toolRuns: [
         {
           type: 'SQL',
           status: 'error',
           latencyMs: Date.now() - started,
           inputSummary: summarize(args.question),
-          errorMessage: lastSqlError,
+          errorMessage: outcome.lastError,
         },
       ],
     }
   }
 
-  const result = executed
-  await db.queryHistory.create({
-    data: {
-      organizationId: requireOrgContext(),
-      integrationId: integration.id,
-      userId: args.userId,
-      naturalQuery: args.question,
-      generatedSql: finalSql,
-      rowCount: result.rowCount,
-      executionMs: result.executionMs,
-      success: true,
-    },
-  })
-  await db.auditLog.create({
-    data: {
-      organizationId: requireOrgContext(),
-      userId: args.userId,
-      action: 'SQL_EXECUTE',
-      severity: 'info',
-      detail: JSON.stringify({
-        integrationId: integration.id,
-        sql: finalSql,
-        rowCount: result.rowCount,
-        executionMs: result.executionMs,
-        attempts: attemptedSql.length + 1,
-      }),
-    },
-  })
-
-  const truncated = result.rowCount >= SQL_MAX_LIMIT
-  /*
-   * TELL THE MODEL WHICH OTHER SOURCES EXIST.
-   *
-   * MEASURED IN UAT: "Bandingkan jumlah pengiriman dengan jumlah pesanan" was answered entirely from Logistics — it
-   * reported "Jumlah pesanan (total) | 8" when the Sales database held TWELVE orders, because 8 is the shipment count
-   * relabelled. A prompt rule against one-sided comparisons cannot fix that on its own: the model had no way to know a
-   * second source existed, so it had nothing to name as missing. Verified that the rule alone was insufficient — the
-   * mislabelling survived it.
-   *
-   * The authoritative list is the org's active integrations. The SQL branch does not otherwise need it, so it is
-   * fetched here rather than threaded through every call site: one query, only on the SQL path, only when an answer is
-   * about to be generated, and a failure to fetch simply omits the note rather than failing the turn.
-   */
-  // The list comes from `loadDbData`, which the router ALREADY ran, rather than a second query here. That matters
-  // beyond tidiness: `tool-branches.test.ts` pins that an explicit `integrationId` performs NO candidate listing (it
-  // is the disambiguation path's job), and a fresh `db.integration.findMany` broke exactly that assertion.
-  const otherSources = (args.integrationNames ?? []).filter((n) => n !== integration.name)
-  /*
-   * TWO RULES, and the second one is the one that was missing.
-   *
-   * The first covers a question that asks to COMPARE with another source. The second covers a question about
-   * "everything" / "the system" / how much data exists — a scope the ONE chosen source cannot satisfy, because the
-   * router picked it out of several. MEASURED with three databases connected: "Berapa banyak data yang tersimpan di
-   * sistem?" was answered with "total 45 baris data yang tersebar di empat tabel utama" from ONE of them (citation:
-   * `ZZ Sales.pelanggan`), while the three databases hold 104 rows across 12 tables. The user asked about the system,
-   * got a confident strict subset, and nothing in the answer said the other sources were not consulted. A confident
-   * subset presented as the whole is the same class as a fabricated figure: the reader cannot tell them apart.
-   */
-  const crossSourceNote =
-    otherSources.length > 0
-      ? `Other connected data sources in this workspace: ${otherSources.join(', ')}. ` +
-        `This answer uses ${integration.name} ONLY. Two rules follow, and BOTH apply:\n` +
-        `1. If the question asks you to compare or combine this result with something those sources would hold, say ` +
-        `plainly that THIS ANSWER COVERS ONLY ${integration.name} and name what was not included. Never present a ` +
-        `figure from this source as if it described another one.\n` +
-        `2. If the question asks about "all", "every", "the system", "the workspace", or the TOTAL amount of data, ` +
-        `then this source CANNOT answer it alone: state that the figure covers only ${integration.name}, name the ` +
-        `other sources (${otherSources.join(', ')}) that were NOT included, and offer to run it per source. Never ` +
-        `present a count from ${integration.name} as the count for the workspace.` +
-        '\n\n'
-      : ''
+  const { integration, result, finalSql, sqlExplanation } = outcome
+  // `integrationNames` comes from `loadDbData`, which the router already ran — an explicit `integrationId` must
+  // perform no candidate listing here (pinned by tool-branches.test.ts).
+  const crossSourceNote = buildCrossSourceNote(integration.name, args.integrationNames)
   const answer = await generateAnswer({
     question: args.question,
-    /*
-     * The measured population travels WITH the rows, in the untrusted wrapper (it is model-generated text about the
-     * data, so it must not acquire system authority). Without it the answer cannot say which rows it counted, which is
-     * the whole point of rule 17.
-     */
+    // The measured population travels WITH the rows inside the untrusted wrapper: it is model-generated text about
+    // the data and must not acquire system authority.
     context:
       (sqlExplanation ? `QUERY SCOPE (what the SQL measured): ${sqlExplanation}\n\n` : '') +
       wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2)),
     source: 'SQL',
-    systemPromptPrefix: crossSourceNote + (effectiveSystemPromptPrefix ?? ''),
+    systemPromptPrefix: crossSourceNote + (outcome.systemPromptPrefix ?? ''),
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,
-    truncated,
+    truncated: result.rowCount >= SQL_MAX_LIMIT,
   })
   const citations: Citation[] = [
     {

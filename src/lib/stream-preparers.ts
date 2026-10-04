@@ -1,36 +1,25 @@
 import { db } from '@/lib/db'
 import { scopedLogger } from '@/lib/logger'
-import { getPromptSettings, resolveSqlRulesPrompt } from '@/lib/prompt-settings'
-import { getOrgContext, requireOrgContext } from '@/lib/prisma-tenant'
-import { decryptConfig } from '@/lib/crypto'
-import {
-  connectorRegistry,
-  describeSchema,
-} from '@/lib/connectors'
-import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
-import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT , SQL_REPAIR_MIN_REMAINING_MS, SQL_REPAIR_TOTAL_BUDGET_MS } from '@/lib/constants'
+import { getPromptSettings } from '@/lib/prompt-settings'
+import { requireOrgContext } from '@/lib/prisma-tenant'
+import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT } from '@/lib/constants'
 import {
   generateRestCall,
-  generateSql,
   streamAnswer,
   streamChat,
   type RestEndpointOption,
 } from '@/lib/ai'
 import { retrieveWithReflection } from '@/lib/intent-pipeline'
 import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
-import { resolveIntegrationForQuestion, tokenize } from '@/lib/smart-router'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import { matchEndpoint } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
 import type { Citation } from '@/lib/types'
 import {
-  withSqlConcurrency,
   buildChartDataFromRows,
   buildDocumentCitation,
   summarize,
-  safeParseColumns,
-  safeParseSampleRow,
   extractTableName,
   jsonRowsToChart,
   type ChatHistoryEntry,
@@ -39,6 +28,7 @@ import {
 import { executeRestRequest } from '@/lib/tool-branches'
 import { buildSourceGuidance } from '@/lib/source-guidance'
 import { judgeSqlAnswerability, type RelevanceJudge } from '@/lib/sql-answerability'
+import { runSqlPipeline, buildCrossSourceNote } from '@/lib/pipelines/sql-pipeline'
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 
@@ -342,185 +332,28 @@ export async function prepareSqlStream(args: {
   integrationNames?: string[]
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  /*
-   * The scope filter, applied to ALL FIVE lookups in this branch.
-   *
-   * `null` means unrestricted — what every key created before this axis resolves to — so it is spread in
-   * CONDITIONALLY rather than sent as `in: []`, which would match nothing and lock out every existing key.
-   */
-  const scopeIds = args.integrationIds && args.integrationIds.length > 0 ? args.integrationIds : null
-  const inScope = scopeIds ? { id: { in: scopeIds } } : {}
+  const outcome = await runSqlPipeline(args)
 
-  let integration = args.integrationId
-    ? await db.integration.findFirst({
-        where: { id: args.integrationId, status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
-    : null
-
-  // ponytail: this used to be an inline ~45-line keyword scorer ending in
-  // `bestMatch ?? allIntegrations[0]` — a SECOND implementation that drifted from
-  // the non-streaming path's `orderBy: { createdAt: 'asc' }` and from the
-  // router's ambiguity-aware picker. The same question could therefore resolve to
-  // a different database depending on transport, and when nothing matched both
-  // fallbacks silently took the OLDEST source instead of refusing. Now delegated
-  // to resolveIntegrationForQuestion so there is exactly one implementation.
-  if (!integration) {
-    /*
-     * SCOPED, and this one changes BEHAVIOUR rather than only safety.
-     *
-     * `available` decides whether the single-source fast path or the "ambiguous — ask which" path is taken. An
-     * unscoped count let a key restricted to ONE database count every database in the org, so it was asked to
-     * disambiguate between sources it may not read: the operator would be shown a list of names the key cannot
-     * access, and the single-source fast path it legitimately qualified for never ran.
-     */
-    const available = await db.integration.count({ where: { status: 'active', ...inScope } })
-    if (available > 1) {
-      const choice = await resolveIntegrationForQuestion(tokenize(args.question), args.question, 'refuse', args.integrationIds)
-      if (!choice) {
-        // Refuse to guess in a streaming turn too, and name the candidates.
-        const names = await db.integration.findMany({
-          where: { status: 'active', ...inScope },
-          orderBy: { name: 'asc' },
-          select: { name: true },
-        })
-        return prepareChatStreamWithNote(args, ambiguousStreamNote(names.map((n) => n.name)), started)
-      }
-      integration = await db.integration.findFirst({
-        where: { id: choice.integrationId, status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
-    } else {
-      integration = await db.integration.findFirst({
-        where: { status: 'active', ...inScope },
-        include: { schemas: { orderBy: { tableName: 'asc' } } },
-      })
+  // Refuse to guess in a streaming turn too, and name the candidates.
+  if (outcome.kind === 'ambiguous') return prepareChatStreamWithNote(args, ambiguousStreamNote(outcome.candidates), started)
+  if (outcome.kind === 'unavailable') return prepareChatStream(args)
+  if (outcome.kind === 'rate_limited') {
+    return {
+      toolRuns: [{
+        type: 'SQL',
+        status: 'blocked',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: '',
+        errorMessage: 'SQL rate limit exceeded.',
+      }],
+      citations: [],
+      chartData: null,
+      integrationId: outcome.integration.id,
+      stream: singleChunkStream('Rate limit exceeded for SQL queries. Please try again in a minute.'),
     }
   }
-
-  if (!integration || integration.schemas.length === 0) {
-    return prepareChatStream(args)
-  }
-
-  const schemaDescription = describeSchema(
-    integration.schemas.map((schema) => ({
-      tableName: schema.tableName,
-      columns: safeParseColumns(schema.columns),
-      rowCount: schema.rowCount ?? undefined,
-      sampleRow: safeParseSampleRow(schema.sampleRow),
-      description: schema.description,
-    })),
-  )
-  const connector = connectorRegistry.getConnector(
-    integration.id,
-    integration.provider,
-    decryptConfig(integration.encryptedConfig),
-  )
-
-  /*
-   * The org's editable Text-to-SQL rules.
-   *
-   * This path previously read NO prompt settings at all, so an admin editing them would see the
-   * change apply to scheduled runs and /api/v1 (which use runSqlBranch) while the interactive chat
-   * — the place they were testing — kept the old behaviour. Resolved once per request, not per
-   * repair attempt.
-   */
-  const sqlRules = resolveSqlRulesPrompt((await getPromptSettings(db)).sqlRulesPrompt)
-  // ponytail: SQL error-correction loop, streaming twin of runSqlBranch's.
-  // A failed execution feeds the DB error back to generateSql for a corrected
-  // retry instead of ending the turn with a canned apology.
-  let lastSqlError = ''
-  const attemptedSql: string[] = []
-  let executed: Awaited<ReturnType<typeof connector.executeQuery>> | null = null
-  let finalSql = ''
-  /** The SQL generator's stated scope, forwarded to the answer so it can name the population it measured. */
-  let sqlExplanation = ''
-
-  for (let attempt = 0; attempt <= SQL_REPAIR_ATTEMPTS; attempt++) {
-    /*
-     * TIME BUDGET BEFORE EVERY RETRY — the streaming twin of tool-branches' check, with the same rule:
-     * attempt 0 always runs, and a retry only starts when one attempt's worst case still fits. The loop
-     * previously counted attempts and never the clock, so a retry could begin with the route's deadline
-     * already spent. Both transports must carry the check or the one that does not becomes the slow path
-     * that re-introduces the defect — the transport-drift class this repo has recorded three times.
-     */
-    if (attempt > 0 && Date.now() - started + SQL_REPAIR_MIN_REMAINING_MS() > SQL_REPAIR_TOTAL_BUDGET_MS()) {
-      log.warn('sql repair loop: not enough budget left for another attempt', {
-        elapsedMs: Date.now() - started,
-        budgetMs: SQL_REPAIR_TOTAL_BUDGET_MS(),
-        attemptsDone: attempt,
-      })
-      break
-    }
-    const feedback = attempt > 0
-      ? `The previous SQL was:\n${attemptedSql[attemptedSql.length - 1]}\nIt failed with error:\n${lastSqlError}`
-      : undefined
-    // ponytail: generateSql MUST be inside a try. It was not, and only the SQL
-    // EXECUTION was guarded, so an LLM failure (provider down, dead BYOK key,
-    // timeout — all of which throw) escaped prepareSqlStream entirely. The
-    // caller has already promised the client an SSE stream by that point, so the
-    // turn died with the connection open and ZERO frames sent: the UI showed
-    // nothing at all, not even an error. Found by stream-preparers.test.ts,
-    // which is the first test ever to exercise this path.
-    let candidate: Awaited<ReturnType<typeof generateSql>>
-    try {
-      candidate = await generateSql({
-        question: args.question,
-        schemaDescription,
-        provider: integration.provider,
-        memoryContext: args.memoryContext,
-        systemPromptPrefix: args.systemPromptPrefix,
-        businessContext: integration.businessContext,
-        repairFeedback: feedback,
-        sqlRules,
-      })
-    } catch (e) {
-      // A transient provider blip must not end the turn; the repair loop retries.
-      lastSqlError = e instanceof Error ? e.message : String(e)
-      attemptedSql.push(`<generation failed: ${lastSqlError}>`)
-      continue
-    }
-    /*
-     * The generator's own EXPLANATION, kept because rule 17 puts the measured population there.
-     *
-     * MEASURED IN UAT: `/send` — the path the chat UI uses — streams through HERE, not through `tool-branches.ts`. A
-     * fix applied only to the non-streaming branch therefore changed nothing a user could see, which a probe
-     * confirmed: the branch's log line never fired while the chat kept answering normally. Only `candidate.sql` was
-     * used here; `explanation` was dropped, so the answer generator never learned which rows the SQL had counted.
-     */
-    sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
-    const guard = validateAndSanitizeLlmSql(candidate.sql)
-    if (!guard.ok) {
-      lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
-      attemptedSql.push(candidate.sql)
-      continue // guardrail rejection is retryable
-    }
-    const sanitizedSql = guard.sanitized
-    try {
-      // ponytail: retry on transient connection errors (ECONNRESET is common
-      // with remote PRINASA DB under load — a single retry recovers most cases).
-      let result: Awaited<ReturnType<typeof connector.executeQuery>>
-      try {
-        result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sanitizedSql))
-      } catch (e) {
-        if (/ECONNRESET|ETIMEDOUT|EPIPE|socket hang up/i.test(e instanceof Error ? e.message : String(e))) {
-          await new Promise((r) => setTimeout(r, 1000))
-          result = await withSqlConcurrency(integration.id, () => connector.executeQuery(sanitizedSql))
-        } else {
-          throw e
-        }
-      }
-      executed = result
-      finalSql = sanitizedSql
-      break
-    } catch (e) {
-      lastSqlError = e instanceof Error ? e.message : String(e)
-      attemptedSql.push(sanitizedSql)
-    }
-  }
-
-  if (!executed) {
-    const errMsg = lastSqlError
+  if (outcome.kind === 'failed') {
     return {
       toolRuns: [{
         type: 'SQL',
@@ -528,77 +361,48 @@ export async function prepareSqlStream(args: {
         latencyMs: Date.now() - started,
         inputSummary: summarize(args.question),
         outputSummary: '',
-        errorMessage: errMsg.slice(0, 500),
+        errorMessage: outcome.lastError.slice(0, 500),
       }],
       citations: [],
       chartData: null,
       stream: streamAnswer({
         question: args.question,
-        context: `SQL execution error after ${SQL_REPAIR_ATTEMPTS + 1} attempts: ${errMsg}`,
+        context: `SQL execution error after ${SQL_REPAIR_ATTEMPTS + 1} attempts: ${outcome.lastError}`,
         source: 'SQL',
-        systemPromptPrefix: args.systemPromptPrefix,
+        systemPromptPrefix: outcome.systemPromptPrefix,
         memoryContext: args.memoryContext,
         chatHistory: args.chatHistory,
       }),
     }
   }
 
-  const result = executed
+  const { integration, result, finalSql, sqlExplanation } = outcome
 
   /*
    * SECOND CHANCE FOR THE DOCUMENTS — only when the database provably did not answer.
    *
-   * The router chose this source from the question's wording, and where a database and a document set both cover a
-   * topic that choice is wrong for a small, predictable class of questions: ones phrased like a data query whose
-   * answer is a POLICY figure ("berapa jam pelatihan per tahun …"). MEASURED: 5.7% of document questions in an eval
-   * reached this branch, almost all of them from two phrasings, and each ended as "cannot be computed" or a
-   * confident wrong number. The verdict is read off the ROWS (empty, all-NULL, or the generator's improvised "I
-   * cannot answer" placeholder), never off the answer's wording, and a relevance judge is only consulted on rows that
-   * look populated.
-   *
-   * Never a REPLACEMENT: when the rows answer, this does nothing, and the extra retrieval is only attempted when
-   * documents exist and the user did not pin this database. If the documents have nothing either, the database's own
-   * "no data" answer is what the user gets, exactly as before.
+   * Where a database and a document set both cover a topic, the router is wrong for a small, predictable class of
+   * questions phrased like a data query whose answer is a POLICY figure. MEASURED: 5.7% of document questions in an
+   * eval reached this branch. The verdict is read off the ROWS, never off the answer's wording, and when the rows
+   * answer this does nothing. A pinned database is never second-guessed.
    */
   if (!args.userPinnedIntegration) {
     const fallback = await tryDocumentsAfterSqlMiss(args, result.rows, started)
     if (fallback) return fallback
   }
 
-  /*
-   * The measured population travels WITH the rows, inside the untrusted wrapper (it is model-generated text ABOUT the
-   * data, so it must not acquire system authority). Without it the answer cannot say which rows it counted — which is
-   * the entire point of rule 17, and the reason two questions in one UAT session reported Rp 1.240.000 and Rp 1.620.000
-   * for the same customer without either answer mentioning a filter.
-   */
+  // The measured population travels WITH the rows, inside the untrusted wrapper (rule 17).
   const context =
     (sqlExplanation ? `QUERY SCOPE (what the SQL measured): ${sqlExplanation}\n\n` : '') +
     wrapUntrusted('CONTEXT (DATABASE ROWS):', JSON.stringify(result.rows, null, 2))
   const chartData = buildChartDataFromRows(result.rows)
-  /*
-   * The same two-rule note as the non-streaming twin (see `crossSourceNote` in tool-branches.ts for the measurement
-   * and both rules). Kept as a deliberate duplicate: the two transports have drifted on shared wording before, and a
-   * shared helper would hide that this path was MISSING the note entirely rather than wording it differently.
-   */
-  const otherSources = (args.integrationNames ?? []).filter((n) => n !== integration.name)
-  const crossSourceNote =
-    otherSources.length > 0
-      ? `Other connected data sources in this workspace: ${otherSources.join(', ')}. ` +
-        `This answer uses ${integration.name} ONLY. Two rules follow, and BOTH apply:\n` +
-        `1. If the question asks you to compare or combine this result with something those sources would hold, say ` +
-        `plainly that THIS ANSWER COVERS ONLY ${integration.name} and name what was not included. Never present a ` +
-        `figure from this source as if it described another one.\n` +
-        `2. If the question asks about "all", "every", "the system", "the workspace", or the TOTAL amount of data, ` +
-        `then this source CANNOT answer it alone: state that the figure covers only ${integration.name}, name the ` +
-        `other sources (${otherSources.join(', ')}) that were NOT included, and offer to run it per source. Never ` +
-        `present a count from ${integration.name} as the count for the workspace.\n\n`
-      : ''
+  const crossSourceNote = buildCrossSourceNote(integration.name, args.integrationNames)
   let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
     context,
     source: 'SQL',
-    systemPromptPrefix: crossSourceNote + (args.systemPromptPrefix ?? ''),
+    systemPromptPrefix: crossSourceNote + (outcome.systemPromptPrefix ?? ''),
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     rowCount: result.rowCount,
@@ -628,6 +432,10 @@ export async function prepareSqlStream(args: {
     stream,
     get usage() { return usage },
   }
+}
+
+async function* singleChunkStream(text: string): AsyncGenerator<string, void, unknown> {
+  yield text
 }
 
 /**

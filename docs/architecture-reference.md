@@ -88,9 +88,9 @@ Load it when: changing retrieval, prompts, SQL generation, guardrails, session m
 - **MSSQL has no per-transaction read-only mode.** `readOnlyIntent` only routes to a read replica when the server has an Availability Group; otherwise a read-write login still permits write side effects. A real fix needs an operator-granted read-only role (a customer-side DB setup step). The function deny-list covers `xp_cmdshell`/`OPENROWSET`/`BULK INSERT`/`OPENDATASOURCE`.
 - The "tokenizer + AST walker" in `guardrails.ts` is hand-rolled lexical scanning, not a real SQL parser. The deny-list is the load-bearing part for functions; the DB read-only mode is the load-bearing part for mutation.
 - **LIMIT 100 is enforced textually + by prompt disclosure only** — no row cap enforced at execution time (the synthesis prompt now tells the model to disclose truncation).
-- The SQL repair loop regenerates on guardrail/execution errors, but transient-network retry (streaming) still re-runs *identical* SQL.
-- The streaming SQL path skips `withToolSandbox` and the SQL rate limit (both are non-streaming-only).
-- Integration selection fallback differs by path: non-streaming takes the oldest active integration; streaming uses keyword scoring over table/column names (`stream-preparers.ts`).
+- The SQL repair loop regenerates on guardrail/execution errors; the one transient-network retry (ECONNRESET/ETIMEDOUT/EPIPE) re-runs *identical* SQL.
+
+**One SQL pipeline for both transports (2026-10-04).** `src/lib/pipelines/sql-pipeline.ts` (`runSqlPipeline`) owns integration selection, the SQL rate limit, `contextPrompt`/`businessContext`/`textColumns`, the repair loop, the guardrail, `withToolSandbox` + `withSqlConcurrency`, and every `queryHistory` / audit row. `runSqlBranch` (`tool-branches.ts`) and `prepareSqlStream` (`stream-preparers.ts`) only shape the output. Before this, the streaming path — the one the web chat uses — wrote no SQL audit rows or queryHistory and skipped the rate limit, the sandbox and the integration `contextPrompt`. `pipelines/transport-parity.test.ts` drives one scripted turn through both transports and requires identical side effects; put new SQL behaviour in the pipeline, never in an adapter.
 
 ### Answer confidence & evidence sufficiency (2026-09 trial)
 
