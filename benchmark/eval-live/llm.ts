@@ -51,8 +51,7 @@ export async function complete(
       signal: AbortSignal.timeout(opts.timeoutMs ?? 240_000),
     }).catch((e: unknown) => ({ ok: false, status: 0, text: async () => String(e) }) as Response)
     if (res.ok) {
-      const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      const text = body.choices?.[0]?.message?.content ?? ''
+      const text = completionText(await res.text())
       if (text.trim()) return text
     }
     // 429/5xx/transport/empty: back off and retry; anything else is a configuration error worth surfacing.
@@ -61,6 +60,33 @@ export async function complete(
     await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt))
   }
   throw new Error(`LLM ${model} failed after retries`)
+}
+
+/**
+ * The assistant text of a completion body. Some gateways answer `stream: false` with SSE frames anyway (measured on
+ * two judge candidates, 2026-10-05); the product handles that shape in `iterSseStream`, and so must the harness, or
+ * every judgement silently becomes `null`.
+ */
+export function completionText(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('data:')) {
+    try {
+      const body = JSON.parse(trimmed) as { choices?: Array<{ message?: { content?: string } }> }
+      return body.choices?.[0]?.message?.content ?? ''
+    } catch {
+      return ''
+    }
+  }
+  let out = ''
+  for (const line of trimmed.split('\n')) {
+    const data = line.replace(/^data:\s*/, '').trim()
+    if (!line.startsWith('data:') || !data || data === '[DONE]') continue
+    try {
+      const frame = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> }
+      out += frame.choices?.[0]?.delta?.content ?? frame.choices?.[0]?.message?.content ?? ''
+    } catch { /* a keep-alive or partial frame */ }
+  }
+  return out
 }
 
 /** Parse the first JSON object/array in a model reply (tolerates code fences and prose around it). */

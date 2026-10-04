@@ -18,13 +18,20 @@ import { complete, mapLimit, parseJson } from './llm'
 import type { EvalQuestion } from './generate-questions'
 import { wilson } from './stats'
 
-const JUDGE = process.env.EVAL_JUDGE_MODEL ?? 'cbai/glm-5.2'
+// Claude since 2026-10-05: the previous judge (cbai/glm-5.2) ran out of credits mid-run and every later judgement came
+// back null. A third model family from the generator (DeepSeek) and the question author (Kimi).
+const JUDGE = process.env.EVAL_JUDGE_MODEL ?? 'ag/claude-sonnet-4-6'
 const base = process.env.EVAL_BASE_URL ?? 'http://127.0.0.1:3107'
 const creds = JSON.parse(readFileSync(process.env.EVAL_CREDENTIALS_FILE!, 'utf8')) as { apiKey: string }
 const arg = (name: string) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null)
 const limit = Number(arg('--limit') ?? Infinity)
 const bookPath = arg('--book')
 const book = bookPath ? readFileSync(bookPath, 'utf8') : ''
+// Re-score the answers of an earlier run without asking the product again (e.g. after a judge outage).
+const rejudgePath = arg('--rejudge')
+const prior = rejudgePath
+  ? new Map((JSON.parse(readFileSync(rejudgePath, 'utf8')) as { results: Array<Record<string, unknown>> }).results.map((r) => [r.id as string, r]))
+  : null
 const out = arg('--out') ?? join(import.meta.dir, '../results', `live-rag-${new Date().toISOString().slice(0, 10)}.json`)
 
 const corpusDir = join(import.meta.dir, 'corpus')
@@ -96,12 +103,16 @@ export function ungroundedNumbers(answer: string, citedText: string): string[] {
   return [...new Set((answer.match(/\d[\d.,]*\d|\d/g) ?? []).map(canon))].filter((n) => n.replace('.', '').length >= 2 && !haystack.has(n))
 }
 
+let judgeFailures = 0
 async function judge(prompt: string): Promise<Record<string, unknown> | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return parseJson<Record<string, unknown>>(await complete(JUDGE, [{ role: 'user', content: prompt }], { maxTokens: 1200 }))
+      // 8000, not 1200: a reasoning judge spends its thinking from the same budget, and a truncated reply is a null
+      // judgement — the failure mode the product itself had (4b96893).
+      return parseJson<Record<string, unknown>>(await complete(JUDGE, [{ role: 'user', content: prompt }], { maxTokens: 8000 }))
     } catch { /* retry once */ }
   }
+  judgeFailures++
   return null
 }
 
@@ -109,8 +120,11 @@ const selected = questions.slice(0, limit)
 console.log(`running ${selected.length} questions against ${base}; judge ${JUDGE}`)
 let done = 0
 const results = await mapLimit(selected, 4, async (q) => {
-  const r = await ask(q.question)
-  const docsCited = r.citations.map(citedDoc).filter((d): d is string => Boolean(d))
+  const was = prior?.get(q.id)
+  const r = was
+    ? { answer: String(was.answer ?? ''), citations: [], tools: (was.tools as string[]) ?? [], ms: Number(was.ms), error: was.error as string | undefined }
+    : await ask(q.question)
+  const docsCited = was ? ((was.citedDocs as string[]) ?? []) : r.citations.map(citedDoc).filter((d): d is string => Boolean(d))
   const row: Record<string, unknown> = { id: q.id, category: q.category, lang: q.lang, question: q.question, expected: q.expectedAnswer, answer: r.answer, citedDocs: [...new Set(docsCited)], tools: r.tools, ms: r.ms, error: r.error }
 
   if (!r.error) {
@@ -158,6 +172,9 @@ const summary = {
   judge: JUDGE,
   questions: results.length,
   errors: results.filter((r) => r.error).length,
+  // A judge failure SHRINKS n silently; it is counted so a run cannot look better by losing its hard cases.
+  judgeFailures,
+  rejudgedFrom: rejudgePath,
   answerCorrectness: judged(answerable, 'verdict', (v) => v === 'correct'),
   answerCorrectOrPartial: judged(answerable, 'verdict', (v) => v === 'correct' || v === 'partial'),
   faithfulness: judged(answerable, 'faithful', (v) => v === true),
@@ -181,5 +198,7 @@ console.log(`refusal (unanswer.)  ${pct(summary.refusal)}`)
 console.log(`numeric grounding    ${pct(summary.numericGrounding)}`)
 for (const [cat, w] of Object.entries(byCategory)) console.log(`  ${cat.padEnd(18)} ${pct(w)}`)
 console.log(`errors ${summary.errors}; latency p50 ${summary.latencyMs.p50} ms, p95 ${summary.latencyMs.p95} ms`)
+console.log(`judge ${JUDGE}: ${judgeFailures} failed judgement(s)`)
 console.log(`wrote ${out}`)
-process.exit(0)
+// More than 2% unjudged means the metrics describe a subset chosen by the judge's outages, not the question set.
+process.exit(judgeFailures > results.length * 0.02 ? 2 : 0)
