@@ -88,9 +88,13 @@ describe('every prompt that carries evidence must USE the boundary', () => {
     const branches = await read('./src/lib/tool-branches.ts')
     const streamers = await read('./src/lib/stream-preparers.ts')
     for (const src of [branches, streamers]) {
-      expect(src).toContain("CONTEXT (DOCUMENTS):")
       expect(src).toContain("CONTEXT (DATABASE ROWS):")
     }
+    // Document evidence is wrapped ONCE, in the shared RAG pipeline that both transports call (2026-10-04).
+    const rag = await read('./src/lib/pipelines/rag-pipeline.ts')
+    expect(rag).toContain("wrapUntrusted('CONTEXT (DOCUMENTS):'")
+    expect(rag).toContain("wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):'")
+    for (const src of [branches, streamers]) expect(src).toContain('gatherRagEvidence(')
     expect(branches).toContain('CONTEXT (REST API RESPONSE):')
   })
 })
