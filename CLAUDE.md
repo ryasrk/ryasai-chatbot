@@ -337,60 +337,42 @@ Negative-controlled on the frozen bytes: planting the `mode` read breaks 2 tests
 buffer (`enterWithOrg` is NOT scoping for in-process memory), six row-cap bypasses including two corruptions
 introduced while fixing them, and three silent-failure classes. Full detail: `docs/progress-log-archive.md`.
 
-### 2026-10-01 (b) — v1.7.0–v1.7.2: faster answers, a security pass, two corrections
+### 2026-10-01 (b) — v1.7.0–v1.7.2 *(moved to the archive: faster answers, a security pass, two corrections)*
 
-**v1.7.0 = latency, v1.7.1 = the batch after it, v1.7.2 = two defects found by reviewing 1.7.1** (a cancelled request was classed as a timeout; a safety test passed with no build on disk). Details in `docs/latency-reference.md`; measured on
-15 policy questions x3, on one machine.
+First token 9.3 s → 7.6 s (p95 43.3 s → 11.3 s once timeouts stopped being retried), `bun audit` 130 → 0, and
+`restoreDocVersion` stopped orphaning `KgRelation` rows. Two audit findings were corrected as wrong (the HNSW index
+exists; three "missing indexes" had no query). Full detail: `docs/progress-log-archive.md`.
 
-- Median time to first token **9.3 s → 7.6 s**, LLM calls before it **4.7 → 3.7**, and first-token p95
-  **43.3 s → 11.3 s** once `fetchWithRetry` stopped retrying TIMEOUTS (it retried the one failure that
-  had already spent the full 30 s budget, up to four times). That retry also cost ACCURACY: 3 of 12
-  tool-selection calls returned `null` on a transport timeout, and `null` silently falls back to the
-  heuristic router. A 5xx and a connection error still use the full ladder.
-- Tool selection starts ALONGSIDE intent analysis (`SPECULATIVE_ROUTING=false` restores serial order);
-  a multi-phrasing query is reranked ONCE, not once per phrasing; cognee's two recall strategies run
-  concurrently (MEASURED on production: 565 ms + 536 ms were serialised on every turn).
-- A per-turn breakdown reaches the `done` frame and `/api/metrics`
-  (`chat_first_token_ms`, `chat_turn_total_ms`, `chat_pre_token_llm_calls`), and
-  `benchmark/latency-eval.ts` refuses a change that makes a previously-correct answer wrong.
-- Citation snippets show the chunk's own text (they showed the document's context prefix, so three
-  sources of one document displayed the same 240 characters).
+### 2026-10-04 — unreleased: one pipeline per tool, a parsed SQL guard, per-role data access
 
-**Rejected with evidence, not re-open blindly:** turning the reranker off is fastest (median → 5.3 s)
-but on this corpus the answer chunk is already first after fusion in 13 of 14 answerable questions, so
-"no regression" could not have failed; and the rerank score cannot replace the reflection check — the
-compound question scored 10 while reflection correctly called the evidence insufficient.
+Driven by a repo audit (architecture 7.5, Text-to-SQL security 7.5, RAG 8.0). Unreleased on `dev`; version unchanged.
 
-**Security: 130 advisories → 0** (`bun audit`; v1.7.1 left 2, closed in v1.7.3 by overriding `deepmerge-ts`/`effect`). `next` 16.1.3 → 16.3.8 fixes two CRITICALS fixed only
-in ≥16.3.3, one of them an unauthenticated RCE in the Image Optimization API — live here, because the
-login screen calls `next/image`. The declared range `^16.1.1` would have reinstalled a vulnerable
-version on the next install, so the floor is now asserted by a test. `prismjs` is pinned to 1.30.0 by
-override (`react-syntax-highlighter → refractor@3.6.0` pulls `~1.27.0` into a CLIENT chunk). `deepmerge-ts`
-and `effect` are pinned exactly by `@prisma/config@6.19.2` (prisma CLI only); v1.7.3 overrides them after
-running migrate's real command inside the real scheduler image. `dependency-security.test.ts` asserts all three.
+- **The two chat transports had drifted on SQL.** `prepareSqlStream` — the web chat — wrote no `GUARDRAIL_BLOCK` /
+  `SQL_EXECUTE` audit and no `queryHistory`, and skipped the SQL rate limit, `withToolSandbox`, the integration
+  `contextPrompt` and `textColumns`. `pipelines/sql-pipeline.ts` and `pipelines/rag-pipeline.ts` now own the logic;
+  `transport-parity.test.ts` drives one turn through both transports and requires identical side effects.
+- **Parsed SQL guard** (`sql-ast-guard.ts`, `node-sql-parser`, ADR 0013), fail-closed, after the lexical scan.
+  Measured first: 137/138 distinct real queries and 480/480 gold queries pass. It caught two lexical bypasses —
+  `"pg_read_file"(…)` (quoted name; the scan now unquotes too) and a catalog in a quoted comma-join.
+- **Per-role access** (ADR 0014): `Integration.accessMode` + `DataAccessPolicy` (tables/columns for analyst/viewer),
+  `Document.allowedRoles`. Enforced in the generator's schema view, the AST guard, the router's document scope and the
+  document/integration read routes. Migration `20261004000002_data_access_policy`.
+- **Static security corpus** (`bun run sql-security-eval`, in CI): 381 attacks 0 bypasses, 66 controls 0 blocked.
+  Negative control: the lexical scan alone lets 76 through (20 catalog, 56 policy).
+- **Authorization defects found on the way**: document version create/restore and schema `?refresh=1` were open to
+  every role (now admin); integration detail/schema served every sample row to every role (now filtered).
+- MSSQL runs each query in an always-rolled-back transaction; MySQL bounds execution server-side
+  (`max_execution_time` / MariaDB `max_statement_time`); "Test connection" reports a login that can write.
+- `module-budget.test.ts` ratchets 3 import cycles and 9 modules over 800 lines.
+- **Corrected audit claim:** the retrieval fallback `loadAllCandidateChunks` is bounded (≤3 documents) and only runs
+  when FTS and vectors both return nothing — not a full scan.
 
-**Two audit findings were WRONG, corrected here.** The HNSW index is PRESENT in production
-(`DocumentChunk_embedding_hnsw`, checked with `pg_indexes`), and three of the four "missing indexes"
-have no query that would use them — only `Document(organizationId, status, isEnabled, createdAt)` was
-real and is added.
+Not done. Needs a live LLM to measure: fencing schema/sample data in the SQL prompt, and the larger RAG/SQL evals with
+an independent judge. Not started: the 1M-chunk retrieval load test, numeric-grounding checks, the real-PDF e2e, and
+splitting `real-connectors.ts`.
 
-**A real bug: `restoreDocVersion` orphaned the knowledge graph.** It deleted a document's chunks and
-re-inserted them without touching `KgRelation`, whose `chunkId` names a chunk id — MEASURED, 131 of 131
-rows orphaned in a development database, 0 in production. Fixed in the same operation. **The FK was
-deliberately NOT added**: `prisma db push` runs in `migrate` on EVERY boot BEFORE the app starts, and
-on a clone holding those rows it exited non-zero ("violates foreign key constraint"), so an affected
-install would stop booting. `scripts/cleanup-kg-orphans.ts` handles an install that already has
-orphans; on the clone the push succeeded once it had run.
-
-**A negative control caught a vacuous test TWICE.** The cleanup first chained `.catch()`, which does
-NOT catch a synchronous throw from an absent `kgRelation` delegate — the throw aborted the restore
-after the chunks were already deleted. Its test then survived its own control twice: `delete
-dbMock.kgRelation` reads as undefined (so `.catch()` caught the TypeError after all), and swapping
-`dbMock.db` after import changed nothing because the reference was already bound. It now throws on
-property ACCESS through a Proxy installed before the import, and the old form fails it.
-
-**Verified:** tsc 0 · lint 0 errors · 313 files, 7664 pass, 0 fail · coverage:gate OK · e2e 19 ·
-build · e2e:prod 19.
+Verified: tsc 0 · lint 0 errors · 348 files, 8,243 pass, 0 fail · coverage:gate OK (220 modules, 76.83%) · build ·
+e2e 19 · e2e:prod 19 · `sql-security-eval` 381/381 blocked, 66/66 allowed.
 
 ### 2026-10-03 (b) — v2.1.0: retrieval stops waiting for the routing verdict
 

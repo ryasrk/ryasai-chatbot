@@ -796,3 +796,58 @@ floor sits above its measurement, or when a floor names a file the summary no lo
 **Verified:** tsc 0 · lint 0 errors · 307/307 files, 7599 pass, 0 fail · coverage:gate OK (203 modules) · e2e dev 18 · e2e:prod 18 · `docker compose config` rc=0 on both composes. Negative controls restored byte-identical throughout, including one that reproduced the ORIGINAL leaks (an analyst got HTTP 200 when `requireRole` was deleted).
 
 **Recorded rather than hidden:** arithmetic counts (`LIMIT 1000000*100`) and `TOP n PERCENT` cannot be bounded by a lexical clamp — both pinned as DOCUMENTED GAP tests so the absence stays visible. A deliberately-failing negative-control artifact (`zz-nc-plant.test.ts`) was left in the tree by a subagent and removed; it was the cause of a transient 8-failure suite run.
+
+### 2026-10-01 (b) — v1.7.0–v1.7.2: faster answers, a security pass, two corrections
+
+**v1.7.0 = latency, v1.7.1 = the batch after it, v1.7.2 = two defects found by reviewing 1.7.1** (a cancelled request was classed as a timeout; a safety test passed with no build on disk). Details in `docs/latency-reference.md`; measured on
+15 policy questions x3, on one machine.
+
+- Median time to first token **9.3 s → 7.6 s**, LLM calls before it **4.7 → 3.7**, and first-token p95
+  **43.3 s → 11.3 s** once `fetchWithRetry` stopped retrying TIMEOUTS (it retried the one failure that
+  had already spent the full 30 s budget, up to four times). That retry also cost ACCURACY: 3 of 12
+  tool-selection calls returned `null` on a transport timeout, and `null` silently falls back to the
+  heuristic router. A 5xx and a connection error still use the full ladder.
+- Tool selection starts ALONGSIDE intent analysis (`SPECULATIVE_ROUTING=false` restores serial order);
+  a multi-phrasing query is reranked ONCE, not once per phrasing; cognee's two recall strategies run
+  concurrently (MEASURED on production: 565 ms + 536 ms were serialised on every turn).
+- A per-turn breakdown reaches the `done` frame and `/api/metrics`
+  (`chat_first_token_ms`, `chat_turn_total_ms`, `chat_pre_token_llm_calls`), and
+  `benchmark/latency-eval.ts` refuses a change that makes a previously-correct answer wrong.
+- Citation snippets show the chunk's own text (they showed the document's context prefix, so three
+  sources of one document displayed the same 240 characters).
+
+**Rejected with evidence, not re-open blindly:** turning the reranker off is fastest (median → 5.3 s)
+but on this corpus the answer chunk is already first after fusion in 13 of 14 answerable questions, so
+"no regression" could not have failed; and the rerank score cannot replace the reflection check — the
+compound question scored 10 while reflection correctly called the evidence insufficient.
+
+**Security: 130 advisories → 0** (`bun audit`; v1.7.1 left 2, closed in v1.7.3 by overriding `deepmerge-ts`/`effect`). `next` 16.1.3 → 16.3.8 fixes two CRITICALS fixed only
+in ≥16.3.3, one of them an unauthenticated RCE in the Image Optimization API — live here, because the
+login screen calls `next/image`. The declared range `^16.1.1` would have reinstalled a vulnerable
+version on the next install, so the floor is now asserted by a test. `prismjs` is pinned to 1.30.0 by
+override (`react-syntax-highlighter → refractor@3.6.0` pulls `~1.27.0` into a CLIENT chunk). `deepmerge-ts`
+and `effect` are pinned exactly by `@prisma/config@6.19.2` (prisma CLI only); v1.7.3 overrides them after
+running migrate's real command inside the real scheduler image. `dependency-security.test.ts` asserts all three.
+
+**Two audit findings were WRONG, corrected here.** The HNSW index is PRESENT in production
+(`DocumentChunk_embedding_hnsw`, checked with `pg_indexes`), and three of the four "missing indexes"
+have no query that would use them — only `Document(organizationId, status, isEnabled, createdAt)` was
+real and is added.
+
+**A real bug: `restoreDocVersion` orphaned the knowledge graph.** It deleted a document's chunks and
+re-inserted them without touching `KgRelation`, whose `chunkId` names a chunk id — MEASURED, 131 of 131
+rows orphaned in a development database, 0 in production. Fixed in the same operation. **The FK was
+deliberately NOT added**: `prisma db push` runs in `migrate` on EVERY boot BEFORE the app starts, and
+on a clone holding those rows it exited non-zero ("violates foreign key constraint"), so an affected
+install would stop booting. `scripts/cleanup-kg-orphans.ts` handles an install that already has
+orphans; on the clone the push succeeded once it had run.
+
+**A negative control caught a vacuous test TWICE.** The cleanup first chained `.catch()`, which does
+NOT catch a synchronous throw from an absent `kgRelation` delegate — the throw aborted the restore
+after the chunks were already deleted. Its test then survived its own control twice: `delete
+dbMock.kgRelation` reads as undefined (so `.catch()` caught the TypeError after all), and swapping
+`dbMock.db` after import changed nothing because the reference was already bound. It now throws on
+property ACCESS through a Proxy installed before the import, and the old form fails it.
+
+**Verified:** tsc 0 · lint 0 errors · 313 files, 7664 pass, 0 fail · coverage:gate OK · e2e 19 ·
+build · e2e:prod 19.

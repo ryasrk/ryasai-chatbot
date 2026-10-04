@@ -195,7 +195,17 @@ const FLOORS: Record<string, number> = {
    * measured coverage collapses. Fixing that mock contamination is the real fix; this floor moves only so the gate
    * can report everything else meanwhile.
    */
-  'src/lib/guardrails.ts': 59, // re-measured 60.09% after the v1.6.0 fixes grew this file; floor was 78
+  // 59 -> 56 on 2026-10-04: the deny-list (41 always-executed lines) MOVED to sql-function-denylist.ts so the lexical
+  // scan and the new AST guard share one copy. Merged 259/431 -> 238/417 = 57.07%; isolated, the guardrail suites
+  // cover 100% of lines here. The merged gap is the mock contamination documented above, not untested code.
+  'src/lib/guardrails.ts': 56,
+  // New on 2026-10-04 — floors set one point under the merged measurement.
+  'src/lib/sql-function-denylist.ts': 99, // 41/41
+  'src/lib/sql-ast-guard.ts': 90, // 156/170 = 91.76%
+  'src/lib/access-scope.ts': 95, // 64/66 = 96.97%
+  'src/lib/pipelines/sql-pipeline.ts': 85, // 233/270 = 86.30%
+  'src/lib/pipelines/rag-pipeline.ts': 86, // 74/85 = 87.06%
+  'src/app/api/integrations/[id]/access-policy/route.ts': 99, // 113/113
   // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
   // EXECUTION, the GET input channel, and the enabled-plugin listing's column select.
   // Same merge artefact as mcp-client above: `plugin-registry-mcp-stdio.test.ts` landed without the floor it earns.
