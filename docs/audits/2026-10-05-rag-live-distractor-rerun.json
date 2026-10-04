@@ -1,0 +1,346 @@
+{
+  "summary": {
+    "ranAt": "2026-10-04T20:58:43.921Z",
+    "judge": "ag/gemini-3.8-flash-high",
+    "questions": 13,
+    "errors": 3,
+    "judgeFailures": 0,
+    "rejudgedFrom": null,
+    "answerCorrectness": {
+      "rate": 0.1,
+      "low": 0.01787574951572113,
+      "high": 0.4041563854975721,
+      "n": 10
+    },
+    "answerCorrectOrPartial": {
+      "rate": 0.1,
+      "low": 0.01787574951572113,
+      "high": 0.4041563854975721,
+      "n": 10
+    },
+    "faithfulness": {
+      "rate": 0.1,
+      "low": 0.01787574951572113,
+      "high": 0.4041563854975721,
+      "n": 10
+    },
+    "citationHit": {
+      "rate": 0.5,
+      "low": 0.23658959361548731,
+      "high": 0.7634104063845126,
+      "n": 10
+    },
+    "refusal": {
+      "rate": null,
+      "low": null,
+      "high": null,
+      "n": 0
+    },
+    "numericGrounding": {
+      "rate": 0.7,
+      "low": 0.39677321997956516,
+      "high": 0.892210712513788,
+      "n": 10
+    },
+    "byCategory": {
+      "distractor-book": {
+        "rate": 0.1,
+        "low": 0.01787574951572113,
+        "high": 0.4041563854975721,
+        "n": 10
+      }
+    },
+    "latencyMs": {
+      "p50": 43090,
+      "p95": 68491
+    }
+  },
+  "results": [
+    {
+      "id": "q223",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the book, in what year was Harvard's first doctorate in artificial life (a-life) granted?",
+      "expected": "2015",
+      "answer": "The retrieved material discusses artificial life (a-life) in general terms — its lessons for understanding natural life, its practical applications, and the weak a-life school — but it contains no mention of Harvard or of any doctorate in artificial life, so no year is given. Saya tidak menemukan ini dalam dokumen yang terambil: neither the book excerpt nor the knowledge-graph relations provide a year for Harvard's first a-life doctorate.",
+      "citedDocs": [
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 52900,
+      "citationHit": true,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant states that it cannot find the answer in the retrieved material, failing to provide the year 2015.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "The retrieved material contains no mention of Harvard or of any doctorate in artificial life",
+        "No year is given for Harvard's doctorate in artificial life",
+        "Neither the book excerpt nor the knowledge-graph relations provide a year for Harvard's first a-life doctorate"
+      ]
+    },
+    {
+      "id": "q224",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "At the turn of the century, what did older Americans begin leaving for analysis on behalf of their descendants?",
+      "expected": "a bequest of their tissue",
+      "answer": "They began leaving **DNA samples**—usually saliva or cheek-swab samples—for genetic analysis, so their descendants could trace ancestry and inherited traits.",
+      "citedDocs": [],
+      "tools": [
+        "CHAT:success"
+      ],
+      "ms": 55130,
+      "citationHit": false,
+      "verdict": "incorrect",
+      "judgeReason": "The reference answer specifies that they began leaving 'a bequest of their tissue'. The assistant failed to mention tissue or a bequest, incorrectly stating they left DNA samples such as saliva or cheek swabs.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q225",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "How many gene code segments did NIH seek to patent in 1994 before deciding not to appeal and drop its other claims?",
+      "expected": "315",
+      "answer": "",
+      "citedDocs": [],
+      "tools": [],
+      "ms": 43090,
+      "error": "HTTP 500 {\"code\":\"INTERNAL_ERROR\",\"message\":\"Failed to process external chat completion.\"}"
+    },
+    {
+      "id": "q226",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What structural change in the electric system did unbundling enable, as described in the text?",
+      "expected": "the split of generation from transmission and distribution",
+      "answer": "The retrieved text does not use the term \"unbundling\" itself — it describes the closest equivalent as the deregulation of electric utilities, which it says is \"largely completed.\" According to the text, deregulation (loosened by the National Energy Act of 1992, which eased the 1935 Public Utility Holding Company Act) made utilities \"effective common carriers\" through competition, and the structural change that followed was a shift from vertically integrated utility-only generation to a mix that includes independent power producers.\n\nThe described results of that shift were:\n\n- Independent power producers grew in number and increasingly supplied expanded capacity, stepping in to cover capacity shortfalls caused by utilities' reluctance to build new plants — reaching about 15% of all electricity by 2010, according to the text.\n- Power was wheeled across the continent, letting power-rich regions supply shortfalls elsewhere in emergencies, and wheeling became an important means for making up power shortfalls (eastern Canada supplying the U.S. Northeast).\n- The means of delivering electricity was \"radically reshaped by the use of information technology,\" with power distribution using a computerized auction system based on electronic data interchange technology, and offers of power at variable quality and rates to business, residential and industrial customers based on programming.\n- Contrary to analysts' predictions, the text states that consolidation of utilities did not happen on a large scale in the United States or the EC.\n\nOne caveat: the retrieved passages are fragmentary and partly garbled, so this reflects only what the extracted text states — I did not find a passage that frames these changes explicitly under the label \"unbundling.\"",
+      "citedDocs": [
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 57923,
+      "citationHit": true,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant failed to find the mention of 'unbundling' in the text and did not state the reference answer, which is the split of generation from transmission and distribution.",
+      "ungroundedNumbers": [
+        "1992",
+        "1935",
+        "15",
+        "2010"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q229",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, in what year were the Clean Air Act Amendments passed in the United States?",
+      "expected": "1990",
+      "answer": "The excerpt mentions the U.S. Clean Air Act Amendments in two places, but neither gives a year for their passage: one refers to them simply as \"CleanAirActAmendments\" alongside a garbled passage about energy efficiency standards, and the other describes them as having occurred \"last century\" and as having set the precedent for this century's International Agreement on the Troposphere. The only specific years nearby (such as 1990) are attached to other events, not to the Amendments.\n\nSo, in short: saya tidak menemukan ini dalam dokumen yang terambil — the passage year is not stated in the excerpt.",
+      "citedDocs": [
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 52170,
+      "citationHit": true,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant failed to identify 1990 as the year the Clean Air Act Amendments were passed and incorrectly claimed the year was not provided in the excerpt.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "The excerpt mentions the U.S. Clean Air Act Amendments in two places.",
+        "Neither mention gives a year for the passage of the Clean Air Act Amendments.",
+        "One mention refers to them simply as 'CleanAirActAmendments' alongside a garbled passage about energy efficiency standards.",
+        "The other mention describes them as having occurred 'last century' and as having set the precedent for this century's International Agreement on the Troposphere.",
+        "Specific years nearby (such as 1990) are attached to other events, not to the Amendments.",
+        "The passage year is not stated in the excerpt."
+      ]
+    },
+    {
+      "id": "q231",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What accord, discussed in the context of advances against the drug trade, was established in 2016?",
+      "expected": "The Hague Accord",
+      "answer": "The **2016 Colombian peace accord** — the **Final Agreement to End the Armed Conflict and Build a Stable and Lasting Peace** between the Colombian government and the **FARC** guerrilla group. It was signed in 2016 and is often discussed in the context of efforts against the drug trade, since it included provisions on rural development and illicit drug crops.",
+      "citedDocs": [],
+      "tools": [
+        "CHAT:success"
+      ],
+      "ms": 14743,
+      "citationHit": false,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant identified the 2016 Colombian peace accord instead of the Hague Accord specified in the reference.",
+      "ungroundedNumbers": [
+        "2016"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q232",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, what percentage of GDP growth this century is accounted for by the pollution tracking and control industry?",
+      "expected": "20%",
+      "answer": "I don't see an excerpt in our conversation yet — no document or passage has been shared, so I can't pull a percentage from it.\n\nIf you paste the excerpt (or point me to the document it came from), I'll find the figure for the share of this century's GDP growth attributed to the pollution tracking and control industry and give you the exact number as stated.",
+      "citedDocs": [],
+      "tools": [
+        "CHAT:success"
+      ],
+      "ms": 12396,
+      "citationHit": false,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant states that it cannot find or see the excerpt, thus failing to provide the requested percentage.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q235",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In what year did rejection engines catch on with the public?",
+      "expected": "about 2012",
+      "answer": "",
+      "citedDocs": [],
+      "tools": [],
+      "ms": 35376,
+      "error": "HTTP 500 {\"code\":\"INTERNAL_ERROR\",\"message\":\"Failed to process external chat completion.\"}"
+    },
+    {
+      "id": "q236",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What U.S. legislation formalized industrial policy and increased coordinated government assistance to manufacturing in 2001?",
+      "expected": "The U.S. Retooling Manufacturing Act of 2001",
+      "answer": "",
+      "citedDocs": [],
+      "tools": [],
+      "ms": 35085,
+      "error": "HTTP 500 {\"code\":\"INTERNAL_ERROR\",\"message\":\"Failed to process external chat completion.\"}"
+    },
+    {
+      "id": "q237",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "Which two countries are described as Brazil's largest trading partners in the discussion of Brazil's manufacturing politics?",
+      "expected": "Chile and Argentina",
+      "answer": "In discussions of Brazil's manufacturing politics and trade, Brazil's two largest trading partners are typically identified as:\n\n1. **China** — Brazil's largest single trading partner, primarily buying soybeans, iron ore, and oil.\n2. **United States** — Brazil's second-largest trading partner, with significant trade in manufactured goods, machinery, and agricultural products.\n\nIf the document you're referencing treats the **European Union** as a single bloc, it may appear alongside China at the top — but as individual countries, it's China and the United States.",
+      "citedDocs": [],
+      "tools": [
+        "CHAT:success"
+      ],
+      "ms": 7340,
+      "citationHit": false,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant failed to identify Chile and Argentina, which are the two countries specified in the source text, and instead answered based on real-world general knowledge (China and the United States).",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q240",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, how many people per year do infectious diseases kill in the poor countries?",
+      "expected": "23 million",
+      "answer": "According to the excerpt, infectious diseases kill 23 million people per year in the poor countries.",
+      "citedDocs": [
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 68491,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant's answer correctly states the exact number of people (23 million) given in the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q241",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What percentage of those at the end of life now choose euthanasia?",
+      "expected": "8.2%",
+      "answer": "There’s no single global percentage, and it depends heavily on what you count—euthanasia, physician-assisted suicide, or “medical aid in dying” (MAID)—and on the country.\n\nIn places where it’s legal and reported, completed cases are a **minority of all deaths**, typically **low single digits**:\n\n| Jurisdiction | Latest data | Completed cases | Share of all deaths |\n|---|---:|---:|---:|\n| Netherlands (euthanasia + assisted suicide) | 2024 | 9,958 | ~5.8% |\n| Canada (MAID; mostly clinician-administered) | 2023 | 15,343 | 4.7% |\n| Belgium (euthanasia) | 2023 | ~3,400 | ~3% |\n| Oregon, U.S. (self-administered aid in dying) | 2023 | 560 | ~1.4% |\n| California, U.S. (self-administered aid in dying) | 2023 | ~1,281 | ~0.4% |\n| Spain (euthanasia) | 2023 | ~766 | ~0.2% |\n\nSo the practical range in legal jurisdictions is roughly **0.2% to 6% of all deaths**, with the Netherlands at the high end. Globally it’s much lower because most countries prohibit euthanasia.\n\nIf you mean **among people who are terminally ill or formally eligible**, the percentage is higher than among all deaths—studies from the Netherlands and Belgium have found roughly **5–15% in some terminal-cancer groups**—but it is still a minority. Also, many people who request it ultimately do not die by euthanasia.\n\nIf you tell me which country or state you’re asking about, I can give the exact latest figure.",
+      "citedDocs": [],
+      "tools": [
+        "CHAT:success"
+      ],
+      "ms": 33326,
+      "citationHit": false,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant failed to state the reference answer of 8.2%, instead providing general real-world estimates across different jurisdictions.",
+      "ungroundedNumbers": [
+        "2024",
+        "9958",
+        "5.8",
+        "2023",
+        "15343",
+        "4.7",
+        "3400",
+        "560",
+        "1.4",
+        "1281",
+        "0.4",
+        "766",
+        "0.2",
+        "15"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "no citation to judge against"
+      ]
+    },
+    {
+      "id": "q243",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, what is described as the world's most popular underwater tourist attraction?",
+      "expected": "The Great Barrier Reef",
+      "answer": "I could not find this in the retrieved material — **saya tidak menemukan ini dalam dokumen yang terambil**. None of the passages provided describe any site as the world's most popular underwater tourist attraction. The closest related mention is a note that the Great Barrier Reef is in better shape than most reefs, but it is not characterized anywhere in these excerpts as the most popular underwater attraction. The other chunks cover topics like virtual reality entertainment, environmental conditions by region, food sufficiency, and air travel, none of which address the question.",
+      "citedDocs": [
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 43834,
+      "citationHit": true,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant states that it cannot find the answer in the retrieved material, failing to identify the Great Barrier Reef as the correct answer.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "None of the passages provided describe any site as the world's most popular underwater tourist attraction.",
+        "The closest related mention is a note that the Great Barrier Reef is in better shape than most reefs.",
+        "The Great Barrier Reef is not characterized anywhere in these excerpts as the most popular underwater attraction.",
+        "The other chunks cover topics like virtual reality entertainment, environmental conditions by region, food sufficiency, and air travel, none of which address the question."
+      ]
+    }
+  ]
+}

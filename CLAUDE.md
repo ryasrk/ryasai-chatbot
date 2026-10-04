@@ -1,7 +1,7 @@
 # CLAUDE.md — ryasai Chatbot (Super-App Track)
 
 > Living document. Update the **Progress Log** at the bottom every session.
-> Last updated 2026-10-01. Version 2.1.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
+> Last updated 2026-10-05. Version 2.1.0. PostgreSQL 16. All PLAN.md phases P0–P5 + S4 + RAG complete. Language standardized to English.
 >
 > **Counts and versions in this file drift.** Section 1 and 8 describe CURRENT state — run the
 > command rather than trusting a number written here; section 9 (Progress Log) is HISTORICAL and
@@ -342,6 +342,36 @@ introduced while fixing them, and three silent-failure classes. Full detail: `do
 First token 9.3 s → 7.6 s (p95 43.3 s → 11.3 s once timeouts stopped being retried), `bun audit` 130 → 0, and
 `restoreDocVersion` stopped orphaning `KgRelation` rows. Two audit findings were corrected as wrong (the HNSW index
 exists; three "missing indexes" had no query). Full detail: `docs/progress-log-archive.md`.
+
+### 2026-10-05 — unreleased: zero import cycles, a live independently judged RAG eval, and what it found
+
+Goal: architecture and RAG toward 9/10 with evidence. Full record: `docs/audits/2026-10-05-architecture-rag-evidence.md`.
+
+- **Architecture.** `src/lib` import cycles 3 → 0 and modules over 800 lines 9 → 0, both now absolute rules in
+  `module-budget.test.ts` (ADR 0015: leaf modules + one explicit port, `chat-completion-port.ts`; public surfaces kept
+  by re-export). `raw-sql-ownership.test.ts` sweeps every raw statement for `organizationId` — it found the embedding
+  `UPDATE` filtering by chunk id only (fixed). Coverage gate 220 → 240 modules.
+- **Security found by the eval:** a key scoped to one database could query all of them through the DAG, agentic
+  loops, planner, unified tools and `/api/v1/agent/run` (`integrationIds` dropped at each delegation).
+- **RAG, same judge (Gemini), 303 questions, 0 failed judgements:** correctness 85.7 → **90.5%**, cross-language
+  75.0 → **95.8%**, multi-hop 61.5 → **79.5%**, false "not found" 9.5% → **5.6%**, p95 61.9 → **50.7 s**. Causes fixed:
+  rerank / kg-extract / synthesis stopped at a 1,024-token default on 73% / 96% / 39% of calls (reasoning model →
+  empty output); chunks separated a section heading from its table (526 → 284 corpus chunks); the pronoun clarification
+  rule never enforced its documented length limit; "According to the excerpt" questions routed to chat; provider
+  timeouts surfaced as anonymous 500s (now typed `LLM_TIMEOUT`, stack logged).
+- **The measurement itself had three defects**, each fixed: two judges failed mid-run (out of credits, then retired)
+  and silently shrank n — failed judgements now counted, >2% exits non-zero; the unanswerable judge could not see the
+  documents; the harness could not parse SSE replies.
+- **Wrong turns, recorded:** the first "after" run measured the OLD build — the server renamed its process to
+  `next-server`, `pkill -f server.js` missed it and the new build failed on EADDRINUSE. Always check which build owns
+  the port (`ss -ltnp` + `/proc/<pid>/cwd`) before trusting a run.
+
+Not done: distractor-book stays ~55% (general-knowledge-phrased questions about a long book are answered from model
+memory); refusal on n=48 moves ±8 points between runs; `unified-tools-mcp.ts` at 13.57% coverage, ungated; no customer
+corpus.
+
+Verified: tsc 0 · lint 0 errors · 351 files, 8,281 pass, 0 fail · coverage:gate OK (240 modules, 76.81%) · e2e 19 ·
+e2e:prod 19.
 
 ### 2026-10-04 — unreleased: one pipeline per tool, a parsed SQL guard, per-role data access
 
