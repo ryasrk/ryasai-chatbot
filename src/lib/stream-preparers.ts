@@ -1,7 +1,5 @@
 import { db } from '@/lib/db'
 import { scopedLogger } from '@/lib/logger'
-import { getPromptSettings } from '@/lib/prompt-settings'
-import { requireOrgContext } from '@/lib/prisma-tenant'
 import { SQL_REPAIR_ATTEMPTS, SQL_MAX_LIMIT } from '@/lib/constants'
 import {
   generateRestCall,
@@ -9,8 +7,7 @@ import {
   streamChat,
   type RestEndpointOption,
 } from '@/lib/ai'
-import { retrieveWithReflection } from '@/lib/intent-pipeline'
-import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
+import { type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import { matchEndpoint } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
@@ -18,7 +15,6 @@ import { executePlugin } from '@/lib/plugin-registry'
 import type { Citation } from '@/lib/types'
 import {
   buildChartDataFromRows,
-  buildDocumentCitation,
   summarize,
   extractTableName,
   jsonRowsToChart,
@@ -26,8 +22,8 @@ import {
   type StreamingCompletionResult,
 } from '@/lib/tool-utils'
 import { executeRestRequest } from '@/lib/tool-branches'
-import { buildSourceGuidance } from '@/lib/source-guidance'
 import { judgeSqlAnswerability, type RelevanceJudge } from '@/lib/sql-answerability'
+import { gatherRagEvidence } from '@/lib/pipelines/rag-pipeline'
 import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
@@ -111,127 +107,30 @@ export async function prepareRagStream(args: {
   speculativeRetrieval?: SpeculativeRetrieval | null
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
-  try {
-    const request = { query: args.question, topK: RAG_ANSWER_TOP_K, documentIds: args.documentIds }
-    retrieval = await settleRetrieval(args.speculativeRetrieval, request, () => retrieveWithReflection(request))
-  } catch (e) {
-    /*
-     * Same recording as the non-streaming twin: the fallback is correct, but it must not be SILENT. The
-     * tool run carries `DEGRADED from RAG` with the failure reason, so the audit trail distinguishes
-     * "answered from chat because retrieval failed" from an ordinary chat turn — the verified weakness
-     * was precisely that the two looked identical.
-     */
-    log.warn('RAG retrieval failed; answering from chat', {
-      error: e instanceof Error ? e.message : String(e),
-    })
+  const evidence = await gatherRagEvidence(args)
+  if (evidence.kind === 'degraded') {
+    log.warn('RAG retrieval failed; answering from chat', { error: evidence.reason })
     const degraded = await prepareChatStream({ ...args })
     return {
       ...degraded,
       toolRuns: degraded.toolRuns.map((run) =>
         run.type === 'CHAT' && run.status === 'success'
-          ? { ...run, outputSummary: summarize(`DEGRADED from RAG: ${e instanceof Error ? e.message : String(e)}`) }
+          ? { ...run, outputSummary: summarize(`DEGRADED from RAG: ${evidence.reason}`) }
           : run,
       ),
     }
   }
-  const topChunks = retrieval.chunks
-  // An empty corpus is NOT degraded (see the twin's comment): retrieval ran and found nothing.
-  if (topChunks.length === 0 && !retrieval.graphContext) return prepareChatStream(args)
-
-  const chunkContext = topChunks
-    .map((item) => `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`)
-    .join('\n\n---\n\n')
-
-  // Same framing as the non-streaming RAG branch — untrusted document text must
-  // be marked as data on BOTH transports, or the two drift (this class of
-  // transport drift has now bitten three times in this codebase).
-  const context = retrieval.graphContext
-    ? `${wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)}\n\n${wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):', retrieval.graphContext)}`
-    : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
-
-  /*
-   * THIS IS THE BRANCH THE WEB CHAT USES, so anything the non-streaming twin does
-   * to the context must be done here too — and it was not. `runRagBranch` gained
-   * the reflection note and the source-guidance injection in the UAT round-2 fix,
-   * but `prepareRagStream` kept sending the bare evidence: the fix was live only
-   * on the transport nothing calls (`/api/documents/search` and the agentic
-   * loop), while the answer the customer actually read was produced here.
-   * MEASURED: asked to refund a complaining customer, the UI answered "there is
-   * no refund procedure in the available sources" while chunk #2 of
-   * `02-sop-layanan-pelanggan.md` contained that procedure verbatim.
-   * Both blocks below are intentional duplicates of src/lib/tool-branches.ts —
-   * see the comment there for why the note is worded the way it is.
-   */
-  const reflectionNote = !retrieval.reflection.sufficient && retrieval.retrievalPasses >= 2
-    ? `\n\n[Note: The retrieved evidence may not fully address the question. Answer based only on the evidence above.` +
-      ` If the answer is not in the evidence, say that YOUR SEARCH did not find it — phrase it as "saya tidak` +
-      ` menemukan ini dalam dokumen yang terambil" — and do NOT claim the document or policy does not exist,` +
-      ` because the search may simply have missed it. Never state that a procedure or figure is absent from the` +
-      ` documents; state only what you did not find.]`
-    : ''
-
-  // Per-document contextPrompts + the org ragContextPrompt, in retrieval order.
-  // Empty prompts inject nothing (buildSourceGuidance returns '').
-  const distinctDocIds: string[] = []
-  for (const c of topChunks) {
-    if (c.documentId && !distinctDocIds.includes(c.documentId)) distinctDocIds.push(c.documentId)
-  }
-  let sourceGuidance = ''
-  if (distinctDocIds.length > 0) {
-    const docs = await db.document.findMany({
-      where: { id: { in: distinctDocIds } },
-      select: { id: true, name: true, contextPrompt: true },
-    })
-    const byId = new Map(docs.map((d) => [d.id, d]))
-    const docPrompts = distinctDocIds
-      .map((id) => byId.get(id))
-      .filter((d): d is NonNullable<typeof d> => Boolean(d))
-      .filter((d) => d.contextPrompt && d.contextPrompt.trim())
-      .map((d) => ({ name: d.name, content: d.contextPrompt! }))
-    const orgPrompt = (await getPromptSettings(db)).ragContextPrompt
-    sourceGuidance = buildSourceGuidance(docPrompts, { budget: 2000, orgPrompt })
-  }
-  const contextWithGuidance = sourceGuidance ? `${sourceGuidance}\n\n${context}` : context
+  if (evidence.kind === 'empty') return prepareChatStream(args)
 
   let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({
     question: args.question,
-    context: contextWithGuidance + reflectionNote,
+    context: evidence.answerContext,
     source: 'RAG',
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     onUsage: (u) => { usage = { promptTokens: u.promptTokens, completionTokens: u.completionTokens } },
-  })
-
-  const citations = topChunks.map((item) =>
-    buildDocumentCitation({
-      documentName: item.documentName,
-      chunkIndex: item.chunkIndex,
-      // The chunk's OWN text: `content` leads with the document summary, which would be every citation's snippet.
-      content: item.ownContent ?? item.content,
-      score: item.score,
-      // Carried, not re-derived: `retrieveWithReflection` re-stamped this list after the merge, and the
-      // answer path concatenates several tool runs' citations, so the array index is not the rank.
-      rank: item.rank,
-    }),
-  )
-
-  await db.auditLog.create({
-    data: {
-      organizationId: requireOrgContext(),
-      userId: null,
-      action: 'RAG_SEARCH',
-      severity: 'info',
-      detail: JSON.stringify({
-        query: args.question,
-        returned: topChunks.length,
-        candidatesScanned: retrieval.candidatesScanned,
-        queryTokens: retrieval.queryTokens,
-        topScore: topChunks[0]?.score ?? 0,
-      }),
-    },
   })
 
   return {
@@ -240,13 +139,13 @@ export async function prepareRagStream(args: {
       status: 'success',
       latencyMs: Date.now() - started,
       inputSummary: summarize(args.question),
-      outputSummary: summarize(context),
+      outputSummary: summarize(evidence.context),
     }],
-    citations,
+    citations: evidence.citations,
     chartData: null,
     stream,
     get usage() { return usage },
-    citationTrail: retrieval.citationTrail,
+    citationTrail: evidence.citationTrail,
   }
 }
 

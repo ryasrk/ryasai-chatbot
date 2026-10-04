@@ -10,10 +10,7 @@ import {
   type RestCallPlan,
   type RestEndpointOption,
 } from '@/lib/ai'
-import { retrieveWithReflection } from '@/lib/intent-pipeline'
-import { RAG_ANSWER_TOP_K, settleRetrieval, type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
-import { getPromptSettings } from '@/lib/prompt-settings'
-import { buildSourceGuidance } from '@/lib/source-guidance'
+import { type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import {
   buildAuthHeaders,
@@ -23,12 +20,12 @@ import {
 } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
+import { gatherRagEvidence } from '@/lib/pipelines/rag-pipeline'
 import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
 import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
   buildChartDataFromRows,
-  buildDocumentCitation,
   sanitizeSqlError,
   summarize,
   unavailableDataSourceResult,
@@ -127,149 +124,35 @@ export async function runRagBranch(args: {
   speculativeRetrieval?: SpeculativeRetrieval | null
 }): Promise<CompletionResult> {
   const started = Date.now()
-  let retrieval: Awaited<ReturnType<typeof retrieveWithReflection>>
-  try {
-    const request = { query: args.question, documentIds: args.documentIds, topK: RAG_ANSWER_TOP_K }
-    retrieval = await settleRetrieval(args.speculativeRetrieval, request, () => retrieveWithReflection(request))
-  } catch (e) {
-    /*
-     * RAG is best-effort — if the knowledge backend is down, degrade to plain chat instead of failing the
-     * whole turn. The degradation is RECORDED rather than silent: `degradedFrom` names the route that was
-     * attempted, so the tool run reads as "answered from chat because retrieval failed" instead of as a
-     * plain chat turn. A user asking a policy question during a sidecar outage otherwise gets a
-     * confident-sounding answer with no citation and no way to tell why.
-     */
-    log.warn('RAG retrieval failed; answering from chat', {
-      error: e instanceof Error ? e.message : String(e),
-    })
-    return runChatBranch(args, {
-      degradedFrom: 'RAG',
-      degradedReason: e instanceof Error ? e.message : String(e),
-    })
+  const evidence = await gatherRagEvidence(args)
+  if (evidence.kind === 'degraded') {
+    log.warn('RAG retrieval failed; answering from chat', { error: evidence.reason })
+    return runChatBranch(args, { degradedFrom: 'RAG', degradedReason: evidence.reason })
   }
-  const topChunks = retrieval.chunks
-  if (topChunks.length === 0 && !retrieval.graphContext) {
-    // Distinct from the error above: retrieval RAN and found nothing. Not degraded — an empty corpus is a
-    // legitimate chat answer, and labelling it degraded would cry wolf on every small install.
-    return runChatBranch(args)
-  }
+  if (evidence.kind === 'empty') return runChatBranch(args)
 
-  const chunkContext = topChunks
-    .map(
-      (item) =>
-        `[Source: ${item.documentName}, chunk #${item.chunkIndex}, score ${item.score}]\n${item.content}`,
-    )
-    .join('\n\n---\n\n')
-  // ponytail: document text is UNTRUSTED — a customer can upload anything. Frame
-  // it as data so a document cannot pose as an instruction (see evidence-boundary.ts
-  // for scope: the SQL path was already defended; this closes the TEXT path).
-  const context = retrieval.graphContext
-    ? `${wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)}\n\n${wrapUntrusted('CONTEXT (KNOWLEDGE GRAPH):', retrieval.graphContext)}`
-    : wrapUntrusted('CONTEXT (DOCUMENTS):', chunkContext)
-  // ponytail: if reflection says evidence is insufficient after multi-turn retrieval,
-  // note it in the context so the LLM doesn't hallucinate beyond the evidence.
-  /*
-   * THE NOTE MUST NOT TURN A RETRIEVAL MISS INTO A CLAIM OF ABSENCE.
-   *
-   * MEASURED IN UAT, on two separate topics: asked "Bagaimana prosedur mengembalikan uang ke pelanggan yang
-   * komplain?", the answer asserted "## Tidak ada prosedur pengembalian uang (refund) dalam sumber yang tersedia"
-   * and enumerated specific sub-details as NOT FOUND — while `02-sop-layanan-pelanggan.md` chunk#2 contains the
-   * refund procedure verbatim (7 hari kerja, 30 hari kalender, biaya 2%, minimal Rp25.000). The same chunk WAS found
-   * by other phrasings of the same question, so the document was reachable and the retrieval simply missed.
-   *
-   * The old wording said "if the evidence doesn't contain the answer, say so" — which instructs the model to report
-   * the ABSENCE OF A POLICY when the truth is ABSENCE FROM ITS OWN SEARCH. Those are different claims and only one
-   * of them is safe: a knowledge officer acting on "there is no refund procedure" would tell a customer so.
-   *
-   * The distinction is now explicit, and the model is told to report the LIMIT OF ITS SEARCH rather than a fact about
-   * the documents. It still refuses to invent an answer — the point is to name the uncertainty honestly.
-   */
-  const reflectionNote = !retrieval.reflection.sufficient && retrieval.retrievalPasses >= 2
-    ? `\n\n[Note: The retrieved evidence may not fully address the question. Answer based only on the evidence above.` +
-      ` If the answer is not in the evidence, say that YOUR SEARCH did not find it — phrase it as "saya tidak` +
-      ` menemukan ini dalam dokumen yang terambil" — and do NOT claim the document or policy does not exist,` +
-      ` because the search may simply have missed it. Never state that a procedure or figure is absent from the` +
-      ` documents; state only what you did not find.]`
-    : ''
-  // Source guidance block (per-doc + org ragContextPrompt). Empty prompts
-  // inject nothing. Fetch per-doc contextPrompts for the distinct contributing
-  // documents in score order (dedupe by first-seen so a doc with 2 chunks
-  // doesn't appear twice). See docs/superpowers/specs/2026-08-26-editable-context-prompts-design.md.
-  const distinctDocIds: string[] = []
-  for (const c of topChunks) {
-    if (c.documentId && !distinctDocIds.includes(c.documentId)) distinctDocIds.push(c.documentId)
-  }
-  let sourceGuidance = ''
-  if (distinctDocIds.length > 0) {
-    const docs = await db.document.findMany({
-      where: { id: { in: distinctDocIds } },
-      select: { id: true, name: true, contextPrompt: true },
-    })
-    // Re-order by retrieval-score (first-seen) so truncation prefers the
-    // highest-scoring evidence — buildSourceGuidance keeps caller-supplied order.
-    const byId = new Map(docs.map((d) => [d.id, d]))
-    const docPrompts = distinctDocIds
-      .map((id) => byId.get(id))
-      .filter((d): d is NonNullable<typeof d> => Boolean(d))
-      .filter((d) => d.contextPrompt && d.contextPrompt.trim())
-      .map((d) => ({ name: d.name, content: d.contextPrompt! }))
-    const orgPrompt = (await getPromptSettings(db)).ragContextPrompt
-    sourceGuidance = buildSourceGuidance(docPrompts, { budget: 2000, orgPrompt })
-  }
-  // Prepend the guidance block to the evidence (NOT as a system message —
-  // keeps systemPromptPrefix semantics untouched per the spec). Empty block
-  // (no prompts anywhere) leaves the context exactly as before.
-  const contextWithGuidance = sourceGuidance ? `${sourceGuidance}\n\n${context}` : context
   const answer = await generateAnswer({
     question: args.question,
-    context: contextWithGuidance + reflectionNote,
+    context: evidence.answerContext,
     source: 'RAG',
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
   })
-  const citations = topChunks.map((item) =>
-    buildDocumentCitation({
-      documentName: item.documentName,
-      chunkIndex: item.chunkIndex,
-      // The chunk's OWN text: `content` leads with the document summary, which would be every citation's snippet.
-      content: item.ownContent ?? item.content,
-      score: item.score,
-      // Carried, not re-derived: `retrieveWithReflection` re-stamped this list after the merge, and the
-      // answer path concatenates several tool runs' citations, so the array index is not the rank.
-      rank: item.rank,
-    }),
-  )
-
-  await db.auditLog.create({
-    data: {
-      organizationId: requireOrgContext(),
-      userId: null,
-      action: 'RAG_SEARCH',
-      severity: 'info',
-      detail: JSON.stringify({
-        query: args.question,
-        returned: topChunks.length,
-        candidatesScanned: retrieval.candidatesScanned,
-        queryTokens: retrieval.queryTokens,
-        topScore: topChunks[0]?.score ?? 0,
-      }),
-    },
-  })
 
   return {
     answer,
-    citations,
+    citations: evidence.citations,
     chartData: null,
     usage: getLastLlmUsage(),
-    citationTrail: retrieval.citationTrail,
+    citationTrail: evidence.citationTrail,
     toolRuns: [
       {
         type: 'RAG',
         status: 'success',
         latencyMs: Date.now() - started,
         inputSummary: summarize(args.question),
-        outputSummary: summarize(context),
+        outputSummary: summarize(evidence.context),
       },
     ],
   }

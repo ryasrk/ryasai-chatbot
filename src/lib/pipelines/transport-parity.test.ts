@@ -22,6 +22,9 @@ let userRole = 'admin'
 let accessMode = 'open'
 let policyRows: Array<{ tableName: string; allowedColumns: string | null }> = []
 let describedTables: string[][] = []
+let answerContexts: string[] = []
+let ragChunks: Array<Record<string, unknown>> = []
+let ragSufficient = true
 
 const INTEGRATION = {
   id: 'int-1',
@@ -67,7 +70,10 @@ mock.module('@/lib/db', () => ({
     appConfig: { findFirst: async () => null },
     user: { findFirst: async () => ({ role: userRole }) },
     dataAccessPolicy: { findMany: async () => policyRows },
-    document: { count: async () => 0, findMany: async () => [] },
+    document: {
+      count: async () => 0,
+      findMany: async () => [{ id: 'd1', name: 'leave.pdf', contextPrompt: 'Quote the article number.' }],
+    },
   },
 }))
 
@@ -115,10 +121,16 @@ mock.module('@/lib/ai', () => ({
     if (next instanceof Error) throw next
     return next
   },
-  generateAnswer: async () => 'answer',
+  generateAnswer: async (a: { context: string; source: string }) => {
+    answerContexts.push(`${a.source}:${a.context}`)
+    return 'answer'
+  },
   generateChat: async () => 'chat',
   generateRestCall: async () => ({ endpointId: null }),
-  streamAnswer: () => gen('answer'),
+  streamAnswer: (a: { context: string; source: string }) => {
+    answerContexts.push(`${a.source}:${a.context}`)
+    return gen('answer')
+  },
   streamChat: () => gen('chat'),
 }))
 
@@ -129,13 +141,28 @@ mock.module('@/lib/tool-rate-limit', () => ({
   checkToolRateLimit: async () => ({ allowed: rateLimitAllowed, remaining: rateLimitAllowed ? 9 : 0 }),
 }))
 
+mock.module('@/lib/intent-pipeline', () => ({
+  retrieveWithReflection: async () => ({
+    chunks: ragChunks,
+    candidatesScanned: ragChunks.length,
+    queryTokens: ['leave'],
+    graphContext: '',
+    reflection: { sufficient: ragSufficient, reason: 'mock', confidence: 1 },
+    retrievalPasses: ragSufficient ? 1 : 2,
+    citationTrail: [],
+  }),
+}))
+
 const realGuardrails = await import('@/lib/guardrails')
 mock.module('@/lib/guardrails', () => realGuardrails)
 
-const { runSqlBranch } = await import('@/lib/tool-branches')
-const { prepareSqlStream } = await import('@/lib/stream-preparers')
+const { runSqlBranch, runRagBranch } = await import('@/lib/tool-branches')
+const { prepareSqlStream, prepareRagStream } = await import('@/lib/stream-preparers')
 
 beforeEach(() => {
+  answerContexts = []
+  ragChunks = []
+  ragSufficient = true
   generateSqlResults = []
   generateSqlCalls = []
   connectorErrors = []
@@ -297,5 +324,43 @@ describe('per-role access is enforced identically on both transports', () => {
       generateSqlResults = [{ sql: 'SELECT salary FROM payroll LIMIT 10' }]
     })
     expect(viaBranch.executedSql).toEqual(['SELECT salary FROM payroll LIMIT 10;'])
+  })
+})
+
+describe('runRagBranch and prepareRagStream build the same answer from the same evidence', () => {
+  const chunk = (i: number) => ({
+    chunkId: `c${i}`, documentId: 'd1', documentName: 'leave.pdf', chunkIndex: i, score: 0.9 - i / 10,
+    content: `SUMMARY\n\nAnnual leave is ${12 + i} days.`, ownContent: `Annual leave is ${12 + i} days.`, rank: i + 1,
+  })
+
+  async function both() {
+    const branch = await runRagBranch({ question: 'How many leave days?', userId: 'u1' } as never)
+    const branchContexts = [...answerContexts]
+    const branchAudits = auditRows.map((r) => r.action)
+    answerContexts = []
+    auditRows = []
+    const stream = await prepareRagStream({ question: 'How many leave days?' } as never)
+    for await (const _ of stream.stream) { /* drain */ }
+    return { branch, stream, branchContexts, streamContexts: [...answerContexts], branchAudits, streamAudits: auditRows.map((r) => r.action) }
+  }
+
+  test('identical answer context (guidance + wrapped evidence), citations and audit', async () => {
+    ragChunks = [chunk(0), chunk(1)]
+    const r = await both()
+    expect(r.streamContexts).toEqual(r.branchContexts)
+    expect(r.branchContexts[0]).toContain('Quote the article number.')
+    expect(r.branchContexts[0]).toContain('Annual leave is 12 days.')
+    expect(r.stream.citations).toEqual(r.branch.citations)
+    expect(r.branch.citations.map((c) => (c as { snippet?: string }).snippet)).toEqual(['Annual leave is 12 days.', 'Annual leave is 13 days.'])
+    expect(r.streamAudits).toEqual(r.branchAudits)
+    expect(r.branchAudits).toEqual(['RAG_SEARCH'])
+  })
+
+  test('insufficient evidence after a second pass adds the same note on both transports', async () => {
+    ragChunks = [chunk(0)]
+    ragSufficient = false
+    const r = await both()
+    expect(r.streamContexts).toEqual(r.branchContexts)
+    expect(r.branchContexts[0]).toContain('YOUR SEARCH did not find it')
   })
 })
