@@ -1,0 +1,3870 @@
+{
+  "generatedAt": "2026-10-04T14:51:21.299Z",
+  "author": "cbai/kimi-k2.7",
+  "verifier": "cbai/glm-5.2",
+  "counts": {
+    "factual": 144,
+    "cross-language": 24,
+    "multi-hop": 39,
+    "colloquial": 24,
+    "distractor-book": 24,
+    "unanswerable": 48
+  },
+  "questions": [
+    {
+      "id": "q001",
+      "category": "factual",
+      "lang": "en",
+      "question": "What aggregate reduction in greenhouse gas emissions does Arunika formally commit to achieving against its 2023 baseline, and by what deadline?",
+      "expectedAnswer": "30% by December 31, 2030",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "Arunika formally commits to reducing aggregate greenhouse gas (GHG) emissions by **30% (-30%) by December 31, 2030**, against the verified 2023 baseline."
+        }
+      ]
+    },
+    {
+      "id": "q002",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the emissions reduction table, what is the 2030 target for Scope 1 (Direct Fuel & Fleet) emissions?",
+      "expectedAnswer": "17,255 tCO2e",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "| **Scope 1 (Direct Fuel & Fleet)** | 24,650 | 22,185 | 17,255 | Telematics controls, idling cap, EV van deployment |"
+        }
+      ]
+    },
+    {
+      "id": "q003",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions?",
+      "expectedAnswer": "4,650 tCO2e",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "| **Scope 2 (Purchased Electricity)** | 5,820 | 4,650 | 4,074 | Rooftop solar installation, high-bay LED retrofits |"
+        }
+      ]
+    },
+    {
+      "id": "q004",
+      "category": "factual",
+      "lang": "en",
+      "question": "In the emissions baseline table, what 2023 baseline value is shown for Scope 3 (Waste & Supply Chain)?",
+      "expectedAnswer": "1,480 tCO2e",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "| **Scope 3 (Waste & Supply Chain)** | 1,480 | 1,320 | 1,036 | Packaging circularity, consolidated backhaul lines |"
+        }
+      ]
+    },
+    {
+      "id": "q005",
+      "category": "factual",
+      "lang": "en",
+      "question": "How many employees are covered by this sustainability and environmental policy?",
+      "expectedAnswer": "1,240",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "The directives set forth in this policy apply to all 1,240 employees, temporary personnel, and registered contractors"
+        }
+      ]
+    },
+    {
+      "id": "q006",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the maximum allowed idling time for motorized equipment at warehouse loading docks and client delivery drop-off bays?",
+      "expectedAnswer": "5 minutes",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "A strict vehicle idling limit of **5 minutes** (300 seconds) is mandatory for all motorized equipment operating at warehouse loading docks, cross-docking staging lanes, and client delivery drop-off bays."
+        }
+      ]
+    },
+    {
+      "id": "q007",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa besar uang harian untuk karyawan Grade 1 di Wilayah Khusus?",
+      "expectedAnswer": "IDR 800.000",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "Grade 1 (C-Level) | IDR 800.000 | IDR 700.000 | IDR 600.000"
+        }
+      ]
+    },
+    {
+      "id": "q008",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa uang harian untuk karyawan Senior Management di Wilayah Lainnya?",
+      "expectedAnswer": "IDR 400.000",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "Grade 2 (Senior Mgmt) | IDR 550.000 | IDR 475.000 | IDR 400.000"
+        }
+      ]
+    },
+    {
+      "id": "q009",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan ketentuan plafon hotel pada kebijakan reimbursement, berapa batas maksimal penggantian kamar hotel per malam untuk karyawan Grade 4?",
+      "expectedAnswer": "IDR 500.000",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "Grade 4: Maksimal IDR 500.000 per malam (Hotel Bintang 3 atau *budget business hotel*)."
+        }
+      ]
+    },
+    {
+      "id": "q010",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang tercakup dalam ruang lingkup kebijakan reimbursement dan perjalanan dinas ini?",
+      "expectedAnswer": "1.240 karyawan",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "seluruh 1.240 karyawan PT Arunika Logistik Nusantara"
+        }
+      ]
+    },
+    {
+      "id": "q011",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa hari kalender batas waktu pengajuan form pertanggungjawaban biaya perjalanan dinas dan klaim reimbursement setelah tanggal kepulangan menurut prosedur dalam dokumen ini?",
+      "expectedAnswer": "14 hari kalender",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "paling lambat **14 hari kalender setelah tanggal kepulangan**"
+        }
+      ]
+    },
+    {
+      "id": "q012",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa plafon maksimal penggantian biaya kamar hotel per malam termasuk pajak dan sarapan untuk karyawan Grade 1 menurut standar fasilitas akomodasi?",
+      "expectedAnswer": "IDR 2.200.000",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "Grade 1: Maksimal IDR 2.200.000 per malam (Hotel Bintang 5 atau setara)."
+        }
+      ]
+    },
+    {
+      "id": "q013",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa nama Chief Financial Officer PT Arunika Logistik Nusantara yang tercantum dalam Matriks Otorisasi Pengadaan?",
+      "expectedAnswer": "Dimas Prasetyo",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "| **Chief Financial Officer (Dimas Prasetyo)** | > Rp 250.000.000 – Rp 500.000.000 | Seluruh komitmen belanja modal (CAPEX) dan operasional (OPEX) |"
+        }
+      ]
+    },
+    {
+      "id": "q014",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa luas fasilitas pergudangan SBY-01 yang disebutkan dalam ruang lingkup kebijakan pengadaan?",
+      "expectedAnswer": "18.000 m²",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "- SBY-01 (Surabaya, 18.000 m²)"
+        }
+      ]
+    },
+    {
+      "id": "q015",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa banyak karyawan yang diikat oleh Kebijakan Pengadaan Barang dan Jasa ini?",
+      "expectedAnswer": "1.240 karyawan",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "Kebijakan ini mengikat 1.240 karyawan Arunika"
+        }
+      ]
+    },
+    {
+      "id": "q016",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa nama Chief Executive Officer yang tercantum dalam Lembar Persetujuan dokumen kebijakan ini?",
+      "expectedAnswer": "Ratna Wijayakusuma",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "| **Ratna Wijayakusuma** |"
+        }
+      ]
+    },
+    {
+      "id": "q017",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa maksimal hari kalender termin pembayaran standar kepada rekanan sejak dokumen penagihan lengkap dan benar diterima?",
+      "expectedAnswer": "30 hari kalender",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "Termin pembayaran standar kepada seluruh rekanan adalah **30 (tiga puluh) hari kalender (Net 30)** terhitung sejak dokumen penagihan lengkap dan benar diterima oleh Departemen Keuangan (Finance)."
+        }
+      ]
+    },
+    {
+      "id": "q018",
+      "category": "factual",
+      "lang": "id",
+      "question": "Dalam rentang nilai berapa seorang Department Manager dapat memberikan otorisasi PR dan PO sesuai Matriks Otorisasi Pengadaan?",
+      "expectedAnswer": "> Rp 10.000.000 – Rp 50.000.000",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "| **Department Manager** | > Rp 10.000.000 – Rp 50.000.000 | Sesuai batas Rencana Anggaran Biaya (RAB) departemen berjalan |"
+        }
+      ]
+    },
+    {
+      "id": "q019",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under POL-FIN-2026-003, what is the default credit limit for a Corporate SME customer?",
+      "expectedAnswer": "IDR 75,000,000",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Corporate SME** | Contracted client; operating history > 12 months; bank statements & NPWP verified | Net 30 calendar days | IDR 75,000,000 | IDR 500,000,000 | Credit Committee |"
+        }
+      ]
+    },
+    {
+      "id": "q020",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the customer segmentation table in the Arunika policy, what are the standard payment terms for an Enterprise customer?",
+      "expectedAnswer": "Net 45 calendar days",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        }
+      ]
+    },
+    {
+      "id": "q021",
+      "category": "factual",
+      "lang": "en",
+      "question": "Which customer segment listed in the POL-FIN-2026-003 table has a default credit limit of IDR 500,000,000?",
+      "expectedAnswer": "Enterprise",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        }
+      ]
+    },
+    {
+      "id": "q022",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+      "expectedAnswer": "2.0% per month",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "- **Rate:** 2.0% per month, calculated on a 30-day pro-rata basis (0.067% per diem) against the gross overdue principal balance."
+        }
+      ]
+    },
+    {
+      "id": "q023",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the maximum cumulative late interest charge allowed as a percentage of the original invoice principal?",
+      "expectedAnswer": "10.0% of the total original invoice principal",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "- **Cap:** Cumulative late interest charges are strictly capped at 10.0% of the total original invoice principal."
+        }
+      ]
+    },
+    {
+      "id": "q024",
+      "category": "factual",
+      "lang": "en",
+      "question": "How many calendar days after invoice dispatch does the policy allow a client to log a billing dispute in Jira Service Management?",
+      "expectedAnswer": "7 calendar days",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "Client disputes regarding rates, damaged cargo, or billing counts must be logged via Jira Service Management within 7 calendar days of invoice dispatch."
+        }
+      ]
+    },
+    {
+      "id": "q025",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the Cost Center Governance and Budget Owners table, who is the designated budget owner for the Warehousing East cost center coded CC-WHSE-51?",
+      "expectedAnswer": "Regional Warehouse Head East",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "| **CC-WHSE-51** | Warehousing East | SBY-01 (18,000 m²), BPN-05 (6,100 m²) | Regional Warehouse Head East | Yusuf Halim (COO) |"
+        }
+      ]
+    },
+    {
+      "id": "q026",
+      "category": "factual",
+      "lang": "en",
+      "question": "In the Cost Center Governance and Budget Owners table, what is the official cost center name mapped to code CC-TECH-40?",
+      "expectedAnswer": "Technology & Systems",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "| **CC-TECH-40** | Technology & Systems | SAP B1, Gudangku v4, RuteKu | IT Infrastructure Manager | Hendra Gunawan (CTO) |"
+        }
+      ]
+    },
+    {
+      "id": "q027",
+      "category": "factual",
+      "lang": "en",
+      "question": "Which executive sponsor is listed for the Human Capital cost center CC-HCTR-30 in the budget owners table?",
+      "expectedAnswer": "Sekar Ayuningtyas (CHRO)",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "| **CC-HCTR-30** | Human Capital | 1,240 Staff, Talent, Payroll | HC Operations Manager | Sekar Ayuningtyas (CHRO) |"
+        }
+      ]
+    },
+    {
+      "id": "q028",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under the CAPEX classification standard in the Expenditure Classification section, what is the minimum acquisition cost (excluding VAT) that requires an item to be budgeted as Capital Expenditure?",
+      "expectedAnswer": "IDR 25,000,000",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "Individual unit purchase cost or aggregated project acquisition cost exceeds **IDR 25,000,000** (exclusive of VAT)."
+        }
+      ]
+    },
+    {
+      "id": "q029",
+      "category": "factual",
+      "lang": "en",
+      "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline?",
+      "expectedAnswer": "5.0%",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "Every operational cost center must integrate a standard **5.0% contingency reserve** calculated against its total controllable OPEX baseline."
+        }
+      ]
+    },
+    {
+      "id": "q030",
+      "category": "factual",
+      "lang": "en",
+      "question": "How many city delivery vans are operated under the Urban Last-Mile transport operations?",
+      "expectedAnswer": "58 vans",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "| **CC-LAST-70** | Urban Last-Mile | 58 City Delivery Vans | Last-Mile Operations Manager | Yusuf Halim (COO) |"
+        }
+      ]
+    },
+    {
+      "id": "q031",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja 5 tahun sampai kurang dari 8 tahun sesuai tabel tambahan loyalitas?",
+      "expectedAnswer": "18 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "| 5 tahun s.d. < 8 tahun | 14 hari kerja | 4 hari kerja | 18 hari kerja |"
+        }
+      ]
+    },
+    {
+      "id": "q032",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja minimal 10 tahun sesuai tabel masa kerja?",
+      "expectedAnswer": "22 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "| $\\ge$ 10 tahun | 14 hari kerja | 8 hari kerja | 22 hari kerja |"
+        }
+      ]
+    },
+    {
+      "id": "q033",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja 3 tahun sampai kurang dari 5 tahun berdasarkan tabel loyalitas?",
+      "expectedAnswer": "16 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "| 3 tahun s.d. < 5 tahun | 14 hari kerja | 2 hari kerja | 16 hari kerja |"
+        }
+      ]
+    },
+    {
+      "id": "q034",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa hari kerja maksimal sisa cuti tahunan yang dapat dialihkan ke tahun berikutnya sesuai kebijakan carry-over?",
+      "expectedAnswer": "6 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "Karyawan diperbolehkan mengalihkan sisa cuti tahunan yang belum terpakai ke tahun kalender berikutnya maksimal sebanyak 6 (enam) hari kerja."
+        }
+      ]
+    },
+    {
+      "id": "q035",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama cuti ayah berbayar penuh yang diberikan kepada karyawan pria saat istrinya melahirkan?",
+      "expectedAnswer": "5 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "Karyawan pria yang istrinya melahirkan atau mengalami keguguran berhak atas cuti ayah selama 5 (lima) hari kerja berbayar penuh."
+        }
+      ]
+    },
+    {
+      "id": "q036",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama cuti melahirkan yang diterima karyawan wanita sesuai kebijakan cuti khusus?",
+      "expectedAnswer": "3 bulan kalender",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "Karyawan wanita berhak atas cuti melahirkan selama 3 (tiga) bulan kalender dengan upah penuh (gaji pokok dan tunjangan tetap)."
+        }
+      ]
+    },
+    {
+      "id": "q037",
+      "category": "factual",
+      "lang": "id",
+      "question": "Dalam tabel struktur golongan jabatan pada kebijakan kompensasi, berapa persentase batas maksimum bonus kinerja tahunan untuk karyawan Grade G1?",
+      "expectedAnswer": "10%",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "| **G1** | Pelaksana Lapangan (Operator Gudang, Helper, Kurir Van) | 4.200.000 | 5.500.000 | 10% |"
+        }
+      ]
+    },
+    {
+      "id": "q038",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut tabel batas manfaat asuransi rawat inap tambahan, berapa batas kamar per hari untuk karyawan Grade G7–G8?",
+      "expectedAnswer": "Rp2.200.000",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "| **G7 – G8** | 2.200.000 | Kamar VIP / VVIP | 320.000.000 |"
+        }
+      ]
+    },
+    {
+      "id": "q039",
+      "category": "factual",
+      "lang": "id",
+      "question": "Pada tabel struktur Grade, berapa gaji pokok maksimum yang tercantum untuk Senior Management & C-Level (Grade G8)?",
+      "expectedAnswer": "Rp65.000.000",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "| **G8** | Senior Management & C-Level (CEO, CFO, CHRO, CTO, COO) | 35.000.000 | 65.000.000 | 40% |"
+        }
+      ]
+    },
+    {
+      "id": "q040",
+      "category": "factual",
+      "lang": "id",
+      "question": "Di bagian administrasi dan ketentuan penutup kebijakan ini, kapan periode cut-off payroll dimulai dan berakhir?",
+      "expectedAnswer": "tanggal 21 bulan berjalan hingga tanggal 20 bulan berikutnya",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "Periode perhitungan *payroll* (*cut-off*) dihitung mulai tanggal 21 bulan berjalan hingga tanggal 20 bulan berikutnya."
+        }
+      ]
+    },
+    {
+      "id": "q041",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa besar tunjangan makan harian yang diterima karyawan Grade G1–G5 sesuai ketentuan tunjangan operasional kerja?",
+      "expectedAnswer": "Rp30.000",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "**Tunjangan Makan:** Diberikan sebesar Rp30.000 per hari kerja efektif kepada seluruh karyawan Grade G1–G5 yang hadir di kantor maupun gudang."
+        }
+      ]
+    },
+    {
+      "id": "q042",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total persentase iuran Jaminan Hari Tua (JHT) BPJS Ketenagakerjaan yang tercantum dalam dokumen?",
+      "expectedAnswer": "5,7%",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "- Jaminan Hari Tua (JHT): 5,7% (3,7% perusahaan, 2,0% karyawan)."
+        }
+      ]
+    },
+    {
+      "id": "q043",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total batas waktu siklus rekrutmen dari publikasi lowongan hingga penerbitan penawaran kerja menurut SOP-HC-2026-002?",
+      "expectedAnswer": "21 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "*Total batas waktu siklus rekrutmen dari publikasi lowongan hingga penerbitan penawaran kerja adalah 21 hari kerja.*"
+        }
+      ]
+    },
+    {
+      "id": "q044",
+      "category": "factual",
+      "lang": "id",
+      "question": "Pada tabel tahapan rekrutmen bagian 3, berapa SLA untuk tahapan Wawancara User?",
+      "expectedAnswer": "3 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "| 5 | *Wawancara User* | Uji kompetensi kerja spesifik dan dinamika fungsi kerja | Kepala Departemen Terkait | 3 | Formulir evaluasi *user* |"
+        }
+      ]
+    },
+    {
+      "id": "q045",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa penanggung jawab dan berapa SLA tahapan Screening Administrasi pada tabel tahapan seleksi?",
+      "expectedAnswer": "HC Recruiter, 3 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "| 2 | *Screening Administrasi* | Verifikasi kualifikasi minimum dan riwayat pengalaman | HC Recruiter | 3 | Daftar kandidat (*shortlist*) |"
+        }
+      ]
+    },
+    {
+      "id": "q046",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama masa percobaan yang wajib dijalani seluruh karyawan dengan status PKWTT?",
+      "expectedAnswer": "3 bulan kalender",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "Seluruh karyawan dengan status Perjanjian Kerja Waktu Tidak Tertentu (PKWTT) wajib menjalani masa percobaan selama 3 (tiga) bulan kalender sejak hari pertama kerja."
+        }
+      ]
+    },
+    {
+      "id": "q047",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa skor evaluasi kinerja minimum yang harus dicapai agar karyawan lulus masa percobaan?",
+      "expectedAnswer": "75,00 dari skala 100",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "- Skor evaluasi kinerja minimum 75,00 dari skala 100."
+        }
+      ]
+    },
+    {
+      "id": "q048",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa insentif pendampingan yang diterima karyawan yang menjalankan tugas sebagai Buddy?",
+      "expectedAnswer": "Rp350.000 per karyawan baru",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "Karyawan yang menjalankan tugas sebagai Buddy berhak memperoleh insentif pendampingan sebesar Rp350.000 per karyawan baru yang dibayarkan melalui payroll pada akhir masa pendampingan setelah pengumpulan laporan *Buddy Evaluation Form*."
+        }
+      ]
+    },
+    {
+      "id": "q049",
+      "category": "factual",
+      "lang": "id",
+      "question": "Kapan dokumen kebijakan MANAJEMEN KINERJA DAN PELATIHAN KARYAWAN mulai berlaku?",
+      "expectedAnswer": "2 Januari 2026",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "Tanggal Berlaku: 2 Januari 2026"
+        }
+      ]
+    },
+    {
+      "id": "q050",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah total karyawan Arunika yang terikat oleh kebijakan ini?",
+      "expectedAnswer": "1.240 karyawan",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "Kebijakan ini mengikat secara hukum bagi seluruh 1.240 karyawan Arunika"
+        }
+      ]
+    },
+    {
+      "id": "q051",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa luas area fasilitas pergudangan JKT-02 Cikarang yang tercantum dalam ruang lingkup kebijakan?",
+      "expectedAnswer": "24.500 m²",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "JKT-02 Cikarang (24.500 m²)"
+        }
+      ]
+    },
+    {
+      "id": "q052",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa anggaran pelatihan tahunan per karyawan untuk Grade 3 menurut tabel anggaran pelatihan?",
+      "expectedAnswer": "Rp 9.000.000",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "| **Grade 3** | Supervisor Gudang Hub, Koordinator Transport, Fleet Specialist | Rp 9.000.000 |"
+        }
+      ]
+    },
+    {
+      "id": "q053",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama durasi Program Peningkatan Kinerja (PIP) yang diatur dalam kebijakan ini?",
+      "expectedAnswer": "60 hari kalender",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "PIP berlangsung selama tepat 60 (enam puluh) hari kalender"
+        }
+      ]
+    },
+    {
+      "id": "q054",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa persentase kuota maksimal untuk predikat kinerja Luar Biasa (Outstanding) menurut tabel distribusi kuota?",
+      "expectedAnswer": "5%",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "| **5** | Luar Biasa (*Outstanding*) | 5% |"
+        }
+      ]
+    },
+    {
+      "id": "q055",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa yang berwenang menerbitkan Surat Peringatan II berdasarkan tabel jenjang sanksi?",
+      "expectedAnswer": "Head of Division & HC",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "| **Surat Peringatan II (SP 2)** | 6 Bulan | Head of Division & HC | Mengabaikan instruksi kerja resmi; merusak aset fasilitas pergudangan atau armada akibat kelalaian operasional. |"
+        }
+      ]
+    },
+    {
+      "id": "q056",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama masa berlaku Surat Peringatan I menurut tabel tingkatan sanksi?",
+      "expectedAnswer": "6 Bulan",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "| **Surat Peringatan I (SP 1)** | 6 Bulan | Manajer Departemen & HC | Pelanggaran SOP operasional berulang; merokok di luar batas area merokok yang ditentukan. |"
+        }
+      ]
+    },
+    {
+      "id": "q057",
+      "category": "factual",
+      "lang": "id",
+      "question": "Sanksi apa yang dikenakan kepada karyawan yang melakukan pelanggaran SOP operasional berulang atau merokok di luar batas area merokok yang ditentukan?",
+      "expectedAnswer": "Surat Peringatan I (SP 1)",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "| **Surat Peringatan I (SP 1)** | 6 Bulan | Manajer Departemen & HC | Pelanggaran SOP operasional berulang; merokok di luar batas area merokok yang ditentukan. |"
+        }
+      ]
+    },
+    {
+      "id": "q058",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara per 31 Desember 2025?",
+      "expectedAnswer": "1.240 karyawan",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "1.240 karyawan per 31 Desember 2025."
+        }
+      ]
+    },
+    {
+      "id": "q059",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa batas nilai nominal cinderamata bisnis musiman yang dapat ditoleransi per entitas rekanan per tahun takwim?",
+      "expectedAnswer": "Rp 500.000",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "nilai nominal wajar maksimal sebesar Rp 500.000 (lima ratus ribu rupiah) per entitas rekanan per tahun takwim"
+        }
+      ]
+    },
+    {
+      "id": "q060",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jarak minimum area merokok yang diizinkan dari pintu perimeter gudang?",
+      "expectedAnswer": "25 meter",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "jarak minimal 25 meter dari pintu perimeter gudang"
+        }
+      ]
+    },
+    {
+      "id": "q061",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah tingkatan klasifikasi data yang diatur dalam dokumen kebijakan keamanan informasi ini?",
+      "expectedAnswer": "4 (empat)",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Seluruh data, arsip elektronik, dokumen cetak, dan rekaman digital diklasifikasikan ke dalam 4 (empat) tingkatan:"
+        }
+      ]
+    },
+    {
+      "id": "q062",
+      "category": "factual",
+      "lang": "id",
+      "question": "Apa saja aturan penanganan data dengan klasifikasi Level 4 (Sangat Rahasia) menurut tabel klasifikasi data?",
+      "expectedAnswer": "Enkripsi end-to-end, verifikasi otorisasi Direksi, audit jejak log akses mingguan",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Enkripsi end-to-end, verifikasi otorisasi Direksi, audit jejak log akses (*access log*) mingguan."
+        }
+      ]
+    },
+    {
+      "id": "q063",
+      "category": "factual",
+      "lang": "id",
+      "question": "Bagaimana kriteria data yang termasuk klasifikasi Level 3 (Rahasia) menurut tabel klasifikasi data?",
+      "expectedAnswer": "Data sensitif operasional dan data klien yang berdampak negatif terhadap reputasi dan finansial bila bocor",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Data sensitif operasional dan data klien yang berdampak negatif terhadap reputasi dan finansial bila bocor."
+        }
+      ]
+    },
+    {
+      "id": "q064",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang terikat oleh kebijakan keamanan informasi ini?",
+      "expectedAnswer": "1.240 karyawan",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Kebijakan ini mengikat secara operasional dan hukum bagi seluruh 1.240 karyawan PT Arunika Logistik Nusantara tanpa terkecuali"
+        }
+      ]
+    },
+    {
+      "id": "q065",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah truk dan van yang termasuk dalam ruang lingkup kebijakan ini?",
+      "expectedAnswer": "312 truk dan 58 van",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Kantor Pusat Surabaya (Jl. Rungkut Industri III No. 18), unit armada logistik (312 truk dan 58 van), serta 5 fasilitas gudang operasional:"
+        }
+      ]
+    },
+    {
+      "id": "q066",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa panjang minimal kata sandi yang disyaratkan untuk setiap akun pengguna menurut kebijakan ini?",
+      "expectedAnswer": "12 karakter",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Setiap akun pengguna wajib memiliki panjang kata sandi **minimal 12 karakter**"
+        }
+      ]
+    },
+    {
+      "id": "q067",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa waktu respon maksimal untuk insiden prioritas P1 menurut tabel klasifikasi prioritas dan SLA?",
+      "expectedAnswer": "15 menit",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **P1 - Kritis** | Sistem inti mati total (*critical outage*); operasional gudang utama atau rantai pasok terhenti penuh; tidak ada *workaround* manual yang memadai. | 15 menit | 2 jam |"
+        }
+      ]
+    },
+    {
+      "id": "q068",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa target waktu resolusi untuk insiden prioritas P4 berdasarkan tabel klasifikasi prioritas?",
+      "expectedAnswer": "48 jam",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **P4 - Rendah** | Gangguan individual, galat minor antarmuka, permohonan hak akses standar, atau asistensi teknis yang tidak menghambat alur kerja harian. | 4 jam | 48 jam |"
+        }
+      ]
+    },
+    {
+      "id": "q069",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa nama Chief Technology Officer yang menyetujui dokumen SOP ini menurut lembar pengesahan?",
+      "expectedAnswer": "Hendra Gunawan",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **Bambang Kurniawan**<br>IT Operations Lead | **Ahmad Fauzan**<br>IT Infrastructure Manager | **Hendra Gunawan**<br>Chief Technology Officer (CTO) |"
+        }
+      ]
+    },
+    {
+      "id": "q070",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang terikat oleh prosedur ini?",
+      "expectedAnswer": "1.240",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "Prosedur ini berlaku mengikat bagi 1.240 karyawan dan sistem inti Arunika"
+        }
+      ]
+    },
+    {
+      "id": "q071",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa unit truk yang terhubung dengan sistem inti Arunika berdasarkan ruang lingkup prosedur?",
+      "expectedAnswer": "312",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "platform *Jira Service Management* yang terhubung dengan operasional 312 unit truk dan 58 van."
+        }
+      ]
+    },
+    {
+      "id": "q072",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa luas fasilitas Hub Jakarta Cikarang JKT-02 yang dicantumkan dalam ruang lingkup?",
+      "expectedAnswer": "24.500 m²",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "Hub Jakarta Cikarang (JKT-02, 24.500 m²)"
+        }
+      ]
+    },
+    {
+      "id": "q073",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the RBAC table in ARN-IT-STD-2026-004, what system role identifier is granted to a Gudangku v4 user who may perform inventory adjustments up to a specified limit and bin relocations?",
+      "expectedAnswer": "WMS-SUPERVISOR",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "| **Gudangku v4** (WMS) | `WMS-SUPERVISOR` | Inventory adjustments up to IDR 50,000,000, bin relocations | Facility Head (SBY/JKT/MDN/MKS/BPN) |"
+        }
+      ]
+    },
+    {
+      "id": "q074",
+      "category": "factual",
+      "lang": "en",
+      "question": "In the Role-Based Access Control table, who is the designated approver for the `TMS-FLEET-ADMIN` role?",
+      "expectedAnswer": "COO (Yusuf Halim)",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "| **RuteKu** (TMS) | `TMS-FLEET-ADMIN` | Fleet records, driver onboarding, GPS geofence routing | COO (Yusuf Halim) |"
+        }
+      ]
+    },
+    {
+      "id": "q075",
+      "category": "factual",
+      "lang": "en",
+      "question": "What permitted operational functions are listed for the `ERP-FIN-CLERK` role in the RBAC framework table?",
+      "expectedAnswer": "AP/AR entry, transport billing, vendor reconciliation",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "| **SAP Business One** | `ERP-FIN-CLERK` | AP/AR entry, transport billing, vendor reconciliation | CFO (Dimas Prasetyo) |"
+        }
+      ]
+    },
+    {
+      "id": "q076",
+      "category": "factual",
+      "lang": "en",
+      "question": "Which core operational system and designated approver are associated with the `TMS-DISPATCHER` role identifier in the RBAC table?",
+      "expectedAnswer": "RuteKu (TMS), Transport Operations Manager",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "| **RuteKu** (TMS) | `TMS-DISPATCHER` | Manifest generation, assigning 312 trucks and 58 vans | Transport Operations Manager |"
+        }
+      ]
+    },
+    {
+      "id": "q077",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the fulfillment SLA for approved access requests submitted through Jira Service Management under this procedure?",
+      "expectedAnswer": "8 working hours",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "IT Infrastructure fulfills approved Jira requests within 8 working hours (business schedule: Monday–Friday, 08:00–17:00 WIB)."
+        }
+      ]
+    },
+    {
+      "id": "q078",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the maximum allowable system expiration period for an external vendor account provisioned under the third-party access governance rules?",
+      "expectedAnswer": "30 calendar days",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "All external vendor accounts must be configured with a hard system expiration date capped at exactly 30 calendar days from provisioning."
+        }
+      ]
+    },
+    {
+      "id": "q079",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the Recovery Objectives table, what is the Recovery Time Objective (RTO) for the Gudangku v4 warehouse management system?",
+      "expectedAnswer": "4 hours",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "| **Gudangku v4** | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster |"
+        }
+      ]
+    },
+    {
+      "id": "q080",
+      "category": "factual",
+      "lang": "en",
+      "question": "What failover mechanism is configured for the RuteKu transport management system in the Recovery Objectives table?",
+      "expectedAnswer": "Automated hourly log shipping with standby instance",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "| **RuteKu** | Transport Management (TMS) | Dispatch & tracking for 312 trucks and 58 delivery vans | 1 hour | 8 hours | Automated hourly log shipping with standby instance |"
+        }
+      ]
+    },
+    {
+      "id": "q081",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the Recovery Point Objective (RPO) specified for SAP Business One in the Recovery Objectives table?",
+      "expectedAnswer": "4 hours",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "| **SAP Business One** | Enterprise Resource Planning (ERP) | General ledger, invoicing, procurement, billing | 4 hours | 24 hours | Daily full backup with 4-hour differential replication |"
+        }
+      ]
+    },
+    {
+      "id": "q082",
+      "category": "factual",
+      "lang": "en",
+      "question": "How many vehicles make up Arunika's fleet as described in the Purpose and Operational Context section?",
+      "expectedAnswer": "370 vehicles",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "orchestrate 1,240 employees, a 370-vehicle fleet (140 CDD, 96 CDE, 52 Fuso, 24 Tronton, and 58 vans), and round-the-clock"
+        }
+      ]
+    },
+    {
+      "id": "q083",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the per-event spending cap for emergency expenditures from the IT Contingency Reserve?",
+      "expectedAnswer": "IDR 650,000,000",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "Authorizes emergency expenditures from the IT Contingency Reserve (capped at IDR 650,000,000 per event)."
+        }
+      ]
+    },
+    {
+      "id": "q084",
+      "category": "factual",
+      "lang": "en",
+      "question": "Within how many business days after each DR exercise must the CTO submit an evaluation report to the Board of Directors?",
+      "expectedAnswer": "10 business days",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "Within 10 business days following each exercise, the CTO submits an evaluation report to the Board of Directors detailing observed RTO/RPO metrics, bottleneck analyses, and required corrective actions."
+        }
+      ]
+    },
+    {
+      "id": "q085",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut prosedur slot booking pada SOP inbound, berapa lama toleransi keterlambatan kedatangan armada setelah slot terkonfirmasi?",
+      "expectedAnswer": "30 menit",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Waktu kedatangan armada mengacu pada slot terkonfirmasi dengan ketentuan **toleransi keterlambatan truk 30 menit**."
+        }
+      ]
+    },
+    {
+      "id": "q086",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa biaya administrasi penataan jadwal ulang yang dikenakan kepada armada yang tiba melebihi batas toleransi keterlambatan?",
+      "expectedAnswer": "IDR 150.000 per armada",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Dikenakan biaya administrasi penataan jadwal ulang sebesar IDR 150.000 per armada."
+        }
+      ]
+    },
+    {
+      "id": "q087",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa target SLA putaway maksimal sejak status Staged di WMS hingga palet tersimpan di lokasi rak definitif?",
+      "expectedAnswer": "4 jam",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Target penyelesaian penataan rak (**putaway SLA**) adalah maksimal **4 jam** sejak proses verifikasi QC selesai tercatat di WMS Gudangku v4 (*status: Staged*) hingga palet tersimpan di rak definitif."
+        }
+      ]
+    },
+    {
+      "id": "q088",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa batas toleransi selisih kuantitas yang diizinkan untuk barang curah/bulk cargo menurut SOP inbound?",
+      "expectedAnswer": "0,5%",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Batas **toleransi selisih kuantitas** fisik terhadap dokumen pengiriman adalah maksimal **0,5%** khusus untuk barang curah (*bulk cargo*) yang bertimbangan variabel."
+        }
+      ]
+    },
+    {
+      "id": "q089",
+      "category": "factual",
+      "lang": "id",
+      "question": "Dalam tabel metode pemeriksaan barang, kategori High-Value Goods diperiksa dengan metode apa?",
+      "expectedAnswer": "Pemeriksaan 100%",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "| **High-Value Goods** | Nilai > IDR 5.000.000/koli | Pemeriksaan 100% | Buka kemasan, verifikasi serial number, cek kelengkapan unit |"
+        }
+      ]
+    },
+    {
+      "id": "q090",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut tabel metode pemeriksaan barang, produk pangan/ritel kartonan tergolong dalam kategori apa dan metode pemeriksaannya seperti apa?",
+      "expectedAnswer": "Fast Moving FMCG, Sampling (AQL 1.0)",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "| **Fast Moving FMCG** | Produk pangan/ritel kartonan | Sampling (AQL 1.0) | Sampel acak 10% koli per lot sesuai standar ISO 2859-1 |"
+        }
+      ]
+    },
+    {
+      "id": "q091",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut SOP, berapa persen target akurasi picking minimal yang wajib dipenuhi setiap shift operasional?",
+      "expectedAnswer": "99,8%",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "**Target Akurasi Picking**: Setiap shift operasional wajib memenuhi target akurasi pengambilan barang minimal sebesar **99,8%** (toleransi deviasi maksimal 0,2%)."
+        }
+      ]
+    },
+    {
+      "id": "q092",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan ketentuan cut-off time outbound, pukul berapa batas akhir penerimaan SO agar masuk ke pengiriman hari yang sama (same-day dispatch)?",
+      "expectedAnswer": "14:00 WIB",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Batas waktu (*cut-off time*) penerimaan data Sales Order (SO) untuk pengiriman hari yang sama (*same-day dispatch*) ditetapkan seragam pada pukul **14:00 WIB** setiap hari kerja operasional."
+        }
+      ]
+    },
+    {
+      "id": "q093",
+      "category": "factual",
+      "lang": "id",
+      "question": "Dalam tabel standar packing, kategori barang mana yang mensyaratkan penggunaan lakban sekuriti dan strapping?",
+      "expectedAnswer": "Elektronik & Fragile",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "| **Elektronik & Fragile** | Box Triple Wall K275 + Siku Karton | Bubble wrap 3 lapis + Busa PE 20 mm | Lakban sekuriti (*tamper-evident*) + Strapping | Stiker Fragile & Arah Panah Tegak |"
+        }
+      ]
+    },
+    {
+      "id": "q094",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan tabel standar packing, kemasan luar seperti apa yang wajib digunakan untuk kategori General Cargo?",
+      "expectedAnswer": "Box Double Wall K150",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "| **General Cargo** | Box Double Wall K150 | Bubble wrap 1 lapis tebal 5 mm | Lakban cokelat Arunika 50 mm segel-H | Barcode Gudangku v4 & Resi RuteKu |"
+        }
+      ]
+    },
+    {
+      "id": "q095",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total unit truk yang tercatat sebagai armada Arunika untuk distribusi outbound?",
+      "expectedAnswer": "312 unit truk",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Tim Staging mengelompokkan paket koli berdasarkan rute TMS \"RuteKu\" dan alokasi daya angkut armada Arunika (total armada 312 unit truk:"
+        }
+      ]
+    },
+    {
+      "id": "q096",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa biaya penanganan ulang stok yang dikenakan untuk setiap nomor SKU yang salah akibat kesalahan pemetikan?",
+      "expectedAnswer": "Rp50.000",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Kesalahan pemetikan akibat kelalaian personal dikenakan audit operasional dan biaya penanganan ulang stok sebesar Rp50.000 per nomor SKU yang salah."
+        }
+      ]
+    },
+    {
+      "id": "q097",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to Table 3.1, what is the standard transit lead time for deliveries from Surabaya (SBY-01) to Medan (MDN-03)?",
+      "expectedAnswer": "5 Calendar Days",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Surabaya (SBY-01) | Medan (MDN-03) | 5 Calendar Days | Intermodal / Fuso"
+        }
+      ]
+    },
+    {
+      "id": "q098",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under the service credit framework in Table 4.1, what invoice deduction percentage applies when the achieved monthly OTD is between 95.0% and 96.9%?",
+      "expectedAnswer": "2.5% Invoice Deduction",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "| **95.0% – 96.9%** | 0.1% – 2.0% Missed | 2.5% Invoice Deduction | Hub Operations Review |"
+        }
+      ]
+    },
+    {
+      "id": "q099",
+      "category": "factual",
+      "lang": "en",
+      "question": "Per Table 3.1, which fleet class is assigned to the Jakarta Cikarang (JKT-02) to Balikpapan (BPN-05) lane?",
+      "expectedAnswer": "Ro-Ro Sea Freight / Fuso",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "| Jakarta Cikarang (JKT-02) | Balikpapan (BPN-05) | 4 Calendar Days | Ro-Ro Sea Freight / Fuso |"
+        }
+      ]
+    },
+    {
+      "id": "q100",
+      "category": "factual",
+      "lang": "en",
+      "question": "What contractual On-Time Delivery target does Arunika commit to under Section 3.1 of the SLA?",
+      "expectedAnswer": "97%",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of **97%** measured monthly per customer account across all contracted lanes."
+        }
+      ]
+    },
+    {
+      "id": "q101",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the maximum liability cap per shipment stated in Section 5.2?",
+      "expectedAnswer": "IDR 100,000,000",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika’s liability for unexcused delay, loss, or damage is strictly capped at **10 times (10x) the freight charge** of the consignment, up to a maximum of IDR 100,000,000 per shipment."
+        }
+      ]
+    },
+    {
+      "id": "q102",
+      "category": "factual",
+      "lang": "en",
+      "question": "Within how many calendar days must clients submit claims after the delivery timestamp, as specified in Section 5.1?",
+      "expectedAnswer": "7 calendar days",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Clients must submit claims for delay, loss, or damage within **7 calendar days** of the delivery timestamp in TMS \"RuteKu\" through Jira Service Management."
+        }
+      ]
+    },
+    {
+      "id": "q103",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut tabel Sistem Poin Pelanggaran Pengemudi, berapa poin penalti yang dikenakan jika pengemudi membeli BBM di luar SPBU resmi atau mencatat transaksi fiktif Kartu Fleet?",
+      "expectedAnswer": "30 poin",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "| **P-05** | Membeli BBM di luar SPBU resmi atau transaksi fiktif Kartu Fleet | 30 | Skorsing 14 hari kerja dan ganti rugi 100% |"
+        }
+      ]
+    },
+    {
+      "id": "q104",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa lama skorsing operasional yang diberlakukan bagi pengemudi yang mengumpulkan 30–39 poin pelanggaran dalam satu tahun?",
+      "expectedAnswer": "14 hari kerja",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "- **30 – 39 Poin:** Penerbitan Surat Peringatan III (SP-3) dan skorsing operasional selama 14 (empat belas) hari kerja."
+        }
+      ]
+    },
+    {
+      "id": "q105",
+      "category": "factual",
+      "lang": "id",
+      "question": "Apa tindakan korektif langsung yang tercantum dalam tabel pelanggaran untuk pengemudi yang mematikan, merusak, atau menutup perangkat GPS telematika?",
+      "expectedAnswer": "Pemanggilan formal dan pemeriksaan unit",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "| **P-04** | Mematikan, merusak, atau menutup perangkat GPS telematika | 25 | Pemanggilan formal dan pemeriksaan unit |"
+        }
+      ]
+    },
+    {
+      "id": "q106",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa batas umur operasional maksimal untuk truk Fuso sejak tanggal penerbitan faktur kendaraan menurut kebijakan pemeliharaan armada?",
+      "expectedAnswer": "10 tahun",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "Masa pakai operasional maksimal untuk seluruh kategori truk (CDD, CDE, Fuso, dan Tronton) adalah 10 (sepuluh) tahun terhitung sejak tanggal penerbitan faktur kendaraan."
+        }
+      ]
+    },
+    {
+      "id": "q107",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total luas hub pergudangan SBY-01 Surabaya dan JKT-02 Jakarta Cikarang yang disebutkan dalam kebijakan ini?",
+      "expectedAnswer": "42.500 m²",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "SBY-01 Surabaya (18.000 m²), JKT-02 Jakarta Cikarang (24.500 m²), MDN-03 Medan (9.200 m²), MKS-04 Makassar (7.800 m²), dan BPN-05 Balikpapan (6.100 m²)."
+        }
+      ]
+    },
+    {
+      "id": "q108",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa pagu transaksi BBM harian untuk kendaraan truk Tronton sesuai ketentuan penggunaan Kartu Fleet?",
+      "expectedAnswer": "IDR 1.900.000 / hari",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "Truk Tronton: IDR 1.900.000 / hari"
+        }
+      ]
+    },
+    {
+      "id": "q109",
+      "category": "factual",
+      "lang": "id",
+      "question": "Menurut tabel APD wajib per area, peralatan pelindung apa saja yang harus dikenakan oleh petugas di area pengisian baterai forklift?",
+      "expectedAnswer": "Kacamata pelindung (goggles), sarung tangan nitril/karet, apron anti-asam",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "| **Area Battery Charging Forklift** | Kacamata pelindung (goggles), sarung tangan nitril/karet, apron anti-asam | EN 166, EN 374 kimia asam timbal | Petugas Maintenance & MHE |"
+        }
+      ]
+    },
+    {
+      "id": "q110",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berdasarkan tabel zona kerja, APD apa yang wajib digunakan saat bekerja di mezzanine dan racking level atas?",
+      "expectedAnswer": "Full body harness double lanyard with shock absorber",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "| **Mezzanine & Racking Level Atas** | Full body harness double lanyard with shock absorber | EN 361, EN 355 beban statis 15 kN | Wajib izin kerja ketinggian (PTW) |"
+        }
+      ]
+    },
+    {
+      "id": "q111",
+      "category": "factual",
+      "lang": "id",
+      "question": "Apa saja APD wajib yang harus dipakai setiap individu yang memasuki zona inbound/outbound loading dock menurut tabel?",
+      "expectedAnswer": "Rompi reflektor high-visibility, sepatu safety toe-cap, helm keselamatan",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "| **Inbound / Outbound Loading Dock** | Rompi reflektor high-visibility, sepatu safety toe-cap, helm keselamatan | EN ISO 20471, SNI 7079 (baja 200J) | Dock Master & Supervisor Shift |"
+        }
+      ]
+    },
+    {
+      "id": "q112",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa target maksimal LTIFR yang ditetapkan untuk periode operasional 2026?",
+      "expectedAnswer": "0,35 per 1.000.000 jam kerja",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "Target *Lost Time Injury Frequency Rate* (LTIFR) untuk periode operasional 2026 adalah **maksimal 0,35 per 1.000.000 jam kerja**, dengan sasaran nihil kecelakaan kerja fatal (*zero fatality*)."
+        }
+      ]
+    },
+    {
+      "id": "q113",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa batas maksimal tumpukan palet untuk penumpukan langsung di atas lantai (block stacking) menurut standar penumpukan palet?",
+      "expectedAnswer": "3 (tiga) tingkat",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "Untuk penumpukan langsung di atas lantai (*block stacking*), **batas maksimal tumpukan palet adalah 3 (tiga) tingkat**. Penumpukan melebihi 3 tingkat dilarang tanpa menggunakan struktur racking permanen."
+        }
+      ]
+    },
+    {
+      "id": "q114",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa besar denda administratif yang dikenakan untuk setiap temuan pelanggaran penggunaan APD di zona operasional?",
+      "expectedAnswer": "IDR 250.000 per temuan",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "Setiap individu yang memasuki zona operasional wajib mengenakan APD sesuai peruntukan zona kerja. Pelanggaran dikenakan sanksi denda administratif IDR 250.000 per temuan serta teguran tertulis."
+        }
+      ]
+    },
+    {
+      "id": "q115",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the Maximum Storage Limits table, what is the maximum dangerous goods capacity permitted at the Surabaya Hub (SBY-01)?",
+      "expectedAnswer": "45,000 kg (45 MT)",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "| **SBY-01** | Surabaya, East Java | 18,000 m² | 1,200 m² | 45,000 kg (45 MT) | Yes |"
+        }
+      ]
+    },
+    {
+      "id": "q116",
+      "category": "factual",
+      "lang": "en",
+      "question": "In the Maximum Storage Limits table, which facility code corresponds to the Cikarang, West Java warehouse that is authorized to accept dangerous goods?",
+      "expectedAnswer": "JKT-02",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "| **JKT-02** | Cikarang, West Java | 24,500 m² | 1,800 m² | 75,000 kg (75 MT) | Yes |"
+        }
+      ]
+    },
+    {
+      "id": "q117",
+      "category": "factual",
+      "lang": "en",
+      "question": "The Maximum Storage Limits table lists Balikpapan as prohibited for dangerous goods. What is the total facility area shown for BPN-05?",
+      "expectedAnswer": "6,100 m²",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "| **BPN-05** | Balikpapan, East Kalimantan | 6,100 m² | 0 m² | 0 kg (0 MT) | Prohibited |"
+        }
+      ]
+    },
+    {
+      "id": "q118",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under the Training and Handler Certification section, how frequently must a certified dangerous goods handler be recertified?",
+      "expectedAnswer": "every twenty-four (24) months",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "Recertification is mandatory every twenty-four (24) months."
+        }
+      ]
+    },
+    {
+      "id": "q119",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to Section 6, what annual training budget is allocated per operative for dangerous goods handler certification?",
+      "expectedAnswer": "IDR 4,800,000 per operative",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "CHRO Sekar Ayuningtyas allocates an annual training budget of IDR 4,800,000 per operative through the People and Culture Division."
+        }
+      ]
+    },
+    {
+      "id": "q120",
+      "category": "factual",
+      "lang": "en",
+      "question": "The SOP requires certified specialists on active floor duty during every shift. What is the minimum number of certified DG specialists required at SBY-01 and JKT-02 during each shift?",
+      "expectedAnswer": "two (2)",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "SBY-01 and JKT-02 must maintain a minimum of two (2) certified DG specialists on active floor duty during every shift."
+        }
+      ]
+    },
+    {
+      "id": "q121",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa skor risiko untuk risiko RSK-OPR-01 pada Tabel 7 Lima Risiko Utama Arunika?",
+      "expectedAnswer": "12 (Tinggi)",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "| 1 | **RSK-OPR-01**<br>Operasional | Kerusakan/kehilangan kargo bernilai tinggi akibat insiden bongkar muat pada 3 shift pergudangan di JKT-02 (24.500 m²) & SBY-01 (18.000 m²). | 3 | 4 | **12**<br>(Tinggi) | COO<br>(Yusuf Halim) | Penerapan SOP inspeksi forklift ganda, instalasi 128 CCTV resolusi 4K terhubung WMS Gudangku v4, dan kenaikan pertanggungan polis marine cargo senilai IDR 10.000.000.000 per hub. |"
+        }
+      ]
+    },
+    {
+      "id": "q122",
+      "category": "factual",
+      "lang": "id",
+      "question": "Siapa pemilik risiko (risk owner) untuk RSK-REG-05 dalam daftar lima risiko utama?",
+      "expectedAnswer": "COO (Yusuf Halim)",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "| 5 | **RSK-REG-05**<br>Kepatuhan | Penindakan hukum dan denda sita armada akibat pelanggaran batas muatan ODOL (*Over Dimension Over Load*) pada 140 CDD dan 96 CDE. | 4 | 3 | **12**<br>(Tinggi) | COO<br>(Yusuf Halim) | Kalibrasi jembatan timbang di gerbang keluar SBY-01 s/d BPN-05, integrasi validasi berat otomatis dari timbangan ke TMS RuteKu sebelum surat jalan dicetak, dan sanksi tegas bagi staf perencana muatan. |"
+        }
+      ]
+    },
+    {
+      "id": "q123",
+      "category": "factual",
+      "lang": "id",
+      "question": "Pada Matriks Evaluasi Risiko 5x5, berapa skor risiko jika kemungkinan bernilai 4 (Sering) dan dampak bernilai 3 (Sedang)?",
+      "expectedAnswer": "Tinggi (12)",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "| **4 - Sering** | Rendah (4) | Sedang (8) | Tinggi (12) | Ekstrem (16) | Ekstrem (20) |"
+        }
+      ]
+    },
+    {
+      "id": "q124",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah unit armada CDE yang tercatat dalam ruang lingkup kebijakan ini?",
+      "expectedAnswer": "96 unit",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "370 unit armada (140 CDD, 96 CDE, 52 Fuso, 24 Tronton, dan 58 van)."
+        }
+      ]
+    },
+    {
+      "id": "q125",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa batas toleransi kerugian bersih kumulatif akibat risiko operasional per triwulan menurut Selera Risiko?",
+      "expectedAnswer": "IDR 750.000.000",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "Toleransi kerugian bersih kumulatif akibat risiko operasional maksimal IDR 750.000.000 per triwulan."
+        }
+      ]
+    },
+    {
+      "id": "q126",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa luas hub pergudangan JKT-02 yang disebutkan dalam dokumen?",
+      "expectedAnswer": "24.500 m²",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "5 hub pergudangan utama (SBY-01 18.000 m², JKT-02 24.500 m², MDN-03 9.200 m², MKS-04 7.800 m², dan BPN-05 6.100 m²)"
+        }
+      ]
+    },
+    {
+      "id": "q127",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to Table 1, what is the policy limit for a single Tronton conveyance?",
+      "expectedAnswer": "IDR 5,000,000,000 per conveyance",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Transit Fleet | Tronton (24 units) | Heavy multi-axle trucks | 5,000,000,000 per conveyance | 5% of claim (min. 15,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q128",
+      "category": "factual",
+      "lang": "en",
+      "question": "Table 1 states the minimum deductible for a CDE transit fleet claim; what is that amount?",
+      "expectedAnswer": "IDR 5,000,000",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Transit Fleet | CDE (96 units) | Colt Diesel Engkel (4 wheels) | 500,000,000 per conveyance | 5% of claim (min. 5,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q129",
+      "category": "factual",
+      "lang": "en",
+      "question": "What is the per-location policy limit shown in Table 1 for the JKT-02 Cikarang regional hub warehouse?",
+      "expectedAnswer": "IDR 120,000,000,000 per location",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Warehouse | JKT-02 Cikarang | Regional hub (24,500 m²) | 120,000,000,000 per location | 10% of claim (min. 25,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q130",
+      "category": "factual",
+      "lang": "en",
+      "question": "For a claim arising at the BPN-05 Balikpapan warehouse, what minimum deductible applies?",
+      "expectedAnswer": "IDR 15,000,000",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Warehouse | BPN-05 Balikpapan | Regional hub (6,100 m²) | 30,000,000,000 per location | 10% of claim (min. 15,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q131",
+      "category": "factual",
+      "lang": "en",
+      "question": "How many CDD trucks does Arunika operate, as stated in the Purpose and Scope section?",
+      "expectedAnswer": "140",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "cargo operations utilizing Arunika's 312 trucks (140 CDD, 96 CDE, 52 Fuso, 24 Tronton) and 58 vans"
+        }
+      ]
+    },
+    {
+      "id": "q132",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under Section 4.1, within how many calendar days must a cargo loss, damage, or shortage notice be formally filed after delivery or scheduled delivery?",
+      "expectedAnswer": "7 calendar days",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "Claimants must formally file any cargo loss, damage, or shortage notice within seven (7) calendar days of shipment delivery or scheduled delivery date."
+        }
+      ]
+    },
+    {
+      "id": "q133",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa tarif pengiriman kargo umum per kilogram dari Distribution Center Surabaya ke Semarang menurut Tabel Tarif Layanan Transportasi dan Freight Forwarding?",
+      "expectedAnswer": "Rp 2.400 per kg",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Semarang | HUB-SMG01 | Truk CDE / CDD | 1 Hari | Rp 2.400 | Rp 24.000"
+        }
+      ]
+    },
+    {
+      "id": "q134",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa total luas area Cikarang Distribution Center berdasarkan tabel Tarif Sewa Ruang Pergudangan?",
+      "expectedAnswer": "24.500 m²",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Cikarang Distribution Center | JKT-02 | Kawasan Industri GIIC Cikarang, Bekasi | 24.500 m² | Rp 88.000"
+        }
+      ]
+    },
+    {
+      "id": "q135",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa persentase diskon tarif dasar freight untuk kategori Tier 5 - Diamond pada Skema Diskon Volume Berjenjang?",
+      "expectedAnswer": "12,5%",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Tier 5 - Diamond | ≥ 100.000 kg | 12,5% | 10,0%"
+        }
+      ]
+    },
+    {
+      "id": "q136",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa tarif per kilogram pengiriman kargo dari Surabaya ke Medan yang tercantum dalam tabel layanan transportasi?",
+      "expectedAnswer": "Rp 8.500 per kg",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Medan | HUB-MDN03 | Kargo Laut + Truk Tronton | 5 - 7 Hari | Rp 8.500 | Rp 85.000"
+        }
+      ]
+    },
+    {
+      "id": "q137",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa jumlah total unit truk yang mendukung operasional armada transportasi Arunika menurut ketentuan umum dokumen ini?",
+      "expectedAnswer": "312 unit truk",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Layanan operasional armada transportasi dikendalikan via Transport Management System (TMS) \"RuteKu\" dengan dukungan 312 unit truk (140 CDD, 96 CDE, 52 Fuso, dan 24 Tronton)"
+        }
+      ]
+    },
+    {
+      "id": "q138",
+      "category": "factual",
+      "lang": "id",
+      "question": "Berapa persentase Fuel Surcharge yang diberlakukan apabila rata-rata harga solar nonsubsidi lebih dari Rp 17.500 per liter?",
+      "expectedAnswer": "9,5%",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Rata-rata harga solar > Rp 17.500 per liter: Fuel Surcharge = 9,5%"
+        }
+      ]
+    },
+    {
+      "id": "q139",
+      "category": "factual",
+      "lang": "en",
+      "question": "Under the Account Manager Assignment Rules table, which assigned role corresponds to a client whose projected monthly revenue exceeds IDR 250,000,000?",
+      "expectedAnswer": "Key Account Manager (KAM)",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "| **Enterprise** | Above IDR 250,000,000 | Key Account Manager (KAM) | Dedicated single point of contact, custom SLA, monthly steering meetings |"
+        }
+      ]
+    },
+    {
+      "id": "q140",
+      "category": "factual",
+      "lang": "en",
+      "question": "In the Account Manager Assignment Rules table, what is the projected monthly revenue range defined for the Commercial client tier?",
+      "expectedAnswer": "IDR 20,000,000 to IDR 75,000,000",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "| **Commercial** | IDR 20,000,000 to IDR 75,000,000 | Account Manager | Portfolio-managed account, standard monthly reporting, priority support queue |"
+        }
+      ]
+    },
+    {
+      "id": "q141",
+      "category": "factual",
+      "lang": "en",
+      "question": "Still referring to the Account Manager Assignment Rules table, what engagement and service level is specified for the Corporate tier?",
+      "expectedAnswer": "Dedicated manager, bi-weekly performance updates, quarterly business reviews",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "| **Corporate** | IDR 75,000,001 to IDR 250,000,000 | Senior Account Manager | Dedicated manager, bi-weekly performance updates, quarterly business reviews |"
+        }
+      ]
+    },
+    {
+      "id": "q142",
+      "category": "factual",
+      "lang": "en",
+      "question": "According to the Credit Limit Tiers policy, what is the maximum unsecured credit limit available under Tier 2?",
+      "expectedAnswer": "IDR 150,000,000",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "Tier 2 (Unsecured Credit up to IDR 150,000,000): Operating history between one and three years. Payment terms: Net 14 days."
+        }
+      ]
+    },
+    {
+      "id": "q143",
+      "category": "factual",
+      "lang": "en",
+      "question": "For Tier 3 customers in the credit policy, how many days of estimated logistics spending must the rolling security deposit cover?",
+      "expectedAnswer": "thirty days",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "Requires a rolling security deposit equal to thirty days of estimated logistics spending or prepayment prior to cargo dispatch."
+        }
+      ]
+    },
+    {
+      "id": "q144",
+      "category": "factual",
+      "lang": "en",
+      "question": "Per the Five-Day Onboarding SLA, within how many business days must the end-to-end customer onboarding procedure be completed?",
+      "expectedAnswer": "five (5) business days",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "The end-to-end customer onboarding procedure must be completed within five (5) business days during standard operating hours (Monday to Friday, 08:00–17:00 WIB)."
+        }
+      ]
+    },
+    {
+      "id": "q145",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Menurut kebijakan operasi armada bersih, berapa batas maksimal waktu mesin kendaraan diaktifkan tanpa bergerak (idling) di area operasional?",
+      "expectedAnswer": "5 menit (300 detik)",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "A strict vehicle idling limit of 5 minutes (300 seconds) is mandatory"
+        }
+      ]
+    },
+    {
+      "id": "q146",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the hotel ceiling table in POL-FIN-2025-004, what is the maximum nightly hotel reimbursement for Grade 2 employees?",
+      "expectedAnswer": "IDR 1.250.000 per malam",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "*   **Grade 2:** Maksimal IDR 1.250.000 per malam (Hotel Bintang 4)."
+        }
+      ]
+    },
+    {
+      "id": "q147",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the Procurement & Goods and Services Policy (POL-PROC-2026-001), what is the document's effective date?",
+      "expectedAnswer": "2 Januari 2026",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "**Tanggal Efektif:** 2 Januari 2026"
+        }
+      ]
+    },
+    {
+      "id": "q148",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Berapa tingkat bunga keterlambatan pembayaran yang dikenakan setiap bulan menurut kebijakan penagihan piutang (late payment charges)?",
+      "expectedAnswer": "2,0% per bulan",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "Rate: 2.0% per month, calculated on a 30-day pro-rata basis (0.067% per diem) against the gross overdue principal balance."
+        }
+      ]
+    },
+    {
+      "id": "q149",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Berapa nilai ambang minimum yang harus dilewati suatu pembelian agar diklasifikasikan sebagai Capital Expenditure (CAPEX) menurut SOP-FIN-2025-004 tentang Annual Budgeting FY2026?",
+      "expectedAnswer": "IDR 25.000.000",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "Individual unit purchase cost or aggregated project acquisition cost exceeds **IDR 25,000,000** (exclusive of VAT)."
+        }
+      ]
+    },
+    {
+      "id": "q150",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the annual leave entitlement table in the policy, what is the total annual leave entitlement for an employee who has worked between 8 and less than 10 years?",
+      "expectedAnswer": "20 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "| 8 tahun s.d. < 10 tahun | 14 hari kerja | 6 hari kerja | 20 hari kerja |"
+        }
+      ]
+    },
+    {
+      "id": "q151",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "How many warehouse facilities are listed under the scope of the Employee Compensation and Allowance Policy?",
+      "expectedAnswer": "5",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "5 fasilitas pergudangan: SBY-01 Surabaya, JKT-02 Cikarang, MDN-03 Medan, MKS-04 Makassar, dan BPN-05 Balikpapan"
+        }
+      ]
+    },
+    {
+      "id": "q152",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "Under the headcount approval hierarchy in the Recruitment and Onboarding SOP, what is the service-level agreement for operational and field staff positions that are within budget?",
+      "expectedAnswer": "2 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "Tingkat Pelaksana & Staf Lapangan (Sesuai Budget): Diverifikasi oleh User Manager, dikaji oleh Talent Acquisition Specialist, dan disetujui oleh CHRO (Sekar Ayuningtyas). SLA: 2 hari kerja."
+        }
+      ]
+    },
+    {
+      "id": "q153",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "Under the performance rating forced distribution table in the policy, what is the maximum quota allowed for the 'Outstanding' rating?",
+      "expectedAnswer": "5%",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "| **5** | Luar Biasa (*Outstanding*) | 5% |"
+        }
+      ]
+    },
+    {
+      "id": "q154",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "Under the \"Ketentuan Gratifikasi\" policy, what is the maximum fair nominal value of seasonal business gifts that may be accepted from one partner entity in a calendar year before the item must be reported to the Ethics Committee?",
+      "expectedAnswer": "Rp 500.000",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "Penerimaan cinderamata bisnis musiman (seperti kalender perusahaan, suvenir promosi, parsel hari raya) hanya dapat ditoleransi apabila memiliki nilai nominal wajar maksimal sebesar **Rp 500.000 (lima ratus ribu rupiah)** per entitas rekanan per tahun takwim."
+        }
+      ]
+    },
+    {
+      "id": "q155",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "What is the official document number assigned to the Information Security Policy of PT Arunika Logistik Nusantara?",
+      "expectedAnswer": "ALN-POL-IT-004",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "**Nomor Dokumen:** ALN-POL-IT-004"
+        }
+      ]
+    },
+    {
+      "id": "q156",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "In the incident priority and SLA classification table, what is the maximum response time for a P2 (Tinggi) incident?",
+      "expectedAnswer": "30 menit",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **P2 - Tinggi** | Kerusakan fungsi mayor pada aplikasi inti; memengaruhi kelancaran distribusi lebih dari 20% armada (truk/van) atau sebagian area dok gudang. | 30 menit |"
+        }
+      ]
+    },
+    {
+      "id": "q157",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Dalam tabel RBAC pada dokumen ini, siapa approver yang ditetapkan untuk peran TMS-FLEET-ADMIN di sistem RuteKu?",
+      "expectedAnswer": "COO (Yusuf Halim)",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "**RuteKu** (TMS) | `TMS-FLEET-ADMIN` | Fleet records, driver onboarding, GPS geofence routing | COO (Yusuf Halim)"
+        }
+      ]
+    },
+    {
+      "id": "q158",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Berdasarkan tabel Recovery Objectives dalam IT Disaster Recovery Plan, berapa Recovery Time Objective (RTO) untuk sistem Warehouse Management System (WMS) Gudangku v4?",
+      "expectedAnswer": "4 jam",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "Gudangku v4 | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster"
+        }
+      ]
+    },
+    {
+      "id": "q159",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "In the damaged-goods handling procedure of Section 3.5, what estimated damage value triggers mandatory escalation to the CFO via Jira Service Management?",
+      "expectedAnswer": "IDR 1.000.000",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Kerusakan dengan estimasi nilai di atas IDR 1.000.000 wajib dieskalasikan melalui Jira Service Management ke CFO Dimas Prasetyo"
+        }
+      ]
+    },
+    {
+      "id": "q160",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to Section 2 of the outbound SOP, what is the uniform cut-off time for receiving verified Sales Orders to qualify for same-day dispatch?",
+      "expectedAnswer": "14:00 WIB",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Batas waktu (*cut-off time*) penerimaan data Sales Order (SO) untuk pengiriman hari yang sama (*same-day dispatch*) ditetapkan seragam pada pukul **14:00 WIB** setiap hari kerja operasional."
+        }
+      ]
+    },
+    {
+      "id": "q161",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Berdasarkan SLA Layanan Pelanggan ini, berapa persen target On-Time Delivery (OTD) kontraktual bulanan yang dijanjikan Arunika untuk seluruh jalur kontrak?",
+      "expectedAnswer": "97%",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of **97%** measured monthly per customer account across all contracted lanes."
+        }
+      ]
+    },
+    {
+      "id": "q162",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "What is the maximum operational lifespan for trucks (CDD, CDE, Fuso, and Tronton) under the fleet management policy?",
+      "expectedAnswer": "10 (sepuluh) tahun",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "Masa pakai operasional maksimal untuk seluruh kategori truk (CDD, CDE, Fuso, dan Tronton) adalah 10 (sepuluh) tahun terhitung sejak tanggal penerbitan faktur kendaraan."
+        }
+      ]
+    },
+    {
+      "id": "q163",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the monthly fire protection inspection section of the warehouse K3 guideline, how frequently must APAR inspections be performed?",
+      "expectedAnswer": "1 (satu) bulan sekali",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "Inspeksi APAR wajib dilakukan secara berkala 1 (satu) bulan sekali"
+        }
+      ]
+    },
+    {
+      "id": "q164",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Berapa batas maksimum penyimpanan barang berbahaya di fasilitas SBY-01 berdasarkan tabel Maximum Storage Limits?",
+      "expectedAnswer": "45,000 kg (45 MT)",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "| **SBY-01** | Surabaya, East Java | 18,000 m² | 1,200 m² | 45,000 kg (45 MT) | Yes |"
+        }
+      ]
+    },
+    {
+      "id": "q165",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the 2026 Risk Appetite section of the Enterprise Risk Management policy, what is the maximum tolerated cumulative net loss per quarter caused by operational risk?",
+      "expectedAnswer": "IDR 750.000.000 per triwulan",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "Toleransi kerugian bersih kumulatif akibat risiko operasional maksimal IDR 750.000.000 per triwulan."
+        }
+      ]
+    },
+    {
+      "id": "q166",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Dalam SOP asuransi kargo, berapa lama batas waktu pengajuan klaim sejak tanggal pengiriman atau tanggal pengiriman yang dijadwalkan?",
+      "expectedAnswer": "seven (7) calendar days",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "Claimants must formally file any cargo loss, damage, or shortage notice within **seven (7) calendar days** of shipment delivery or scheduled delivery date."
+        }
+      ]
+    },
+    {
+      "id": "q167",
+      "category": "cross-language",
+      "lang": "en",
+      "question": "According to the general terms in Section 1, what is the minimum billing weight for domestic land and sea cargo services?",
+      "expectedAnswer": "10 kilogram (kg)",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "berat minimum penagihan (*minimum charge*) sebesar 10 kilogram (kg)."
+        }
+      ]
+    },
+    {
+      "id": "q168",
+      "category": "cross-language",
+      "lang": "id",
+      "question": "Menurut tabel penugasan akun klien, kategori mana yang memerlukan proyeksi pendapatan bulanan di atas IDR 250.000.000 dan ditangani oleh Key Account Manager?",
+      "expectedAnswer": "Enterprise",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "| **Enterprise** | Above IDR 250,000,000 | Key Account Manager (KAM) | Dedicated single point of contact, custom SLA, monthly steering meetings |"
+        }
+      ]
+    },
+    {
+      "id": "q169",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Siapa Chief Operating Officer yang meninjau kebijakan cuti sekaligus kebijakan manajemen kinerja dan pelatihan karyawan Arunika?",
+      "expectedAnswer": "Yusuf Halim",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "Ditinjau oleh,\nYusuf Halim\n*Chief Operating Officer (COO)*"
+        },
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "Ditinjau oleh: Dimas Prasetyo (Chief Financial Officer) & Yusuf Halim (Chief Operating Officer)"
+        }
+      ]
+    },
+    {
+      "id": "q170",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Platform apa yang digunakan Arunika untuk melaporkan kendala teknis akses HRIS cuti dan untuk mengajukan pelatihan karyawan?",
+      "expectedAnswer": "Jira Service Management",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "Tiket kendala akses teknis disampaikan via Jira Service Management."
+        },
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "Pengajuan pelatihan wajib diajukan melalui portal Jira Service Management ke Direktorat Human Capital minimal 14 hari kerja sebelum jadwal pelaksanaan."
+        }
+      ]
+    },
+    {
+      "id": "q171",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa pagu anggaran pelatihan tahunan untuk satu pengemudi truk atau kurir van yang termasuk Grade 1 di Arunika?",
+      "expectedAnswer": "Rp 2.500.000",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "awak armada transportasi last-mile dan freight forwarding"
+        },
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "| **Grade 1** | Operator Gudang, Driver Truk (CDD/CDE/Fuso/Tronton), Kurir Van | Rp 2.500.000 |"
+        }
+      ]
+    },
+    {
+      "id": "q172",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa selisih waktu antara tanggal efektif SOP Annual Budgeting FY2026 dan tanggal efektif Kebijakan Pengadaan Barang dan Jasa?",
+      "expectedAnswer": "4 bulan",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "**Effective Date:** 1 September 2025"
+        },
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "**Tanggal Efektif:** 2 Januari 2026"
+        }
+      ]
+    },
+    {
+      "id": "q173",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Jika National Fleet Manager mengajukan pembelian armada baru senilai di atas Rp 500.000.000, siapa yang berwenang menyetujui PO menurut matriks otorisasi dan cost center mana yang memiliki anggarannya?",
+      "expectedAnswer": "Ratna Wijayakusuma (CEO) dan CC-FLOT-60 (Line-Haul Fleet)",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "| **Chief Executive Officer (Ratna Wijayakusuma)** | > Rp 500.000.000 | Pengadaan armada baru, sewa fasilitas, dan kontrak strategis |"
+        },
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "| **CC-FLOT-60** | Line-Haul Fleet | 312 Trucks (CDD, CDE, Fuso, Tronton) | National Fleet Manager | Yusuf Halim (COO) |"
+        }
+      ]
+    },
+    {
+      "id": "q174",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Sebuah aset senilai Rp 50.000.000 dengan masa manfaat lebih dari 1 tahun, bagaimana klasifikasi anggarannya dan metode pemilihan vendor yang harus digunakan?",
+      "expectedAnswer": "CAPEX dan Pemilihan Terbatas/RFQ (minimal 3 penawaran)",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "An item or project must be budgeted under CAPEX when it satisfies both of the following cumulative criteria:"
+        },
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "- Wajib menyertakan minimal 3 (tiga) surat penawaran harga resmi yang sah dan dapat diperbandingkan dari vendor terdaftar yang berbeda."
+        }
+      ]
+    },
+    {
+      "id": "q175",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "What is the common effective date stated in both the inbound goods receipt SOP and the outbound picking/packing/shipping SOP?",
+      "expectedAnswer": "15 Januari 2026",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "**Tanggal Efektif** | 15 Januari 2026"
+        },
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "**Tanggal Efektif** | 15 Januari 2026"
+        }
+      ]
+    },
+    {
+      "id": "q176",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Who is the Chief Operating Officer that approved both the inbound and outbound warehouse SOPs?",
+      "expectedAnswer": "Yusuf Halim",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "**Disetujui Oleh** | Yusuf Halim (Chief Operating Officer)"
+        },
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "**Disetujui oleh:** Yusuf Halim (Chief Operating Officer)"
+        }
+      ]
+    },
+    {
+      "id": "q177",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "According to both SOPs, what are the daily scheduling deadlines for inbound dock appointment booking and for same-day outbound Sales Order submission?",
+      "expectedAnswer": "Inbound dock booking: H-1 at 15:00 WIB; same-day outbound SO: 14:00 WIB",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Transporter atau vendor wajib melakukan reservasi jadwal pembongkaran (*slot booking*) melalui modul *Dock Appointment* pada WMS Gudangku v4 paling lambat **H-1 pukul 15:00 WIB**."
+        },
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Batas waktu (*cut-off time*) penerimaan data Sales Order (SO) untuk pengiriman hari yang sama (*same-day dispatch*) ditetapkan seragam pada pukul **14:00 WIB** setiap hari kerja operasional."
+        }
+      ]
+    },
+    {
+      "id": "q178",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "For a CDD truck operating on the Surabaya-to-Jakarta Cikarang lane, what is the cargo insurance policy limit per conveyance and the standard transit lead time?",
+      "expectedAnswer": "IDR 1,000,000,000 per conveyance and 2 calendar days",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "| Surabaya (SBY-01) | Jakarta Cikarang (JKT-02) | 2 Calendar Days | Tronton / Fuso / CDD |"
+        },
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Transit Fleet | CDD (140 units) | Colt Diesel Double (6 wheels) | 1,000,000,000 per conveyance | 5% of claim (min. 5,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q179",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "What is the cargo insurance policy limit for Arunika's Jakarta Cikarang warehouse, and what monthly On-Time Delivery target does the SLA require?",
+      "expectedAnswer": "IDR 120,000,000,000 per location and 97%",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of **97%** measured monthly per customer account across all contracted lanes."
+        },
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Warehouse | JKT-02 Cikarang | Regional hub (24,500 m²) | 120,000,000,000 per location | 10% of claim (min. 25,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q180",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "A customer submits a cargo claim eight calendar days after delivery. What is the maximum SLA liability per shipment, and will the cargo insurance claim be accepted?",
+      "expectedAnswer": "IDR 100,000,000 per shipment; no, it will be barred as late",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika's liability for unexcused delay, loss, or damage is strictly capped at **10 times (10x) the freight charge** of the consignment, up to a maximum of IDR 100,000,000 per shipment."
+        },
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "Claimants must formally file any cargo loss, damage, or shortage notice within **seven (7) calendar days** of shipment delivery or scheduled delivery date."
+        }
+      ]
+    },
+    {
+      "id": "q181",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa hari setelah kebijakan Armada mulai berlaku, Kebijakan Keberlanjutan menjadi efektif?",
+      "expectedAnswer": "27 hari",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "**Tanggal Berlaku:** 5 Januari 2026"
+        },
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "**Effective Date:** February 1, 2026"
+        }
+      ]
+    },
+    {
+      "id": "q182",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa menit lebih lama interval mengemudi berturut-turut maksimal sebelum istirahat dibandingkan batas idling kendaraan?",
+      "expectedAnswer": "235 menit",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "waktu istirahat minimal selama 30 (tiga puluh) menit setiap 4 (empat) jam mengemudi"
+        },
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "A strict vehicle idling limit of **5 minutes** (300 seconds) is mandatory"
+        }
+      ]
+    },
+    {
+      "id": "q183",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Siapa nama eksekutif selain CEO Ratna Wijayakusuma yang tercantum sebagai penandatangan/penyetujui di kedua dokumen kebijakan?",
+      "expectedAnswer": "Yusuf Halim",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "**Yusuf Halim**\n*Chief Operating Officer (COO)*"
+        },
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "Approved By: Ratna Wijayakusuma (Chief Executive Officer), Yusuf Halim (Chief Operating Officer), Dimas Prasetyo (Chief Financial Officer)"
+        }
+      ]
+    },
+    {
+      "id": "q184",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many days after the Information Security Policy takes effect does the Access System SOP become effective?",
+      "expectedAnswer": "17 days",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "**Tanggal Berlaku:** 15 Januari 2026"
+        },
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "**Effective Date** | February 1, 2026"
+        }
+      ]
+    },
+    {
+      "id": "q185",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many times longer is the standard user password expiration period than the maximum allowed lifetime of a third-party vendor account?",
+      "expectedAnswer": "3 times",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Masa kedaluwarsa kata sandi adalah **90 hari kalender**."
+        },
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "All external vendor accounts must be configured with a hard system expiration date capped at exactly 30 calendar days from provisioning."
+        }
+      ]
+    },
+    {
+      "id": "q186",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "By how many days does the automatic suspension threshold for inactive accounts exceed the backup data retention period?",
+      "expectedAnswer": "10 days",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Arsip cadangan data wajib disimpan dengan masa **retensi selama 35 hari kalender**."
+        },
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "Unused accounts inactive for 45 consecutive days must be suspended automatically."
+        }
+      ]
+    },
+    {
+      "id": "q187",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut SOP Penanganan Gangguan dan Insiden TI serta IT-DRP, berapa selisih antara target waktu resolusi insiden prioritas P1 dan Recovery Time Objective (RTO) untuk sistem WMS Gudangku v4?",
+      "expectedAnswer": "2 jam",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **P1 - Kritis** | Sistem inti mati total (*critical outage*); operasional gudang utama atau rantai pasok terhenti penuh; tidak ada *workaround* manual yang memadai. | 15 menit | 2 jam |"
+        },
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "| **Gudangku v4** | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster |"
+        }
+      ]
+    },
+    {
+      "id": "q188",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The SOP mentions the number of trucks and vans supported by core systems, while the DRP provides a fleet breakdown by vehicle type. How many trucks (excluding vans) does Arunika operate?",
+      "expectedAnswer": "312 trucks",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "sistem inti Arunika, yaitu WMS *Gudangku v4*, TMS *RuteKu*, ERP *SAP Business One*, serta platform *Jira Service Management* yang terhubung dengan operasional 312 unit truk dan 58 van."
+        },
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "1,240 employees, a 370-vehicle fleet (140 CDD, 96 CDE, 52 Fuso, 24 Tronton, and 58 vans), and round-the-clock, three-shift operations"
+        }
+      ]
+    },
+    {
+      "id": "q189",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Lokasi Hub mana yang menjadi tempat kejadian insiden P1 WMS down pada contoh kasus SOP sekaligus menjadi lokasi Disaster Recovery Site menurut IT-DRP?",
+      "expectedAnswer": "Hub Jakarta Cikarang (JKT-02)",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "**Skenario Kejadian:** Server basis data WMS *Gudangku v4* mengalami *crash* mendadak di Hub JKT-02 Cikarang pada Shift 2 pukul 14:15 WIB."
+        },
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "**Disaster Recovery Site (DRS):** Secure Tier-III Colocation Data Center located within the Jakarta Cikarang Hub facility (JKT-02), Cikarang Industrial Estate, West Java."
+        }
+      ]
+    },
+    {
+      "id": "q190",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Using the default credit limit for a Corporate SME in the finance policy and the 2026 warehouse tariff for the Cikarang Distribution Center, what is the largest whole square-meter area that the default credit limit can cover for one month?",
+      "expectedAnswer": "852 m²",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "| Cikarang Distribution Center | JKT-02 | Kawasan Industri GIIC Cikarang, Bekasi | 24.500 m² | Rp 88.000 |"
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Corporate SME** | Contracted client; operating history > 12 months; bank statements & NPWP verified | Net 30 calendar days | IDR 75,000,000 | IDR 500,000,000 | Credit Committee |"
+        }
+      ]
+    },
+    {
+      "id": "q191",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The sales tariff applies a maximum fuel surcharge to freight when solar prices exceed a threshold, while the finance policy caps late payment interest. Which of these two percentages is higher?",
+      "expectedAnswer": "Late-payment interest cap (10.0%)",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "* Rata-rata harga solar > Rp 17.500 per liter: **Fuel Surcharge = 9,5%**"
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "- **Cap:** Cumulative late interest charges are strictly capped at 10.0% of the total original invoice principal."
+        }
+      ]
+    },
+    {
+      "id": "q192",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The finance policy requires joint approval for bad debt write-offs up to a certain amount. If that amount is expressed only as inbound pallet handling fees, how many whole pallets can be handled before the cumulative cost would exceed the approval threshold?",
+      "expectedAnswer": "1,351 pallets",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "* **Inbound Handling (Bongkar & Put-away ke Rak):** Rp 18.500 per palet."
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "- **Up to IDR 25,000,000:** Approved jointly by the Credit & Collections Manager and Financial Controller."
+        }
+      ]
+    },
+    {
+      "id": "q193",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "SOP-COM-2026-002 sets the maximum unsecured credit limit for Tier 1 onboarding clients. Which customer segment in POL-FIN-2026-003 has the same maximum credit limit?",
+      "expectedAnswer": "Corporate SME",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "**Tier 1 (Unsecured Credit up to IDR 500,000,000):** Minimum operating history of three years with verified profitable cash flow. Payment terms: Net 30 days."
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Corporate SME** | Contracted client; operating history > 12 months; bank statements & NPWP verified | Net 30 calendar days | IDR 75,000,000 | IDR 500,000,000 | Credit Committee |"
+        }
+      ]
+    },
+    {
+      "id": "q194",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Under the Account Manager Assignment Rules in SOP-COM-2026-002, a client with projected monthly revenue above IDR 250,000,000 is classified as Enterprise. What annual contracted run-rate threshold defines the Enterprise credit segment in POL-FIN-2026-003?",
+      "expectedAnswer": "> IDR 3,000,000,000",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "| **Enterprise** | Above IDR 250,000,000 | Key Account Manager (KAM) | Dedicated single point of contact, custom SLA, monthly steering meetings |"
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        }
+      ]
+    },
+    {
+      "id": "q195",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "After a successful Day 5 operational trial shipment and formal Trial Sign-Off under SOP-COM-2026-002, within how many business days must Arunika deliver the resulting invoice under POL-FIN-2026-003?",
+      "expectedAnswer": "2 business days",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "Day 5: Operational Trial Shipment Execution & Formal Account Go-Live Sign-Off"
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "Invoices accompanied by commercial receipts, digital tax slips (Faktur Pajak), and validated e-PODs must be delivered to clients within 2 business days of operational milestone completion."
+        }
+      ]
+    },
+    {
+      "id": "q196",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, di policy esg-01 keberlanjutan, ev van yg dipilotin di jkt-02 mau dideploy brp unit ya?",
+      "expectedAnswer": "12 unit",
+      "evidence": [
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "pilot deployment of 12 electric vans dedicated to last-mile urban logistics"
+        }
+      ]
+    },
+    {
+      "id": "q197",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo c-level ke jabodetabek uang hariannya brp ya?",
+      "expectedAnswer": "IDR 800.000",
+      "evidence": [
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "Grade 1 (C-Level) | IDR 800.000 | IDR 700.000 | IDR 600.000"
+        }
+      ]
+    },
+    {
+      "id": "q198",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min klo vendor udah kirim invoice lengkap nih, brp lama ya finance transfer? net berapa hari?",
+      "expectedAnswer": "30 hari kalender",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "Termin pembayaran standar kepada seluruh rekanan adalah **30 (tiga puluh) hari kalender (Net 30)** terhitung sejak dokumen penagihan lengkap dan benar diterima oleh Departemen Keuangan (Finance)."
+        }
+      ]
+    },
+    {
+      "id": "q199",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo customer walk-in/retail di policy billing & collection fin-03, limit kredit defaultnya brp ya?",
+      "expectedAnswer": "IDR 0",
+      "evidence": [
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "Walk-in / Retail | Ad-hoc bookings, non-contracted transport, spot cargo, retail last-mile | Cash on Delivery (COD) / Pre-payment | IDR 0 | IDR 0 | Branch Station Manager"
+        }
+      ]
+    },
+    {
+      "id": "q200",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, kl beli aset kantor, harga di atas brp ya harus masuk capex di sop anggaran fy2026? bingung soalnya 😅",
+      "expectedAnswer": "IDR 25.000.000 (exclusive of VAT)",
+      "evidence": [
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "Individual unit purchase cost or aggregated project acquisition cost exceeds **IDR 25,000,000** (exclusive of VAT)."
+        }
+      ]
+    },
+    {
+      "id": "q201",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, kalo masa kerja udh 10 tahun, total cuti tahunannya brp hari ya?",
+      "expectedAnswer": "22 hari kerja",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "$\\ge$ 10 tahun | 14 hari kerja | 8 hari kerja | 22 hari kerja"
+        }
+      ]
+    },
+    {
+      "id": "q202",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, kl dpt THR, paling telat brp hari sblm hari rayanya cair ya?",
+      "expectedAnswer": "14 hari kalender",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "Pembayaran THR dibayarkan selambat-lambatnya 14 (empat belas) hari kalender sebelum hari raya keagamaan karyawan yang bersangkutan."
+        }
+      ]
+    },
+    {
+      "id": "q203",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo nanya kode dokumen sop rekrutmen & onboarding arunika itu brp ya?",
+      "expectedAnswer": "SOP-HC-2026-002",
+      "evidence": [
+        {
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "quote": "**Kode Dokumen** | SOP-HC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "q204",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo karyawan dapet nilai 1 atau 2 trus masuk program pip, lama nya brp hari ya?",
+      "expectedAnswer": "60 hari kalender",
+      "evidence": [
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "PIP berlangsung selama tepat 60 (enam puluh) hari kalender terhitung sejak penerbitan surat resmi oleh Human Capital."
+        }
+      ]
+    },
+    {
+      "id": "q205",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, kl soal jam kerja kantor pusat sm kantor cabang di pol-hc-2026-002, brp ya?",
+      "expectedAnswer": "08:00–17:00 WIB",
+      "evidence": [
+        {
+          "source": "hr-05-kode-etik.md",
+          "quote": "Waktu kerja operasional kantor pusat dan kantor cabang ditetapkan hari Senin hingga Jumat pukul 08:00–17:00 WIB."
+        }
+      ]
+    },
+    {
+      "id": "q206",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo bikin password akun sistem kerja di arunika minimal brp karakter ya?",
+      "expectedAnswer": "12 karakter",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Setiap akun pengguna wajib memiliki panjang kata sandi **minimal 12 karakter**,"
+        }
+      ]
+    },
+    {
+      "id": "q207",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo ada insiden prioritas p1/p2 di luar jam kerja helpdesk, lapornya ke hotline darurat TI ext brp ya?",
+      "expectedAnswer": "Ext. 1099",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "**Hotline Darurat TI Ext. 1099** (saluran luar: +62 31 8432199 Ext. 1099)"
+        }
+      ]
+    },
+    {
+      "id": "q208",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, di sop akses sistem arn-it-std-2026-004, masa berlaku akun vendor eksternal itu max brp hari ya dr pas provisioning?",
+      "expectedAnswer": "30 calendar days",
+      "evidence": [
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "All external vendor accounts must be configured with a hard system expiration date capped at exactly 30 calendar days from provisioning."
+        }
+      ]
+    },
+    {
+      "id": "q209",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, versi it drp yg lagi berlaku itu brp ya?",
+      "expectedAnswer": "2.4",
+      "evidence": [
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "**Version:** 2.4"
+        }
+      ]
+    },
+    {
+      "id": "q210",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo truk penerimaan telat dari jadwal slot booking di sop inbound, batas toleransi keterlambatannya brp menit ya?",
+      "expectedAnswer": "30 menit",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "Waktu kedatangan armada mengacu pada slot terkonfirmasi dengan ketentuan **toleransi keterlambatan truk 30 menit**."
+        }
+      ]
+    },
+    {
+      "id": "q211",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo so masuk buat kirim same-day, cut-off jam brp ya?",
+      "expectedAnswer": "14:00 WIB",
+      "evidence": [
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "Batas waktu (*cut-off time*) penerimaan data Sales Order (SO) untuk pengiriman hari yang sama (*same-day dispatch*) ditetapkan seragam pada pukul **14:00 WIB** setiap hari kerja operasional."
+        }
+      ]
+    },
+    {
+      "id": "q212",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, target otd bulanan di sla kita brp persen ya?",
+      "expectedAnswer": "97%",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of 97% measured monthly per customer account across all contracted lanes."
+        }
+      ]
+    },
+    {
+      "id": "q213",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, truk di arunika umur maksmal brp tahun sih? mksdnya yg cdd, cde, fuso, tronton itu",
+      "expectedAnswer": "10 tahun",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "Masa pakai operasional maksimal untuk seluruh kategori truk (CDD, CDE, Fuso, dan Tronton) adalah **10 (sepuluh) tahun**"
+        }
+      ]
+    },
+    {
+      "id": "q214",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, target ltifr buat operasional 2026 brp ya? takut nih fasilitas kita ga capai",
+      "expectedAnswer": "0,35 per 1.000.000 jam kerja",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "Target Lost Time Injury Frequency Rate (LTIFR) untuk periode operasional 2026 adalah maksimal 0,35 per 1.000.000 jam kerja"
+        }
+      ]
+    },
+    {
+      "id": "q215",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, mau tanya untuk gudang sby-01 kapasitas maksimal barang berbahaya yang bisa disimpan brp kg ya?",
+      "expectedAnswer": "45.000 kg (45 MT)",
+      "evidence": [
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "| **SBY-01** | Surabaya, East Java | 18,000 m² | 1,200 m² | 45,000 kg (45 MT) | Yes |"
+        }
+      ]
+    },
+    {
+      "id": "q216",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo lihat dokumen kerangka manajemen risiko aln, ketua komite risikonya siapa ya?",
+      "expectedAnswer": "Ratna Wijayakusuma",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "Ketua Komite: Direktur Utama (CEO), Ratna Wijayakusuma."
+        }
+      ]
+    },
+    {
+      "id": "q217",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo klaim buat armada CDD di tabel 1, deductible per kejadiannya brp ya?",
+      "expectedAnswer": "5% dari klaim (min. 5.000.000 IDR)",
+      "evidence": [
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Transit Fleet | CDD (140 units) | Colt Diesel Double (6 wheels) | 1,000,000,000 per conveyance | 5% of claim (min. 5,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q218",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, kalo harga solar industri udh di atas rp 17.500/liter, fuel surcharge buat tarif pengiriman brp persen ya?",
+      "expectedAnswer": "9,5%",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "Rata-rata harga solar > Rp 17.500 per liter: **Fuel Surcharge = 9,5%**"
+        }
+      ]
+    },
+    {
+      "id": "q219",
+      "category": "colloquial",
+      "lang": "id",
+      "question": "min, klo klien cash flownya profit dan udh beroperasi 3 thn, limit kredit tier 1nya brp ya?",
+      "expectedAnswer": "IDR 500,000,000",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "Tier 1 (Unsecured Credit up to IDR 500,000,000): Minimum operating history of three years with verified profitable cash flow."
+        }
+      ]
+    },
+    {
+      "id": "q220",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to prediction 72 in the excerpt, what kind of criteria will a new form of old-age security in the United States likely be based on?",
+      "expectedAnswer": "need-only criteria",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "72. In the United States, the likely collapse of the Social Security system will lead to a new form of old-age security such as one based on need-only criteria."
+        }
+      ]
+    },
+    {
+      "id": "q221",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In the discussion of World 2 home safety and security, what annual market size is attributed to security devices in developing economies?",
+      "expectedAnswer": "$13.2 billion",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "in the developing economies has made security devices an annual $13.2 billion market."
+        }
+      ]
+    },
+    {
+      "id": "q222",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the book, as early as 1993, what percentage of the workforce was in information?",
+      "expectedAnswer": "60%",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "As early as 1993, 60% of the workforce was in information."
+        }
+      ]
+    },
+    {
+      "id": "q223",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the book, in what year was Harvard's first doctorate in artificial life (a-life) granted?",
+      "expectedAnswer": "2015",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "HarvardÕs first doctorate in a-life was granted in 2015."
+        }
+      ]
+    },
+    {
+      "id": "q224",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "At the turn of the century, what did older Americans begin leaving for analysis on behalf of their descendants?",
+      "expectedAnswer": "a bequest of their tissue",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "It became voguish around the turn of the century, when the great expectations for DNAidentification were becoming real, for olderAmericans to leave a bequest of their tissue for analysis on behalf of their descendants."
+        }
+      ]
+    },
+    {
+      "id": "q225",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "How many gene code segments did NIH seek to patent in 1994 before deciding not to appeal and drop its other claims?",
+      "expectedAnswer": "315",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "tions for 315 segments of gene codes in 1994, NIH decided not to appeal and"
+        }
+      ]
+    },
+    {
+      "id": "q226",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What structural change in the electric system did unbundling enable, as described in the text?",
+      "expectedAnswer": "the split of generation from transmission and distribution",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Unbundling, for example, enabled the split of generation from transmission and distribution."
+        }
+      ]
+    },
+    {
+      "id": "q227",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In the section on U.S. vehicle recycling and remanufacturing, what percentage of vehicles are affected by recycling and remanufacturing?",
+      "expectedAnswer": "88%",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Recycling and remanufacturing now affects 88% of U.S. vehicles."
+        }
+      ]
+    },
+    {
+      "id": "q228",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In the 'Materials Use in World 2 Countries' table, which individuals typically buy foreign-made clothing?",
+      "expectedAnswer": "The better-off individuals",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The better-off individuals typically buy foreign-made cloth-\ning. There is some production of cheaper, mid-tech fabrics"
+        }
+      ]
+    },
+    {
+      "id": "q229",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, in what year were the Clean Air Act Amendments passed in the United States?",
+      "expectedAnswer": "1990",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "the passage of the CleanAirActAmendments in the United States in 1990"
+        }
+      ]
+    },
+    {
+      "id": "q230",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In the 'Forces shaping global management' section, what grade is assigned to 'Global technology'?",
+      "expectedAnswer": "D+",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "GlobaltechnologyD+Establishing global oversight of technology has languished; there"
+        }
+      ]
+    },
+    {
+      "id": "q231",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What accord, discussed in the context of advances against the drug trade, was established in 2016?",
+      "expectedAnswer": "The Hague Accord",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The HagueAccord of 2016 was an important advance in the global war on drugs."
+        }
+      ]
+    },
+    {
+      "id": "q232",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, what percentage of GDP growth this century is accounted for by the pollution tracking and control industry?",
+      "expectedAnswer": "20%",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Pollution tracking and control is a robust industry, accounting for 20% of GDPgrowth this century."
+        }
+      ]
+    },
+    {
+      "id": "q233",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the infrastructure score card mentioned in the text, what is the table below based on?",
+      "expectedAnswer": "ratings issued by several groups in 2024 and 2025",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The table below is an infrastructure score card based on ratings issued by several groups in 2024 and 2025. It compares the middle and destitute"
+        }
+      ]
+    },
+    {
+      "id": "q234",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "Over the period 1990 to 2020, what range of healthy economic growth rates did many countries see, according to the text?",
+      "expectedAnswer": "3% to 5.5%",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "countries saw healthy economic growth rates of 3% to 5.5% over the period 1990 to 2020."
+        }
+      ]
+    },
+    {
+      "id": "q235",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In what year did rejection engines catch on with the public?",
+      "expectedAnswer": "about 2012",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "rejection engines caught on with the public about 2012 as their prices came"
+        }
+      ]
+    },
+    {
+      "id": "q236",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What U.S. legislation formalized industrial policy and increased coordinated government assistance to manufacturing in 2001?",
+      "expectedAnswer": "The U.S. Retooling Manufacturing Act of 2001",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The U.S. Retooling ManufacturingAct of 2001 formalized industrial policy and coordinated and increased government assistance to manufactur-\ning.Akey provision was the revision of the ShermanAntitrustAct to enable"
+        }
+      ]
+    },
+    {
+      "id": "q237",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "Which two countries are described as Brazil's largest trading partners in the discussion of Brazil's manufacturing politics?",
+      "expectedAnswer": "Chile and Argentina",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Chile andArgentina are BrazilÕs largest trading partners."
+        }
+      ]
+    },
+    {
+      "id": "q238",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "Under which act did food packaging materials come, according to the text?",
+      "expectedAnswer": "Waste ReductionAct of 1999",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "packaging materials came under the Waste ReductionAct of 1999."
+        }
+      ]
+    },
+    {
+      "id": "q239",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "In what year was the first phase of the Human Genome Project completed, according to the genetics revolution section?",
+      "expectedAnswer": "2003",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The completion of the first phase of the Human Genome Project in 2003"
+        }
+      ]
+    },
+    {
+      "id": "q240",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, how many people per year do infectious diseases kill in the poor countries?",
+      "expectedAnswer": "23 million",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Infectious diseases kill 23 million per year"
+        }
+      ]
+    },
+    {
+      "id": "q241",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "What percentage of those at the end of life now choose euthanasia?",
+      "expectedAnswer": "8.2%",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "Euthanasia is now a choice of 8.2% of those at the end of life, up from about 2.3% in 2000."
+        }
+      ]
+    },
+    {
+      "id": "q242",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the 'Critical Developments 1990-2025' table, in what year was UNESCO's Bright Horizons program established to improve education in destitute countries?",
+      "expectedAnswer": "2005",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "2005UNESCOÕs Bright Horizons"
+        }
+      ]
+    },
+    {
+      "id": "q243",
+      "category": "distractor-book",
+      "lang": "en",
+      "question": "According to the excerpt, what is described as the world's most popular underwater tourist attraction?",
+      "expectedAnswer": "The Great Barrier Reef",
+      "evidence": [
+        {
+          "source": "distractor-book",
+          "quote": "The Great Barrier\nReef inAustralia is the worldÕs most popular underwater tourist attraction."
+        }
+      ]
+    },
+    {
+      "id": "q244",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Does the company offer a pension contribution plan beyond BPJS Ketenagakerjaan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q245",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada kebijakan kerja jarak jauh bagi karyawan non-operasional?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q246",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur retur barang dari pelanggan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q247",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan menyediakan transportasi antar-jemput karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q248",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Is there a formal policy on social media use by employees?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q249",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Berapa umur pensiun normal karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q250",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Does PT Arunika Logistik Nusantara have an employee assistance program (EAP)?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q251",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the process for customs clearance and import documentation?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q252",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur pemasukan barang impor melalui bea cukai?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q253",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Are employees allowed to work from home on a regular basis?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q254",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Berapa frekuensi drill kebakaran di gudang setiap tahunnya?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q255",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "How can I update my personal bank account details for payroll?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q256",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the policy for bringing personal devices into the warehouse?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q257",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Does the company offer any certification or tuition reimbursement programs?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q258",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Berapa batas maksimal klaim reimbursement untuk biaya konsumsi rapat per hari?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q259",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur peminjaman aset IT seperti laptop untuk acara di luar kantor?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q260",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana cara mengajukan cuti haid dan berapa hari kuotanya?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q261",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada kebijakan kerja jarak jauh (work from home) bagi karyawan operasional gudang?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q262",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan menyediakan tunjangan kacamata atau lensa kontak?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q263",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada SOP untuk pengembalian barang dari pelanggan (return goods)?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q264",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan memberikan asuransi jiwa tambahan di luar BPJS Ketenagakerjaan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q265",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada kebijakan subsidi pendidikan untuk anak karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q266",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the company's policy on remote work / work-from-home for office staff?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q267",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Who is the Data Protection Officer (DPO) responsible for information security incidents?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q268",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Does the company provide a gym membership or wellness allowance?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q269",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the procedure for returning incorrect or excess procurement items?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q270",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the SLA response time for urgent shipment inquiries?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q271",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berdasarkan kebijakan reimbursement, siapa nama Chief Executive Officer yang menandatangani kebijakan tersebut, dan berapa persentase bonus kinerja tahunan maksimum untuk grade jabatannya dalam tabel kompensasi?",
+      "expectedAnswer": "Ratna Wijayakusuma; 40%",
+      "evidence": [
+        {
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "quote": "| **G8** | Senior Management & C-Level (CEO, CFO, CHRO, CTO, COO) | 35.000.000 | 65.000.000 | 40% |"
+        },
+        {
+          "source": "fin-01-reimbursement.md",
+          "quote": "**Ratna Wijayakusuma** — Chief Executive Officer"
+        }
+      ]
+    },
+    {
+      "id": "q272",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Apa nomor dokumen yang sama-sama tercantum pada kebijakan cuti dan izin karyawan serta kebijakan manajemen kinerja dan pelatihan karyawan?",
+      "expectedAnswer": "POL-HC-2026-002",
+      "evidence": [
+        {
+          "source": "hr-01-kebijakan-cuti.md",
+          "quote": "**Kode Dokumen:** POL-HC-2026-002"
+        },
+        {
+          "source": "hr-04-kinerja-pelatihan.md",
+          "quote": "**Nomor Dokumen:** POL-HC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "q273",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berdasarkan kebijakan pengadaan dan anggaran, mekanisme apa yang wajib digunakan untuk pengadaan heavy-duty warehouse racking system senilai Rp 150 juta dengan umur manfaat 5 tahun, dan bagaimana klasifikasi anggarannya?",
+      "expectedAnswer": "Tender formal; CAPEX",
+      "evidence": [
+        {
+          "source": "fin-02-pengadaan.md",
+          "quote": "Nilai di Atas Rp 100.000.000 (Tender Formal)"
+        },
+        {
+          "source": "fin-04-anggaran.md",
+          "quote": "An item or project must be budgeted under CAPEX when it satisfies both of the following cumulative criteria:\n1. **Value Threshold:** Individual unit purchase cost or aggregated project acquisition cost exceeds **IDR 25,000,000** (exclusive of VAT).\n2. **Economic Useful Life:** The asset provides an economic and useful life greater than **one (1) year** (12 months)."
+        }
+      ]
+    },
+    {
+      "id": "q274",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "SOP inbound menetapkan toleransi kedatangan truk setelah slot booking, dan SOP outbound menetapkan toleransi keterlambatan jadwal keberangkatan armada. Berapa menit toleransi tersebut pada kedua prosedur?",
+      "expectedAnswer": "30 menit",
+      "evidence": [
+        {
+          "source": "ops-01-penerimaan-barang.md",
+          "quote": "toleransi keterlambatan truk 30 menit"
+        },
+        {
+          "source": "ops-02-pengiriman-outbound.md",
+          "quote": "melebihi batas toleransi 30 menit dikenakan penalti"
+        }
+      ]
+    },
+    {
+      "id": "q275",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The Customer Service Level Agreement became effective on 1 January 2026. How many days later did the Cargo Insurance and Claims SOP take effect?",
+      "expectedAnswer": "14 days",
+      "evidence": [
+        {
+          "source": "ops-03-sla-layanan.md",
+          "quote": "Effective Date: 1 January 2026"
+        },
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "Effective Date: January 15, 2026"
+        }
+      ]
+    },
+    {
+      "id": "q276",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa jumlah total unit kendaraan bermotor aktif (truk dan van) yang tercatat dalam Kebijakan Pengelolaan Armada dan Sustainability and Environmental Policy PT Arunika Logistik Nusantara?",
+      "expectedAnswer": "370 unit",
+      "evidence": [
+        {
+          "source": "ops-04-armada.md",
+          "quote": "mencakup 312 unit truk (140 CDD, 96 CDE, 52 Fuso, dan 24 Tronton) serta 58 unit van *last-mile delivery*."
+        },
+        {
+          "source": "esg-01-keberlanjutan.md",
+          "quote": "operates an active transport fleet comprising 312 trucks (140 CDD, 96 CDE, 52 Fuso, 24 Tronton) and 58 light commercial delivery vans."
+        }
+      ]
+    },
+    {
+      "id": "q277",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many certified dangerous-goods specialists must be on active floor duty across all DG-accepting hubs during one full day of warehouse operations?",
+      "expectedAnswer": "12 specialists",
+      "evidence": [
+        {
+          "source": "ops-05-k3-gudang.md",
+          "quote": "terbagi dalam 3 shift pergudangan: Shift 1 (06:00–14:00 WIB/WITA), Shift 2 (14:00–22:00 WIB/WITA), dan Shift 3 (22:00–06:00 WIB/WITA)."
+        },
+        {
+          "source": "ops-06-barang-berbahaya.md",
+          "quote": "SBY-01 and JKT-02 must maintain a minimum of two (2) certified DG specialists on active floor duty during every shift."
+        }
+      ]
+    },
+    {
+      "id": "q278",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut Kebijakan Keamanan Informasi dan SOP Akses Sistem, berapa jumlah karyawan yang terikat oleh kebijakan tersebut dan siapa saja yang menyetujui standar akses sistem?",
+      "expectedAnswer": "1.240 karyawan; Hendra Gunawan (CTO) dan Ratna Wijayakusuma (CEO)",
+      "evidence": [
+        {
+          "source": "it-01-keamanan-informasi.md",
+          "quote": "Kebijakan ini mengikat secara operasional dan hukum bagi seluruh 1.240 karyawan PT Arunika Logistik Nusantara tanpa terkecuali"
+        },
+        {
+          "source": "it-03-akses-sistem.md",
+          "quote": "Hendra Gunawan (CTO), Ratna Wijayakusuma (CEO)"
+        }
+      ]
+    },
+    {
+      "id": "q279",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Which document sets the shorter maximum recovery time for a total WMS Gudangku v4 outage: the SOP's P1 resolution target or the DRP's RTO for Gudangku v4?",
+      "expectedAnswer": "SOP P1 resolution target of 2 hours",
+      "evidence": [
+        {
+          "source": "it-02-penanganan-insiden.md",
+          "quote": "| **P1 - Kritis** | Sistem inti mati total (*critical outage*); operasional gudang utama atau rantai pasok terhenti penuh; tidak ada *workaround* manual yang memadai. | 15 menit | 2 jam |"
+        },
+        {
+          "source": "it-04-pemulihan-bencana.md",
+          "quote": "| **Gudangku v4** | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster |"
+        }
+      ]
+    },
+    {
+      "id": "q280",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many total fleet units are affected by a TMS credit hold lock under Arunika's policy?",
+      "expectedAnswer": "370 units",
+      "evidence": [
+        {
+          "source": "sales-01-tarif.md",
+          "quote": "dengan dukungan 312 unit truk (140 CDD, 96 CDE, 52 Fuso, dan 24 Tronton) serta 58 unit van last-mile"
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "TMS (\"RuteKu\"): Automatic system lock prevents booking creation, route planning, and dispatch allocation across all fleet assets"
+        }
+      ]
+    },
+    {
+      "id": "q281",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Under the onboarding SOP, what is the maximum unsecured credit limit for a Tier 1 client, and how does it compare to the default credit limit assigned to the Enterprise customer segment in the billing policy?",
+      "expectedAnswer": "IDR 500,000,000; it is equal to the Enterprise default credit limit.",
+      "evidence": [
+        {
+          "source": "sales-02-onboarding-pelanggan.md",
+          "quote": "Tier 1 (Unsecured Credit up to IDR 500,000,000): Minimum operating history of three years with verified profitable cash flow. Payment terms: Net 30 days."
+        },
+        {
+          "source": "fin-03-penagihan-piutang.md",
+          "quote": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        }
+      ]
+    },
+    {
+      "id": "q282",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut rencana mitigasi risiko utama 2026 untuk kargo bernilai tinggi, pertanggungan polis marine cargo dinaikkan per hub. Berapa selisih nilai pertanggungan tersebut dengan limit polis asuransi untuk gudang JKT-02 yang tercantum dalam SOP asuransi kargo?",
+      "expectedAnswer": "IDR 110.000.000.000",
+      "evidence": [
+        {
+          "source": "risk-01-manajemen-risiko.md",
+          "quote": "Penerapan SOP inspeksi forklift ganda, instalasi 128 CCTV resolusi 4K terhubung WMS Gudangku v4, dan kenaikan pertanggungan polis marine cargo senilai IDR 10.000.000.000 per hub."
+        },
+        {
+          "source": "risk-02-asuransi-klaim.md",
+          "quote": "| Warehouse | JKT-02 Cikarang | Regional hub (24,500 m²) | 120,000,000,000 per location | 10% of claim (min. 25,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "q283",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada daftar hotel rekanan untuk perjalanan dinas karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q284",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Which insurance company underwrites our fleet vehicle coverage?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q285",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Berapa jumlah hari cuti bersama yang diberikan setiap tahun?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q286",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "How do I request access to the warehouse CCTV system?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q287",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah karyawan diperbolehkan mengambil cuti tahunan di muka?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q288",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the procedure for reporting a cybersecurity incident to the national CERT?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q289",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "Does the company provide an employee shuttle bus service?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q290",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur retur barang dari pelanggan ke gudang?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q291",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah tunjangan kesehatan mencakup anggota keluarga karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q292",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan memberikan bantuan biaya pendidikan anak karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q293",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the maximum storage temperature for flammable chemical goods?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q294",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur peminjaman kendaraan operasional untuk dinas mendadak?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q295",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan menerapkan kebijakan kerja dari rumah?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q296",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the data retention period for customer delivery records?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q297",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah ada insentif referral untuk merekomendasikan calon karyawan?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q298",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What is the process for requesting a replacement company laptop?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q299",
+      "category": "unanswerable",
+      "lang": "en",
+      "question": "What ESG or sustainability certifications has the company obtained?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q300",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah tersedia fasilitas kantin di lokasi gudang?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q301",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan memberikan tunjangan bensin kepada karyawan yang menggunakan kendaraan pribadi untuk urusan dinas?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q302",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Bagaimana prosedur pengajuan cuti untuk menunaikan ibadah umroh?",
+      "expectedAnswer": "",
+      "evidence": []
+    },
+    {
+      "id": "q303",
+      "category": "unanswerable",
+      "lang": "id",
+      "question": "Apakah perusahaan memiliki kebijakan kerja jarak jauh (remote work) untuk karyawan kantor?",
+      "expectedAnswer": "",
+      "evidence": []
+    }
+  ]
+}
