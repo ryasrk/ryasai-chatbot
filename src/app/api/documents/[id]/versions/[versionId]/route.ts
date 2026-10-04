@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getActiveUser, handleApiError, writeAudit } from '@/lib/session'
+import { getActiveUser, handleApiError, requireRole, writeAudit } from '@/lib/session'
 import { restoreDocVersion } from '@/lib/doc-versioning'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
@@ -11,7 +11,10 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   try {
     const user = await getActiveUser()
     enterWithOrg(user.organizationId)
-        const { id, versionId } = await ctx.params
+    // A version snapshot/restore rewrites what the document answers with, so it is gated like PATCH/DELETE on the
+    // document itself. Before 2026-10-04 any authenticated role, including viewer, could restore a version.
+    requireRole(user, 'admin')
+    const { id, versionId } = await ctx.params
     const result = await restoreDocVersion(id, versionId)
     await writeAudit({
       userId: user.userId,

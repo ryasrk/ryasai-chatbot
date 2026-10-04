@@ -49,7 +49,15 @@ mock.module('@/lib/session', () => ({
     auditWrites.push(r)
     events.push('audit')
   },
-  handleApiError: (e: unknown, msg: string) => Response.json({ error: msg }, { status: 500 }),
+  requireRole: (u: { role: string }, minRole: string) => {
+    if (minRole === 'admin' && u.role !== 'admin') {
+      const e = new Error(`Requires ${minRole} role. You have ${u.role}.`)
+      e.name = 'ForbiddenError'
+      throw e
+    }
+  },
+  handleApiError: (e: unknown, msg: string) =>
+    Response.json({ error: msg }, { status: (e as Error)?.name === 'ForbiddenError' ? 403 : 500 }),
 }))
 
 mock.module('@/lib/prisma-tenant', () => ({
@@ -268,5 +276,15 @@ describe('the WHOLE doc-versioning module is org-scoped, not just the restored p
       // The document ROW itself is never loaded by unique id; a scoped read (or none at all) is the contract.
       expect(scoped).not.toContain('db.document.findUnique')
     }
+  })
+})
+
+describe('role gate', () => {
+  test('a viewer cannot restore a version (403, no library call, no audit)', async () => {
+    // Before 2026-10-04 any authenticated role could restore a version, which rewrites the document's chunks.
+    user = { ...adminUser, role: 'viewer' }
+    const res = await post()
+    expect(res.status).toBe(403)
+    expect(events).toEqual(['enterWithOrg:org-1'])
   })
 })

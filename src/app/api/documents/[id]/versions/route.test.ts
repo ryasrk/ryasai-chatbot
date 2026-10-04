@@ -45,7 +45,15 @@ mock.module('@/lib/session', () => ({
     auditWrites.push(r)
     events.push('audit')
   },
-  handleApiError: (e: unknown, msg: string) => Response.json({ error: msg }, { status: 500 }),
+  requireRole: (u: { role: string }, minRole: string) => {
+    if (minRole === 'admin' && u.role !== 'admin') {
+      const e = new Error(`Requires ${minRole} role. You have ${u.role}.`)
+      e.name = 'ForbiddenError'
+      throw e
+    }
+  },
+  handleApiError: (e: unknown, msg: string) =>
+    Response.json({ error: msg }, { status: (e as Error)?.name === 'ForbiddenError' ? 403 : 500 }),
 }))
 
 mock.module('@/lib/prisma-tenant', () => ({
@@ -117,12 +125,12 @@ describe('org context', () => {
     expect(events).toEqual(['enterWithOrg:org-1', 'createDocVersion', 'audit'])
   })
 
-  test('a viewer-scoped user still enters their own org (the route adds no role gate)', async () => {
-    // Documented as the current behaviour: this route is not admin-only, unlike the connector edits. Recorded
-    // by assertion so a later decision to gate it has to change this test deliberately.
+  test('a viewer is refused BEFORE any version is created (403, no library call, no audit)', async () => {
+    // Was pinned as "the route adds no role gate" until 2026-10-04: any role could snapshot a document.
     user = { ...adminUser, role: 'viewer' }
-    await post()
-    expect(events[0]).toBe('enterWithOrg:org-1')
+    const res = await post()
+    expect(res.status).toBe(403)
+    expect(events).toEqual(['enterWithOrg:org-1'])
   })
 })
 
