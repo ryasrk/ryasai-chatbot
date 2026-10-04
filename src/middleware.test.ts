@@ -71,6 +71,12 @@ describe('middleware — non-API paths pass through untouched', () => {
 })
 
 describe('middleware — the session existence gate', () => {
+  test('metrics authentication reaches the handler without a browser cookie', async () => {
+    expect(nextResponse(await middleware(req('/api/metrics', { session: null, bearer: 'scraper-token' })))).toBe(true)
+    // An absent token also reaches the handler, which must reject it unless an admin session exists.
+    expect(nextResponse(await middleware(req('/api/metrics', { session: null })))).toBe(true)
+    expect((await middleware(req('/api/metrics/other', { session: null }))).status).toBe(401)
+  })
   test('an API call with NO session cookie is refused with 401', async () => {
     const res = await middleware(req('/api/documents', { session: null }))
     expect(res.status).toBe(401)

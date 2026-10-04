@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { UnauthorizedError } from '@/lib/session'
-import { enterWithOrg } from '@/lib/prisma-tenant'
+import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 import { readKeyScope, type KeyScope } from '@/lib/api-key-scope'
 
 const KEY_PREFIX = 'ryas_'
@@ -65,7 +65,8 @@ export async function requireExternalApiKey(
   // ponytail: prefix-based narrowing — extract first 13 chars (KEY_PREFIX + 8) to filter
   // candidates before hashing. Falls back to all keys if prefix is too short.
   const prefix = token.slice(0, 13)
-  const candidates = prefix.length >= 13
+  // The key identifies the org, so its candidate lookup is explicitly pre-auth.
+  const candidates = await bypassOrg(async () => prefix.length >= 13
     ? await db.apiKey.findMany({
         where: { isActive: true, revokedAt: null, keyPrefix: prefix },
         select: {
@@ -88,6 +89,7 @@ export async function requireExternalApiKey(
             allowedIntegrationIds: true, allowedDocumentIds: true, allowedTools: true,
           },
       })
+  )
 
   const matched = candidates.find((candidate) =>
     verifyApiKey(token, candidate.keyHash),

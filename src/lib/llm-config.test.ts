@@ -1,5 +1,12 @@
-import { test, expect, describe, afterEach } from 'bun:test'
+import { test, expect, describe, afterEach, mock } from 'bun:test'
 import { isBlockedHostAsync, isBlockedHost, normalizeBaseUrl, allowedHosts } from '@/lib/llm-config'
+
+// Exercise resolved-address decisions without relying on public wildcard DNS.
+mock.module('node:dns/promises', () => ({
+  lookup: async (hostname: string) => [{
+    address: hostname === 'lvh.me' || hostname.endsWith('.nip.io') ? '127.0.0.1' : '93.184.216.34', family: 4,
+  }],
+}))
 
 describe('isBlockedHost', () => {
   test('blocks loopback, link-local, private, CGNAT ranges', () => {

@@ -18,7 +18,10 @@
  *     the socket.io mini-service, server libs). Never import in client components.
  */
 import crypto from 'crypto'
+import { SESSION_CLOCK_SKEW_MS } from './constants'
 import { getEncryptionKey } from '@/lib/config'
+
+export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 // ponytail: lazy key — read at call time so tests can set env vars after import.
 function key(): Buffer { return getEncryptionKey() }
@@ -66,7 +69,7 @@ export function maskConfig(config: Record<string, unknown>): Record<string, unkn
 // ---------------------------------------------------------------------------
 // The active-user cookie used to be plain JSON trusting `userId` verbatim,
 // which allowed trivial impersonation (IDs leak via /api/me/users). It is now a
-// `userId.sessionVersion.signature` token; the server only trusts `userId` if
+// `userId.sessionVersion.issuedAt.signature` token; the server only trusts `userId` if
 // the HMAC verifies AND the sessionVersion matches the user's current version
 // in DB. Incrementing sessionVersion on login invalidates all prior cookies.
 function sessionHmac(payload: string): string {
@@ -75,7 +78,7 @@ function sessionHmac(payload: string): string {
 
 /** Sign a user id + session version into a verifiable session token. */
 export function signSession(userId: string, sessionVersion: number = 0): string {
-  const payload = `${userId}.${sessionVersion}`
+  const payload = `${userId}.${sessionVersion}.${Date.now()}`
   return `${payload}.${sessionHmac(payload)}`
 }
 
@@ -83,9 +86,12 @@ export function signSession(userId: string, sessionVersion: number = 0): string 
 export function verifySession(token: string | undefined | null): string | null {
   if (!token) return null
   const parts = token.split('.')
-  // ponytail: accept both 2-part (legacy, no version) and 3-part (with version) tokens.
-  // Legacy tokens are rejected once users re-login (version mismatch in session.ts).
-  if (parts.length < 2) return null
+  // ponytail: a signed issuance time bounds server-side lifetime, even when a cookie is replayed.
+  // Legacy tokens have no expiry evidence and require a fresh login after upgrading.
+  if (parts.length !== 4 || !parts[0] || !/^\d+$/.test(parts[1]) || !/^\d+$/.test(parts[2])) return null
+  const issuedAt = Number(parts[2])
+  const now = Date.now()
+  if (!Number.isSafeInteger(issuedAt) || issuedAt > now + SESSION_CLOCK_SKEW_MS || now - issuedAt >= SESSION_MAX_AGE_MS) return null
   const sig = parts[parts.length - 1]
   const payload = parts.slice(0, -1).join('.')
   const expected = sessionHmac(payload)

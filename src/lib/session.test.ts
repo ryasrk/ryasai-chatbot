@@ -9,6 +9,8 @@ const mockUserFindUnique = mock<(args: any) => Promise<any>>(async () => null)
 const mockUserFindFirst = mock<(args: any) => Promise<any>>(async () => null)
 const mockAuditLogCreate = mock<(args: any) => Promise<any>>(async () => ({}))
 const mockOrgFindUnique = mock<(args: any) => Promise<any>>(async () => ({ licenseStatus: 'valid', licensePlan: 'pro' }))
+const mockActivityGet = mock(async (): Promise<string | null> => null)
+const mockActivitySet = mock(async (..._args: unknown[]) => 'OK')
 
 mock.module('next/headers', () => ({
   cookies: async () => ({ get: mockCookieGet }),
@@ -25,7 +27,7 @@ mock.module('@/lib/db', () => ({
   },
 }))
 mock.module('@/lib/redis', () => ({
-  redisCmd: { get: async () => null, set: async () => 'OK' },
+  redisCmd: { get: mockActivityGet, set: mockActivitySet },
 }))
 
 // `session.ts` reads the org with `requireOrgContext()` (the fail-fast replacement for
@@ -48,6 +50,8 @@ beforeEach(() => {
   mockUserFindFirst.mockImplementation(async () => null)
   mockAuditLogCreate.mockImplementation(async () => ({}))
   mockOrgFindUnique.mockImplementation(async () => ({ licenseStatus: 'valid', licensePlan: 'pro' }))
+  mockActivityGet.mockReset().mockImplementation(async () => null)
+  mockActivitySet.mockClear()
 })
 
 describe('handleApiError', () => {
@@ -137,8 +141,27 @@ describe('writeAudit — fail-closed for critical, swallow for non-critical', ()
 })
 
 describe('getActiveUser', () => {
+  test('idle activity is enforced by the authenticated consumer before database access', async () => {
+    stubAuthenticatedUser()
+    mockActivityGet.mockImplementation(async () => String(Date.now() - 31 * 60 * 1000))
+    await expect(getActiveUser()).rejects.toThrow('Session expired due to inactivity')
+    expect(mockActivitySet).not.toHaveBeenCalled()
+  })
+  test('activity evidence survives the idle timeout and is isolated by login version', async () => {
+    stubAuthenticatedUser()
+    await getActiveUser()
+    expect(mockActivityGet).toHaveBeenCalledWith('session:activity:user-1:0')
+    expect(mockActivitySet).toHaveBeenCalledWith('session:activity:user-1:0', expect.any(String), 'PX', expect.any(Number))
+    expect(mockActivitySet.mock.calls[0][3] as number).toBeGreaterThan(7 * 24 * 60 * 60 * 1000)
+  })
+  test('Redis outages cannot renew an old token whose activity evidence is unavailable', async () => {
+    stubAuthenticatedUser()
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now() - 31 * 60 * 1000}.signature` }))
+    mockActivityGet.mockImplementation(async () => { throw new Error('Redis unavailable') })
+    await expect(getActiveUser()).rejects.toThrow('Session expired due to inactivity')
+  })
   test('valid cookie + active user → returns user', async () => {
-    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
     mockVerifySession.mockImplementation(() => 'user-1')
     mockUserFindUnique.mockImplementation(async () => ({
       id: 'user-1',
@@ -155,7 +178,7 @@ describe('getActiveUser', () => {
   })
 
   test('valid cookie + INACTIVE user → falls through, throws (no fallback)', async () => {
-    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
     mockVerifySession.mockImplementation(() => 'user-1')
     mockUserFindUnique.mockImplementation(async () => ({
       id: 'user-1',
@@ -212,7 +235,7 @@ describe('getActiveUser', () => {
 
   test('locked-down org (expired) without skipLicenseCheck → throws LicenseError', async () => {
     process.env.AUTH_DEMO_FALLBACK = 'false'
-    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
     mockVerifySession.mockImplementation(() => 'user-1')
     mockUserFindUnique.mockImplementation(async () => ({
       id: 'user-1',
@@ -230,7 +253,7 @@ describe('getActiveUser', () => {
 
   test('locked-down org (expired) WITH skipLicenseCheck → returns user (no throw)', async () => {
     process.env.AUTH_DEMO_FALLBACK = 'false'
-    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
     mockVerifySession.mockImplementation(() => 'user-1')
     mockUserFindUnique.mockImplementation(async () => ({
       id: 'user-1',
@@ -250,7 +273,7 @@ describe('getActiveUser', () => {
 
   test('valid org + skipLicenseCheck → still returns user (no regression)', async () => {
     process.env.AUTH_DEMO_FALLBACK = 'false'
-    mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+    mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
     mockVerifySession.mockImplementation(() => 'user-1')
     mockUserFindUnique.mockImplementation(async () => ({
       id: 'user-1',
@@ -317,7 +340,7 @@ describe('getActiveUser', () => {
 })
 
 function stubAuthenticatedUser() {
-  mockCookieGet.mockImplementation(() => ({ value: 'signed.token' }))
+  mockCookieGet.mockImplementation(() => ({ value: `user-1.0.${Date.now()}.signature` }))
   mockVerifySession.mockImplementation(() => 'user-1')
   mockUserFindUnique.mockImplementation(async () => ({
     id: 'user-1',

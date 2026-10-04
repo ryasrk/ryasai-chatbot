@@ -41,6 +41,8 @@ const PUBLIC_API_PATHS = new Set([
   '/api',
   '/api/v1/health',
   '/api/health',
+  // The handler verifies either METRICS_TOKEN or an admin session.
+  '/api/metrics',
   '/api/v1/chat/completions',
   '/api/v1/agent/run',
   '/api/webhooks/incoming',

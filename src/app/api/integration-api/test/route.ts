@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { enterWithOrg } from '@/lib/prisma-tenant'
+import { readResponseBody } from '@/lib/response-body'
+import { z } from 'zod'
 
 /**
  * POST /api/integration-api/test — server-side proxy for the API explorer's
@@ -22,7 +24,14 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
  *   - 30s timeout, response capped
  */
 const PROXY_TIMEOUT_MS = 30_000
-const MAX_RESPONSE_CHARS = 200_000
+const MAX_RESPONSE_BYTES = 200_000
+const requestSchema = z.object({
+  method: z.string().default('GET'),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+  params: z.record(z.string(), z.string()).optional(),
+  body: z.string().optional(),
+})
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,13 +39,17 @@ export async function POST(req: NextRequest) {
     enterWithOrg(user.organizationId)
     requireRole(user, 'admin')
 
-    const payload = (await req.json().catch(() => ({}))) as {
-      method?: string
-      url?: string
-      headers?: Record<string, string>
-      params?: Record<string, string>
-      body?: string
+    const requestBody = await readResponseBody(req, 1_000_000)
+    if (requestBody.truncated) {
+      return NextResponse.json({ ok: false, error: 'Request exceeds 1 MB limit.' }, { status: 413 })
     }
+    let decodedPayload: unknown
+    try { decodedPayload = JSON.parse(requestBody.text || '{}') } catch {
+      return NextResponse.json({ ok: false, error: 'Invalid JSON request body.' }, { status: 400 })
+    }
+    const parsedPayload = requestSchema.safeParse(decodedPayload)
+    if (!parsedPayload.success) return NextResponse.json({ ok: false, error: 'Invalid request body.' }, { status: 400 })
+    const payload = parsedPayload.data
 
     const method = (payload.method ?? 'GET').trim().toUpperCase()
     if (!/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method)) {
@@ -101,8 +114,12 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const rawText = await response.text().catch(() => '')
-    const bodyText = rawText.slice(0, MAX_RESPONSE_CHARS)
+    let body: Awaited<ReturnType<typeof readResponseBody>>
+    try {
+      body = await readResponseBody(response, MAX_RESPONSE_BYTES)
+    } catch {
+      return NextResponse.json({ ok: false, error: 'Failed to read the upstream response.', latencyMs: Date.now() - started }, { status: 502 })
+    }
     const latencyMs = Date.now() - started
 
     const responseHeaders: Record<string, string> = {}
@@ -116,11 +133,13 @@ export async function POST(req: NextRequest) {
     }).catch(() => {})
 
     return NextResponse.json({
-      ok: response.ok,
+      ok: response.ok && !body.truncated,
       status: response.status,
       statusText: response.statusText || '',
       headers: responseHeaders,
-      body: bodyText,
+      body: body.text,
+      truncated: body.truncated,
+      ...(body.truncated ? { error: 'Response exceeds 200 KB limit; showing a partial response.' } : {}),
       latencyMs,
     })
   } catch (e) {

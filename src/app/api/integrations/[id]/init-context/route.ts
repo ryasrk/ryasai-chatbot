@@ -45,7 +45,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
     const { generateDatabaseProfile } = await import('@/lib/ai')
     const { safeParseColumns, safeParseSampleRow } = await import('@/lib/schema-enrichment')
 
-    const fullIntegration = await db.integration.findUnique({
+    const fullIntegration = await db.integration.findFirst({
       where: { id },
       include: { schemas: { select: { tableName: true, columns: true, rowCount: true, sampleRow: true } } },
     })
@@ -69,12 +69,13 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
       tables,
     })
 
-    if (profile) {
-      await db.integration.update({
-        where: { id },
-        data: { businessContext: profile },
-      })
+    if (!profile.trim()) {
+      return NextResponse.json({ ok: false, error: 'The AI provider returned an empty business context. Try again.' }, { status: 502 })
     }
+    await db.integration.update({
+      where: { id },
+      data: { businessContext: profile },
+    })
 
     await writeAudit({
       userId: user.userId,

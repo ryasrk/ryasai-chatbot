@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { bypassOrg } from '@/lib/prisma-tenant'
-import { getActiveUser, handleApiError } from '@/lib/session'
+import { getActiveUser, requireRole, handleApiError } from '@/lib/session'
 import { validateLicense, generateMachineId } from '@/lib/license-client'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
@@ -14,15 +14,16 @@ import { enterWithOrg } from '@/lib/prisma-tenant'
  */
 export async function POST(req: NextRequest) {
   try {
-    const user = await getActiveUser()
+    const user = await getActiveUser({ skipLicenseCheck: true })
     enterWithOrg(user.organizationId)
-        const body = await req.json().catch(() => null)
+    requireRole(user, 'admin')
+    const body = await req.json().catch(() => null)
     if (!body || typeof body !== 'object') {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
     }
 
     const { licenseKey, organizationName } = body as Record<string, string>
-    if (!licenseKey) {
+    if (typeof licenseKey !== 'string' || !licenseKey.trim() || (organizationName !== undefined && typeof organizationName !== 'string')) {
       return NextResponse.json({ error: 'License key is required.' }, { status: 400 })
     }
 

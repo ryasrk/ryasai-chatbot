@@ -186,6 +186,7 @@ mock.module('@/lib/errors', () => {
 })
 
 let storedEmbeddingRows: Array<{ dims: number | null; model: string | null }> = []
+const embeddingQueries: Array<{ sql: string; params: unknown[] }> = []
 
 mock.module('@/lib/db', () => ({
   db: {
@@ -197,7 +198,10 @@ mock.module('@/lib/db', () => ({
      * Empty here so the route takes its "no embeddings yet" path, which is what a fresh install has. Individual
      * tests set `storedEmbeddingRows` when they need a concrete dimension.
      */
-    $queryRaw: async () => storedEmbeddingRows,
+    $queryRaw: async (strings: TemplateStringsArray, ...params: unknown[]) => {
+      embeddingQueries.push({ sql: strings.join('?'), params })
+      return storedEmbeddingRows
+    },
     vectorStoreConfig: {
       findFirst: async (args: Record<string, unknown> = {}) => {
         calls.push({ model: 'vectorStoreConfig', op: 'findFirst', args })
@@ -254,9 +258,16 @@ beforeEach(() => {
   encryptedInputs.length = 0
   ensured.length = 0
   roleChecks.length = 0
+  embeddingQueries.length = 0
 })
 
 describe('GET', () => {
+  test('stored embedding facts are explicitly scoped in raw SQL to the authenticated organization', async () => {
+    await GET()
+    expect(embeddingQueries).toHaveLength(1)
+    expect(embeddingQueries[0].sql).toMatch(/WHERE\s+"organizationId"\s*=\s*\?\s+AND embedding IS NOT NULL/)
+    expect(embeddingQueries[0].params).toEqual(['org-1'])
+  })
   test('with no row it reports the INTERNAL defaults rather than null', async () => {
     // The form renders these; a null body would leave the fields blank and look like a load failure.
     const res = await GET()

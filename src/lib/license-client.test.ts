@@ -62,8 +62,8 @@ describe('getLockdownReason', () => {
     expect(getLockdownReason('valid', null)).toBeNull()
   })
 
-  test('none → null (no lockdown)', () => {
-    expect(getLockdownReason('none', null)).toBeNull()
+  test('none → unpaid: a pending registration has no signed entitlement', () => {
+    expect(getLockdownReason('none', null)).toBe('unpaid')
   })
 
   test('expired → expired', () => {
@@ -96,8 +96,8 @@ describe('getLockdownReason', () => {
     expect(getLockdownReason('unreachable', null)).toBe('unreachable')
   })
 
-  test('unknown status → null (fail open)', () => {
-    expect(getLockdownReason('something-weird', null)).toBeNull()
+  test('unknown status cannot grant an entitlement', () => {
+    expect(getLockdownReason('something-weird', null)).toBe('expired')
   })
 })
 

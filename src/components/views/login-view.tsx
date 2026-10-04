@@ -181,6 +181,7 @@ export function LoginView({ onSuccess, defaultMode = 'login', startStep = 0 }: L
             src="/neo-olympian-hero.webp"
             alt="A classical marble statue transitioning into golden AI circuitry"
             fill
+            sizes="(min-width: 1024px) 58vw, (min-width: 768px) 50vw, 0px"
             priority
             className="object-cover object-top"
           />

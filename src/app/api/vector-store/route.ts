@@ -17,11 +17,11 @@ import { EMBEDDING_DIMENSIONS } from '@/lib/constants'
  * the retriever will actually have to match. `null` when no chunk has an embedding yet (a fresh install), which the
  * UI renders as "unknown" rather than as a fabricated number.
  */
-async function readStoredEmbeddingFacts(): Promise<{ size: number | null; model: string | null }> {
+async function readStoredEmbeddingFacts(organizationId: string): Promise<{ size: number | null; model: string | null }> {
   const [row] = await db.$queryRaw<Array<{ dims: number | null; model: string | null }>>`
     SELECT vector_dims(embedding) AS dims, "embeddingModel" AS model
       FROM "DocumentChunk"
-     WHERE embedding IS NOT NULL
+     WHERE "organizationId" = ${organizationId} AND embedding IS NOT NULL
      LIMIT 1
   `
   return { size: row?.dims ?? null, model: row?.model ?? null }
@@ -29,10 +29,11 @@ async function readStoredEmbeddingFacts(): Promise<{ size: number | null; model:
 
 export async function GET() {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const row = await db.vectorStoreConfig.findFirst()
     // The MEASURED facts, so the response distinguishes "configured" from "actually stored".
-    const stored = await readStoredEmbeddingFacts()
+    const stored = await readStoredEmbeddingFacts(user.organizationId)
     /*
      * The two halves of the comparison the UI needs and previously could not make.
      *

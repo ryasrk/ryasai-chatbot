@@ -204,13 +204,14 @@ export function getLockdownReason(
   status: string,
   validatedAt: Date | null,
 ): 'expired' | 'deactivated' | 'unreachable' | 'unpaid' | null {
-  if (status === 'valid' || status === 'none') return null
-  if (status === 'unpaid') return 'unpaid'
+  if (status === 'valid') return null
+  if (status === 'unpaid' || status === 'none') return 'unpaid'
   if (status === 'expired' || status === 'invalid' || status === 'suspended') return status === 'suspended' ? 'deactivated' : 'expired'
   if (status === 'unreachable') {
     return isWithinGracePeriod(validatedAt) ? null : 'unreachable'
   }
-  return null
+  // Unknown persisted states cannot establish a signed entitlement.
+  return 'expired'
 }
 
 export { REVALIDATION_INTERVAL_MS }

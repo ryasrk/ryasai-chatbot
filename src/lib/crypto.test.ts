@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeAll } from 'bun:test'
+import { describe, expect, test, beforeAll, spyOn } from 'bun:test'
 import crypto from 'crypto'
 
 process.env.ENCRYPTION_SECRET_KEY = 'a'.repeat(64)
@@ -120,6 +120,28 @@ describe('maskConfig', () => {
 })
 
 describe('signSession / verifySession', () => {
+  test('signed issuance time enforces server-side lifetime and rejects replay after seven days', () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(1_800_000_000_000)
+    try {
+      const token = signSession('user', 7)
+      expect(verifySession(token)).toBe('user')
+      clock.mockReturnValue(1_800_000_000_000 + 7 * 24 * 60 * 60 * 1000 - 1)
+      expect(verifySession(token)).toBe('user')
+      clock.mockReturnValue(1_800_000_000_000 + 7 * 24 * 60 * 60 * 1000)
+      expect(verifySession(token)).toBeNull()
+      clock.mockReturnValue(1_800_000_000_000 - 225)
+      expect(verifySession(token)).toBe('user')
+      clock.mockReturnValue(1_800_000_000_000 - 5_000)
+      expect(verifySession(token)).toBe('user')
+      clock.mockReturnValue(1_800_000_000_000 - 5_001)
+      expect(verifySession(token)).toBeNull()
+    } finally { clock.mockRestore() }
+  })
+  test('legacy tokens lack expiry evidence and require a new login', () => {
+    const payload = 'user.7'
+    const sig = crypto.createHmac('sha256', Buffer.from('a'.repeat(64), 'hex')).update(payload).digest('base64url')
+    expect(verifySession(`${payload}.${sig}`)).toBeNull()
+  })
   test('round-trip: sign → verify → same userId', () => {
     const userId = 'user_abc123'
     const token = signSession(userId)
