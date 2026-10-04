@@ -172,3 +172,6 @@ start.bat
 uat/agent-runs/**
 !uat/agent-runs/*/
 !uat/agent-runs/*/REPORT.md
+
+# Generated portable plugin SDK
+/sdk/dist/

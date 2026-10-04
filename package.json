@@ -21,13 +21,14 @@
     "bench:prinasa-sessions": "bun benchmark/prinasa-session-runner.ts",
     "bench:prinasa-toggle": "bun benchmark/prinasa-session-runner.ts --kind toggle",
     "prepare": "if [ -d .git/hooks ]; then cp scripts/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit; fi",
-    "test:coverage": "bun test --coverage",
+    "test:coverage": "bun scripts/coverage.ts",
     "coverage": "bun scripts/coverage.ts",
     "e2e:prod": "playwright test -c playwright.prod.config.ts",
     "coverage:gate": "bun scripts/coverage-gate.ts",
     "audit:coverage": "python3 scripts/coverage-honest.py",
     "audit:holders": "python3 scripts/audit-test-holders.py",
-    "audit:routes": "python3 scripts/audit-route-tests.py"
+    "audit:routes": "python3 scripts/audit-route-tests.py",
+    "db:deploy": "bun scripts/migrate.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",
@@ -118,5 +119,8 @@
     "deepmerge-ts": "8.0.2",
     "effect": "3.20.0",
     "prismjs": "1.30.0"
+  },
+  "patchedDependencies": {
+    "braces@3.0.3": "patches/braces@3.0.3.patch"
   }
 }

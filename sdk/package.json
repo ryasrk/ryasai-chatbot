@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "description": "Type-safe SDK for building ryasai Chatbot plugin tools.",
   "type": "module",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./index.ts",
-      "import": "./index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "bun build index.ts --target=node --format=esm --outdir=dist && ../node_modules/.bin/tsc -p tsconfig.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
 }

@@ -2,11 +2,10 @@ import type { PluginRequest, PluginResponse, HttpLikeRequest, HttpLikeResponse }
 
 /**
  * Wrap a plugin handler into an HTTP webhook adapter compatible with
- * Express / Next.js / Node http handlers. The wrapped function receives a
+ * Express or Next.js Pages API handlers. The wrapped function receives a
  * parsed PluginRequest and returns a PluginResponse (or throws).
  *
- * Usage (Next.js route):
- *   export const POST = wrapHandler(async (req) => ({ ok: true, output: req.input }))
+ * App Router and other Fetch API servers should use wrapFetchHandler instead.
  */
 export function wrapHandler(
   fn: (req: PluginRequest) => Promise<PluginResponse> | PluginResponse,
@@ -34,6 +33,31 @@ export function wrapHandler(
         error: e instanceof Error ? e.message : String(e),
         latencyMs,
       } satisfies PluginResponse)
+    }
+  }
+}
+
+/** Adapt a plugin to a Fetch API route, including Next.js App Router. */
+export function wrapFetchHandler(
+  fn: (req: PluginRequest) => Promise<PluginResponse> | PluginResponse,
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return Response.json({ ok: false, output: '', error: 'A JSON request body is required.' }, { status: 400 })
+    }
+    const started = Date.now()
+    try {
+      const result = await fn(normalizeRequest({ body }))
+      return Response.json({ ...result, latencyMs: result.latencyMs ?? Date.now() - started }, {
+        status: result.ok ? 200 : 502,
+      })
+    } catch {
+      // Exceptions can contain credentials; only an explicit PluginResponse
+      // should carry a handler-provided message across the HTTP boundary.
+      return Response.json({ ok: false, output: '', error: 'Plugin execution failed.', latencyMs: Date.now() - started }, { status: 502 })
     }
   }
 }

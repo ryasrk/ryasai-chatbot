@@ -2,7 +2,7 @@
  * @ryasai/chatbot-sdk — type-safe helpers for building plugin tools.
  *
  * Quick start:
- *   import { createManifest, wrapHandler } from '@ryasai/chatbot-sdk'
+ *   import { createManifest, wrapFetchHandler } from '@ryasai/chatbot-sdk'
  *
  *   const manifest = createManifest({
  *     endpoint: 'https://my-tool.example.com/run',
@@ -13,7 +13,7 @@
  *     paramDescription: '{ "email": "user@example.com" }',
  *   })
  *
- *   export const POST = wrapHandler(async (req) => {
+ *   export const POST = wrapFetchHandler(async (req) => {
  *     const { email } = JSON.parse(req.input)
  *     return { ok: true, output: JSON.stringify(await lookup(email)) }
  *   })
@@ -30,4 +30,4 @@ export type {
 } from './types'
 
 export { createManifest } from './manifest'
-export { wrapHandler } from './handler'
+export { wrapHandler, wrapFetchHandler } from './handler'
