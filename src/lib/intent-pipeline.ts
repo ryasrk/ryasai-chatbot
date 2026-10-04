@@ -179,7 +179,11 @@ export function needsClarificationByRule(question: string): {
   // contain no concrete noun — "berapa jumlah karyawan itu?" names karyawan and must pass through.
   const PRONOUN_ONLY =
     /\b(itu|tersebut|tadi|yang tadi|dari itu|those|these|them|that one|the previous one|the above)\b/
-  if (PRONOUN_ONLY.test(q)) {
+  // SHORT is enforced, not just documented: a long question carries its own referents even when they are not in the
+  // NOUNS list. MEASURED on the live eval: a 33-word question naming a sales tariff, a fuel surcharge and a finance
+  // policy ended "Which of these two percentages is higher?" and was answered "What should I count?".
+  const words = q.split(/\s+/).filter(Boolean).length
+  if (PRONOUN_ONLY.test(q) && words <= 8) {
     const NOUNS = /\b(karyawan|pelanggan|pesanan|produk|gudang|stok|pengiriman|departemen|cuti|absensi|invoice|order|customer|product|employee|warehouse|shipment|document|dokumen|laporan|report)\b/
     if (!NOUNS.test(q)) return { needed: true, kind: 'subject', reason: 'pronoun with no antecedent' }
   }

@@ -33,6 +33,15 @@ describe('needsClarificationByRule', () => {
     }
   })
 
+  test('a LONG question that ends on a pronoun carries its own referents and passes', () => {
+    // MEASURED on the 2026-10-04 live eval: this was answered "What should I count?". Its referents (a fuel
+    // surcharge, a late-payment interest cap) are not in the rule's noun list, and the rule documented a length
+    // limit it never enforced.
+    const q = 'The sales tariff applies a maximum fuel surcharge to freight when solar prices exceed a threshold, ' +
+      'while the finance policy caps late payment interest. Which of these two percentages is higher?'
+    expect(needsClarificationByRule(q).needed).toBe(false)
+  })
+
   test('a relative time with NO frame requires clarification', () => {
     for (const q of ['Tampilkan data terbaru.', 'Show me recent data.', 'Data terakhir dong.']) {
       expect({ q, needed: needsClarificationByRule(q).needed }).toEqual({ q, needed: true })
