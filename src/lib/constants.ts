@@ -188,11 +188,33 @@ export const LLM_MAX_TOKENS_BY_PURPOSE: Record<string, number> = {
   agent: 8192,
   planner: 8192,
   chat: Number(process.env.LLM_MAX_TOKENS_CHAT ?? 8192),
+  // The retrieval and graph purposes fell through to the old 1024 default. MEASURED on the 2026-10-04 live eval
+  // (reasoning model, LlmUsageLog): `kg-extract` stopped at the cap on 3,665 of 3,823 calls, `rag-rerank` on 1,102
+  // of 1,504 and `synthesis` on 297 of 757. A capped reasoning call returns EMPTY content, so the reranker silently
+  // fell back to fused order after four attempts (logged "EMPTY completion" 51 times in ~180 questions), graph
+  // extraction stored nothing, and multi-step answers came back blank. A direct probe of the production rerank
+  // prompt with 24 candidates: 1 of 6 empty at 1024, 0 of 6 at 8192, longest run 1,776 tokens.
+  'rag-rerank': 8192,
+  'kg-extract': 8192,
+  synthesis: 8192,
+  'schema-description': 8192,
+  'confidence-evaluation': 4096,
+  'query-rewrite': 4096,
+  'contextual-retrieval': 4096,
+  'source-init': 4096,
+  'alignment-check': 4096,
 }
 
-/** The ceiling for a purpose, falling back to the structured-step default. */
+/**
+ * The default for a purpose with no entry. It was 1024, sized for a small JSON answer, and every purpose added later
+ * without an entry inherited a cap a reasoning model can spend entirely on thinking (see the measurement above). 4096
+ * is still a bound — it stops a runaway model — but no longer the failure mode of an unlisted purpose.
+ */
+export const LLM_DEFAULT_MAX_TOKENS = 4096
+
+/** The ceiling for a purpose, falling back to `LLM_DEFAULT_MAX_TOKENS`. */
 export function maxTokensForPurpose(purpose: string): number {
-  return LLM_MAX_TOKENS_BY_PURPOSE[purpose] ?? 1024
+  return LLM_MAX_TOKENS_BY_PURPOSE[purpose] ?? LLM_DEFAULT_MAX_TOKENS
 }
 export const LLM_STREAM_TIMEOUT_MS = 120_000
 export const LLM_MAX_RETRIES = 3

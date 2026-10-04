@@ -1829,10 +1829,15 @@ describe('agent-purpose token ceiling', () => {
     expect(maxTokensForPurpose('planner')).toBeGreaterThan(1024)
   })
 
-  test('an UNKNOWN purpose still falls back to the documented 1024 default', () => {
-    // The fallback itself must stay — it bounds a provider that would otherwise
-    // run unbounded on a reasoning model.
-    expect(maxTokensForPurpose('not-a-real-purpose')).toBe(1024)
+  test('an UNKNOWN purpose falls back to a BOUNDED default with reasoning headroom', () => {
+    // The fallback itself must stay — it bounds a provider that would otherwise run unbounded on a reasoning model —
+    // but at 1024 it truncated reasoning models to empty output (measured on rag-rerank, kg-extract, synthesis).
+    expect(maxTokensForPurpose('not-a-real-purpose')).toBe(4096)
+  })
+
+  test('the retrieval and graph purposes measured at the old cap have explicit headroom', () => {
+    // MEASURED 2026-10-04: these stopped at 1024 on 96% (kg-extract), 73% (rag-rerank) and 39% (synthesis) of calls.
+    for (const p of ['rag-rerank', 'kg-extract', 'synthesis']) expect(maxTokensForPurpose(p)).toBeGreaterThanOrEqual(8192)
   })
 })
 
