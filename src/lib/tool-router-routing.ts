@@ -5,7 +5,8 @@
  * into one the org can actually serve. `tool-router.ts` owns the transports and the branch dispatch.
  */
 import { db } from '@/lib/db'
-import { routeQuery, type RouteDecision } from '@/lib/ai'
+import { routeQuery, type RouteDecision, type RoutingContext } from '@/lib/ai'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 import { pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
 import { selectToolWithLlm } from '@/lib/tool-selector'
 import { rewriteQuery } from '@/lib/intent-pipeline'
@@ -296,7 +297,7 @@ export async function resolveRouting(
     // No LLM (unconfigured, or the provider failed). `routeQuery` is the
     // documented fail-closed fallback; a hard failure here would take chat down
     // for a deployment whose only problem is a transient provider error.
-    const routed = await routeQuery({
+    const routed = await routeQueryOrDegrade({
       question: effectiveQuestion,
       hasIntegrations: intCount > 0,
       hasDocuments: docCount > 0,
@@ -370,4 +371,25 @@ export async function loadContextualContext(decision: RouteDecision, sessionId?:
   })
   if (recentToolRuns.length === 0) return ''
   return recentToolRuns.map((tr) => `[Prior ${tr.type} result for: ${tr.inputSummary}]\n${tr.outputSummary}`).join('\n\n---\n\n')
+}
+
+/**
+ * `routeQuery`, degraded instead of thrown when the PROVIDER fails.
+ *
+ * It is already the fallback for a failed tool selector, so reaching it usually means the provider is struggling — and
+ * it had no handler of its own. MEASURED on the 2026-10-05 live eval: three questions failed with HTTP 500 on every
+ * run, because the selector's call timed out (swallowed) and this one then timed out too (not caught). A transient
+ * provider failure now routes by what the org has: documents first, then a database, else plain chat — the same
+ * graceful-degradation order as the rest of the pipeline. An UNCONFIGURED LLM is not a transient failure and still
+ * propagates: fail-closed config stays fail-closed.
+ */
+export async function routeQueryOrDegrade(ctx: RoutingContext): Promise<Awaited<ReturnType<typeof routeQuery>>> {
+  try {
+    return await routeQuery(ctx)
+  } catch (e) {
+    if (!(e instanceof LlmProviderError)) throw e
+    const decision: RouteDecision = ctx.hasDocuments ? 'RAG' : ctx.hasIntegrations ? 'SQL' : 'CHAT'
+    log.warn('router fallback failed at the provider; routing by source availability', { decision, failure: e.failure })
+    return { decision, reason: `provider unavailable (${e.failure}); routed by source availability` }
+  }
 }

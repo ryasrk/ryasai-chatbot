@@ -7,7 +7,8 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { scopedLogger } from '@/lib/logger'
 import { redisCmd } from '@/lib/redis'
-import { AppError } from '@/lib/errors'
+import { AppError, toTypedError } from '@/lib/errors'
+import { LlmProviderError } from '@/lib/llm-client-utils'
 import { SESSION_INACTIVITY_TIMEOUT_MS } from '@/lib/constants'
 import { getLockdownReason } from '@/lib/license-client'
 import { sessionActivityExpired } from '@/lib/session-activity'
@@ -92,7 +93,17 @@ export function handleApiError(e: unknown, fallback: string, status = 500) {
       { status: e.statusCode },
     )
   }
-  log.error('Unhandled API error', { error: e instanceof Error ? e.message : String(e) })
+  // A provider failure is the customer's provider (BYOK), not an internal fault: typed code, category and fix, never
+  // the raw provider body. `toTypedError` already knew this; routes that use this handler did not reach it.
+  if (e instanceof LlmProviderError) {
+    const typed = toTypedError(e)
+    log.warn('AI provider error reached the API boundary', { code: typed.code, error: e.message })
+    return NextResponse.json({ error: { code: typed.code, message: typed.message, hint: typed.hint } }, { status: typed.statusCode })
+  }
+  // The STACK, not only the message: "LLM transport error: timeout" names no call site, and an unhandled error that
+  // reaches here is by definition one nobody anticipated. MEASURED 2026-10-05: three reproducible HTTP 500s left only
+  // that message, and the throwing call had to be found by reproduction.
+  log.error('Unhandled API error', { error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined })
   return NextResponse.json(
     { error: { code: 'INTERNAL_ERROR' as const, message: fallback } },
     { status },

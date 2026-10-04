@@ -81,6 +81,17 @@ export function toTypedError(e: unknown): {
   // these errors fell through to INTERNAL_ERROR/500 and returned the raw
   // "LLM error (HTTP 401): ..." text to the browser.
   if (e instanceof LlmProviderError) {
+    // A TIMEOUT is its own code: the request may well succeed on retry, which is not what "provider error" tells a
+    // client. MEASURED 2026-10-05: a reasoning model ran past the 60 s limit on three eval questions every time.
+    if (e.failure.kind === 'unreachable' && /timed? ?out|timeout/i.test(e.message)) {
+      return {
+        code: 'LLM_TIMEOUT',
+        message: 'The AI provider did not answer in time.',
+        hint: 'Retry the request; if it keeps timing out, choose a faster model or raise LLM_TIMEOUT_MS.',
+        // 502 like every provider failure (the status contract is pinned in errors.test.ts); the CODE says "timeout".
+        statusCode: 502,
+      }
+    }
     return {
       code: 'LLM_ERROR',
       message: `AI provider error: ${e.failure.kind === 'auth' ? 'authentication failed' : e.failure.kind === 'quota' ? 'quota or credit exhausted' : e.failure.kind === 'model_missing' ? 'configured model unavailable' : e.failure.kind === 'model_unsupported' ? 'model lacks a required capability' : e.failure.kind === 'unreachable' ? 'provider unreachable' : 'unexpected provider response'}`,

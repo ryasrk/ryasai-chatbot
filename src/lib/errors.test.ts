@@ -17,6 +17,7 @@ mock.module('next/headers', () => ({
 
 import { AppError, LlmNotConfiguredError, toTypedError, type ErrorCode } from './errors'
 import { UnauthorizedError } from './session'
+import { LlmProviderError } from './llm-client-utils'
 
 describe('AppError', () => {
   test('constructor with all params (code, message, hint, statusCode, cause)', () => {
@@ -179,5 +180,15 @@ describe('toTypedError', () => {
     expect(typed.code).toBe('INTERNAL_ERROR')
     expect(typed.message).toBe('42')
     expect(typed.statusCode).toBe(500)
+  })
+})
+
+describe('provider timeouts are their own code', () => {
+  test('a transport timeout maps to LLM_TIMEOUT with a retry hint; other provider failures stay LLM_ERROR', () => {
+    const timeout = toTypedError(new LlmProviderError(null, 'The operation was aborted due to timeout'))
+    expect(timeout.code).toBe('LLM_TIMEOUT')
+    expect(timeout.statusCode).toBe(502)
+    expect(timeout.hint).toContain('LLM_TIMEOUT_MS')
+    expect(toTypedError(new LlmProviderError(401, 'invalid api key')).code).toBe('LLM_ERROR')
   })
 })

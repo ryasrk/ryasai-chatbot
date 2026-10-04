@@ -55,6 +55,14 @@ beforeEach(() => {
 })
 
 describe('handleApiError', () => {
+  test('a provider failure is a typed 502, never INTERNAL_ERROR', async () => {
+    // MEASURED 2026-10-05: a provider timeout in the answer call reached this handler as a bare 500 INTERNAL_ERROR.
+    const { LlmProviderError } = await import('./llm-client-utils')
+    const res = handleApiError(new LlmProviderError(null, 'The operation was aborted due to timeout'), 'fallback')
+    expect(res.status).toBe(502)
+    expect((await res.json()).error.code).toBe('LLM_TIMEOUT')
+  })
+
   test('UnauthorizedError → 401 with typed UNAUTHORIZED code', async () => {
     const res = handleApiError(new UnauthorizedError('no session'), 'fallback')
     expect(res.status).toBe(401)
