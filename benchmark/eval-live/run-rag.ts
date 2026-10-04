@@ -18,9 +18,11 @@ import { complete, mapLimit, parseJson } from './llm'
 import type { EvalQuestion } from './generate-questions'
 import { wilson } from './stats'
 
-// Claude since 2026-10-05: the previous judge (cbai/glm-5.2) ran out of credits mid-run and every later judgement came
-// back null. A third model family from the generator (DeepSeek) and the question author (Kimi).
-const JUDGE = process.env.EVAL_JUDGE_MODEL ?? 'ag/claude-sonnet-4-6'
+// The judge is a third model family from the generator (DeepSeek) and the question author (Kimi). It has been replaced
+// twice on 2026-10-05: cbai/glm-5.2 ran out of credits mid-run, then ag/claude-sonnet-4-6 was retired mid-run and
+// answered every call with a plain "no longer available" sentence. Both showed up only because failed judgements are
+// counted below — a run that loses more than 2% of them exits non-zero.
+const JUDGE = process.env.EVAL_JUDGE_MODEL ?? 'cx/gpt-6-sol'
 const base = process.env.EVAL_BASE_URL ?? 'http://127.0.0.1:3107'
 const creds = JSON.parse(readFileSync(process.env.EVAL_CREDENTIALS_FILE!, 'utf8')) as { apiKey: string }
 const arg = (name: string) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null)
