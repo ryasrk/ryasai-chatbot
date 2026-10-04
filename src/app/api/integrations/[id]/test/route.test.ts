@@ -51,6 +51,8 @@ const events: string[] = []
 const calls: Array<{ model: string; op: string; args: Record<string, unknown> }> = []
 const auditWrites: Array<Record<string, unknown>> = []
 const getConnectorArgs: unknown[][] = []
+/** What the connector's write-privilege probe reports; `undefined` = the connector has no probe. */
+let writePrivilege: boolean | null | undefined = undefined
 const dropped: string[] = []
 const decryptedBlobs: string[] = []
 let embeddingCacheInvalidated = 0
@@ -107,6 +109,7 @@ mock.module('@/lib/connectors', () => ({
       getConnectorArgs.push([id, provider, cfg])
       events.push('getConnector')
       const base = {
+        ...(writePrivilege !== undefined ? { probeWritePrivilege: async () => writePrivilege } : {}),
         fetchSchema: async () => {
           events.push('fetchSchema')
           if (fetchSchemaThrows) throw fetchSchemaThrows
@@ -211,6 +214,7 @@ beforeEach(() => {
   calls.length = 0
   auditWrites.length = 0
   getConnectorArgs.length = 0
+  writePrivilege = undefined
   dropped.length = 0
   decryptedBlobs.length = 0
   embeddingCacheInvalidated = 0
@@ -540,5 +544,28 @@ describe('internal failures beyond the connector', () => {
     expect(typeof mod.describeConnectionError).toBe('function')
     const out = mod.describeConnectionError(new Error('x')) as { reason: string; message: string }
     expect(out).toEqual({ reason: 'ssl', message: 'described:x' })
+  })
+})
+
+describe('POST /test — the login\'s write privilege is reported', () => {
+  test('a login that can write is surfaced in the response and audited as a warning', async () => {
+    writePrivilege = true
+    const res = await post()
+    const body = (await res.json()) as { ok: boolean; writePrivilege: unknown }
+    expect(body.ok).toBe(true)
+    expect(body.writePrivilege).toBe(true)
+    const row = auditWrites.find((a) => a.action === 'INTEGRATION_TEST')!
+    expect(row.severity).toBe('warning')
+  })
+
+  test('a read-only login is info, and a connector without a probe reports null', async () => {
+    writePrivilege = false
+    let body = (await (await post()).json()) as { writePrivilege: unknown }
+    expect(body.writePrivilege).toBe(false)
+    expect(auditWrites.find((a) => a.action === 'INTEGRATION_TEST')!.severity).toBe('info')
+    auditWrites.length = 0
+    writePrivilege = undefined
+    body = (await (await post()).json()) as { writePrivilege: unknown }
+    expect(body.writePrivilege).toBeNull()
   })
 })

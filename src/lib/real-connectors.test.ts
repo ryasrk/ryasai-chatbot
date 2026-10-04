@@ -2726,3 +2726,45 @@ describe('pinned defects (each FAILS when the defect is fixed)', () => {
     expect(code).not.toContain('xp_cmdshell')
   })
 })
+
+// ---------------------------------------------------------------------------
+// probeWritePrivilege — surfaced on "Test connection" because a least-privilege login is the real boundary.
+// The PostgreSQL query was verified against a live server with a temporary role inside a rolled-back transaction
+// (SELECT-only role → false; after GRANT INSERT → true).
+// ---------------------------------------------------------------------------
+
+describe('probeWritePrivilege', () => {
+  const withPool = <T extends object>(c: T, pool: unknown): T => {
+    ;(c as unknown as { _pool: unknown })._pool = pool
+    return c
+  }
+
+  test('PostgreSQL reports the boolean the catalog query returns', async () => {
+    const pg = (writable: unknown) => withPool(new PostgresConnector(PG_CFG, 'POSTGRESQL'), { query: async () => ({ rows: [{ writable }] }) })
+    expect(await pg(true).probeWritePrivilege()).toBe(true)
+    expect(await pg(false).probeWritePrivilege()).toBe(false)
+    expect(await pg('t').probeWritePrivilege()).toBeNull()
+  })
+
+  test.each([
+    ["GRANT SELECT ON `shop`.* TO `ro`@`%`", false],
+    ["GRANT SELECT, INSERT ON `shop`.* TO `app`@`%`", true],
+    ['GRANT ALL PRIVILEGES ON *.* TO `root`@`localhost` WITH GRANT OPTION', true],
+    ['GRANT USAGE ON *.* TO `ro`@`%`', false],
+    ["GRANT SELECT ON `shop`.`orders` TO `ro`@`%`", false],
+    ["GRANT UPDATE (`status`) ON `shop`.`orders` TO `ops`@`%`", true],
+  ])('MySQL grant line %s → %s', async (line, expected) => {
+    const c = withPool(new MysqlConnector(MY_CFG, 'MYSQL'), { query: async () => [[{ 'Grants for x': line }]] })
+    expect(await c.probeWritePrivilege()).toBe(expected)
+  })
+
+  test('MSSQL maps the bit column, and any failure is "unknown" (null), never "read-only"', async () => {
+    const ms = (writable: unknown) => withPool(new MssqlConnector(MS_CFG, 'MSSQL'), { request: () => ({ query: async () => ({ recordset: [{ writable }] }) }) })
+    expect(await ms(true).probeWritePrivilege()).toBe(true)
+    expect(await ms(0).probeWritePrivilege()).toBe(false)
+    const broken = withPool(new MssqlConnector(MS_CFG, 'MSSQL'), { request: () => ({ query: async () => { throw new Error('permission denied') } }) })
+    expect(await broken.probeWritePrivilege()).toBeNull()
+    const pgBroken = withPool(new PostgresConnector(PG_CFG, 'POSTGRESQL'), { query: async () => { throw new Error('x') } })
+    expect(await pgBroken.probeWritePrivilege()).toBeNull()
+  })
+})

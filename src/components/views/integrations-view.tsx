@@ -128,6 +128,12 @@ export function IntegrationsView() {
         toast.success(
           `Connection successful. ${json.tablesCount ?? 0} tables available.`,
         )
+        if (json.writePrivilege === true) {
+          toast.warning(
+            'This database login can WRITE data. Queries are read-only by design, but use a read-only login for this integration.',
+            { duration: 10_000 },
+          )
+        }
         await fetchList()
       } else {
         toast.error(json.message ?? 'Connection failed — check credentials.')

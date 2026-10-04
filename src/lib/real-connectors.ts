@@ -619,6 +619,24 @@ export class PostgresConnector implements BaseDatabaseConnector {
     }
   }
 
+  /** Superuser, ownership of a user table, or an INSERT/UPDATE/DELETE/TRUNCATE grant on one, all mean "can write". */
+  async probeWritePrivilege(): Promise<boolean | null> {
+    try {
+      const pool = await this.pool()
+      const res = await pool.query(`
+        SELECT COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false)
+          OR EXISTS (SELECT 1 FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND tableowner = current_user)
+          OR EXISTS (SELECT 1 FROM information_schema.table_privileges
+                     WHERE grantee IN (current_user, 'PUBLIC')
+                       AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')
+                       AND table_schema NOT IN ('pg_catalog', 'information_schema')) AS writable`)
+      const v = res.rows?.[0]?.writable
+      return typeof v === 'boolean' ? v : null
+    } catch {
+      return null
+    }
+  }
+
   /** SELECT 1 on a FRESH pool, with a classified diagnostic on failure. */
   async testConnectionDetailed(): Promise<DetailedTestResult> {
     return detailedPing(async () => {
@@ -807,6 +825,18 @@ export class MysqlConnector implements BaseDatabaseConnector {
     }
   }
 
+  /** Any grant line naming a write privilege (or ALL PRIVILEGES) for the current user. */
+  async probeWritePrivilege(): Promise<boolean | null> {
+    try {
+      const pool = await this.pool()
+      const [rows] = await pool.query({ sql: 'SHOW GRANTS FOR CURRENT_USER()', timeout: QUERY_TIMEOUT_MS })
+      const lines = (rows as Array<Record<string, unknown>>).map((r) => String(Object.values(r)[0] ?? ''))
+      return lines.some((l) => /\bGRANT\b[^]*?\b(ALL PRIVILEGES|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b[^]*?\bON\b/i.test(l))
+    } catch {
+      return null
+    }
+  }
+
   /** SELECT 1 on a FRESH pool, with a classified diagnostic on failure. */
   async testConnectionDetailed(): Promise<DetailedTestResult> {
     return detailedPing(async () => {
@@ -959,6 +989,24 @@ export class MssqlConnector implements BaseDatabaseConnector {
       return true
     } catch {
       return false
+    }
+  }
+
+  /** Database-level INSERT/UPDATE/DELETE permission, or sysadmin, for the current login. */
+  async probeWritePrivilege(): Promise<boolean | null> {
+    try {
+      const pool = await this.pool()
+      const res = await pool.request().query(
+        `SELECT CAST(CASE WHEN IS_SRVROLEMEMBER('sysadmin') = 1
+                       OR HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'INSERT') = 1
+                       OR HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'UPDATE') = 1
+                       OR HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'DELETE') = 1
+                  THEN 1 ELSE 0 END AS bit) AS writable`,
+      )
+      const v = (res.recordset as Array<{ writable?: unknown }> | undefined)?.[0]?.writable
+      return typeof v === 'boolean' ? v : v === 1 ? true : v === 0 ? false : null
+    } catch {
+      return null
     }
   }
 

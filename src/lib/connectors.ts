@@ -47,6 +47,13 @@ export interface BaseDatabaseConnector {
    * haven't implemented it.
    */
   testConnectionDetailed?(): Promise<DetailedTestResult>
+  /**
+   * Can this LOGIN write? `true` = it holds a write privilege, `false` = read-only as far as the server reports,
+   * `null` = could not tell. Surfaced on "Test connection" because a least-privilege login is the real boundary on
+   * a customer database; the guards and read-only transactions are defence in depth. Optional: ClickHouse runs every
+   * session with readonly=1, so it does not implement it.
+   */
+  probeWritePrivilege?(): Promise<boolean | null>
   fetchSchema(): Promise<ReflectedTable[]>
   executeQuery(sql: string): Promise<QueryResult>
   // ponytail: optional — only real connectors with pools implement this.

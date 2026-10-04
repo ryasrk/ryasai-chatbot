@@ -137,11 +137,15 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
       void initIntegrationContext(id).catch(logSwallowed('integrations/test: initIntegrationContext'))
     }
 
+    // Least privilege is the real boundary on a customer database (the guards and read-only transactions are defence
+    // in depth), so a login that can WRITE is reported every time it is tested. `null` = the server would not say.
+    const writePrivilege = connector.probeWritePrivilege ? await connector.probeWritePrivilege() : null
+
     await writeAudit({
       userId: user.userId,
       action: 'INTEGRATION_TEST',
-      severity: 'info',
-      detail: { integrationId: id, name: integration.name, provider: integration.provider, tablesCount },
+      severity: writePrivilege ? 'warning' : 'info',
+      detail: { integrationId: id, name: integration.name, provider: integration.provider, tablesCount, writePrivilege },
     })
 
     return NextResponse.json({
@@ -151,8 +155,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx) {
         lastTestedAt: new Date().toISOString(),
         lastTestOk: true,
         tablesCount,
+        writePrivilege,
       },
       tablesCount,
+      writePrivilege,
     })
   } catch (e) {
     return handleApiError(e, 'Failed to test connection.')
