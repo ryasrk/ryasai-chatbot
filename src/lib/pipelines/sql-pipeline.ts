@@ -32,6 +32,7 @@ import {
   safeParseSampleRow,
 } from '@/lib/tool-utils'
 import type { QueryResult } from '@/lib/connectors'
+import { filterSchemaForPolicy, loadSqlAccessPolicy, resolveUserRole } from '@/lib/access-scope'
 
 const log = scopedLogger('sql-pipeline')
 
@@ -76,6 +77,8 @@ export type SqlPipelineOutcome =
   | { kind: 'ambiguous'; candidates: string[] }
   /** No active integration with a reflected schema inside the scope. */
   | { kind: 'unavailable' }
+  /** The integration is restricted and the user's role is granted no table in it. */
+  | { kind: 'forbidden'; integration: { id: string; name: string } }
   | { kind: 'rate_limited'; integration: { id: string; name: string } }
 
 /** `inScope` is a separate parameter so the structural scope audit (tool-router-scope-forward.test.ts) can see it. */
@@ -179,17 +182,32 @@ export async function runSqlPipeline(args: SqlPipelineArgs): Promise<SqlPipeline
     if (!rl.allowed) return { kind: 'rate_limited', integration: ref }
   }
 
+  // Per-role access (access-scope.ts). The generator only ever SEES granted tables and columns; the AST guard below
+  // independently rejects anything outside the grant, so a prompt-injected or hallucinated table still cannot run.
+  const role = await resolveUserRole(args.userId)
+  const policy = await loadSqlAccessPolicy(integration, role)
+
   const systemPromptPrefix = withIntegrationContextPrompt(args.systemPromptPrefix, integration.contextPrompt)
   // Resolved once per turn, not per repair attempt: the value cannot change mid-request.
   const sqlRules = resolveSqlRulesPrompt((await getPromptSettings(db)).sqlRulesPrompt)
 
-  const schemaTables = integration.schemas.map((schema) => ({
+  const reflectedTables = integration.schemas.map((schema) => ({
     tableName: schema.tableName,
     columns: safeParseColumns(schema.columns),
     rowCount: schema.rowCount ?? undefined,
     sampleRow: safeParseSampleRow(schema.sampleRow),
     description: schema.description,
   }))
+  const schemaTables = filterSchemaForPolicy(reflectedTables, policy)
+  if (schemaTables.length === 0) {
+    await audit(args.userId, 'ACCESS_DENIED', 'warning', { integrationId: integration.id, role, reason: 'no granted table' })
+    return { kind: 'forbidden', integration: ref }
+  }
+  // EVERY reflected column, not just granted ones: the AST guard needs them to attribute an unqualified column to the
+  // table that really has it (a restricted column must not hide behind an unqualified name).
+  const schemaColumns = new Map(
+    reflectedTables.map((t) => [t.tableName.toLowerCase(), new Set(t.columns.map((c) => c.name.toLowerCase()))]),
+  )
   const schemaDescription = describeSchema(schemaTables)
   // Free-text columns for the stale-profile fallback: what the model wrongly filters on without query hints.
   const textColumns = [
@@ -252,11 +270,12 @@ export async function runSqlPipeline(args: SqlPipelineArgs): Promise<SqlPipeline
     // Captured BEFORE the guard so a repaired retry replaces it, matching the SQL that finally runs.
     sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
 
-    const guard = validateAndSanitizeLlmSql(candidate.sql, { provider: integration.provider })
+    const guard = validateAndSanitizeLlmSql(candidate.sql, { provider: integration.provider, policy, schemaColumns })
     if (!guard.ok) {
       lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
       attemptedSql.push(candidate.sql)
-      await audit(args.userId, 'GUARDRAIL_BLOCK', 'critical', {
+      await audit(args.userId, guard.violation === 'access' ? 'ACCESS_DENIED' : 'GUARDRAIL_BLOCK', 'critical', {
+        role,
         integrationId: integration.id,
         naturalQuery: args.question,
         generatedSql: candidate.sql,
@@ -334,6 +353,11 @@ export async function runSqlPipeline(args: SqlPipelineArgs): Promise<SqlPipeline
  * from ONE of them while the three held 104 rows; and "Bandingkan jumlah pengiriman dengan jumlah pesanan" reported
  * the shipment count relabelled as orders. The model cannot name a missing source it does not know exists.
  */
+/** What the user is told when their role has no grant in the chosen source. Names no table: that would leak schema. */
+export function forbiddenSourceMessage(integrationName: string): string {
+  return `Your role does not have access to the data in ${integrationName}. Ask an administrator to grant access to the tables you need.`
+}
+
 export function buildCrossSourceNote(integrationName: string, integrationNames: string[] | undefined): string {
   const otherSources = (integrationNames ?? []).filter((n) => n !== integrationName)
   if (otherSources.length === 0) return ''

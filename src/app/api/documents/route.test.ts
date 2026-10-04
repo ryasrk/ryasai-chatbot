@@ -27,6 +27,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 const admin = { userId: 'u1', organizationId: 'org-1', role: 'admin', plan: 'flat' }
 const viewer = { userId: 'u2', organizationId: 'org-1', role: 'viewer', plan: 'flat' }
 let getActiveUserImpl: () => Promise<typeof admin> = async () => admin
+const listWheres: Array<Record<string, unknown>> = []
 
 /** What `getKnowledgeStorageChoice()` reports. The default is the UNCHOSEN install. */
 let storageChosen = false
@@ -57,6 +58,10 @@ const createdDoc = {
 mock.module('@/lib/db', () => ({
   db: {
     document: {
+      findMany: async (q: { where: Record<string, unknown> }) => {
+        listWheres.push(q.where)
+        return []
+      },
       count: async () => docCount,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         createdDocs.push(data)
@@ -181,7 +186,7 @@ mock.module('@/lib/vector-stores', () => ({
   },
 }))
 
-const { POST } = await import('./route')
+const { GET, POST } = await import('./route')
 
 function upload(name = 'facts.txt', body: string | Blob = 'hello world'): Promise<Response> {
   const form = new FormData()
@@ -324,5 +329,22 @@ describe('bounded upload preserves all accepted chunks', () => {
     expect(chunkWrites).toHaveLength(0)
     expect(auditCalls).toHaveLength(0)
     expect(enqueued).toHaveLength(0)
+  })
+})
+
+describe('GET /api/documents — per-role visibility', () => {
+  test('a viewer lists only documents whose allowedRoles include viewer', async () => {
+    getActiveUserImpl = async () => viewer
+    listWheres.length = 0
+    const res = await GET(new Request('http://x/api/documents') as never)
+    expect(res.status).toBe(200)
+    expect(listWheres[0]).toEqual({ allowedRoles: { has: 'viewer' } })
+  })
+
+  test('an admin lists every document, and the category filter still applies', async () => {
+    getActiveUserImpl = async () => admin
+    listWheres.length = 0
+    await GET(new Request('http://x/api/documents?category=SOP') as never)
+    expect(listWheres[0]).toEqual({ category: 'SOP' })
   })
 })

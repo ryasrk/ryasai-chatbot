@@ -28,7 +28,7 @@ import {
 import { executeRestRequest } from '@/lib/tool-branches'
 import { buildSourceGuidance } from '@/lib/source-guidance'
 import { judgeSqlAnswerability, type RelevanceJudge } from '@/lib/sql-answerability'
-import { runSqlPipeline, buildCrossSourceNote } from '@/lib/pipelines/sql-pipeline'
+import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
 import { chatOnce } from '@/lib/llm-client'
 import { getRoleLlmConfig } from '@/lib/llm-config'
 
@@ -351,6 +351,22 @@ export async function prepareSqlStream(args: {
       chartData: null,
       integrationId: outcome.integration.id,
       stream: singleChunkStream('Rate limit exceeded for SQL queries. Please try again in a minute.'),
+    }
+  }
+  if (outcome.kind === 'forbidden') {
+    return {
+      toolRuns: [{
+        type: 'SQL',
+        status: 'blocked',
+        latencyMs: Date.now() - started,
+        inputSummary: summarize(args.question),
+        outputSummary: '',
+        errorMessage: 'Access denied for this role.',
+      }],
+      citations: [],
+      chartData: null,
+      integrationId: outcome.integration.id,
+      stream: singleChunkStream(forbiddenSourceMessage(outcome.integration.name)),
     }
   }
   if (outcome.kind === 'failed') {

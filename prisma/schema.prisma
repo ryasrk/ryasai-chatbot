@@ -61,6 +61,7 @@ model Organization {
   llmUsageLogs        LlmUsageLog[]
   savedPrompts        SavedPrompt[]
   orders              Order[]
+  dataAccessPolicies  DataAccessPolicy[]
 }
 
 // ------------------------------------------------------------------
@@ -151,17 +152,22 @@ model Integration {
   /// domain glossary, and query hints. Injected into the SQL prompt so the
   /// Text-to-SQL model understands the business domain, not just raw schema.
   businessContext String?
+  /// `open` (default): every role may query every reflected table — how every install behaved before per-role access.
+  /// `restricted`: non-admin roles may query ONLY the tables (and columns) granted in DataAccessPolicy; an ungranted
+  /// table is denied. Enforced in the SQL prompt and by the AST guard (sql-ast-guard.ts).
+  accessMode      String    @default("open")
   /// Admin-editable context prompt injected into SQL answer synthesis when
   /// this integration is used. Empty by default → injects nothing.
   contextPrompt   String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  schemas       IntegrationSchema[]
-  queryHistory  QueryHistory[]
-  chatMessages  ChatMessage[]
-  scheduledRuns ScheduledRun[]
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  schemas        IntegrationSchema[]
+  queryHistory   QueryHistory[]
+  chatMessages   ChatMessage[]
+  scheduledRuns  ScheduledRun[]
+  accessPolicies DataAccessPolicy[]
 
   @@index([organizationId])
 }
@@ -219,29 +225,32 @@ model LlmConfig {
 // RAG — documents & semantic chunks
 // ------------------------------------------------------------------
 model Document {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  type           String // pdf | docx | xlsx | txt | md
-  sizeBytes      Int
-  mimeType       String
-  status         String    @default("processing") // processing | ready | error
-  isEnabled      Boolean   @default(true)
-  category       String? // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
-  description    String?
+  id                  String    @id @default(cuid())
+  organizationId      String
+  name                String
+  type                String // pdf | docx | xlsx | txt | md
+  sizeBytes           Int
+  mimeType            String
+  status              String    @default("processing") // processing | ready | error
+  isEnabled           Boolean   @default(true)
+  category            String? // SOP | KEBIJAKAN | FINANSIAL | INVOICE | LAINNYA
+  description         String?
   /// Admin-editable context prompt prepended to RAG answer synthesis when
   /// chunks from this document contribute to an answer. Empty → no-op.
-  contextPrompt  String?
-  contentText    String
-  uploadPath     String?
-  cognifyStatus  String? // null | processing | completed | failed
-  cognifyError   String?
+  contextPrompt       String?
+  contentText         String
+  uploadPath          String?
+  cognifyStatus       String? // null | processing | completed | failed
+  cognifyError        String?
   /// Durable add/graph phase identity; retries observe the same upstream run.
   cognifyPipelineJson String?
-  cognifiedAt    DateTime?
-  version        Int       @default(1)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  cognifiedAt         DateTime?
+  /// Roles allowed to retrieve this document's chunks. Defaults to every role, which is how every install behaved
+  /// before per-role access; `admin` is always allowed regardless (access-scope.ts).
+  allowedRoles        String[]  @default(["admin", "analyst", "viewer"])
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   chunks       DocumentChunk[]
@@ -319,25 +328,21 @@ model KgRelation {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  /*
+  /**
    * NO FOREIGN KEY ON `chunkId`, AND THAT IS DELIBERATE — with the measurement that decided it.
-   *
    * The column is a loose string, so deleting chunks (a version restore, or a re-upload) left rows naming chunk ids
    * that no longer exist: MEASURED, 131 of 131 rows orphaned in a development database, 0 in production. The graph's
    * global level then looks those ids up, finds nothing, and contributes no candidates — which reads as "no entities
    * matched" rather than as a broken graph.
-   *
    * `doc-versioning.ts` now deletes the relation rows in the same operation that deletes their chunks, which is the
    * real fix. The constraint itself is NOT added, because it cannot be added non-destructively:
-   *
-   *   - `prisma db push` runs in the `migrate` service on EVERY boot, BEFORE the app starts, so a runtime cleanup
-   *     cannot run first. MEASURED, on a clone of a real database holding 131 orphans:
-   *         Error: insert or update on table "KgRelation" violates foreign key constraint "KgRelation_chunkId_fkey"
-   *     and the migrate container exits non-zero — the app never starts. That is the exact failure mode recorded for
-   *     the `tsv` column (see `DocumentChunk.tsv`): a schema push that refuses on legacy data is a failed install.
-   *   - `onDelete: NoAction` does not help; adding the constraint still VALIDATES existing rows.
-   *   - A `NOT VALID` constraint would be invisible to Prisma, which manages this table and would treat it as drift.
-   *
+   * - `prisma db push` runs in the `migrate` service on EVERY boot, BEFORE the app starts, so a runtime cleanup
+   * cannot run first. MEASURED, on a clone of a real database holding 131 orphans:
+   * Error: insert or update on table "KgRelation" violates foreign key constraint "KgRelation_chunkId_fkey"
+   * and the migrate container exits non-zero — the app never starts. That is the exact failure mode recorded for
+   * the `tsv` column (see `DocumentChunk.tsv`): a schema push that refuses on legacy data is a failed install.
+   * - `onDelete: NoAction` does not help; adding the constraint still VALIDATES existing rows.
+   * - A `NOT VALID` constraint would be invisible to Prisma, which manages this table and would treat it as drift.
    * So the FK stays out, and `scripts/cleanup-kg-orphans.ts` exists for operators whose database already has
    * orphans. Once a cleanup has been verified in the field, the constraint can be added in a later release.
    */
@@ -870,4 +875,24 @@ model SavedPrompt {
   @@index([userId])
   @@index([category])
   @@index([isPublic])
+}
+
+/// One role's grant on one table of one integration, consulted only when `Integration.accessMode = "restricted"`.
+/// A table without a row for the role is DENIED (fail-closed). `admin` is never restricted.
+model DataAccessPolicy {
+  id             String   @id @default(cuid())
+  organizationId String
+  integrationId  String
+  role           String // analyst | viewer
+  tableName      String
+  /// JSON string[] of readable columns; null = every column of the table.
+  allowedColumns String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, integrationId, role, tableName])
+  @@index([organizationId, integrationId])
 }

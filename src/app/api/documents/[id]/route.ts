@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
+import { DATA_ROLES, documentVisibilityWhere, normalizeRole } from '@/lib/access-scope'
 import { forgetKnowledgeGraph, cognifyDocument } from '@/lib/cognee'
 import { invalidateRagCache } from '@/lib/rag'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
@@ -18,11 +19,13 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     const doc = await db.document.findFirst({ // nosemgrep
-      where: { id },
+      // A document the role may not retrieve is reported as not found, exactly like another org's id.
+      where: { id, ...documentVisibilityWhere(normalizeRole(user.role)) },
       select: {
         id: true,
         name: true,
@@ -37,6 +40,7 @@ export async function GET(
         cognifyError: true,
         cognifiedAt: true,
         contentText: true,
+        allowedRoles: true,
         contextPrompt: true,
         createdAt: true,
         updatedAt: true,
@@ -95,6 +99,8 @@ export async function GET(
 interface PatchBody {
   isEnabled?: boolean
   contextPrompt?: string
+  /** Roles allowed to retrieve this document. `admin` is always included; unknown roles are rejected. */
+  allowedRoles?: unknown
 }
 
 const DOC_PROMPT_MAX = 4000
@@ -120,7 +126,7 @@ export async function PATCH(
 
     const existing = await db.document.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, isEnabled: true, contextPrompt: true },
+      select: { id: true, name: true, isEnabled: true, contextPrompt: true, allowedRoles: true },
     })
 
     if (!existing) {
@@ -130,7 +136,18 @@ export async function PATCH(
       )
     }
 
-    const data: { isEnabled?: boolean; contextPrompt?: string } = {}
+    const data: { isEnabled?: boolean; contextPrompt?: string; allowedRoles?: string[] } = {}
+    if (body.allowedRoles !== undefined) {
+      const roles = Array.isArray(body.allowedRoles) ? body.allowedRoles.map(String) : null
+      if (!roles || roles.some((r) => !(DATA_ROLES as readonly string[]).includes(r))) {
+        return NextResponse.json(
+          { error: `allowedRoles must be an array of ${DATA_ROLES.join(', ')}.` },
+          { status: 400 },
+        )
+      }
+      // admin can never be locked out of a document it administers.
+      data.allowedRoles = DATA_ROLES.filter((r) => r === 'admin' || roles.includes(r))
+    }
     if (typeof body.isEnabled === 'boolean') {
       data.isEnabled = body.isEnabled
     }
@@ -147,7 +164,7 @@ export async function PATCH(
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
-        { error: 'Field isEnabled (boolean) or contextPrompt (string) is required.' },
+        { error: 'Field isEnabled (boolean), contextPrompt (string) or allowedRoles (array) is required.' },
         { status: 400 },
       )
     }
@@ -155,7 +172,7 @@ export async function PATCH(
     const updated = await db.document.update({
       where: { id: existing.id },
       data,
-      select: { id: true, isEnabled: true, contextPrompt: true, updatedAt: true },
+      select: { id: true, isEnabled: true, contextPrompt: true, allowedRoles: true, updatedAt: true },
     })
     // Retrieval filters on isEnabled, but cached results were computed before the
     // toggle — without this a disabled document keeps answering for the cache TTL.
@@ -185,7 +202,7 @@ export async function PATCH(
       detail: {
         documentId: existing.id,
         name: existing.name,
-        before: { isEnabled: existing.isEnabled, contextPrompt: existing.contextPrompt },
+        before: { isEnabled: existing.isEnabled, contextPrompt: existing.contextPrompt, allowedRoles: existing.allowedRoles },
         after: data,
         contextPromptLength:
           typeof data.contextPrompt === 'string' ? data.contextPrompt.length : undefined,

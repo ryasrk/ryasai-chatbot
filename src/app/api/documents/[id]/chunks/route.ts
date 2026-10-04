@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, handleApiError } from '@/lib/session'
+import { documentVisibilityWhere, normalizeRole } from '@/lib/access-scope'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 
 export const runtime = 'nodejs'
@@ -17,7 +18,8 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
     const { searchParams } = new URL(req.url)
 
@@ -30,7 +32,8 @@ export async function GET(
 
     // Make sure the document belongs to the active company before paginating.
     const doc = await db.document.findFirst({ // nosemgrep
-      where: { id },
+      // A document the role may not retrieve is reported as not found, exactly like another org's id.
+      where: { id, ...documentVisibilityWhere(normalizeRole(user.role)) },
       select: { id: true, name: true, _count: { select: { chunks: true } } },
     })
     if (!doc) {

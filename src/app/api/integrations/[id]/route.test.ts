@@ -13,10 +13,12 @@ let deleteManyCount = 1
 let updateThrows: Error | null = null
 const effects: string[] = []
 let schemaRows: Array<Record<string, unknown>> = []
+let policyRows: Array<{ tableName: string; allowedColumns: string | null }> = []
 let integrationExisting: Record<string, unknown> | null = { id: 'int-1', name: 'prod db', status: 'active', contextPrompt: null }
 
 mock.module('@/lib/db', () => ({
   db: {
+    dataAccessPolicy: { findMany: async () => policyRows },
     integration: {
       findFirst: async () => integrationExisting,
       update: async ({ data }: { data: Record<string, unknown> }) => {
@@ -390,5 +392,25 @@ describe('PATCH /api/integrations/[id] — fields and errors', () => {
     updateThrows = new Error('connection terminated')
     const res = await patch('int-1', { name: 'x' })
     expect(res.status).toBe(500)
+  })
+})
+
+describe('GET /api/integrations/[id] — per-role access', () => {
+  test('a restricted viewer gets only granted tables and no generated domain profile', async () => {
+    getActiveUserImpl = async () => viewer
+    policyRows = [{ tableName: 'orders', allowedColumns: null }]
+    integrationExisting = {
+      id: 'int-1', name: 'prod db', status: 'active', contextPrompt: null, encryptedConfig: 'x',
+      accessMode: 'restricted', businessContext: 'payroll.salary joins employees',
+      schemas: [
+        { id: 's1', tableName: 'orders', columns: '[{"name":"total"}]', rowCount: 1, sampleRow: null, reflectedAt: 't' },
+        { id: 's2', tableName: 'payroll', columns: '[{"name":"salary"}]', rowCount: 1, sampleRow: '{"salary":1}', reflectedAt: 't' },
+      ],
+    }
+    const res = await get('int-1')
+    const body = (await res.json()) as { data: { tables: Array<{ tableName: string }>; businessContext: string | null } }
+    expect(body.data.tables.map((t) => t.tableName)).toEqual(['orders'])
+    expect(body.data.businessContext).toBeNull()
+    policyRows = []
   })
 })

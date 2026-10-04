@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { extractError } from '@/lib/extract-error'
 import { useActiveUser } from '@/hooks/use-active-user'
 import { PromptEditor } from '@/components/views/_shared/prompt-editor'
@@ -193,6 +194,7 @@ function DocDetailContent({ doc }: { doc: DocumentItem }) {
       )}
 
       <DocContextPromptEditor docId={id} initial={detail.contextPrompt ?? ''} />
+      <DocVisibilityEditor docId={id} initial={detail.allowedRoles ?? ['admin', 'analyst', 'viewer']} />
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-muted-foreground">
@@ -435,6 +437,60 @@ function DocContextPromptEditor({ docId, initial }: { docId: string; initial: st
   )
 }
 
+/**
+ * Which roles may retrieve this document (admin-only control). Enforced server-side on every retrieval path, the
+ * document list and the chunk viewer — a role left unchecked never sees this document in an answer or a listing.
+ */
+function DocVisibilityEditor({ docId, initial }: { docId: string; initial: string[] }) {
+  const { user } = useActiveUser()
+  const [roles, setRoles] = useState<string[]>(initial)
+  const [saving, setSaving] = useState(false)
+  if (user?.role !== 'admin') return null
+
+  const toggle = async (role: 'analyst' | 'viewer', on: boolean) => {
+    const next = on ? [...new Set([...roles, role])] : roles.filter((r) => r !== role)
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/documents/${docId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowedRoles: next }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) throw new Error(extractError(json?.error, 'Failed to save document visibility.'))
+      setRoles(json.data?.allowedRoles ?? next)
+      toast.success('Document visibility saved')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 space-y-1.5">
+      <div className="text-xs font-medium">Visible to roles</div>
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        <label className="flex items-center gap-1.5 text-muted-foreground">
+          <Checkbox checked disabled aria-label="admin (always)" /> admin (always)
+        </label>
+        {(['analyst', 'viewer'] as const).map((role) => (
+          <label key={role} className="flex items-center gap-1.5">
+            <Checkbox
+              checked={roles.includes(role)}
+              disabled={saving}
+              onCheckedChange={(on) => void toggle(role, on === true)}
+            />
+            {role}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Unchecked roles never retrieve this document in answers, searches or listings.
+      </p>
+    </div>
+  )
+}
 
 function ChunkCard({ chunk }: { chunk: ChunkPreview }) {
   const [expanded, setExpanded] = useState(false)

@@ -134,6 +134,20 @@ describe('the IDOR class: findFirst for the ownership check', () => {
     expect(calls.filter((c) => c.model === 'documentChunk')).toHaveLength(0)
   })
 
+  test("the ownership check also applies the ROLE's document visibility", async () => {
+    // A viewer asking for a document whose allowedRoles exclude it gets the same 404 as another org's id.
+    user = { ...adminUser, role: 'viewer' }
+    await get()
+    const load = calls.find((c) => c.op === 'findFirst')!
+    expect((load.args as { where: Record<string, unknown> }).where).toMatchObject({ allowedRoles: { has: 'viewer' } })
+  })
+
+  test('an admin is not filtered by role', async () => {
+    await get()
+    const load = calls.find((c) => c.op === 'findFirst')!
+    expect((load.args as { where: Record<string, unknown> }).where).not.toHaveProperty('allowedRoles')
+  })
+
   test('the handler enters the session org', async () => {
     await get()
     expect(enteredOrgs).toEqual(['org-1'])

@@ -15,4 +15,6 @@ export interface DocDetail extends DocumentItem {
   // when this document contributes chunks. Optional because older GET responses
   // predate the column being selected — default to '' when absent.
   contextPrompt?: string
+  /** Roles allowed to retrieve this document (admin always included). Absent on responses older than the column. */
+  allowedRoles?: string[]
 }

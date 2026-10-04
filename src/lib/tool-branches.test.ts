@@ -54,6 +54,9 @@ mock.module('@/lib/db', () => ({
     integration: { findFirst: mockIntegrationFindFirst, findMany: mockIntegrationFindMany },
     auditLog: { create: mockAuditLogCreate },
     queryHistory: { create: mockQueryHistoryCreate },
+    // Read by the SQL pipeline to resolve the caller's role (access-scope.ts). Admin = no per-role restriction, which
+    // keeps these tests about the branch; per-role behaviour is tested in access-scope / transport-parity.
+    user: { findFirst: async () => ({ role: 'admin' }) },
   },
 }))
 mock.module('@/lib/intent-pipeline', () => ({ retrieveWithReflection: mockRetrieveWithReflection }))

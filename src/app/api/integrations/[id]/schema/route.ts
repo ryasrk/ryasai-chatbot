@@ -16,6 +16,7 @@ import { getActiveUser, handleApiError } from '@/lib/session'
 import { decryptConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
+import { filterSchemaForPolicy, loadSqlAccessPolicy, normalizeRole } from '@/lib/access-scope'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -25,13 +26,17 @@ const SCHEMA_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 export async function GET(req: NextRequest, ctx: RouteCtx) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
     const refresh = new URL(req.url).searchParams.get('refresh') === '1'
+    // `?refresh=1` re-reflects the live database and REWRITES the stored schema, so it is an admin action. Before
+    // 2026-10-04 any role could trigger it.
+    if (refresh) requireRole(user, 'admin')
 
     const integration = await db.integration.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, provider: true, status: true, encryptedConfig: true, organizationId: true },
+      select: { id: true, name: true, provider: true, status: true, encryptedConfig: true, organizationId: true, accessMode: true },
     })
 
     if (!integration) {
@@ -99,16 +104,18 @@ export async function GET(req: NextRequest, ctx: RouteCtx) {
       }
     }
 
-    const tables = rows.map((r) => ({
+    // Same per-role filter as the SQL generator's view: ungranted tables, columns and sample values never leave.
+    const policy = await loadSqlAccessPolicy(integration, normalizeRole(user.role))
+    const tables = filterSchemaForPolicy(rows.map((r) => ({
       id: r.id,
       tableName: r.tableName,
-      columns: safeParseColumns(r.columns),
+      columns: safeParseColumns(r.columns) as Array<{ name: string }>,
       rowCount: r.rowCount,
-      sampleRow: r.sampleRow ? safeParseJson(r.sampleRow) : undefined,
+      sampleRow: r.sampleRow ? (safeParseJson(r.sampleRow) as Record<string, unknown>) : undefined,
       description: r.description,
       manualDescription: r.manualDescription,
       reflectedAt: r.reflectedAt,
-    }))
+    })), policy)
 
     return NextResponse.json({
       ok: true,

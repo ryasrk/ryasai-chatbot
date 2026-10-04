@@ -130,6 +130,8 @@ mock.module('@/lib/db', () => ({
         return { id: 'audit-1' }
       },
     },
+    // Read by the SQL pipeline to resolve the caller's role; admin = unrestricted (per-role tests live elsewhere).
+    user: { findFirst: async () => ({ role: 'admin' }) },
     // Written by the shared SQL pipeline. This transport wrote NONE before the pipeline was unified, which is the
     // drift the audit assertions below pin.
     queryHistory: {

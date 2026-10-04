@@ -18,6 +18,10 @@ let executedSql: string[] = []
 let auditRows: Array<{ action: string; severity: string; userId: string }> = []
 let queryHistoryRows: Array<{ success: boolean; generatedSql: string }> = []
 let rateLimitAllowed = true
+let userRole = 'admin'
+let accessMode = 'open'
+let policyRows: Array<{ tableName: string; allowedColumns: string | null }> = []
+let describedTables: string[][] = []
 
 const INTEGRATION = {
   id: 'int-1',
@@ -27,7 +31,11 @@ const INTEGRATION = {
   encryptedConfig: 'x',
   businessContext: 'Orders are invoiced monthly.',
   contextPrompt: 'Fiscal year starts in April.',
-  schemas: [{ tableName: 'orders', columns: '[{"name":"total","type":"int"},{"name":"note","type":"text"}]', rowCount: 3, sampleRow: null, description: null }],
+  get accessMode() { return accessMode },
+  schemas: [
+    { tableName: 'orders', columns: '[{"name":"total","type":"int"},{"name":"note","type":"text"}]', rowCount: 3, sampleRow: null, description: null },
+    { tableName: 'payroll', columns: '[{"name":"salary","type":"int"}]', rowCount: 3, sampleRow: '{"salary":25000000}', description: null },
+  ],
 }
 
 mock.module('@/lib/prisma-tenant', () => ({
@@ -57,6 +65,8 @@ mock.module('@/lib/db', () => ({
       },
     },
     appConfig: { findFirst: async () => null },
+    user: { findFirst: async () => ({ role: userRole }) },
+    dataAccessPolicy: { findMany: async () => policyRows },
     document: { count: async () => 0, findMany: async () => [] },
   },
 }))
@@ -85,7 +95,10 @@ mock.module('@/lib/connectors', () => ({
       close: async () => {},
     }),
   },
-  describeSchema: () => 'TABLE orders(total int, note text)',
+  describeSchema: (tables: Array<{ tableName: string; columns: Array<{ name: string }> }>) => {
+    describedTables.push(tables.map((t) => `${t.tableName}(${t.columns.map((c) => c.name).join(',')})`))
+    return 'TABLE orders(total int, note text)'
+  },
 }))
 
 async function* gen(text: string): AsyncGenerator<string, void, unknown> {
@@ -130,12 +143,17 @@ beforeEach(() => {
   auditRows = []
   queryHistoryRows = []
   rateLimitAllowed = true
+  userRole = 'admin'
+  accessMode = 'open'
+  policyRows = []
+  describedTables = []
 })
 
 /** Everything observable that the pipeline produced for one turn. */
 function snapshot() {
   return {
     executedSql: [...executedSql],
+    describedTables: describedTables.map((t) => [...t]),
     auditRows: auditRows.map((r) => ({ ...r })),
     queryHistoryRows: queryHistoryRows.map((r) => ({ ...r })),
     generatorSaw: generateSqlCalls.map((c) => ({
@@ -164,6 +182,7 @@ async function runBoth(script: () => void, failures: () => void = () => {}) {
 }
 
 function beforeEachReset() {
+  describedTables = []
   generateSqlCalls = []
   executedSql = []
   auditRows = []
@@ -217,5 +236,66 @@ describe('runSqlBranch and prepareSqlStream have identical SQL side effects', ()
     expect(viaBranch.generatorSaw).toEqual([])
     expect(branch.toolRuns[0].status).toBe('blocked')
     expect(stream.toolRuns[0].status).toBe('blocked')
+  })
+})
+
+describe('per-role access is enforced identically on both transports', () => {
+  test('a viewer on a restricted integration sees only granted columns, and a query outside the grant is denied', async () => {
+    userRole = 'viewer'
+    accessMode = 'restricted'
+    policyRows = [{ tableName: 'orders', allowedColumns: '["total"]' }]
+    const { branch, stream, viaBranch, viaStream } = await runBoth(() => {
+      generateSqlResults = [
+        { sql: 'SELECT salary FROM payroll LIMIT 10' }, // ungranted table
+        { sql: 'SELECT note FROM orders LIMIT 10' }, // ungranted column
+        { sql: 'SELECT total FROM orders LIMIT 10' },
+      ]
+    })
+    expect(viaStream).toEqual(viaBranch)
+    // The generator never saw payroll or the note column — nor the payroll sample value.
+    expect(viaBranch.describedTables[0]).toEqual(['orders(total)'])
+    expect(viaBranch.auditRows.map((r) => `${r.action}:${r.severity}`)).toEqual([
+      'ACCESS_DENIED:critical',
+      'ACCESS_DENIED:critical',
+      'SQL_EXECUTE:info',
+    ])
+    expect(viaBranch.executedSql).toEqual(['SELECT total FROM orders LIMIT 10;'])
+    expect(branch.toolRuns[0].status).toBe('success')
+    expect(stream.toolRuns[0].status).toBe('success')
+  })
+
+  test('a role with NO grant in the integration is refused before any generation', async () => {
+    userRole = 'analyst'
+    accessMode = 'restricted'
+    policyRows = []
+    const { branch, stream, viaBranch, viaStream } = await runBoth(() => {
+      generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    })
+    expect(viaStream).toEqual(viaBranch)
+    expect(viaBranch.generatorSaw).toEqual([])
+    expect(viaBranch.auditRows.map((r) => r.action)).toEqual(['ACCESS_DENIED'])
+    expect(branch.toolRuns[0].status).toBe('blocked')
+    expect(stream.toolRuns[0].status).toBe('blocked')
+    expect(branch.answer).toContain('does not have access')
+  })
+
+  test('an admin is never restricted, even on a restricted integration', async () => {
+    userRole = 'admin'
+    accessMode = 'restricted'
+    policyRows = []
+    const { viaBranch } = await runBoth(() => {
+      generateSqlResults = [{ sql: 'SELECT salary FROM payroll LIMIT 10' }]
+    })
+    expect(viaBranch.describedTables[0]).toEqual(['orders(total,note)', 'payroll(salary)'])
+    expect(viaBranch.executedSql).toEqual(['SELECT salary FROM payroll LIMIT 10;'])
+  })
+
+  test('open mode keeps the pre-existing behaviour for every role', async () => {
+    userRole = 'viewer'
+    accessMode = 'open'
+    const { viaBranch } = await runBoth(() => {
+      generateSqlResults = [{ sql: 'SELECT salary FROM payroll LIMIT 10' }]
+    })
+    expect(viaBranch.executedSql).toEqual(['SELECT salary FROM payroll LIMIT 10;'])
   })
 })

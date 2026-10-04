@@ -156,6 +156,9 @@ export const ORG_SCOPED_MODELS: ReadonlySet<string> = new Set([
   // the install. Its docstring claimed the extension scoped the read, which is
   // exactly why nobody re-checked it — the false claim is fixed in that file too.
   'order',
+  // Per-role table grants (2026-10-04). Org-scoped like every other config row: a policy read for one org must never
+  // return another org's grants.
+  'dataAccessPolicy',
 ])
 
 /**

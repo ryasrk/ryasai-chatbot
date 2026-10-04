@@ -15,6 +15,7 @@ let schemaRow: Record<string, unknown> | null = {
   manualDescription: false,
 }
 let schemaRows: Array<Record<string, unknown>> = []
+let policyRows: Array<{ tableName: string; allowedColumns: string | null }> = []
 const createManyArgs: Array<{ data: Array<Record<string, unknown>> }> = []
 const deleteManyArgs: Array<{ integrationId: string }> = []
 const embedCacheCalls: number[] = []
@@ -26,6 +27,7 @@ mock.module('@/lib/db', () => ({
     integration: {
       findFirst: async () => integrationExisting,
     },
+    dataAccessPolicy: { findMany: async () => policyRows },
     integrationSchema: {
       findFirst: async () => schemaRow,
       findMany: async () => schemaRows,
@@ -89,6 +91,7 @@ function patch(id: string, body: unknown): Promise<Response> {
 }
 
 beforeEach(() => {
+  policyRows = []
   getActiveUserImpl = async () => admin
   auditCalls.length = 0
   enterCalls.length = 0
@@ -378,5 +381,41 @@ describe('GET /api/integrations/[id]/schema?refresh=1', () => {
     // Anything but '1' must be a plain read; a sloppy truthy check would let a
     // stray query parameter hit the customer's database.
     expect(deleteManyArgs).toHaveLength(0)
+  })
+})
+
+describe('GET schema — per-role access', () => {
+  test('a viewer cannot trigger ?refresh=1 (it rewrites the stored schema)', async () => {
+    getActiveUserImpl = async () => viewer
+    const res = await get('int-1', '?refresh=1')
+    expect(res.status).toBe(403)
+    expect(deleteManyArgs).toEqual([])
+  })
+
+  test('under a restricted policy a viewer sees only granted tables, columns and sample values', async () => {
+    getActiveUserImpl = async () => viewer
+    integrationExisting = { id: 'int-1', accessMode: 'restricted' }
+    policyRows = [{ tableName: 'employees', allowedColumns: '["name"]' }]
+    schemaRows = [
+      { id: 's1', tableName: 'employees', columns: '[{"name":"name"},{"name":"salary"}]', sampleRow: '{"name":"Budi","salary":25000000}', reflectedAt: new Date() },
+      { id: 's2', tableName: 'payroll', columns: '[{"name":"amount"}]', sampleRow: null, reflectedAt: new Date() },
+    ]
+    const res = await get('int-1')
+    const body = (await res.json()) as { data: { tables: Array<{ tableName: string; columns: Array<{ name: string }>; sampleRow?: Record<string, unknown> }> } }
+    expect(body.data.tables.map((t) => t.tableName)).toEqual(['employees'])
+    expect(body.data.tables[0].columns.map((c) => c.name)).toEqual(['name'])
+    expect(body.data.tables[0].sampleRow).toEqual({ name: 'Budi' })
+  })
+
+  test('an admin sees everything even when the integration is restricted', async () => {
+    getActiveUserImpl = async () => admin
+    integrationExisting = { id: 'int-1', accessMode: 'restricted' }
+    schemaRows = [
+      { id: 's1', tableName: 'employees', columns: '[{"name":"salary"}]', sampleRow: null, reflectedAt: new Date() },
+      { id: 's2', tableName: 'payroll', columns: '[{"name":"amount"}]', sampleRow: null, reflectedAt: new Date() },
+    ]
+    const res = await get('int-1')
+    const body = (await res.json()) as { data: { tables: Array<{ tableName: string }> } }
+    expect(body.data.tables.map((t) => t.tableName)).toEqual(['employees', 'payroll'])
   })
 })

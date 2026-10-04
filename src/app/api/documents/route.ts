@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
+import { documentVisibilityWhere, normalizeRole } from '@/lib/access-scope'
 import {
   chunkText,
   detectDocType,
@@ -39,11 +40,13 @@ const ALLOWED_MIME_TYPES = new Set([
  */
 export async function GET(req: NextRequest) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { searchParams } = new URL(req.url)
     const category = searchParams.get('category')
 
-    const where: { category?: string } = {}
+    // A role sees only the documents it may retrieve (Document.allowedRoles); admin sees all.
+    const where: Record<string, unknown> = { ...documentVisibilityWhere(normalizeRole(user.role)) }
     if (category) {
       where.category = category
     }
@@ -63,6 +66,7 @@ export async function GET(req: NextRequest) {
         description: true,
         cognifyStatus: true,
         cognifyError: true,
+        allowedRoles: true,
         createdAt: true,
         _count: { select: { chunks: true } },
         // EMBEDDING COMPLETENESS, which nothing exposed before.

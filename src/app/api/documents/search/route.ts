@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveUser, writeAudit, handleApiError } from '@/lib/session'
+import { narrowDocumentScope, normalizeRole } from '@/lib/access-scope'
 import { retrieveRelevantChunks } from '@/lib/rag'
 import { enterWithOrg } from '@/lib/prisma-tenant'
 import { UnsupportedVectorProviderError } from '@/lib/vector-stores'
@@ -43,9 +44,13 @@ export async function POST(req: NextRequest) {
     const user = await getActiveUser()
     enterWithOrg(user.organizationId)
     
+    // Retrieval narrowed to the documents the role may read, through the same scope the chat path uses.
+    const documentIds = await narrowDocumentScope(normalizeRole(user.role), null)
     const retrieval = await retrieveRelevantChunks({
       query,
       topK,
+      // Forwarded only when the role is actually narrowed, so an unrestricted call stays exactly `{ query, topK }`.
+      ...(documentIds ? { documentIds } : {}),
     })
     if (retrieval.queryTokens.length === 0) {
       // Nothing usable to match — return empty rather than scanning all chunks.

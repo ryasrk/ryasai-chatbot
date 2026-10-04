@@ -31,6 +31,8 @@ export interface GuardrailResult {
   sanitized: string
   reason?: string
   detectedNodes?: string[]
+  /** `access` when the AST guard denied a table/column under a per-role policy — audited as ACCESS_DENIED. */
+  violation?: 'access'
 }
 
 const MUTATION_KEYWORDS = new Set([
@@ -393,7 +395,13 @@ export function validateAndSanitizeLlmSql(generatedSql: string, options: AstGuar
   const ast = options.provider ? checkSqlAst(generatedSql, options) : null
   if (ast && !ast.ok) {
     inc('guardrail_blocks_total', { type: `ast_${ast.kind}` })
-    return { ok: false, sanitized: '', reason: ast.reason, detectedNodes: ast.detectedNodes }
+    return {
+      ok: false,
+      sanitized: '',
+      reason: ast.reason,
+      detectedNodes: ast.detectedNodes,
+      ...(ast.kind === 'access' ? { violation: 'access' as const } : {}),
+    }
   }
 
   // 4. Re-compile & enforce a hard LIMIT cap (spec §4.3).

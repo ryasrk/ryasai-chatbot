@@ -32,6 +32,20 @@ const mockDocChunkFindMany = mock(async () => [] as unknown[])
 const mockLlmConfigFindFirst = mock(async () => null)
 const mockVectorStoreConfigFindFirst = mock(async () => null)
 
+// Role narrowing happens at the two public entry points (access-scope.ts); these tests are about routing, so it is a
+// pass-through here. `tool-router-access.test.ts` proves the narrowing itself reaches the branches.
+let accessRole = 'admin'
+let accessNarrowTo: string[] | null = null
+const accessCalls: Array<{ role: string; requested: string[] | null | undefined }> = []
+mock.module('@/lib/access-scope', () => ({
+  resolveUserRole: async () => accessRole,
+  narrowDocumentScope: async (role: string, requested: string[] | null | undefined) => {
+    accessCalls.push({ role, requested })
+    if (accessNarrowTo) return accessNarrowTo
+    return requested && requested.length > 0 ? requested : null
+  },
+}))
+
 mock.module('@/lib/db', () => ({
   db: {
     integration: { count: mockIntegrationCount, findFirst: mockIntegrationFindFirst, findMany: mockIntegrationFindMany },
@@ -2207,6 +2221,26 @@ describe('runStreamingChatCompletion — the streamed dispatcher', () => {
     await runStreamingChatCompletion({ question: 'what is the policy?', userId: 'u1' })
     expect(streamCalls.map((c) => c.name)).toEqual(['prepareRagStream'])
     expect(ragStreamArgs[0].memoryContext).toBe(memoryContextValue)
+  })
+
+  test("the RAG branch receives the document scope narrowed to the caller's ROLE", async () => {
+    // access-scope.ts decides WHICH documents a role may read; this pins that the router applies it at the entry
+    // point, so the branch (and everything under it) only ever sees the narrowed scope.
+    accessRole = 'viewer'
+    accessNarrowTo = ['doc-visible']
+    accessCalls.length = 0
+    try {
+      useSchemaRow()
+      needsRetrieval()
+      mockDocumentCount.mockImplementation(async () => 1)
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      await runStreamingChatCompletion({ question: 'what is the policy?', userId: 'u-viewer', documentIds: ['doc-visible', 'doc-hidden'] })
+      expect(accessCalls).toEqual([{ role: 'viewer', requested: ['doc-visible', 'doc-hidden'] }])
+      expect(ragStreamArgs[0].documentIds).toEqual(['doc-visible'])
+    } finally {
+      accessRole = 'admin'
+      accessNarrowTo = null
+    }
   })
 
   test('REST decision routes to prepareRestStream', async () => {

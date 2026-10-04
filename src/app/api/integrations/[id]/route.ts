@@ -14,6 +14,7 @@ import { db, isPrismaNotFound } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
 import { decryptConfig, maskConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
+import { filterSchemaForPolicy, loadSqlAccessPolicy, normalizeRole } from '@/lib/access-scope'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -21,7 +22,8 @@ interface RouteCtx {
 
 export async function GET(_req: NextRequest, ctx: RouteCtx) {
   try {
-    enterWithOrg((await getActiveUser()).organizationId)
+    const user = await getActiveUser()
+    enterWithOrg(user.organizationId)
     const { id } = await ctx.params
 
     const integration = await db.integration.findFirst({ // nosemgrep
@@ -42,14 +44,17 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
 
     const masked = maskConfig(decryptConfig(integration.encryptedConfig))
 
-    const tables = integration.schemas.map((s) => ({
+    // Under a restricted policy a non-admin sees only granted tables/columns — the sample row carries REAL values,
+    // so serving it unfiltered would hand a viewer the very column the SQL guard refuses to read.
+    const policy = await loadSqlAccessPolicy(integration, normalizeRole(user.role))
+    const tables = filterSchemaForPolicy(integration.schemas.map((s) => ({
       id: s.id,
       tableName: s.tableName,
-      columns: safeParseColumns(s.columns),
+      columns: safeParseColumns(s.columns) as Array<{ name: string }>,
       rowCount: s.rowCount,
-      sampleRow: s.sampleRow ? safeParseJson(s.sampleRow) : undefined,
+      sampleRow: s.sampleRow ? (safeParseJson(s.sampleRow) as Record<string, unknown>) : undefined,
       reflectedAt: s.reflectedAt,
-    }))
+    })), policy)
 
     return NextResponse.json({
       ok: true,
@@ -64,7 +69,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
         createdAt: integration.createdAt,
         updatedAt: integration.updatedAt,
         config: masked,
-        businessContext: integration.businessContext,
+        accessMode: integration.accessMode,
+        // The generated domain profile names tables and may quote sample values, so a restricted reader gets none.
+        businessContext: policy ? null : integration.businessContext,
         // Staleness is reported so a caller can offer regeneration. MEASURED: a
         // profile written before the prompt asked for query hints caused a
         // fabricated filter in 10 of 10 runs, so "has context" is not the same as

@@ -35,6 +35,13 @@ const state = {
   routeSeen: null as any,
 }
 
+// Role narrowing at the entry point is a pass-through here; tool-router-access.test.ts covers it.
+mock.module('@/lib/access-scope', () => ({
+  resolveUserRole: async () => 'admin',
+  narrowDocumentScope: async (_role: string, requested: string[] | null | undefined) =>
+    requested && requested.length > 0 ? requested : null,
+}))
+
 mock.module('@/lib/db', () => ({
   db: {
     document: {

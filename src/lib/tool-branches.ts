@@ -23,7 +23,7 @@ import {
 } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
-import { runSqlPipeline, buildCrossSourceNote } from '@/lib/pipelines/sql-pipeline'
+import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
 import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
@@ -320,6 +320,23 @@ export async function runSqlBranch(args: {
           latencyMs: Date.now() - started,
           inputSummary: summarize(args.question),
           errorMessage: 'SQL rate limit exceeded.',
+        },
+      ],
+    }
+  }
+  if (outcome.kind === 'forbidden') {
+    return {
+      answer: forbiddenSourceMessage(outcome.integration.name),
+      citations: [],
+      chartData: null,
+      integrationId: outcome.integration.id,
+      toolRuns: [
+        {
+          type: 'SQL',
+          status: 'blocked',
+          latencyMs: Date.now() - started,
+          inputSummary: summarize(args.question),
+          errorMessage: 'Access denied for this role.',
         },
       ],
     }

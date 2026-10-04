@@ -52,6 +52,7 @@ import { Separator } from '@/components/ui/separator'
 import { extractError } from '@/lib/extract-error'
 import { useActiveUser } from '@/hooks/use-active-user'
 import { PromptEditor } from '@/components/views/_shared/prompt-editor'
+import { AccessPolicyEditor } from './access-policy-editor'
 import type { Integration } from '@/lib/types'
 import { SchemaData, SchemaTable, timeAgo } from './types'
 
@@ -665,6 +666,10 @@ function SchemaViewerContent({
           integrationId={integration.id}
           initial={contextPrompt}
         />
+      </div>
+      {/* Per-role table access — admin-only; renders nothing for other roles. */}
+      <div className="py-2.5 border-b border-border/70">
+        <AccessPolicyEditor integrationId={integration.id} />
       </div>
       <div className="space-y-2 pb-2.5 border-b border-border/70">
         <div className="flex items-center justify-between gap-2">

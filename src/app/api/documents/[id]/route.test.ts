@@ -12,6 +12,7 @@ const ragCacheCalls: number[] = []
 let forgetCalls = 0
 let cognifyCalls: Array<{ documentId: string; chunks: Array<{ content: string; chunkIndex: number }> }> = []
 const chunkRows: Array<{ content: string; chunkIndex: number }> = []
+let lastUpdate: Record<string, unknown> | null = null
 let docExisting: Record<string, unknown> | null = { id: 'doc-1', name: 'a.pdf', isEnabled: true, contextPrompt: '' }
 
 mock.module('@/lib/db', () => ({
@@ -19,6 +20,7 @@ mock.module('@/lib/db', () => ({
     document: {
       findFirst: async () => docExisting,
       update: async ({ data }: { data: Record<string, unknown> }) => ({
+        ...(lastUpdate = data, {}),
         id: 'doc-1',
         isEnabled: data.isEnabled ?? true,
         contextPrompt: typeof data.contextPrompt === 'string' ? data.contextPrompt : '',
@@ -212,6 +214,23 @@ describe('GET /api/documents/[id]', () => {
     }
   })
 
+  test("GET applies the ROLE's document visibility to the lookup", async () => {
+    getActiveUserImpl = async () => viewer
+    let whereArg: Record<string, unknown> | null = null
+    const dbMod = await import('@/lib/db')
+    const original = dbMod.db.document.findFirst
+    dbMod.db.document.findFirst = (async (args: { where: Record<string, unknown> }) => {
+      whereArg = args.where
+      return docExisting
+    }) as typeof original
+    try {
+      await get('doc-1')
+      expect(whereArg).toMatchObject({ id: 'doc-1', allowedRoles: { has: 'viewer' } })
+    } finally {
+      dbMod.db.document.findFirst = original
+    }
+  })
+
   test('an unknown id is 404, not an empty document', async () => {
     docExisting = null
     const res = await get('nope')
@@ -377,5 +396,29 @@ describe('GET /api/documents/[id] — failure path', () => {
     } finally {
       dbMod.db.document.findFirst = original
     }
+  })
+})
+
+describe('PATCH /api/documents/[id] allowedRoles', () => {
+  test('roles are stored, and admin is always kept even when omitted', async () => {
+    getActiveUserImpl = async () => admin
+    lastUpdate = null
+    const res = await patch('doc-1', { allowedRoles: ['analyst'] })
+    expect(res.status).toBe(200)
+    expect(lastUpdate as Record<string, unknown> | null).toEqual({ allowedRoles: ['admin', 'analyst'] })
+  })
+
+  test('an unknown role is rejected and nothing is written', async () => {
+    getActiveUserImpl = async () => admin
+    lastUpdate = null
+    const res = await patch('doc-1', { allowedRoles: ['viewer', 'superuser'] })
+    expect(res.status).toBe(400)
+    expect(lastUpdate).toBeNull()
+  })
+
+  test('a non-array is rejected', async () => {
+    getActiveUserImpl = async () => admin
+    const res = await patch('doc-1', { allowedRoles: 'viewer' })
+    expect(res.status).toBe(400)
   })
 })

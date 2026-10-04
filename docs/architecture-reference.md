@@ -92,6 +92,8 @@ Load it when: changing retrieval, prompts, SQL generation, guardrails, session m
 
 **One SQL pipeline for both transports (2026-10-04).** `src/lib/pipelines/sql-pipeline.ts` (`runSqlPipeline`) owns integration selection, the SQL rate limit, `contextPrompt`/`businessContext`/`textColumns`, the repair loop, the guardrail, `withToolSandbox` + `withSqlConcurrency`, and every `queryHistory` / audit row. `runSqlBranch` (`tool-branches.ts`) and `prepareSqlStream` (`stream-preparers.ts`) only shape the output. Before this, the streaming path — the one the web chat uses — wrote no SQL audit rows or queryHistory and skipped the rate limit, the sandbox and the integration `contextPrompt`. `pipelines/transport-parity.test.ts` drives one scripted turn through both transports and requires identical side effects; put new SQL behaviour in the pipeline, never in an adapter.
 
+**Per-role data access (2026-10-04, ADR 0014).** `access-scope.ts`: `Integration.accessMode` `open|restricted` + `DataAccessPolicy` rows grant `analyst`/`viewer` tables and optional columns; `admin` is never restricted. The pipeline filters the schema the generator sees (incl. sample-row values) and passes the policy to the AST guard, which denies ungranted tables/columns anywhere in the query (`ACCESS_DENIED`, critical). `Document.allowedRoles` narrows `documentIds` at the router's two public entry points and on the document list/detail/chunks/search routes. Admin surface: `GET/PUT /api/integrations/[id]/access-policy`, `PATCH /api/documents/[id] { allowedRoles }`.
+
 ### Answer confidence & evidence sufficiency (2026-09 trial)
 
 INCIDENT (user-reported): *"the LLM sometimes says it doesn't know even though the

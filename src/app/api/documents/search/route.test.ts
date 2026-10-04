@@ -182,6 +182,17 @@ mock.module('@/lib/prisma-tenant', () => ({
   createTenantExtension: () => ({}),
 }))
 
+/** What access-scope narrows the document scope to for this test (null = unrestricted). */
+let narrowTo: string[] | null = null
+const narrowCalls: Array<{ role: string }> = []
+mock.module('@/lib/access-scope', () => ({
+  normalizeRole: (r: unknown) => (r === 'admin' || r === 'analyst' ? r : 'viewer'),
+  narrowDocumentScope: async (role: string) => {
+    narrowCalls.push({ role })
+    return narrowTo
+  },
+}))
+
 mock.module('@/lib/session', () => ({
   getActiveUser: async () => {
     events.push('getActiveUser')
@@ -610,6 +621,8 @@ beforeEach(() => {
   embedTextsCalls = []
   cacheStore.clear()
   getActiveUserImpl = async () => ACTIVE_USER
+  narrowTo = null
+  narrowCalls.length = 0
   retrievalResult = { chunks: [], queryTokens: ['annual', 'leave'], candidatesScanned: 3, graphContext: '' }
   retrievalThrows = null
   getActiveUserThrows = null
@@ -628,6 +641,23 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // validation
 // ---------------------------------------------------------------------------
+
+describe('POST /api/documents/search — per-role document visibility', () => {
+  test("retrieval is narrowed to the documents the caller's ROLE may read", async () => {
+    getActiveUserImpl = async () => ({ ...ACTIVE_USER, role: 'viewer' })
+    narrowTo = ['doc-visible']
+    const res = await post({ query: 'annual leave' })
+    expect(res.status).toBe(200)
+    expect(narrowCalls).toEqual([{ role: 'viewer' }])
+    expect(retrievalCalls[0].documentIds).toEqual(['doc-visible'])
+  })
+
+  test('an unrestricted role sends no documentIds at all', async () => {
+    const res = await post({ query: 'annual leave' })
+    expect(res.status).toBe(200)
+    expect('documentIds' in retrievalCalls[0]).toBe(false)
+  })
+})
 
 describe('POST /api/documents/search — request validation', () => {
   test('unparseable JSON body → 400 Invalid JSON body, and NO session/retrieval work happens', async () => {

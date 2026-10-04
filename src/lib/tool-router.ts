@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { narrowDocumentScope, resolveUserRole } from '@/lib/access-scope'
 import { routeQuery, type RouteDecision } from '@/lib/ai'
 import { pickBestIntegration, pickBestIntegrationByKeywords, tokenize } from '@/lib/smart-router'
 import { cancelSpeculativeRetrieval, startSpeculativeRetrieval } from '@/lib/speculative-retrieval'
@@ -74,7 +75,21 @@ export async function runNonStreamingChatCompletion(args: {
    */
   integrationIds?: string[] | null
 }): Promise<CompletionResult> {
-  return withUsageTracking(() => _runNonStreamingChatCompletion(args))
+  return withUsageTracking(async () =>
+    _runNonStreamingChatCompletion({ ...args, documentIds: await documentScopeForUser(args.userId, args.documentIds) }),
+  )
+}
+
+/**
+ * The document scope narrowed to what the caller's ROLE may read (`Document.allowedRoles`, access-scope.ts).
+ *
+ * Applied at the two public entry points so every branch below — RAG, the SQL→documents fallback, speculative
+ * retrieval, the agentic loop and the graph recall — receives the already-narrowed `documentIds` they all honour.
+ * Admin (and therefore API-key and scheduled turns, which run as the org admin under the key's own scope) is
+ * unchanged.
+ */
+async function documentScopeForUser(userId: string, requested: string[] | null | undefined): Promise<string[] | null> {
+  return narrowDocumentScope(await resolveUserRole(userId), requested)
 }
 
 async function _runNonStreamingChatCompletion(args: {
@@ -297,7 +312,9 @@ export async function runStreamingChatCompletion(args: {
    */
   integrationIds?: string[] | null
 }): Promise<StreamingCompletionResult> {
-  return withUsageTracking(() => _runStreamingChatCompletion(args))
+  return withUsageTracking(async () =>
+    _runStreamingChatCompletion({ ...args, documentIds: await documentScopeForUser(args.userId, args.documentIds) }),
+  )
 }
 
 async function _runStreamingChatCompletion(args: {
