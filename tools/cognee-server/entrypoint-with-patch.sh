@@ -26,4 +26,7 @@ else
   echo "[entrypoint] WARNING: $PATCH not found — starting unpatched." >&2
 fi
 
+# An explicitly enabled compatibility requirement must apply before serving writes.
+python3 /opt/cognee-patch/patch-system-message-limit.py || exit $?
+
 exec /app/entrypoint.sh "$@"

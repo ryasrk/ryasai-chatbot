@@ -1,7 +1,8 @@
-import { Worker, type Job } from 'bullmq'
+import { Worker, UnrecoverableError, type Job } from 'bullmq'
 import { redis, jobQueue, checkRedisHealth } from '@/lib/redis'
 import { embedDocumentChunks, embedCompanyDocuments } from '@/lib/embeddings'
 import { cognifyDocument } from '@/lib/cognee'
+import { isCogneeEnabled } from '@/lib/cognee-core'
 import { rebuildFts } from '@/lib/rag-fts'
 import {
   issueLicenseForOrder,
@@ -14,6 +15,8 @@ import {
   ORDER_RECONCILE_CRON,
 } from '@/lib/order-reconcile'
 import { db } from '@/lib/db'
+import { getLockdownReason } from '@/lib/license-client'
+import { LicenseError } from '@/lib/session'
 import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 
 export type JobType =
@@ -77,6 +80,31 @@ async function runWithJobOrg<T>(data: JobData, fn: () => Promise<T>): Promise<T>
   const orgId = await resolveJobOrg(data)
   // Synchronous enter in the CALLER's frame, before the handler is awaited.
   if (orgId) enterWithOrg(orgId)
+  // Activation and payment reconciliation must work while the install is locked.
+  // Every other handler performs product work and needs a current entitlement.
+  if (data.type !== 'license-issue' && data.type !== 'order-reconcile') {
+    if (!orgId) throw new UnrecoverableError('Product job has no organization context')
+    const org = await bypassOrg(() => db.organization.findUnique({
+      where: { id: orgId },
+      select: { licenseStatus: true, licenseValidatedAt: true },
+    }))
+    const reason = getLockdownReason(org?.licenseStatus ?? 'invalid', org?.licenseValidatedAt ?? null)
+    if (reason) {
+      if (data.documentId && (data.type === 'document-embed' || data.type === 'document-cognify')) {
+        await db.document.updateMany({
+          where: { id: data.documentId, organizationId: orgId },
+          data: data.type === 'document-cognify'
+            ? { cognifyStatus: 'failed', cognifyError: `License ${reason}; reprocess after activation or renewal.` }
+            : { status: 'error', cognifyError: `License ${reason}; reprocess after activation or renewal.` },
+        })
+      }
+      await db.auditLog.create({ data: {
+        organizationId: orgId, userId: null, action: 'BACKGROUND_JOB_BLOCKED', severity: 'warning',
+        detail: JSON.stringify({ type: data.type, documentId: data.documentId, reason }),
+      } })
+      throw new LicenseError(reason)
+    }
+  }
   return fn()
 }
 
@@ -92,7 +120,7 @@ registerJobHandler('document-embed', async (data) => {
 })
 
 registerJobHandler('document-cognify', async (data) => {
-  if (!data.documentId) return
+  if (!data.documentId || !(await isCogneeEnabled())) return
   // findFirst, NOT findUnique. This handler runs inside `runWithJobOrg`, so the org IS entered before it is
   // reached and an unscoped read would today return this tenant's row -- but that is a property of the CALLER, not
   // of this line, and the two cross-tenant IDORs found this round were both exactly that mistake (an unscoped read
@@ -108,7 +136,8 @@ registerJobHandler('document-cognify', async (data) => {
     select: { content: true, chunkIndex: true },
     orderBy: { chunkIndex: 'asc' },
   })
-  await cognifyDocument({ documentId: doc.id, documentName: doc.name, chunks })
+  const completed = await cognifyDocument({ documentId: doc.id, documentName: doc.name, chunks })
+  if (!completed) throw new Error('Document graph did not complete; retry observes the saved pipeline')
 })
 
 registerJobHandler('fts-rebuild', async () => {
@@ -182,7 +211,13 @@ export function startJobWorker(): Worker<JobData> {
     async (job: Job<JobData>) => {
       const handler = handlers[job.data.type]
       if (!handler) throw new Error(`No handler for job type: ${job.data.type}`)
-      await runWithJobOrg(job.data, () => handler(job.data))
+      try {
+        await runWithJobOrg(job.data, () => handler(job.data))
+      } catch (error) {
+        // Renewal needs operator action; retrying burns attempts without changing entitlement.
+        if (error instanceof LicenseError) throw new UnrecoverableError(error.message)
+        throw error
+      }
     },
     {
       connection: redis,

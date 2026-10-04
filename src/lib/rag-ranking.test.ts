@@ -1,14 +1,58 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   bm25Rank,
   fuseRankings,
   toRanking,
   RRF_K,
-  CORPUS_DF,
-  CORPUS_N,
+  quotaFuse,
+  getCorpusStats,
   resetCorpusStats,
   type Bm25Doc,
 } from './rag-ranking'
+
+import { enterWithOrg } from './prisma-tenant'
+beforeEach(() => resetCorpusStats())
+
+describe('tenant corpus statistics', () => {
+  test('another org cannot replace or consume the active org statistics', () => {
+    enterWithOrg('org-a')
+    getCorpusStats().df.set('policy', 1)
+    getCorpusStats().n.total = 1000
+    const docs = [{ id: 'a', tokens: ['policy'] }]
+    const scoreA = bm25Rank(['policy'], docs)[0].score
+    enterWithOrg('org-b')
+    expect(getCorpusStats().df.size).toBe(0)
+    getCorpusStats().df.set('policy', 999)
+    getCorpusStats().n.total = 1000
+    expect(bm25Rank(['policy'], docs)[0].score).toBeLessThan(scoreA)
+    enterWithOrg('org-a')
+    expect(bm25Rank(['policy'], docs)[0].score).toBe(scoreA)
+    expect(getCorpusStats().df.get('policy')).toBe(1)
+  })
+  test('missing context cannot populate a shared corpus', () => {
+    enterWithOrg('')
+    getCorpusStats().df.set('private-term', 3)
+    expect(getCorpusStats().df.size).toBe(0)
+  })
+})
+
+describe('balanced candidate membership', () => {
+  const lexical = Array.from({ length: 20 }, (_, index) => ({ id: `l${index}`, score: 20 - index }))
+  test('semantic head survives a full lexical pool and lexical head stays first', () => {
+    const result = quotaFuse(lexical, ['v0', 'v1', 'v2', 'v3'], 6)
+    expect(result.map((entry) => entry.id)).toEqual(['l0', 'l1', 'l2', 'v0', 'v1', 'v2'])
+    expect(result.map((entry) => entry.score)).toEqual([1, 1 / 2, 1 / 3, 1 / 4, 1 / 5, 1 / 6])
+  })
+  test('overlap does not waste slots and short retrievers yield their capacity', () => {
+    expect(quotaFuse(lexical, ['l0', 'l1', 'v0'], 6).map((entry) => entry.id))
+      .toEqual(['l0', 'l1', 'l2', 'l3', 'l4', 'v0'])
+    expect(quotaFuse([], ['v0', 'v1'], 5).map((entry) => entry.id)).toEqual(['v0', 'v1'])
+    expect(quotaFuse(lexical, [], 6).map((entry) => entry.id)).toEqual(['l0', 'l1', 'l2', 'l3', 'l4', 'l5'])
+  })
+  test('invalid or empty budgets do not allocate candidates', () => {
+    for (const budget of [0, -1, NaN, Infinity]) expect(quotaFuse(lexical, ['v'], budget)).toEqual([])
+  })
+})
 
 // ---------------------------------------------------------------------------
 // corpus-level IDF override
@@ -22,10 +66,12 @@ describe('bm25Rank with corpus-level IDF', () => {
   ]
 
   test('corpus stats make a pool-ubiquitous-but-rare-corpus-term rank by true rarity', () => {
+    enterWithOrg('org-ranking')
     // "policy" is in every pool doc (pool df=3). Without corpus stats its IDF
     // collapses. Say corpus has 1000 docs and "policy" appears in 300 → still
     // some weight; "refund" in only 10 corpus docs → far higher IDF.
     resetCorpusStats()
+    const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
     CORPUS_DF.set('policy', 300)
     CORPUS_DF.set('refund', 10)
     CORPUS_DF.set('invoice', 500)
@@ -53,11 +99,13 @@ describe('bm25Rank with corpus-level IDF', () => {
   })
 
   test('resetCorpusStats clears both structures', () => {
+    enterWithOrg('org-ranking')
+    const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
     CORPUS_DF.set('x', 1)
     CORPUS_N.total = 5
     resetCorpusStats()
-    expect(CORPUS_DF.size).toBe(0)
-    expect(CORPUS_N.total).toBe(0)
+    expect(getCorpusStats().df.size).toBe(0)
+    expect(getCorpusStats().n.total).toBe(0)
   })
 })
 

@@ -21,6 +21,10 @@ import { join } from 'node:path'
  * because the default (queue off in tests) would take the inline path unconditionally and make every
  * assertion below pass for the wrong reason.
  */
+let lockdownReason: string | null = null
+let licenseLookupFails = false
+mock.module('@/lib/background-license', () => ({ backgroundLockdownReason: async () => { if (licenseLookupFails) throw new Error('license database unavailable'); return lockdownReason } }))
+
 const state = {
   status: 'ready' as string,
   addShouldThrow: null as Error | null,
@@ -109,6 +113,8 @@ function fallbackSpy() {
 }
 
 beforeEach(async () => {
+  lockdownReason = null
+  licenseLookupFails = false
   await resetMemoryQueueForTest()
   process.env.MEMORY_QUEUE_IN_TESTS = '1'
   state.status = 'ready'
@@ -283,4 +289,25 @@ describe('enqueueMemoryWrite — the depth cap (backpressure against a stuck sid
     expect(outcome).toBe('queued')
     expect(state.addCalls).toBe(1)
   })
+})
+
+
+test('locked memory is dropped before both queue admission and the Redis-down fallback', async () => {
+  lockdownReason = 'unpaid'
+  let inlineCalls = 0
+  for (const status of ['ready', 'reconnecting']) {
+    state.status = status
+    expect(await enqueueMemoryWrite(job, async () => { inlineCalls++ })).toBe('dropped')
+  }
+  expect(inlineCalls).toBe(0)
+  expect(state.addCalls).toBe(0)
+})
+
+
+test('an unavailable entitlement lookup drops optional memory without an unhandled rejection', async () => {
+  licenseLookupFails = true
+  let inlineCalls = 0
+  expect(await enqueueMemoryWrite(job, async () => { inlineCalls++ })).toBe('dropped')
+  expect(inlineCalls).toBe(0)
+  expect(state.addCalls).toBe(0)
 })

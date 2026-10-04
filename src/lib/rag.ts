@@ -176,15 +176,30 @@ export function selectTopRetrievedChunks<T extends { score: number; chunkIndex: 
   topK: number,
   maxPerDocument = RAG_MAX_PER_DOCUMENT,
 ): T[] {
+  // Prefer document diversity, then fill unused slots from capped documents.
+  // A single-document corpus must still return enough evidence to answer.
+  if (!Number.isFinite(topK) || topK < 1) return []
+  topK = Math.floor(topK)
+  const sorted = sortRetrievedChunks(rows)
   const selected: T[] = []
   const perDocument = new Map<string, number>()
+  const deferred: T[] = []
 
-  for (const row of sortRetrievedChunks(rows)) {
+  for (const row of sorted) {
     const count = perDocument.get(row.documentId) ?? 0
-    if (count >= maxPerDocument) continue
+    if (count >= maxPerDocument) {
+      // Hold it back, but do not throw it away: it becomes eligible if no fresh document can fill the slot.
+      deferred.push(row)
+      continue
+    }
     selected.push(row)
     perDocument.set(row.documentId, count + 1)
+    if (selected.length >= topK) return selected
+  }
+
+  for (const row of deferred) {
     if (selected.length >= topK) break
+    selected.push(row)
   }
 
   return selected

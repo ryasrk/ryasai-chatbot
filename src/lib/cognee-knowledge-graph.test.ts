@@ -16,6 +16,7 @@ const core = {
   updateCalls: [] as Array<{ id: string; status: string; error?: string }>,
   resets: 0,
   resetClientCacheThrows: false,
+  completionWriteFails: false,
   // Graph backend reported by the client. Defaults to kuzu (the local default) because that
   // is the case where NATURAL_LANGUAGE must be skipped.
   graphProvider: 'kuzu' as string | null,
@@ -43,6 +44,7 @@ mock.module('@/lib/cognee-core', () => ({
   extractSearchItems: () => core.items.map((i) => ({ text: i.text, score: i.score })),
   updateDocumentCognifyStatus: async (id: string, status: string, error?: string) => {
     core.updateCalls.push({ id, status, error })
+    if (status === 'completed' && core.completionWriteFails) throw new Error('completion status rejected')
   },
   resetClientCache: () => {
     if (core.resetClientCacheThrows) throw new Error('client cache reset exploded')
@@ -55,6 +57,8 @@ const dbState = {
   updateManyCalls: [] as any[],
   findManyThrow: false,
   findManyCalls: [] as any[],
+  pipelineJson: null as string | null,
+  pipelineWrites: [] as any[],
 }
 
 // The fake honours the `where` it is given, because a fake that ignores the
@@ -74,6 +78,8 @@ function matchesWhere(doc: any, where: any): boolean {
 mock.module('@/lib/db', () => ({
   db: {
     document: {
+      findFirst: async () => ({ cognifyPipelineJson: dbState.pipelineJson }),
+      update: async (args: any) => { dbState.pipelineWrites.push(args); return {} },
       findMany: async (a: any) => {
         if (dbState.findManyThrow) throw new Error('db down')
         dbState.findManyCalls.push(a)
@@ -197,6 +203,7 @@ beforeEach(() => {
   core.updateCalls = []
   core.resets = 0
   core.resetClientCacheThrows = false
+  core.completionWriteFails = false
   // SDK path unless a test opts into the server: a leaked serverOptions would
   // silently move every other test off the branch it exists to cover.
   core.serverOptions = null
@@ -204,6 +211,8 @@ beforeEach(() => {
   dbState.updateManyCalls = []
   dbState.findManyCalls = []
   dbState.findManyThrow = false
+  dbState.pipelineJson = null
+  dbState.pipelineWrites = []
   httpState.rememberCalls = []
   httpState.recallCalls = []
   httpState.forgetCalls = []
@@ -1476,4 +1485,36 @@ describe('the knowledge-graph read is SCOPED by node_set, and the write TAGS it'
     expect(httpState.rememberCalls.length).toBeGreaterThan(0)
     expect(httpState.rememberCalls[0]!.args.nodeSet).toEqual(['doc-xyz'])
   })
+})
+
+
+test('document retries pass the saved pipeline identity and persist subsequent phases', async () => {
+  core.serverOptions = SERVER_OPTS
+  const state = {
+    datasetId: '11111111-1111-4111-8111-111111111111',
+    runId: '22222222-2222-4222-8222-222222222222',
+    dataIds: ['33333333-3333-4333-8333-333333333333'],
+  }
+  dbState.pipelineJson = JSON.stringify(state)
+  expect(await cognifyDocument(docs[0])).toBe(true)
+  const wait = httpState.rememberCalls[0].args.waitForPipeline
+  expect(wait.state).toEqual(state)
+  await wait.onState({ ...state, terminal: 'completed' })
+  expect(dbState.pipelineWrites[0].where.id).toBe(docs[0].documentId)
+  expect(JSON.parse(dbState.pipelineWrites[0].data.cognifyPipelineJson)).toEqual({ ...state, terminal: 'completed' })
+})
+test('corrupt saved document pipeline state refuses a new upload', async () => {
+  core.serverOptions = SERVER_OPTS
+  dbState.pipelineJson = '{}'
+  expect(await cognifyDocument(docs[0])).toBe(false)
+  expect(httpState.rememberCalls).toHaveLength(0)
+  expect(core.updateCalls.at(-1)?.status).toBe('failed')
+})
+
+
+test('document ingestion cannot report success when recording completion fails', async () => {
+  core.serverOptions = SERVER_OPTS
+  core.completionWriteFails = true
+  expect(await cognifyDocument(docs[0])).toBe(false)
+  expect(core.updateCalls.at(-1)?.status).toBe('failed')
 })

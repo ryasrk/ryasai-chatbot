@@ -5,9 +5,8 @@ import { getOrgContext } from '@/lib/prisma-tenant'
 // ponytail: lazy check so mock.module('@/lib/db-provider') works in tests.
 const isPostgres = () => getDbProvider() === 'postgresql'
 
-// ponytail: DDL (CREATE TABLE / ADD COLUMN / CREATE INDEX) runs once per process —
-// the statements are idempotent but a round-trip on every upsert/search was pure waste.
-const ftsDdlDone = new Set<string>()
+let sqliteFtsReady = false
+let sqliteFtsPending: Promise<void> | undefined
 
 export function buildFtsMatchQuery(tokens: string[]): string {
   return tokens
@@ -26,20 +25,20 @@ export function normalizeFtsRows(rows: Array<{ chunkId: string; rank: number }>)
 }
 
 export async function ensureRagFtsTable() {
-  const backend = isPostgres() ? 'postgres' : 'sqlite'
-  if (ftsDdlDone.has(backend)) return
-  if (isPostgres()) {
-    await db.$executeRawUnsafe(`ALTER TABLE "DocumentChunk" ADD COLUMN IF NOT EXISTS tsv tsvector`)
-    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DocumentChunk_tsv_idx" ON "DocumentChunk" USING GIN(tsv)`)
-  } else {
-    // ponytail: legacy `companyId UNINDEXED` column removed — it was always ''
-    // and is org-unsafe. Searches now join DocumentChunk to filter by org instead.
-    await db.$executeRawUnsafe(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS DocumentChunkFts
-      USING fts5(chunkId UNINDEXED, content, keywords)
-    `)
-  }
-  ftsDdlDone.add(backend)
+  // PostgreSQL migrations and Prisma schema push own tsv and its GIN index.
+  // Runtime ALTER TABLE acquires an exclusive lock and can deadlock with HNSW creation.
+  if (isPostgres() || sqliteFtsReady) return
+  // ponytail: legacy `companyId UNINDEXED` column removed — it was always ''
+  // and is org-unsafe. Searches join DocumentChunk to filter by org instead.
+  sqliteFtsPending ??= db.$executeRawUnsafe(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS DocumentChunkFts
+    USING fts5(chunkId UNINDEXED, content, keywords)
+  `).then(() => {
+    sqliteFtsReady = true
+  }).finally(() => {
+    sqliteFtsPending = undefined
+  })
+  await sqliteFtsPending
 }
 
 export async function upsertChunkFts(args: {
@@ -47,24 +46,35 @@ export async function upsertChunkFts(args: {
   content: string
   keywords?: string | null
 }) {
+  const orgId = getOrgContext()
+  if (!orgId) throw new Error('FTS upsert requires an organization context')
   await ensureRagFtsTable()
   if (isPostgres()) {
     await db.$executeRawUnsafe(
-      `UPDATE "DocumentChunk" SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, '')) WHERE id = $1`,
+      `UPDATE "DocumentChunk" SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, '')) WHERE id = $1 AND "organizationId" = $2`,
       args.chunkId,
+      orgId,
     )
     return
   }
-  await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts WHERE chunkId = ?', args.chunkId)
   await db.$executeRawUnsafe(
-    'INSERT INTO DocumentChunkFts(chunkId, content, keywords) VALUES (?, ?, ?)',
+    'DELETE FROM DocumentChunkFts WHERE chunkId = ? AND chunkId IN (SELECT id FROM DocumentChunk WHERE organizationId = ?)',
+    args.chunkId,
+    orgId,
+  )
+  await db.$executeRawUnsafe(
+    'INSERT INTO DocumentChunkFts(chunkId, content, keywords) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM DocumentChunk WHERE id = ? AND organizationId = ?)',
     args.chunkId,
     args.content,
     args.keywords ?? '',
+    args.chunkId,
+    orgId,
   )
 }
 
 export async function rebuildFts(): Promise<{ indexed: number }> {
+  const orgId = getOrgContext()
+  if (!orgId) throw new Error('FTS rebuild requires an organization context')
   await ensureRagFtsTable()
   const chunks = await db.documentChunk.findMany({
     where: { document: { status: 'ready', isEnabled: true } },
@@ -76,7 +86,8 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
       SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, ''))
       FROM "Document" d
       WHERE "DocumentChunk"."documentId" = d."id" AND d."status" = 'ready' AND d."isEnabled" = true
-    `)
+        AND "DocumentChunk"."organizationId" = $1
+    `, orgId)
     // ponytail: refresh corpus-level document frequency for BM25. ts_stat reads
     // from the tsv column (GIN-indexed source of truth) — one grouped query per
     // rebuild instead of per search. Dollar-quoting avoids the nested-escape
@@ -84,15 +95,18 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
     // corpora; ranking falls back to pool-local IDF when this is stale/empty.
     try {
       const stats = await db.$queryRawUnsafe<Array<{ word: string; ndoc: number }>>(
-        `SELECT word, ndoc FROM ts_stat($query$
+        `SELECT word, ndoc FROM ts_stat(format($query$
            SELECT tsv FROM "DocumentChunk" c
            JOIN "Document" d ON c."documentId" = d."id"
            WHERE d."status" = 'ready' AND d."isEnabled" = true
-         $query$)
-         ORDER BY ndoc DESC
+             AND c."organizationId" = %L
+         $query$, $1::text))
+         ORDER BY ndoc DESC, word ASC
          LIMIT 50000`,
+        orgId,
       )
-      const { CORPUS_DF, CORPUS_N } = await import('@/lib/rag-ranking')
+      const { getCorpusStats } = await import('@/lib/rag-ranking')
+      const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
       CORPUS_DF.clear()
       for (const row of stats) CORPUS_DF.set(row.word, Number(row.ndoc))
       CORPUS_N.total = chunks.length
@@ -101,7 +115,7 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
     }
     return { indexed: chunks.length }
   }
-  await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts')
+  await db.$executeRawUnsafe('DELETE FROM DocumentChunkFts WHERE chunkId IN (SELECT id FROM DocumentChunk WHERE organizationId = ?)', orgId)
   for (const chunk of chunks) {
     await db.$executeRawUnsafe(
       'INSERT INTO DocumentChunkFts(chunkId, content, keywords) VALUES (?, ?, ?)',

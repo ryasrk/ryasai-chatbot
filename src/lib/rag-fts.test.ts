@@ -92,6 +92,7 @@ describe('RAG FTS helpers', () => {
 
 describe('ensureRagFtsTable (SQLite)', () => {
   test('creates FTS5 virtual table', async () => {
+    enterWithOrg('org-fts')
     await ensureRagFtsTable()
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
     const ftsCreate = sqls.find((s) => s.includes('CREATE VIRTUAL TABLE') && s.includes('fts5'))
@@ -102,6 +103,7 @@ describe('ensureRagFtsTable (SQLite)', () => {
 
 describe('upsertChunkFts (SQLite)', () => {
   test('deletes then inserts into FTS table', async () => {
+    enterWithOrg('org-fts')
     await upsertChunkFts({ chunkId: 'c1', content: 'text', keywords: 'kw' })
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
     expect(sqls.some((s) => s.includes('DELETE FROM DocumentChunkFts'))).toBe(true)
@@ -111,15 +113,17 @@ describe('upsertChunkFts (SQLite)', () => {
 
 describe('rebuildFts (SQLite)', () => {
   test('deletes all then re-inserts chunks, returns indexed count', async () => {
+    enterWithOrg('org-fts')
     const result = await rebuildFts()
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
-    expect(sqls.some((s) => s === 'DELETE FROM DocumentChunkFts')).toBe(true)
+    expect(sqls.some((s) => s.startsWith('DELETE FROM DocumentChunkFts WHERE chunkId IN'))).toBe(true)
     expect(result.indexed).toBe(2)
   })
 })
 
 describe('searchFtsChunkIds (SQLite)', () => {
   test('no org context → empty result (no cross-org query)', async () => {
+    enterWithOrg('org-fts')
     const ids = await bypassOrg(() =>
       searchFtsChunkIds({ queryTokens: ['hello'], limit: 10 }),
     )
@@ -128,19 +132,21 @@ describe('searchFtsChunkIds (SQLite)', () => {
   })
 
   test('issues bm25 match query scoped to org and returns sorted chunkIds', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementation(
       async () => [{ chunkId: 'b', rank: -3 }, { chunkId: 'a', rank: -5 }],
     )
     const ids = await searchFtsChunkIds({ queryTokens: ['hello', 'world'], limit: 10 })
     expect(ids).toEqual(['a', 'b'])
-    const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
+    const sql = mockQueryRawUnsafe.mock.calls[0].map(String).join(' ')
     expect(sql).toContain('bm25')
     expect(sql).toContain('DocumentChunkFts')
     expect(sql).toContain('organizationId')
   })
 
   test('empty tokens → empty result (no DB call)', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     const ids = await searchFtsChunkIds({ queryTokens: [], limit: 10 })
     expect(ids).toEqual([])
@@ -148,8 +154,10 @@ describe('searchFtsChunkIds (SQLite)', () => {
   })
 
   test('DB error → returns empty array (graceful)', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementation(async () => {
+    enterWithOrg('org-fts')
       throw new Error('FTS table missing')
     })
     const ids = await searchFtsChunkIds({ queryTokens: ['x'], limit: 5 })
@@ -170,6 +178,7 @@ describe('searchFtsChunkIds (SQLite)', () => {
 
 describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path)', () => {
   test('the search term is a BOUND PARAMETER and the SQL carries no term text', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementation(async () => [{ chunkId: 'c1', rank: -1 }])
     await searchFtsChunkIds({ queryTokens: ['invoice', 'SKU-902'], limit: 10 })
@@ -192,6 +201,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('the hit titles/args do not grow with the NUMBER of tokens, because the SQL is static', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementation(async () => [])
     await searchFtsChunkIds({ queryTokens: ['a', 'b', 'c', 'd', 'e'], limit: 3 })
@@ -203,6 +213,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('the token sanitiser is character-class based, so the tsquery/FTS5 operator set is neutralised', async () => {
+    enterWithOrg('org-fts')
     // `%`, `_`, `&`, `|`, `!`, `:`, `*`, `^`, `-`, `(`, `)`, `"`, `{`, `}` are
     // all replaced. Verified through the real function rather than by reading
     // the regex.
@@ -218,6 +229,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('a percent and underscore are NOT SQL LIKE wildcards in either direction', async () => {
+    enterWithOrg('org-fts')
     // `%` and `_` are only special to LIKE. This module never uses LIKE, and
     // the FTS5 MATCH language treats them as ordinary characters — but they
     // are still stripped by the sanitiser, which makes the behaviour
@@ -228,6 +240,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('a single quote cannot terminate the SQL string literal, because nothing is interpolated', async () => {
+    enterWithOrg('org-fts')
     // The classic payload. Two independent defences are measured here: the
     // quote is stripped by the sanitiser AND the result is a bind parameter.
     const payload = "'; DROP TABLE DocumentChunkFts; --"
@@ -246,6 +259,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('FTS5 column-filter and NEAR syntax cannot be injected — the output is always quoted terms', async () => {
+    enterWithOrg('org-fts')
     // In FTS5, `col:value` is a column filter and `NEAR(a b, 5)` is a proximity
     // operator. Both need literal punctuation that the sanitiser removes, and
     // the result is always wrapped in double quotes, which in FTS5 makes the
@@ -261,6 +275,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('the output is always a list of DOUBLE-QUOTED terms joined by OR — the shape is the guard', async () => {
+    enterWithOrg('org-fts')
     const built = buildFtsMatchQuery(['invoice', 'stok*', 'a&b'])
     expect(built).toBe('"invoice" OR "stok" OR "a b"')
     expect(built.split(' OR ')).toHaveLength(3)
@@ -268,6 +283,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
   })
 
   test('there is NO escaping that could be bypassed, because there is no string concatenation', async () => {
+    enterWithOrg('org-fts')
     // The strongest form of the safety claim is structural, so it is asserted
     // structurally: the SQL template is a literal, and the only dynamic part
     // is the ARGUMENT LIST. If a future change moves the term into the
@@ -283,6 +299,7 @@ describe('rag-fts — buildFtsMatchQuery is the SQL-safety boundary (SQLite path
 
 describe('rag-fts — organization scoping of the RAW SQL path', () => {
   test('the FTS query joins DocumentChunk so the org filter is IN THE WHERE CLAUSE', async () => {
+    enterWithOrg('org-fts')
     // The FTS5 virtual table is created WITHOUT an org column (see
     // ensureRagFtsTable below), and the tenant extension cannot rewrite raw
     // SQL. So the join is the ONLY thing preventing a cross-org read, and it is
@@ -298,6 +315,7 @@ describe('rag-fts — organization scoping of the RAW SQL path', () => {
   })
 
   test('the FTS5 table genuinely has NO org column, which is why the join is required', async () => {
+    enterWithOrg('org-fts')
     // This is the fact the comment above the query asserts. Pinning it means a
     // change that adds an org column to the virtual table (and drops the join)
     // fails loudly here instead of silently widening the query.
@@ -314,6 +332,7 @@ describe('rag-fts — organization scoping of the RAW SQL path', () => {
   })
 
   test('the org comes from the AsyncLocalStorage CONTEXT, so it cannot be spoofed by the caller', async () => {
+    enterWithOrg('org-fts')
     // There is no `orgId` parameter on the function. A caller cannot pass a
     // different org; only enterWithOrg can set it, and that is the middleware's
     // job. Asserted via the signature, so adding an org parameter would fail
@@ -331,6 +350,7 @@ describe('rag-fts — organization scoping of the RAW SQL path', () => {
   })
 
   test('a FAILED org lookup is not a reason to query without one', async () => {
+    enterWithOrg('org-fts')
     // If the org were resolved lazily inside the try block, an error resolving
     // it would land in the catch and return [] — indistinguishable from
     // "no matches", which is fine — but the DANGEROUS shape is a fallback that
@@ -343,6 +363,7 @@ describe('rag-fts — organization scoping of the RAW SQL path', () => {
   })
 
   test('run() isolation: a bypassed scope does NOT clear an outer enterWithOrg scope', async () => {
+    enterWithOrg('org-fts')
     // `bypassOrg` uses AsyncLocalStorage.run(undefined, fn), which is
     // SCOPED — it restores the previous store on exit. So a caller inside an
     // org that invokes bypassOrg for one call still has its org afterwards.
@@ -362,6 +383,7 @@ describe('rag-fts — organization scoping of the RAW SQL path', () => {
 
 describe('rag-fts — query-input boundaries', () => {
   test('empty token list and whitespace-only tokens produce NO database call', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     expect(await searchFtsChunkIds({ queryTokens: [], limit: 10 })).toEqual([])
     expect(await searchFtsChunkIds({ queryTokens: [String.fromCharCode(9), String.fromCharCode(10), '   '], limit: 5 })).toEqual([])
@@ -369,6 +391,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('a token list that sanitises to EMPTY is also refused before the query', async () => {
+    enterWithOrg('org-fts')
     // Every token being pure punctuation is the shape a caller reaches by
     // tokenising a stopword-only or emoji-only query. `buildFtsMatchQuery`
     // returns '', the guard catches it, and no MATCH '' is ever sent.
@@ -379,6 +402,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('a token of ONLY punctuation is dropped, but surviving tokens in the same list still query', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-1')
     mockQueryRawUnsafe.mockImplementation(async () => [{ chunkId: 'k', rank: -1 }])
     const ids = await searchFtsChunkIds({ queryTokens: ['%%%', 'invoice'], limit: 10 })
@@ -387,6 +411,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('a VERY LONG query is truncated to 12 terms, so the bind argument is bounded', async () => {
+    enterWithOrg('org-fts')
     // 500 tokens. The cap is 12 — bounding the MATCH expression length is what
     // keeps a hostile caller from building a megabyte-long tsquery/FTS5
     // expression per request. Asserted on the ACTUAL bound argument.
@@ -406,6 +431,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('a very long SINGLE token is NOT truncated — only the token COUNT is bounded', async () => {
+    enterWithOrg('org-fts')
     // MEASURED ceiling, and it is worth stating plainly: the 12-term cap limits
     // how many terms, not how long one is. A single 1 MB token becomes a 1 MB
     // bind argument. That is parameterised (no injection) but it is an
@@ -417,6 +443,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('a query with a TRAILING operator loses the operator and keeps the term', async () => {
+    enterWithOrg('org-fts')
     // The realistic shape of this is a user typing "invoice AND" or "stok*".
     // A trailing `AND`/`OR`/`*`/`-` must not reach tsquery as a dangling
     // operator (PostgreSQL raises a syntax error on 'invoice &'), and it does
@@ -435,6 +462,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('the limit is passed through UNVALIDATED — negative, zero and fractional values are bound as given', async () => {
+    enterWithOrg('org-fts')
     // MEASURED, and stated as a finding rather than validated, because
     // validating it here would hide the fact that this module does not.
     // `LIMIT -1` in SQLite means "no limit" — so a caller that computes a
@@ -452,6 +480,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('non-string tokens are coerced by String() inside the regex, not thrown on', async () => {
+    enterWithOrg('org-fts')
     // `token.replace` would throw on a number or null. The declared type is
     // string[], but a JS caller (or a tokeniser that leaks a number through)
     // reaches this with a non-string. Measured: it throws, because the
@@ -462,6 +491,7 @@ describe('rag-fts — query-input boundaries', () => {
   })
 
   test('CODE-POINT SANITISATION: unicode letters and digits are PRESERVED, not ASCII-stripped', async () => {
+    enterWithOrg('org-fts')
     // The regex uses \p{L}\p{N} with the u flag, so Indonesian and accented
     // terms survive. An ASCII-only sanitiser would silently turn a valid
     // non-English query into an empty MATCH — a retrieval outage for every
@@ -477,6 +507,7 @@ describe('rag-fts — query-input boundaries', () => {
 
 describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   test('the row limit and ORDER BY are in the SQL, and the LIMIT is the bound argument', async () => {
+    enterWithOrg('org-fts')
     // The DB does the limit; this function only re-sorts. Both facts asserted:
     // the statement says ORDER BY rank ASC + LIMIT ?, and the arg is the limit.
     enterWithOrg('org-1')
@@ -489,6 +520,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   })
 
   test('THE ORDER BY IS NON-DETERMINISTIC FOR TIES, and the client-side sort does not fix it', async () => {
+    enterWithOrg('org-fts')
     // MEASURED STABILITY FINDING. `ORDER BY rank ASC` over bm25()/ts_rank()
     // has no tiebreaker, so two chunks with identical scores come back in an
     // order the database does not guarantee. This function then re-sorts by the
@@ -508,10 +540,11 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
     // So the OUTCOME depends on the database's row order, not on this function.
     expect(tieA).not.toEqual(tieB)
     // The SQL has no secondary sort key to make it deterministic.
-    expect(SOURCE_ORDER_BY_HAS_TIEBREAKER).toBe(false)
+    expect(SOURCE_ORDER_BY_HAS_TIEBREAKER).toBe(true)
   })
 
   test('ranks are sorted ASCENDING, because ts_rank is negated and bm25 is negative', async () => {
+    enterWithOrg('org-fts')
     // Both arms negate so that "more negative" means "better" and a single
     // `ORDER BY rank ASC` works for both. Getting this wrong by removing the
     // negation would reverse relevance silently.
@@ -523,6 +556,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   })
 
   test('a rank of 0, NaN and Infinity do not crash the sort', async () => {
+    enterWithOrg('org-fts')
     // The comparator is `a.rank - b.rank`, which is NaN-tolerant in the sense
     // that it does not throw — it just produces an implementation-defined
     // order. Pinned so a driver that returns NaN (a malformed tsvector, a
@@ -536,6 +570,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   })
 
   test('falsy chunkIds are FILTERED OUT of the result', async () => {
+    enterWithOrg('org-fts')
     // `-ts_rank(...) AS "chunkId"` would be nonsensical; the filter is really
     // a guard against a row where the id column came back null (an outer join
     // in a future variant). Pinned because a null id entering the candidate
@@ -547,6 +582,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   })
 
   test('duplicate chunkIds are NOT de-duplicated — the caller is responsible for the Set', async () => {
+    enterWithOrg('org-fts')
     // rag-retrieval does `new Set([...vectorRanking, ...lexicalIds])`, so the
     // de-duplication lives there. Pinning that this function does NOT do it
     // means a change in either place is a deliberate one.
@@ -557,6 +593,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
   })
 
   test('the input array is NOT mutated (the caller may still hold it)', async () => {
+    enterWithOrg('org-fts')
     const rows = [{ chunkId: 'b', rank: -3 }, { chunkId: 'a', rank: -5 }]
     const snapshot = JSON.stringify(rows)
     normalizeFtsRows(rows)
@@ -571,6 +608,7 @@ describe('rag-fts — normalizeFtsRows: ordering, ties and shape', () => {
 
 describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is the compensation', () => {
   test('the SQLite DDL creates a virtual table with NO organizationId column', async () => {
+    enterWithOrg('org-fts')
     // This is the load-bearing fact behind the JOIN in searchFtsChunkIds. If a
     // future change adds the column here, the JOIN becomes redundant and this
     // test should be replaced — so it fails and forces the decision.
@@ -587,10 +625,8 @@ describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is th
     expect(SOURCE).toContain('legacy `companyId UNINDEXED` column removed')
   })
 
-  test('the DDL is idempotent and runs ONCE per backend per process', async () => {
-    // `ftsDdlDone` is process-level. Two consecutive calls must produce ONE
-    // CREATE statement — the comment calls a per-search round trip "pure
-    // waste", and this pins that the set actually short-circuits.
+  test('SQLite initialization stops issuing DDL after success', async () => {
+    enterWithOrg('org-fts')
     await ensureRagFtsTable()
     const after1 = mockExecuteRawUnsafe.mock.calls.length
     await ensureRagFtsTable()
@@ -600,14 +636,12 @@ describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is th
     // earlier test already primed the Set, N on a cold run), and the point is
     // that it does not grow.
     expect(mockExecuteRawUnsafe.mock.calls.length).toBe(after1)
-    // The Set is the mechanism, and the backend is the key — so a provider
-    // switch would re-run the DDL rather than skip it.
-    expect(SOURCE).toContain('const ftsDdlDone = new Set<string>()')
-    expect(SOURCE).toContain('if (ftsDdlDone.has(backend)) return')
-    expect(SOURCE).toContain('ftsDdlDone.add(backend)')
+    // The separate schema suite exercises a cold initialization and failed retry;
+    // this assertion covers consumers that call initialization after it is ready.
   })
 
   test('the DELETE+INSERT upsert is not atomic, and the failure mode is stated', async () => {
+    enterWithOrg('org-fts')
     // Order matters: DELETE then INSERT. A crash between them leaves the chunk
     // UNINDEXED (not double-indexed, not a duplicate). Pinned via the shared
     // event log, so reversing the order fails.
@@ -624,22 +658,24 @@ describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is th
   })
 
   test('upsertChunkFts binds all three columns as parameters and coalesces a null keyword', async () => {
+    enterWithOrg('org-fts')
     await upsertChunkFts({ chunkId: 'cid', content: 'the body', keywords: null })
     const inserts = mockExecuteRawUnsafe.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO DocumentChunkFts'))
     expect(inserts).toHaveLength(1)
     const [sql, ...args] = inserts[0]!
-    expect(String(sql)).toContain('VALUES (?, ?, ?)')
-    expect(args).toEqual(['cid', 'the body', ''])
+    expect(String(sql)).toContain('SELECT ?, ?, ? WHERE EXISTS')
+    expect(args).toEqual(['cid', 'the body', '', 'cid', 'org-fts'])
     // The keywords column is NOT NULL in the virtual table, so the `?? ''`
     // coercion is load-bearing, not cosmetic.
     expect(String(sql)).not.toContain('the body')
   })
 
   test('rebuildFts DELETEs everything first, then re-inserts one row per eligible chunk', async () => {
+    enterWithOrg('org-fts')
     const events: string[] = []
     mockExecuteRawUnsafe.mockImplementation(async (sql: string) => {
       const s = String(sql)
-      if (s === 'DELETE FROM DocumentChunkFts') events.push('delete-all')
+      if (s.startsWith('DELETE FROM DocumentChunkFts WHERE chunkId IN')) events.push('delete-all')
       else if (s.includes('INSERT INTO DocumentChunkFts')) events.push('insert')
       return 1
     })
@@ -653,6 +689,7 @@ describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is th
   })
 
   test('rebuildFts asks for only the three columns it needs, filtered to searchable docs', async () => {
+    enterWithOrg('org-fts')
     // Asserted through the mocked findMany, which records its arguments. The
     // filter is what keeps disabled and not-yet-ready documents out of the
     // index — indexing them would let retrieval cite a document the user
@@ -668,6 +705,7 @@ describe('rag-fts — the FTS schema is org-unsafe BY DESIGN, and the join is th
 
 describe('rag-fts — hybrid-search scoping ceiling (documented)', () => {
   test('a cross-org chunk reachable through the VECTOR arm is NOT prevented by this module', async () => {
+    enterWithOrg('org-fts')
     // This module only guarantees that its OWN candidate list is org-scoped.
     // rag-retrieval unions the FTS ids with vector-store ids
     // (`new Set([...vectorRanking, ...lexicalIds, ...kgRanking])`) and then
@@ -695,19 +733,18 @@ describe('rag-fts — hybrid-search scoping ceiling (documented)', () => {
 // ===========================================================================
 
 describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
-  test('the DDL adds a tsvector column and a GIN index, and NOT an FTS5 table', async () => {
+  test('Postgres schema initialization issues no DDL or catalog reads during requests', async () => {
+    // The old expectation required runtime ALTER despite both migration and Prisma schema
+    // owning tsv. Even an idempotent ALTER takes an exclusive lock and caused a live deadlock.
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
-    await ensureRagFtsTable()
-    const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => String(c[0]))
-    expect(sqls.some((s) => s.includes('ADD COLUMN IF NOT EXISTS tsv tsvector'))).toBe(true)
-    expect(sqls.some((s) => s.includes('CREATE INDEX IF NOT EXISTS "DocumentChunk_tsv_idx"') && s.includes('USING GIN(tsv)'))).toBe(true)
-    // The statements are IF-NOT-EXISTS idempotent, which is what lets them run
-    // on every cold start without a migration.
-    expect(sqls.every((s) => s.includes('IF NOT EXISTS'))).toBe(true)
-    expect(sqls.some((s) => s.includes('CREATE VIRTUAL TABLE'))).toBe(false)
+    await Promise.all([ensureRagFtsTable(), ensureRagFtsTable()])
+    expect(mockExecuteRawUnsafe).not.toHaveBeenCalled()
+    expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
   })
 
   test('the upsert updates the tsv column in place and binds the chunk id as $1', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
     await upsertChunkFts({ chunkId: 'cid', content: 'body text', keywords: 'kw' })
     const update = mockExecuteRawUnsafe.mock.calls.find((c) => String(c[0]).includes('to_tsvector'))
@@ -717,15 +754,17 @@ describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
     expect(String(sql)).toContain('WHERE id = $1')
     // The CONTENT is not in this statement at all — PostgreSQL reads the row's
     // own `content` and `keywords` columns, so the caller's text never becomes
-    // SQL text. The only bind is the id.
+    // SQL text. Both chunk id and tenant are bound.
     expect(String(sql)).not.toContain('body text')
-    expect(args).toEqual(['cid'])
+    expect(String(sql)).toContain('"organizationId" = $2')
+    expect(args).toEqual(['cid', 'org-fts'])
     // No FTS5 table is touched on this backend.
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => String(c[0]))
     expect(sqls.some((s) => s.includes('INSERT INTO DocumentChunkFts'))).toBe(false)
   })
 
   test('the rebuild is ONE bulk UPDATE with a JOIN, not a per-chunk loop', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
     const result = await rebuildFts()
     expect(result.indexed).toBe(2)
@@ -736,11 +775,12 @@ describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
     expect(String(updates[0][0])).toContain(`d."status" = 'ready' AND d."isEnabled" = true`)
     // No DELETE + per-row INSERT on this backend.
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => String(c[0]))
-    expect(sqls.some((s) => s === 'DELETE FROM DocumentChunkFts')).toBe(false)
+    expect(sqls.some((s) => s.startsWith('DELETE FROM DocumentChunkFts WHERE chunkId IN'))).toBe(false)
     expect(sqls.some((s) => s.includes('INSERT INTO DocumentChunkFts'))).toBe(false)
   })
 
   test('the ts_stat refresh reads the INDEXED tsv column and is capped at 50000 rows', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
     mockQueryRawUnsafe.mockImplementation(async () => [{ word: 'invoice', ndoc: '12' }])
     await rebuildFts()
@@ -752,16 +792,18 @@ describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
     expect(sql).toContain('LIMIT 50000')
     // Dollar-quoting, because the inner query contains single quotes that a
     // plain literal would have to escape.
-    expect(sql).toContain('$query$')
-    expect(sql.match(/\$query\$/g)).toHaveLength(2)
+    expect(sql).toContain('ts_stat(format(')
+    expect(mockQueryRawUnsafe.mock.calls[0]).toHaveLength(2)
     // Scoped to searchable documents only.
     expect(sql).toContain(`"status" = 'ready'`)
     expect(sql).toContain(`"isEnabled" = true`)
   })
 
   test('the ts_stat result POPULATES the BM25 corpus table and coerces ndoc to a number', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
-    const { CORPUS_DF, CORPUS_N } = await import('@/lib/rag-ranking')
+    const { getCorpusStats } = await import('@/lib/rag-ranking')
+    const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
     CORPUS_DF.clear()
     CORPUS_N.total = 0
     // A STALE entry from a previous corpus: it must be gone afterwards, proving
@@ -785,11 +827,13 @@ describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
   })
 
   test('a ts_stat FAILURE is swallowed and the rebuild still reports success', async () => {
+    enterWithOrg('org-fts')
     // An older PostgreSQL without ts_stat, a permission problem, a timeout: the
     // chunks were already written by the bulk UPDATE, so throwing here would
     // lose the whole index for a STATISTICS refresh.
     setDbProvider('postgresql')
-    const { CORPUS_DF } = await import('@/lib/rag-ranking')
+    const { getCorpusStats } = await import('@/lib/rag-ranking')
+    const { df: CORPUS_DF } = getCorpusStats()
     CORPUS_DF.clear()
     CORPUS_DF.set('stale-word', 999)
     mockQueryRawUnsafe.mockImplementation(async () => { throw new Error('ts_stat: permission denied') })
@@ -803,6 +847,7 @@ describe('rag-fts (Postgres arm) — DDL, upsert and rebuild', () => {
 
 describe('rag-fts (Postgres arm) — the search path', () => {
   test('the query is a STATIC template with $1/$2/$3 binds and shares ONE query string', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementation(async () => [{ chunkId: 'pg-1', rank: -0.5 }])
@@ -825,6 +870,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('the org filter is IN the WHERE clause of the raw SQL, next to the MATCH', async () => {
+    enterWithOrg('org-fts')
     // Raw SQL bypasses the tenant extension, so this filter is the ONLY org
     // scoping in the Postgres path. It is asserted by name and by position.
     setDbProvider('postgresql')
@@ -838,6 +884,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('the Postgres term is the RAW joined token string — buildFtsMatchQuery is NOT used', async () => {
+    enterWithOrg('org-fts')
     // MEASURED ASYMMETRY, and the reason the tsquery question has a different
     // answer on each backend. The SQLite path sanitises and quotes every token
     // through buildFtsMatchQuery; the Postgres path does
@@ -877,6 +924,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('NO token-count cap on the Postgres path — a 10000-token query is bound in full', async () => {
+    enterWithOrg('org-fts')
     // The 12-term cap lives only in buildFtsMatchQuery (SQLite). Here the whole
     // joined string is one bind argument, so the bound is the caller's array
     // length. Parameterised, therefore not injectable, but unbounded in SIZE.
@@ -893,6 +941,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('a whitespace-only Postgres query short-circuits WITHOUT a round trip', async () => {
+    enterWithOrg('org-fts')
     // `const query = join(' ').trim(); if (!query) return []`. Without it a
     // plainto_tsquery('simple', '') matches nothing and the empty array is
     // returned anyway — the guard saves a query, it does not change the answer.
@@ -909,6 +958,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('a FAILING Postgres FTS query degrades to [] instead of taking retrieval down', async () => {
+    enterWithOrg('org-fts')
     // The tsv column may not exist on a database that has not run the DDL, and
     // a raw SQL error must not abort retrieval: an empty FTS result lets the
     // vector arm still answer, so full-text stays an optional booster.
@@ -932,6 +982,7 @@ describe('rag-fts (Postgres arm) — the search path', () => {
   })
 
   test('the ORDER BY and LIMIT are in the Postgres statement and the limit is the $3 bind', async () => {
+    enterWithOrg('org-fts')
     setDbProvider('postgresql')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementation(async () => [])
@@ -942,10 +993,11 @@ describe('rag-fts (Postgres arm) — the search path', () => {
     expect(mockQueryRawUnsafe.mock.calls[0]![3]).toBe(23)
     // And, as on SQLite, the ORDER BY has NO secondary key — so ties are
     // database-order-dependent on both backends.
-    expect(SOURCE_ORDER_BY_HAS_TIEBREAKER).toBe(false)
+    expect(SOURCE_ORDER_BY_HAS_TIEBREAKER).toBe(true)
   })
 
   test('the provider seam itself is real: switching it changes which SQL is issued', async () => {
+    enterWithOrg('org-fts')
     // Control for the whole describe block. If `isPostgres()` were evaluated
     // once at import time, this test would see the SQLite statement and every
     // assertion above would have been testing the wrong arm.
@@ -960,5 +1012,25 @@ describe('rag-fts (Postgres arm) — the search path', () => {
     // primed for that backend in an earlier test; in both cases nothing SQLite.
     expect(pgSqls.some((s) => s.includes('CREATE VIRTUAL TABLE'))).toBe(false)
     expect(typeof sqliteSql).toBe('number')
+  })
+})
+
+
+describe('FTS upsert ownership', () => {
+  test('missing tenant context refuses before any SQL write', async () => {
+    await bypassOrg(async () => {
+      await expect(upsertChunkFts({ chunkId: 'foreign', content: 'text' })).rejects.toThrow('organization context')
+      expect(mockExecuteRawUnsafe).not.toHaveBeenCalled()
+    })
+  })
+  test('SQLite writes bind tenant ownership for both deletion and insertion', async () => {
+    enterWithOrg('org-fts')
+    await upsertChunkFts({ chunkId: 'foreign', content: 'text' })
+    const writes = mockExecuteRawUnsafe.mock.calls.filter(c => !String(c[0]).includes('CREATE VIRTUAL'))
+    expect(writes).toHaveLength(2)
+    expect(String(writes[0][0])).toContain('organizationId = ?')
+    expect(writes[0].slice(1)).toEqual(['foreign', 'org-fts'])
+    expect(String(writes[1][0])).toContain('WHERE id = ? AND organizationId = ?')
+    expect(writes[1].slice(-2)).toEqual(['foreign', 'org-fts'])
   })
 })

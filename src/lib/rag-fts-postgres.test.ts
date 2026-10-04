@@ -26,17 +26,18 @@ beforeEach(() => {
 })
 
 describe('ensureRagFtsTable (Postgres)', () => {
-  test('adds tsvector column + GIN index (not FTS5)', async () => {
+  test('leaves the migration-owned Postgres schema untouched at runtime', async () => {
+    // Runtime ALTER was redundant with the schema and acquired an exclusive lock.
+    enterWithOrg('org-fts')
     await ensureRagFtsTable()
-    const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
-    expect(sqls.some((s) => s.includes('ADD COLUMN IF NOT EXISTS tsv tsvector'))).toBe(true)
-    expect(sqls.some((s) => s.includes('USING GIN(tsv)'))).toBe(true)
-    expect(sqls.some((s) => s.includes('CREATE VIRTUAL TABLE'))).toBe(false)
+    expect(mockExecuteRawUnsafe).not.toHaveBeenCalled()
+    expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
   })
 })
 
 describe('upsertChunkFts (Postgres)', () => {
   test('updates tsv via to_tsvector (no FTS insert)', async () => {
+    enterWithOrg('org-fts')
     await upsertChunkFts({ chunkId: 'c1', content: 'text', keywords: 'kw' })
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
     expect(sqls.some((s) => s.includes('to_tsvector') && s.includes('UPDATE "DocumentChunk"'))).toBe(true)
@@ -46,6 +47,7 @@ describe('upsertChunkFts (Postgres)', () => {
 
 describe('rebuildFts (Postgres)', () => {
   test('bulk UPDATE tsv with JOIN (no per-row insert)', async () => {
+    enterWithOrg('org-fts')
     const result = await rebuildFts()
     const sqls = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string)
     expect(sqls.some((s) => s.includes('UPDATE "DocumentChunk"') && s.includes('to_tsvector'))).toBe(true)
@@ -56,11 +58,13 @@ describe('rebuildFts (Postgres)', () => {
 
 describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
   test('ts_stat SUCCESS populates CORPUS_DF and CORPUS_N', async () => {
+    enterWithOrg('org-fts')
     // The happy path of the corpus-level document-frequency refresh. `ts_stat` reads from
     // the tsv column, one grouped query per rebuild instead of one per search, and the
     // parsed rows become the BM25 IDF table. Without this, corpus-wide ranking silently
     // degrades to pool-local IDF, which is a different (worse) relevance model.
-    const { CORPUS_DF, CORPUS_N } = await import('@/lib/rag-ranking')
+    const { getCorpusStats } = await import('@/lib/rag-ranking')
+    const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
     CORPUS_DF.clear()
     CORPUS_N.total = 0
     // A STALE entry from a previous corpus. The refresh must REPLACE the table, not merge
@@ -89,6 +93,7 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
   })
 
   test('the ts_stat query is CAPPED and reads the tsv column, not the raw content', async () => {
+    enterWithOrg('org-fts')
     // Two properties of the query itself, invisible from the returned rows:
     //   * `LIMIT 50000` guards a pathological corpus from building an unbounded map. The
     //     comment calls it out, and ranking falls back when the table is stale -- so an
@@ -98,7 +103,7 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
     //     be pointless.
     mockQueryRawUnsafe.mockImplementationOnce(async () => [{ word: 'w', ndoc: '1' }])
     await rebuildFts()
-    const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
+    const sql = mockQueryRawUnsafe.mock.calls[0].map(String).join(' ')
     expect(sql).toContain('ts_stat')
     expect(sql).toContain('SELECT tsv FROM "DocumentChunk"')
     expect(sql).toContain('LIMIT 50000')
@@ -108,6 +113,7 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
   })
 
   test('DECLARED EQUIVALENT: the !query guard in the Postgres path', async () => {
+    enterWithOrg('org-fts')
     // `if (!query) return []` short-circuits an all-whitespace token list. WITHOUT it the
     // query still runs and PostgreSQL's `plainto_tsquery('simple', '')` matches NOTHING,
     // so the empty array is returned either way -- the guard avoids a round trip, not a
@@ -121,15 +127,18 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
   })
 
   test('ts_stat FAILURE degrades to pool-local IDF and still reports indexed', async () => {
+    enterWithOrg('org-fts')
     // The catch is what keeps a rebuild from failing because the STATISTICS query could
     // not run -- an older Postgres without ts_stat, a permission problem, a timeout. The
     // chunks were already written by the bulk UPDATE, so the rebuild must still report
     // success and let ranking fall back rather than throwing and losing the whole index.
-    const { CORPUS_DF } = await import('@/lib/rag-ranking')
+    const { getCorpusStats } = await import('@/lib/rag-ranking')
+    const { df: CORPUS_DF } = getCorpusStats()
     CORPUS_DF.clear()
     CORPUS_DF.set('stale-word', 999)
 
     mockQueryRawUnsafe.mockImplementationOnce(async () => {
+    enterWithOrg('org-fts')
       throw new Error('ts_stat: permission denied')
     })
     const result = await rebuildFts()
@@ -143,6 +152,7 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
 
 describe('searchFtsChunkIds (Postgres)', () => {
   test('no org context → empty result (no cross-org query)', async () => {
+    enterWithOrg('org-fts')
     const ids = await bypassOrg(() =>
       searchFtsChunkIds({ queryTokens: ['search'], limit: 10 }),
     )
@@ -151,19 +161,21 @@ describe('searchFtsChunkIds (Postgres)', () => {
   })
 
   test('uses ts_rank + plainto_tsquery scoped to org', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementationOnce(
       async () => [{ chunkId: 'pg-1', rank: -0.5 }],
     )
     const ids = await searchFtsChunkIds({ queryTokens: ['search', 'term'], limit: 10 })
     expect(ids).toEqual(['pg-1'])
-    const sql = String(mockQueryRawUnsafe.mock.calls[0][0])
+    const sql = mockQueryRawUnsafe.mock.calls[0].map(String).join(' ')
     expect(sql).toContain('ts_rank')
     expect(sql).toContain('plainto_tsquery')
     expect(sql).toContain('organizationId')
   })
 
   test('empty query → empty result', async () => {
+    enterWithOrg('org-fts')
     enterWithOrg('org-pg')
     const ids = await searchFtsChunkIds({ queryTokens: [], limit: 10 })
     expect(ids).toEqual([])
@@ -172,12 +184,14 @@ describe('searchFtsChunkIds (Postgres)', () => {
 
 describe('searchFtsChunkIds (Postgres) — the degradation path', () => {
   test('a FAILING FTS query degrades to [] instead of throwing', async () => {
+    enterWithOrg('org-fts')
     // Lines 144-146. The tsvector column may not exist yet on a database that has
     // not run the migration, and a raw SQL error must not take the whole retrieval
     // down: falling back to an empty FTS result lets the VECTOR arm still answer.
     // Returning [] (not rethrowing) is what makes full-text an optional booster
     // rather than a hard dependency.
     mockQueryRawUnsafe.mockImplementationOnce(async () => {
+    enterWithOrg('org-fts')
       throw new Error('column "tsv" does not exist')
     })
     const ids = await searchFtsChunkIds({ queryTokens: ['search'], limit: 10 })
@@ -185,6 +199,7 @@ describe('searchFtsChunkIds (Postgres) — the degradation path', () => {
   })
 
   test('the warning is emitted on a fresh stdout, proving it is not the if() being skipped', async () => {
+    enterWithOrg('org-fts')
     // Bun SUPPRESSES console.warn inside tests: replacing console.warn records
     // nothing, and replacing process.stdout.write ALSO records nothing, because the
     // suppression happens before either. No test in this repo captures console.warn
@@ -196,6 +211,7 @@ describe('searchFtsChunkIds (Postgres) — the degradation path', () => {
     // out of reach rather than faked.
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementation(async () => {
+    enterWithOrg('org-fts')
       throw new Error('column "tsv" does not exist')
     })
     // Not rejects: the whole point of the branch is that retrieval DEGRADES.
@@ -205,6 +221,7 @@ describe('searchFtsChunkIds (Postgres) — the degradation path', () => {
   })
 
   test('a SUCCESSFUL query returns rows, so the degradation is not the only outcome', async () => {
+    enterWithOrg('org-fts')
     // The inverse, so the test above cannot pass by always returning [].
     // mockImplementation (not Once) with an explicit reset, because a leftover
     // `mockImplementationOnce` from an earlier test is consumed FIRST and made my

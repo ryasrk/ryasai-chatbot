@@ -18,6 +18,7 @@ import { enterWithOrg, requireOrgContext } from '@/lib/prisma-tenant'
 import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
 import { getKnowledgeStorageChoice } from '@/lib/vector-stores'
 import { AppError } from '@/lib/errors'
+import { RAG_MAX_CHUNKS_PER_UPLOAD } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -259,6 +260,32 @@ export async function POST(req: NextRequest) {
         ? extracted
         : emptyDocumentContent(file.name)
 
+    // Semantic-ish chunking: split on double-newlines, filter empties.
+    // Parent-doc chunking: small child chunks + parent window context (opt-in).
+    // Cap chunks per upload to avoid pathological files filling the DB.
+    const useParentDoc = !!process.env.PARENT_DOC_CHILD_SIZE
+    const chunkResult = useParentDoc
+      ? (await import('@/lib/rag-chunking')).chunkTextParentDoc(contentText, { maxChunks: RAG_MAX_CHUNKS_PER_UPLOAD + 1 })
+      : null
+    let chunks: string[]
+    let chunkContextPrefixes: (string | null)[]
+    if (chunkResult) {
+      chunks = chunkResult.map((c) => c.content)
+      chunkContextPrefixes = chunkResult.map((c) => c.contextPrefix)
+    } else {
+      chunks = chunkText(contentText, { maxChunks: RAG_MAX_CHUNKS_PER_UPLOAD + 1 })
+      chunkContextPrefixes = chunks.map(() => null)
+    }
+    // If chunking yielded nothing (e.g., a one-paragraph doc), use the whole text.
+    if (chunks.length === 0) { chunks = [contentText]; chunkContextPrefixes = [null] }
+
+    // Probe one extra chunk so the bound cannot silently discard a document's tail.
+    if (chunks.length > RAG_MAX_CHUNKS_PER_UPLOAD) {
+      return NextResponse.json({
+        error: `Document exceeds ${RAG_MAX_CHUNKS_PER_UPLOAD.toLocaleString()} chunks. Split it into smaller documents and upload each part.`,
+      }, { status: 413 })
+    }
+
     // Create the document with status='ready'.
     const doc = await db.document.create({
       data: {
@@ -274,26 +301,6 @@ export async function POST(req: NextRequest) {
         uploadPath: null,
       },
     })
-
-    // Semantic-ish chunking: split on double-newlines, filter empties.
-    // Parent-doc chunking: small child chunks + parent window context (opt-in).
-    // Cap chunks per upload to avoid pathological files filling the DB.
-    const MAX_CHUNKS = 500
-    const useParentDoc = !!process.env.PARENT_DOC_CHILD_SIZE
-    const chunkResult = useParentDoc
-      ? (await import('@/lib/rag-chunking')).chunkTextParentDoc(contentText, { maxChunks: MAX_CHUNKS })
-      : null
-    let chunks: string[]
-    let chunkContextPrefixes: (string | null)[]
-    if (chunkResult) {
-      chunks = chunkResult.map((c) => c.content)
-      chunkContextPrefixes = chunkResult.map((c) => c.contextPrefix)
-    } else {
-      chunks = chunkText(contentText, { maxChunks: MAX_CHUNKS })
-      chunkContextPrefixes = chunks.map(() => null)
-    }
-    // If chunking yielded nothing (e.g., a one-paragraph doc), use the whole text.
-    if (chunks.length === 0) { chunks = [contentText]; chunkContextPrefixes = [null] }
 
     // Persist chunks with token estimate + keyword tags.
     const chunkRows = chunks.map((content, idx) => ({

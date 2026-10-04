@@ -12,11 +12,14 @@ const chunks = (...names: string[]) => names.map((documentName) => ({ documentNa
 describe('RAG eval helpers', () => {
   test('computes precision and grounded rate', () => {
     const summary = summarizeRagEval([
-      { ok: true, grounded: true, latencyMs: 10 },
-      { ok: false, grounded: false, latencyMs: 30 },
+      { ok: true, grounded: true, latencyMs: 10, precision: 0.25 },
+      { ok: false, grounded: false, latencyMs: 30, precision: 0 },
     ])
 
-    expect(summary.precisionAtK).toBe(0.5)
+    // One relevant chunk out of four is precision 0.25, even on a successful
+    // question. Counting successful questions mislabeled hit rate as precision.
+    expect(summary.precisionAtK).toBe(0.125)
+    expect(summary.hitRateAtK).toBe(0.5)
     expect(summary.groundedRate).toBe(0.5)
     expect(summary.avgLatencyMs).toBe(20)
   })
@@ -99,6 +102,7 @@ describe('relevantSourcesFor', () => {
 describe('compareRagEval', () => {
   const base = {
     total: 10,
+    hitRateAtK: 0.5,
     precisionAtK: 0.5,
     recallAtK: 0.5,
     mrr: 0.5,

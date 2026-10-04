@@ -2,6 +2,19 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 // Captured Prisma calls — these assertions are about WHAT gets sent to the DB
 // (org id present, all tokens used), so the mock records args rather than data.
+let graphLockdownReason: string | null = null
+let chunkExists = true
+mock.module('@/lib/background-license', () => ({ backgroundLockdownReason: async () => graphLockdownReason }))
+const graphDebugMessages: string[] = []
+const actualLogger = await import('@/lib/logger')
+const createLogger = actualLogger.scopedLogger
+mock.module('@/lib/logger', () => ({ ...actualLogger, scopedLogger: (component: string) => {
+  const logger = createLogger(component)
+  return { ...logger, debug: (message: string, data?: Record<string, unknown>) => {
+    if (component === 'kg') graphDebugMessages.push(message)
+    logger.debug(message, data)
+  } }
+} }))
 let kgCreateManyArgs: any[] = []
 let chunkFindManyArgs: any[] = []
 let queryRawCalls: Array<{ strings: string[]; values: unknown[] }> = []
@@ -29,7 +42,7 @@ mock.module('@/lib/db', () => ({
       // `indexChunkKnowledgeGraph` now uses the FILTER op so the tenant extension appends the org: the
       // read-modify-write could otherwise carry a foreign chunk's keywords into this tenant's row.
       findUnique: async () => null,
-      findFirst: async () => ({ keywords: 'existing' }),
+      findFirst: async () => chunkExists ? ({ keywords: 'existing' }) : null,
       update: async () => {
         if (chunkUpdateThrows) throw chunkUpdateThrows
         return {}
@@ -55,11 +68,13 @@ mock.module('@/lib/db', () => ({
 
 const mockChatOnce = mock(async () => '{"entities":[],"relations":[]}')
 mock.module('@/lib/llm-client', () => ({ chatOnce: mockChatOnce }))
+const actualLlmConfig = await import('@/lib/llm-config')
 mock.module('@/lib/llm-config', () => ({
+  ...actualLlmConfig,
   getRoleLlmConfig: async () => ({ provider: 'OPENAI', baseUrl: 'x', apiKey: 'k', model: 'm' }),
 }))
 
-import { dualLevelRetrieval, ensureKgTrgmIndexes, extractEntitiesRelations, indexChunkKnowledgeGraph, resetKgTrgmGuardForTests } from './knowledge-graph'
+const { dualLevelRetrieval, ensureKgTrgmIndexes, extractEntitiesRelations, indexChunkKnowledgeGraph, resetKgTrgmGuardForTests } = await import('./knowledge-graph')
 import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 
 const TEST_ORG = 'org-kg-test'
@@ -75,6 +90,11 @@ const TEST_ORG = 'org-kg-test'
 // versions), so the org is established by `withOrg` below rather than by a hook. The
 // hook keeps doing what it is reliable for: resetting the mock state.
 beforeEach(() => {
+  graphLockdownReason = null
+  graphDebugMessages.length = 0
+  mockChatOnce.mockReset()
+  mockChatOnce.mockImplementation(async () => '{"entities":[],"relations":[]}')
+  chunkExists = true
   kgCreateManyArgs = []
   chunkFindManyArgs = []
   queryRawCalls = []
@@ -524,3 +544,28 @@ describe('ensureKgTrgmIndexes — the KG scan stays fast as the graph grows', ()
     expect(code).not.toContain('ILIKE ANY')
   })
 })
+
+
+test('locked chunk indexing calls neither the provider nor relation persistence', () => withOrg(async () => {
+  graphLockdownReason = 'expired'
+  mockChatOnce.mockClear()
+  await indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: 'x'.repeat(80) })
+  expect(mockChatOnce).not.toHaveBeenCalled()
+  expect(kgCreateManyArgs).toHaveLength(0)
+}))
+test('a foreign or deleted chunk is refused before extraction and relation persistence', () => withOrg(async () => {
+  chunkExists = false
+  mockChatOnce.mockClear()
+  await indexChunkKnowledgeGraph({ chunkId: 'foreign', content: 'x'.repeat(80) })
+  expect(mockChatOnce).not.toHaveBeenCalled()
+  expect(kgCreateManyArgs).toHaveLength(0)
+}))
+
+
+test('failed relation persistence never logs the chunk as indexed', () => withOrg(async () => {
+  mockChatOnce.mockImplementationOnce(async () => JSON.stringify({ entities: [{ name: 'entity', type: 'concept' }], relations: [{ source: 'entity', target: 'entity' }] }))
+  kgCreateManyThrows = new Error('relation write failed')
+  await indexChunkKnowledgeGraph({ chunkId: 'chunk-1', content: 'x'.repeat(80) })
+  expect(kgCreateManyArgs).toHaveLength(1)
+  expect(graphDebugMessages).not.toContain('Indexed chunk KG')
+}))

@@ -2,6 +2,11 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test'
 import { describeSchema } from './connectors'
 
 // --- Mocks for the init*Context tests (must precede the source-init import) ---
+let sourceLockdownReason: string | null = null
+let sourceLicenseLookupFails = false
+const infoMessages: string[] = []
+mock.module('@/lib/background-license', () => ({ backgroundLockdownReason: async () => { if (sourceLicenseLookupFails) throw new Error('license database unavailable'); return sourceLockdownReason } }))
+beforeEach(() => { sourceLockdownReason = null; sourceLicenseLookupFails = false; infoMessages.length = 0; endpointUpdateThrows = false })
 const docRow: { current: Record<string, unknown> | null } = { current: null }
 const endpointRow: { current: Record<string, unknown> | null } = { current: null }
 const integrationRow: { current: Record<string, unknown> | null } = { current: null }
@@ -21,12 +26,13 @@ mock.module('@/lib/db', () => ({
     restApiEndpoint: {
       findFirst: async () => endpointRow.current,
       update: async ({ data }: { data: Record<string, unknown> }) => {
+        if (endpointUpdateThrows) throw new Error('endpoint write failed')
         updates.push({ model: 'restApiEndpoint', data })
         return data
       },
     },
     integration: {
-      findUnique: async () => integrationRow.current,
+      findFirst: async () => integrationRow.current,
       update: async ({ data }: { data: Record<string, unknown> }) => {
         updates.push({ model: 'integration', data })
         return data
@@ -36,6 +42,7 @@ mock.module('@/lib/db', () => ({
 }))
 
 let docUpdateThrows = false
+let endpointUpdateThrows = false
 let cfgValue: Record<string, unknown> | null = { id: '1' }
 let chatImpl: () => Promise<string> = async () => 'A document about invoices.'
 mock.module('@/lib/llm-config', () => ({
@@ -54,7 +61,7 @@ mock.module('@/lib/llm-client', () => ({
 }))
 mock.module('@/lib/logger', () => ({
   scopedLogger: () => ({
-    info: () => {},
+    info: (message: string) => { infoMessages.push(message) },
     warn: (m: string) => { warnings.push(m) },
     error: () => {},
   }),
@@ -379,7 +386,10 @@ describe('initIntegrationContext', () => {
     enrichThrows = true
     // The two halves are independent: a failed table-description pass should not
     // also cost the integration its business context.
-    await expect(initIntegrationContext('int-1')).rejects.toThrow('enrich failed')
+    // The old rejection assertion pinned the loss of an independent profile pass.
+    await expect(initIntegrationContext('int-1')).resolves.toBeUndefined()
+    expect(profileCalls).toHaveLength(1)
+    expect(updates.find(row => row.model === 'integration')?.data.businessContext).toBe('DOMAIN OVERVIEW')
   })
 
   test('the tables handed to the profile generator are parsed', async () => {
@@ -400,4 +410,42 @@ describe('SOURCE_INIT_LIMITS', () => {
     expect(SOURCE_INIT_LIMITS.MAX_SAMPLE_ROWS).toBe(3)
     expect(SOURCE_INIT_LIMITS.MAX_SAMPLE_CHARS).toBe(1500)
   })
+})
+
+
+test('source initialization rejects locked entitlement before any provider work', async () => {
+  sourceLockdownReason = 'expired'
+  chatPrompts.length = 0
+  enrichCalls.length = 0
+  profileCalls.length = 0
+  await initDocumentContext('doc-1')
+  await initRestEndpointContext('ep-1')
+  await initIntegrationContext('int-1')
+  expect(chatPrompts).toHaveLength(0)
+  expect(enrichCalls).toHaveLength(0)
+  expect(profileCalls).toHaveLength(0)
+})
+test('an unavailable entitlement does not start source initialization', async () => {
+  sourceLicenseLookupFails = true
+  chatPrompts.length = 0
+  await initDocumentContext('doc-1')
+  expect(chatPrompts).toHaveLength(0)
+})
+test('a failed description write never logs successful initialization', async () => {
+  docRow.current = { id: 'doc-1', name: 'File', contentText: 'content' }
+  docUpdateThrows = true
+  cfgValue = { id: '1' }
+  chatImpl = async () => 'Description'
+  await initDocumentContext('doc-1')
+  expect(infoMessages).not.toContain('document context initialized')
+})
+
+
+test('a failed REST description write never logs successful initialization', async () => {
+  endpointRow.current = { id: 'ep-1', method: 'GET', path: '/fixture', connector: { name: 'Fixture', baseUrl: 'https://fixture.invalid' } }
+  endpointUpdateThrows = true
+  cfgValue = { id: '1' }
+  chatImpl = async () => 'Description'
+  await initRestEndpointContext('ep-1')
+  expect(infoMessages).not.toContain('REST endpoint context initialized')
 })

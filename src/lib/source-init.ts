@@ -19,9 +19,23 @@
  *   - input truncated to a few KB (enough for a summary, capped cost)
  */
 import { db } from '@/lib/db'
+import { getOrgContext } from '@/lib/prisma-tenant'
+import { backgroundLockdownReason } from '@/lib/background-license'
 import { scopedLogger, logSwallowed } from '@/lib/logger'
 
 const log = scopedLogger('source-init')
+
+async function canInitializeSource(): Promise<boolean> {
+  try {
+    const reason = await backgroundLockdownReason(getOrgContext() ?? '')
+    if (!reason) return true
+    log.warn('source initialization skipped: organization license is locked')
+  } catch {
+    log.warn('source initialization skipped: organization license could not be verified')
+  }
+  return false
+}
+
 
 const MAX_DOC_CHARS = 6000
 const MAX_SAMPLE_ROWS = 3
@@ -60,9 +74,8 @@ async function llmSummarize(system: string, user: string): Promise<string | null
  * description was provided.
  */
 export async function initDocumentContext(documentId: string): Promise<void> {
-  // findFirst, NOT findUnique. `findUnique` is the one read the tenant extension cannot rewrite, and this helper is
-  // called from `api/documents` with a client-supplied id: an unscoped read here would summarise ANOTHER tenant's
-  // document body into a description the caller can then read back. As a FILTER operation the org is appended.
+  if (!(await canInitializeSource())) return
+  // Filter reads keep client-supplied source IDs within the active organization.
   const doc = await db.document.findFirst({
     where: { id: documentId },
     select: { id: true, name: true, category: true, description: true, contentText: true },
@@ -75,10 +88,12 @@ export async function initDocumentContext(documentId: string): Promise<void> {
   )
   if (!description) return
 
-  await db.document.update({
-    where: { id: documentId },
-    data: { description },
-  }).catch(logSwallowed('source-init: document.update (description)'))
+  try {
+    await db.document.update({ where: { id: documentId }, data: { description } })
+  } catch (error) {
+    logSwallowed('source-init: document.update (description)')(error)
+    return
+  }
   log.info('document context initialized', { documentId, chars: description.length })
 }
 
@@ -93,8 +108,8 @@ export async function initDocumentContext(documentId: string): Promise<void> {
  * endpoint-selection prompt (empty descriptions there degrade routing badly).
  */
 export async function initRestEndpointContext(endpointId: string): Promise<void> {
-  // findFirst for the same reason as initDocumentContext: reached from the connector endpoint routes with a
-  // client-supplied id, and the read pulls `sampleResponse`, which is customer data.
+  if (!(await canInitializeSource())) return
+  // The scoped lookup also protects the endpoint's saved response sample.
   const endpoint = await db.restApiEndpoint.findFirst({
     where: { id: endpointId },
     select: {
@@ -118,10 +133,12 @@ export async function initRestEndpointContext(endpointId: string): Promise<void>
   )
   if (!description) return
 
-  await db.restApiEndpoint.update({
-    where: { id: endpointId },
-    data: { description },
-  }).catch(logSwallowed('source-init: restApiEndpoint.update (description)'))
+  try {
+    await db.restApiEndpoint.update({ where: { id: endpointId }, data: { description } })
+  } catch (error) {
+    logSwallowed('source-init: restApiEndpoint.update (description)')(error)
+    return
+  }
   log.info('REST endpoint context initialized', { endpointId })
 }
 
@@ -135,8 +152,11 @@ export async function initRestEndpointContext(endpointId: string): Promise<void>
  * one "init this source" entry point.
  */
 export async function initIntegrationContext(integrationId: string): Promise<void> {
+  if (!(await canInitializeSource())) return
+  const owned = await db.integration.findFirst({ where: { id: integrationId }, select: { id: true } })
+  if (!owned) return
   const { enrichSchemaDescriptions } = await import('@/lib/schema-enrichment')
-  await enrichSchemaDescriptions(integrationId, '')
+  await enrichSchemaDescriptions(integrationId, '').catch(logSwallowed('source-init: schema descriptions'))
   // Generate the business context profile (domain overview, glossary, query hints)
   await generateIntegrationBusinessContext(integrationId).catch(logSwallowed('source-init: businessContext'))
 }
@@ -150,7 +170,7 @@ async function generateIntegrationBusinessContext(integrationId: string): Promis
   const { db } = await import('@/lib/db')
   const { generateDatabaseProfile } = await import('@/lib/ai')
 
-  const integration = await db.integration.findUnique({
+  const integration = await db.integration.findFirst({
     where: { id: integrationId },
     include: { schemas: { select: { tableName: true, columns: true, rowCount: true, sampleRow: true } } },
   })

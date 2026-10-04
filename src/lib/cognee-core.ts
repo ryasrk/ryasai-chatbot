@@ -412,18 +412,15 @@ async function updateDocumentCognifyStatus(
   status: string | null,
   error: string | undefined,
 ): Promise<void> {
-  try {
-    await db.document.update({
-      where: { id: documentId },
-      data: {
-        cognifyStatus: status,
-        cognifyError: error ?? null,
-        cognifiedAt: status === 'completed' ? new Date() : null,
-      },
-    })
-  } catch {
-    // non-fatal — document may not exist or schema may not have fields
-  }
+  // Completion includes recording the status; a failed write must reach the worker.
+  await db.document.update({
+    where: { id: documentId },
+    data: {
+      cognifyStatus: status,
+      cognifyError: error ?? null,
+      cognifiedAt: status === 'completed' ? new Date() : null,
+    },
+  })
 }
 
 export { updateDocumentCognifyStatus }

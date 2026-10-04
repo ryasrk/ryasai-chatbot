@@ -14,6 +14,7 @@ import { getRoleLlmConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { chatOnce } from '@/lib/llm-client'
 import { scopedLogger } from '@/lib/logger'
 import { getOrgContext } from '@/lib/prisma-tenant'
+import { backgroundLockdownReason } from '@/lib/background-license'
 import { tokenize } from '@/lib/rag'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
@@ -118,6 +119,16 @@ export async function indexChunkKnowledgeGraph(args: {
   content: string
 }): Promise<void> {
   try {
+    const orgId = getOrgContext()
+    if (!orgId || await backgroundLockdownReason(orgId)) {
+      log.warn('chunk graph indexing skipped: organization entitlement unavailable', { chunkId: args.chunkId })
+      return
+    }
+    // Authorize before sending content to a provider or creating chunk relations.
+    const existing = await db.documentChunk.findFirst({
+      where: { id: args.chunkId }, select: { keywords: true },
+    })
+    if (!existing) return
     const cfg = await getRoleLlmConfig('extract')
     if (!cfg) return
 
@@ -132,10 +143,6 @@ export async function indexChunkKnowledgeGraph(args: {
       // string into a row this tenant then reads, and would overwrite that row's keywords with a merged value.
       // As a FILTER op the extension appends the org, so a foreign chunk id resolves to null and the update is a
       // no-op for it.
-      const existing = await db.documentChunk.findFirst({
-        where: { id: args.chunkId },
-        select: { keywords: true },
-      })
       // Guarded: with the read now org-scoped, a null result means the chunk is not this tenant's (or is gone), and
       // updating it anyway would be the same unscoped write in a new costume.
       if (existing) {
@@ -175,6 +182,7 @@ export async function indexChunkKnowledgeGraph(args: {
             chunkId: args.chunkId,
             error: e instanceof Error ? e.message : String(e),
           })
+          return
         }
       }
     }

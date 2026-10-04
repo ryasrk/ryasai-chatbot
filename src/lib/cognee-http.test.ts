@@ -103,6 +103,19 @@ describe('cognee-http — health', () => {
 })
 
 describe('cognee-http — remember (the write path)', () => {
+  test('large UTF-8 texts use lossless file uploads for every entry in original order', async () => {
+    fetchState.response = jsonResponse({ status: 'completed' })
+    const texts = ['first fact', 'é'.repeat(524_289), 'last fact']
+    await cogneeRemember(OPTS, { texts, datasetName: 'org:acme:kb', runInBackground: false })
+    const form = fetchState.calls[0].init.body as FormData
+    expect(form.getAll('raw_data')).toEqual([])
+    const files = form.getAll('data') as File[]
+    expect(files.map(file => file.name)).toEqual(['document-0.txt', 'document-1.txt', 'document-2.txt'])
+    expect(await Promise.all(files.map(file => file.text()))).toEqual(texts)
+    expect(form.get('datasetName')).toBe('org:acme:kb')
+    expect(form.get('run_in_background')).toBe('false')
+  })
+
   test('sends multipart with one raw_data field per text', async () => {
     fetchState.response = jsonResponse({ status: 'completed', items_processed: 2 })
     const res = await cogneeRemember(OPTS, {

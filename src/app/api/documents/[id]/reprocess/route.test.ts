@@ -9,11 +9,20 @@ const enqueueCalls: Array<{ type: string; data: Record<string, unknown> }> = []
 let enqueueResult: 'queued' | 'sync' = 'queued'
 
 let docResult: Record<string, unknown> | null = null
+const stateWrites: Array<any> = []
+let claimCount = 1
+let enqueueThrows = false
 
 mock.module('@/lib/db', () => ({
   db: {
     document: {
       findFirst: async () => docResult,
+      updateMany: async (args: any) => {
+        stateWrites.push(args)
+        const matches = !!docResult && Object.entries(args.where).every(([key, value]) => docResult![key] === value)
+        if (claimCount && matches) docResult = { ...docResult, ...args.data }
+        return { count: claimCount && matches ? 1 : 0 }
+      },
     },
   },
 }))
@@ -34,6 +43,7 @@ mock.module('@/lib/session', () => ({
 mock.module('@/lib/job-processor', () => ({
   enqueueOrSync: async (type: string, data: Record<string, unknown>) => {
     enqueueCalls.push({ type, data })
+    if (enqueueThrows) throw new Error('queue unavailable')
     return enqueueResult
   },
 }))
@@ -55,6 +65,9 @@ function post(id = 'doc-1'): Promise<Response> {
 
 beforeEach(() => {
   getActiveUserImpl = async () => user
+  stateWrites.length = 0
+  claimCount = 1
+  enqueueThrows = false
   auditCalls.length = 0
   enqueueCalls.length = 0
   enterCalls.length = 0
@@ -110,4 +123,39 @@ describe('POST /api/documents/[id]/reprocess', () => {
     expect(res.status).toBe(200)
     expect(enqueueCalls).toHaveLength(2)
   })
+})
+
+
+const savedPipeline = {
+  datasetId: '11111111-1111-4111-8111-111111111111',
+  runId: '22222222-2222-4222-8222-222222222222',
+  dataIds: ['33333333-3333-4333-8333-333333333333'],
+}
+function failedDocument(pipeline = savedPipeline) {
+  return { id: 'doc-1', name: 'book.pdf', status: 'ready', cognifyStatus: 'failed', cognifyPipelineJson: JSON.stringify(pipeline) }
+}
+test('a timeout preserves the existing upstream run for retry', async () => {
+  docResult = failedDocument()
+  expect((await post()).status).toBe(200)
+  expect(stateWrites[0].data).not.toHaveProperty('cognifyPipelineJson')
+  expect(docResult!.cognifyPipelineJson).toBe(JSON.stringify(savedPipeline))
+})
+test('a confirmed terminal failure permits a new graph attempt', async () => {
+  docResult = failedDocument({ ...savedPipeline, terminal: 'failed' } as typeof savedPipeline)
+  expect((await post()).status).toBe(200)
+  expect(stateWrites[0].data.cognifyPipelineJson).toBeNull()
+})
+test('concurrent reprocess requests claim the document only once', async () => {
+  docResult = failedDocument()
+  const results = await Promise.all([post(), post()])
+  expect(results.map(result => result.status).sort()).toEqual([200, 409])
+  expect(enqueueCalls.filter(call => call.type === 'document-cognify')).toHaveLength(1)
+})
+test('a queue failure is not reported as accepted and releases the processing claim', async () => {
+  docResult = failedDocument()
+  enqueueThrows = true
+  expect((await post()).ok).toBe(false)
+  expect(docResult!.cognifyStatus).toBe('failed')
+  expect(docResult!.cognifyError).toContain('Could not start document reprocessing')
+  expect(auditCalls).toHaveLength(0)
 })

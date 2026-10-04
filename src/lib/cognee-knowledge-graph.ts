@@ -2,6 +2,7 @@
  * Cognee — knowledge graph: cognify, graph-grounded recall, forget/reset.
  * Depends on: cognee-types, cognee-core, external (db).
  */
+import { parseDocumentPipelineState } from './cognee-document-pipeline'
 import type { GraphSearchResult } from './cognee-types'
 import { kbDatasetFor, writeNotStored } from './cognee-types'
 import {
@@ -52,17 +53,28 @@ export async function cognifyDocument(args: {
     .map((chunk) => chunk.content)
     .join('\n\n')
 
-  // Server backend: `remember` both stores AND cognifies in one call, so there is
-  // no separate add→cognify handshake. This is simpler than the SDK path below,
-  // where the two steps can fail independently and leave data added-but-not-graphed.
+  // Document mode persists storage and graph identities between short requests.
+  // Retries observe the accepted run rather than uploading and launching it again.
   const serverOpts = await getCogneeServerOptions()
   if (serverOpts) {
     try {
+      const stored = await db.document.findFirst({
+        where: { id: args.documentId },
+        select: { cognifyPipelineJson: true },
+      })
+      if (!stored) return false
+      const pipelineState = parseDocumentPipelineState(stored.cognifyPipelineJson)
       await updateDocumentCognifyStatus(args.documentId, 'processing', undefined)
       const res = await cogneeRemember(serverOpts, {
         texts: [text],
         datasetName: dataset,
         runInBackground: false,
+        waitForPipeline: {
+          state: pipelineState,
+          onState: async state => {
+            await db.document.update({ where: { id: args.documentId }, data: { cognifyPipelineJson: JSON.stringify(state) } })
+          },
+        },
         /*
          * TAG THE DOCUMENT, or the scope filter has nothing to match.
          *

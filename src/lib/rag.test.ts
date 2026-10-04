@@ -615,3 +615,18 @@ describe('tokenizeForScoring — BM25 needs term frequency and whole identifiers
     expect(tokenizeForScoring('')).toEqual([])
   })
 })
+
+
+describe('retrieval diversity backfill', () => {
+  const rows = Array.from({length: 6}, (_, chunkIndex) => ({documentId:'one',chunkIndex,score:10-chunkIndex}))
+  test('a single document fills the requested evidence slots beyond its diversity cap', () => {
+    expect(selectTopRetrievedChunks(rows,5,2).map(r=>r.chunkIndex)).toEqual([0,1,2,3,4])
+  })
+  test('other documents receive slots before capped evidence is backfilled', () => {
+    expect(selectTopRetrievedChunks([...rows,{documentId:'two',chunkIndex:0,score:1}],5,2).map(r=>r.documentId)).toEqual(['one','one','two','one','one'])
+  })
+  test('zero and invalid limits return no evidence; fractional limits are bounded', () => {
+    for(const limit of [0,-1,NaN,Infinity]) expect(selectTopRetrievedChunks(rows,limit)).toEqual([])
+    expect(selectTopRetrievedChunks(rows,2.9)).toHaveLength(2)
+  })
+})

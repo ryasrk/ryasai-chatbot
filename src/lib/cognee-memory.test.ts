@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MEMORY_WRITE_MAX_CHARS } from '@/lib/constants'
 
+const actualTenant = await import('@/lib/prisma-tenant')
+mock.module('@/lib/prisma-tenant', () => ({ ...actualTenant, getOrgContext: () => 'memory-fixture-org', bypassOrg: async (fn: () => Promise<unknown>) => fn() }))
+
+let fixtureLicenseStatus = 'valid'
+mock.module('@/lib/db', () => ({ db: { organization: { findUnique: async () => ({ licenseStatus: fixtureLicenseStatus, licenseValidatedAt: null }) } } }))
+
 // ---------------------------------------------------------------------------
 // Chat memory: remember/recall + the session-level semantic cache.
 //
@@ -113,6 +119,7 @@ function fakeClient(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  fixtureLicenseStatus = 'valid'
   clearSessionCache()
   state.enabled = true
   state.client = null
@@ -1242,4 +1249,12 @@ describe('rememberChatTurn — a server-supplied error reason is logged verbatim
     const logged = warnSpy.mock.calls.map((c) => c.map(String).join(' ')).join(' ')
     expect(logged).toContain('already running')
   })
+})
+
+
+test('rememberChatTurn honors entitlement through the real inline admission path', async () => {
+  fixtureLicenseStatus = 'expired'
+  state.serverOptions = { baseUrl: 'http://cognee:8000' }
+  await rememberChatTurn({ sessionId: 's-license', userMessage: 'secret', aiMessage: 'answer', toolRuns: [] })
+  expect(state.httpRememberCalls).toHaveLength(0)
 })

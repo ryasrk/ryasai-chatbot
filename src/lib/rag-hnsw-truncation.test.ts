@@ -67,13 +67,12 @@ mock.module('@/lib/db', () => ({
     llmConfig: { findFirst: async () => null },
     $queryRaw: async () => [],
     $executeRaw: async () => 1,
-    // The probe issues SHOW hnsw.iterative_scan; the search runs inside a
+    // The probe issues current_setting('hnsw.iterative_scan', true); the search runs inside a
     // transaction whose tx must expose the same raw API.
     $queryRawUnsafe: async (sql: string) => {
       rawCalls.push(sql)
-      if (sql.includes('SHOW hnsw.iterative_scan')) {
-        if (!hasIterativeScan) throw new Error('unrecognized configuration parameter')
-        return [{ iterative_scan: 'off' }]
+      if (sql.includes("current_setting('hnsw.iterative_scan', true)")) {
+        return [{ v: hasIterativeScan ? 'off' : null }]
       }
       return pgvectorRows
     },
@@ -190,11 +189,11 @@ describe('HNSW filter truncation', () => {
     await retrieveRelevantChunks({ query: 'refund policy overtime', topK: 3 })
 
     // 0.6.x raises 42704 on an unknown GUC; issuing it would break every query.
-    // Note: the capability PROBE legitimately issues `SHOW hnsw.iterative_scan`
+    // Note: the capability PROBE legitimately issues `current_setting('hnsw.iterative_scan', true)`
     // (and matches on the parameter name), so filter to SET statements only —
     // asserting on the bare substring would pass/fail for the wrong reason.
     const setIterative = rawCalls.filter(
-      (s) => s.includes('iterative_scan') && !s.trim().toUpperCase().startsWith('SHOW'),
+      (s) => s.includes('iterative_scan') && s.trim().toUpperCase().startsWith('SET'),
     )
     expect(setIterative).toEqual([])
   })

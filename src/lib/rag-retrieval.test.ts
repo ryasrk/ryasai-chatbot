@@ -1,4 +1,3 @@
-import { RAG_MAX_PER_DOCUMENT } from '@/lib/constants'
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { prometheusText, resetMetrics } from './metrics'
@@ -79,7 +78,7 @@ mock.module('@/lib/citation-trail', () => ({
 }))
 
 mock.module('@/lib/rag-ranking', () => ({
-  RANKING_VERSION: 'lex1',
+  RANKING_VERSION: 'lex2',
   bm25Rank: (tokens: unknown, docs: unknown) => bm25RankImpl(tokens, docs),
   lexicalFirst: (lexical: unknown, vector: unknown) => lexicalFirstImpl(lexical, vector),
   toRanking: (entries: unknown) => toRankingImpl(entries),
@@ -242,9 +241,7 @@ mock.module('@/lib/db', () => ({
     documentChunk: { findMany: async () => dbChunkRows },
     $queryRawUnsafe: async (sql: string) => {
       rawUnsafeCalls.push(sql)
-      if (sql.includes('hnsw.iterative_scan') && !showIterativeOk) {
-        throw new Error('42704 unrecognized configuration parameter')
-      }
+      if (sql.includes('current_setting')) return [{ v: showIterativeOk ? 'off' : null }]
       return []
     },
     $executeRawUnsafe: async (sql: string) => {
@@ -615,7 +612,8 @@ describe('retrieveRelevantChunks — HyDE and rerank switches', () => {
     // satisfies `chunks.length <= topK` and the reranker is skipped — the
     // short-circuit is about the widened pool, which is the point: the widening
     // is what gives the reranker candidates to choose from.
-    expect(selectCalls).toEqual([{ count: 3, k: 3 }])
+    // The wider pool preserves candidates for the single rerank.
+    expect(selectCalls).toEqual([{ count: 3, k: 8 }])
   })
 
   test('a pool smaller than topK reaches NEITHER selection path', async () => {
@@ -632,7 +630,7 @@ describe('retrieveRelevantChunks — HyDE and rerank switches', () => {
     // one inside retrieveAndFuse and the one in the caller.
     // MEASURED: default rerank widens topK to 15, so the single call carries
     // k=15 rather than k=5.
-    expect(selectCalls).toEqual([{ count: 1, k: 15 }])
+    expect(selectCalls).toEqual([{ count: 1, k: 40 }])
   })
 })
 
@@ -817,13 +815,10 @@ describe('rerankWithLlm', () => {
     expect((chunks[0] as { content: string }).content).toContain('content 0')
   })
 
-  test('the per-document cap applies on the reranked path too', async () => {
-    // `selectTopRetrievedChunks` capped one document's share on the non-reranked path, but the reranked path
-    // bypassed it — so a single document could fill every citation slot. The fixture puts every chunk in `doc-1`,
-    // so with a cap of 3 the fourth endorsed chunk must NOT appear however well it scored.
-    // SIX candidates for a topK of 4, and that is deliberate: `rerankWithLlm` returns early when
-    // `chunks.length <= topK`, so an equal-sized pool never reaches the reranker at all — the first version of this
-    // test used four and passed for the wrong reason (it measured the early return, not the cap).
+  test('endorsed evidence from one document fills available rerank slots', async () => {
+    // The old cap pinned evidence loss for single-document corpora. Rejected
+    // chunks remain excluded, while all endorsed chunks can fill unused slots.
+    // Six candidates exceed topK so this test exercises the reranker.
     rerankValue = null
     llmCfgValue = { id: 'r1' }
     const ids = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5']
@@ -832,8 +827,8 @@ describe('rerankWithLlm', () => {
     toRankingImpl = (entries: unknown) => (entries as Array<{ id: string }>).map((e) => e.id)
     llmAnswer = '[{"index":0,"score":10},{"index":1,"score":9},{"index":2,"score":8},{"index":3,"score":7}]'
     const r = await retrieveRelevantChunks({ query: 'invoices', topK: 4 })
-    // Four endorsed, all in one document: the cap of RAG_MAX_PER_DOCUMENT (3) must hold.
-    expect(r.chunks.length).toBe(RAG_MAX_PER_DOCUMENT)
+    // Four endorsed, all in one document: no competing document needs a slot.
+    expect(r.chunks.length).toBe(4)
   })
 
   test('an UNPARSEABLE answer falls back to the original order', async () => {
@@ -932,9 +927,9 @@ describe('pgvector capability probe', () => {
     embedResult = [[0.1, 0.2]]
     embedConfigValue = { id: 'e1' }
     await retrieveRelevantChunks({ query: 'one', topK: 2 })
-    const afterFirst = rawUnsafeCalls.filter((q) => q.includes('SHOW')).length
+    const afterFirst = rawUnsafeCalls.filter((q) => q.includes('current_setting')).length
     await retrieveRelevantChunks({ query: 'two', topK: 2 })
-    const afterSecond = rawUnsafeCalls.filter((q) => q.includes('SHOW')).length
+    const afterSecond = rawUnsafeCalls.filter((q) => q.includes('current_setting')).length
     // A repeated probe would cost a round trip on EVERY user query.
     expect(afterFirst).toBe(1)
     expect(afterSecond).toBe(1)
@@ -1599,7 +1594,7 @@ function toIds(ranking: unknown): string[] {
 }
 
 mock.module('@/lib/rag-ranking', () => ({
-  RANKING_VERSION: 'lex1',
+  RANKING_VERSION: 'lex2',
   bm25Rank: (tokens: unknown, docs: unknown) => bm25RankImpl(tokens, docs),
   lexicalFirst: (lexical: unknown, vector: unknown) => {
     if (!useRealFusion) return lexicalFirstImpl(lexical, vector)
@@ -1974,7 +1969,7 @@ describe('the ranking version is part of the cache key', async () => {
   })
 
   test('the key carries RANKING_VERSION and the org segment', async () => {
-    expect(RANKING_VERSION).toBe('lex1')
+    expect(RANKING_VERSION).toBe('lex2')
     await retrieveReal({ query: 'invoices', topK: 5 })
     const key = cacheSets.at(-1)!.key
     expect(key).toBe(`rag:org-test:${RANKING_VERSION}:5:*:invoices`)
@@ -2027,25 +2022,25 @@ describe('retrieval records a baseline instead of only a log line', () => {
     expect(text).toContain('rag_retrieval_latency_ms_count')
     expect(text).toMatch(/rag_cache_miss_total 1/)
     // Labelled with the value that ordered the result, so an A/B run is readable.
-    expect(text).toMatch(/rag_retrieval_latency_ms_count\{ranking="lex1"\}/)
+    expect(text).toMatch(/rag_retrieval_latency_ms_count\{ranking="lex2"\}/)
   })
 
   test('a cache HIT does not add a latency sample — the p50 must not improve with hit rate', async () => {
     orgContextHolder.value = 'org-metrics'
     await retrieveReal({ query: 'invoices', topK: 5 })
     const afterMiss = prometheusText()
-    const missCount = Number(/rag_retrieval_latency_ms_count\{ranking="lex1"\} (\d+)/.exec(afterMiss)?.[1])
+    const missCount = Number(/rag_retrieval_latency_ms_count\{ranking="lex2"\} (\d+)/.exec(afterMiss)?.[1])
     expect(missCount).toBe(1)
 
     // Same query, so the second call is served from cache.
-    cacheStore.set(`rag:org-metrics:lex1:5:*:invoices`, {
+    cacheStore.set(`rag:org-metrics:lex2:5:*:invoices`, {
       chunks: [chunk('cached')], queryTokens: ['x'], candidatesScanned: 99, graphContext: '',
     })
     const second = await retrieveReal({ query: 'invoices', topK: 5 })
     expect(second.candidatesScanned).toBe(99) // proves it really was the cache path
 
     const afterHit = prometheusText()
-    const countAfter = Number(/rag_retrieval_latency_ms_count\{ranking="lex1"\} (\d+)/.exec(afterHit)?.[1])
+    const countAfter = Number(/rag_retrieval_latency_ms_count\{ranking="lex2"\} (\d+)/.exec(afterHit)?.[1])
     // Still 1: the hit was counted as a hit and contributed no timing observation.
     expect(countAfter).toBe(1)
     expect(afterHit).toMatch(/rag_cache_hit_total 1/)

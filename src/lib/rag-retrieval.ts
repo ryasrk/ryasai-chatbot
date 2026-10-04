@@ -15,9 +15,6 @@ import { cacheGet, cacheSet, cacheDel } from '@/lib/redis'
 import {
   RAG_CACHE_TTL_MS,
   RAG_MAX_CHUNKS_PER_UPLOAD,
-  // The per-document cap the non-reranked path already applied through `selectTopRetrievedChunks`. The reranked
-  // path bypassed it entirely until the padding loop was removed, so one document could fill every citation slot.
-  RAG_MAX_PER_DOCUMENT,
 } from '@/lib/constants'
 import {
   tokenize, scoreChunk,
@@ -143,10 +140,20 @@ export async function retrieveRelevantChunks(args: {
     const { decomposeQuery, mergeRetrievedResults } = await import('@/lib/hyde')
     const subQueries = decomposeQuery(args.query)
     if (subQueries.length > 1) {
+      // Gather pools, then judge their union once. Truncating each sub-query
+      // before merging can discard evidence needed by a compound question.
       const subResults = await Promise.all(
-        subQueries.map((q) => retrieveRelevantChunks({ query: q, topK: args.topK, _skipDecompose: true, _skipRerank: args._skipRerank, documentIds: args.documentIds })),
+        subQueries.map((query) => retrieveRelevantChunks({
+          ...args, query, _skipDecompose: true, _skipRerank: true,
+        })),
       )
       const merged = mergeRetrievedResults(subResults)
+      args.signal?.throwIfAborted()
+      merged.chunks = skipRerank
+        ? merged.chunks
+        : ragRerankEnabled()
+          ? await dispatchRerank(args.query, merged.chunks, args.topK)
+          : selectTopRetrievedChunks(merged.chunks, args.topK)
       _cacheMisses += 1
       /*
        * This branch RETURNS EARLY, so it never reached the stamp at the end of this function — a decomposed
@@ -180,7 +187,13 @@ export async function retrieveRelevantChunks(args: {
   // (Was opt-in for years while CLAUDE.md claimed the opposite — the drift
   // meant the flagship precision feature never ran anywhere.)
   const rerankEnabled = ragRerankEnabled()
-  const retrievalTopK = rerankEnabled ? args.topK * 3 : args.topK
+  // A wider pool gives the reranker access to evidence beyond the lexical head.
+  // Bound operator overrides so malformed values cannot create an unbounded query.
+  const configuredMultiplier = Number(process.env.RAG_POOL_MULTIPLIER ?? 8)
+  const poolMultiplier = Number.isFinite(configuredMultiplier)
+    ? Math.min(16, Math.max(1, Math.floor(configuredMultiplier)))
+    : 8
+  const retrievalTopK = rerankEnabled ? args.topK * poolMultiplier : args.topK
 
   const [kgResult, cogneeGraphContext] = await Promise.all([
     dualLevelRetrieval({ query: args.query, topK: args.topK }),
@@ -193,6 +206,7 @@ export async function retrieveRelevantChunks(args: {
     vectorQuery,
     queryTokens,
     topK: retrievalTopK,
+    balancePool: rerankEnabled,
     kgRanking: kgResult.allChunkIds,
     documentIds: args.documentIds,
   })
@@ -323,30 +337,12 @@ async function rerankWithLlm(
 
     const reranked: RetrievedChunk[] = []
     const used = new Set<number>()
-    /*
-     * ONLY WHAT THE RERANKER ACTUALLY SCORED, capped per document.
-     *
-     * The loop below used to PART-FILL the result to `topK` with whatever the reranker had rejected, so a result
-     * always carried `topK` chunks — MEASURED across 17 retrievals: 2.24 chunks endorsed on average, 4.65 returned.
-     * More than half of every answer's "sources" were passages the reranker had refused, which is exactly what the
-     * user saw: citations #2 and #3 about annual leave on a question about overtime pay.
-     *
-     * The padding looked harmless — more context is not obviously worse — but it is not free: every padded chunk is
-     * a citation the UI shows (so it advertises a match that does not exist), a passage competing for the answer
-     * prompt's attention, and a diversity slot taken from a document that might have answered better. `selectTop`'s
-     * per-document cap never applied on this path either, so one document could occupy the whole result.
-     *
-     * `min(topK, chunks.length)` is the ceiling, not a target: fewer chunks is the correct output when the reranker
-     * endorses fewer, and callers already handle an empty result (`prepareRagStream` falls back to chat).
-     */
-    const perDocument = new Map<string, number>()
+    // Select only endorsed chunks; diversity may relax when no other document
+    // can fill a slot, but rejected evidence never pads a partial endorsement.
     for (const item of scored) {
       if (used.has(item.index)) continue
       used.add(item.index)
       const chunk = chunks[item.index]
-      const count = perDocument.get(chunk.documentId) ?? 0
-      if (count >= RAG_MAX_PER_DOCUMENT) continue
-      perDocument.set(chunk.documentId, count + 1)
       /*
        * Carry the RERANKER's judgement on the chunk. MEASURED IN UAT: without it this array was ordered by the
        * LLM while every chunk still reported its RETRIEVAL score, so `POST /api/documents/search` returned
@@ -354,7 +350,6 @@ async function rerankWithLlm(
        * The UI then labelled it "Match #1…#4", with the best chunk shown as Match #3.
        */
       reranked.push({ ...chunk, rerankScore: item.score })
-      if (reranked.length >= topK) break
     }
     /*
      * A TOTAL rejection is NOT a ranking, so it does not get to empty the result.
@@ -366,7 +361,9 @@ async function rerankWithLlm(
      * is returned instead, truncated to what the caller asked for.
      */
     if (reranked.length === 0) return chunks.slice(0, topK)
-    return reranked
+    return selectTopRetrievedChunks(reranked.map((chunk, index) => ({
+      chunk, documentId: chunk.documentId, chunkIndex: index, score: chunk.rerankScore!,
+    })), topK).map((row) => row.chunk)
   } catch (e) {
     log.warn('LLM rerank failed, using original order', { error: e instanceof Error ? e.message : String(e) })
     return chunks.slice(0, topK)
@@ -388,6 +385,7 @@ async function retrieveAndFuse(args: {
   vectorQuery: string
   queryTokens: string[]
   topK: number
+  balancePool?: boolean
   /**
    * Restrict both legs (vector and lexical) to these documents. Threaded explicitly rather than
    * read from a module-level value so a caller cannot accidentally run unscoped by forgetting to
@@ -466,9 +464,9 @@ async function retrieveAndFuse(args: {
   )
   const bm25Scores = new Map(bm25.map((entry) => [entry.id, entry.score]))
 
-  // BM25 decides the head; semantic and graph candidates fill in behind it. See
-  // `lexicalFirst` for the measurement that replaced reciprocal-rank fusion.
-  const fused = lexicalFirst(toRanking(bm25), [...vectorRanking, ...(args.kgRanking ?? [])])
+  // Balance membership only in rerank pools. Without a judge, keep the measured
+  // lexical-first order over the full union and let diversity selection truncate.
+  const fused = lexicalFirst(toRanking(bm25), [...vectorRanking, ...(args.kgRanking ?? [])], args.balancePool ? topK : undefined)
 
   const scored: RetrievedChunk[] = []
   /*
@@ -648,10 +646,26 @@ let _iterativeScanSupported: boolean | null = null
 async function hasIterativeScan(): Promise<boolean> {
   if (_iterativeScanSupported !== null) return _iterativeScanSupported
   try {
-    // SHOW on an unknown GUC raises 42704; on a supported build it returns a row.
-    await db.$queryRawUnsafe(`SHOW hnsw.iterative_scan`)
-    _iterativeScanSupported = true
+    /*
+     * `current_setting(name, true)` — the SECOND ARGUMENT is the fix, not a nicety.
+     *
+     * `SHOW hnsw.iterative_scan` on a build without that GUC (pgvector < 0.8.0, which is what this install has)
+     * raises 42704. The catch below handled it, so the FUNCTION was correct — but Postgres still reported the error
+     * to the driver, and Prisma logs every server error it sees at `prisma:error` level. MEASURED effect on this
+     * install: `Raw query failed. Code: 42704. unrecognized configuration parameter "hnsw.iterative_scan"` printed
+     * once per process, and it appeared in the retrieval log path — which cost real time during this investigation,
+     * because it reads as "the vector search just failed" when in fact the vector search returned a FULL result set
+     * (96 of 96) on every query measured. That is the worst kind of noise: a message that describes a failure which
+     * is not happening, on the path where a real failure would matter most.
+     *
+     * `missing_ok = true` returns NULL for an unknown parameter instead of raising, so the probe answers the same
+     * question with no server error and nothing to log.
+     */
+    const rows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(`SELECT current_setting('hnsw.iterative_scan', true) AS v`)
+    const value = rows[0]?.v
+    _iterativeScanSupported = typeof value === 'string' && value.length > 0
   } catch {
+    // A driver/permission failure is a different thing from "unsupported": still answer false (the safe branch).
     _iterativeScanSupported = false
   }
   return _iterativeScanSupported

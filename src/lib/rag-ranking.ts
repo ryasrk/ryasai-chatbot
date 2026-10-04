@@ -1,3 +1,5 @@
+import { getOrgContext } from './prisma-tenant'
+
 /**
  * Lexical ranking (Okapi BM25) + rank fusion (Reciprocal Rank Fusion).
  *
@@ -21,17 +23,27 @@
  * a fourth retriever a one-line change at the call site.
  */
 
-// Corpus-level document frequency, refreshed by the FTS rebuild and read here
-// as an optional override. Pool-local IDF remains the fallback when empty —
-// relative rarity within a pool usually decides ordering anyway, but a term
-// common in the pool yet rare corpus-wide was under-weighted.
-export const CORPUS_DF: Map<string, number> = new Map()
-export const CORPUS_N = { total: 0 }
+interface CorpusStats {
+  df: Map<string, number>
+  n: { total: number }
+}
+// Each org owns its statistics. Limit retained corpora; eviction falls back to
+// pool-local IDF and never changes the ownership of another org's statistics.
+const corpora = new Map<string, CorpusStats>()
+export function getCorpusStats(): CorpusStats {
+  const orgId = getOrgContext()
+  if (!orgId) return { df: new Map(), n: { total: 0 } }
+  let stats = corpora.get(orgId)
+  if (!stats) {
+    if (corpora.size >= 100) corpora.delete(corpora.keys().next().value!)
+    stats = { df: new Map(), n: { total: 0 } }
+    corpora.set(orgId, stats)
+  }
+  return stats
+}
 
-/** Test seam — reset corpus stats. */
 export function resetCorpusStats(): void {
-  CORPUS_DF.clear()
-  CORPUS_N.total = 0
+  corpora.clear()
 }
 
 // Standard Okapi parameters. k1 controls term-frequency saturation, b controls
@@ -79,6 +91,7 @@ export function bm25Rank(queryTokens: string[], docs: Bm25Doc[]): RankedId[] {
   // pool-local otherwise. Corpus stats see the whole org's corpus, so a term
   // that is rare overall but happens to be in every pool document keeps its
   // discriminating weight instead of collapsing toward 0.
+  const { df: CORPUS_DF, n: CORPUS_N } = getCorpusStats()
   const corpusAvailable = CORPUS_DF.size > 0 && CORPUS_N.total > n
   const resolveCorpusDf = (token: string, poolDf: number): { df: number; n: number } =>
     corpusAvailable && CORPUS_DF.has(token)
@@ -147,7 +160,7 @@ export function fuseRankings(rankings: string[][], k: number = RRF_K): RankedId[
  * the cached value is that order, and a TTL-long mix of old and new orders would
  * make a ranking change unmeasurable.
  */
-export const RANKING_VERSION = 'lex1' // bump when `lexicalFirst` or its tokens change
+export const RANKING_VERSION = 'lex2' // bump when `lexicalFirst` or its tokens change
 
 /**
  * Lexical-first combination: the BM25 order is kept intact and vector-only hits are
@@ -165,7 +178,10 @@ export const RANKING_VERSION = 'lex1' // bump when `lexicalFirst` or its tokens 
  * `score` is a descending rank value (1 for the head), NOT a similarity: it exists so
  * callers that sort or merge by score keep this order.
  */
-export function lexicalFirst(lexicalRanking: string[], vectorRanking: string[]): RankedId[] {
+export function lexicalFirst(lexicalRanking: string[], vectorRanking: string[], poolSlots?: number): RankedId[] {
+  if (poolSlots !== undefined) {
+    return quotaFuse(lexicalRanking.map((id) => ({ id, score: 0 })), vectorRanking, poolSlots)
+  }
   const ordered: string[] = []
   const seen = new Set<string>()
   for (const id of [...lexicalRanking, ...vectorRanking]) {
@@ -174,6 +190,33 @@ export function lexicalFirst(lexicalRanking: string[], vectorRanking: string[]):
     ordered.push(id)
   }
   return ordered.map((id, index) => ({ id, score: 1 / (index + 1) }))
+}
+
+/**
+ * Reserve candidate slots for both retrievers before the reranker judges relevance.
+ * Lexical order remains first within the selected pool; overlapping hits consume
+ * one slot, and an exhausted retriever gives its remaining slots to the other.
+ */
+export function quotaFuse(
+  lexicalScored: RankedId[],
+  semanticRanking: string[],
+  totalSlots: number,
+): RankedId[] {
+  const slots = Number.isFinite(totalSlots) ? Math.max(0, Math.floor(totalSlots)) : 0
+  if (!slots) return []
+  const lexical = [...new Set(lexicalScored.map((entry) => entry.id))]
+  const semantic = [...new Set(semanticRanking)]
+  const selected = new Set<string>()
+  const quota = Math.ceil(slots / 2)
+  for (const id of lexical.slice(0, quota)) selected.add(id)
+  for (const id of semantic.slice(0, slots - selected.size)) selected.add(id)
+  for (const id of lexicalFirst(lexical, semantic).map((entry) => entry.id)) {
+    if (selected.size >= slots) break
+    selected.add(id)
+  }
+  return lexicalFirst(lexical, semantic)
+    .filter((entry) => selected.has(entry.id))
+    .map((entry, index) => ({ id: entry.id, score: 1 / (index + 1) }))
 }
 
 /** Ids of a scored list in rank order — the shape fuseRankings consumes. */

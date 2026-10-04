@@ -1,3 +1,4 @@
+import { backgroundLockdownReason } from '@/lib/background-license'
 import { Worker, UnrecoverableError, type Job } from 'bullmq'
 
 import { redis } from '@/lib/redis'
@@ -48,6 +49,9 @@ export function resetMemoryWorkerForTest(): void {
  * normally on a refused write is exactly the false success this queue exists to remove.
  */
 export async function performMemoryWrite(jobData: MemoryWriteJob): Promise<void> {
+  const reason = await backgroundLockdownReason(jobData.organizationId)
+  if (reason) throw new UnrecoverableError(`Memory write blocked: license ${reason}`)
+
   const { getCogneeServerOptions } = await import('@/lib/cognee-core')
   const { cogneeRemember } = await import('@/lib/cognee-http')
   const { datasetFor, writeNotStored, capWritePayload } = await import('@/lib/cognee-types')

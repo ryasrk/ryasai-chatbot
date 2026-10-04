@@ -1,3 +1,4 @@
+import { parseDocumentPipelineState } from '@/lib/cognee-document-pipeline'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/session'
@@ -25,7 +26,7 @@ export async function POST(
 
     const doc = await db.document.findFirst({ // nosemgrep
       where: { id },
-      select: { id: true, name: true, status: true, cognifyStatus: true },
+      select: { id: true, name: true, status: true, cognifyStatus: true, cognifyPipelineJson: true },
     })
 
     if (!doc) {
@@ -38,19 +39,33 @@ export async function POST(
       )
     }
 
-    // Same enqueue shape as the upload path (documents/route.ts): embed first,
-    // cognify fire-and-forget. enqueueOrSync falls back to synchronous
-    // processing when Redis is down.
-    const mode = await enqueueOrSync('document-embed', {
-      type: 'document-embed',
-      documentId: doc.id,
-      organizationId: user.organizationId,
+    const pipeline = parseDocumentPipelineState(doc.cognifyPipelineJson ?? null)
+    const claim = await db.document.updateMany({
+      where: { id: doc.id, status: doc.status, cognifyStatus: doc.cognifyStatus },
+      data: {
+        cognifyStatus: 'processing', cognifyError: null,
+        // Only a confirmed terminal failure starts a new run. Timeouts resume the saved run.
+        ...(pipeline?.terminal === 'failed' ? { cognifyPipelineJson: null } : {}),
+      },
     })
-    void enqueueOrSync('document-cognify', {
-      type: 'document-cognify',
-      documentId: doc.id,
-      organizationId: user.organizationId,
-    }).catch(() => null)
+    if (claim.count !== 1) {
+      return NextResponse.json({ error: 'Document is already being reprocessed.' }, { status: 409 })
+    }
+    let mode: 'queued' | 'sync'
+    try {
+      mode = await enqueueOrSync('document-embed', {
+        type: 'document-embed', documentId: doc.id, organizationId: user.organizationId,
+      })
+      await enqueueOrSync('document-cognify', {
+        type: 'document-cognify', documentId: doc.id, organizationId: user.organizationId,
+      })
+    } catch (error) {
+      await db.document.updateMany({
+        where: { id: doc.id, cognifyStatus: 'processing' },
+        data: { cognifyStatus: 'failed', cognifyError: 'Could not start document reprocessing. Retry after checking the worker.' },
+      })
+      throw error
+    }
 
     await writeAudit({
       userId: user.userId,

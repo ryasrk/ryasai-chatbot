@@ -1,3 +1,4 @@
+import { backgroundLockdownReason } from '@/lib/background-license'
 import { Queue } from 'bullmq'
 
 import { redis } from '@/lib/redis'
@@ -145,6 +146,19 @@ export async function enqueueMemoryWrite(
   job: MemoryWriteJob,
   inlineFallback: (job: MemoryWriteJob) => Promise<void>,
 ): Promise<'queued' | 'inline' | 'dropped'> {
+  let reason: Awaited<ReturnType<typeof backgroundLockdownReason>>
+  try {
+    reason = await backgroundLockdownReason(job.organizationId)
+  } catch {
+    // Optional memory may be dropped; an unverifiable entitlement cannot permit a write.
+    log.warn('memory write dropped: organization license could not be verified', { organizationId: job.organizationId })
+    return 'dropped'
+  }
+  if (reason) {
+    log.warn('memory write dropped: organization license is locked', { organizationId: job.organizationId, reason })
+    return 'dropped'
+  }
+
   /*
    * SKIPPED IN TESTS unless a test opts in.
    *

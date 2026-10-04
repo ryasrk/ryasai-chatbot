@@ -49,7 +49,9 @@ export const RAG_CHUNK_OVERLAP = 180
 // single-document case.
 export const RAG_MAX_PER_DOCUMENT = 3
 export const RAG_CACHE_TTL_MS = 60_000
-export const RAG_MAX_CHUNKS_PER_UPLOAD = 500
+// A 2.7 MB reference book produces 1,029 chunks; the old 500 cap discarded its tail.
+// The upload probes one extra chunk and rejects larger documents before persistence.
+export const RAG_MAX_CHUNKS_PER_UPLOAD = 2_000
 
 /**
  * Character budget for the memory block injected into prompts.
@@ -212,6 +214,8 @@ export const LLM_RETRY_BACKOFF_BASE_MS = Number(process.env.LLM_RETRY_BACKOFF_BA
 
 // Session
 export const SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
+// Bounded tolerance for distributed session issuance and activity clocks.
+export const SESSION_CLOCK_SKEW_MS = 5_000
 
 // Notifications
 export const NOTIFICATION_MAX_RETRIES = 3

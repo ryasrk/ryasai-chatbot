@@ -1,5 +1,5 @@
 /**
- * Cognee HTTP client — talks to a cognee API server (v1.5.4).
+ * Cognee HTTP client — talks to a cognee API server (pinned v1.6.0).
  * ----------------------------------------------------------------------------
  * Replaces the in-process `@cognee/cognee-ts` SDK. Why the server:
  *
@@ -11,7 +11,8 @@
  *     token (docs/cognee-http-migration.md).
  *
  * This module is a thin transport layer only — no tenant logic, no settings
- * cache, no retries beyond a deadline. Those live in cognee-core.ts so the
+ * cache. Document writes delegate persisted phase waiting to cognee-document-pipeline.ts.
+ * Settings live in cognee-core.ts so the
  * provider choice stays in one place.
  *
  * GRACEFUL DEGRADATION: every call returns null / [] rather than throwing when
@@ -27,6 +28,8 @@
  *   - `datasets.has()` has no equivalent here — GET /datasets lists datasets
  *     truthfully, so the old advisory-only workaround is not ported.
  */
+
+import { processDocumentPipeline, type DocumentPipelineWait } from './cognee-document-pipeline'
 
 /** A single search hit as the server returns it (v1.5.4 shape). */
 export interface CogneeSearchHit {
@@ -278,10 +281,22 @@ export async function cogneeRemember(
     /** false = wait for the pipeline, so the caller knows when data is searchable. */
     runInBackground?: boolean
     timeoutMs?: number
+    waitForPipeline?: DocumentPipelineWait
   },
 ): Promise<CogneeRememberResult | null> {
+  if (args.waitForPipeline) return processDocumentPipeline(opts, { ...args, wait: args.waitForPipeline })
   const form = new FormData()
-  for (const text of args.texts) form.append('raw_data', text)
+  // The pinned server limits each multipart text field to 1 MiB. Use file
+  // uploads for the entire batch if any text exceeds it, preserving entry order
+  // because the server processes uploaded files before raw_data entries.
+  const uploadTexts = args.texts.some(text => Buffer.byteLength(text, 'utf8') > 1_048_576)
+  for (const [index, text] of args.texts.entries()) {
+    if (uploadTexts) {
+      form.append('data', new File([text], `document-${index}.txt`, { type: 'text/plain' }))
+    } else {
+      form.append('raw_data', text)
+    }
+  }
   form.append('datasetName', args.datasetName)
   if (args.sessionId) form.append('session_id', args.sessionId)
   for (const n of args.nodeSet ?? []) form.append('node_set', n)

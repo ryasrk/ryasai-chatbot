@@ -134,7 +134,7 @@ mock.module('@/lib/rag', () => ({
     extractCalls++
     return { text: extractText, isPlaceholder: false }
   },
-  chunkText: (text: string) => text.split('\n\n').filter(Boolean),
+  chunkText: (text: string, options: { maxChunks: number }) => text.split('\n\n').filter(Boolean).slice(0, options.maxChunks),
   extractKeywords: () => [],
   invalidateRagCache: async () => {},
 }))
@@ -291,5 +291,38 @@ describe('request validation still answers before any auth work', () => {
 
     expect(res.status).toBe(400)
     expect(storageReads).toBe(0)
+  })
+})
+
+describe('bounded upload preserves all accepted chunks', () => {
+  test('a document above the old 500 cap retains its final chunk', async () => {
+    storageChosen = true
+    extractText = Array.from({ length: 1_029 }, (_, i) => `Book section ${i}`).join('\n\n')
+    const res = await upload()
+    expect(res.status).toBe(201)
+    expect(chunkWrites[0]).toHaveLength(1_029)
+    expect(chunkWrites[0].at(-1)?.content).toBe('Book section 1028')
+    const body = await res.json()
+    expect(body.document.chunkCount).toBe(1_029)
+  })
+  test('a document exactly at the limit retains every chunk', async () => {
+    storageChosen = true
+    extractText = Array.from({ length: 2_000 }, (_, i) => `Section ${i}`).join('\n\n')
+    const res = await upload()
+    expect(res.status).toBe(201)
+    expect(chunkWrites[0]).toHaveLength(2_000)
+    expect(chunkWrites[0].at(-1)?.content).toBe('Section 1999')
+    expect((await res.json()).document.chunkCount).toBe(2_000)
+  })
+  test('over-limit documents fail before any document, chunk, audit or job is persisted', async () => {
+    storageChosen = true
+    extractText = Array.from({ length: 2_001 }, (_, i) => `Section ${i}`).join('\n\n')
+    const res = await upload()
+    expect(res.status).toBe(413)
+    expect((await res.json()).error).toContain('Split it into smaller documents')
+    expect(createdDocs).toHaveLength(0)
+    expect(chunkWrites).toHaveLength(0)
+    expect(auditCalls).toHaveLength(0)
+    expect(enqueued).toHaveLength(0)
   })
 })

@@ -13,6 +13,7 @@ const cfgState = {
   appConfig: null as any,
   appConfigThrows: false,
   updateCalls: [] as any[],
+  statusWriteError: null as Error | null,
 }
 const llmState = { cfg: { provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://llm', apiKey: 'k1', model: 'm1' } as any }
 const embState = { cfg: { provider: 'OPENAI_COMPATIBLE', baseUrl: 'http://emb', apiKey: 'k2', model: 'e1' } as any }
@@ -27,7 +28,7 @@ mock.module('@/lib/db', () => ({
       },
     },
     document: {
-      update: async (a: any) => { cfgState.updateCalls.push(a); return {} },
+      update: async (a: any) => { cfgState.updateCalls.push(a); if (cfgState.statusWriteError) throw cfgState.statusWriteError; return {} },
     },
   },
 }))
@@ -88,6 +89,7 @@ beforeEach(() => {
   cfgState.appConfig = null
   cfgState.appConfigThrows = false
   cfgState.updateCalls = []
+  cfgState.statusWriteError = null
   sdkState.constructArgs = []
   sdkState.warmCalls = 0
   sdkState.shouldThrow = false
@@ -352,12 +354,11 @@ describe('cognee-core — pure helpers', () => {
     expect(cfgState.updateCalls[1].data.cognifyError).toBe('err')
   })
 
-  test('a failing status write is swallowed (non-fatal by design)', async () => {
-    const orig = cfgState.updateCalls
-    // The function catches internally; a throw here would abort a cognify run
-    // over a bookkeeping row.
-    await expect(updateDocumentCognifyStatus('gone', 'completed', undefined)).resolves.toBeUndefined()
-    cfgState.updateCalls = orig
+  test('a failed completion write propagates instead of reporting recorded success', async () => {
+    // The previous fake never threw, so its resolves assertion did not exercise failure.
+    // A status write is part of completion, not optional memory recall.
+    cfgState.statusWriteError = new Error('status write rejected')
+    await expect(updateDocumentCognifyStatus('gone', 'completed', undefined)).rejects.toThrow('status write rejected')
   })
 
   test('settings accessors pass through the configured values', () => {

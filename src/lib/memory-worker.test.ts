@@ -10,6 +10,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
  * cognify pipeline is busy gets HTTP 200 with `{"status":"running","items_processed":0}`. That MUST
  * throw, or the retry never happens and the turn is dropped exactly as before this queue existed.
  */
+let lockdownReason: string | null = null
+mock.module('@/lib/background-license', () => ({ backgroundLockdownReason: async () => lockdownReason }))
+
 const state = {
   serverOptions: { baseUrl: 'http://cognee:8000' } as { baseUrl: string } | null,
   rememberResult: null as unknown,
@@ -65,6 +68,7 @@ const job = {
 }
 
 beforeEach(() => {
+  lockdownReason = null
   state.serverOptions = { baseUrl: 'http://cognee:8000' }
   state.rememberResult = null
   state.calls = []
@@ -216,4 +220,12 @@ describe('startMemoryWorker — the org-context admission gate', () => {
     expect(tenantState.entered).toEqual(['org-real'])
     expect(state.calls).toHaveLength(1)
   })
+})
+
+
+test('expired memory jobs never reach the sidecar and fail without retries', async () => {
+  lockdownReason = 'expired'
+  const { UnrecoverableError } = await import('bullmq')
+  await expect(performMemoryWrite(job)).rejects.toBeInstanceOf(UnrecoverableError)
+  expect(state.calls).toHaveLength(0)
 })

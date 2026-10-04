@@ -35,7 +35,12 @@ class FakeWorker {
     return this
   }
 }
-mock.module('bullmq', () => ({ Worker: FakeWorker }))
+class FakeUnrecoverableError extends Error {}
+mock.module('bullmq', () => ({ Worker: FakeWorker, UnrecoverableError: FakeUnrecoverableError }))
+class FakeLicenseError extends Error {
+  constructor(readonly reason: string) { super(`License ${reason}`) }
+}
+mock.module('@/lib/session', () => ({ LicenseError: FakeLicenseError }))
 
 // --- Redis / queue mock: drives checkRedisHealth and records enqueues --------------------
 const redisState = {
@@ -80,8 +85,11 @@ mock.module('@/lib/embeddings', () => ({
   embedDocumentChunks: async (a: unknown) => { calls.embedDocumentChunks.push(a) },
   embedCompanyDocuments: async (a: unknown) => { calls.embedCompanyDocuments.push(a) },
 }))
+let cognifyEnabled = true
+let cognifyCompleted = true
+mock.module('@/lib/cognee-core', () => ({ isCogneeEnabled: async () => cognifyEnabled }))
 mock.module('@/lib/cognee', () => ({
-  cognifyDocument: async (a: unknown) => { calls.cognifyDocument.push(a) },
+  cognifyDocument: async (a: unknown) => { calls.cognifyDocument.push(a); return cognifyCompleted },
 }))
 mock.module('@/lib/rag-fts', () => ({ rebuildFts: async () => { calls.rebuildFts++ } }))
 mock.module('@/lib/license-issue', () => ({
@@ -100,6 +108,7 @@ mock.module('@/lib/order-reconcile', () => ({
 
 // --- db mock: only what the cognify handler and the org fallback read -------------------
 const dbLookups: Array<Record<string, unknown>> = []
+const licenseState = { status: 'valid', validatedAt: null as Date | null, missing: false, audit: [] as any[], updates: [] as any[] }
 const dbState = {
   doc: null as { id: string; name: string; organizationId?: string } | null,
   chunkOrderBy: null as unknown,
@@ -107,7 +116,10 @@ const dbState = {
 }
 mock.module('@/lib/db', () => ({
   db: {
+    organization: { findUnique: async () => licenseState.missing ? null : ({ licenseStatus: licenseState.status, licenseValidatedAt: licenseState.validatedAt }) },
+    auditLog: { create: async (args: any) => { licenseState.audit.push(args); return args.data } },
     document: {
+      updateMany: async (args: any) => { licenseState.updates.push(args); return { count: 1 } },
       // The SCOPE-DISCOVERY read in `resolveJobOrg`: unscoped on purpose, wrapped in bypassOrg.
       findUnique: async (args: { select?: Record<string, boolean> }) => {
         dbLookups.push({ select: args.select, doc: dbState.doc?.organizationId })
@@ -156,6 +168,13 @@ import {
 } from './job-processor'
 
 beforeEach(() => {
+  licenseState.status = 'valid'
+  licenseState.validatedAt = null
+  licenseState.missing = false
+  licenseState.audit.length = 0
+  licenseState.updates.length = 0
+  cognifyEnabled = true
+  cognifyCompleted = true
   // The worker is a module-level singleton; without dropping it, `startJobWorker()` in a later
   // test reuses the FIRST worker and every assertion on the constructor/events sees nothing.
   resetJobWorkerForTest()
@@ -322,19 +341,18 @@ describe('the dispatched processor — every handler runs with the JOB OWN org i
     expect(probeOrgSeen).toBe('org-via-bypass')
   })
 
-  test('a job with NEITHER organizationId nor documentId leaves the context empty', async () => {
-    // Pinned as MEASURED, and it is the honest limit of the guard: with nothing to resolve
-    // from, the org stays undefined. This is why every enqueue site must pass an org.
+  test('a job with neither organizationId nor documentId is refused before its handler', async () => {
+    // Missing context must not execute even when an ambient request context exists.
     probeOrgSeen = 'unset'
     registerProbe()
 
     startJobWorker()
-    await capturedProcessor!({ data: { type: PROBE_TYPE } })
+    await expect(capturedProcessor!({ data: { type: PROBE_TYPE } })).rejects.toThrow('no organization context')
 
-    expect(probeOrgSeen).toBeUndefined()
+    expect(probeOrgSeen).toBe('unset')
   })
 
-  test('a document that no longer exists does not crash the job', async () => {
+  test('a missing legacy document cannot establish authorization for its job', async () => {
     // Uses the probe type, NOT 'fts-rebuild': registering a stub for a REAL type replaces the
     // module's own handler for the rest of the file. That leftover stub is what made the
     // `fts-rebuild calls rebuildFts` test fail while passing in isolation.
@@ -344,9 +362,9 @@ describe('the dispatched processor — every handler runs with the JOB OWN org i
     startJobWorker()
     await expect(
       capturedProcessor!({ data: { type: PROBE_TYPE, documentId: 'gone' } }),
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow('no organization context')
     // No org could be resolved, so none was entered.
-    expect(probeOrgSeen).toBeUndefined()
+    expect(probeOrgSeen).toBe('unset')
   })
 
   test('an UNREGISTERED job type throws, and the message names the type', async () => {
@@ -546,5 +564,63 @@ describe('reportQueuedJobsOnStartup diagnostics', () => {
     // Non-license types fall through to the flat default.
     expect(strategy(0, 'document-embed')).toBe(30_000)
     expect(strategy(5, 'document-embed')).toBe(30_000)
+  })
+})
+
+
+test('an incomplete graph job fails so BullMQ retries the saved upstream run', async () => {
+  dbState.doc = { id: 'doc-2', name: 'book.pdf', organizationId: 'o1' }
+  cognifyCompleted = false
+  startJobWorker()
+  await expect(capturedProcessor!({ data: { type: 'document-cognify', documentId: 'doc-2', organizationId: 'o1' } }))
+    .rejects.toThrow('Document graph did not complete')
+})
+test('disabled Cognee is skipped without creating a failing graph job', async () => {
+  dbState.doc = { id: 'doc-2', name: 'book.pdf', organizationId: 'o1' }
+  cognifyEnabled = false
+  startJobWorker()
+  await capturedProcessor!({ data: { type: 'document-cognify', documentId: 'doc-2', organizationId: 'o1' } })
+  expect(calls.cognifyDocument).toHaveLength(0)
+})
+
+
+describe('background entitlement enforcement', () => {
+  for (const type of ['document-embed', 'document-cognify', 'fts-rebuild', 'embedding-rebuild'] as const) {
+    test(`${type} is blocked before provider or index work and is not retried`, async () => {
+      licenseState.status = 'expired'
+      startJobWorker()
+      await expect(capturedProcessor!({ data: { type, organizationId: 'o1', documentId: 'd1' } })).rejects.toBeInstanceOf(FakeUnrecoverableError)
+      expect(calls.embedDocumentChunks.length + calls.embedCompanyDocuments.length + calls.cognifyDocument.length + calls.rebuildFts).toBe(0)
+      expect(licenseState.audit[0].data).toMatchObject({ organizationId: 'o1', severity: 'warning', action: 'BACKGROUND_JOB_BLOCKED' })
+      if (type.startsWith('document-')) expect(licenseState.updates[0].where).toEqual({ id: 'd1', organizationId: 'o1' })
+    })
+  }
+  test('Redis-down work rejects with the API license error instead of reporting sync success', async () => {
+    licenseState.status = 'unpaid'
+    redisState.connected = false
+    await expect(enqueueOrSync('fts-rebuild', { type: 'fts-rebuild', organizationId: 'o1' })).rejects.toBeInstanceOf(FakeLicenseError)
+    expect(calls.rebuildFts).toBe(0)
+  })
+  test('a missing organization fails closed', async () => {
+    licenseState.missing = true
+    startJobWorker()
+    await expect(capturedProcessor!({ data: { type: 'fts-rebuild', organizationId: 'missing' } })).rejects.toBeInstanceOf(FakeUnrecoverableError)
+    expect(calls.rebuildFts).toBe(0)
+  })
+  test('validator unreachability within grace still permits product work', async () => {
+    licenseState.status = 'unreachable'
+    licenseState.validatedAt = new Date()
+    startJobWorker()
+    await capturedProcessor!({ data: { type: 'fts-rebuild', organizationId: 'o1' } })
+    expect(calls.rebuildFts).toBe(1)
+  })
+  test('locked installs can issue paid licenses and reconcile payments', async () => {
+    licenseState.status = 'unpaid'
+    startJobWorker()
+    await capturedProcessor!({ data: { type: 'license-issue', orderId: 'paid-order' } })
+    await capturedProcessor!({ data: { type: 'order-reconcile' } })
+    expect(calls.issueLicenseForOrder).toEqual(['paid-order'])
+    expect(calls.runOrderReconciliation).toBe(1)
+    expect(licenseState.audit).toHaveLength(0)
   })
 })

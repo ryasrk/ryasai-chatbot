@@ -44,6 +44,7 @@ export interface RagEvalResult {
 
 export interface RagEvalSummary {
   total: number
+  hitRateAtK: number
   precisionAtK: number
   recallAtK: number
   mrr: number
@@ -55,9 +56,8 @@ export function summarizeRagEval(results: RagEvalResult[]): RagEvalSummary {
   const total = Math.max(1, results.length)
   return {
     total: results.length,
-    // Kept as the hit-rate (share of questions that found something relevant) so
-    // existing callers do not silently change meaning.
-    precisionAtK: round(results.filter((result) => result.ok).length / total),
+    hitRateAtK: round(results.filter((result) => result.ok).length / total),
+    precisionAtK: round(mean(results.map((result) => result.precision))),
     recallAtK: round(mean(results.map((r) => r.recall))),
     mrr: round(mean(results.map((r) => r.reciprocalRank))),
     groundedRate: round(results.filter((result) => result.grounded).length / total),
@@ -154,7 +154,7 @@ export function compareRagEval(
 }
 
 function mean(values: Array<number | undefined>): number {
-  const present = values.filter((v): v is number => typeof v === 'number')
+  const present = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   if (present.length === 0) return 0
   return present.reduce((sum, v) => sum + v, 0) / present.length
 }
