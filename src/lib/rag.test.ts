@@ -125,7 +125,8 @@ describe('RAG chunking', () => {
 
   test('short text returns a single chunk', () => {
     const chunks = chunkText('Short paragraph.\n\nSecond short paragraph.')
-    expect(chunks).toEqual(['Short paragraph.', 'Second short paragraph.'])
+    // One section, under the size limit: one chunk (paragraphs of a section are packed since 2026-10-05).
+    expect(chunks).toEqual(['Short paragraph.\nSecond short paragraph.'])
   })
 
   test('empty text returns empty array', () => {

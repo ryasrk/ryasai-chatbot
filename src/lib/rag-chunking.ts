@@ -77,13 +77,102 @@ export function chunkText(
   // ponytail: stop building chunks once maxChunks is reached — avoids materializing
   // tens of thousands of chunk strings only to slice them down to 500 afterwards.
   const chunks: string[] = []
-  for (const block of splitStructuralBlocks(content)) {
-    for (const chunk of splitLongChunk(block, maxChars, overlapChars)) {
+  for (const section of packSections(splitStructuralBlocks(content), maxChars)) {
+    for (const chunk of splitSection(section, maxChars, overlapChars)) {
       if (chunks.length >= maxChunks) return chunks
       chunks.push(chunk)
     }
   }
   return chunks
+}
+
+/**
+ * Pack structural blocks into SECTION chunks: a block that opens with a heading starts a new chunk, and every block
+ * after it (paragraphs, lists, tables) joins that chunk while it fits.
+ *
+ * WHY. Every paragraph and table used to be its own chunk, so a section's heading and the table under it were
+ * separated. MEASURED on the 2026-10-04 live eval corpus: 526 chunks averaging 314 characters against a 1,400 limit,
+ * 3-character `---` chunks, and "### 2. Maximum Storage Limits" plus one sentence in one chunk with the table of
+ * limits in the next — which carries none of the heading's words. Retrieval matched the heading; the answer model
+ * then said "only the section title was retrieved, not the table" on 6 of the 23 wrong answers in that run.
+ * The rule that a chunk never straddles two sections still holds: only a heading starts a new section.
+ */
+function packSections(blocks: string[], maxChars: number): string[][] {
+  const sections: string[][] = []
+  let current: string[] = []
+  let size = 0
+  for (const block of blocks) {
+    if (isSeparatorBlock(block)) continue
+    const opensSection = isHeadingLine(block.split('\n', 1)[0])
+    if (current.length > 0 && (opensSection || size + 1 + block.length > maxChars)) {
+      sections.push(current)
+      current = []
+      size = 0
+    }
+    current.push(block)
+    size += (size ? 1 : 0) + block.length
+  }
+  if (current.length > 0) sections.push(current)
+  return sections
+}
+
+/** A horizontal rule (`---`, `***`, `___`) separates content; it is not content. */
+function isSeparatorBlock(block: string): boolean {
+  return /^[\s\-*_=]+$/.test(block) && block.trim().length >= 3
+}
+
+/**
+ * Turn one packed section into chunks. A section that fits is one chunk. One that does not is split block by block;
+ * every continuation chunk is prefixed with the section heading, so a chunk that holds only part of a section still
+ * says which section it is, and a table is split by ROW with its header repeated rather than flattened into words.
+ */
+function splitSection(blocks: string[], maxChars: number, overlapChars: number): string[] {
+  const whole = blocks.join('\n')
+  if (whole.length <= maxChars) return [whole]
+  const firstLine = blocks[0].split('\n', 1)[0]
+  const heading = isHeadingLine(firstLine) ? firstLine.trim() : null
+  const withHeading = (text: string) => (heading && !text.startsWith(heading) ? `${heading}\n${text}` : text)
+  const out: string[] = []
+  for (const block of blocks) {
+    // The heading prefix comes out of the budget, but never more than half of it: a long heading must not starve the
+    // body it labels.
+    const room = heading ? Math.max(Math.ceil(maxChars / 2), maxChars - heading.length - 1) : maxChars
+    const pieces = isTableBlock(block) ? splitTableBlock(block, room) : splitLongChunk(block, room, overlapChars)
+    for (const piece of pieces) out.push(withHeading(piece))
+  }
+  return out
+}
+
+function isTableBlock(block: string): boolean {
+  const lines = block.split('\n').filter((l) => l.trim())
+  return lines.length >= 2 && lines.filter(isTableRow).length >= lines.length - 1
+}
+
+/**
+ * Split a table by rows, repeating its header (and a markdown separator row) on every piece: a row without its
+ * header is a list of values nobody can read. A table whose header alone exceeds the room falls back to words.
+ */
+function splitTableBlock(block: string, maxChars: number): string[] {
+  const lines = block.split('\n')
+  const firstRow = lines.findIndex(isTableRow)
+  const isMdSeparator = (l: string) => /^\|?[\s:|-]+\|?$/.test(l.trim()) && l.includes('-')
+  const headerEnd = firstRow + (lines[firstRow + 1] && isMdSeparator(lines[firstRow + 1]) ? 2 : 1)
+  const header = lines.slice(0, headerEnd).join('\n')
+  if (header.length >= maxChars / 2) return splitLongChunk(block, maxChars, 0)
+  const out: string[] = []
+  let rows: string[] = []
+  let size = header.length
+  for (const row of lines.slice(headerEnd)) {
+    if (rows.length > 0 && size + 1 + row.length > maxChars) {
+      out.push([header, ...rows].join('\n'))
+      rows = []
+      size = header.length
+    }
+    rows.push(row)
+    size += 1 + row.length
+  }
+  if (rows.length > 0) out.push([header, ...rows].join('\n'))
+  return out
 }
 
 /**

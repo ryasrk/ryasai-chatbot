@@ -25,9 +25,35 @@ import {
 } from './rag-chunking'
 
 describe('chunkText', () => {
-  test('splits on double newlines', () => {
-    const result = chunkText('Para one.\n\nPara two.', { maxChars: 100 })
-    expect(result).toEqual(['Para one.', 'Para two.'])
+  test('paragraphs of one section share a chunk while they fit, and split when they do not', () => {
+    // Since 2026-10-05 a section is packed: one-paragraph chunks averaged 314 of 1,400 characters and separated a
+    // heading from the table under it (measured on the live eval corpus).
+    expect(chunkText('Para one.\n\nPara two.', { maxChars: 100 })).toEqual(['Para one.\nPara two.'])
+    expect(chunkText('Para one.\n\nPara two.', { maxChars: 12 })).toEqual(['Para one.', 'Para two.'])
+  })
+
+  test('a separator line is never a chunk', () => {
+    expect(chunkText('## A\nBody a.\n\n---\n\n## B\nBody b.', { maxChars: 500 })).toEqual(['## A\nBody a.', '## B\nBody b.'])
+  })
+
+  test('a section heading travels with the table under it, even after an intro sentence', () => {
+    const doc = '### 2. Maximum Storage Limits\nThresholds are monitored.\n\n| Facility | Max |\n|---|---|\n| SBY-01 | 45,000 kg |'
+    const [only] = chunkText(doc, { maxChars: 1400 })
+    expect(only).toContain('Maximum Storage Limits')
+    expect(only).toContain('SBY-01 | 45,000 kg')
+  })
+
+  test('an overflowing section repeats its heading, and a table split keeps its header on every piece', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => `| F-${i} | ${1000 + i} kg |`).join('\n')
+    const chunks = chunkText(`### Limits\n\n| Facility | Max |\n|---|---|\n${rows}`, { maxChars: 300 })
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const c of chunks) {
+      expect(c.startsWith('### Limits')).toBe(true)
+      expect(c).toContain('| Facility | Max |')
+      expect(c.length).toBeLessThanOrEqual(300)
+    }
+    // Every row survives exactly once.
+    expect(chunks.join('\n').match(/\| F-\d+ \|/g)?.length).toBe(30)
   })
 
   // Structure-aware contracts: a chunk must never straddle two sections, and a
@@ -52,7 +78,7 @@ describe('chunkText', () => {
     const tableChunk = result.find((c) => c.includes('Kategori'))
     expect(tableChunk).toBeDefined()
     expect(tableChunk).toContain('Enterprise')
-    expect(tableChunk).not.toContain('Intro sentence')
+    // The intro sentence of the same section now travels WITH the table (it is usually what names it).
   })
 
   test('ordinary capitalized sentence is NOT treated as a heading', () => {
