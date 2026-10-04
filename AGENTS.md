@@ -122,7 +122,7 @@ bun run prepare          # install pre-commit hook (.git/hooks/pre-commit)
   `invariants.test.ts` asserts no production manifest ships it.
 - e2e mock stack: `e2e/global-setup.ts` seeds the e2e DB, starts a mock License-Validator on `:4546` (Ed25519 test keypair from `e2e-keys.ts` → `LICENSE_SIGNING_PUBLIC_KEY`) and a mock LLM on `:4545`; the app runs on `:3105` with `E2E_DATABASE_URL`. Playwright `workers: 1` (shared DB).
 - `src/lib/tenant-route-guard.test.ts` statically enforces org-context entry on every route — if it fails for a new route, add `enterWithOrg((await getActiveUser()).organizationId)` (or `bypassOrg` if genuinely cross-org).
-- 132 `*.test.ts` files across `src/` (129 run as unit tests; 3 integration files opt in via `bun run test:integration`). Every new lib file should ship with a `*.test.ts`.
+- `scripts/test.ts` discovers the current test inventory and reports file totals. Integration files opt in via `bun run test:integration`. Every new lib file should ship with a `*.test.ts`.
 
 ### Pre-commit hook
 
@@ -148,8 +148,9 @@ shipped, and two tempting speed-ups that were rejected with the evidence.
 
 ## Cross-tenant IDOR: `findUnique` on a client-supplied id (2026-09 audit)
 
-`findUnique` is NOT org-scoped (the tenant extension cannot add `organizationId`
-to a unique `where`). The long-standing rationale in `prisma-tenant.ts` was
+The original incident occurred when `findUnique` was unscoped. The runtime
+extension now adds an `organizationId` predicate using Prisma 6's extended
+unique filters. This defence does not replace the client-ID convention below. The long-standing rationale in `prisma-tenant.ts` was
 *"IDs are cuid() random — cross-tenant access by ID is infeasible"*. **That
 rationale is false and has been removed**: `api/mcp/servers/route.ts` returns
 `id: true` to the browser, so a legitimate org-A user holds their own server ids
@@ -199,7 +200,7 @@ unavailable)'` — deliberately not "failed", because `aligned: true` next to
 ## Multi-Tenancy
 
 - **Tenant root**: `Organization` model. `User.organizationId` links 1 user → 1 org. Every data model carries `organizationId`.
-- **Auto-scoping**: `src/lib/prisma-tenant.ts` Prisma extension auto-injects `organizationId` via `AsyncLocalStorage` on `findFirst`/`findMany`/`count`/`aggregate`/`groupBy`/`update*`/`delete*`/`create*`. **`findUnique` is NOT scoped** — see "Cross-tenant IDOR" above: an earlier note here claimed cuid ids made cross-tenant access infeasible, which was wrong (ids are returned to clients) and two routes were exploitable. Use `findFirst` for any client-supplied id.
+- **Auto-scoping**: `src/lib/prisma-tenant.ts` uses shared `AsyncLocalStorage` stores to inject `organizationId` into supported read and write operations, including unique reads. Missing context and explicit foreign tenant IDs fail closed. Use `findFirst` for client-supplied IDs; raw SQL and nested relation operations still require explicit ownership checks.
 - **Escape hatch**: `bypassOrg(fn)` for setup/SSO/signup/seed where no org context exists yet.
 - **Context setup**: `getActiveUser()` (in `session.ts`) calls `enterWithOrg(orgId)` — but **`AsyncLocalStorage.enterWith()` does NOT propagate back to the caller's frame**. Every route handler MUST call `enterWithOrg(user.organizationId)` itself right after `getActiveUser()`, or all its DB queries run unscoped (cross-tenant leak). `src/lib/tenant-route-guard.test.ts` enforces this statically — keep it green when adding routes.
 - **RBAC**: `admin > analyst > viewer`. `requireRole(user, 'admin')` guards admin routes.
@@ -368,7 +369,7 @@ expectation, or changing how a prompt is delivered.
 - **Comments explain *why*** — the codebase uses `// ponytail:` markers for hard-won context. Preserve these.
 - **Typed errors**: `src/lib/errors.ts` defines `AppError` with 16 codes. `handleApiError()` in `session.ts` maps them to HTTP responses with `{ error: { code, message, hint? } }`.
 - **New tools/plugins**: ship with a unit test for the executor + a guardrail test if it touches external systems.
-- **Prisma schema changes**: run `bunx prisma db push` to apply, `bunx prisma generate` to regenerate the client.
+- **Prisma schema changes**: prototype with `bunx prisma db push` in development, regenerate the client, then record a reviewed migration. Production runs `bun run db:deploy`; never replace the frozen baseline snapshot with the latest schema.
 
 ## Setup
 

@@ -1,0 +1,31 @@
+{
+  "scope": "Isolated PostgreSQL, real scoped source/graph entrypoints; external transport counted and refused",
+  "licenseStatus": "expired",
+  "runtimeConfigurationPresent": true,
+  "providerCalls": 0,
+  "description": null,
+  "keywords": "baseline",
+  "relations": 0,
+  "negativeControls": [
+    "Removing the graph license check fails provider-call refusal",
+    "Removing the authorized chunk early return fails provider-call refusal",
+    "Ignoring locked source entitlement fails provider/enrichment refusal",
+    "Removing the return after description-write failure fails success-log refusal",
+    "Removing the return after graph-relation failure fails success-log refusal"
+  ],
+  "additionalBehavior": [
+    "Integration client-ID reads use findFirst and missing integration stops before schema enrichment",
+    "Schema-description failure permits the independent business-profile pass",
+    "Document and REST description writes do not log success on failure",
+    "Failed graph relation writes do not log completed chunk indexing"
+  ],
+  "limitations": [
+    "Live probe covers expired graph indexing and document description; REST/integration paths and persistence failures covered by focused behavioral tests",
+    "Configured fixture transport was intercepted and refused; no real provider request or customer data change occurred"
+  ],
+  "testCorrections": [
+    "First success-log negative control survived because the scoped logger existed before the spy was installed",
+    "Test imports the graph module after registering a complete logger fixture and preserving llm-config exports",
+    "Repeated negative control failed the intended relation-success assertion; original source restored byte-identically and all 29 focused tests passed"
+  ]
+}

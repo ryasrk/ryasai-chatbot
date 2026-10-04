@@ -16,7 +16,7 @@ All of the following must pass before opening a PR:
 - `bunx tsc --noEmit` — 0 errors
 - `bun run lint` — 0 errors
 - `bun run test` — all tests pass
-- `bun run e2e` — run if your change touches UI
+- `bun run e2e` and `bun run build && bun run e2e:prod` — validate browser behavior in development and in the shipped standalone build
 
 ## Code Style
 
@@ -113,3 +113,20 @@ image whose name says one version and whose UI displays another.
 - One logical change per PR.
 - Include tests for new logic.
 - **Delete the branch after merge.** See "Branches" above.
+
+## Database releases
+
+Production uses `bun run db:deploy` and versioned SQL in `prisma/migrations`.
+Prototype changes with `db push` only on a development database, then generate
+and review a migration. Test it against a fresh database and an upgraded copy.
+The baseline snapshot is frozen; legacy adoption rejects an incompatible schema.
+Before release, exercise backup/restore on a separate empty database and run
+both `bun run e2e` and `bun run build && bun run e2e:prod`.
+
+Live quality checks use the dedicated eval org's BYOK configuration and its
+`EVAL_ENCRYPTION_SECRET_KEY`. Configure the workflow variables
+`EVAL_RAG_GOLDEN_FILE` and `EVAL_SQL_GOLDEN_FILE` with reviewed repository paths.
+Each set needs at least 40 questions. RAG requires a different judge model or
+endpoint and no skipped judgements. SQL requires expected row counts and
+first-row values on every case. Missing setup or failing thresholds fails the
+live workflow; offline tests do not substitute for these measurements.

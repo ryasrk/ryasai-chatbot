@@ -29,6 +29,8 @@ import { E2E_LICENSE_INTERNAL_SECRET } from './e2e/mock-license-validator'
  * Run: bun run build && bunx playwright test -c playwright.prod.config.ts
  */
 
+const E2E_REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://localhost:6379/15'
+
 const E2E_DATABASE_URL =
   process.env.E2E_DATABASE_URL ?? 'postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e'
 
@@ -36,6 +38,7 @@ const E2E_DATABASE_URL =
 // NODE_ENV must be production so the standalone server runs in prod mode.
 const E2E_ENV = [
   'NODE_ENV=production',
+  `REDIS_URL=${E2E_REDIS_URL}`,
   `DATABASE_URL=${E2E_DATABASE_URL}`,
   'AUTH_DEMO_FALLBACK=false',
   'LICENSE_VALIDATOR_URL=http://localhost:4546',

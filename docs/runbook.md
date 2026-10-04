@@ -211,7 +211,7 @@ Scores are posted to Langfuse if configured (`LANGFUSE_PUBLIC_KEY` + `LANGFUSE_S
 - **Contextual Retrieval:** Set `CONTEXTUAL_RETRIEVAL=true` to prepend LLM-generated document summaries to chunks before embedding.
 - **LLM Reranker:** Set `RAG_LLM_RERANK=true` to enable 0-10 scoring reranker (filters chunks scoring < 3).
 - **Chunk size/overlap:** Adjust `RAG_CHUNK_SIZE` and `RAG_CHUNK_OVERLAP` in `src/lib/constants.ts`.
-- **Max chunks per upload:** `RAG_MAX_CHUNKS_PER_UPLOAD` (default 500).
+- **Max chunks per upload:** 2,000 (`RAG_MAX_CHUNKS_PER_UPLOAD` in `src/lib/constants.ts`). Larger documents are rejected before persistence; split them into smaller files.
 
 ### Check the in-memory trace buffer
 
@@ -237,7 +237,7 @@ docker inspect <container> | grep OOMKills
 **Mitigation:**
 - Increase memory limit in Helm values or docker-compose.yml
 - Check for unbounded in-memory caches (RAG cache, trace ring buffer, rate limit buckets)
-- Reduce `RAG_MAX_CHUNKS_PER_UPLOAD` if processing large documents
+- Split documents exceeding the chunk limit before uploading them
 - Check for memory leaks in long-running scheduler process
 
 **Prevention:** Set memory limits, monitor `container_memory_usage_bytes` in Prometheus.
@@ -296,6 +296,63 @@ curl https://chatbot.example.com/api/health | jq '.checks.redis'
 - Clear BullMQ stuck jobs: `redis-cli --scan --pattern 'bull:document-processing:*' | xargs redis-cli del`
 
 **Prevention:** Monitor Redis memory and connection count, set maxmemory policy.
+
+### Cognee Graph Extraction Fails With Provider Schema Errors
+
+Check the pipeline activity status as well as the document's `cognifyStatus`.
+A healthy sidecar or an accepted background request does not mean that a graph
+is searchable. Inspect server-side validation errors without copying provider
+bodies or credentials into client responses.
+
+Some compatible endpoints discard system messages above a measured size limit.
+Cognee's graph instruction plus JSON schema can exceed that limit. Compare the
+same small extraction with an intact system message and bounded system parts
+before enabling compatibility. For a measured 2,000-character endpoint ceiling,
+set `COGNEE_SYSTEM_MESSAGE_MAX_CHARS=1600` in the deployment `.env`, wait for
+active pipelines to finish, and recreate the Cognee service:
+
+```bash
+docker compose up -d --force-recreate cognee
+```
+
+The opt-in patch preserves every character and keeps all instruction parts in
+the system role. Document content stays in the user role. The default `0` leaves
+message shape unchanged. An enabled patch refuses to boot if the pinned adapter
+layout is unsupported. Reprocess the failed document, confirm graph completion,
+and verify a cited answer before treating the issue as resolved. Reset the value
+to `0` and recreate the sidecar to disable splitting.
+
+### Document Graph Retry After a Timeout
+
+Deploy the additive `Document.cognifyPipelineJson` migration with `bun run db:deploy`
+before starting the updated application. Document ingestion persists the stored
+file IDs and accepted graph-run ID. A retry observes that run without uploading
+again. The graph wait has a 30-minute overall deadline; completion requires the
+exact run and every stored file to report readiness.
+
+A timed-out run can still be processing upstream. Use the document reprocess
+endpoint to resume observation. A confirmed failed run clears its state before a
+new attempt. Reprocessing claims the document atomically; a concurrent request
+receives HTTP 409. If the launch response was lost, the saved state is marked
+`launching` with no run ID. Inspect the tenant dataset's sidecar activity and
+reconcile its identity before retrying; do not clear this state blindly or launch
+a second graph pipeline. Never restart a sidecar solely because the app timed out.
+
+### Background Work Blocked by a License
+
+Document embedding, graph processing, index rebuilds and memory writes require
+an active entitlement at execution time. A job queued before expiry can therefore
+be blocked when a worker picks it up. Validator unreachability within the recorded
+grace period remains allowed. License issuance and payment reconciliation remain
+available while the install is locked.
+
+Blocked document jobs persist a document error and a `BACKGROUND_JOB_BLOCKED`
+audit warning. Blocked memory jobs fail immediately and remain in BullMQ's failed
+history, with their reason in worker logs. These failures do not exhaust automatic
+retry attempts. Activate or renew the license before reprocessing documents.
+Memory admission drops optional writes when entitlement cannot be verified,
+including during a database outage; the chat answer remains independent of that
+memory write.
 
 ### Scheduler Not Running
 

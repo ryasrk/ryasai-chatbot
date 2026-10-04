@@ -1,0 +1,19 @@
+{
+  "scope": "isolated PostgreSQL 16 database; synthetic fixture removed after probe",
+  "foreignTenantMutation": false,
+  "owningTenantIndexed": true,
+  "negativeControlRemovedOrganizationPredicateExit": 1,
+  "restoredFocusedTestsExit": 0,
+  "missingContextRefusedBeforeWrites": true,
+  "latestCoverageGate": {
+    "exit": 0,
+    "ftsLinePct": 70.52023121387283,
+    "floor": 69,
+    "existingFloorsUnchanged": true
+  },
+  "sqliteBehavioralTests": {
+    "passed": 3,
+    "failed": 0,
+    "removedInsertionTenantPredicateExit": 1
+  }
+}

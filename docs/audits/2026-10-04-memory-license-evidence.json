@@ -1,0 +1,24 @@
+{
+  "scope": "Isolated PostgreSQL and Redis database 11; real BullMQ memory worker",
+  "licenseAtAdmission": "valid",
+  "licenseAtExecution": "expired",
+  "state": "failed",
+  "attemptsConfigured": 5,
+  "attemptsMade": 1,
+  "failedReason": "Memory write blocked: license expired",
+  "unitChecks": [
+    "Valid, pending, expired, suspended, missing and unknown organization states",
+    "Unreachable validator inside and outside grace",
+    "Locked admission and Redis-down fallback drop without transport",
+    "Worker rechecks entitlement and uses an unrecoverable error",
+    "Unavailable admission lookup drops optional memory without rejecting its caller"
+  ],
+  "negativeControls": [
+    "Removed worker gate failed its focused test",
+    "Removed producer gate failed its focused test"
+  ],
+  "limitations": [
+    "Admission/fallback and provider-call refusal verified by behavioral tests; live probe covers revocation before real worker execution",
+    "Upload graph extraction and source-description fire-and-forget paths remain under review"
+  ]
+}

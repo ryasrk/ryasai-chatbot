@@ -2,7 +2,7 @@
  * Prisma tenant extension — auto-injects organizationId into all queries.
  * ----------------------------------------------------------------------------
  * Uses AsyncLocalStorage to track the current org context. When a request
- * comes in, getActiveUser() calls enterWithOrg(orgId). Every subsequent Prisma
+ * comes in, its handler must call enterWithOrg(orgId). Every subsequent Prisma
  * query on org-scoped models automatically gets organizationId injected into
  * the where clause (reads) and data object (creates).
  *
@@ -10,8 +10,8 @@
  * SSO login, signup, setup wizard, and seed scripts where no org context
  * exists yet or explicit org control is needed.
  *
- * ponytail: findUnique is NOT scoped (can't add non-unique fields to unique
- * where). The original rationale here was "IDs are cuid() random — cross-tenant
+ * ponytail: findUnique lookups were previously unscoped. Prisma 6 now accepts an
+ * additional organizationId predicate; the extension applies it as defence in depth. The original rationale here was "IDs are cuid() random — cross-tenant
  * access by ID is infeasible", which is security-through-obscurity and was
  * measurably FALSE: `api/mcp/servers/route.ts` returns `id: true` to the browser,
  * so a legitimate org-A user holds their own server IDs in plain sight and those
@@ -27,10 +27,9 @@
  * for (a) pre-auth lookups where no org exists yet (login, signup, invitation
  * tokens) and (b) re-reading a row this same handler just created.
  *
- * Ceiling: this is a convention, not a guarantee — the extension cannot rewrite
- * findUnique because Prisma's unique `where` rejects extra fields. So a new
- * `findUnique({where:{id}})` on a client-supplied ID is a silent regression.
- * `src/lib/tenant-route-guard.test.ts` now fails on that pattern; keep it green.
+ * Raw SQL and nested relation operations require explicit ownership checks.
+ * Client-supplied IDs still use findFirst; the invariant allowlist enforces
+ * that convention independently of runtime scoping. Missing context fails closed.
  *
  * THERE ARE TWO INDEPENDENT WAYS ISOLATION IS LOST HERE, and the first one hid
  * behind the second for months:
@@ -41,8 +40,7 @@
  *      extension never fires. This is how `Order` leaked (see the entry below):
  *      the guards all checked the OPERATION (`findUnique` vs `findFirst`) and
  *      nothing checked the MODEL. `tenant-scope-coverage.test.ts` now does.
- *   2. OPERATION COVERAGE. On a model that IS listed, `findUnique`,
- *      `findUniqueOrThrow` and `updateManyAndReturn` are not scoped.
+ *   2. OPERATION COVERAGE. On a model that IS listed, every supported operation must receive the tenant predicate.
  *
  * So "the query used findFirst and the route called enterWithOrg" is NOT
  * sufficient evidence of isolation. Check the model is in the set.
@@ -50,7 +48,14 @@
 import { Prisma } from '@prisma/client'
 import { AsyncLocalStorage } from 'async_hooks'
 
-const orgStorage = new AsyncLocalStorage<string>()
+// Next instrumentation and route bundles must share the same context stores.
+// Module-local stores diverge across bundles and development reloads.
+const tenantGlobal = globalThis as unknown as {
+  ryasaiOrgStorage?: AsyncLocalStorage<string>
+  ryasaiBypassStorage?: AsyncLocalStorage<boolean>
+}
+const orgStorage = tenantGlobal.ryasaiOrgStorage ??= new AsyncLocalStorage<string>()
+const bypassStorage = tenantGlobal.ryasaiBypassStorage ??= new AsyncLocalStorage<boolean>()
 
 export function getOrgContext(): string | undefined {
   return orgStorage.getStore()
@@ -85,7 +90,8 @@ export function enterWithOrg(orgId: string): void {
 }
 
 export async function bypassOrg<T>(fn: () => Promise<T>): Promise<T> {
-  return orgStorage.run(undefined as unknown as string, fn)
+  // PrismaPromise is lazy: await it inside the context, before its then() executes.
+  return bypassStorage.run(true, () => orgStorage.run(undefined as unknown as string, async () => await fn()))
 }
 
 // ponytail: org-scoped models — every model that has organizationId, MINUS the
@@ -170,11 +176,12 @@ export const ORG_SCOPE_EXCEPTIONS: Readonly<Record<string, string>> = {
 // Operations that accept a where clause for filtering (non-unique)
 const FILTER_OPS = new Set([
   'findFirst', 'findFirstOrThrow', 'findMany', 'count', 'aggregate', 'groupBy',
+  'findUnique', 'findUniqueOrThrow',
 ])
 
 // Operations that mutate via where clause
 const MUTATE_WHERE_OPS = new Set([
-  'update', 'updateMany', 'delete', 'deleteMany',
+  'update', 'updateMany', 'updateManyAndReturn', 'delete', 'deleteMany',
 ])
 
 // Operations that create data
@@ -185,23 +192,28 @@ const CREATE_OPS = new Set([
 function injectOrgWhere(args: any, orgId: string): any {
   if (!args.where) {
     args.where = { organizationId: orgId }
-  } else if (args.where.organizationId === undefined) {
+  } else {
+    if (args.where.organizationId !== undefined && args.where.organizationId !== orgId) {
+      throw new Error('Tenant isolation: organizationId conflicts with the active organization; cross-org work requires bypassOrg(fn)')
+    }
     args.where = { ...args.where, organizationId: orgId }
   }
   return args
 }
 
+function assertOrgId(value: unknown, orgId: string): void {
+  if (value !== undefined && value !== orgId) {
+    throw new Error('Tenant isolation: organizationId conflicts with the active organization; cross-org work requires bypassOrg(fn)')
+  }
+}
+
 function injectOrgCreate(args: any, orgId: string): any {
   if (!args.data) return args
-  if (Array.isArray(args.data)) {
-    args.data = args.data.map((d: any) =>
-      d.organizationId === undefined ? { ...d, organizationId: orgId } : d,
-    )
-  } else {
-    if (args.data.organizationId === undefined) {
-      args.data = { ...args.data, organizationId: orgId }
-    }
+  const stamp = (data: any) => {
+    assertOrgId(data.organizationId, orgId)
+    return { ...data, organizationId: orgId }
   }
+  args.data = Array.isArray(args.data) ? args.data.map(stamp) : stamp(args.data)
   return args
 }
 
@@ -215,27 +227,30 @@ export function createTenantExtension() {
         // ORG_SCOPED_MODELS is keyed by first-lowercase names ("user") — normalize
         // before matching, otherwise injection silently never fires (cross-org leak).
         const modelKey = model ? model.charAt(0).toLowerCase() + model.slice(1) : undefined
-        if (!orgId || !model || !modelKey || !ORG_SCOPED_MODELS.has(modelKey)) {
+        if (!model || !modelKey || !ORG_SCOPED_MODELS.has(modelKey) || bypassStorage.getStore()) {
           return query(args)
         }
 
+        if (!orgId) requireOrgContext()
+        const activeOrg = orgId as string
+
         if (FILTER_OPS.has(operation)) {
-          args = injectOrgWhere(args, orgId)
+          args = injectOrgWhere(args, activeOrg)
         } else if (CREATE_OPS.has(operation)) {
-          args = injectOrgCreate(args, orgId)
+          args = injectOrgCreate(args, activeOrg)
         } else if (MUTATE_WHERE_OPS.has(operation)) {
-          // Inject orgId into where to prevent cross-tenant mutations
-          args = injectOrgWhere(args, orgId)
+          args = injectOrgWhere(args, activeOrg)
+          if (args.data) assertOrgId(args.data.organizationId, activeOrg)
         } else if (operation === 'upsert') {
-          // ponytail: upsert where must be unique — don't inject into where.
-          // Only inject into create data. If the record exists in another org,
-          // the update path runs (potential cross-tenant issue) but in practice
-          // upserts are only used in seed scripts with bypassOrg().
-          if (args.create?.organizationId === undefined) {
-            args.create = { ...args.create, organizationId: orgId }
-          }
+          // Prisma 6 accepts additional non-unique predicates in a unique where.
+          // Both the existing-row branch and the create branch must belong to this org.
+          args = injectOrgWhere(args, activeOrg)
+          const createArgs = injectOrgCreate({ data: args.create }, activeOrg)
+          args.create = createArgs.data
+          if (args.update) assertOrgId(args.update.organizationId, activeOrg)
+        } else {
+          throw new Error(`Tenant isolation: unsupported operation ${operation} on ${model}`)
         }
-        // findUnique/findUniqueOrThrow: skipped (see file-level comment)
 
         return query(args)
       },

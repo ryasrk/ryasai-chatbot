@@ -54,6 +54,7 @@ function waitForPort(port: number, label: string, timeoutMs = 10_000): Promise<v
 }
 
 export default async function globalSetup() {
+  process.env.REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://localhost:6379/15'
   console.log('\n[global-setup] Seeding e2e database…')
   execSync('bun run scripts/e2e-seed.ts', {
     stdio: 'inherit',

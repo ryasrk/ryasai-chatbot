@@ -1,0 +1,22 @@
+[
+  {
+    "model": "cbcn/glm-5.2",
+    "mode": "unsplit",
+    "systemChars": 3210,
+    "status": 200,
+    "parseable": false,
+    "valid": false,
+    "nodeCount": 0,
+    "elapsedMs": 4196
+  },
+  {
+    "model": "cbcn/glm-5.2",
+    "mode": "split",
+    "systemChars": 3210,
+    "status": 200,
+    "parseable": true,
+    "valid": true,
+    "nodeCount": 4,
+    "elapsedMs": 27423
+  }
+]

@@ -10,7 +10,7 @@ App code → metrics.ts (in-memory) → /api/metrics → Prometheus scrape → G
 
 ## Metrics Endpoint
 
-`GET /api/metrics` — Prometheus text format. Scrape every 15s.
+`GET /api/metrics` — Prometheus text format. Scrape every 15s. Set `METRICS_TOKEN` on the app and mount the same token in the scraper credentials file. Without a token, this endpoint requires an authenticated admin session.
 
 ```yaml
 # prometheus.yml
@@ -20,6 +20,9 @@ scrape_configs:
     static_configs:
       - targets: ['chatbot:3000']
     metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/ryasai-metrics-token
 ```
 
 ## Grafana Dashboard

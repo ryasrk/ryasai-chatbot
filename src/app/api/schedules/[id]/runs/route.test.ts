@@ -175,7 +175,7 @@ describe('the IDOR question: this route reads logs by a client-supplied schedule
     // `findMany` must be in FILTER_OPS, or the injection above never fires for this route.
     const filters = tenantSrc.slice(tenantSrc.indexOf('const FILTER_OPS'), tenantSrc.indexOf('])', tenantSrc.indexOf('const FILTER_OPS')))
     expect(filters).toContain("'findMany'")
-    expect(filters).not.toContain("'findUnique'")
+    expect(filters).toContain("'findUnique'")
 
     // And the injection APPENDS rather than replaces, so the route's `scheduledRunId` survives
     // alongside the org -- the conjunctive match is what makes a foreign schedule id match nothing.

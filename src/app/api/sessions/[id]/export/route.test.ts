@@ -205,7 +205,8 @@ describe('IDOR: the id is client-supplied and the payload is a whole conversatio
     expect(filterOps).toContain("'findFirst'")
     expect(filterOps).toContain("'findMany'")
     // The whole point: the unscoped operations are deliberately absent from the scoped list.
-    expect(filterOps).not.toContain('findUnique')
+    // Unique reads now receive an additional tenant predicate in Prisma 6.
+    expect(filterOps).toContain('findUnique')
     // chatSession is one of the models the extension covers.
     expect(tenant).toContain("'chatSession'")
   })

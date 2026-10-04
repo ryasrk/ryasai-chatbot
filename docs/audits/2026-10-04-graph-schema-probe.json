@@ -1,0 +1,26 @@
+[
+  {
+    "model": "cbcn/glm-5.2",
+    "status": 200,
+    "parseable": false,
+    "valid": false,
+    "nodeCount": 0,
+    "elapsedMs": 20521
+  },
+  {
+    "model": "cbcn/kimi-k3",
+    "status": 200,
+    "parseable": true,
+    "valid": false,
+    "nodeCount": 5,
+    "elapsedMs": 17872
+  },
+  {
+    "model": "cbai/claude-sonnet-4.6",
+    "status": 200,
+    "parseable": false,
+    "valid": false,
+    "nodeCount": 0,
+    "elapsedMs": 4709
+  }
+]

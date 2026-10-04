@@ -1,0 +1,824 @@
+{
+  "summary": {
+    "questions": 40,
+    "avgFaithfulness": 1,
+    "avgAnswerRelevance": 1,
+    "avgContextPrecision": 0.28874999999999984,
+    "avgContextRecall": 1,
+    "avgLatencyMs": 11626.725,
+    "judgedFaithfulness": 0,
+    "judgedAnswerRelevance": 0,
+    "judgedContextPrecision": 0,
+    "judgedContextRecall": 0
+  },
+  "results": [
+    {
+      "questionId": "readiness-01-01",
+      "question": "How long are Enterprise invoice payment terms?",
+      "expectedAnswer": "30 calendar days after issue",
+      "generatedAnswer": "Enterprise invoice payment terms run for 30 calendar days after the invoice is issued.",
+      "retrievedChunks": [
+        {
+          "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest ",
+          "score": 1,
+          "documentName": "Payment policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 14416
+    },
+    {
+      "questionId": "readiness-01-02",
+      "question": "How long are SMB invoice payment terms?",
+      "expectedAnswer": "14 calendar days after issue",
+      "generatedAnswer": "SMB invoices are payable within 14 calendar days of the issue date.",
+      "retrievedChunks": [
+        {
+          "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest ",
+          "score": 1,
+          "documentName": "Payment policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9025
+    },
+    {
+      "questionId": "readiness-01-03",
+      "question": "What deposit must a new customer pay before work starts?",
+      "expectedAnswer": "50 percent",
+      "generatedAnswer": "A new customer must pay a 50 percent deposit before any work starts.",
+      "retrievedChunks": [
+        {
+          "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest ",
+          "score": 1,
+          "documentName": "Payment policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9964
+    },
+    {
+      "questionId": "readiness-01-04",
+      "question": "What is the monthly late-payment interest and its maximum?",
+      "expectedAnswer": "1 percent monthly, capped at 5 percent",
+      "generatedAnswer": "Late payments accrue interest at 1% per month, and that interest is capped at 5% of the invoice amount.",
+      "retrievedChunks": [
+        {
+          "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest ",
+          "score": 1,
+          "documentName": "Payment policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 8601
+    },
+    {
+      "questionId": "readiness-01-05",
+      "question": "When does Finance send the first overdue invoice reminder?",
+      "expectedAnswer": "7 days after the invoice due date",
+      "generatedAnswer": "Finance sends the first reminder 7 days after the invoice due date.",
+      "retrievedChunks": [
+        {
+          "content": "Enterprise invoice terms are 30 calendar days after issue.\n\nSMB invoice terms are 14 calendar days after issue.\n\nNew customers must pay a 50 percent deposit before work starts.\n\nLate payment interest ",
+          "score": 1,
+          "documentName": "Payment policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.5,
+        "contextRecall": 1
+      },
+      "latencyMs": 15256
+    },
+    {
+      "questionId": "readiness-02-01",
+      "question": "How many paid annual leave days do full-time employees receive?",
+      "expectedAnswer": "18",
+      "generatedAnswer": "Full-time employees receive **18 paid annual leave days** per year.\n\nFor reference, up to 5 unused days can roll over into the next year, and any rolled-over days must be used by January 31.",
+      "retrievedChunks": [
+        {
+          "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests req",
+          "score": 1,
+          "documentName": "Leave policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 13312
+    },
+    {
+      "questionId": "readiness-02-02",
+      "question": "What is the maximum annual leave rollover?",
+      "expectedAnswer": "5 days",
+      "generatedAnswer": "The maximum rollover is 5 unused annual leave days per year. Full-time employees accrue 18 paid annual leave days annually, and any rolled-over days must be used by January 31 of the following year.",
+      "retrievedChunks": [
+        {
+          "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests req",
+          "score": 1,
+          "documentName": "Leave policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.6,
+        "contextRecall": 1
+      },
+      "latencyMs": 13671
+    },
+    {
+      "questionId": "readiness-02-03",
+      "question": "When must rolled-over leave be used?",
+      "expectedAnswer": "January 31",
+      "generatedAnswer": "Rolled-over leave must be used by January 31.",
+      "retrievedChunks": [
+        {
+          "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests req",
+          "score": 1,
+          "documentName": "Leave policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9203
+    },
+    {
+      "questionId": "readiness-02-04",
+      "question": "How much advance notice is required for annual leave?",
+      "expectedAnswer": "7 calendar days",
+      "generatedAnswer": "Annual leave requests require **7 calendar days** of advance notice.",
+      "retrievedChunks": [
+        {
+          "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests req",
+          "score": 1,
+          "documentName": "Leave policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 16817
+    },
+    {
+      "questionId": "readiness-02-05",
+      "question": "How long is paid parental leave for the primary caregiver?",
+      "expectedAnswer": "16 weeks",
+      "generatedAnswer": "Paid parental leave for the primary caregiver lasts **16 weeks**.",
+      "retrievedChunks": [
+        {
+          "content": "Full-time employees receive 18 paid annual leave days per year.\n\nAt most 5 unused leave days can roll over into the next year.\n\nRolled-over leave must be used by January 31.\n\nAnnual leave requests req",
+          "score": 1,
+          "documentName": "Leave policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 11006
+    },
+    {
+      "questionId": "readiness-03-01",
+      "question": "Who approves purchases below USD 5000?",
+      "expectedAnswer": "Department managers",
+      "generatedAnswer": "Purchases under USD 5000 are approved by department managers. For comparison, purchases of USD 25,000 or more go to the CFO for approval.",
+      "retrievedChunks": [
+        {
+          "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security revi",
+          "score": 1,
+          "documentName": "Procurement policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9810
+    },
+    {
+      "questionId": "readiness-03-02",
+      "question": "Who approves purchases of at least USD 25000?",
+      "expectedAnswer": "The CFO",
+      "generatedAnswer": "Purchases of USD 25,000 or more are approved by the CFO.",
+      "retrievedChunks": [
+        {
+          "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security revi",
+          "score": 1,
+          "documentName": "Procurement policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.4,
+        "contextRecall": 1
+      },
+      "latencyMs": 12108
+    },
+    {
+      "questionId": "readiness-03-03",
+      "question": "How many supplier quotes are required above USD 10000?",
+      "expectedAnswer": "three written supplier quotes",
+      "generatedAnswer": "Purchases above USD 10,000 require three written supplier quotes.",
+      "retrievedChunks": [
+        {
+          "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security revi",
+          "score": 1,
+          "documentName": "Procurement policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9969
+    },
+    {
+      "questionId": "readiness-03-04",
+      "question": "How often are active supplier security reviews repeated?",
+      "expectedAnswer": "every 12 months",
+      "generatedAnswer": "Active supplier security reviews are repeated every 12 months.",
+      "retrievedChunks": [
+        {
+          "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security revi",
+          "score": 1,
+          "documentName": "Procurement policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9304
+    },
+    {
+      "questionId": "readiness-03-05",
+      "question": "When must a purchase order be issued?",
+      "expectedAnswer": "before goods are ordered",
+      "generatedAnswer": "A purchase order must be issued before goods are ordered.",
+      "retrievedChunks": [
+        {
+          "content": "Department managers approve purchases below USD 5000.\n\nThe CFO approves purchases of USD 25000 or more.\n\nPurchases above USD 10000 require three written supplier quotes.\n\nActive supplier security revi",
+          "score": 1,
+          "documentName": "Procurement policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9886
+    },
+    {
+      "questionId": "readiness-04-01",
+      "question": "How long can a user session remain idle?",
+      "expectedAnswer": "30 minutes",
+      "generatedAnswer": "A user session can stay idle for up to 30 minutes; after that, it expires automatically.",
+      "retrievedChunks": [
+        {
+          "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents",
+          "score": 1,
+          "documentName": "Security policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9898
+    },
+    {
+      "questionId": "readiness-04-02",
+      "question": "How long are security audit logs retained?",
+      "expectedAnswer": "180 days",
+      "generatedAnswer": "Security audit logs are retained for 180 days.",
+      "retrievedChunks": [
+        {
+          "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents",
+          "score": 1,
+          "documentName": "Security policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 8521
+    },
+    {
+      "questionId": "readiness-04-03",
+      "question": "Which accounts must use multi-factor authentication?",
+      "expectedAnswer": "Administrator accounts",
+      "generatedAnswer": "Administrator accounts must use multi-factor authentication.",
+      "retrievedChunks": [
+        {
+          "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents",
+          "score": 1,
+          "documentName": "Security policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9261
+    },
+    {
+      "questionId": "readiness-04-04",
+      "question": "How quickly must suspected security incidents be reported?",
+      "expectedAnswer": "within 60 minutes",
+      "generatedAnswer": "Suspected security incidents must be reported within 60 minutes.",
+      "retrievedChunks": [
+        {
+          "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents",
+          "score": 1,
+          "documentName": "Security policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 10668
+    },
+    {
+      "questionId": "readiness-04-05",
+      "question": "How often must service credentials be rotated?",
+      "expectedAnswer": "at least every 90 days",
+      "generatedAnswer": "Service credentials must be rotated at least every 90 days.",
+      "retrievedChunks": [
+        {
+          "content": "Idle user sessions expire after 30 minutes without activity.\n\nSecurity audit logs are retained for 180 days.\n\nAdministrator accounts must use multi-factor authentication.\n\nSuspected security incidents",
+          "score": 1,
+          "documentName": "Security policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 8527
+    },
+    {
+      "questionId": "readiness-05-01",
+      "question": "When do database backups run?",
+      "expectedAnswer": "daily at 02:00 UTC",
+      "generatedAnswer": "Database backups run once a day, at 02:00 UTC.",
+      "retrievedChunks": [
+        {
+          "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are ret",
+          "score": 1,
+          "documentName": "Recovery policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9915
+    },
+    {
+      "questionId": "readiness-05-02",
+      "question": "What is the database recovery point objective?",
+      "expectedAnswer": "24 hours",
+      "generatedAnswer": "The database recovery point objective is 24 hours.",
+      "retrievedChunks": [
+        {
+          "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are ret",
+          "score": 1,
+          "documentName": "Recovery policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 13425
+    },
+    {
+      "questionId": "readiness-05-03",
+      "question": "What is the database recovery time objective?",
+      "expectedAnswer": "4 hours",
+      "generatedAnswer": "The recovery time objective for database recovery is 4 hours — that's the target window for restoring the database after an incident.",
+      "retrievedChunks": [
+        {
+          "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are ret",
+          "score": 1,
+          "documentName": "Recovery policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 1,
+        "contextRecall": 1
+      },
+      "latencyMs": 29050
+    },
+    {
+      "questionId": "readiness-05-04",
+      "question": "How long are daily database backups retained?",
+      "expectedAnswer": "30 days",
+      "generatedAnswer": "Daily database backups are retained for 30 days.",
+      "retrievedChunks": [
+        {
+          "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are ret",
+          "score": 1,
+          "documentName": "Recovery policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 13960
+    },
+    {
+      "questionId": "readiness-05-05",
+      "question": "How often is a populated database restore drill performed?",
+      "expectedAnswer": "quarterly",
+      "generatedAnswer": "A populated database restore drill is performed quarterly.",
+      "retrievedChunks": [
+        {
+          "content": "Database backups run daily at 02:00 UTC.\n\nThe recovery point objective for database recovery is 24 hours.\n\nThe recovery time objective for database recovery is 4 hours.\n\nDaily database backups are ret",
+          "score": 1,
+          "documentName": "Recovery policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 14778
+    },
+    {
+      "questionId": "readiness-06-01",
+      "question": "What is the standard hotel reimbursement ceiling?",
+      "expectedAnswer": "USD 150 per night",
+      "generatedAnswer": "The standard hotel reimbursement ceiling is USD 150 per night.",
+      "retrievedChunks": [
+        {
+          "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after",
+          "score": 1,
+          "documentName": "Travel policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 14193
+    },
+    {
+      "questionId": "readiness-06-02",
+      "question": "What is the daily meal reimbursement limit during approved travel?",
+      "expectedAnswer": "USD 40 per day",
+      "generatedAnswer": "Meals during approved travel are reimbursed up to **USD 40 per day**.",
+      "retrievedChunks": [
+        {
+          "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after",
+          "score": 1,
+          "documentName": "Travel policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 7448
+    },
+    {
+      "questionId": "readiness-06-03",
+      "question": "When must travel expense claims be submitted after return?",
+      "expectedAnswer": "within 10 calendar days",
+      "generatedAnswer": "Travel expense claims must be submitted within 10 calendar days after you return.",
+      "retrievedChunks": [
+        {
+          "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after",
+          "score": 1,
+          "documentName": "Travel policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 8774
+    },
+    {
+      "questionId": "readiness-06-04",
+      "question": "What flight duration permits business-class travel?",
+      "expectedAnswer": "longer than 8 hours",
+      "generatedAnswer": "Business-class travel is permitted when the itinerary is longer than 8 hours. Any flight itinerary exceeding that 8-hour threshold qualifies.",
+      "retrievedChunks": [
+        {
+          "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after",
+          "score": 1,
+          "documentName": "Travel policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 10276
+    },
+    {
+      "questionId": "readiness-06-05",
+      "question": "What document is required for train travel reimbursement?",
+      "expectedAnswer": "an itemized receipt",
+      "generatedAnswer": "For train travel reimbursement, you need to provide an itemized receipt.",
+      "retrievedChunks": [
+        {
+          "content": "The standard hotel reimbursement ceiling is USD 150 per night.\n\nMeals during approved travel are reimbursed up to USD 40 per day.\n\nTravel expense claims must be submitted within 10 calendar days after",
+          "score": 1,
+          "documentName": "Travel policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 10788
+    },
+    {
+      "questionId": "readiness-07-01",
+      "question": "How quickly are Severity 1 support incidents acknowledged?",
+      "expectedAnswer": "within 15 minutes",
+      "generatedAnswer": "Severity 1 support incidents are acknowledged within 15 minutes.",
+      "retrievedChunks": [
+        {
+          "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity",
+          "score": 1,
+          "documentName": "Support policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 12042
+    },
+    {
+      "questionId": "readiness-07-02",
+      "question": "What is the workaround deadline for Severity 1 support incidents?",
+      "expectedAnswer": "within 4 hours",
+      "generatedAnswer": "Severity 1 support incidents require a workaround within **4 hours**.",
+      "retrievedChunks": [
+        {
+          "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity",
+          "score": 1,
+          "documentName": "Support policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 16650
+    },
+    {
+      "questionId": "readiness-07-03",
+      "question": "How quickly are Severity 2 support incidents acknowledged?",
+      "expectedAnswer": "within 1 hour",
+      "generatedAnswer": "Severity 2 support incidents are acknowledged within 1 hour.",
+      "retrievedChunks": [
+        {
+          "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity",
+          "score": 1,
+          "documentName": "Support policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 8971
+    },
+    {
+      "questionId": "readiness-07-04",
+      "question": "How quickly are Severity 3 support incidents acknowledged?",
+      "expectedAnswer": "within 1 business day",
+      "generatedAnswer": "Severity 3 support incidents are acknowledged within 1 business day.",
+      "retrievedChunks": [
+        {
+          "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity",
+          "score": 1,
+          "documentName": "Support policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.25,
+        "contextRecall": 1
+      },
+      "latencyMs": 8656
+    },
+    {
+      "questionId": "readiness-07-05",
+      "question": "When does scheduled support maintenance begin?",
+      "expectedAnswer": "on Sundays at 02:00 UTC",
+      "generatedAnswer": "Scheduled support maintenance begins on Sundays at 02:00 UTC.",
+      "retrievedChunks": [
+        {
+          "content": "Severity 1 support incidents are acknowledged within 15 minutes.\n\nSeverity 1 support incidents need a workaround within 4 hours.\n\nSeverity 2 support incidents are acknowledged within 1 hour.\n\nSeverity",
+          "score": 1,
+          "documentName": "Support policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9990
+    },
+    {
+      "questionId": "readiness-08-01",
+      "question": "How long are customer financial records retained?",
+      "expectedAnswer": "7 years",
+      "generatedAnswer": "Customer financial records are retained for 7 years.",
+      "retrievedChunks": [
+        {
+          "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer ",
+          "score": 1,
+          "documentName": "Data governance policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 16907
+    },
+    {
+      "questionId": "readiness-08-02",
+      "question": "How quickly are deletion requests acknowledged?",
+      "expectedAnswer": "within 3 business days",
+      "generatedAnswer": "Deletion requests are acknowledged within 3 business days. The full deletion itself is completed within 30 calendar days.",
+      "retrievedChunks": [
+        {
+          "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer ",
+          "score": 1,
+          "documentName": "Data governance policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.4,
+        "contextRecall": 1
+      },
+      "latencyMs": 9098
+    },
+    {
+      "questionId": "readiness-08-03",
+      "question": "What is the deadline for completing deletion requests?",
+      "expectedAnswer": "within 30 calendar days",
+      "generatedAnswer": "Deletion requests must be completed within 30 calendar days. (The 3-business-day figure in the policy refers to acknowledgment of the request, not its completion.)",
+      "retrievedChunks": [
+        {
+          "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer ",
+          "score": 1,
+          "documentName": "Data governance policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 9357
+    },
+    {
+      "questionId": "readiness-08-04",
+      "question": "Who approves exports of personal data?",
+      "expectedAnswer": "The Data Protection Officer",
+      "generatedAnswer": "The Data Protection Officer is responsible for approving any export of personal data.",
+      "retrievedChunks": [
+        {
+          "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer ",
+          "score": 1,
+          "documentName": "Data governance policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 12611
+    },
+    {
+      "questionId": "readiness-08-05",
+      "question": "Is production personal data allowed in development databases?",
+      "expectedAnswer": "prohibited",
+      "generatedAnswer": "No. Production personal data is prohibited in development databases, so it must not be used there.",
+      "retrievedChunks": [
+        {
+          "content": "Customer financial records are retained for 7 years.\n\nDeletion requests are acknowledged within 3 business days.\n\nDeletion requests are completed within 30 calendar days.\n\nThe Data Protection Officer ",
+          "score": 1,
+          "documentName": "Data governance policy"
+        }
+      ],
+      "metrics": {
+        "faithfulness": 1,
+        "answerRelevance": 1,
+        "contextPrecision": 0.2,
+        "contextRecall": 1
+      },
+      "latencyMs": 8957
+    }
+  ],
+  "timestamp": "2026-10-04T03:59:11.291Z",
+  "meta": {
+    "questionCount": 40,
+    "questionSource": "benchmark/data/readiness-corpus.json",
+    "judgeIndependent": true,
+    "judgeModel": "cbcn/glm-5.2",
+    "orgId": "cmuta7w070000h86hu2cssaja"
+  }
+}

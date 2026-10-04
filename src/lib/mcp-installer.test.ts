@@ -1,6 +1,13 @@
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test'
+import { describe, expect, it, beforeEach, afterEach, mock } from 'bun:test'
 import { parseMcpInstallInstructions } from './mcp-installer'
 import { npmPackageMissing, searchNpmPackages, fetchMcpInstallFromUrl } from './mcp-installer'
+
+// Unit tests control DNS separately from fetch; a private answer must stop HTTP.
+mock.module('node:dns/promises', () => ({
+  lookup: async (hostname: string) => [{
+    address: hostname === 'sneaky.example.com' ? '10.0.0.7' : '93.184.216.34', family: 4,
+  }],
+}))
 
 describe('parseMcpInstallInstructions', () => {
   it('parses JSON mcpServers config block', () => {
@@ -228,7 +235,7 @@ describe('fetchMcpInstallFromUrl', () => {
     // asserted on its own terms here rather than inferred from a combined result.
     const { isBlockedHost, isBlockedHostAsync } = await import('@/lib/llm-config')
     expect(isBlockedHost('sneaky.example.com')).toBe(false)
-    await expect(isBlockedHostAsync('sneaky.example.com')).resolves.toBe(false)
+    await expect(isBlockedHostAsync('sneaky.example.com')).resolves.toBe(true)
     // And the literals it CAN see are still refused synchronously.
     expect(isBlockedHost('169.254.169.254')).toBe(true)
     expect(await isBlockedHostAsync('169.254.169.254')).toBe(true)
@@ -243,10 +250,9 @@ describe('fetchMcpInstallFromUrl', () => {
     const { isBlockedHost, isBlockedHostAsync } = await import('@/lib/llm-config')
     expect(isBlockedHost('sneaky.example.com')).toBe(false)
     const before = fetchCalls.length
-    // Without a resolver that returns an internal address this is a public host and
-    // the fetch path proceeds; the async layer is exercised directly instead of
-    // being assumed, so deleting it is visible.
-    await expect(isBlockedHostAsync('sneaky.example.com')).resolves.toBe(false)
+    // The resolver returns a private address even though the hostname is public.
+    await expect(isBlockedHostAsync('sneaky.example.com')).resolves.toBe(true)
+    expect(await fetchMcpInstallFromUrl('https://sneaky.example.com/readme')).toBeNull()
     expect(fetchCalls.length).toBe(before)
   })
 

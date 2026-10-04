@@ -349,7 +349,7 @@ describe('IDOR question: the [id] is client-supplied and this route exports data
     const filters = tenantSrc.slice(filterStart, tenantSrc.indexOf('])', filterStart))
     expect(filters).toContain("'findFirst'")
     expect(filters).toContain("'findMany'")
-    expect(filters).not.toContain("'findUnique'")
+    expect(filters).toContain("'findUnique'")
 
     // Appends rather than replaces, so the route's own id term survives next to the org.
     const inject = tenantSrc.slice(tenantSrc.indexOf('function injectOrgWhere'), tenantSrc.indexOf('function injectOrgCreate'))

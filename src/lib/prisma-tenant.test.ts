@@ -113,6 +113,20 @@ describe('requireOrgContext — the fail-fast org read', () => {
 })
 
 describe('org context storage', () => {
+  test('bypass keeps lazy database evaluation inside its context', async () => {
+    enterWithOrg('org-a')
+    // Prisma evaluates a query when its promise is awaited, rather than when
+    // the query object is created. Eager mocks cannot expose this boundary.
+    const lazy = {
+      then(resolve: (value: unknown) => void, reject: (error: unknown) => void) {
+        captured!({ model: 'User', operation: 'findMany', args: {},
+          query: async (args) => args }).then(resolve, reject)
+      },
+    }
+    const result = await bypassOrg(() => lazy as unknown as Promise<Record<string, unknown>>)
+    expect(result).toEqual({})
+    expect(getOrgContext()).toBe('org-a')
+  })
   test('enterWithOrg then getOrgContext round-trips', async () => {
     await bypassOrg(async () => {
       enterWithOrg('org-x')
@@ -163,28 +177,18 @@ describe('READS — org scoping is injected', () => {
     expect(args.where).toEqual({ severity: 'critical', organizationId: 'org-a' })
   })
 
-  test('an EXPLICIT organizationId is NOT overridden', async () => {
-    // Some paths legitimately scope explicitly (admin cross-org reads). Clobbering
-    // it would break them silently.
-    const args = await run({
-      model: 'User',
-      operation: 'findMany',
-      orgId: 'org-a',
-      args: { where: { organizationId: 'org-b' } },
-    })
-    expect(args.where).toEqual({ organizationId: 'org-b' })
+  test('a foreign organization predicate is rejected before querying', async () => {
+    // Explicit foreign scope previously overrode tenant isolation. Cross-org
+    // operations must use bypassOrg rather than a client-controlled predicate.
+    await expect(run({ model: 'User', operation: 'findMany', orgId: 'org-a',
+      args: { where: { organizationId: 'org-b' } } })).rejects.toThrow('conflicts')
   })
 
-  test('findUnique is deliberately NOT scoped', async () => {
-    // The documented ceiling: Prisma's unique where rejects extra fields. Pinned so
-    // a future change is a deliberate decision, not an accident.
-    const args = await run({
-      model: 'User',
-      operation: 'findUnique',
-      orgId: 'org-a',
-      args: { where: { id: 'abc' } },
-    })
-    expect(args.where).toEqual({ id: 'abc' })
+  test('unique reads retain the unique id and require the active org', async () => {
+    for (const operation of ['findUnique', 'findUniqueOrThrow']) {
+      const args = await run({ model: 'User', operation, orgId: 'org-a', args: { where: { id: 'abc' } } })
+      expect(args.where).toEqual({ id: 'abc', organizationId: 'org-a' })
+    }
   })
 })
 
@@ -228,26 +232,11 @@ describe('CREATES — org is injected into data', () => {
     expect(args.data).toEqual([{ text: 't', organizationId: 'org-a' }])
   })
 
-  test('an explicit organizationId in data is NOT overwritten', async () => {
-    const args = await run({
-      model: 'User',
-      operation: 'create',
-      orgId: 'org-a',
-      args: { data: { organizationId: 'org-b' } },
-    })
-    expect(args.data).toEqual({ organizationId: 'org-b' })
-  })
-
-  test('createMany leaves rows that already carry an organizationId alone', async () => {
-    // A mixed batch is realistic during an org migration; the ones already stamped
-    // must not be reassigned.
-    const args = await run({
-      model: 'User',
-      operation: 'createMany',
-      orgId: 'org-a',
-      args: { data: [{ organizationId: 'org-b' }, { name: 'n' }] },
-    })
-    expect(args.data).toEqual([{ organizationId: 'org-b' }, { name: 'n', organizationId: 'org-a' }])
+  test('foreign create data and mixed-tenant batches are rejected', async () => {
+    for (const data of [{ organizationId: 'org-b' }, [{ organizationId: 'org-b' }, { name: 'n' }]]) {
+      await expect(run({ model: 'User', operation: Array.isArray(data) ? 'createMany' : 'create',
+        orgId: 'org-a', args: { data } })).rejects.toThrow('conflicts')
+    }
   })
 
   test('a create with NO data is returned untouched', async () => {
@@ -257,27 +246,18 @@ describe('CREATES — org is injected into data', () => {
   })
 })
 
-describe('upsert — create data only, never the unique where', () => {
-  test('organizationId goes into create, not where', async () => {
-    // Injecting into a unique where would make Prisma reject the query outright.
-    const args = await run({
-      model: 'AppConfig',
-      operation: 'upsert',
-      orgId: 'org-a',
-      args: { where: { key: 'k' }, create: { value: 'v' }, update: { value: 'w' } },
-    })
-    expect(args.where).toEqual({ key: 'k' })
+describe('upsert scopes both branches', () => {
+  test('where and create both carry the active org', async () => {
+    const args = await run({ model: 'AppConfig', operation: 'upsert', orgId: 'org-a',
+      args: { where: { key: 'k' }, create: { value: 'v' }, update: { value: 'w' } } })
+    expect(args.where).toEqual({ key: 'k', organizationId: 'org-a' })
     expect(args.create).toEqual({ value: 'v', organizationId: 'org-a' })
   })
-
-  test('an explicit organizationId in create is preserved', async () => {
-    const args = await run({
-      model: 'AppConfig',
-      operation: 'upsert',
-      orgId: 'org-a',
-      args: { where: { key: 'k' }, create: { organizationId: 'org-b' } },
-    })
-    expect(args.create).toEqual({ organizationId: 'org-b' })
+  test('neither branch can reassign a row to another org', async () => {
+    for (const args of [
+      { where: { id: 'x' }, create: { organizationId: 'org-b' }, update: {} },
+      { where: { id: 'x' }, create: {}, update: { organizationId: 'org-b' } },
+    ]) await expect(run({ model: 'User', operation: 'upsert', orgId: 'org-a', args })).rejects.toThrow('conflicts')
   })
 })
 
@@ -302,10 +282,23 @@ describe('the extension must do NOTHING without an org context', () => {
     expect(args.where).toBeUndefined()
   })
 
-  test('an operation OUTSIDE every set is passed through untouched', async () => {
-    // e.g. findRaw/runCommand -- untouched rather than mis-injected.
-    const args = await run({ model: 'User', operation: 'someUnknownOp', orgId: 'org-a', args: { where: { a: 1 } } })
-    expect(args.where).toEqual({ a: 1 })
+  test('an unsupported operation on a tenant model fails closed', async () => {
+    await expect(run({ model: 'User', operation: 'someUnknownOp', orgId: 'org-a' })).rejects.toThrow('unsupported operation')
+  })
+  test('missing context rejects reads and writes without forwarding a query', async () => {
+    for (const operation of ['findMany', 'findUnique', 'create', 'deleteMany']) {
+      await expect(run({ model: 'User', operation })).rejects.toThrow('no organization context')
+    }
+  })
+  test('mutations cannot move a row into a foreign org', async () => {
+    for (const operation of ['update', 'updateMany', 'updateManyAndReturn']) {
+      await expect(run({ model: 'User', operation, orgId: 'org-a',
+        args: { where: { id: 'x' }, data: { organizationId: 'org-b' } } })).rejects.toThrow('conflicts')
+    }
+  })
+  test('updateManyAndReturn receives the tenant predicate', async () => {
+    const args = await run({ model: 'User', operation: 'updateManyAndReturn', orgId: 'org-a', args: { data: { name: 'new' } } })
+    expect(args.where).toEqual({ organizationId: 'org-a' })
   })
 })
 
@@ -415,7 +408,7 @@ describe('Order is org-scoped (the measured cross-tenant IDOR)', () => {
     // findUnique is never scoped (documented ceiling) -- hence bypassOrg is REQUIRED
     // here rather than merely convenient: there is no scoped form of this lookup by
     // a non-unique-pair key.
-    expect(scoped.where).toEqual({ midtransOrderId: 'M' })
+    expect(scoped.where).toEqual({ midtransOrderId: 'M', organizationId: 'org-a' })
 
     const unscoped = await bypassOrg(async () =>
       run({ model: 'Order', operation: 'findMany', bypass: true, args: { where: { status: 'settlement' } } }),

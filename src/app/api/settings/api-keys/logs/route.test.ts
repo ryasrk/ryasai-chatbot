@@ -148,7 +148,7 @@ describe('the leak question: no filter, so the org context IS the isolation', ()
     const filterStart = tenantSrc.indexOf('const FILTER_OPS')
     const filters = tenantSrc.slice(filterStart, tenantSrc.indexOf('])', filterStart))
     expect(filters).toContain("'findMany'")
-    expect(filters).not.toContain("'findUnique'")
+    expect(filters).toContain("'findUnique'")
 
     // APPEND, not replace -- otherwise the injection could clobber a future caller filter.
     const inject = tenantSrc.slice(tenantSrc.indexOf('function injectOrgWhere'), tenantSrc.indexOf('function injectOrgCreate'))

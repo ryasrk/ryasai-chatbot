@@ -1,0 +1,18 @@
+[
+  {
+    "model": "cbcn/glm-5.2",
+    "status": 200,
+    "parseable": true,
+    "valid": true,
+    "nodeCount": 3,
+    "elapsedMs": 13509
+  },
+  {
+    "model": "cbcn/kimi-k3",
+    "status": 200,
+    "parseable": true,
+    "valid": true,
+    "nodeCount": 4,
+    "elapsedMs": 12039
+  }
+]

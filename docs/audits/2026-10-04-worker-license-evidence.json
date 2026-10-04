@@ -1,0 +1,18 @@
+{
+  "state": "failed",
+  "attemptsConfigured": 3,
+  "attemptsMade": 1,
+  "failedReason": "License has expired. Please renew your license.",
+  "document": {
+    "cognifyStatus": "failed",
+    "cognifyError": "License expired; reprocess after activation or renewal."
+  },
+  "auditRows": 1,
+  "auditSeverity": "warning",
+  "scope": "Isolated PostgreSQL evaluation database and Redis database 12; real BullMQ worker",
+  "negativeControl": "Bypassing the lockdown predicate failed focused behavioral tests; byte-identical restoration passed",
+  "limitations": [
+    "One live expired-license job; other handlers, grace and billing exemptions verified through behavioral unit tests",
+    "No customer license state changed; no external payment or license issuance exercised"
+  ]
+}

@@ -10,40 +10,40 @@ Procedures for the compose-first production deployment (`install.sh` →
   BEFORE images are pulled or the schema is touched.
 - **Where**: `/opt/ryasai-chatbot/backups/ryasai-<timestamp>.sql` on the VPS.
 - **Retention**: newest 5 dumps; older ones are deleted automatically.
-- Fresh installs skip the backup (no data yet). Backup failure is non-fatal
-  (warns) so a stopped DB can't wedge the installer — but check the warning.
+- Fresh installs skip the backup (no data yet). An update stops when its application database backup fails. Restore database health and retry before changing images or schema.
 
 ## Restore procedure (schema drift / bad migration)
 
-The `migrate` one-shot runs `prisma db push` WITHOUT `--accept-data-loss`.
-Schema drift that would drop data fails the migrate job loudly and `app` /
-`scheduler` never start (`service_completed_successfully` gate). That is
-deliberate: an operator decides, not the deploy script.
+The `migrate` one-shot runs `bun scripts/migrate.ts`, then Prisma's versioned
+`migrate deploy`. Fresh databases apply the recorded migration. Existing installs
+without migration history are adopted only when their schema matches the frozen
+baseline; known runtime search indexes are preserved. A mismatch stops startup
+through the `service_completed_successfully` gate.
 
-1. SSH to the VPS and inspect the failure:
-   ```bash
-   docker compose -f docker-compose.prod.yml logs migrate
-   ```
-2. Decide:
-   - **Safe to proceed** (drift is intentional): edit nothing here — apply the
-     schema change manually with `prisma db push --accept-data-loss` ONLY after
-     confirming a fresh backup exists:
-     ```bash
-     docker compose -f docker-compose.prod.yml exec -T db \
-       pg_dump -U ryasai -d ryasai > backups/manual-$(date +%Y%m%d-%H%M%S).sql
-     ```
-   - **Roll back instead**: continue below.
+Inspect the failure with `docker compose -f docker-compose.prod.yml logs migrate`.
+Back up the database before reconciling a mismatch. Review schema changes and
+ship a migration in `prisma/migrations`; do not use `db push --accept-data-loss`
+as a production recovery shortcut. Development schema prototyping can still use
+`db push`, but each released change needs a migration tested against both an
+empty database and an upgraded install.
+
+The backup validation command requires a separate empty database and retains its
+restored data for inspection. Stop writers while validating row counts, since
+concurrent writes can change the source after the dump's snapshot.
 
 ### Restoring from a dump
 
 ```bash
 cd /opt/ryasai-chatbot
 # pick the newest dump
-ls -1t backups/ryasai-*.sql | head -1
-docker compose -f docker-compose.prod.yml exec -T db psql -U ryasai -d postgres \
+RESTORE_FILE=$(find backups -maxdepth 1 -type f -name 'ryasai-[0-9]*.sql' | sort | tail -1)
+test -n "$RESTORE_FILE" && test -s "$RESTORE_FILE"
+# Stop writers before resetting the application database.
+docker compose -f docker-compose.prod.yml stop app scheduler
+docker compose -f docker-compose.prod.yml exec -T db psql -X -v ON_ERROR_STOP=1 -U ryasai -d ryasai \
   -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-docker compose -f docker-compose.prod.yml exec -T db psql -U ryasai -d ryasai \
-  < "$(ls -1t backups/ryasai-*.sql | head -1)"
+docker compose -f docker-compose.prod.yml exec -T db psql -X -v ON_ERROR_STOP=1 -U ryasai -d ryasai \
+  < "$RESTORE_FILE"
 ```
 
 Then re-pin the app to the previous image tag (below) so code matches schema.
@@ -65,7 +65,7 @@ services:
     image: ghcr.io/ryasrk/ryasai-chatbot:scheduler@sha256:<previous-digest>
 EOF
 
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
+docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d --remove-orphans
 ```
 
 Delete the override file when you're ready to follow `main` again.

@@ -1,0 +1,74 @@
+{
+  "scope": "isolated PostgreSQL/Redis and pinned Cognee sidecar; no customer database reset",
+  "pdf": {
+    "fixture": "test-data/coates.2025.book.1996.pdf",
+    "httpStatus": 201,
+    "chunks": 1029,
+    "embeddingJsonNonNull": 1029,
+    "cognifyStatusAfterUpload": "failed",
+    "cognifyStatusAfterResume": "completed",
+    "statusAfterResume": "ready"
+  },
+  "multipart": {
+    "rawFieldProbeBytes": 1048577,
+    "rawFieldHttpStatus": 400,
+    "rawFieldError": "Part exceeded maximum size of 1024KB.",
+    "correctedFullBookUtf8Bytes": 1138868,
+    "fileTransportAccepted": true,
+    "runInBackground": true,
+    "processingCompleted": true,
+    "processingPending": 0,
+    "pipelineTerminalStatus": "DATASET_PROCESSING_COMPLETED"
+  },
+  "limitations": [
+    "One document-specific question, checked for five expected facts; not an independent whole-book quality assessment",
+    "A lost graph-launch response requires operator inspection; retries do not launch a duplicate pipeline"
+  ],
+  "pipeline": {
+    "datasetId": "7a6de09b-bb84-5241-b026-986e7b4f26df",
+    "runId": "13f2a8a2-390a-46bb-aa53-e81920a6e849",
+    "resume": "Existing full-book run adopted with verified file/run IDs; no second upload or graph launch",
+    "completionChecks": [
+      "Exact run and tenant dataset completed",
+      "Own file processing-status completed",
+      "Application completion status persisted"
+    ],
+    "systemMessageLimitChars": 1600
+  },
+  "questionAnswer": {
+    "httpStatus": 200,
+    "elapsedMs": 34889,
+    "question": "According to the introduction of the uploaded coates.2025.book.1996.pdf book, what are the four enabling technologies shaping 2025, and what is the fifth primary driver of change?",
+    "expectedFacts": {
+      "information": true,
+      "materials": true,
+      "genetics": true,
+      "energy": true,
+      "environmentalism": true
+    },
+    "citations": [
+      {
+        "type": "DOCUMENT",
+        "source": "coates.2025.book.1996.pdf",
+        "chunkIndex": 1
+      },
+      {
+        "type": "DOCUMENT",
+        "source": "coates.2025.book.1996.pdf",
+        "chunkIndex": 82
+      },
+      {
+        "type": "DOCUMENT",
+        "source": "coates.2025.book.1996.pdf",
+        "chunkIndex": 683
+      },
+      {
+        "type": "DOCUMENT",
+        "source": "coates.2025.book.1996.pdf",
+        "chunkIndex": 6
+      }
+    ],
+    "inlineNumericCitationMarkers": false,
+    "artifact": "Isolated standalone artifact with durable document pipeline, before the subsequent worker license gate"
+  }
+}

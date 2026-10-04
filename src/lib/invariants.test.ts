@@ -713,8 +713,6 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
       'src/app/api/setup/status/route.ts',
       // re-reads a row the SAME handler just created, not a client id.
       'src/app/api/documents/route.ts',
-      // validates via an org-scoped findFirst BEFORE the unscoped read.
-      'src/app/api/integrations/[id]/init-context/route.ts',
       // id comes from the session/order, and the handlers re-scope by org.
       'src/app/api/agent/dashboard/route.ts',
       'src/app/api/billing/orders/route.ts',
@@ -1071,7 +1069,7 @@ describe('invariant: columns the runtime DDL creates are DECLARED in the Prisma 
   /**
    * INCIDENT (2026-09-27, found by updating the production deployment to 1.0.0).
    *
-   * `rag-fts.ts` creates `DocumentChunk.tsv` at runtime:
+   * `rag-fts.ts` originally created `DocumentChunk.tsv` at runtime:
    *
    *     ALTER TABLE "DocumentChunk" ADD COLUMN IF NOT EXISTS tsv tsvector
    *
@@ -1092,7 +1090,7 @@ describe('invariant: columns the runtime DDL creates are DECLARED in the Prisma 
    * deploy orders `migrate` before `app`, so the stop happened before any traffic was lost.
    *
    * The fix declares the column as `Unsupported("tsvector")?`, which tells Prisma to pass the type
-   * through and STOP MANAGING the column. Verified non-destructively against real production data
+   * through while retaining the column in the schema. Verified non-destructively against real production data
    * restored into a scratch database: the old schema aborted refusing to drop 4 non-null values; the
    * new schema reported "Your database is now in sync" and all 4 values were still present after.
    *
@@ -1104,11 +1102,16 @@ describe('invariant: columns the runtime DDL creates are DECLARED in the Prisma 
   const schema = readRepo('prisma/schema.prisma')
   const ragFts = readRepo('src/lib/rag-fts.ts')
 
-  test('the runtime DDL in rag-fts.ts is still what this guard assumes', () => {
-    // Negative control on the SCAN. If the DDL moves or is renamed, the assertions below could pass
-    // while the real mechanism changed, so pin the invocation itself.
-    expect(ragFts).toMatch(/ADD COLUMN IF NOT EXISTS tsv tsvector/)
-    expect(ragFts).toContain('tsv')
+  test('the FTS column and index are owned by schema deployment before requests', () => {
+    // Schema push and the frozen baseline both create these objects. Runtime ALTER
+    // takes an exclusive lock and deadlocked with HNSW creation in a live evaluation.
+    const baseline = readRepo('prisma/migrations/20261004000000_baseline/migration.sql')
+    expect(baseline).toMatch(/"tsv"\s+tsvector/)
+    expect(baseline).toMatch(/CREATE INDEX "DocumentChunk_tsv_idx"[^;]*USING GIN\s*\("tsv"\)/)
+    expect(schema).toMatch(/@@index\(\[tsv\], type: Gin\)/)
+    const code = ragFts.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(code).not.toMatch(/ALTER TABLE|CREATE INDEX/i)
+    expect(code).toMatch(/SET tsv = to_tsvector/)
   })
 
   test('DocumentChunk.tsv is declared in the Prisma schema', () => {
@@ -1116,7 +1119,7 @@ describe('invariant: columns the runtime DDL creates are DECLARED in the Prisma 
     expect(model.length).toBeGreaterThan(0)
     expect(
       model,
-      'DocumentChunk.tsv is created by raw SQL in rag-fts.ts but is NOT declared in ' +
+      'DocumentChunk.tsv is used by raw SQL in rag-fts.ts but is NOT declared in ' +
         'prisma/schema.prisma. `prisma db push` will therefore try to DROP it, and the deploy\'s ' +
         'migrate step will abort with "Use the --accept-data-loss flag" — leaving the install down. ' +
         'Declare it as `tsv Unsupported("tsvector")?`.',

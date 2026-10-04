@@ -10,6 +10,8 @@ import {
 import { E2E_LICENSE_INTERNAL_SECRET } from './e2e/mock-license-validator'
 
 // Postgres-only schema — the e2e DB is a dedicated database, not a SQLite file.
+const E2E_REDIS_URL = process.env.E2E_REDIS_URL ?? 'redis://localhost:6379/15'
+
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://ryasai:ryasai_dev@localhost:5432/ryasai_e2e'
 
 export default defineConfig({
@@ -26,7 +28,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `env DATABASE_URL=${E2E_DATABASE_URL} AUTH_DEMO_FALLBACK=false LICENSE_VALIDATOR_URL=http://localhost:4546 LICENSE_SIGNING_PUBLIC_KEY=${E2E_LICENSE_PUBKEY_HEX} MIDTRANS_SERVER_KEY=${E2E_MIDTRANS_SERVER_KEY} MIDTRANS_IS_PRODUCTION=false MIDTRANS_BASE_URL=http://localhost:4547 NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=e2e-client-key NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION=false LICENSE_INTERNAL_SECRET=${E2E_LICENSE_INTERNAL_SECRET} LLM_ALLOW_BLOCKED_HOSTS=true PORT=3105 bun node_modules/.bin/next dev -p 3105`,
+      command: `env REDIS_URL=${E2E_REDIS_URL} DATABASE_URL=${E2E_DATABASE_URL} AUTH_DEMO_FALLBACK=false LICENSE_VALIDATOR_URL=http://localhost:4546 LICENSE_SIGNING_PUBLIC_KEY=${E2E_LICENSE_PUBKEY_HEX} MIDTRANS_SERVER_KEY=${E2E_MIDTRANS_SERVER_KEY} MIDTRANS_IS_PRODUCTION=false MIDTRANS_BASE_URL=http://localhost:4547 NEXT_PUBLIC_MIDTRANS_CLIENT_KEY=e2e-client-key NEXT_PUBLIC_MIDTRANS_IS_PRODUCTION=false LICENSE_INTERNAL_SECRET=${E2E_LICENSE_INTERNAL_SECRET} LLM_ALLOW_BLOCKED_HOSTS=true PORT=3105 bun node_modules/.bin/next dev -p 3105`,
       url: 'http://localhost:3105/api/v1/health',
       reuseExistingServer: false,
       timeout: 120_000,
