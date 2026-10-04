@@ -236,8 +236,6 @@ model Document {
   uploadPath     String?
   cognifyStatus  String? // null | processing | completed | failed
   cognifyError   String?
-  /// Durable add/graph phase identity; retries observe the same upstream run.
-  cognifyPipelineJson String?
   cognifiedAt    DateTime?
   version        Int       @default(1)
   createdAt      DateTime  @default(now())
@@ -285,10 +283,18 @@ model DocumentChunk {
   /// Full-text search column, written and read by `rag-fts.ts`
   /// (`UPDATE "DocumentChunk" SET tsv = to_tsvector(...)`, `-ts_rank(tsv, ...)`).
   ///
-  /// Prisma migrations and schema push create this column and its GIN index.
-  /// Runtime DDL would take an exclusive lock during retrieval and can deadlock
-  /// with HNSW index creation. Keeping the column declared also prevents a
-  /// schema push from treating stored search data as drift and dropping it.
+  /// WHY IT IS DECLARED HERE even though `ensureRagFtsTable()` creates it at runtime with
+  /// `ADD COLUMN IF NOT EXISTS`: that runtime creation left the column INVISIBLE to Prisma, so every
+  /// `prisma db push` treated it as drift and tried to DROP it. `db push` refuses when the column
+  /// holds data — "You are about to drop the column `tsv` on the `DocumentChunk` table, which still
+  /// contains 4 non-null values" — and that fail-closed stop is the only reason this was noticed
+  /// instead of silently disabling BM25 ranking on a live install. MEASURED on the production
+  /// deployment during the 1.0.0 update: the migrate container exited 1 and the app was never
+  /// started.
+  ///
+  /// `Unsupported` because Prisma has no `tsvector` type: it passes the type through verbatim and
+  /// stops managing the column, so the runtime DDL remains the creator while `db push` leaves it
+  /// alone. The two no longer disagree.
   tsv               Unsupported("tsvector")?
   embeddingProvider String?
   embeddingModel    String?

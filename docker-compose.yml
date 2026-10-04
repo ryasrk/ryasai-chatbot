@@ -29,7 +29,7 @@ services:
     # be dropped) must fail the migrate job LOUDLY so an operator intervenes;
     # silently destroying customer data on `docker compose up` is never okay.
     # Rollback: restore the newest pg_dump from backups/ (see docs/operations.md).
-    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
+    entrypoint: ["bun", "scripts/migrate.ts"]
     restart: "no"
     networks:
       - ryasai-net
@@ -342,6 +342,8 @@ services:
       # Skips a 30s startup probe that fails the whole request when the embedding
       # endpoint is slow to warm up (it usually is).
       - COGNEE_SKIP_CONNECTION_TEST=true
+      # Opt in only for endpoints with a measured per-message system prompt ceiling.
+      - COGNEE_SYSTEM_MESSAGE_MAX_CHARS=${COGNEE_SYSTEM_MESSAGE_MAX_CHARS:-0}
       # litellm rejects params a provider does not support instead of dropping
       # them (e.g. `dimensions` on some embedding models).
       - LITELLM_DROP_PARAMS=true

@@ -1,17 +1,19 @@
-FROM oven/bun:1 AS deps
+FROM oven/bun:1.4.2 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
+COPY patches ./patches
 COPY prisma ./prisma
 RUN bun install --frozen-lockfile
 
-FROM oven/bun:1 AS runner
+FROM oven/bun:1.4.2 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bunx prisma generate
 # source tree (src/lib, mini-services) + config bundled by bun at runtime
 # ponytail: no build needed — bun runs TS directly; image is for the scheduler worker only.
 # Note: full node_modules kept on purpose — this image also runs the compose
-# `migrate` one-shot (`prisma db push`), which needs the prisma CLI closure.
+# `migrate` one-shot, which needs the Prisma CLI and PostgreSQL client.
 CMD ["bun", "run", "mini-services/scheduler/index.ts"]

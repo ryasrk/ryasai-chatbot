@@ -1,6 +1,7 @@
-FROM oven/bun:1 AS deps
+FROM oven/bun:1.4.2 AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
+COPY patches ./patches
 COPY prisma ./prisma
 RUN bun install --frozen-lockfile
 
@@ -28,7 +29,7 @@ RUN cp -r node_modules/.prisma .next/standalone/node_modules/
 # the bun node-compat bug never applies here. Schema is applied by the
 # `migrate` one-shot service in compose (scheduler image ships the full prisma
 # CLI); the app image only needs the traced @prisma/client, so no CLI is kept.
-FROM oven/bun:1-slim AS prod
+FROM oven/bun:1.4.2-slim AS prod
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000

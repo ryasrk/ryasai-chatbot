@@ -1,92 +1,32 @@
 #!/usr/bin/env bun
-/**
- * Automated backup validation — runs backup → restore → validate cycle.
- * Designed for cron or CI: exits 0 on success, 1 on failure.
- *
- * Usage:
- *   bun run scripts/validate-backup.ts                    # uses a temp restore DB
- *   bun run scripts/validate-backup.ts --restore-db=postgresql://user:pass@localhost:5432/ryasai_test
- *
- * ponytail: the only way to trust a backup is to restore it. This script
- * automates the full cycle so it can run nightly in CI.
- */
-import { execSync } from 'child_process'
-import { rmSync } from 'fs'
-import { join } from 'path'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { assertDistinctDatabases, backupPostgres, postgresScalar, restorePostgres } from '../src/lib/postgres-backup'
 
-const args = process.argv.slice(2)
-const restoreDbArg = args.find((a) => a.startsWith('--restore-db='))
-const restoreDb = restoreDbArg?.split('=')[1] ?? process.env.BACKUP_TEST_DATABASE_URL
-
-const sourceDb = process.env.DATABASE_URL
-if (!sourceDb) {
-  console.error('[validate-backup] DATABASE_URL is required.')
-  process.exit(1)
-}
-
-if (!restoreDb) {
-  console.error('[validate-backup] BACKUP_TEST_DATABASE_URL or --restore-db is required.')
-  console.error('[validate-backup] Set up a separate test database for restore validation.')
-  process.exit(1)
-}
-
-const tmpDir = mkdtempSync(join(tmpdir(), 'ryasai-backup-'))
-const backupFile = join(tmpDir, 'test-backup.sql')
-
-console.log('[validate-backup] Step 1: Creating backup...')
+const source = process.env.DATABASE_URL
+const target = process.argv.slice(2).find((arg) => arg.startsWith('--restore-db='))?.slice('--restore-db='.length)
+  ?? process.env.BACKUP_TEST_DATABASE_URL
+if (!source || !target) throw new Error('DATABASE_URL and a separate BACKUP_TEST_DATABASE_URL are required')
+assertDistinctDatabases(source, target)
+const tableCount = Number(postgresScalar(target, "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'"))
+if (tableCount !== 0) throw new Error('Restore validation requires an empty target database')
+const temporary = await mkdtemp(join(tmpdir(), 'ryasai-backup-'))
 try {
-  execSync(`pg_dump "${sourceDb}" --no-owner --no-privileges -f "${backupFile}"`, { stdio: 'inherit', timeout: 300_000 })
-  console.log(`[validate-backup] Backup created: ${backupFile}`)
-} catch (e) {
-  console.error('[validate-backup] Backup failed:', e instanceof Error ? e.message : String(e))
-  process.exit(1)
-}
-
-console.log('[validate-backup] Step 2: Restoring to test database...')
-try {
-  execSync(`psql "${restoreDb}" --set ON_ERROR_STOP=on -f "${backupFile}"`, { stdio: 'inherit', timeout: 600_000 })
-  console.log('[validate-backup] Restore complete.')
-} catch (e) {
-  console.error('[validate-backup] Restore failed:', e instanceof Error ? e.message : String(e))
-  rmSync(tmpDir, { recursive: true })
-  process.exit(1)
-}
-
-console.log('[validate-backup] Step 3: Validating restored data...')
-const checks: Array<{ label: string; source: string; target: string }> = [
-  { label: 'User count matches', source: 'SELECT count(*) FROM "User"', target: 'SELECT count(*) FROM "User"' },
-  { label: 'Document count matches', source: 'SELECT count(*) FROM "Document"', target: 'SELECT count(*) FROM "Document"' },
-  { label: 'Integration count matches', source: 'SELECT count(*) FROM "Integration"', target: 'SELECT count(*) FROM "Integration"' },
-]
-
-let allPassed = true
-for (const check of checks) {
-  try {
-    const sourceCount = execSync(`psql "${sourceDb}" -t -c "${check.source}"`).toString().trim()
-    const targetCount = execSync(`psql "${restoreDb}" -t -c "${check.target}"`).toString().trim()
-    const passed = sourceCount === targetCount
-    console.log(`[validate-backup] ${passed ? 'PASS' : 'FAIL'}: ${check.label} → source=${sourceCount}, target=${targetCount}`)
-    if (!passed) allPassed = false
-  } catch (e) {
-    console.error(`[validate-backup] FAIL: ${check.label} → ${e instanceof Error ? e.message : String(e)}`)
-    allPassed = false
+  const filepath = join(temporary, 'validation.sql.gz')
+  await backupPostgres(source, filepath)
+  await restorePostgres(target, filepath)
+  for (const table of ['User', 'Document', 'Integration', 'ChatSession']) {
+    const sql = `SELECT count(*) FROM "${table}"`
+    const before = postgresScalar(source, sql)
+    const after = postgresScalar(target, sql)
+    if (!/^\d+$/.test(before) || before !== after) throw new Error(`Row count mismatch: ${table}`)
+    console.log(`[validate-backup] ${table}: ${after} rows match`)
   }
-}
-
-console.log('[validate-backup] Step 4: Cleanup...')
-try {
-  execSync(`psql "${restoreDb}" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`, { stdio: 'pipe' })
-} catch {
-  console.warn('[validate-backup] Warning: could not clean test database.')
-}
-rmSync(tmpDir, { recursive: true })
-
-if (allPassed) {
-  console.log('[validate-backup] ALL CHECKS PASSED — backup is valid and restorable.')
-  process.exit(0)
-} else {
-  console.error('[validate-backup] VALIDATION FAILED — backup may be corrupt or incomplete.')
-  process.exit(1)
+  console.log('[validate-backup] Restore validation passed; target retained for inspection')
+} catch (error) {
+  console.error('[validate-backup]', error instanceof Error ? error.message : 'Validation failed')
+  process.exitCode = 1
+} finally {
+  await rm(temporary, { recursive: true, force: true })
 }

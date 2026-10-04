@@ -571,8 +571,9 @@ if [ "$IS_UPDATE" = true ]; then
     info "DB backup saved -> $(du -h "$BACKUP_DIR/ryasai-$STAMP.sql" | cut -f1) $BACKUP_DIR/ryasai-$STAMP.sql"
   else
     rm -f "$BACKUP_TMP"
-    warn "DB backup FAILED — continuing, but there is NO restore point for this update."
+    warn "DB backup FAILED — update stopped; there is NO restore point for this update."
     warn "  Check that the db service is healthy, then re-run the update."
+    exit 1
   fi
 
   # --- Memory database (`cognee_db`), when it exists --------------------------
@@ -698,7 +699,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-    entrypoint: ["bun", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
+    entrypoint: ["bun", "scripts/migrate.ts"]
     restart: "no"
     networks: [ryasai-net]
 
