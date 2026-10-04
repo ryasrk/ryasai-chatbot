@@ -483,6 +483,7 @@ interface MssqlScript {
   inputs: Array<[string, unknown]>
   closeCalls: number
   requests: number
+  tx: string[]
 }
 
 const mssql: MssqlScript = {
@@ -492,6 +493,7 @@ const mssql: MssqlScript = {
   inputs: [],
   closeCalls: 0,
   requests: 0,
+  tx: [],
 }
 
 interface MssqlConfig { options?: Record<string, unknown>; pool?: Record<string, unknown>; server?: string; port?: number }
@@ -515,6 +517,14 @@ class FakeMssqlPool {
         return { query: (sql: string) => this.run(sql) }
       },
       query: (sql: string) => this.run(sql),
+    }
+  }
+  /** A transaction whose requests go through the same script; BEGIN/ROLLBACK are recorded in `mssql.tx`. */
+  transaction() {
+    return {
+      begin: async () => { mssql.tx.push('BEGIN') },
+      request: () => this.request(),
+      rollback: async () => { mssql.tx.push('ROLLBACK') },
     }
   }
   private run(sql: string) {
@@ -632,6 +642,7 @@ beforeEach(() => {
   mssql.inputs = []
   mssql.closeCalls = 0
   mssql.requests = 0
+  mssql.tx = []
   mssqlConnectCalls = 0
   lastMssqlCfg = null
 })
@@ -1342,25 +1353,40 @@ describe('MssqlConnector.executeQuery', () => {
     expect(r.rowCount).toBe(1)
   })
 
-  test('MSSQL sends NO read-only statements — the guards are the only control', async () => {
+  test('the query runs inside a transaction that is ALWAYS rolled back', async () => {
     mssql.results = [{ recordset: [] }]
     await new Ms(MS_CFG, 'MSSQL').executeQuery('SELECT a FROM t')
-    // There is no per-transaction read-only mode on SQL Server, so nothing
-    // beyond the caller SQL may appear. A future BEGIN/READ ONLY here would be a
-    // security regression dressed as hardening.
+    // SQL Server has no READ ONLY transaction; rollback undoes any data write that slipped past the scanners. Only
+    // the caller's SQL is sent — no claim of a read-only mode the server does not have.
     expect(mssql.calls).toEqual(['SELECT a FROM t'])
+    expect(mssql.tx).toEqual(['BEGIN', 'ROLLBACK'])
+  })
+
+  test('the transaction is rolled back when the query FAILS, and the driver error still propagates', async () => {
+    const c = new Ms(MS_CFG, 'MSSQL')
+    const tx: string[] = []
+    ;(c as unknown as { _pool: unknown })._pool = {
+      transaction: () => ({
+        begin: async () => { tx.push('BEGIN') },
+        request: () => ({ query: async () => { throw new Error('Invalid column name xyz') } }),
+        // An already-aborted transaction rejects its rollback; that must not mask the real error.
+        rollback: async () => { tx.push('ROLLBACK'); throw new Error('Transaction has been aborted') },
+      }),
+    }
+    await expect(c.executeQuery('SELECT xyz FROM t')).rejects.toThrow('Invalid column name xyz')
+    expect(tx).toEqual(['BEGIN', 'ROLLBACK'])
   })
 
   test('a mutation is refused with the SELECT/WITH message before the pool is reached', async () => {
     const c = new Ms(MS_CFG, 'MSSQL')
-    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) } }
+    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) }, transaction: () => { throw new Error(NEVER) } }
     await expect(c.executeQuery('DELETE FROM t')).rejects.toThrow('Only SELECT/WITH queries are permitted.')
     expect(mssql.calls).toEqual([])
   })
 
   test('a side-effecting server function is refused at the execution boundary', async () => {
     const c = new Ms(MS_CFG, 'MSSQL')
-    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) } }
+    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) }, transaction: () => { throw new Error(NEVER) } }
     for (const sql of [
       "SELECT * FROM OPENROWSET('SQLNCLI','s','SELECT 1')",
       "SELECT * FROM OPENDATASOURCE('SQLNCLI','s').db.dbo.t",
@@ -1374,7 +1400,7 @@ describe('MssqlConnector.executeQuery', () => {
 
   test('xp_cmdshell is refused at the execution boundary (it IS in the shared deny list)', async () => {
     const c = new Ms(MS_CFG, 'MSSQL')
-    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) } }
+    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) }, transaction: () => { throw new Error(NEVER) } }
     // The source comment at ~line 996 promises the deny-list blocks xp_cmdshell.
     // This executes the real function body and asserts the documented behaviour;
     // it FAILS if the entry is removed from guardrails.ts DANGEROUS_FUNCTIONS.
@@ -1386,7 +1412,7 @@ describe('MssqlConnector.executeQuery', () => {
 
   test('every server-side escape hatch this file names is refused pre-flight', async () => {
     const c = new Ms(MS_CFG, 'MSSQL')
-    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) } }
+    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error(NEVER) }, transaction: () => { throw new Error(NEVER) } }
     // MEASURED: EVERY one of these reaches the shared deny list, so the comment
     // at ~line 996 (which names xp_cmdshell / sp_configure / xp_reg* / sp_OA* /
     // OPENROWSET / OPENQUERY / BULK INSERT / OPENDATASOURCE) is accurate as of the
@@ -2012,9 +2038,14 @@ describe('enrichSchema (through pg/mysql/mssql fetchSchema)', () => {
 // `[rows, fields]`, and a JSONEachRow text body).
 // ===========================================================================
 
-function withMsPool(pool: unknown) {
+function withMsPool(pool: { request: () => unknown }) {
   const c = new Ms(MS_CFG, 'MSSQL')
-  ;(c as unknown as { _pool: unknown })._pool = pool
+  // executeQuery runs inside pool.transaction(); a stub that only scripts request() gets a pass-through transaction.
+  const withTx = 'transaction' in pool ? pool : {
+    ...pool,
+    transaction: () => ({ begin: async () => {}, request: () => pool.request(), rollback: async () => {} }),
+  }
+  ;(c as unknown as { _pool: unknown })._pool = withTx
   return c
 }
 
@@ -2687,7 +2718,9 @@ describe('pinned defects (each FAILS when the defect is fixed)', () => {
     expect(code).not.toMatch(/child_process|execSync|spawnSync|node:fs|from 'fs'/)
     expect(code).not.toMatch(/process\.env(?!\.DB_SSL_REJECT_UNAUTHORIZED)/)
     const mssqlExec = code.slice(code.indexOf('class MssqlConnector'))
-    expect(mssqlExec).toContain('const result = await pool.request().query(sql)')
+    // The query runs through the always-rolled-back transaction, never a bare pool request.
+    expect(mssqlExec).toContain('result = await tx.request().query(sql)')
+    expect(mssqlExec).toContain('await tx.rollback()')
     // The comment names xp_cmdshell; the enforcement lives in guardrails.ts.
     expect(MODULE_SRC).toContain('xp_cmdshell')
     expect(code).not.toContain('xp_cmdshell')

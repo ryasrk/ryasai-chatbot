@@ -1055,21 +1055,21 @@ export class MssqlConnector implements BaseDatabaseConnector {
     assertNoDangerousFunctions(sql)
     const pool = await this.pool()
     const start = Date.now()
-    // ponytail: MSSQL has no per-transaction read-only mode. A truly read-only
-    // intent must come from the LOGIN's server role (GRANT/DENY on the target
-    // DBs), which is an operator decision we cannot make at runtime. We do what
-    // is enforceable here: ApplicationIntent=ReadOnly is set on the pool (see
-    // pool()) so servers with an Availability Group route us to a read replica,
-    // and `assertNoDangerousFunctions` blocks xp_cmdshell / sp_configure /
-    // xp_reg* / sp_OA* / OPENROWSET / OPENQUERY / BULK INSERT / OPENDATASOURCE.
-    // That list was WRONG when this comment was written: `xp_cmdshell` was named
-    // here but absent from DANGEROUS_FUNCTIONS, and probing it directly returned
-    // an empty detection list — the documented protection did not exist. The
-    // rules now match the sentence; if you edit the sentence, edit the list.
-    // Residual risk: a read-write login on a non-AG server can still be used for
-    // write side effects if the scanner is somehow evaded — document this in the
-    // customer-facing DB setup guide.
-    const result = await pool.request().query(sql)
+    // MSSQL has no per-transaction READ ONLY mode, so the query runs inside a transaction that is ALWAYS rolled back:
+    // any data write that slipped past the scanners is undone by the server. Stated precisely, because it is not a
+    // read-only guarantee: effects OUTSIDE the transaction (xp_cmdshell, linked servers, mail, sequence/identity
+    // increments) are not undone — `assertNoDangerousFunctions` above denies those families, and a least-privilege
+    // login remains the real boundary. ApplicationIntent=ReadOnly is
+    // still set on the pool so an Availability Group routes to a read replica.
+    const tx = pool.transaction()
+    await tx.begin()
+    let result: { recordset?: unknown }
+    try {
+      result = await tx.request().query(sql)
+    } finally {
+      // After an error with XACT_ABORT the server may already have rolled back; that rejection is not a failure.
+      await tx.rollback().catch(() => {})
+    }
     const rows: QueryRow[] = (result.recordset as QueryRow[]) ?? []
     return {
       rows: rows.map((r) => normaliseRow(r)),

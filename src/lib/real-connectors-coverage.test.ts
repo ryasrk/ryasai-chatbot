@@ -47,6 +47,9 @@ const FakeConnectionPool = class {
       query: async () => mssqlQueryResult,
     }
   }
+  transaction() {
+    return { begin: async () => {}, request: () => this.request(), rollback: async () => {} }
+  }
   async close() {
     mssqlCloseCalls++
   }
@@ -1421,9 +1424,9 @@ describe('MssqlConnector — read-only intent and executeQuery', () => {
     expect(typeof r.executionMs).toBe('number')
   })
 
-  test('MSSQL has no read-only TRANSACTION, so the SQL guards are what stop a write', async () => {
+  test('a write is refused by the SQL guards before any transaction is opened', async () => {
     const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
-    const poison = { request: () => { throw new Error('pool must not be reached') } }
+    const poison = { request: () => { throw new Error('pool must not be reached') }, transaction: () => { throw new Error('pool must not be reached') } }
     ;(c as unknown as { _pool: unknown })._pool = poison
     await expect(c.executeQuery('DELETE FROM t')).rejects.toThrow('Only SELECT/WITH queries are permitted.')
   })
@@ -1441,7 +1444,8 @@ describe('MssqlConnector — read-only intent and executeQuery', () => {
     // PRE-FLIGHT: the poison pool throws "pool must not be reached" if any SQL had
     // been sent, so a rejection here cannot be the pool failing instead.
     const c = new MssqlConnector({ host: 'h', database: 'd', user: 'u', password: 'p' }, 'MSSQL')
-    ;(c as unknown as { _pool: unknown })._pool = { request: () => { throw new Error('pool must not be reached') } }
+    const unreachable = () => { throw new Error('pool must not be reached') }
+    ;(c as unknown as { _pool: unknown })._pool = { request: unreachable, transaction: unreachable }
 
     await expect(c.executeQuery("SELECT * FROM OPENROWSET('SQLNCLI','s','SELECT 1')"))
       .rejects.toThrow(/not permitted on a read-only data source/)
