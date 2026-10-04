@@ -252,7 +252,7 @@ export async function runSqlPipeline(args: SqlPipelineArgs): Promise<SqlPipeline
     // Captured BEFORE the guard so a repaired retry replaces it, matching the SQL that finally runs.
     sqlExplanation = typeof candidate.explanation === 'string' ? candidate.explanation.trim() : ''
 
-    const guard = validateAndSanitizeLlmSql(candidate.sql)
+    const guard = validateAndSanitizeLlmSql(candidate.sql, { provider: integration.provider })
     if (!guard.ok) {
       lastSqlError = guard.reason ?? 'SQL rejected by guardrail'
       attemptedSql.push(candidate.sql)

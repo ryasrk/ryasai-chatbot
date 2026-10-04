@@ -22,6 +22,8 @@
  * Rules here must never be the only thing standing between the LLM and data.
  */
 import { SQL_MAX_LIMIT } from '@/lib/constants'
+import { DANGEROUS_FUNCTIONS } from '@/lib/sql-function-denylist'
+import { checkSqlAst, type AstGuardOptions } from '@/lib/sql-ast-guard'
 import { inc } from './metrics'
 
 export interface GuardrailResult {
@@ -197,76 +199,6 @@ const INJECTION_SHAPES: Array<{ re: RegExp; label: string }> = [
   { re: /;\s*(drop|delete|update|insert|alter|truncate|grant|create)\b/i, label: 'stacked mutation' },
 ]
 
-const DANGEROUS_FUNCTIONS: Array<{ re: RegExp; label: string }> = [
-  // Postgres
-  { re: /\bpg_read_(file|binary_file)\s*\(/i, label: 'pg_read_file' },
-  { re: /\bpg_write_file\s*\(/i, label: 'pg_write_file' },
-  { re: /\bpg_ls_dir\s*\(/i, label: 'pg_ls_dir' },
-  { re: /\bpg_stat_file\s*\(/i, label: 'pg_stat_file' },
-  { re: /\blo_(import|export)\s*\(/i, label: 'lo_import/lo_export' },
-  { re: /\bdblink(_connect)?\s*\(/i, label: 'dblink' },
-  { re: /\bpg_sleep(_for|_until)?\s*\(/i, label: 'pg_sleep' },
-  { re: /\bset_config\s*\(/i, label: 'set_config' },
-  { re: /\bpostgres_fdw\b/i, label: 'postgres_fdw' },
-  // MySQL
-  { re: /\bload_file\s*\(/i, label: 'load_file' },
-  { re: /\bsleep\s*\(/i, label: 'sleep' },
-  { re: /\bbenchmark\s*\(/i, label: 'benchmark' },
-  // MSSQL
-  // MEASURED GAP, NOW CLOSED. `real-connectors.ts` documented that
-  // `assertNoDangerousFunctions` "blocks xp_cmdshell / OPENROWSET / BULK INSERT / OPENDATASOURCE", and the other
-  // three WERE listed here while `xp_cmdshell` was not: probed directly, `EXEC master..xp_cmdshell 'whoami'`,
-  // `SELECT xp_cmdshell ON x`, and `SELECT xp_cmdshell('whoami')` all returned an EMPTY detection list. That is the
-  // single most valuable MSSQL primitive for an attacker -- arbitrary OS command execution as the SQL service
-  // account -- so a comment asserting it was blocked was worse than no comment at all.
-  //
-  // Matched WITHOUT a following `(` on purpose: the classic form is an extended stored procedure invoked as
-  // `EXEC master..xp_cmdshell 'cmd'`, which has no parenthesis after the name.
-  { re: /\bxp_cmdshell\b/i, label: 'xp_cmdshell' },
-  // Sibling extended procedures reachable the same way. `sp_configure` is the documented route to re-ENABLE
-  // xp_cmdshell on a server where an operator turned it off, so it belongs in the same family.
-  { re: /\bsp_configure\b/i, label: 'sp_configure' },
-  { re: /\bxp_reg(read|write|deletevalue|addmultistring|enumvalues)\b/i, label: 'xp_reg*' },
-  { re: /\bxp_servicecontrol\b/i, label: 'xp_servicecontrol' },
-  { re: /\bxp_dirtree\b|\bxp_fileexist\b|\bxp_subdirs\b/i, label: 'xp_dirtree/xp_fileexist' },
-  { re: /\bsp_OACreate\b|\bsp_OAMethod\b|\bsp_OAGetProperty\b|\bsp_OADestroy\b/i, label: 'sp_OA* (OLE automation)' },
-  { re: /\bopenrowset\s*\(/i, label: 'openrowset' },
-  { re: /\bopendatasource\s*\(/i, label: 'opendatasource' },
-  { re: /\bopenquery\s*\(/i, label: 'openquery' },
-  { re: /\bbulk\s+insert\b/i, label: 'bulk insert' },
-  // ClickHouse table functions
-  { re: /\b(url|file|s3|hdfs|remote|remoteSecure|mysql|postgresql|jdbc|odbc|input)\s*\(/i, label: 'ClickHouse table function' },
-  // ponytail: server-fingerprint probes. `SELECT @@version` passed every other
-  // rule — it is a bare SELECT with no mutation and no known function — yet it
-  // is step one of fingerprinting a server to pick an exploit, and it returns
-  // data the user never asked for. Found by trial/fleet (case D3-gb-22), which
-  // is the point of running the fleet: no rule matched, so nothing else would
-  // have caught it.
-  { re: /(^|[^\w@])@@\s*[a-z_]/i, label: 'system variable probe (@@var)' },
-  // NOTE: these four are contextual — see BARE_PROBES below. `version()`
-  // appearing as ONE column of a business query is normal SQL; `SELECT
-  // version()` on its own is a fingerprint probe. Regex alone cannot tell them
-  // apart, so the whole-statement shape is checked separately.
-  { re: /\bcurrent_user\b|\bsession_user\b|\bsystem_user\b/i, label: 'identity probe' },
-  { re: /\bpg_postmaster_start_time\s*\(/i, label: 'pg_postmaster_start_time' },
-  { re: /\binet_server_addr\s*\(|\binet_server_port\s*\(/i, label: 'server address probe' },
-  // ponytail: second wave of fingerprint probes, all found by the 518-case
-  // trial/fleet run — each is a bare SELECT with no mutation and no
-  // side-effecting function, so nothing in the earlier list matched:
-  //   SELECT database() / schema() / user()  -> env & identity disclosure
-  //   SELECT pg_version()                    -> version disclosure
-  //   ... WHERE name = waitfor delay         -> MSSQL time-based blind injection
-  //   SELECT updatexml(...) / extractvalue() -> MySQL error-based extraction
-  //   SELECT case when 1=1 then ...          -> boolean-blind probe
-  //   SELECT if(1=1,sleep(5),0)              -> MySQL time-based blind
-  { re: /\bpg_version\s*\(/i, label: 'pg_version probe' },
-
-
-  { re: /\bwaitfor\s+delay\b/i, label: 'MSSQL waitfor delay' },
-  { re: /\bupdatexml\s*\(|\bextractvalue\s*\(/i, label: 'MySQL error extraction' },
-  { re: /\bcase\s+when\b[\s\S]*\bthen\b[\s\S]*\bend\b/i, label: 'boolean-blind CASE probe' },
-  { re: /\bif\s*\([^)]*\b(sleep|benchmark|pg_sleep)\s*\(/i, label: 'MySQL time-based blind' },
-]
 
 /**
  * Replace the CONTENT of quoted literals with filler, preserving offsets and
@@ -329,7 +261,11 @@ function maskStringLiterals(sql: string): string {
 
 /** Names of side-effecting functions present in `sql` (string-literal-aware). */
 export function detectDangerousFunctions(sql: string): string[] {
-  const masked = maskStringLiterals(sql)
+  // Double-quoted identifiers are unquoted before the scan: Postgres accepts `"pg_read_file"('/etc/passwd')` as the
+  // same call, and MEASURED on 2026-10-04 that spelling passed every pattern below.
+  // Unquoted BEFORE masking, because the mask blanks double-quoted text; an identifier inside a single-quoted literal
+  // is still masked afterwards, so a literal mentioning a function stays data.
+  const masked = maskStringLiterals(sql.replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, '$1'))
   const found: string[] = []
   for (const { re, label } of DANGEROUS_FUNCTIONS) {
     if (re.test(masked)) found.push(label)
@@ -368,7 +304,14 @@ function tokenize(sql: string): string[] {
  * Walk the token stream and detect any node belonging to MUTATION_KEYWORDS.
  * This is the TS analogue of `sqlglot`'s `exp.Delete | exp.Update | ...` walk.
  */
-export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult {
+/**
+ * `options.provider` turns on the AST layer for that dialect (ClickHouse stays lexical-only), and `options.policy`
+ * enforces per-role table/column access. Without a provider only the lexical layer runs — every PRODUCTION caller
+ * passes one, which `invariants.test.ts` enforces, so the dialect-agnostic call is a unit-test seam for the scan. Order: lexical scan → AST → LIMIT clamp. The AST is used to VALIDATE only;
+ * the query that runs is the model's text with the lexical LIMIT clamp, never a re-serialised tree, so validation
+ * cannot change what a query means.
+ */
+export function validateAndSanitizeLlmSql(generatedSql: string, options: AstGuardOptions = {}): GuardrailResult {
   const detected: string[] = []
   if (!generatedSql || !generatedSql.trim()) {
     return { ok: false, sanitized: '', reason: 'Empty query.' }
@@ -443,6 +386,14 @@ export function validateAndSanitizeLlmSql(generatedSql: string): GuardrailResult
       reason: `Security violation: AI is not allowed to modify data (${detected.join(', ')}).`,
       detectedNodes: detected,
     }
+  }
+
+  // 3b. Parse. A real parse sees what the scan cannot: the base tables and columns read (for per-role access), every
+  // function call as a node, SELECT … INTO, and statement shape. Fail-closed on an unparseable query.
+  const ast = options.provider ? checkSqlAst(generatedSql, options) : null
+  if (ast && !ast.ok) {
+    inc('guardrail_blocks_total', { type: `ast_${ast.kind}` })
+    return { ok: false, sanitized: '', reason: ast.reason, detectedNodes: ast.detectedNodes }
   }
 
   // 4. Re-compile & enforce a hard LIMIT cap (spec §4.3).

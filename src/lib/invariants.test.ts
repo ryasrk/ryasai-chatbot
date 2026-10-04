@@ -250,9 +250,13 @@ describe('invariant: SQL guard lists are single-source', () => {
     expect(src).toContain('export function detectDangerousFunctions')
     // Must check functions on the masked (string-literal-stripped) SQL.
     expect(src).toMatch(/maskStringLiterals/)
+    // The list itself lives in sql-function-denylist.ts so the lexical scan and the AST guard share ONE copy.
+    expect(src).toContain("from '@/lib/sql-function-denylist'")
+    const list = readRepo('src/lib/sql-function-denylist.ts')
     for (const fn of ['pg_read_file', 'dblink', 'set_config', 'load_file', 'url']) {
-      expect(src).toContain(fn)
+      expect(list).toContain(fn)
     }
+    expect(readRepo('src/lib/sql-ast-guard.ts')).toContain("from '@/lib/sql-function-denylist'")
   })
 })
 
@@ -1271,5 +1275,24 @@ describe('invariant: no model with organizationId is left unscoped', () => {
     const exceptionBlock = tenantSrc.slice(excStart, tenantSrc.indexOf('\n}', excStart))
     expect(exceptionBlock).toMatch(/pre-auth/i)
     expect(exceptionBlock).not.toMatch(/^\s{2}organization:/m)
+  })
+})
+
+describe('invariant: every production SQL guard call names its dialect', () => {
+  // The AST layer (sql-ast-guard.ts) runs only when `provider` is passed; the provider-less call exists as a unit-test
+  // seam for the lexical scan. A production caller that forgets it silently loses parsing, system-catalog denial and
+  // per-role access checks — so every non-test call site must pass an options object with `provider`.
+  test('validateAndSanitizeLlmSql is called with { provider } outside tests', () => {
+    const calls: string[] = []
+    for (const rel of globSync('src/**/*.ts', { cwd: REPO_ROOT })) {
+      if (rel.endsWith('.test.ts')) continue
+      readFileSync(join(REPO_ROOT, rel), 'utf8').split('\n').forEach((line, i) => {
+        if (!line.includes('validateAndSanitizeLlmSql(')) return
+        if (/export function validateAndSanitizeLlmSql|^\s*(\*|\/\/)/.test(line)) return
+        calls.push(`${rel}:${i + 1}: ${line.trim()}`)
+      })
+    }
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls.filter((l) => !/validateAndSanitizeLlmSql\([^)]*\{\s*provider/.test(l))).toEqual([])
   })
 })

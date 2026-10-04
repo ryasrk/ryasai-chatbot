@@ -132,7 +132,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx) {
     }
 
     // 2. Guardrail — AST validation (spec §4.3)
-    const guard = validateAndSanitizeLlmSql(generatedSql)
+    const guard = validateAndSanitizeLlmSql(generatedSql, { provider: integration.provider })
     if (!guard.ok) {
       await writeAudit({
         userId: user.userId,
