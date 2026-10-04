@@ -354,6 +354,26 @@ describe('mergeRetrievalResults', () => {
 // --- Async tests: analyzeIntent ---
 
 describe('analyzeIntent', () => {
+  test('a question that NAMES a document is routed to retrieval even when the model says chat', async () => {
+    // MEASURED 2026-10-05: the model returned needsRetrieval=false for "According to the excerpt, ..." and the turn was
+    // answered from general knowledge. The override must be reachable from analyzeIntent, not only exist as a rule.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation(async () => JSON.stringify({ needsRetrieval: false, needsClarification: false, confidence: 0.9 }))
+    const named = await analyzeIntent({
+      question: 'According to the excerpt, in what year were the Clean Air Act Amendments passed?',
+      hasDocuments: true,
+      hasIntegrations: false,
+    })
+    expect(named.needsRetrieval).toBe(true)
+    // Without documents there is nothing to retrieve, and the model's verdict stands.
+    const noDocs = await analyzeIntent({
+      question: 'According to the excerpt, in what year were the Clean Air Act Amendments passed?',
+      hasDocuments: false,
+      hasIntegrations: false,
+    })
+    expect(noDocs.needsRetrieval).toBe(false)
+  })
+
   test('returns default needsRetrieval=true when no LLM configured', async () => {
     mockGetLlmRuntimeConfig.mockImplementation(async () => null)
 

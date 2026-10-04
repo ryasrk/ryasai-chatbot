@@ -206,6 +206,14 @@ export function needsClarificationByRule(question: string): {
   return { needed: false }
 }
 
+/**
+ * Does the question explicitly point at a document ("according to the book", "in the excerpt", "menurut dokumen")?
+ * Deliberately phrase-based and narrow: it only forces retrieval when the user said where the answer is.
+ */
+export function namesDocumentSource(question: string): boolean {
+  return /\b(according to (the |this |our )?(book|excerpt|text|passage|document|documents|policy|sop|report|manual|handbook)|(in|from) (the|this) (book|excerpt|text|passage|document|policy|sop|report|manual)|the excerpt|menurut (dokumen|buku|kutipan|teks|kebijakan|sop|laporan|pedoman)|(dalam|di|pada) (dokumen|buku|kutipan|teks|kebijakan|sop|pedoman) (ini|tersebut)|berdasarkan (dokumen|buku|kebijakan|sop|pedoman))\b/i.test(question)
+}
+
 export async function analyzeIntent(args: {
   question: string
   chatHistory?: ChatHistoryEntry[]
@@ -316,6 +324,15 @@ export async function analyzeIntent(args: {
     // QUERY_INDICATORS, so "Berapa banyak itu?" was suppressed as a data query even though it names
     // nothing to count, and the pipeline answered it from an arbitrarily auto-selected database.
     // One produced a confident "Jumlahnya 2.405 (total stok)" the user could not identify as a guess.
+    // A question that NAMES its source is a retrieval question, whatever the model judged. MEASURED on the
+    // 2026-10-05 live eval: "According to the excerpt, in what year were the Clean Air Act Amendments passed?" was
+    // routed to plain chat and answered "I don't see an excerpt in our conversation".
+    if (args.hasDocuments && namesDocumentSource(args.question)) {
+      parsed.needsRetrieval = true
+      parsed.needsClarification = false
+      parsed.clarificationQuestion = undefined
+    }
+
     const rule = needsClarificationByRule(args.question)
     if (rule.needed) {
       parsed.needsClarification = true

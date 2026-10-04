@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { needsClarificationByRule } from './intent-pipeline'
+import { namesDocumentSource, needsClarificationByRule } from './intent-pipeline'
 
 /**
  * The documented ambiguity rule has NEVER worked, and the reason was placement.
@@ -86,5 +86,24 @@ describe('needsClarificationByRule', () => {
     expect(needsClarificationByRule('Show me recent data.').kind).toBe('time')
     // And it must be absent when no clarification is needed, so a caller cannot act on a stale kind.
     expect(needsClarificationByRule('Berapa jumlah karyawan?').kind).toBeUndefined()
+  })
+})
+
+describe('namesDocumentSource', () => {
+  test('a question that says where the answer is, is a document question', () => {
+    // MEASURED 2026-10-05: each of these was routed to plain chat and answered from general knowledge or with
+    // "I don't see an excerpt in our conversation".
+    for (const q of [
+      'According to the excerpt, in what year were the Clean Air Act Amendments passed in the United States?',
+      "According to the book, in what year was Harvard's first doctorate in artificial life granted?",
+      'Menurut dokumen, berapa hari cuti tahunan?',
+      'Berdasarkan kebijakan, siapa yang menyetujui pengadaan?',
+    ]) expect({ q, hit: namesDocumentSource(q) }).toEqual({ q, hit: true })
+  })
+
+  test('ordinary questions are left to the model', () => {
+    for (const q of ['Halo, apa kabar?', 'How many customers are there?', 'Write me a poem about logistics.']) {
+      expect({ q, hit: namesDocumentSource(q) }).toEqual({ q, hit: false })
+    }
   })
 })
