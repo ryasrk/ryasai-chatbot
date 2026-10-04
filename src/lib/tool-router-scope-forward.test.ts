@@ -177,14 +177,17 @@ describe('the TOOL EXECUTORS carry the document scope — the last unscoped entr
    * A family can be allowed AND scoped, so scoping the list does not scope the tool.
    */
   const unified = stripComments(readFileSync(join(import.meta.dir, 'unified-tools.ts'), 'utf-8'))
+  // The context TYPE lives in the contract leaf; the executors that consume it stay in unified-tools.ts.
+  const contract = stripComments(readFileSync(join(import.meta.dir, 'unified-tool-core.ts'), 'utf-8'))
   const orch = stripComments(readFileSync(join(import.meta.dir, 'agent-orchestrator.ts'), 'utf-8'))
   const route = stripComments(
     readFileSync(join(import.meta.dir, '..', 'app', 'api', 'v1', 'agent', 'run', 'route.ts'), 'utf-8'),
   )
 
   test('the context carries the scope and all THREE router calls consume it', () => {
-    const ctx = unified.slice(unified.indexOf('export interface ToolExecutionContext'))
+    const ctx = contract.slice(contract.indexOf('export interface ToolExecutionContext'))
     expect(ctx.slice(0, 900)).toMatch(/documentIds\?: string\[\] \| null/)
+    expect(ctx.slice(0, 900)).toMatch(/integrationIds\?: string\[\] \| null/)
     // Counted because the three executors are near-identical: a per-site assertion would be three copies of the
     // same line, and a count fails loudly if one is dropped while the others stay.
     const uses = unified.match(/documentIds: context\.documentIds/g) ?? []
@@ -228,8 +231,14 @@ describe('the integration axis: EVERY source-selection query in the chat path is
   //
   // `pipelines/sql-pipeline.ts` holds every SQL-branch lookup since both transports were unified (2026-10-04). The two
   // transport adapters stay listed: they may hold NO integration query, but any one added there must be scoped too.
-  const FILES = ['tool-router.ts', 'pipelines/sql-pipeline.ts', 'tool-branches.ts', 'stream-preparers.ts', 'smart-router.ts']
-  const MAY_BE_EMPTY = new Set(['tool-branches.ts', 'stream-preparers.ts'])
+  //
+  // `tool-router-routing.ts` holds the routing-context lookups since the router was split (2026-10-04); the router
+  // itself stays listed for the same reason as the transport adapters.
+  const FILES = [
+    'tool-router.ts', 'tool-router-routing.ts', 'pipelines/sql-pipeline.ts', 'tool-branches.ts', 'stream-preparers.ts',
+    'smart-router.ts',
+  ]
+  const MAY_BE_EMPTY = new Set(['tool-router.ts', 'tool-branches.ts', 'stream-preparers.ts'])
 
   for (const file of FILES) {
     const src = stripComments(readFileSync(join(import.meta.dir, file), 'utf-8'))
@@ -254,8 +263,8 @@ describe('the integration axis travels WITH the document axis through every dele
    * Structural, so a NEW delegation that forwards one axis and forgets the other fails by name.
    */
   const FILES = [
-    'tool-router.ts', 'tool-router-agentic.ts', 'planner.ts', 'unified-tools.ts', 'agent-orchestrator.ts',
-    '../app/api/v1/agent/run/route.ts',
+    'tool-router.ts', 'tool-router-routing.ts', 'tool-router-agentic.ts', 'planner.ts', 'unified-tools.ts',
+    'agent-orchestrator.ts', '../app/api/v1/agent/run/route.ts',
   ]
   for (const file of FILES) {
     test(`${file}: every object that forwards documentIds also forwards integrationIds`, () => {

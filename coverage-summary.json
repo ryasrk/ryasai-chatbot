@@ -1,14 +1,14 @@
 {
-  "linePct": 76.83,
-  "linesHit": 28918,
-  "linesFound": 37640,
-  "reachableLinePct": 88.38,
-  "reachableLinesHit": 25237,
-  "reachableLinesFound": 28554,
-  "fnPct": 89.63,
-  "fnsHit": 2636,
-  "fnsFound": 2941,
-  "filesMeasured": 276,
+  "linePct": 76.81,
+  "linesHit": 28994,
+  "linesFound": 37750,
+  "reachableLinePct": 88.35,
+  "reachableLinesHit": 25316,
+  "reachableLinesFound": 28655,
+  "fnPct": 89.96,
+  "fnsHit": 2662,
+  "fnsFound": 2959,
+  "filesMeasured": 296,
   "failedTestFiles": [],
   "files": [
     {
@@ -64,6 +64,15 @@
       "fHit": 1,
       "fFound": 12,
       "fPct": 8.333333333333332
+    },
+    {
+      "file": "src/lib/unified-tools-mcp.ts",
+      "hit": 30,
+      "found": 221,
+      "pct": 13.574660633484163,
+      "fHit": 4,
+      "fFound": 10,
+      "fPct": 40
     },
     {
       "file": "src/components/ui/textarea.tsx",
@@ -156,15 +165,6 @@
       "fPct": 64.28571428571429
     },
     {
-      "file": "src/lib/unified-tools.ts",
-      "hit": 367,
-      "found": 799,
-      "pct": 45.93241551939925,
-      "fHit": 25,
-      "fFound": 38,
-      "fPct": 65.78947368421053
-    },
-    {
       "file": "src/components/views/memory-provider-panel.tsx",
       "hit": 69,
       "found": 144,
@@ -172,6 +172,24 @@
       "fHit": 4,
       "fFound": 6,
       "fPct": 66.66666666666666
+    },
+    {
+      "file": "src/lib/tool-router.ts",
+      "hit": 204,
+      "found": 423,
+      "pct": 48.226950354609926,
+      "fHit": 26,
+      "fFound": 30,
+      "fPct": 86.66666666666667
+    },
+    {
+      "file": "src/lib/unified-tools.ts",
+      "hit": 216,
+      "found": 436,
+      "pct": 49.54128440366973,
+      "fHit": 14,
+      "fFound": 19,
+      "fPct": 73.68421052631578
     },
     {
       "file": "src/lib/profile-version.ts",
@@ -210,15 +228,6 @@
       "fPct": 83.33333333333334
     },
     {
-      "file": "src/lib/tool-router.ts",
-      "hit": 370,
-      "found": 705,
-      "pct": 52.4822695035461,
-      "fHit": 49,
-      "fFound": 55,
-      "fPct": 89.0909090909091
-    },
-    {
       "file": "src/lib/simple-pipeline.ts",
       "hit": 123,
       "found": 228,
@@ -229,9 +238,9 @@
     },
     {
       "file": "src/lib/agent-orchestrator.ts",
-      "hit": 193,
-      "found": 348,
-      "pct": 55.45977011494253,
+      "hit": 194,
+      "found": 349,
+      "pct": 55.587392550143264,
       "fHit": 13,
       "fFound": 15,
       "fPct": 86.66666666666667
@@ -264,6 +273,15 @@
       "fPct": 94.11764705882352
     },
     {
+      "file": "src/lib/real-connector-postgres.ts",
+      "hit": 120,
+      "found": 208,
+      "pct": 57.692307692307686,
+      "fHit": 19,
+      "fFound": 20,
+      "fPct": 95
+    },
+    {
       "file": "src/components/views/cognee-card.tsx",
       "hit": 157,
       "found": 271,
@@ -273,13 +291,31 @@
       "fPct": 40
     },
     {
+      "file": "src/lib/intent-pipeline.ts",
+      "hit": 285,
+      "found": 489,
+      "pct": 58.282208588957054,
+      "fHit": 25,
+      "fFound": 26,
+      "fPct": 96.15384615384616
+    },
+    {
       "file": "src/lib/rag-retrieval.ts",
-      "hit": 410,
-      "found": 703,
-      "pct": 58.32147937411095,
-      "fHit": 57,
-      "fFound": 58,
-      "fPct": 98.27586206896551
+      "hit": 314,
+      "found": 537,
+      "pct": 58.47299813780261,
+      "fHit": 38,
+      "fFound": 39,
+      "fPct": 97.43589743589743
+    },
+    {
+      "file": "src/lib/rag-vector.ts",
+      "hit": 100,
+      "found": 170,
+      "pct": 58.82352941176471,
+      "fHit": 18,
+      "fFound": 18,
+      "fPct": 100
     },
     {
       "file": "src/lib/cognee-config-push.ts",
@@ -289,6 +325,15 @@
       "fHit": 5,
       "fFound": 9,
       "fPct": 55.55555555555556
+    },
+    {
+      "file": "src/lib/tool-router-routing.ts",
+      "hit": 173,
+      "found": 289,
+      "pct": 59.86159169550172,
+      "fHit": 23,
+      "fFound": 25,
+      "fPct": 92
     },
     {
       "file": "src/components/views/memory-configuration-panel.tsx",
@@ -318,6 +363,15 @@
       "fPct": 86.8421052631579
     },
     {
+      "file": "src/lib/ai.ts",
+      "hit": 336,
+      "found": 551,
+      "pct": 60.98003629764065,
+      "fHit": 27,
+      "fFound": 27,
+      "fPct": 100
+    },
+    {
       "file": "src/components/ui/button.tsx",
       "hit": 96,
       "found": 153,
@@ -327,30 +381,39 @@
       "fPct": 66.66666666666666
     },
     {
-      "file": "src/lib/ai.ts",
-      "hit": 477,
-      "found": 752,
-      "pct": 63.430851063829785,
-      "fHit": 47,
-      "fFound": 47,
-      "fPct": 100
-    },
-    {
-      "file": "src/lib/intent-pipeline.ts",
-      "hit": 388,
-      "found": 609,
-      "pct": 63.71100164203612,
-      "fHit": 33,
-      "fFound": 35,
-      "fPct": 94.28571428571428
-    },
-    {
       "file": "src/lib/source-guidance.ts",
       "hit": 55,
       "found": 86,
       "pct": 63.95348837209303,
       "fHit": 2,
       "fFound": 2,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/real-connector-mssql.ts",
+      "hit": 119,
+      "found": 186,
+      "pct": 63.97849462365591,
+      "fHit": 20,
+      "fFound": 21,
+      "fPct": 95.23809523809523
+    },
+    {
+      "file": "src/lib/ai-rest.ts",
+      "hit": 47,
+      "found": 71,
+      "pct": 66.19718309859155,
+      "fHit": 5,
+      "fFound": 5,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/ai-schema.ts",
+      "hit": 63,
+      "found": 95,
+      "pct": 66.3157894736842,
+      "fHit": 8,
+      "fFound": 8,
       "fPct": 100
     },
     {
@@ -453,12 +516,30 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/real-connector-mysql.ts",
+      "hit": 110,
+      "found": 156,
+      "pct": 70.51282051282051,
+      "fHit": 24,
+      "fFound": 24,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/rag-fts.ts",
       "hit": 122,
       "found": 173,
       "pct": 70.52023121387283,
       "fHit": 17,
       "fFound": 17,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/planner.ts",
+      "hit": 415,
+      "found": 588,
+      "pct": 70.578231292517,
+      "fHit": 25,
+      "fFound": 25,
       "fPct": 100
     },
     {
@@ -469,15 +550,6 @@
       "fHit": 30,
       "fFound": 34,
       "fPct": 88.23529411764706
-    },
-    {
-      "file": "src/lib/real-connectors.ts",
-      "hit": 738,
-      "found": 1033,
-      "pct": 71.44240077444337,
-      "fHit": 109,
-      "fFound": 114,
-      "fPct": 95.6140350877193
     },
     {
       "file": "src/lib/web-fetch.ts",
@@ -508,9 +580,9 @@
     },
     {
       "file": "src/lib/tool-router-agentic.ts",
-      "hit": 425,
-      "found": 576,
-      "pct": 73.78472222222221,
+      "hit": 430,
+      "found": 584,
+      "pct": 73.63013698630137,
       "fHit": 30,
       "fFound": 31,
       "fPct": 96.7741935483871
@@ -525,13 +597,13 @@
       "fPct": 74.35897435897436
     },
     {
-      "file": "src/lib/planner.ts",
-      "hit": 583,
-      "found": 781,
+      "file": "src/lib/real-connector-clickhouse.ts",
+      "hit": 106,
+      "found": 142,
       "pct": 74.64788732394366,
-      "fHit": 49,
-      "fFound": 49,
-      "fPct": 100
+      "fHit": 16,
+      "fFound": 17,
+      "fPct": 94.11764705882352
     },
     {
       "file": "src/lib/session-activity.ts",
@@ -597,6 +669,15 @@
       "fPct": 76.47058823529412
     },
     {
+      "file": "src/lib/admin-tools-mcp.ts",
+      "hit": 354,
+      "found": 456,
+      "pct": 77.63157894736842,
+      "fHit": 30,
+      "fFound": 33,
+      "fPct": 90.9090909090909
+    },
+    {
       "file": "src/components/views/knowledge-base/doc-card.tsx",
       "hit": 222,
       "found": 282,
@@ -633,6 +714,15 @@
       "fPct": 66.66666666666666
     },
     {
+      "file": "src/lib/embeddings.ts",
+      "hit": 336,
+      "found": 423,
+      "pct": 79.43262411347519,
+      "fHit": 35,
+      "fFound": 36,
+      "fPct": 97.22222222222221
+    },
+    {
       "file": "src/lib/api-key-scope.ts",
       "hit": 100,
       "found": 125,
@@ -649,15 +739,6 @@
       "fHit": 10,
       "fFound": 10,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/embeddings.ts",
-      "hit": 335,
-      "found": 417,
-      "pct": 80.3357314148681,
-      "fHit": 35,
-      "fFound": 36,
-      "fPct": 97.22222222222221
     },
     {
       "file": "src/lib/mcp-installer.ts",
@@ -705,6 +786,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/real-connector-shared.ts",
+      "hit": 276,
+      "found": 339,
+      "pct": 81.41592920353983,
+      "fHit": 30,
+      "fFound": 32,
+      "fPct": 93.75
+    },
+    {
       "file": "src/lib/scheduler-queue.ts",
       "hit": 119,
       "found": 145,
@@ -741,6 +831,15 @@
       "fPct": 96.875
     },
     {
+      "file": "src/lib/unified-tools-admin.ts",
+      "hit": 106,
+      "found": 128,
+      "pct": 82.8125,
+      "fHit": 4,
+      "fFound": 5,
+      "fPct": 80
+    },
+    {
       "file": "src/lib/alignment-check.ts",
       "hit": 54,
       "found": 65,
@@ -768,6 +867,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/session.ts",
+      "hit": 148,
+      "found": 178,
+      "pct": 83.14606741573034,
+      "fHit": 13,
+      "fFound": 14,
+      "fPct": 92.85714285714286
+    },
+    {
       "file": "src/lib/embedding-stamp.ts",
       "hit": 10,
       "found": 12,
@@ -786,6 +894,15 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/mcp-client.ts",
+      "hit": 412,
+      "found": 493,
+      "pct": 83.56997971602435,
+      "fHit": 45,
+      "fFound": 49,
+      "fPct": 91.83673469387756
+    },
+    {
       "file": "src/lib/distributed-rate-limit.ts",
       "hit": 41,
       "found": 49,
@@ -795,15 +912,6 @@
       "fPct": 87.5
     },
     {
-      "file": "src/lib/admin-tools.ts",
-      "hit": 569,
-      "found": 675,
-      "pct": 84.29629629629629,
-      "fHit": 48,
-      "fFound": 56,
-      "fPct": 85.71428571428571
-    },
-    {
       "file": "src/lib/constrained-output.ts",
       "hit": 43,
       "found": 51,
@@ -811,15 +919,6 @@
       "fHit": 5,
       "fFound": 5,
       "fPct": 100
-    },
-    {
-      "file": "src/lib/mcp-client.ts",
-      "hit": 529,
-      "found": 626,
-      "pct": 84.50479233226838,
-      "fHit": 56,
-      "fFound": 63,
-      "fPct": 88.88888888888889
     },
     {
       "file": "src/lib/llm-client-openai.ts",
@@ -858,13 +957,22 @@
       "fPct": 53.84615384615385
     },
     {
-      "file": "src/lib/pipelines/sql-pipeline.ts",
-      "hit": 233,
-      "found": 270,
-      "pct": 86.29629629629629,
-      "fHit": 21,
+      "file": "src/lib/query-expansion.ts",
+      "hit": 105,
+      "found": 122,
+      "pct": 86.0655737704918,
+      "fHit": 8,
+      "fFound": 9,
+      "fPct": 88.88888888888889
+    },
+    {
+      "file": "src/lib/plan-model.ts",
+      "hit": 174,
+      "found": 202,
+      "pct": 86.13861386138613,
+      "fHit": 24,
       "fFound": 24,
-      "fPct": 87.5
+      "fPct": 100
     },
     {
       "file": "src/lib/health-status.ts",
@@ -874,6 +982,15 @@
       "fHit": 19,
       "fFound": 19,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/pipelines/sql-pipeline.ts",
+      "hit": 236,
+      "found": 273,
+      "pct": 86.44688644688645,
+      "fHit": 22,
+      "fFound": 25,
+      "fPct": 88
     },
     {
       "file": "src/lib/schema-enrichment.ts",
@@ -939,6 +1056,15 @@
       "fPct": 97.36842105263158
     },
     {
+      "file": "src/lib/mcp-transport.ts",
+      "hit": 120,
+      "found": 136,
+      "pct": 88.23529411764706,
+      "fHit": 13,
+      "fFound": 14,
+      "fPct": 92.85714285714286
+    },
+    {
       "file": "src/app/api/notifications/route.ts",
       "hit": 62,
       "found": 70,
@@ -948,10 +1074,10 @@
       "fPct": 83.33333333333334
     },
     {
-      "file": "src/lib/rag.ts",
-      "hit": 146,
-      "found": 163,
-      "pct": 89.57055214723927,
+      "file": "src/lib/rag-scoring.ts",
+      "hit": 144,
+      "found": 161,
+      "pct": 89.44099378881988,
       "fHit": 15,
       "fFound": 16,
       "fPct": 93.75
@@ -1002,13 +1128,13 @@
       "fPct": 40
     },
     {
-      "file": "src/lib/session.ts",
-      "hit": 170,
-      "found": 187,
-      "pct": 90.9090909090909,
-      "fHit": 15,
-      "fFound": 17,
-      "fPct": 88.23529411764706
+      "file": "src/lib/ai-chat.ts",
+      "hit": 39,
+      "found": 43,
+      "pct": 90.69767441860465,
+      "fHit": 7,
+      "fFound": 7,
+      "fPct": 100
     },
     {
       "file": "src/lib/metrics.ts",
@@ -1099,6 +1225,15 @@
       "fHit": 17,
       "fFound": 18,
       "fPct": 94.44444444444444
+    },
+    {
+      "file": "src/lib/unified-tool-core.ts",
+      "hit": 28,
+      "found": 30,
+      "pct": 93.33333333333333,
+      "fHit": 4,
+      "fFound": 4,
+      "fPct": 100
     },
     {
       "file": "src/lib/redis.ts",
@@ -1236,6 +1371,15 @@
       "fPct": 87.5
     },
     {
+      "file": "src/lib/constants.ts",
+      "hit": 54,
+      "found": 56,
+      "pct": 96.42857142857143,
+      "fHit": 2,
+      "fFound": 3,
+      "fPct": 66.66666666666666
+    },
+    {
       "file": "src/lib/api-key-scope-guard.ts",
       "hit": 85,
       "found": 88,
@@ -1245,15 +1389,6 @@
       "fPct": 100
     },
     {
-      "file": "src/app/api/v1/agent/run/route.ts",
-      "hit": 123,
-      "found": 127,
-      "pct": 96.8503937007874,
-      "fHit": 5,
-      "fFound": 6,
-      "fPct": 83.33333333333334
-    },
-    {
       "file": "src/app/api/auth/saml/callback/route.ts",
       "hit": 31,
       "found": 32,
@@ -1261,6 +1396,15 @@
       "fHit": 2,
       "fFound": 3,
       "fPct": 66.66666666666666
+    },
+    {
+      "file": "src/app/api/v1/agent/run/route.ts",
+      "hit": 124,
+      "found": 128,
+      "pct": 96.875,
+      "fHit": 5,
+      "fFound": 6,
+      "fPct": 83.33333333333334
     },
     {
       "file": "src/lib/access-scope.ts",
@@ -1305,6 +1449,15 @@
       "pct": 98.07692307692307,
       "fHit": 5,
       "fFound": 5,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/admin-tools.ts",
+      "hit": 220,
+      "found": 224,
+      "pct": 98.21428571428571,
+      "fHit": 37,
+      "fFound": 37,
       "fPct": 100
     },
     {
@@ -1407,15 +1560,6 @@
       "fPct": 100
     },
     {
-      "file": "src/lib/constants.ts",
-      "hit": 44,
-      "found": 44,
-      "pct": 100,
-      "fHit": 2,
-      "fFound": 3,
-      "fPct": 66.66666666666666
-    },
-    {
       "file": "src/lib/db-provider.ts",
       "hit": 3,
       "found": 3,
@@ -1434,7 +1578,25 @@
       "fPct": 100
     },
     {
+      "file": "src/lib/rag.ts",
+      "hit": 3,
+      "found": 3,
+      "pct": 100,
+      "fHit": 1,
+      "fFound": 1,
+      "fPct": 100
+    },
+    {
       "file": "src/lib/retrieval-rank.ts",
+      "hit": 5,
+      "found": 5,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 2,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/chat-completion-port.ts",
       "hit": 5,
       "found": 5,
       "pct": 100,
@@ -1459,6 +1621,24 @@
       "fHit": 1,
       "fFound": 1,
       "fPct": 100
+    },
+    {
+      "file": "src/lib/real-connectors.ts",
+      "hit": 5,
+      "found": 5,
+      "pct": 100,
+      "fHit": 1,
+      "fFound": 1,
+      "fPct": 100
+    },
+    {
+      "file": "src/lib/session-errors.ts",
+      "hit": 25,
+      "found": 25,
+      "pct": 100,
+      "fHit": 2,
+      "fFound": 3,
+      "fPct": 66.66666666666666
     },
     {
       "file": "src/lib/sql-function-denylist.ts",

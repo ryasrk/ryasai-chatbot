@@ -15,7 +15,7 @@ import { chatOnce } from '@/lib/llm-client'
 import { scopedLogger } from '@/lib/logger'
 import { getOrgContext } from '@/lib/prisma-tenant'
 import { backgroundLockdownReason } from '@/lib/background-license'
-import { tokenize } from '@/lib/rag'
+import { tokenize } from '@/lib/rag-scoring'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 
 const log = scopedLogger('kg')

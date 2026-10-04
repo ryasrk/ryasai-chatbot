@@ -29,6 +29,13 @@ function readRepo(rel: string): string {
   return readFileSync(join(REPO_ROOT, rel), 'utf8')
 }
 
+/**
+ * The external-connector FAMILY's source as one text. `real-connectors.ts` was split per dialect (2026-10-04) and is
+ * now a barrel; every invariant below is about the family, so it reads all six files.
+ */
+const connectorFamily = () => ['real-connectors', 'real-connector-shared', 'real-connector-postgres', 'real-connector-mysql',
+  'real-connector-mssql', 'real-connector-clickhouse'].map((f) => readRepo(`src/lib/${f}.ts`)).join('\n')
+
 // ---------------------------------------------------------------------------
 // 1. Exactly one instrumentation file, and it MUST start the BullMQ worker
 // ---------------------------------------------------------------------------
@@ -151,7 +158,7 @@ describe('invariant: cognee searchType literals are valid in the pinned v1.6.0 s
 // the specifier is analyzable. Never reintroduce a variable specifier.
 describe('invariant: DB drivers load via static import map', () => {
   test('loadDriver resolves through DRIVER_LOADERS with literal specifiers', () => {
-    const src = readRepo('src/lib/real-connectors.ts')
+    const src = connectorFamily()
     expect(src).toContain('DRIVER_LOADERS')
     // The loader map must use string-literal imports only.
     const mapBlock = src.slice(
@@ -164,7 +171,7 @@ describe('invariant: DB drivers load via static import map', () => {
   })
 
   test('no variable-specifier dynamic import remains in real-connectors.ts', () => {
-    const raw = readRepo('src/lib/real-connectors.ts')
+    const raw = connectorFamily()
     // Strip comments first — the fix's own documentation legitimately mentions
     // `import(variable)` as the anti-pattern.
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '')
@@ -221,7 +228,7 @@ describe('invariant: PDF parser has no binary-noise fallback', () => {
 // real-connectors.ts must IMPORT it rather than redeclare it.
 describe('invariant: SQL guard lists are single-source', () => {
   test('real-connectors.ts imports the function deny-list instead of copying it', () => {
-    const src = readRepo('src/lib/real-connectors.ts')
+    const src = connectorFamily()
     expect(src).toContain("from '@/lib/guardrails'")
     expect(src).toContain('detectDangerousFunctions')
     // A local copy of the function table is the regression this guards against.
@@ -229,14 +236,14 @@ describe('invariant: SQL guard lists are single-source', () => {
   })
 
   test('executeQuery paths call assertNoDangerousFunctions', () => {
-    const src = readRepo('src/lib/real-connectors.ts')
+    const src = connectorFamily()
     const calls = src.match(/assertNoDangerousFunctions\(sql\)/g) ?? []
     // One per connector executeQuery: Postgres, MySQL, MSSQL, ClickHouse.
     expect(calls.length).toBeGreaterThanOrEqual(4)
   })
 
   test('Postgres and MySQL enforce DB-level read-only transactions', () => {
-    const src = readRepo('src/lib/real-connectors.ts')
+    const src = connectorFamily()
     expect(src).toContain('SET TRANSACTION READ ONLY')
     expect(src).toContain('START TRANSACTION READ ONLY')
     // statement_timeout is what bounds pg_sleep at the server.
@@ -593,7 +600,7 @@ describe('invariant: plan quotas are enforced, not decorative', () => {
     // The reverse index must exist and must be DERIVED from the same map so the
     // two directions cannot drift.
     // Both directions must come from ONE table, so they cannot drift.
-    const src = codeOnly('src/lib/intent-pipeline.ts')
+    const src = codeOnly('src/lib/query-expansion.ts')
     expect(src).toMatch(/SYNONYM_REVERSE[\s\S]{0,500}Object\.entries\(QUERY_SYNONYMS\)/)
     expect(src).toContain('PRIMARY_SYNONYM')
   })
@@ -916,7 +923,7 @@ describe('invariant: HNSW filter truncation stays handled', () => {
   // this installation runs 0.6.0, so the code must probe for it and treat a
   // short result as a failure in the meantime.
   test('an under-filled vector leg is not mistaken for success', () => {
-    const src = readRepo('src/lib/rag-retrieval.ts')
+    const src = readRepo('src/lib/rag-vector.ts') // the vector leg, split from rag-retrieval.ts
 
     // The old bug in one line: any non-empty result returned immediately.
     expect(src).not.toMatch(/if \(pgScores\.size > 0\) return pgScores/)
@@ -926,7 +933,7 @@ describe('invariant: HNSW filter truncation stays handled', () => {
   })
 
   test('ef_search is raised and iterative_scan is probed, never assumed', () => {
-    const src = readRepo('src/lib/rag-retrieval.ts')
+    const src = readRepo('src/lib/rag-vector.ts') // the vector leg, split from rag-retrieval.ts
 
     // Leaving ef_search at the server default (40) is the bug: it must scale
     // with the requested limit...

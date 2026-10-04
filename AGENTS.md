@@ -30,7 +30,7 @@ assertion (it documents the outage) and restructure your change.
    renamed literal by refreshing the fixture and syncing `COGNEE_SEARCH_TYPES` —
    never by deleting the guard.
 3. **DB drivers load through the static `DRIVER_LOADERS` map** in
-   `real-connectors.ts` — `async () => import('pg')` literals, never
+   `real-connector-shared.ts` — `async () => import('pg')` literals, never
    `await import(variable)`. A variable specifier is invisible to Turbopack
    (breaks dev) and to output tracing (drivers silently vanish from the
    standalone Docker image → "driver not installed" in production only).
@@ -389,7 +389,7 @@ expectation, or changing how a prompt is delivered.
 
 ## Database integrations (Supabase/Neon/PlanetScale…)
 
-- Managed providers hand users a **connection string** — the create-integration dialog accepts it and pre-fills the fields; the server (`parseConnectionString` in `real-connectors.ts`) re-parses authoritatively.
+- Managed providers hand users a **connection string** — the create-integration dialog accepts it and pre-fills the fields; the server (`parseConnectionString` in `real-connector-shared.ts`, re-exported by `real-connectors.ts`) re-parses authoritatively.
 - Managed providers default to TLS (`sslByDefault` in `db-provider-presets.ts`). TLS verification is ON by default; `DB_SSL_REJECT_UNAUTHORIZED=0` is the dev/self-signed opt-out.
 - Connection failures are **classified** (`describeConnectionError`): `auth` / `ssl` / `dns` / `timeout` / `refused` / `database_missing` / `driver_missing`. The UI shows the classified hint; never regress to the opaque "Connection failed" string.
 - `POST /api/integrations/[id]/test` (the UI "Test Connection" button) re-tests on a fresh pool and refreshes the schema cache.

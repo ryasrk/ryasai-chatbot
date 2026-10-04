@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { UnauthorizedError } from '@/lib/session'
+import { UnauthorizedError } from '@/lib/session-errors'
 import { bypassOrg, enterWithOrg } from '@/lib/prisma-tenant'
 import { readKeyScope, type KeyScope } from '@/lib/api-key-scope'
 

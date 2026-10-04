@@ -150,7 +150,7 @@ const FLOORS: Record<string, number> = {
   // same floor entries), so the tests that arrived WITH the pull request were committed while the floors they earned
   // were not — leaving a floor 33.5 points below reality, which `coverage-floor-consistency.test.ts` caught by refusing
   // to let a floor stop guarding. MEASURED 84.50% (529/626).
-  'src/lib/mcp-client.ts': 84,
+  'src/lib/mcp-client.ts': 83, // re-measured 83.57% (412/493) after the stateless transport helpers (88%) moved to mcp-transport.ts, floored below; was 84
   // SQL-injection guardrail: dangerous-function masking, the string-literal walker
   // and the LIMIT cap. 188/189 executable; 1 line is a bun arrow-callback artifact.
   /*
@@ -300,7 +300,7 @@ const FLOORS: Record<string, number> = {
   // ratchet a denominator the tests cannot lower. The behaviour is pinned by client-ip.test.ts and by the
   // IP-keyed cases in middleware.test.ts and the login route tests.
   'src/lib/tool-branches.ts': 70, // re-measured 73.76% (669/907); was 84
-  'src/lib/embeddings.ts': 80, // re-measured 81.66% (334/409); was 82
+  'src/lib/embeddings.ts': 79, // re-measured 79.43% (336/423); hits ROSE 334 -> 336, the denominator grew by the raw-write ownership comment; was 80
   'src/lib/smart-router.ts': 55, // re-measured 56.12% (243/433); was 74
   // Merged 68.14% (462/678), re-measured 2026-09-26. The floor is set to the MEASURED merged value,
   // not to a desire: the module is 100.00% FUNCTIONS merged, so the line figure is pulled down by a
@@ -315,7 +315,7 @@ const FLOORS: Record<string, number> = {
   // 64 -> 63. The module gained the `signal` plumbing for speculative retrieval (three checks plus the threaded
   // parameter), so the merged denominator moved 574 -> 609 while hit rose 373 -> 388; the floor follows the MEASUREMENT
   // rather than the old estimate, which is the convention this file records for grown modules.
-  'src/lib/intent-pipeline.ts': 63, // re-measured 63.71% (388/609); was 64
+  'src/lib/intent-pipeline.ts': 58, // re-measured 58.28% (285/489) after query expansion (86%) moved to query-expansion.ts, floored below; was 63
   'src/lib/real-connectors.ts': 68, // lowered 73 -> 68. The merged denominator moved 937 -> 942 (the module
   // gained the xp_cmdshell comment rewrite) and the DRIVER-LOADER paths are exercised in per-file
   // subprocesses whose lcov is merged only for the instrumented subset. Single-file figure is 95.10%/98.69%.
@@ -697,6 +697,29 @@ const FLOORS: Record<string, number> = {
   'src/app/api/settings/api-keys/logs/route.ts': 95, // measured 100.00% (22/22)
   'src/app/api/setup/seed-plugins/route.ts': 95, // measured 100.00% (22/22)
   'src/app/api/tools/[id]/test/route.ts': 95, // measured 100.00% (35/35)
+  // Modules split out of the nine oversized ones (2026-10-04, ADR 0015). Each floor is its own merged measurement,
+  // rounded down, so the code that moved stays gated where it now lives. `unified-tools-mcp.ts` (13.57%) is not
+  // gated: its MCP builders are exercised through the orchestrator suites, not measured here — a known gap.
+  'src/lib/plan-model.ts': 86, // re-measured 86.14% (174/202)
+  'src/lib/tool-router-routing.ts': 59, // re-measured 59.86% (173/289)
+  'src/lib/unified-tools.ts': 49, // re-measured 49.54% (216/436)
+  'src/lib/unified-tool-core.ts': 93, // re-measured 93.33% (28/30)
+  'src/lib/unified-tools-admin.ts': 82, // re-measured 82.81% (106/128)
+  'src/lib/real-connector-shared.ts': 81, // re-measured 81.42% (276/339)
+  'src/lib/real-connector-postgres.ts': 57, // re-measured 57.69% (120/208)
+  'src/lib/real-connector-mysql.ts': 70, // re-measured 70.51% (110/156)
+  'src/lib/real-connector-mssql.ts': 63, // re-measured 63.98% (119/186)
+  'src/lib/real-connector-clickhouse.ts': 74, // re-measured 74.65% (106/142)
+  'src/lib/ai-chat.ts': 90, // re-measured 90.70% (39/43)
+  'src/lib/ai-rest.ts': 66, // re-measured 66.20% (47/71)
+  'src/lib/ai-schema.ts': 66, // re-measured 66.32% (63/95)
+  'src/lib/mcp-transport.ts': 88, // re-measured 88.24% (120/136)
+  'src/lib/query-expansion.ts': 86, // re-measured 86.07% (105/122)
+  'src/lib/rag-vector.ts': 58, // re-measured 58.82% (100/170)
+  'src/lib/rag-scoring.ts': 89, // re-measured 89.44% (144/161)
+  'src/lib/admin-tools-mcp.ts': 77, // re-measured 77.63% (354/456)
+  'src/lib/session-errors.ts': 99, // re-measured 100.00% (25/25)
+  'src/lib/chat-completion-port.ts': 99, // re-measured 100.00% (5/5)
 }
 
 /** Only modules at or above this measured percentage are eligible for gating. */

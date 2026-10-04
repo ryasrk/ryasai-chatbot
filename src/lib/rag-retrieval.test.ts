@@ -50,7 +50,7 @@ mock.module('@/lib/constants', () => ({
   RAG_CACHE_TTL_MS: 60_000,
   RAG_MAX_CHUNKS_PER_UPLOAD: 500,
 }))
-mock.module('./rag', () => ({
+mock.module('./rag-scoring', () => ({
   tokenize: (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean),
   tokenizeForScoring: (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean),
   scoreChunk: () => ({ total: 0, lexicalTotal: 0, contentHits: 0, keywordHits: 0, phraseHits: 0, semanticSimilarity: 0, semanticScore: 0 }),
@@ -1018,7 +1018,7 @@ describe('ensureVectorIndexes', () => {
     // it. It must: log a warning, RESET the memo so a later deploy can retry, and
     // NOT fall back to a plain (blocking) CREATE INDEX -- that is the failure mode
     // the CONCURRENTLY form exists to avoid.
-    const src = await Bun.file('./src/lib/rag-retrieval.ts').text()
+    const src = await Bun.file('./src/lib/rag-vector.ts').text()
     const catchAt = src.indexOf('ensureVectorIndexes failed')
     // The documented-operator escape hatch is a CONCURRENTLY statement, not a
     // blocking one: if this ever degrades to plain CREATE INDEX, ingestion stalls.
@@ -1835,7 +1835,8 @@ function stripComments(src: string): string {
 }
 
 describe('rag-retrieval.ts — no swallowed vector-store refusal, no length proxy', () => {
-  const src = readFileSync(join(import.meta.dir, 'rag-retrieval.ts'), 'utf8')
+  // Retrieval and its vector leg (split into rag-vector.ts) read as ONE module: each fact holds for both files.
+  const src = ['rag-retrieval.ts', 'rag-vector.ts'].map((f) => readFileSync(join(import.meta.dir, f), 'utf8')).join('\n')
 
   test('the UnsupportedVectorProviderError re-throw precedes the absorb-and-return', () => {
     const code = stripComments(src)

@@ -756,7 +756,8 @@ describe('loadDriver', () => {
     // variable-specifier import() is invisible to Turbopack (breaks dev) and to
     // output tracing (drivers silently vanish from the standalone image), and
     // both failure modes surface to users as "driver not installed".
-    const src = readFileSync(join(import.meta.dir, 'real-connectors.ts'), 'utf8')
+    const src = ['real-connectors.ts', 'real-connector-shared.ts', 'real-connector-postgres.ts', 'real-connector-mysql.ts',
+      'real-connector-mssql.ts', 'real-connector-clickhouse.ts'].map((f) => readFileSync(join(import.meta.dir, f), 'utf8')).join('\n')
     for (const spec of ['pg', 'mysql2/promise', 'mssql', '@clickhouse/client']) {
       expect(src).toContain(`async () => import('${spec}')`)
     }

@@ -9,9 +9,8 @@
  * (SQL/RAG/REST/CHAT) based on the sub-question text.
  */
 import { generateAnswer, generateChat } from '@/lib/ai'
-import type { Citation } from '@/lib/types'
 import { routingMemoryBlock } from '@/lib/memory-routing'
-import { runNonStreamingChatCompletion } from '@/lib/tool-router'
+import { runNonStreamingChatCompletion } from '@/lib/chat-completion-port'
 import { recallContext } from '@/lib/cognee'
 import { executePlugin } from '@/lib/plugin-registry'
 import { callMcpTool, listMcpTools } from '@/lib/mcp-client'
@@ -22,50 +21,22 @@ import { fetchUrlForPlanner, webSearch } from '@/lib/web-fetch'
 import { db } from '@/lib/db'
 import { chatOnce as llmChatOnce, type LlmToolDef } from '@/lib/llm-client'
 import { getLlmRuntimeConfig } from '@/lib/llm-config'
-import { extractJson } from '@/lib/constrained-output'
 import { assertSystemPromptUnderCeiling } from '@/lib/system-message-ceiling'
 import { withToolSandbox } from '@/lib/tool-sandbox'
 import { toolCircuitBreaker } from '@/lib/tool-circuit-breaker'
 import { logSwallowed } from '@/lib/logger'
 import type { ToolDef } from '@/lib/tool-registry'
+import {
+  MAX_STEPS, normalizePlan, validatePlan, parsePlanResponse, coerceMcpInput, fallbackChatPlan, groupByLevel, topoSort,
+  isStepConfirmed, resolveStepInput, formatStepContext, stepFailureReason,
+  type PlanStep, type Plan, type PlanStepResult, type StepStatus,
+} from '@/lib/plan-model'
+export { parsePlanResponse, validatePlan, PlanValidationError, topoSort, isStepConfirmed, resolveStepInput, stepFailureReason, formatStepContext } from '@/lib/plan-model'
+export type { PlanStep, Plan, PlanStepResult, StepStatus } from '@/lib/plan-model'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface PlanStep {
-  id: string // 'step1', 'step2', etc
-  tool: string // tool id from registry
-  input: Record<string, string> // params for the tool
-  dependsOn?: string[] // step ids that must complete first
-}
-
-export interface Plan {
-  steps: PlanStep[]
-  needsSynthesis: boolean // if true, run generateAnswer with all step outputs
-}
-
-export interface PlanStepResult {
-  stepId: string
-  tool: string
-  ok: boolean
-  output: string
-  error?: string
-  latencyMs: number
-  /**
-   * The step's own citations, CARRIED rather than dropped.
-   *
-   * MEASURED DEFECT: a compound question ("40 jam pelatihan AND total gaji") ran a RAG step and a SQL step, both
-   * `success`, and the persisted assistant message carried `citations: []` — so the answer stated two figures from
-   * two sources and the UI showed no source for either. `executeStep` built its result without this field, so the
-   * citations `runNonStreamingChatCompletion` had just produced were discarded one frame later.
-   */
-  citations?: Citation[]
-}
-
-export type StepStatus = 'running' | 'done' | 'error'
-
-const MAX_STEPS = 6
 
 // ponytail: shared between the function-calling planner and the JSON planner so
 // the two cannot drift. Both must describe the same {{stepN}} contract.
@@ -322,211 +293,6 @@ export async function planQuery(args: {
 // Plan parsing + validation (pure functions, testable without LLM)
 // ---------------------------------------------------------------------------
 
-/**
- * Parse the LLM's raw JSON response into a validated Plan.
- * - Malformed JSON → fallback CHAT plan (no throw).
- * - Valid JSON but validation fails (bad tool, > MAX_STEPS, cycle) → throws.
- */
-export function parsePlanResponse(raw: string, availableTools: ToolDef[]): Plan {
-  let parsed: unknown
-  try {
-    parsed = extractJson(raw)
-  } catch {
-    return fallbackChatPlan()
-  }
-  const plan = normalizePlan(parsed)
-  return validatePlan(plan, availableTools)
-}
-
-function normalizePlan(parsed: unknown): Plan {
-  if (!parsed || typeof parsed !== 'object') return { steps: [], needsSynthesis: false }
-  const obj = parsed as { steps?: unknown; needsSynthesis?: unknown }
-  const steps = Array.isArray(obj.steps)
-    ? obj.steps.map(normalizeStep).filter((s): s is PlanStep => s !== null)
-    : []
-  return {
-    steps,
-    needsSynthesis: obj.needsSynthesis === true,
-  }
-}
-
-function normalizeStep(raw: unknown): PlanStep | null {
-  if (!raw || typeof raw !== 'object') return null
-  const step = raw as Record<string, unknown>
-  // ponytail: step ids are machine identifiers, never user-facing — lowercase them
-  // (and dependsOn) so "Step1" vs "step1" from the LLM can't produce a dangling
-  // dependency or a missed {{stepN}} substitution.
-  const id = String(step.id ?? '').trim().toLowerCase()
-  const tool = String(step.tool ?? '').trim()
-  if (!id || !tool) return null
-  const input =
-    step.input && typeof step.input === 'object' && !Array.isArray(step.input)
-      ? stringifyEntries(step.input as Record<string, unknown>)
-      : {}
-  const dependsOn = Array.isArray(step.dependsOn)
-    ? step.dependsOn.map((d) => String(d).trim().toLowerCase()).filter(Boolean)
-    : undefined
-  return { id, tool, input, dependsOn }
-}
-
-function stringifyEntries(record: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [key, value] of Object.entries(record)) {
-    result[key] = String(value)
-  }
-  return result
-}
-
-/**
- * Restore the JSON type of each step input value before calling an MCP tool.
- *
- * The planner normalizes every step input to a STRING, but an MCP server's
- * JSON Schema declares real types (`tail: number`, `recursive: boolean`,
- * `paths: string[]`). Blindly `JSON.parse`-ing each value corrupts any string
- * that merely LOOKS like JSON — MEASURED: a legitimate `path: "12345"` became
- * the number `12345`, and `path: "\"quoted\""` lost its quotes. A server
- * validating its own schema then rejects the call, or worse, acts on a
- * different path than the model asked for.
- *
- * Fix: consult the tool's declared schema. Only convert when the JSON-parsed
- * value's TYPE MATCHES the declared type; otherwise keep the original string.
- * A string parameter can therefore never be silently retyped.
- */
-function coerceMcpInput(
-  input: Record<string, string>,
-  schema?: Record<string, unknown>,
-): Record<string, unknown> {
-  const declared = ((schema?.properties ?? {}) as Record<string, { type?: string }>)
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(input)) {
-    const declaredType = declared[k]?.type
-    // No declared schema for this key: keep the raw string. Passing a string to
-    // a server that expected a number fails loudly and legibly; guessing risks
-    // acting on the wrong value, which fails silently.
-    if (!declaredType || declaredType === 'string') {
-      out[k] = v
-      continue
-    }
-    try {
-      const parsed = JSON.parse(v)
-      const matches =
-        (declaredType === 'number' || declaredType === 'integer') && typeof parsed === 'number' ||
-        declaredType === 'boolean' && typeof parsed === 'boolean' ||
-        declaredType === 'array' && Array.isArray(parsed) ||
-        declaredType === 'object' && parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      // Type mismatch means the string was not a JSON literal of the declared
-      // type (e.g. "5" for a number is fine; "abc" is not). Keep it as a string
-      // and let the server report the validation error.
-      out[k] = matches ? parsed : v
-    } catch {
-      out[k] = v
-    }
-  }
-  return out
-}
-
-/**
- * Validate a plan against the available tools.
- * Throws on: empty plan, unknown tool, too many steps, circular deps, dangling dependsOn.
- */
-export function validatePlan(plan: Plan, availableTools: ToolDef[]): Plan {
-  if (plan.steps.length === 0) throw new PlanValidationError('Plan has no steps.')
-
-  const toolIds = new Set(availableTools.map((t) => t.id))
-  for (const step of plan.steps) {
-    if (!toolIds.has(step.tool)) {
-      throw new PlanValidationError(`Step ${step.id} uses unknown tool "${step.tool}".`)
-    }
-  }
-
-  if (plan.steps.length > MAX_STEPS) {
-    throw new PlanValidationError(`Plan has ${plan.steps.length} steps, max is ${MAX_STEPS}.`)
-  }
-
-  // topoSort throws on cycles and dangling dependsOn — re-throw as PlanValidationError.
-  try {
-    topoSort(plan.steps)
-  } catch (e) {
-    throw new PlanValidationError(
-      e instanceof Error ? e.message : 'Plan dependency graph is invalid.',
-    )
-  }
-
-  return plan
-}
-
-export class PlanValidationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'PlanValidationError'
-  }
-}
-
-function fallbackChatPlan(question = ''): Plan {
-  return {
-    steps: [
-      {
-        id: 'step1',
-        tool: 'chat',
-        input: { message: question || 'fallback' },
-        dependsOn: [],
-      },
-    ],
-    needsSynthesis: false,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Topological sort — Kahn's algorithm, preserves original order for ties
-// ---------------------------------------------------------------------------
-
-export function topoSort(steps: PlanStep[]): PlanStep[] {
-  const stepMap = new Map(steps.map((s) => [s.id, s]))
-  const inDegree = new Map<string, number>()
-  const dependents = new Map<string, string[]>()
-
-  for (const step of steps) {
-    inDegree.set(step.id, 0)
-    dependents.set(step.id, [])
-  }
-
-  for (const step of steps) {
-    for (const dep of step.dependsOn ?? []) {
-      if (!stepMap.has(dep)) {
-        throw new Error(`Step "${step.id}" depends on unknown step "${dep}".`)
-      }
-      inDegree.set(step.id, (inDegree.get(step.id) ?? 0) + 1)
-      dependents.get(dep)!.push(step.id)
-    }
-  }
-
-  // Start with all zero-indegree nodes in original order.
-  const queue: string[] = steps
-    .filter((s) => (inDegree.get(s.id) ?? 0) === 0)
-    .map((s) => s.id)
-
-  const result: PlanStep[] = []
-  while (queue.length > 0) {
-    const id = queue.shift()!
-    result.push(stepMap.get(id)!)
-    for (const dependent of dependents.get(id) ?? []) {
-      const newDegree = (inDegree.get(dependent) ?? 0) - 1
-      inDegree.set(dependent, newDegree)
-      if (newDegree === 0) queue.push(dependent)
-    }
-  }
-
-  if (result.length !== steps.length) {
-    throw new Error('Circular dependency detected in plan steps.')
-  }
-
-  return result
-}
-
-// ---------------------------------------------------------------------------
-// Execute plan — run each step in topo order via the existing single-tool router
-// ---------------------------------------------------------------------------
-
 export async function executePlan(args: {
   plan: Plan
   userId: string
@@ -579,63 +345,6 @@ export async function executePlan(args: {
   }
 
   return results
-}
-
-/**
- * Whether THIS step carries the user's confirmation.
- *
- * ponytail: was previously computed once per plan with `steps.some(...)`, which
- * meant confirming one step confirmed every step — a plan could smuggle an
- * unconfirmed admin action alongside a confirmed one. Per-step, always.
- */
-export function isStepConfirmed(step: PlanStep): boolean {
-  const { confirm, confirmed } = step.input
-  return confirm === 'yes' || confirm === 'true' || confirmed === 'yes'
-}
-
-const MAX_INJECTED_OUTPUT = 8_000
-
-/**
- * Replace {{stepN}} placeholders in a step's input values with that step's output.
- * A placeholder whose step failed or produced nothing resolves to empty string —
- * the tool then reports a missing input rather than receiving the literal "{{step1}}".
- *
- * ponytail: string substitution, not a template engine. Outputs are truncated so a
- * large fetched page can't blow the downstream tool's input budget.
- */
-export function resolveStepInput(step: PlanStep, priorOutputs: Map<string, string>): PlanStep {
-  if (priorOutputs.size === 0) return step
-  let touched = false
-  const input: Record<string, string> = {}
-  for (const [key, value] of Object.entries(step.input)) {
-    input[key] = value.replace(/\{\{\s*(step\d+)\s*\}\}/gi, (_match, id: string) => {
-      touched = true
-      return (priorOutputs.get(id.toLowerCase()) ?? '').slice(0, MAX_INJECTED_OUTPUT)
-    })
-  }
-  return touched ? { ...step, input } : step
-}
-
-function groupByLevel(sorted: PlanStep[]): PlanStep[][] {
-  const levels: PlanStep[][] = []
-  const completedIds = new Set<string>()
-
-  while (completedIds.size < sorted.length) {
-    const currentLevel = sorted.filter((step) => {
-      if (completedIds.has(step.id)) return false
-      const deps = step.dependsOn ?? []
-      return deps.every((dep) => completedIds.has(dep))
-    })
-
-    if (currentLevel.length === 0) break
-
-    levels.push(currentLevel)
-    for (const step of currentLevel) {
-      completedIds.add(step.id)
-    }
-  }
-
-  return levels
 }
 
 async function executeStep(
@@ -932,31 +641,6 @@ async function selfCorrect(args: {
 // ---------------------------------------------------------------------------
 // Synthesize — combine step outputs into a single NL answer
 // ---------------------------------------------------------------------------
-
-/** Why a step failed. Every failure path sets output:'' and puts the reason in error. */
-export function stepFailureReason(r: PlanStepResult): string {
-  return r.error || r.output || 'unknown error'
-}
-
-/**
- * Render step results for a synthesis prompt.
- *
- * ponytail: failures MUST reach the model. Callers built this with
- * `r.output ?? r.error`, but a failed step carries output:'' — an empty string,
- * not nullish — so `??` kept the empty string and dropped the reason. The model
- * then saw a blank CONTEXT, had no tool result to report, and fell back to
- * pretrained knowledge: generic "clone the repo and run npm install" tutorials
- * instead of saying what actually broke.
- */
-export function formatStepContext(results: PlanStepResult[]): string {
-  return results
-    .map((r) =>
-      r.ok
-        ? `[Step ${r.stepId} — ${r.tool}] OK\n${r.output}`
-        : `[Step ${r.stepId} — ${r.tool}] FAILED: ${stepFailureReason(r)}`,
-    )
-    .join('\n\n---\n\n')
-}
 
 export async function synthesizeAnswer(args: {
   question: string

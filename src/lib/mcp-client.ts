@@ -18,8 +18,6 @@
  * - DNS-rebinding protection via dns.lookup before TCP connect
  * - Non-text content blocks serialized (no silent data loss)
  */
-import { statSync } from 'node:fs'
-import { join, resolve, basename } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client'
 import {
   ToolListChangedNotificationSchema,
@@ -29,14 +27,12 @@ import {
   ListRootsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { db } from '@/lib/db'
-import { decryptConfig } from '@/lib/crypto'
-import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
 import { resolveIsolation, buildIsolatedArgv } from '@/lib/plugin-sandbox'
 import { publicConfig } from '@/lib/public-config'
+import { resolveStdioCommand, buildTransport, extractText, safeClose, listMcpRoots, type McpServerRow, type McpCallResult } from '@/lib/mcp-transport'
+export { listMcpRoots, resolveStdioCommand } from '@/lib/mcp-transport'
+export type { McpRoot } from '@/lib/mcp-transport'
 
 /** A resource advertised by an MCP server (a readable artifact — file, record, page). */
 export interface McpResource {
@@ -73,19 +69,6 @@ export interface McpTool {
   toolName: string
   description: string
   inputSchema: Record<string, unknown>
-}
-
-type McpServerRow = {
-  id: string
-  name: string
-  description: string
-  transport: string
-  command: string
-  args: string
-  url: string
-  envJson: string
-  headersJson: string
-  isEnabled: boolean
 }
 
 interface CachedConnection {
@@ -138,90 +121,6 @@ const CONNECT_TIMEOUT_MS = Number(process.env.MCP_CONNECT_TIMEOUT_MS ?? 15_000)
 const LIST_TOOLS_TIMEOUT_MS = Number(process.env.MCP_LIST_TOOLS_TIMEOUT_MS ?? 10_000)
 const CALL_TOOL_TIMEOUT_MS = Number(process.env.MCP_CALL_TOOL_TIMEOUT_MS ?? 30_000)
 
-// Minimal view of the callTool result — the SDK's union return type is far
-// wider than what we consume (text content + isError flag).
-interface McpCallResult {
-  content?: Array<{ type: string; text?: string; [k: string]: unknown }>
-  isError?: boolean
-}
-
-/**
- * Build a client that reacts to the server changing its tool list at runtime.
- *
- * WHY THIS EXISTS (MEASURED, not theoretical). MCP lets a server advertise
- * `capabilities.tools.listChanged` and then push
- * `notifications/tools/list_changed` whenever its tools change — the standard
- * pattern for servers whose tool set is dynamic (auth-dependent tools, tools
- * enabled by server-side config, tools registered by a plugin load). We cached
- * the tool list for TOOLS_TTL_MS and registered NO notification handler, so a
- * newly announced tool stayed invisible until the TTL expired.
- *
- * Verified against a real server that adds a tool 2s after connect and emits the
- * notification: the client reported 1 tool where the server had 2, until the
- * cache was reset by hand. `invalidateMcpToolsCache()` on the notification
- * closes that gap, so the next `listMcpTools()` re-reads from the server.
- *
- * The handler is deliberately tolerant: a notification that cannot be handled
- * must never tear down a working connection.
- */
-/**
- * A filesystem root this install exposes to MCP servers.
- *
- * MCP `roots` are how a CLIENT tells a server which directories it may work in.
- * They exist so a server can orient itself (and refuse paths outside them)
- * instead of being handed absolute paths with no context.
- */
-export interface McpRoot {
-  uri: string
-  name: string
-}
-
-/**
- * The roots we advertise to servers.
- *
- * WHY AN ENV-VAR ALLOWLIST AND NOT SOMETHING WIDER: a root is an explicit
- * grant — whatever we list, we are telling a foreign process it may read. The
- * safe default is to advertise NOTHING rather than to guess at the host's
- * filesystem, so this is opt-in via `MCP_ROOTS` (colon-separated paths, the
- * same convention as PATH). An install that never sets it answers `roots: []`,
- * which is a truthful "I grant you no directories" and keeps a server from
- * assuming it may reach anywhere.
- *
- * Paths are resolved and required to be absolute and existing, so a typo cannot
- * silently advertise a root that does not exist — a server would then fail on a
- * path it was told was valid.
- */
-export function listMcpRoots(): McpRoot[] {
-  const raw = process.env.MCP_ROOTS ?? ''
-  const out: McpRoot[] = []
-  for (const entry of raw.split(':').map((p) => p.trim()).filter(Boolean)) {
-    let resolved: string
-    try {
-      resolved = resolve(entry)
-    } catch {
-      console.warn(`[mcp] ignoring unreadable MCP_ROOTS entry: ${entry}`)
-      continue
-    }
-    if (!resolved.startsWith('/')) {
-      console.warn(`[mcp] ignoring non-absolute MCP_ROOTS entry: ${entry}`)
-      continue
-    }
-    let stat: ReturnType<typeof statSync>
-    try {
-      stat = statSync(resolved)
-    } catch {
-      console.warn(`[mcp] ignoring MCP_ROOTS entry that does not exist: ${entry}`)
-      continue
-    }
-    if (!stat.isDirectory()) {
-      console.warn(`[mcp] ignoring MCP_ROOTS entry that is not a directory: ${entry}`)
-      continue
-    }
-    out.push({ uri: `file://${resolved}`, name: basename(resolved) || resolved })
-  }
-  return out
-}
-
 /**
  * Tell connected servers that the advertised roots changed.
  *
@@ -243,6 +142,25 @@ export async function notifyRootsChanged(): Promise<number> {
   return told
 }
 
+/**
+ * Build a client that reacts to the server changing its tool list at runtime.
+ *
+ * WHY THIS EXISTS (MEASURED, not theoretical). MCP lets a server advertise
+ * `capabilities.tools.listChanged` and then push
+ * `notifications/tools/list_changed` whenever its tools change — the standard
+ * pattern for servers whose tool set is dynamic (auth-dependent tools, tools
+ * enabled by server-side config, tools registered by a plugin load). We cached
+ * the tool list for TOOLS_TTL_MS and registered NO notification handler, so a
+ * newly announced tool stayed invisible until the TTL expired.
+ *
+ * Verified against a real server that adds a tool 2s after connect and emits the
+ * notification: the client reported 1 tool where the server had 2, until the
+ * cache was reset by hand. `invalidateMcpToolsCache()` on the notification
+ * closes that gap, so the next `listMcpTools()` re-reads from the server.
+ *
+ * The handler is deliberately tolerant: a notification that cannot be handled
+ * must never tear down a working connection.
+ */
 function createClient(): Client {
   const client = new Client(
     /*
@@ -342,7 +260,6 @@ async function listMcpToolsUncached(): Promise<McpTool[]> {
   }
   return all
 }
-
 
 /**
  * Reject a call to a tool the server does not actually expose.
@@ -786,146 +703,6 @@ async function getConnection(
     console.warn(`[mcp] connect failed for "${r.name}":`, e)
     await safeClose(client)
     return null
-  }
-}
-
-function onPath(cmd: string): boolean {
-  return (process.env.PATH ?? '')
-    .split(':')
-    .filter(Boolean)
-    .some((dir) => {
-      try {
-        return statSync(join(dir, cmd)).isFile()
-      } catch {
-        return false
-      }
-    })
-}
-
-/**
- * Pick the runner to actually spawn. Prefers bunx over npx; everything else is
- * spawned exactly as stored.
- *
- * ponytail: every MCP README says `npx -y <pkg>`, and that is what the installer
- * parses and stores. Two problems with running it literally. The stock
- * `oven/bun:1-slim` runtime had no Node at all, so npx was ENOENT and no stdio
- * server could start — the Dockerfile now installs Node, but an older or
- * stripped image still won't have it. And npx runs the server as a grandchild
- * (npx -> node -> server), so closing the transport leaves the real process
- * behind; bunx execs it directly and dies with the transport. Measured on the
- * install integration test: bunx 4.1s and a clean exit, npx never exited.
- *
- * bunx is argv-compatible with npx down to tolerating `-y`, and ships with the
- * runtime this app runs on. Falls back to npx if bunx somehow isn't on PATH.
- *
- * Only npx has a substitute. uvx/python have no bun equivalent — a server
- * needing those requires the real runtime, which the prod stage now installs.
- */
-export function resolveStdioCommand(command: string): string {
-  if (command === 'npx' && onPath('bunx')) return 'bunx'
-  return command
-}
-
-async function buildTransport(row: McpServerRow): Promise<Transport | null> {
-  if (row.transport === 'stdio') {
-    if (!row.command) return null
-    return new StdioClientTransport({
-      command: resolveStdioCommand(row.command),
-      args: parseArgs(row.args),
-      env: loadEnv(row.envJson),
-    })
-  }
-  if (row.transport === 'sse' || row.transport === 'http') {
-    if (!row.url) return null
-    let url: URL
-    try {
-      url = new URL(row.url)
-    } catch {
-      return null
-    }
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    // Sync string check first (fast path), then async DNS-rebinding check.
-    if (isBlockedHost(url.hostname)) return null
-    if (await isBlockedHostAsync(url.hostname)) return null
-    const headers = loadHeaders(row.headersJson)
-    const requestInit = headers ? { headers } : undefined
-    if (row.transport === 'sse') return new SSEClientTransport(url, requestInit ? { requestInit } : undefined)
-    return new StreamableHTTPClientTransport(url, requestInit ? { requestInit } : undefined)
-  }
-  return null
-}
-
-function parseArgs(raw: string): string[] {
-  try {
-    const a = JSON.parse(raw)
-    return Array.isArray(a) ? a.map(String) : []
-  } catch (e) {
-    console.warn('[mcp] parseArgs: failed to parse args JSON:', e)
-    return []
-  }
-}
-
-function loadEnv(envJson: string): Record<string, string> | undefined {
-  if (!envJson || envJson === '{}') return undefined
-  try {
-    const dec = decryptConfig(envJson)
-    if (dec && typeof dec === 'object') return toStringRecord(dec)
-  } catch (e) {
-    console.warn('[mcp] loadEnv: decryptConfig failed, trying plain JSON:', e)
-  }
-  try {
-    const parsed = JSON.parse(envJson)
-    if (parsed && typeof parsed === 'object') return toStringRecord(parsed)
-  } catch (e) {
-    console.warn('[mcp] loadEnv: plain JSON parse also failed:', e)
-  }
-  return undefined
-}
-
-function loadHeaders(headersJson: string): Record<string, string> | undefined {
-  if (!headersJson || headersJson === '{}') return undefined
-  try {
-    const dec = decryptConfig(headersJson)
-    if (dec && typeof dec === 'object') return toStringRecord(dec)
-  } catch {
-    // not encrypted — fall through to plain JSON
-  }
-  try {
-    const parsed = JSON.parse(headersJson)
-    if (parsed && typeof parsed === 'object') return toStringRecord(parsed)
-  } catch (e) {
-    console.warn('[mcp] loadHeaders: failed to parse headersJson:', e)
-  }
-  return undefined
-}
-
-function toStringRecord(obj: Record<string, unknown>): Record<string, string> | undefined {
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(obj)) {
-    if (typeof v === 'string') out[k] = v
-    else if (v !== null && v !== undefined) out[k] = String(v)
-  }
-  return Object.keys(out).length > 0 ? out : undefined
-}
-
-function extractText(content: McpCallResult['content']): string {
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((c) => {
-      if (c.type === 'text' && typeof c.text === 'string') return c.text
-      // ponytail: serialize non-text blocks (image, audio, resource) as JSON
-      // to avoid silent data loss. The planner sees a structured string.
-      return JSON.stringify(c)
-    })
-    .join('\n')
-    .slice(0, 8000)
-}
-
-async function safeClose(client: Client): Promise<void> {
-  try {
-    await client.close()
-  } catch {
-    // best-effort — the connection may already be dead
   }
 }
 

@@ -2289,7 +2289,9 @@ describe('ClickHouseConnector.executeQuery — full paths', () => {
 // runtime), because a runtime assertion cannot see a variable specifier.
 // ===========================================================================
 
-const MODULE_SRC = readFileSync(join(import.meta.dir, 'real-connectors.ts'), 'utf8')
+// The connector FAMILY's source, read as one: the module was split per dialect, and a source fact holds for all of it.
+const MODULE_SRC = ['real-connectors.ts', 'real-connector-shared.ts', 'real-connector-postgres.ts', 'real-connector-mysql.ts',
+  'real-connector-mssql.ts', 'real-connector-clickhouse.ts'].map((f) => readFileSync(join(import.meta.dir, f), 'utf8')).join('\n')
 
 /** Strip comments so a check cannot pass by matching its own documentation. */
 function stripComments(src: string): string {
@@ -2710,7 +2712,7 @@ describe('pinned defects (each FAILS when the defect is fixed)', () => {
     expect(() => assertSelectOnly('SELECT set_config(chr(120))')).not.toThrow()
     // And the timeout value itself is re-asserted after the query runs, so a batch that ever slipped
     // past the scanner could not leave a disabled ceiling on a pooled backend. Asserted from source.
-    const src = readFileSync(join(import.meta.dir, 'real-connectors.ts'), 'utf8')
+    const src = MODULE_SRC
     const resets = [...src.matchAll(/SET LOCAL statement_timeout = \$\{QUERY_TIMEOUT_MS\}/g)]
     expect(resets.length).toBe(2)
   })

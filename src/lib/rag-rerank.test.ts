@@ -97,8 +97,9 @@ mock.module('@/lib/constants', () => ({
 // leaving zero chunks from nine candidates. A partial mock produces a failure that
 // looks like a source bug — mock the surface the importer uses, not the one you
 // remember.
-mock.module('./rag', () => ({
+mock.module('./rag-scoring', () => ({
   tokenize: (t: string) => t.toLowerCase().split(/\s+/).filter(Boolean),
+  tokenizeForScoring: (t: string) => t.toLowerCase().split(/\s+/).filter(Boolean),
   scoreChunk: () => ({ lexical: 1, semantic: 0, phrase: 0, total: 1 }),
   selectTopRetrievedChunks: <T,>(rows: T[], topK: number) => rows.slice(0, topK),
 }))

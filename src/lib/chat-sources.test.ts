@@ -55,7 +55,8 @@ describe('document pin — the sentinel is mapped, never sent as an integration 
   })
 
   test('the router states the pin in its prompt with a STABLE label', () => {
-    const router = read('./tool-router.ts')
+    // The routing context moved to tool-router-routing.ts when the router was split; the pin lives there now.
+    const router = read('./tool-router-routing.ts')
     expect(router).toMatch(/pinnedSourceName: args\.pinToDocuments/)
     // A label carrying the live document count would change the prompt whenever a document was added, so the same
     // question would produce different prompts on different days.

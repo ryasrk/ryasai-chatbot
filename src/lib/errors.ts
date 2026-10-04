@@ -1,11 +1,11 @@
 /**
  * Typed error system — consistent `{ error: { code, message, hint? } }`
  * API responses. AppError is the base for typed throw sites; the legacy
- * UnauthorizedError (session.ts) and LlmNotConfiguredError (moved here from
+ * UnauthorizedError (session-errors.ts) and LlmNotConfiguredError (moved here from
  * ai.ts) are recognised by toTypedError so existing throw sites get typed
  * codes without changes.
  */
-import { UnauthorizedError } from '@/lib/session'
+import { UnauthorizedError } from '@/lib/session-errors'
 import { LlmProviderError } from '@/lib/llm-client-utils'
 
 export type ErrorCode =

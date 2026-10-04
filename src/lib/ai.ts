@@ -10,63 +10,25 @@
  *   - generateAnswer(): final NL answer from SQL rows / RAG context.
  *   - streamAnswer(): token-by-token streaming for the HTTP SSE pipeline.
  */
-import { getLlmRuntimeConfig, type LlmRuntimeConfig } from '@/lib/llm-config'
 import { routingMemoryBlock } from '@/lib/memory-routing'
 import { defaultSqlRulesPrompt } from '@/lib/prompt-settings'
-import { chatOnce as llmChatOnce, chatStream as llmChatStream, type LlmUsage } from '@/lib/llm-client'
+import type { LlmUsage } from '@/lib/llm-client'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
-import { LlmNotConfiguredError } from '@/lib/errors'
 import { wrapUntrusted, DATA_BOUNDARY_RULE } from '@/lib/evidence-boundary'
 import {
   assertSystemPromptUnderCeiling,
   assertSystemMessagesUnderCeiling,
   orgSystemPrefixMessage,
 } from '@/lib/system-message-ceiling'
-
-// ---------------------------------------------------------------------------
-// Backend resolution + shared completion helpers
-// ---------------------------------------------------------------------------
-
-type ChatRole = 'system' | 'user' | 'assistant'
-interface ChatMessage {
-  role: ChatRole
-  content: string
-}
-
-interface ChatOpts {
-  temperature?: number
-  purpose?: string
-  /** Forwarded to chatStream so the caller can report token usage. */
-  onUsage?: (usage: LlmUsage) => void
-}
-
-async function resolveBackend(): Promise<{ cfg: LlmRuntimeConfig }> {
-  const cfg = await getLlmRuntimeConfig()
-  if (cfg && cfg.baseUrl && cfg.apiKey) return { cfg }
-  throw new LlmNotConfiguredError()
-}
-
-/** Non-streaming completion. Returns the trimmed message content. */
-async function chatOnce(messages: ChatMessage[], opts: ChatOpts = {}): Promise<string> {
-  const { cfg } = await resolveBackend()
-  const temperature = opts.temperature ?? 0
-  return llmChatOnce(cfg, messages, temperature, opts.purpose ?? 'chat')
-}
-
-/** Streaming completion — yields token chunks. */
-async function* chatStream(
-  messages: ChatMessage[],
-  opts: ChatOpts = {},
-): AsyncGenerator<string, void, unknown> {
-  const { cfg } = await resolveBackend()
-  const temperature = opts.temperature ?? 0
-  yield* llmChatStream(cfg, messages, temperature, opts.purpose ?? 'chat', undefined, opts.onUsage)
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+import { isProfileCurrent } from '@/lib/profile-version'
+import { chatOnce, chatStream, historyToMessages, type ChatMessage } from '@/lib/ai-chat'
+export { DATABASE_PROFILE_VERSION, isProfileCurrent } from '@/lib/profile-version'
+export { HISTORY_MAX_TURNS, HISTORY_TURN_MAX_CHARS, historyToMessages } from '@/lib/ai-chat'
+export { REST_ROUTER_SYSTEM_PROMPT, generateRestCall, parseRestCallJson } from '@/lib/ai-rest'
+export type { RestEndpointOption, RestCallPlan } from '@/lib/ai-rest'
+export { generateSchemaDescriptions, generateDatabaseProfile } from '@/lib/ai-schema'
+export type { TableSummaryInput } from '@/lib/ai-schema'
 
 export type RouteDecision = 'SQL' | 'RAG' | 'REST' | 'CHAT' | 'CONTEXTUAL_CHAT' | 'PLUGIN'
 
@@ -620,126 +582,6 @@ export async function generateSessionTitle(firstMessage: string): Promise<string
 // IntegrationSchema.description. Used as context for intent analysis + routing.
 // ----------------------------------------------------------------------------
 
-export interface TableSummaryInput {
-  tableName: string
-  columns: Array<{ name: string; type: string; primaryKey?: boolean }>
-  rowCount?: number | null
-  sampleRow?: Record<string, unknown> | null
-}
-
-export async function generateSchemaDescriptions(args: {
-  integrationName: string
-  tables: TableSummaryInput[]
-}): Promise<Record<string, string>> {
-  if (args.tables.length === 0) return {}
-
-  const tableTexts = args.tables.map((t) => {
-    const cols = t.columns.map((c) => `${c.name}:${c.type}${c.primaryKey ? ' (PK)' : ''}`).join(', ')
-    const sample = t.sampleRow ? `\n  Sample row: ${JSON.stringify(t.sampleRow).slice(0, 300)}` : ''
-    const rows = t.rowCount != null ? ` (${t.rowCount} rows)` : ''
-    return `Table: ${t.tableName}${rows}\n  Columns: ${cols}${sample}`
-  }).join('\n\n')
-
-  const raw = await chatOnce(
-    [
-      {
-        role: 'system',
-        content:
-          'You are a database schema analyst. For each table, write a concise 1-sentence description of what the table contains and its purpose. ' +
-          'Focus on business meaning, not technical details. ' +
-          'Output ONLY valid JSON (no markdown fence): {"tableName": "description", ...}',
-      },
-      {
-        role: 'user',
-        content:
-          `Database: ${args.integrationName}\n\nTables:\n${tableTexts}\n\n` +
-          `Generate a JSON object mapping each table name to a 1-sentence description.`,
-      },
-    ],
-    { purpose: 'schema-description' },
-  )
-
-  try {
-    const cleaned = raw.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    return JSON.parse(cleaned) as Record<string, string>
-  } catch (e) {
-    console.warn('[ai] schema reflection JSON parse failed:', e instanceof Error ? e.message : String(e))
-    // ponytail: LLM returned malformed JSON — return empty, don't block schema reflection
-    return {}
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Database Profile generation — LLM analyzes the full schema and produces a
-// rich business context document. This is the "what database is this?" answer
-// that gets injected into every Text-to-SQL call so the model understands:
-//   1. What business domain the database serves (mining safety, HR, e-commerce)
-//   2. How tables relate to each other (participants → companies → sites)
-//   3. Domain vocabulary (abbreviations, non-English terms)
-//   4. Querying hints (which columns to filter on, what "active" means)
-//
-// Generated once at connection test time, stored in Integration.businessContext.
-// ---------------------------------------------------------------------------
-
-export { DATABASE_PROFILE_VERSION, isProfileCurrent } from '@/lib/profile-version'
-import { DATABASE_PROFILE_VERSION, isProfileCurrent } from '@/lib/profile-version'
-
-export async function generateDatabaseProfile(args: {
-  integrationName: string
-  tables: TableSummaryInput[]
-}): Promise<string> {
-  if (args.tables.length === 0) return ''
-
-  const tableTexts = args.tables.map((t) => {
-    const cols = t.columns.map((c) => `${c.name}:${c.type}${c.primaryKey ? ' (PK)' : ''}`).join(', ')
-    const sample = t.sampleRow ? `\n  Sample: ${JSON.stringify(t.sampleRow).slice(0, 300)}` : ''
-    const rows = t.rowCount != null ? ` (${t.rowCount} rows)` : ''
-    return `${t.tableName}${rows}: ${cols}${sample}`
-  }).join('\n')
-
-  const raw = await chatOnce(
-    [
-      {
-        role: 'system',
-        content:
-          'You are a database analyst. Analyze the complete schema of a database and produce a ' +
-          'BUSINESS CONTEXT document that will help a Text-to-SQL AI understand the domain. ' +
-          'The document must be plain text (not JSON) with these sections:\n\n' +
-          '## DOMAIN\nWhat business domain is this database for? (e.g. "HR and payroll", ' +
-          '"e-commerce", "inventory management"). What organization type?\n\n' +
-          '## CORE ENTITIES\nList the 5-10 most important tables and what they represent in business ' +
-          'terms. Use the business name, not the table name.\n\n' +
-          '## KEY RELATIONSHIPS\nHow do the core entities connect? (e.g. "employees belong to ' +
-          'departments, have payroll records, attend training sessions")\n\n' +
-          '## DOMAIN GLOSSARY\nDefine domain-specific terms and abbreviations found in table/column ' +
-          'names. Include non-English terms if present.\n\n' +
-          '## QUERY HINTS\nPractical tips for writing correct SQL:\n' +
-          '- Which column indicates "active" status for key tables\n' +
-          '- Which tables should be used for common business questions\n' +
-          '- Which columns to avoid filtering on unnecessarily\n' +
-          '- When to use COUNT(*) vs filtering (e.g. "for vendor count, count ALL companies — do NOT filter by name patterns")\n' +
-          '- Common pitfalls (e.g. soft-delete columns, case sensitivity)\n' +
-          '- For each core entity, note: which table to query, what "active" means, and what NOT to filter on\n\n' +
-          'Keep it concise — aim for 300-500 words total. Do NOT include SQL examples.',
-      },
-      {
-        role: 'user',
-        content:
-          `Database name: ${args.integrationName}\n\n` +
-          `Complete schema (${args.tables.length} tables):\n${tableTexts}\n\n` +
-          `Generate the business context document.`,
-      },
-    ],
-    { purpose: 'schema-description' },
-  )
-
-  const body = raw.trim()
-  if (!body) return ''
-  // The marker is prepended, not asked of the model: a model told to emit it will
-  // sometimes forget, and a marker that is sometimes missing cannot be trusted.
-  return `<!-- profile-version: ${DATABASE_PROFILE_VERSION} -->\n${body}`
-}
-
 /** Pure non-streaming chat (no SQL/RAG) for external API and general questions. */
 export async function generateChat(
   question: string,
@@ -770,114 +612,6 @@ export async function generateChat(
   messages.push({ role: 'user', content: question })
   assertSystemMessagesUnderCeiling(messages, 'generateChat')
   return chatOnce(messages, { purpose: 'chat' })
-}
-
-export interface RestEndpointOption {
-  id: string
-  connectorName: string
-  method: string
-  path: string
-  description?: string | null
-  parameterSchema?: string | null
-  sampleResponse?: string | null
-}
-
-export interface RestCallPlan {
-  endpointId: string
-  query: Record<string, string | number | boolean | null>
-  body: unknown
-  explanation: string
-}
-
-/**
- * How many endpoints the REST router prompt lists. Every enabled endpoint of every active connector used to be
- * included, with its full `sampleResponse` — the one prompt in the product that grew without limit. See the comment
- * at the listing for the measured shape and what is kept versus dropped.
- */
-const REST_PROMPT_ENDPOINT_LIMIT = 40
-
-/** The example payload in the REST prompt is a SHAPE hint, not data to answer from, so only a prefix is shown. */
-const REST_SAMPLE_RESPONSE_CHARS = 200
-
-function truncateSampleResponse(sample: string | null | undefined): string {
-  if (!sample) return '-'
-  if (sample.length <= REST_SAMPLE_RESPONSE_CHARS) return sample
-  return `${sample.slice(0, REST_SAMPLE_RESPONSE_CHARS)}…[truncated, ${sample.length} chars total]`
-}
-
-export const REST_ROUTER_SYSTEM_PROMPT =
-  'You are an enterprise REST API router. Select the ONE most relevant whitelisted endpoint to answer the user question. ' +
-  'Do not create new paths. Use the endpointId exactly from the list. ' +
-  'sampleResponse is only an example structure, not final data to answer the user. ' +
-  'The explanation should briefly describe the reason for selecting the endpoint and the parameters sent. ' +
-  'Do not send query or body if parameterSchema is empty or does not mention that parameter. ' +
-  'Answer ONLY JSON without markdown: {"endpointId":"...","query":{},"body":null,"explanation":"..."}.\n' +
-  'Use query for simple URL parameters. Use body only for non-GET methods when truly needed.'
-
-export async function generateRestCall(args: {
-  question: string
-  endpoints: RestEndpointOption[]
-  memoryContext?: string
-}): Promise<RestCallPlan> {
-  const raw = await chatOnce(
-    [
-      {
-        role: 'system',
-        content: REST_ROUTER_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content:
-          `User question: ${args.question}\n\n` +
-          (args.memoryContext ? `Memory: a similar previous request:\n${args.memoryContext}\n\n` : '') +
-          /*
-           * BOUNDED, in two dimensions, because this list was the one prompt in the product that grew without limit.
-           *
-           * MEASURED SHAPE OF THE GROWTH: every connector's every enabled endpoint is listed, and each line carries
-           * `parameterSchema` AND `sampleResponse` in full. Those are operator-entered JSON strings, so a connector
-           * with a rich sample payload costs kilobytes per endpoint — the current install has none, which is exactly
-           * why nothing noticed. With 50 endpoints at a few KB each this is tens of thousands of characters for ONE
-           * routing call, on the customer's BYOK key.
-           *
-           * What is kept and what is dropped:
-           *  - `parameterSchema` stays FULL. It is the contract: the model must not send a parameter the schema
-           *    does not mention, and truncating JSON breaks that rule's premise.
-           *  - `sampleResponse` is a SHAPE hint only ("sampleResponse is only an example structure"), so it is cut
-           *    to a prefix. The first 200 characters show the shape; the rest of a large payload is data the model
-           *    is explicitly told not to answer from.
-           *  - The LIST is capped at 40 endpoints. An install with more than that cannot be served by a single
-           *    prompt anyway (MEASURED on the database-listing variant of this problem: a model cannot reliably pick
-           *    from a longer list), and the cap keeps the worst case bounded. Over-cap endpoints are not silently
-           *    hidden: the count is stated so the model can say so rather than guess.
-           */
-          `Whitelisted endpoints:\n${REST_PROMPT_ENDPOINT_LIMIT < args.endpoints.length ? `[${args.endpoints.length} endpoints configured; showing the first ${REST_PROMPT_ENDPOINT_LIMIT} — if none matches, say so rather than guessing]\n` : ''}${args.endpoints
-            .slice(0, REST_PROMPT_ENDPOINT_LIMIT)
-            .map(
-              (endpoint) =>
-                `- id=${endpoint.id}; connector=${endpoint.connectorName}; method=${endpoint.method}; path=${endpoint.path}; description=${endpoint.description ?? '-'}; parameterSchema=${endpoint.parameterSchema ?? '-'}; sampleResponse=${truncateSampleResponse(endpoint.sampleResponse)}`,
-            )
-            .join('\n')}\n\n` +
-          'Provide the JSON endpoint selection.',
-      },
-    ],
-    { purpose: 'rest' },
-  )
-  return parseRestCallJson(raw)
-}
-
-export function parseRestCallJson(raw: string): RestCallPlan {
-  const cleaned = raw.replace(/```json|```/g, '').trim()
-  const parsed = JSON.parse(cleaned) as Partial<RestCallPlan>
-  const query =
-    parsed.query && typeof parsed.query === 'object' && !Array.isArray(parsed.query)
-      ? parsed.query
-      : {}
-  return {
-    endpointId: String(parsed.endpointId ?? '').trim(),
-    query: query as RestCallPlan['query'],
-    body: parsed.body === undefined ? null : parsed.body,
-    explanation: String(parsed.explanation ?? '').trim(),
-  }
 }
 
 /** Streaming answer — yields token chunks. */
@@ -985,62 +719,4 @@ export async function* streamChat(
   )
   assertSystemMessagesUnderCeiling(messages, 'streamChat')
   yield* chatStream(messages, { purpose: 'chat', onUsage })
-}
-
-/**
- * ponytail: history used to be flattened into ONE system message
- * ("Prior conversation history:\nUser: ... Assistant: ..."), which the model
- * reads as reference material, not as the live conversation — weaker
- * grounding for follow-ups ("itu", "yang tadi"). Native alternating
- * user/assistant turns keep the model's dialogue attention on the thread.
- * A short system note still labels the block so the model knows these are
- * prior turns, not the current question.
- *
- * MEASURED DEFECT in the first version of that note: it EMBEDDED the whole history a second
- * time (`Prior conversation history (most recent last):\n${formatHistory(recent)}`). Ten turns
- * of 2000 characters made the note 20,116 characters — and it is a `role:'system'` message, so
- * the provider DISCARDED it WHOLE (cliff ~2000, see `system-message-ceiling.ts`). The ordinary
- * case is over too: ten turns of 200 characters plus the 47-character prefix is 2047, so on any
- * realistic 10-turn conversation the label never arrived, while the same text was paid for twice
- * in the prompt. It is a SIGNPOST, so it now carries the signal without the copy — the turns
- * below already carry the content, and that is the mechanism the note describes.
- */
-/**
- * The history window and the per-turn cap, named because they are a BUDGET, not incidental numbers.
- *
- * MEASURED (why 6 x 800 replaced 10 x 2000): the old window was up to 10 turns at 2,000 characters each — a
- * theoretical 20,000 characters (~5,500 tokens) of history re-sent on EVERY turn of a long conversation, on the
- * customer's BYOK key. Real turns are shorter than the cap, so the practical cost is lower, but the cap is what a
- * worst case costs and the worst case is reachable by pasting a log into the chat. 6 turns at 800 characters keeps
- * the three most recent exchanges intact (the "itu / yang tadi" follow-ups depend on the last few turns, not the
- * tenth) and bounds the worst case at 4,800 characters — a quarter of the old ceiling.
- *
- * Turns OLDER than the window are not lost: the send route injects the rolling session summary, which is built for
- * exactly this and covers topics and decisions from any depth.
- */
-export const HISTORY_MAX_TURNS = 6
-export const HISTORY_TURN_MAX_CHARS = 800
-
-export function historyToMessages(history: ChatMessage[]): ChatMessage[] {
-  const recent = history.slice(-HISTORY_MAX_TURNS)
-  const out: ChatMessage[] = [
-    {
-      role: 'system',
-      content:
-        'Prior conversation history (most recent last): the turns that follow are shared context, ' +
-        'not the current question. Answer the NEW question at the end.',
-    },
-  ]
-  for (const m of recent) {
-    if (!m.content || !m.content.trim()) continue
-    out.push({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: m.content.slice(0, HISTORY_TURN_MAX_CHARS),
-    })
-  }
-  // Guarded here rather than only at each caller: this produces the history block for
-  // generateAnswer / generateChat / streamAnswer / streamChat, so a note that grows again fails
-  // once, at the source, instead of in whichever call site happens to be exercised.
-  assertSystemMessagesUnderCeiling(out, 'historyToMessages')
-  return out
 }

@@ -22,37 +22,9 @@ export interface ActiveUser {
   plan: string | null
 }
 
-export class UnauthorizedError extends Error {
-  readonly code = 'UNAUTHORIZED'
-  constructor(message = 'No active session.') {
-    super(message)
-    this.name = 'UnauthorizedError'
-  }
-}
-
-export class ForbiddenError extends Error {
-  readonly code = 'FORBIDDEN'
-  constructor(message = 'Insufficient permissions.') {
-    super(message)
-    this.name = 'ForbiddenError'
-  }
-}
-
-export class LicenseError extends Error {
-  readonly code = 'LICENSE_INVALID'
-  readonly reason: string
-  constructor(reason: string = 'expired', message?: string) {
-    const messages: Record<string, string> = {
-      expired: 'License has expired. Please renew your license.',
-      deactivated: 'License has been deactivated. Please contact support.',
-      unreachable: 'License server unreachable and grace period has expired. Please check your internet connection.',
-      unpaid: 'Subscription required — buy a license to continue',
-    }
-    super(message ?? messages[reason] ?? 'License is no longer valid.')
-    this.name = 'LicenseError'
-    this.reason = reason
-  }
-}
+// Defined in a leaf module so `errors.ts` can recognise them without importing this file (which imports it).
+export { UnauthorizedError, ForbiddenError, LicenseError } from '@/lib/session-errors'
+import { UnauthorizedError, ForbiddenError, LicenseError } from '@/lib/session-errors'
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, analyst: 1, admin: 2 }
 

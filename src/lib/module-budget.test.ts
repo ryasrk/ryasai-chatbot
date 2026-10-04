@@ -1,10 +1,11 @@
 /**
- * Architecture ratchets for `src/lib`: no NEW import cycle, no NEW oversized module, and no listed module growing.
+ * Architecture rules for `src/lib`: no import cycle, and no module longer than 800 lines.
  *
- * WHY A RATCHET. Measured on 2026-10-04: three static import cycles (the largest spans the router, planner, agentic
- * loop, tool selector and unified tools) and nine non-test modules over 800 lines. Neither is fixed by decree; what can
- * be enforced is that they only get better. Shrinking a listed file, or breaking a cycle, is free — then lower the
- * number here (or delete the entry) in the same change, so the ratchet tightens behind the improvement.
+ * HISTORY. Measured on 2026-10-04: three static import cycles (the largest spanned the router, planner, agentic loop,
+ * tool selector and unified tools) and nine non-test modules over 800 lines. This file began as a ratchet that only
+ * let both numbers fall. Both reached zero the same day — the cycles broken with leaf modules and one explicit port,
+ * the nine modules split along their seams with their public surface kept by re-export — so both are now absolute.
+ * A module that needs to grow past the cap has two responsibilities: split it along the seam, not around the rule.
  *
  * Static `import`/`export … from` only: type-only imports are erased, and a dynamic `import()` is the documented way
  * this codebase breaks a runtime cycle.
@@ -15,29 +16,6 @@ import { dirname, join, relative, resolve } from 'node:path'
 
 const ROOT = join(import.meta.dir, '../..')
 const MAX_LINES = 800
-
-/**
- * Current size of each module already over budget. A listed module may shrink, never grow. (planner, tool-router and
- * unified-tools grew by the integration-scope fix; the next change splits all three below the cap.)
- */
-const OVERSIZED_BASELINE: Record<string, number> = {
-  'real-connectors.ts': 1297,
-  'ai.ts': 1047,
-  'unified-tools.ts': 1002,
-  'planner.ts': 997,
-  'mcp-client.ts': 987,
-  'intent-pipeline.ts': 948,
-  'rag-retrieval.ts': 863,
-  'tool-router.ts': 834,
-  'admin-tools.ts': 804,
-}
-
-/** Existing cycles, as sorted member lists. A cycle not listed here fails; a listed one may shrink or disappear. */
-const CYCLE_BASELINE: string[][] = [
-  ['errors.ts', 'session.ts'],
-  ['knowledge-graph.ts', 'rag-retrieval.ts', 'rag.ts'],
-  ['planner.ts', 'tool-router-agentic.ts', 'tool-router.ts', 'tool-selector.ts', 'unified-tools.ts'],
-]
 
 const files = globSync('src/lib/**/*.ts', { cwd: ROOT }).filter((f) => !f.endsWith('.test.ts'))
 const known = new Set(files)
@@ -104,25 +82,19 @@ function cycles(graph: Map<string, string[]>): string[][] {
 }
 
 describe('src/lib module budget', () => {
-  test(`no module grows past ${MAX_LINES} lines, and no listed oversized module grows`, () => {
+  test(`no module is longer than ${MAX_LINES} lines`, () => {
     const violations: string[] = []
     for (const f of files) {
       const lines = readFileSync(join(ROOT, f), 'utf8').split('\n').length
-      const cap = OVERSIZED_BASELINE[short(f)] ?? MAX_LINES
-      if (lines > cap) violations.push(`${short(f)}: ${lines} lines (cap ${cap})`)
+      if (lines > MAX_LINES) violations.push(`${short(f)}: ${lines} lines (cap ${MAX_LINES})`)
     }
     expect(violations).toEqual([])
   })
 
-  test('the oversized baseline names only files that still exist', () => {
-    const present = new Set(files.map(short))
-    expect(Object.keys(OVERSIZED_BASELINE).filter((f) => !present.has(f))).toEqual([])
-  })
-
-  test('no new import cycle: every cycle is (a subset of) a known one', () => {
-    const found = cycles(importGraph())
-    const allowed = CYCLE_BASELINE.map((c) => new Set(c))
-    const fresh = found.filter((c) => !allowed.some((a) => c.every((m) => a.has(m))))
-    expect(fresh).toEqual([])
+  test('no import cycle at all', () => {
+    // The ratchet reached zero on 2026-10-04 (errors↔session via `session-errors.ts`, the RAG layer via the
+    // `rag-scoring.ts` leaf, the router family via `chat-completion-port.ts`). From here a cycle is simply a defect:
+    // break it with a leaf module or a port, never by adding it to a list.
+    expect(cycles(importGraph())).toEqual([])
   })
 })

@@ -114,7 +114,8 @@ describe('tool-selector — no promise of a switch that does nothing', () => {
   })
 
   test('the levers the header now names really are read by code', async () => {
-    const router = await Bun.file(new URL('./tool-router.ts', import.meta.url)).text()
+    // Speculative routing lives in tool-router-routing.ts since the router was split.
+    const router = await Bun.file(new URL('./tool-router-routing.ts', import.meta.url)).text()
     const simple = await Bun.file(new URL('./simple-pipeline.ts', import.meta.url)).text()
     expect(/process\.env\.SPECULATIVE_ROUTING/.test(router)).toBe(true)
     expect(/process\.env\.SIMPLE_PIPELINE/.test(simple)).toBe(true)
