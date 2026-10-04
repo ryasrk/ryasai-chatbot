@@ -214,13 +214,15 @@ describe('MysqlConnector.executeQuery', () => {
     await new MysqlConnector(MYSQL_CFG, 'MYSQL').executeQuery('SELECT a FROM t LIMIT 1')
     // All three statements on one connection — a pooled per-call read-only would
     // not apply to the query that follows.
-    expect(my.connCalls[0]).toBe('SET TRANSACTION READ ONLY')
-    expect(my.connCalls[1]).toBe('START TRANSACTION READ ONLY')
-    expect(my.connCalls[2]).toContain('SELECT a FROM t')
+    // The server-side execution bound comes first, then the read-only transaction, then the query.
+    expect(my.connCalls[0]).toBe('SET SESSION max_execution_time = 30000')
+    expect(my.connCalls[1]).toBe('SET TRANSACTION READ ONLY')
+    expect(my.connCalls[2]).toBe('START TRANSACTION READ ONLY')
+    expect(my.connCalls[3]).toContain('SELECT a FROM t')
   })
 
   test('a successful query commits, releases, and reports rowCount + timing', async () => {
-    my.connQueryResults = [[], [], [{ a: 1 }, { a: 2 }]]
+    my.connQueryResults = [[], [], [], [{ a: 1 }, { a: 2 }]]
     const r = await new MysqlConnector(MYSQL_CFG, 'MYSQL').executeQuery('SELECT a FROM t LIMIT 2')
     expect(r.rowCount).toBe(2)
     expect(r.rows).toHaveLength(2)
@@ -241,7 +243,7 @@ describe('MysqlConnector.executeQuery', () => {
   })
 
   test('rows are normalised (Dates/Decimals become strings, not objects)', async () => {
-    my.connQueryResults = [[], [], [{ when: new Date('2026-01-02T03:04:05Z'), n: 7 }]]
+    my.connQueryResults = [[], [], [], [{ when: new Date('2026-01-02T03:04:05Z'), n: 7 }]]
     const r = await new MysqlConnector(MYSQL_CFG, 'MYSQL').executeQuery('SELECT when, n FROM t LIMIT 1')
     expect(typeof r.rows[0].when).toBe('string')
     expect(r.rows[0].n).toBe(7)

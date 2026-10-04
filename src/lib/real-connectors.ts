@@ -24,6 +24,8 @@ import { detectDangerousFunctions } from '@/lib/guardrails'
 
 // ponytail: 30s query timeout — matches the REST/LLM timeout convention (CLAUDE.md §6).
 const QUERY_TIMEOUT_MS = 30_000
+/** MariaDB's `max_statement_time` is in SECONDS. */
+const MYSQL_STATEMENT_TIMEOUT_S = Math.ceil(QUERY_TIMEOUT_MS / 1000)
 
 // ---------------------------------------------------------------------------
 // Config + row helpers
@@ -915,6 +917,13 @@ export class MysqlConnector implements BaseDatabaseConnector {
     // All statements must run on the same connection, so we check one out.
     const conn = await pool.getConnection()
     try {
+      // SERVER-side time bound. mysql2's `timeout` only abandons the CLIENT side: the server kept executing the slow
+      // query after the caller had given up (Postgres has `statement_timeout` for exactly this). MySQL 5.7.8+ honours
+      // `max_execution_time` (ms, SELECT only); MariaDB names it `max_statement_time` (seconds). A server that knows
+      // neither still has the client timeout.
+      await conn.query(`SET SESSION max_execution_time = ${QUERY_TIMEOUT_MS}`).catch(() =>
+        conn.query(`SET SESSION max_statement_time = ${MYSQL_STATEMENT_TIMEOUT_S}`).catch(() => {}),
+      )
       await conn.query('SET TRANSACTION READ ONLY')
       await conn.query('START TRANSACTION READ ONLY')
       const [rows] = await conn.query({ sql, timeout: QUERY_TIMEOUT_MS })

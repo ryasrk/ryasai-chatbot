@@ -1154,10 +1154,28 @@ function withMysqlConn(script: MysqlConnScript) {
 }
 
 describe('MysqlConnector.executeQuery', () => {
+  test('MariaDB: the MySQL variable is rejected, its seconds-based twin is set, and the query still runs', async () => {
+    const { c, conn } = withMysqlConn({
+      onQuery: (sql) => (sql.startsWith('SET SESSION max_execution_time') ? new Error('Unknown system variable') : [{ n: 1 }]),
+    })
+    const r = await c.executeQuery('SELECT n FROM t')
+    expect(conn.statements.slice(0, 2)).toEqual(['SET SESSION max_execution_time = 30000', 'SET SESSION max_statement_time = 30'])
+    expect(r.rowCount).toBe(1)
+  })
+
+  test('a server that knows neither variable still runs the query (the client timeout remains)', async () => {
+    const { c } = withMysqlConn({
+      onQuery: (sql) => (sql.startsWith('SET SESSION') ? new Error('Unknown system variable') : [{ n: 1 }]),
+    })
+    expect((await c.executeQuery('SELECT n FROM t')).rowCount).toBe(1)
+  })
+
   test('the read-only transaction is opened BEFORE the caller SQL, then committed', async () => {
     const { c, conn } = withMysqlConn({ onQuery: () => [{ n: 1 }] })
     const r = await c.executeQuery('SELECT n FROM t')
     expect(conn.statements).toEqual([
+      // Server-side bound: mysql2's own timeout only abandons the client.
+      'SET SESSION max_execution_time = 30000',
       'SET TRANSACTION READ ONLY',
       'START TRANSACTION READ ONLY',
       'SELECT n FROM t',
@@ -2318,6 +2336,8 @@ describe('source facts — invariants that a runtime assertion cannot see', () =
     // site and should be reviewed by hand.
     const ALLOWED_INTERPOLATIONS = [
       '`${QUERY_TIMEOUT_MS}`',
+      // Module constant (seconds form of QUERY_TIMEOUT_MS for MariaDB), never caller input.
+      '${MYSQL_STATEMENT_TIMEOUT_S}',
       "${useSsl ? 'https' : 'http'}://${c.host}:${c.port || 8123}",
       '${quote(col.name)}',
       '${q(table.tableName)}',
