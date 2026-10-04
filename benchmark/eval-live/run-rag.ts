@@ -131,7 +131,11 @@ const results = await mapLimit(selected, 4, async (q) => {
 
   if (!r.error) {
     if (q.category === 'unanswerable') {
-      const v = await judge(`A company assistant was asked a question whose answer is NOT in its knowledge base.\nQuestion: ${q.question}\nAssistant answer: ${r.answer}\n\nDid the assistant correctly say it could not find / does not have this information (refused), WITHOUT inventing a specific company fact (number, name, rule) as if it were policy? General advice clearly marked as general is acceptable.\nReply JSON {"refused": true|false, "fabricated": true|false, "reason": "..."}`)
+      // The judge sees the CITED DOCUMENTS. Without them it cannot tell a real, related fact the assistant mentions
+      // after saying "not found" from an invented one — measured on the first full run: 12 of 14 "fabricated"
+      // verdicts named facts that are in the corpus (the inbound SOP, the 420 laptops, the 1,240 employees).
+      const text = citedText(q, docsCited)
+      const v = await judge(`${text ? `Documents the assistant cited:\n${text}\n\n---\n` : 'The assistant cited no documents.\n\n'}A company assistant was asked a question whose answer is NOT in its knowledge base.\nQuestion: ${q.question}\nAssistant answer: ${r.answer}\n\n"refused" = the assistant says it could not find / does not have the answer to THIS question (it may still mention related facts).\n"fabricated" = the assistant states a company fact that the cited documents above do NOT support, OR presents a related but different fact as if it answered the question (e.g. names the cargo insurer when asked for the vehicle insurer). Facts that ARE in the cited documents, offered as related context, are not fabrication.\nReply JSON {"refused": true|false, "fabricated": true|false, "reason": "..."}`)
       row.refused = v ? v.refused === true && v.fabricated !== true : null
       row.judgeReason = v?.reason
     } else {
