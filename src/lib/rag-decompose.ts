@@ -18,16 +18,21 @@ import { decomposeQuery, isComplexQuery } from '@/lib/hyde'
  * Comparison and "both" cues the conjunction regex cannot see: a question that relates two facts without an "and"
  * between two clauses ("how many days after X takes effect does Y …", "exceed", "selisih … dengan").
  */
-const RELATES_TWO_FACTS = /\b(both|each of|difference|differ|exceed(s|ed)?|longer than|shorter than|more than|less than|after .{3,80}? (takes|took|become|becomes|became) effect|days? (after|before)|hari (setelah|sebelum)|selisih|sekaligus|keduanya|kedua (prosedur|kebijakan|sop|dokumen)|masing-masing|dibanding(kan)?|lebih (lama|lambat|cepat|besar|kecil|tinggi|rendah) dari(pada)?)\b/i
+const RELATES_TWO_FACTS = /\b(both|each of|difference|differ|exceed(s|ed)?|longer than|shorter than|after .{3,80}? (takes|took|become|becomes|became) effect|setelah .{3,80}?(mulai )?berlaku|selisih|sekaligus|keduanya|kedua (prosedur|kebijakan|sop|dokumen)|masing-masing|dibanding(kan)?|lebih (lama|lambat|cepat|besar|kecil|tinggi|rendah) dari(pada)?)\b/i
+
+/** A fragment that asks something: the regex split cut a real question in two only if BOTH halves ask. */
+const ASKS = /\b(what|which|who|whom|when|where|why|how|berapa|apa|apakah|siapa|kapan|mana|bagaimana|mengapa|kenapa)\b/i
 
 export function needsDecomposition(question: string): boolean {
   if (RELATES_TWO_FACTS.test(question)) return true
   // The regex split already decided this is several questions; whether its fragments are usable is what the model
   // fixes. Fragments of 4+ words only: "Apa saja syarat" / "ketentuan pengembalian barang?" is one noun phrase cut in
   // two, and paying a model call to rejoin it buys nothing.
+  // MEASURED on the eval set: requiring only 4+ words per fragment still split 17 of 144 single-fact questions on a
+  // noun-phrase "and" ("Cost Center Governance and Budget Owners table", "PR dan PO") — a model call each, ~3.8 s.
   if (!isComplexQuery(question)) return false
   const parts = decomposeQuery(question)
-  return parts.length > 1 && parts.every((p) => p.split(/\s+/).length >= 4)
+  return parts.length > 1 && parts.every((p) => p.split(/\s+/).length >= 4 && ASKS.test(p))
 }
 
 /** A usable reply: 2–3 distinct standalone questions (4+ words each), none just the original repeated. */

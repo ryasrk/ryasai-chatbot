@@ -254,7 +254,7 @@ describe('memory: EVERY exit path of the non-streaming pipeline must write the t
     // control: deleting `remember` from the DAG path still left four `return remember(` calls, so the
     // count was satisfied by the others. A guard that cannot fail for the case it was written for is
     // worse than no guard — it reports safety. This pins the specific branch.
-    expect(nonStreamingBody()).toMatch(/return remember\(dagResult\)/)
+    expect(nonStreamingBody()).toMatch(/return remember\(dag\)/)
   })
 
   test('the agentic branch specifically goes through the wrapper', () => {
