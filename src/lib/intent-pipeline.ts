@@ -50,6 +50,7 @@ import { isPlaceholderChunk } from '@/lib/rag-chunking'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 import { wrapUntrusted } from './evidence-boundary'
 import { expandQuery } from '@/lib/query-expansion'
+import { translateForRetrieval } from '@/lib/query-translate'
 import { needsClarificationByRule } from '@/lib/intent-by-rule'
 export { needsClarificationByRule } from '@/lib/intent-by-rule'
 import { coverageMerge, decomposeForRetrieval, retrieveCompound } from '@/lib/rag-decompose'
@@ -573,10 +574,13 @@ export async function retrieveWithReflection(args: {
   // On by default (RAG_MERGED_JUDGE=off disables): the reranker already judged these chunks against the question (every part); its verdict stands
   // in for the judge call when every evidence chunk carries one. Any chunk without one (rerank skipped, unparseable
   // reply) falls back to the judge, so the switch can only remove calls, never verdicts.
-  const verdicts = evidenceChunks.map((c) => c.rerankVerdict)
-  const reflection = process.env.RAG_MERGED_JUDGE !== 'off' && verdicts.length > 0 && verdicts.every((v) => v !== undefined)
-    ? { sufficient: verdicts.every(Boolean), reason: 'reranker verdict', confidence: 0.7 }
-    : await evaluateEvidenceSufficiency({ question: args.query, evidence })
+  const judge = async (chunks: RetrievedChunk[]): Promise<ReflectionResult> => {
+    const verdicts = chunks.map((c) => c.rerankVerdict)
+    return process.env.RAG_MERGED_JUDGE !== 'off' && verdicts.length > 0 && verdicts.every((v) => v !== undefined)
+      ? { sufficient: verdicts.every(Boolean), reason: 'reranker verdict', confidence: 0.7 }
+      : await evaluateEvidenceSufficiency({ question: args.query, evidence: chunks.map((c) => c.content).join('\n\n') })
+  }
+  const reflection = await judge(evidenceChunks)
 
   // 4. Multi-turn: if reflection says insufficient, do one more pass with 2x topK
   if (!reflection.sufficient && merged.chunks.length > 0) {
@@ -586,8 +590,8 @@ export async function retrieveWithReflection(args: {
     const forced = perSub.length === 0 && evidence ? await decomposeForRetrieval(args.query, { force: true }) : []
     const hops = forced.length > 1 ? await compound(forced) : null
     if (hops) ({ perSub, topK: k } = hops)
-    const secondPass = hops?.merged ?? await retrieveRelevantChunks({
-      query: args.query,
+    const secondPassFor = (query: string) => retrieveRelevantChunks({
+      query,
       topK: args.topK * 2,
       signal: args.signal,
       ...(singleNoRerank ? { _noRerank: true } : {}),
@@ -595,16 +599,37 @@ export async function retrieveWithReflection(args: {
       // would respect the scope and the reflection pass would quietly widen it back out.
       documentIds: args.documentIds,
     })
-    const merged2 = mergeRetrievalResults([merged, secondPass])
+    // The question in the corpus's other language, searched alongside (query-translate.ts): every cross-language
+    // failure of the 2026-10-05 eval was a second-pass turn. Its best chunk is guaranteed a place like a hop's.
+    const [secondPass, translated] = await Promise.all([
+      hops?.merged ?? secondPassFor(args.query),
+      translateForRetrieval(args.query).then((t) => (t ? secondPassFor(t) : null)),
+    ])
+    if (translated && translated.chunks.length > 0) perSub = [...perSub, translated.chunks]
+    const merged2 = mergeRetrievalResults([merged, secondPass, ...(translated ? [translated] : [])])
+    // Re-stamped: the per-query ranks carried by `merged`/`secondPass` describe the orders the individual
+    // retrievals produced, and this is a NEW order after the merge and the select. The UI labels these
+    // "Match #N", so the label has to come from the list the caller receives.
+    const finalChunks = stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged2.chunks, k * 2), perSub, k * 2))
+    /*
+     * THE VERDICT DESCRIBES THE CONTEXT THE ANSWER READS. It used to be the FIRST pass's, returned with the second
+     * pass's chunks: the answer was told "the evidence may not address the question — say your search did not find
+     * it" (rag-pipeline.ts) and a probe-routed turn fell back to chat, about evidence the second pass HAD found.
+     * MEASURED (failure audit, 2026-10-05): 33 of 255 eval questions took a second pass and in 20 of them every
+     * evidence quote was in the final context; q185 then answered "I can't compute the ratio" with both figures in
+     * front of it. Judged again only when the second pass added a chunk — otherwise the context is the one judged.
+     * (Sufficient Context, Joren et al., ICLR 2025: abstain on the context the generator is given.)
+     */
+    const finalEvidence = finalChunks.filter((c) => !isPlaceholderChunk(c.content))
+    const judged = new Set(evidenceChunks.map((c) => c.chunkId))
+    const grew = finalEvidence.some((c) => !judged.has(c.chunkId))
+    if (grew) args.signal?.throwIfAborted()
     return {
-      // Re-stamped: the per-query ranks carried by `merged`/`secondPass` describe the orders the individual
-      // retrievals produced, and this is a NEW order after the merge and the select. The UI labels these
-      // "Match #N", so the label has to come from the list the caller receives.
-      chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged2.chunks, k * 2), perSub, k * 2)),
+      chunks: finalChunks,
       queryTokens: merged2.queryTokens,
       candidatesScanned: merged2.candidatesScanned,
       graphContext: merged2.graphContext,
-      reflection,
+      reflection: grew ? await judge(finalEvidence) : reflection,
       retrievalPasses: 2,
     }
   }

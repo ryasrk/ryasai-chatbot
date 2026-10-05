@@ -251,6 +251,18 @@ describe('rerankWithLlm — reordering by model judgement', () => {
     expect(state.chatCalls[0].temp).toBe(0)
   })
 
+  test('the prompt shows the part of a long chunk that holds the query words, not its first 300 characters', async () => {
+    // Failure audit 2026-10-05: 55% of the eval corpus's evidence started after character 300 (rerank-window.ts).
+    seedCandidates(9)
+    const filler = 'Opening paragraph about something else entirely. '.repeat(12)
+    state.chunkRows[4] = { ...row(4), content: `${filler}\nThe sales by region figure for Cikarang is 42 units.` }
+    state.chatRaw = '[{"index":0,"score":9}]'
+    await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
+    const prompt = JSON.stringify(state.chatCalls[0].messages)
+    expect(filler.length).toBeGreaterThan(300)
+    expect(prompt).toContain('Cikarang is 42 units')
+  })
+
   test('the result is still capped at topK', async () => {
     seedCandidates(9)
     state.chatRaw = '[{"index":0,"score":10},{"index":1,"score":9},{"index":2,"score":8},{"index":3,"score":7}]'

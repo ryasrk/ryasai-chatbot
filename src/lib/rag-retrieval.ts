@@ -1,4 +1,6 @@
 import { db } from '@/lib/db'
+import { gluedWordVariants } from '@/lib/glued-words'
+import { rerankWindow } from '@/lib/rerank-window'
 import { scopedLogger } from '@/lib/logger'
 import { getOrgContext } from '@/lib/prisma-tenant'
 const log = scopedLogger('rag')
@@ -323,7 +325,9 @@ async function rerankWithLlm(
      * is the text without that prefix; falling back to `content` keeps installs without contextual retrieval exactly
      * as they were (MEASURED locally: `ownContent` is absent there, and the reranker already saw the real text).
      */
-    const chunkList = chunks.map((c, i) => `[${i}] ${(c.ownContent ?? c.content).slice(0, 300)}`).join('\n\n')
+    // The part of each chunk that holds the query's words, not its opening (rerank-window.ts): 55% of the eval corpus's
+    // evidence started after character 300, where this prompt used to stop. Visible evidence 103/272 -> 228/272.
+    const chunkList = chunks.map((c, i) => `[${i}] ${rerankWindow(c.ownContent ?? c.content, query)}`).join('\n\n')
     // The same call also says whether the chunks TOGETHER answer the query, so the separate sufficiency judge can be
     // skipped. A/B on the 20 hardest eval questions (2 runs per arm): judge calls 1.40 -> 0.20 per question, accuracy
     // not lower. On by default; RAG_MERGED_JUDGE=off restores the separate judge.
@@ -469,7 +473,8 @@ async function retrieveAndFuse(args: {
       // Keywords fold in as extra term occurrences — a lightweight BM25F: a term
       // that is both in the body and an extracted keyword legitimately scores
       // higher, without a hand-picked field weight.
-      tokens: tokenizeForScoring(chunk.content).concat(
+      // Glued PDF words count under their split form too, as the tsv does (glued-words.ts).
+      tokens: tokenizeForScoring(`${chunk.content} ${gluedWordVariants(chunk.content)}`).concat(
         (chunk.keywords ?? '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean),
       ),
     })),

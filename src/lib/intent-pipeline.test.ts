@@ -958,6 +958,90 @@ describe('retrieveWithReflection', () => {
     expect(secondPassCall[0].topK).toBe(10)
   })
 
+  test('the verdict is re-taken on the second-pass context when that pass added evidence', async () => {
+    // MEASURED (failure audit, 2026-10-05): the FIRST pass's "insufficient" was returned with the second pass's chunks,
+    // so the answer was told to say "not found" about evidence in front of it (q185, 20 of 255 eval questions).
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    const judged: string[] = []
+    mockChatOnce.mockImplementation((async (_cfg: unknown, messages: Array<{ content: string }>, _t: number, purpose: string) => {
+      if (purpose !== 'reflection') return ''
+      judged.push(messages.at(-1)!.content)
+      const sawPassword = messages.at(-1)!.content.includes('password expires after 90 days')
+      return JSON.stringify({ sufficient: sawPassword, reason: sawPassword ? 'both figures' : 'one figure missing', confidence: 0.9 })
+    }) as never)
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: args.topK === 10
+        ? [makeChunk({ chunkId: 'pw', content: 'The password expires after 90 days.' }), makeChunk({ chunkId: 'vendor', content: 'Vendor accounts expire after 30 days.' })]
+        : [makeChunk({ chunkId: 'vendor', content: 'Vendor accounts expire after 30 days.' })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+
+    const result = await retrieveWithReflection({ query: 'leave', topK: 5 })
+
+    expect(result.retrievalPasses).toBe(2)
+    expect(judged).toHaveLength(2)
+    expect(judged[1]).toContain('password expires after 90 days')
+    expect(result.reflection).toMatchObject({ sufficient: true, reason: 'both figures' })
+  })
+
+  test('the second pass also searches the question in the other language, and its best chunk reaches the context', async () => {
+    // Failure audit 2026-10-05: every cross-language failure (q151, q166, q167, q186) was a second-pass turn.
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation((async (_cfg: unknown, _m: unknown, _t: number, purpose: string) =>
+      purpose === 'query-translate' ? 'Berapa batas waktu pengajuan klaim asuransi kargo?'
+        : purpose === 'reflection' ? JSON.stringify({ sufficient: false, reason: 'not yet', confidence: 0.9 }) : '') as never)
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: args.query.startsWith('Berapa')
+        ? [makeChunk({ chunkId: 'id-chunk', content: 'Klaim wajib diajukan dalam 7 hari kalender.', score: 0.2 })]
+        : Array.from({ length: 12 }, (_, i) => makeChunk({ chunkId: `en-${i}`, content: `Unrelated English text ${i}.`, score: 0.9 - i / 100 })),
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+
+    const r = await retrieveWithReflection({ query: 'What is the cargo insurance claim deadline?', topK: 4 })
+
+    expect(r.retrievalPasses).toBe(2)
+    const searched = mockRetrieveRelevantChunks.mock.calls.map((c) => (c[0] as { query: string }).query)
+    expect(searched).toContain('Berapa batas waktu pengajuan klaim asuransi kargo?')
+    // Lowest score of the pool, kept anyway: the translated search's best chunk is guaranteed like a hop's.
+    expect(r.chunks.map((c) => c.chunkId)).toContain('id-chunk')
+  })
+
+  test('RAG_TRANSLATE_ON_MISS=false: no translation call, no extra search', async () => {
+    process.env.RAG_TRANSLATE_ON_MISS = 'false'
+    try {
+      mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+      mockChatOnce.mockImplementation((async (_c: unknown, _m: unknown, _t: number, purpose: string) =>
+        purpose === 'reflection' ? JSON.stringify({ sufficient: false, reason: 'x', confidence: 0.9 }) : 'Terjemahan') as never)
+      mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string }) => ({
+        chunks: [makeChunk({ chunkId: 'c', content: 'text' })], queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+      }))
+      await retrieveWithReflection({ query: 'leave', topK: 5 })
+      expect((mockChatOnce.mock.calls as unknown as unknown[][]).filter((c) => c[3] === 'query-translate')).toHaveLength(0)
+    } finally {
+      delete process.env.RAG_TRANSLATE_ON_MISS
+    }
+  })
+
+  test('a second pass that added nothing keeps the first verdict, without another judge call', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    let judgeCalls = 0
+    mockChatOnce.mockImplementation((async (_cfg: unknown, _m: unknown, _t: number, purpose: string) => {
+      if (purpose !== 'reflection') return ''
+      judgeCalls++
+      return JSON.stringify({ sufficient: false, reason: 'nothing on it', confidence: 0.9 })
+    }) as never)
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string }) => ({
+      chunks: [makeChunk({ chunkId: 'same', content: 'Unrelated text.' })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+
+    const result = await retrieveWithReflection({ query: 'leave', topK: 5 })
+
+    expect(result.retrievalPasses).toBe(2)
+    expect(judgeCalls).toBe(1)
+    expect(result.reflection).toMatchObject({ sufficient: false, reason: 'nothing on it' })
+  })
+
   test('does single pass when reflection says sufficient', async () => {
     mockGetLlmRuntimeConfig.mockImplementation(async () => null)
     mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
@@ -1385,7 +1469,8 @@ describe('retrieveWithReflection — placeholders never become evidence', () => 
     // to bless a placeholder — the emptiness guard decides.
     expect(r.reflection.sufficient).toBe(false)
     expect(r.reflection.reason).toBe('No evidence retrieved')
-    expect(mockChatOnce.mock.calls).toHaveLength(0)
+    // No JUDGE call (the second pass may still ask for a translation to search with — that judges nothing).
+    expect((mockChatOnce.mock.calls as unknown as unknown[][]).filter((c) => c[3] === 'reflection')).toHaveLength(0)
   })
 
   test('the SECOND pass keeps only real chunks too', async () => {

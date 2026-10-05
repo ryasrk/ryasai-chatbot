@@ -223,7 +223,7 @@ export const LLM_DEFAULT_MAX_TOKENS = 4096
  * classification and ranking do not need a reasoning pass. The answer, SQL and agent purposes keep the model default.
  * `LLM_REASONING_EFFORT_STRUCTURED=off` sends nothing; a provider that rejects the field is retried without it.
  */
-const STRUCTURED_PURPOSES = new Set(['rag-rerank', 'reflection', 'rag-decompose', 'intent-analysis', 'query-rewrite'])
+const STRUCTURED_PURPOSES = new Set(['rag-rerank', 'reflection', 'rag-decompose', 'intent-analysis', 'query-rewrite', 'query-translate'])
 
 export function reasoningEffortForPurpose(purpose: string | undefined): 'none' | undefined {
   if (process.env.LLM_REASONING_EFFORT_STRUCTURED === 'off') return undefined
