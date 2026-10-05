@@ -1842,3 +1842,41 @@ describe('retrieveWithReflection — one rerank over the union of the expansions
     expect(mockRerankMerged.mock.calls.length).toBe(0)
   })
 })
+
+describe('retrieveWithReflection — a compound question is retrieved hop by hop', () => {
+  // Live eval: one hop's chunk reached the 4-chunk context and the other's did not. See rag-decompose.ts.
+  const q = 'How many days after the Information Security Policy takes effect does the Access System SOP become effective?'
+  const subs = ['When does the Information Security Policy take effect?', 'When does the Access System SOP become effective?']
+
+  test('each model-written sub-question is searched, and its best chunk survives a reranker that prefers the other', async () => {
+    rerankOn = true
+    mockGetLlmRuntimeConfig.mockImplementation(async () => ({ provider: 'OPENAI_COMPATIBLE', model: 'm' }))
+    mockChatOnce.mockImplementation((async (_cfg: unknown, _m: unknown, _t: unknown, purpose?: string) =>
+      purpose === 'rag-decompose' ? JSON.stringify(subs) : '{"sufficient": true, "reason": "ok", "confidence": 0.9}') as never)
+    mockRetrieveRelevantChunks.mockClear()
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string }) => ({
+      // Both languages: the sub-question's own translation variant ("akses") must find the same hop.
+      chunks: /access|akses/i.test(args.query)
+        ? [makeChunk({ chunkId: 'access', content: 'Access SOP effective 18 Jan '.repeat(4), score: 0.3 })]
+        : [makeChunk({ chunkId: 'sec1', content: 'Security policy effective 1 Jan '.repeat(4), score: 0.9 }),
+           makeChunk({ chunkId: 'sec2', content: 'Security policy scope '.repeat(4), score: 0.8 })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+    // A reranker that keeps only the security-policy chunks for the whole question.
+    mockRerankMerged.mockImplementation((async (_q: string, chunks: Array<{ chunkId: string }>, k: number) =>
+      chunks.filter((c) => c.chunkId.startsWith('sec')).slice(0, k)) as never)
+    try {
+      const r = await retrieveWithReflection({ query: q, topK: 2 })
+      const asked = (mockRetrieveRelevantChunks.mock.calls as unknown as Array<[{ query: string; _skipDecompose?: boolean }]>).map(([a]) => a)
+      expect(subs.every((s) => asked.some((a) => a.query === s))).toBe(true)
+      expect(asked.every((a) => a._skipDecompose === true)).toBe(true)
+      expect(r.chunks.map((c) => c.chunkId)).toContain('access')
+    } finally {
+      rerankOn = false
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+      mockChatOnce.mockImplementation(async () => '')
+      mockRerankMerged.mockImplementation(async (_q: string, chunks: unknown[], topK: number) => (chunks as unknown[]).slice(0, topK))
+    }
+  })
+})
+

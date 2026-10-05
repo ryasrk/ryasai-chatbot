@@ -882,6 +882,11 @@ const byFile = new Map(summary.files.map((f) => [f.file, f]))
  * starts Redis for that reason.
  */
 const MOCK_INFLATED_DENOMINATOR: Record<string, { hits: number; note: string }> = {
+  'src/lib/hyde.ts': {
+    hits: 61,
+    note: 'mocked by lib/rag-retrieval.test.ts and now also loaded through rag-decompose.ts (2026-10-05): hits 61 -> 61, '
+      + 'records 61 -> 75; covered by lib/hyde.test.ts',
+  },
   'src/lib/sql-answerability.ts': {
     hits: 24,
     note: 'its own run measures 24/24 (100%); the merged report doubles the denominator, which is the only entry there that '
