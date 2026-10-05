@@ -489,3 +489,17 @@ re-run):** REST and plugin webhooks followed a redirect to an internal host (`gu
 bounds the body); OAuth2 tokens uncached and auth errors thrown; `sslmode` in a connection string overrode the
 connector's TLS; the selector showed an arbitrary 8 tables and the first 40 endpoints (`source-relevance.ts`).
 NOT tested: SQL Server, ClickHouse, real-model routing. No connector for SQLite, Turso, Oracle, MongoDB.
+
+### 2026-10-05 (b) — PR #46 merged (ported), and two guard gaps closed
+
+PR #46 (compound questions run every part; connector exact values, ANSI_QUOTES, SSRF-safe REST/webhooks, OAuth2
+token cache, relevance-ranked sources) conflicted in 8 files with the module split and was PORTED onto it
+(`tool-router-routing.ts`, `ai-rest.ts`, `plan-model.ts`, `real-connector-*`), keeping dev's scope forwarding and
+citation dedupe. Found while merging, both fixed in `sql-ast-guard.ts` and negative-controlled: (1) ANSI_QUOTES made
+`WHERE "salary" > 100` read a denied column while the MySQL-mode parser saw a string — the guard now parses
+double-quoted names as identifiers; (2) SUPABASE/NEON/COCKROACHDB/PLANETSCALE/TIDB matched no parser dialect, so
+the AST layer and per-role policy never ran for them (pre-existing). Four coverage floors re-set to the merged
+measurement (hits rose, denominators grew). NOT measured: the new selector wording against a real model.
+
+Verified: tsc 0 · lint 0 errors · 355 files, 8,395 pass, 0 fail · coverage:gate OK (240 modules, 76.93%) · build ·
+e2e 19 · e2e:prod 19 · sql-security-eval all attacks blocked, all controls allowed.

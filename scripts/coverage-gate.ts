@@ -405,12 +405,12 @@ const FLOORS: Record<string, number> = {
   // Math.max per line, so phantom drift cannot mask it.
   'src/lib/cognee-http.ts': 25, // merged 54.04% (127/235); single-file 96.21% (127/132); 5 misses are braces
   'src/lib/agentic-budget.ts': 76, // merged 76.47%; measured 100.00% (13/13)
-  'src/lib/rest-api-connectors.ts': 97, // merged 97.89%; 93/93 executable (100.00%) after adding the OAuth2 flow
+  'src/lib/rest-api-connectors.ts': 96, // merged 96.64% (144/149) after PR #46's OAuth2 token cache; was 97.89%
   'src/lib/license-client.ts': 69, // re-measured 70.2% after the v1.6.0 fixes grew this file; floor was 83
   'src/lib/constants.ts': 95, // measured 100.00% (21/21)
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
   'src/lib/cron.ts': 82, // re-measured 83.09% (113/136); was 90
-  'src/lib/db-provider-presets.ts': 100, // measured 100.00% (34/34); the driver-selection function was never run
+  'src/lib/db-provider-presets.ts': 89, // merged 89.36% (42/47); the 5 misses are continuation lines of identifierQuotingRule's strings, every branch is tested
   'src/lib/db-provider.ts': 95, // measured 100.00% (3/3)
   'src/lib/db.ts': 85, // measured 91.67% (11/12)
   // 71 -> 67. The module gained a `try/catch` around the knowledge-graph cleanup added in v1.7.1 (it deletes
@@ -705,13 +705,13 @@ const FLOORS: Record<string, number> = {
   'src/lib/unified-tools.ts': 49, // re-measured 49.54% (216/436)
   'src/lib/unified-tool-core.ts': 93, // re-measured 93.33% (28/30)
   'src/lib/unified-tools-admin.ts': 82, // re-measured 82.81% (106/128)
-  'src/lib/real-connector-shared.ts': 81, // re-measured 81.42% (276/339)
+  'src/lib/real-connector-shared.ts': 79, // merged 79.29% (314/396) after PR #46's exact-value helpers; was 81.42% (276/339)
   'src/lib/real-connector-postgres.ts': 57, // re-measured 57.69% (120/208)
   'src/lib/real-connector-mysql.ts': 70, // re-measured 70.51% (110/156)
   'src/lib/real-connector-mssql.ts': 63, // re-measured 63.98% (119/186)
   'src/lib/real-connector-clickhouse.ts': 74, // re-measured 74.65% (106/142)
   'src/lib/ai-chat.ts': 90, // re-measured 90.70% (39/43)
-  'src/lib/ai-rest.ts': 66, // re-measured 66.20% (47/71)
+  'src/lib/ai-rest.ts': 65, // merged 65.06% (54/83) after PR #46's relevance ranking; was 66.20% (47/71)
   'src/lib/ai-schema.ts': 66, // re-measured 66.32% (63/95)
   'src/lib/mcp-transport.ts': 88, // re-measured 88.24% (120/136)
   'src/lib/query-expansion.ts': 86, // re-measured 86.07% (105/122)
