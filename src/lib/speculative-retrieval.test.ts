@@ -47,9 +47,10 @@ describe('startSpeculativeRetrieval — only when the documents are reachable', 
     expect(calls[0]).toMatchObject({ query: base.question, topK: RAG_ANSWER_TOP_K })
   })
 
-  test('RAG_ANSWER_TOP_K is the value the branches have always used', () => {
+  test('RAG_ANSWER_TOP_K is the measured value the branches use', () => {
     // Both answer branches read this constant, so the speculation cannot start for a topK they no longer ask for.
-    expect(RAG_ANSWER_TOP_K).toBe(4)
+    // 8 since 2026-10-05 (multi-hop evidence in context 69.2% -> 74.4%; see the constant).
+    expect(RAG_ANSWER_TOP_K).toBe(8)
   })
 
   test.each([

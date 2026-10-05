@@ -27,7 +27,9 @@ const creds = JSON.parse(readFileSync(process.env.EVAL_CREDENTIALS_FILE!, 'utf8'
 const { enterWithOrg } = await import('../../src/lib/prisma-tenant')
 enterWithOrg(creds.orgId)
 const { retrieveWithReflection } = await import('../../src/lib/intent-pipeline')
-const { RAG_ANSWER_TOP_K } = await import('../../src/lib/speculative-retrieval')
+const { RAG_ANSWER_TOP_K: PRODUCT_TOP_K } = await import('../../src/lib/speculative-retrieval')
+// `--topk N` measures another context size without changing the product constant.
+const RAG_ANSWER_TOP_K = Number(arg('--topk') ?? PRODUCT_TOP_K)
 
 const { questions } = JSON.parse(readFileSync(join(import.meta.dir, 'rag-questions.json'), 'utf8')) as { questions: EvalQuestion[] }
 const selected = questions.filter((q) => categories.includes(q.category) && (!ids || ids.includes(q.id)))

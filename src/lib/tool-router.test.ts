@@ -1893,7 +1893,7 @@ describe('runStreamingChatCompletion — speculative RETRIEVAL', () => {
       const spec = ragStreamArgs[0].speculativeRetrieval as { request: Record<string, unknown> } | null
       expect(spec).not.toBeNull()
       // No chat history, so there is no rewrite: the effective question IS the question asked.
-      expect(spec!.request).toMatchObject({ query: 'Berapa hari cuti?', topK: 4, documentIds: ['d1'] })
+      expect(spec!.request).toMatchObject({ query: 'Berapa hari cuti?', topK: 8, documentIds: ['d1'] })
     })
   })
 

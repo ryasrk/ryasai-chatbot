@@ -30,8 +30,12 @@ const log = scopedLogger('speculative-retrieval')
 /**
  * The number of chunks a RAG answer is built from. One constant for the speculative start AND both answer branches,
  * so the speculation cannot be started for a `topK` the branch no longer asks for.
+ *
+ * 8, was 4. MEASURED (retrieval-recall.ts, 2026-10-05): multi-hop questions with all evidence in context 69.2% -> 74.4%,
+ * factual unchanged (88.9% both). The reranker passes on only the chunks it endorses (median 3), so the context the
+ * answer reads grows only when there is more relevant evidence. Anthropic's contextual-retrieval study sent 20.
  */
-export const RAG_ANSWER_TOP_K = 4
+export const RAG_ANSWER_TOP_K = 8
 
 export type Retrieval = Awaited<ReturnType<typeof retrieveWithReflection>>
 
