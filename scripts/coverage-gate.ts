@@ -202,6 +202,13 @@ const FLOORS: Record<string, number> = {
   // New on 2026-10-04 — floors set one point under the merged measurement.
   'src/lib/sql-function-denylist.ts': 99, // 41/41
   'src/lib/sql-ast-guard.ts': 90, // 156/170 = 91.76%
+  // 2026-10-05, merged measurement (hits/records). unified-tools-mcp.ts was 13.57% and ungated until its suite.
+  'src/lib/unified-tools-mcp.ts': 88, // merged 88.55% (147/166)
+  'src/lib/kb-probe.ts': 80, // merged 80.49% (33/41)
+  'src/lib/rag-decompose.ts': 82, // merged 82.52% (85/103)
+  'src/lib/retrieval-merge.ts': 57, // merged 57.50% (23/40); the function's own lines are covered, the rest are comment records
+  'src/lib/integration-limits.ts': 100, // merged 100% (2/2)
+  'src/components/views/schedules/schedule-model.ts': 62, // merged 62.67% (47/75); the cron mapping is fully tested, the formatters are not
   'src/lib/access-scope.ts': 95, // 64/66 = 96.97%
   'src/lib/pipelines/sql-pipeline.ts': 85, // 233/270 = 86.30%
   'src/lib/pipelines/rag-pipeline.ts': 86, // 74/85 = 87.06%
