@@ -1314,7 +1314,8 @@ const realWithToolSandbox = realSandbox.withToolSandbox
 const sandboxState: { reject: Error | null; rejectOnce: boolean; calls: number } = { reject: null, rejectOnce: false, calls: 0 }
 mock.module('@/lib/tool-sandbox', () => ({
   ...realSandbox,
-  withToolSandbox: async <T>(tool: string, fn: () => Promise<T>): Promise<T> => {
+  // The timeout is passed through: dropping it made every step use the per-tool default whatever its budget.
+  withToolSandbox: async <T>(tool: string, fn: () => Promise<T>, timeoutMs?: number): Promise<T> => {
     sandboxState.calls++
     if (sandboxState.reject) {
       // `rejectOnce` narrows the refusal to a SINGLE invocation, so a sibling step
@@ -1326,7 +1327,7 @@ mock.module('@/lib/tool-sandbox', () => ({
       }
       throw sandboxState.reject
     }
-    return realWithToolSandbox(tool, fn)
+    return realWithToolSandbox(tool, fn, timeoutMs)
   },
 }))
 
@@ -2196,6 +2197,48 @@ describe('executePlan — a built-in step runs the tool the plan chose', () => {
     await executePlan({ plan: { steps: [{ id: 's1', tool: 'chat', input: { question: 'hi' } }], needsSynthesis: false }, userId: 'u1' })
     const first = (mockRunNonStreaming.mock.calls as unknown as Array<[{ plannedTool?: unknown }]>)[0]?.[0]
     expect(first?.plannedTool).toBeUndefined()
+  })
+})
+
+describe('executePlan — a step that runs the whole chat pipeline gets a pipeline budget', () => {
+  /*
+   * MEASURED LIVE (2026-10-05, ToolRun.errorMessage): 11 RAG steps of compound questions failed with
+   * `Tool "rag" timed out after 30000ms`. The per-tool sandbox (30 s) wrapped the WHOLE step — intent, routing,
+   * retrieval, rerank, reflection and the answer, each with its own timeout — so a step was killed while it was
+   * still working, and the part was reported as not answered (10 of the 18 failed parts of the agentic eval).
+   */
+  test('a rag step slower than the per-tool timeout still completes', async () => {
+    const prev = process.env.TOOL_TIMEOUT_MS
+    process.env.TOOL_TIMEOUT_MS = '40'
+    try {
+      mockRunNonStreaming.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 120))
+        return { answer: 'leave is 14 days', citations: [], chartData: null, toolRuns: [], integrationId: null }
+      })
+      const [r] = await executePlan({ plan: { steps: [{ id: 's1', tool: 'rag', input: { question: 'annual leave' } }], needsSynthesis: false }, userId: 'u1' })
+      expect(r.ok).toBe(true)
+      expect(r.output).toBe('leave is 14 days')
+    } finally {
+      if (prev === undefined) delete process.env.TOOL_TIMEOUT_MS
+      else process.env.TOOL_TIMEOUT_MS = prev
+    }
+  })
+
+  test('the pipeline budget is itself bounded (PLAN_STEP_TIMEOUT_MS)', async () => {
+    const prev = process.env.PLAN_STEP_TIMEOUT_MS
+    process.env.PLAN_STEP_TIMEOUT_MS = '40'
+    try {
+      mockRunNonStreaming.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 200))
+        return { answer: 'late', citations: [], chartData: null, toolRuns: [], integrationId: null }
+      })
+      const [r] = await executePlan({ plan: { steps: [{ id: 's1', tool: 'sql', input: { question: 'q' } }], needsSynthesis: false }, userId: 'u1' })
+      expect(r.ok).toBe(false)
+      expect(r.error).toContain('timed out')
+    } finally {
+      if (prev === undefined) delete process.env.PLAN_STEP_TIMEOUT_MS
+      else process.env.PLAN_STEP_TIMEOUT_MS = prev
+    }
   })
 })
 

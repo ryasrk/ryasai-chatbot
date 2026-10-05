@@ -329,7 +329,7 @@ export async function executePlan(args: {
     const levelResults = await Promise.all(
       level.map((step) => {
         const resolved = resolveStepInput(step, priorOutputs)
-        return withToolSandbox(resolved.tool, () => executeStep(resolved, args, isStepConfirmed(resolved))).catch((e) => {
+        return withToolSandbox(resolved.tool, () => executeStep(resolved, args, isStepConfirmed(resolved)), stepBudgetMs(resolved.tool)).catch((e) => {
           args.onStatus?.(step.id, step.tool, 'error')
           return {
             stepId: step.id, tool: step.tool, ok: false, output: '',
@@ -345,6 +345,19 @@ export async function executePlan(args: {
   }
 
   return results
+}
+
+/**
+ * The time a step may take. A step whose tool is one external call (MCP, plugin, web fetch/search, admin) keeps the
+ * per-tool sandbox timeout. Every other step runs the WHOLE chat pipeline — intent, routing, retrieval, rerank,
+ * reflection, answer — each call with its own timeout, so the 30 s per-tool default killed it mid-work: MEASURED live,
+ * 11 RAG steps ended `Tool "rag" timed out after 30000ms` and their parts were reported unanswered. 120 s by default
+ * (`PLAN_STEP_TIMEOUT_MS`), below the 180 s agentic deadline that bounds the turn.
+ */
+function stepBudgetMs(tool: string): number | undefined {
+  if (/^(admin|mcp|plugin):/.test(tool) || tool === 'web_fetch' || tool === 'web_search') return undefined
+  const fromEnv = Number(process.env.PLAN_STEP_TIMEOUT_MS)
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 120_000
 }
 
 /**

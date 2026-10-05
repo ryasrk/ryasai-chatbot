@@ -61,7 +61,8 @@ const SYSTEM = 'Split the user question into the separate questions that must ea
  * asked only when `needsDecomposition` says so; any failure or unusable reply falls back to the heuristic split.
  */
 export async function decomposeForRetrieval(question: string): Promise<string[]> {
-  if (!needsDecomposition(question)) return [question]
+  // `RAG_MODEL_DECOMPOSE=false` restores the previous path exactly (the regex split inside retrieveRelevantChunks).
+  if (process.env.RAG_MODEL_DECOMPOSE === 'false' || !needsDecomposition(question)) return [question]
   try {
     const { getRoleLlmConfig } = await import('@/lib/llm-config')
     const { chatOnce } = await import('@/lib/llm-client')

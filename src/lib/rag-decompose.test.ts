@@ -73,6 +73,16 @@ describe('decomposeForRetrieval', () => {
     expect(llm.calls[0].purpose).toBe('rag-decompose')
   })
 
+  test('RAG_MODEL_DECOMPOSE=false takes the previous path: the question itself, no model call', async () => {
+    process.env.RAG_MODEL_DECOMPOSE = 'false'
+    try {
+      expect(await decomposeForRetrieval(q)).toEqual([q])
+      expect(llm.calls).toHaveLength(0)
+    } finally {
+      delete process.env.RAG_MODEL_DECOMPOSE
+    }
+  })
+
   test('a simple question makes no model call', async () => {
     expect(await decomposeForRetrieval('Berapa hari cuti tahunan karyawan tetap?')).toEqual(['Berapa hari cuti tahunan karyawan tetap?'])
     expect(llm.calls).toHaveLength(0)
