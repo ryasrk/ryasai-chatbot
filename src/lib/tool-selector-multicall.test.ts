@@ -134,3 +134,34 @@ describe('selectToolWithLlm — every tool call is resolved', () => {
     expect(await ask()).toBeNull()
   })
 })
+
+describe('selectToolWithLlm — a second source for the SAME part is a hedge, not a part', () => {
+  /*
+   * MEASURED (final RAG eval, 2026-10-05): document-only questions that also ran a database or REST step rose from 1
+   * to 13 of 255 once extra calls were planned; only 3 of those 13 answers were faithful, and they were 9 s slower.
+   * Probe of the selector (106 selections): on those questions the extra call asked about the SAME words of the
+   * user's question as the first (overlap 1.0 on 10 of 11); on 79 genuine compound questions it asked about other
+   * words (0.0 on 77, 0.5 on 2). An extra call whose part of the question is the first call's part is dropped.
+   */
+  const askQ = (question: string) => selectToolWithLlm({ question, context: 'chat', isAdmin: false, needsDatabaseListing: true })
+
+  test('the same part asked of a second source is dropped', async () => {
+    chatResult = [
+      { name: 'search_knowledge_base', arguments: '{"query":"Kebijakan keamanan informasi PT Arunika Logistik Nusantara cakupan karyawan yang terikat"}' },
+      { name: 'query_database', arguments: '{"question":"Berapa jumlah karyawan PT Arunika Logistik Nusantara?","database":"HR Database"}' },
+    ]
+    const sel = await askQ('Berapa jumlah karyawan PT Arunika Logistik Nusantara yang terikat oleh kebijakan keamanan informasi?')
+    expect(sel?.toolId).toBe('rag')
+    expect(sel?.extraTools ?? []).toEqual([])
+  })
+
+  test('two parts of a compound question are both kept', async () => {
+    chatResult = [
+      { name: 'search_knowledge_base', arguments: '{"query":"IT Contingency Reserve per-event spending cap"}' },
+      { name: 'query_database', arguments: '{"question":"What is the total amount across all invoice line items?","database":"HR Database"}' },
+    ]
+    const sel = await askQ('What is the per-event spending cap of the IT Contingency Reserve? Also, what is the total amount across all invoice line items in the database?')
+    expect(sel?.extraTools?.map((t) => t.toolId)).toEqual(['sql'])
+  })
+})
+

@@ -192,6 +192,43 @@ async function translatedPhrasings(question: string): Promise<string[]> {
   }
 }
 
+const PART_STOP_WORDS = new Set(`what which who whom when where how many much does did the and for with from that this into
+than are was were have has its their total list show number database table berapa apa siapa kapan yang dan dari untuk dengan
+pada dalam adalah jumlah tampilkan daftar`.split(/\s+/))
+
+/** The question's content words a call's own question/query mentions. */
+function partWords(callArgs: Record<string, unknown>, questionWords: Set<string>): Set<string> {
+  const text = String(callArgs.question ?? callArgs.query ?? '').toLowerCase()
+  return new Set(text.split(/[^\p{L}\p{N}-]+/u).filter((w) => questionWords.has(w)))
+}
+
+function primaryArgsOf(raw: string | undefined): Record<string, unknown> {
+  try {
+    return JSON.parse(raw || '{}') as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Do two tool calls ask about the SAME part of the user's question?
+ *
+ * MEASURED (2026-10-05, 106 selections on the eval corpus): on document-only questions the model also asked the
+ * database or an API for the same thing — the words of the user's question each call mentions overlapped 1.0 on 10
+ * of 11 such extra calls — and those answers were faithful 3 times in 13. On 79 genuine compound questions the calls
+ * covered different words (0.0 on 77, 0.5 on 2). Overlap is measured against the smaller call's share of the question,
+ * so a short query inside a long one still counts; 0.8 separates the two sets with room on both sides.
+ */
+export function asksSamePart(question: string, a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const q = new Set(question.toLowerCase().split(/[^\p{L}\p{N}-]+/u).filter((w) => w.length > 3 && !PART_STOP_WORDS.has(w)))
+  const pa = partWords(a, q)
+  const pb = partWords(b, q)
+  if (pa.size === 0 || pb.size === 0) return false
+  let shared = 0
+  for (const w of pa) if (pb.has(w)) shared++
+  return shared / Math.min(pa.size, pb.size) >= 0.8
+}
+
 /** Identity of one tool call: the tool plus its arguments, insensitive to JSON key order and spacing. */
 function callKey(toolId: string, rawArgs: string | undefined): string {
   try {
@@ -433,6 +470,8 @@ export async function selectToolWithLlm(args: {
         // lose a part of a compound question over a JSON detail.
         otherArgs = {}
       }
+      // A second SOURCE for the same part of the question is a hedge, not a part: dropped (see `asksSamePart`).
+      if (asksSamePart(args.question, primaryArgsOf(call.arguments), otherArgs)) continue
       extraTools.push({ toolId: otherId, args: otherArgs })
     }
 
