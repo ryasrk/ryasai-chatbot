@@ -469,3 +469,10 @@ measurement (hits rose, denominators grew). NOT measured: the new selector wordi
 
 Verified: tsc 0 · lint 0 errors · 355 files, 8,395 pass, 0 fail · coverage:gate OK (240 modules, 76.93%) · build ·
 e2e 19 · e2e:prod 19 · sql-security-eval all attacks blocked, all controls allowed.
+
+### 2026-10-05 (c) — agentic/RAG/latency round (unreleased)
+
+Live agentic eval added (`eval-live/run-agentic.ts`): all parts correct 78.8% → 92.5%, 0 leaks, calls 12 → 7.3. RAG:
+correctness 91.7% (flat), multi-hop evidence in context 59.0 → 69.2%, **faithfulness 86.9 → 80.3% (regression: selector
+hedges extra DB/REST steps on doc questions — open item 1)**. First token 8–10 s on doc questions; rerank is the main
+cost. Ratings 8.0/8.3/8.5, latency 5.5: `docs/audits/2026-10-05-agentic-rag-latency-evidence.md`.
