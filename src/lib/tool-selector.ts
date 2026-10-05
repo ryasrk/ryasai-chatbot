@@ -41,6 +41,7 @@ import { routingMemoryBlock } from '@/lib/memory-routing'
 import type { RouteDecision } from '@/lib/ai'
 import { logSwallowed } from '@/lib/logger'
 import { db } from '@/lib/db'
+import { rankByRelevance } from '@/lib/source-relevance'
 
 export interface ToolSelection {
   /**
@@ -176,6 +177,32 @@ function looksContextual(
 }
 
 /**
+ * The question's translated phrasings (intent-pipeline's synonym bridge), or none.
+ *
+ * Loaded lazily: intent-pipeline pulls in retrieval and its LLM config, and test files that fake those with a partial
+ * surface failed at LOAD once this module imported it statically. Ranking is a hint, so a load failure costs only the
+ * translations.
+ */
+async function translatedPhrasings(question: string): Promise<string[]> {
+  try {
+    const { expandQuery } = await import('@/lib/intent-pipeline')
+    return typeof expandQuery === 'function' ? expandQuery(question) : []
+  } catch {
+    return []
+  }
+}
+
+/** Identity of one tool call: the tool plus its arguments, insensitive to JSON key order and spacing. */
+function callKey(toolId: string, rawArgs: string | undefined): string {
+  try {
+    const parsed = JSON.parse(rawArgs || '{}') as Record<string, unknown>
+    return `${toolId}:${JSON.stringify(Object.keys(parsed).sort().map((k) => [k, parsed[k]]))}`
+  } catch {
+    return `${toolId}:${rawArgs ?? ''}`
+  }
+}
+
+/**
  * Ask the model which tool to use.
  *
  * Returns a CHAT decision when the model answers in text, which is the correct
@@ -215,7 +242,10 @@ export async function selectToolWithLlm(args: {
   const databases = args.needsDatabaseListing
     ? await db.integration.findMany({
         where: { status: 'active' },
-        select: { id: true, name: true, schemas: { select: { tableName: true }, take: 25 } },
+        // Every table name, in a DEFINED order. It was `take: 25` with no order, and only the first 8 of those
+        // reached the prompt — so which tables represented a database was arbitrary. The 8 shown are now chosen
+        // by relevance to the question (`databaseBlock` below); 500 bounds a pathological schema.
+        select: { id: true, name: true, schemas: { select: { tableName: true }, orderBy: { tableName: 'asc' }, take: 500 } },
         // NO `take` LIMIT on the source list. It was 20, and with 23 connected
         // that silently hid three databases from the model: MEASURED, the
         // truncated ones were `SYNTH-Recruitment`, `SYNTH-Vendors` and
@@ -263,11 +293,18 @@ export async function selectToolWithLlm(args: {
   const toolsForCall = withDatabaseEnum
   // Table names still help the model pick WELL; they stay in the prompt. Only the
   // choice MECHANISM moved into the schema.
+  // The 8 tables shown per database are the ones most relevant to the question, not the first 8 stored. MEASURED
+  // with six databases: the answering tables (`HR.leave_balances`, `Logistics.shipments`) were among the hidden
+  // "+N more", so the model could only guess the database from its name. Translated phrasings let an Indonesian
+  // question ("sisa cuti") reach an English table name ("leave_balances").
+  const phrasings = databases.length > 1 ? [args.question, ...(await translatedPhrasings(args.question))] : []
   const databaseBlock = databases.length > 1
     ? '\n\nConnected databases and their tables, for choosing between them:\n'
       + databases.map((d) => {
-          const tables = d.schemas.map((x) => x.tableName)
-          return `- ${d.name} — ${tables.slice(0, 8).join(', ') || '(no tables reflected)'}`
+          // Sorted here as well as in the query, so ties never depend on the order rows happened to arrive in.
+          const tables = d.schemas.map((x) => x.tableName).sort()
+          const shown = rankByRelevance(tables, (t) => t, phrasings).slice(0, 8)
+          return `- ${d.name} — ${shown.join(', ') || '(no tables reflected)'}`
             + (tables.length > 8 ? `, +${tables.length - 8} more` : '')
         }).join('\n')
     : ''
@@ -289,7 +326,10 @@ export async function selectToolWithLlm(args: {
   // trade-off: tool questions 40/40 and 40/40, a greeting 40/40 direct_chat,
   // thanks 40/40 text.
   const system = [
-    'You choose the single best tool for the user question, then call it.',
+    // NOT MEASURED against a real model: this line used to read "the single best tool", which told the model to
+    // drop every part of a compound question but one. The rule list above was tuned at N=40 and each added rule
+    // cost accuracy, so the compound case is stated HERE, in the opening sentence, rather than as another rule.
+    'You choose the best tool for the user question, then call it. If the question has several independent parts that need different sources, call one tool per part in the same reply.',
     '',
     'Rules:',
     '- For EVERYTHING else, call a tool. If the question names a table or column',
@@ -377,9 +417,13 @@ export async function selectToolWithLlm(args: {
      * sometimes repeats itself) is not carried twice.
      */
     const extraTools: Array<{ toolId: string; args: Record<string, unknown> }> = []
+    // A repeat is the same tool with the SAME arguments. The same tool with different arguments is a second part of
+    // the question (two databases, two endpoints) and used to be dropped as if it were a repeat.
+    const seenCalls = new Set([callKey(toolId, call.arguments)])
     for (const other of result.slice(1)) {
       const otherId = byFunctionName.get(other.name) ?? functionNameToToolId(other.name)
-      if (!otherId || otherId === toolId) continue
+      if (!otherId || seenCalls.has(callKey(otherId, other.arguments))) continue
+      seenCalls.add(callKey(otherId, other.arguments))
       let otherArgs: Record<string, unknown> = {}
       try {
         otherArgs = JSON.parse(other.arguments || '{}') as Record<string, unknown>

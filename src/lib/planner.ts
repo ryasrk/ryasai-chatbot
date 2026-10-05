@@ -31,7 +31,7 @@ import {
   isStepConfirmed, resolveStepInput, formatStepContext, stepFailureReason,
   type PlanStep, type Plan, type PlanStepResult, type StepStatus,
 } from '@/lib/plan-model'
-export { parsePlanResponse, validatePlan, PlanValidationError, topoSort, isStepConfirmed, resolveStepInput, stepFailureReason, formatStepContext } from '@/lib/plan-model'
+export { parsePlanResponse, validatePlan, PlanValidationError, topoSort, isStepConfirmed, resolveStepInput, stepFailureReason, formatStepContext, planFromToolCalls, composePartialAnswer } from '@/lib/plan-model'
 export type { PlanStep, Plan, PlanStepResult, StepStatus } from '@/lib/plan-model'
 
 // ---------------------------------------------------------------------------
@@ -549,6 +549,13 @@ async function executeStep(
       documentIds: args.documentIds,
       integrationIds: args.integrationIds,
     })
+    if (completion.needsUserInput) {
+      args.onStatus?.(step.id, step.tool, 'error')
+      return {
+        stepId: step.id, tool: step.tool, ok: false, output: '',
+        error: completion.answer, needsUserInput: true, latencyMs: Date.now() - started,
+      }
+    }
     const hasFailedTool = completion.toolRuns.some(
       (tr) => tr.status === 'error' || tr.status === 'blocked',
     )

@@ -8,6 +8,9 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
+// Namespace import for `expandQuery`: tests mock intent-pipeline with partial surfaces, and a missing NAMED export
+// fails the whole file at load.
+import * as intentNs from '@/lib/intent-pipeline'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import { matchEndpoint } from '@/lib/rest-api-connectors'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
@@ -440,13 +443,15 @@ export async function prepareRestStream(args: {
   const started = Date.now()
   const connectors = await db.restApiConnector.findMany({
     where: { isActive: true },
+    // A defined order: the endpoint listing used to depend on whatever order the rows came back in.
+    orderBy: { createdAt: 'asc' },
     include: {
       endpoints: {
         where: { isEnabled: true },
         orderBy: [{ method: 'asc' }, { path: 'asc' }],
-        // The prompt caps how many endpoints it lists (see generateRestCall); more than this can never be
-        // shown, so loading them is wasted work — and the payload grows with every enabled endpoint.
-        take: 40,
+        // generateRestCall shows the 40 most RELEVANT endpoints (source-relevance.ts). Capping here at 40 per
+        // connector, by path, decided relevance by alphabet before the ranking ever ran. 200 bounds the payload.
+        take: 200,
       },
     },
   })
@@ -474,6 +479,8 @@ export async function prepareRestStream(args: {
     plan = await generateRestCall({
       question: args.question,
       endpoints: endpointOptions,
+      // Translated phrasings let an Indonesian question rank an English endpoint description.
+      phrasings: [args.question, ...(intentNs.expandQuery?.(args.question) ?? [])],
       memoryContext: args.memoryContext,
     })
   } catch {

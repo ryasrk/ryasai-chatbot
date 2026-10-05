@@ -123,7 +123,7 @@ mock.module('@/lib/web-fetch', () => ({
 // process-global and leaks into admin-tools.test.ts. Per-step confirmation is
 // covered by the isStepConfirmed unit tests below instead.
 
-import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQuery, planQueryWithTools, synthesizeAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
+import { topoSort, parsePlanResponse, validatePlan, PlanValidationError, executePlan, planQuery, planQueryWithTools, synthesizeAnswer, planFromToolCalls, composePartialAnswer, formatStepContext, resolveStepInput, isStepConfirmed } from '@/lib/planner'
 import type { PlanStep, Plan } from '@/lib/planner'
 import type { ToolDef } from '@/lib/tool-registry'
 
@@ -2067,5 +2067,106 @@ describe('planner — tool ids are registry-checked before any executor runs', (
     const mcpArgs = mockCallMcpTool.mock.calls[0] as unknown as [string, string]
     expect(mcpArgs[0]).toBe('')
     expect(mcpArgs[1]).toBe('')
+  })
+})
+
+describe('planFromToolCalls — the model\'s tool calls are the plan', () => {
+  test('one independent step per call, each with its own question', () => {
+    const plan = planFromToolCalls(
+      [
+        { toolId: 'rest', args: { question: 'weather in Jakarta' } },
+        { toolId: 'sql', args: { question: 'customers in Jakarta' } },
+      ],
+      'weather and customers in Jakarta',
+    )
+    expect(plan.needsSynthesis).toBe(true)
+    expect(plan.steps.map((s) => [s.id, s.tool, s.input.question, s.dependsOn])).toEqual([
+      ['step1', 'rest', 'weather in Jakarta', undefined],
+      ['step2', 'sql', 'customers in Jakarta', undefined],
+    ])
+  })
+
+  test('a call without a question falls back to the user question', () => {
+    const plan = planFromToolCalls([{ toolId: 'rag', args: {} }, { toolId: 'sql', args: { query: 'q2' } }], 'the whole question')
+    expect(plan.steps[0].input.question).toBe('the whole question')
+    expect(plan.steps[1].input.question).toBe('q2')
+  })
+
+  test('a database the model named travels in the step question', () => {
+    const plan = planFromToolCalls(
+      [{ toolId: 'sql', args: { question: 'orders', database: 'Sales' } }, { toolId: 'sql', args: { question: 'stock', database: 'Warehouse' } }],
+      'q',
+    )
+    expect(plan.steps.map((s) => s.input.question)).toEqual(['In Sales: orders', 'In Warehouse: stock'])
+  })
+
+  test('more calls than the step ceiling are cut, never run unbounded', () => {
+    const plan = planFromToolCalls(Array.from({ length: 9 }, (_, i) => ({ toolId: 'sql', args: { question: `q${i}` } })), 'q')
+    expect(plan.steps).toHaveLength(6)
+  })
+})
+
+describe('composePartialAnswer — a part that was not answered is always named', () => {
+  const plan: Plan = {
+    steps: [
+      { id: 'step1', tool: 'rest', input: { question: 'weather in Jakarta' } },
+      { id: 'step2', tool: 'sql', input: { question: 'customers in Jakarta' } },
+    ],
+    needsSynthesis: true,
+  }
+  const ok = { stepId: 'step1', tool: 'rest', ok: true, output: '31C', latencyMs: 1 }
+
+  test('every step succeeded: the answer is returned untouched', () => {
+    expect(composePartialAnswer('ANSWER', [ok, { stepId: 'step2', tool: 'sql', ok: true, output: '2', latencyMs: 1 }], plan)).toBe('ANSWER')
+  })
+
+  test('a failed part is named with its question and its reason', () => {
+    const out = composePartialAnswer('ANSWER', [ok, { stepId: 'step2', tool: 'sql', ok: false, output: '', error: 'connection refused', latencyMs: 1 }], plan)
+    expect(out.startsWith('ANSWER')).toBe(true)
+    expect(out).toContain('**Not answered:**\n- customers in Jakarta: connection refused')
+    expect(out).not.toContain('I need your input')
+  })
+
+  test('a part that needs the user is ASKED, not reported as a failure', () => {
+    const out = composePartialAnswer('ANSWER', [ok, { stepId: 'step2', tool: 'sql', ok: false, output: '', error: 'Which database do you mean?', needsUserInput: true, latencyMs: 1 }], plan)
+    expect(out).toContain('**I need your input to answer the rest:**\n- customers in Jakarta: Which database do you mean?')
+    expect(out).not.toContain('**Not answered:**')
+  })
+
+  test('nothing succeeded and every part needs the user: the question is the whole reply', () => {
+    const out = composePartialAnswer('Sorry, no steps completed successfully.', [
+      { stepId: 'step1', tool: 'rest', ok: false, output: '', error: 'Which city?', needsUserInput: true, latencyMs: 1 },
+      { stepId: 'step2', tool: 'sql', ok: false, output: '', error: 'Which database?', needsUserInput: true, latencyMs: 1 },
+    ], plan)
+    expect(out).toBe('Which city?\n\nWhich database?')
+  })
+
+  test('nothing succeeded for other reasons: the failure report stands', () => {
+    const report = 'Sorry, no steps completed successfully.\n\n- sql: boom'
+    expect(composePartialAnswer(report, [{ stepId: 'step2', tool: 'sql', ok: false, output: '', error: 'boom', latencyMs: 1 }], plan)).toBe(report)
+  })
+})
+
+describe('executePlan — a step that stops on a question for the user', () => {
+  test('is marked needsUserInput and carries the question, not a tool error', async () => {
+    mockRunNonStreaming.mockImplementationOnce(async () => ({
+      answer: 'I could not tell which data source this question refers to.',
+      needsUserInput: true,
+      citations: [],
+      chartData: null,
+      toolRuns: [{ status: 'blocked', errorMessage: 'Ambiguous data source — refusing to guess.' }],
+      integrationId: null,
+    }) as never)
+    const results = await executePlan({ plan: { steps: [{ id: 'a', tool: 'sql', input: { question: 'salaries' } }], needsSynthesis: true }, userId: 'u1' })
+    expect(results[0]).toMatchObject({ ok: false, needsUserInput: true, error: 'I could not tell which data source this question refers to.' })
+  })
+
+  test('a successful step keeps the citations of its source', async () => {
+    const citation = { type: 'DATABASE', source: 'Sales.orders', query_used: 'SELECT 1' }
+    mockRunNonStreaming.mockImplementationOnce(async () => ({
+      answer: '42', citations: [citation], chartData: null, toolRuns: [], integrationId: null,
+    }) as never)
+    const results = await executePlan({ plan: { steps: [{ id: 'a', tool: 'sql', input: { question: 'q' } }], needsSynthesis: true }, userId: 'u1' })
+    expect(results[0].citations).toEqual([citation] as never)
   })
 })

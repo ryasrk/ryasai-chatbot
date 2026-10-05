@@ -142,10 +142,17 @@ describe('tool-selector — every tool call is resolved, not just the first', ()
     expect(body).toMatch(/extraTools\.push\(\{ toolId: otherId, args: otherArgs \}\)/)
   })
 
-  test('an unknown or duplicate call is DROPPED rather than carried', async () => {
+  test('an unknown or repeated call is DROPPED rather than carried', async () => {
     const body = await src()
-    // An unknown name must not become a tool id, and a repeat of the primary would run the same source twice.
-    expect(body).toMatch(/if \(!otherId \|\| otherId === toolId\) continue/)
+    // An unknown name must not become a tool id, and an identical call would run the same source twice. A repeat is
+    // the same tool with the SAME arguments: the same tool with different arguments is another part of the question.
+    expect(body).toMatch(/if \(!otherId \|\| seenCalls\.has\(callKey\(otherId, other\.arguments\)\)\) continue/)
+  })
+
+  test('the prompt no longer limits the model to one tool', async () => {
+    const body = await src()
+    expect(body).not.toMatch(/the single best tool for the user question, then call it\.'/)
+    expect(body).toMatch(/call one tool per part in the same reply/)
   })
 
   test('a malformed argument blob still counts as a REQUEST for that source', async () => {

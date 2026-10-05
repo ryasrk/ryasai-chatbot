@@ -2,7 +2,7 @@ import type { Citation, ChartData } from '@/lib/types'
 import type { PendingToolRun, CompletionResult, ChatHistoryEntry, StreamingCompletionResult } from '@/lib/tool-utils'
 import { isAlignmentCheckEnabled } from '@/lib/alignment-check'
 import { evaluateAnswerConfidence } from '@/lib/intent-pipeline'
-import { planQuery, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
+import { planQuery, planFromToolCalls, composePartialAnswer, executePlan, synthesizeAnswer, type PlanStepResult } from '@/lib/planner'
 import { getAvailableTools } from '@/lib/tool-registry'
 import { summarize } from '@/lib/tool-utils'
 import { createTokenBudget, type TokenBudget } from '@/lib/agentic-budget'
@@ -160,17 +160,21 @@ export async function runMultiStepDag(args: {
    */
   documentIds?: string[] | null
   integrationIds?: string[] | null
+  /** The tool calls the model made for a compound question. When given they are the plan, one step per call. */
+  requestedTools?: Array<{ toolId: string; args: Record<string, unknown> }>
 }): Promise<CompletionResult | null> {
   try {
     const availableTools = await getAvailableTools(args.question, 'chat')
     if (availableTools.length === 0) return null
 
-    const plan = await planQuery({
-      question: args.question,
-      availableTools,
-      sessionId: args.sessionId,
-      chatHistory: args.chatHistory,
-    })
+    const plan = args.requestedTools && args.requestedTools.length > 1
+      ? planFromToolCalls(args.requestedTools, args.question)
+      : await planQuery({
+          question: args.question,
+          availableTools,
+          sessionId: args.sessionId,
+          chatHistory: args.chatHistory,
+        })
 
     if (plan.steps.length === 1 && plan.steps[0].tool === 'chat' && !plan.needsSynthesis) {
       return null
@@ -187,11 +191,11 @@ export async function runMultiStepDag(args: {
       integrationIds: args.integrationIds,
     })
 
-    const answer = await synthesizeAnswer({
-      question: args.question,
-      stepResults: results,
+    const answer = composePartialAnswer(
+      await synthesizeAnswer({ question: args.question, stepResults: results, plan }),
+      results,
       plan,
-    })
+    )
 
     // ponytail: MCP steps are persisted as ToolRun rows at invocation time in
     // the planner (executeStep), so filter them out here to avoid duplicates.

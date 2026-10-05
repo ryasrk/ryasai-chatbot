@@ -25,6 +25,8 @@ export interface CompletionResult {
   integrationId?: string
   usage?: { promptTokens: number; completionTokens: number }
   citationTrail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
+  /** True when `answer` is a question back to the user, not an answer: only the user can supply what is missing. */
+  needsUserInput?: boolean
 }
 
 export interface ChatHistoryEntry {
@@ -272,6 +274,7 @@ export function ambiguousDataSourceResult(
       `I could not tell which data source this question refers to, and I do not want to guess ` +
       `and answer from the wrong database. Available sources${more}: ${list.join(', ')}. ` +
       `Please name the source you mean — for example "in ${list[0] ?? 'the sales database'}, ...".`,
+    needsUserInput: true,
     citations: [],
     chartData: null,
     toolRuns: [

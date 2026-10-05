@@ -5,6 +5,7 @@
 import type { BaseDatabaseConnector, QueryResult, QueryRow, ReflectedTable } from './connectors'
 import {
   QUERY_TIMEOUT_MS, MYSQL_STATEMENT_TIMEOUT_S, readDbConfig, resolveUseSsl, assertNoDangerousFunctions, assertSelectOnly, normaliseRow, loadDriver, detailedPing, assembleSchema, enrichSchema,
+  MYSQL_EXACT_VALUES, enableAnsiQuotes,
   type DetailedTestResult, type PingablePool, type RawColumnRow, type RawTableRow,
 } from '@/lib/real-connector-shared'
 
@@ -31,7 +32,9 @@ export class MysqlConnector implements BaseDatabaseConnector {
         connectionLimit: 10,
         connectTimeout: QUERY_TIMEOUT_MS,
         enableKeepAlive: true,
+        ...MYSQL_EXACT_VALUES,
       })
+      enableAnsiQuotes(this._pool)
     }
     return this._pool
   }

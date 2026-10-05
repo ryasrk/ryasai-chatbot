@@ -8,7 +8,29 @@ import {
   getDbProtocolFamily,
   getVectorStorePreset,
   getVectorStoreBackend,
+  identifierQuotingRule,
 } from './db-provider-presets'
+
+describe('identifierQuotingRule — the quoting the model is told to use, per dialect', () => {
+  // MEASURED on MySQL 8.4 / MariaDB 11.4: double-quoted names fail to parse, or — in a WHERE clause — compare two
+  // strings and return 0 rows. Every MySQL-wire provider must therefore be told backticks.
+  test.each(['MYSQL', 'PLANETSCALE', 'TIDB'])('%s is told backticks and warned off double quotes', (id) => {
+    const rule = identifierQuotingRule(id)
+    expect(rule).toContain('backticks')
+    expect(rule).toContain('never double quotes')
+    expect(rule).toContain('overrides')
+  })
+
+  test.each(['POSTGRESQL', 'SUPABASE', 'NEON', 'COCKROACHDB', 'CLICKHOUSE'])('%s is told double quotes, never backticks', (id) => {
+    const rule = identifierQuotingRule(id)
+    expect(rule).toContain('double quotes')
+    expect(rule).toContain('never backticks')
+  })
+
+  test('SQL Server accepts double quotes or brackets', () => {
+    expect(identifierQuotingRule('MSSQL')).toContain('[brackets]')
+  })
+})
 
 describe('db-provider-presets', () => {
   test('has expected number of presets', () => {

@@ -35,6 +35,32 @@ export function getDbProtocolFamily(providerId: string): DbProtocolFamily {
   return 'POSTGRESQL'
 }
 
+/**
+ * How generated SQL must quote identifiers on this provider, stated to the model on every SQL turn.
+ *
+ * WHY IT EXISTS (measured on MySQL 8.4 and MariaDB 11.4): the default Text-to-SQL rules said to double-quote every
+ * table and column name, which is right for PostgreSQL and wrong for MySQL, where a double-quoted word is a STRING.
+ * `FROM "customers"` is a syntax error there, and worse, `WHERE "city" = 'Jakarta'` compares two strings and
+ * returns 0 rows instead of 2 — a wrong answer with no error for the repair loop to catch. The rules are editable
+ * per organisation, so fixing their default text cannot reach an org that already edited it; this line is sent
+ * after the rules, from code, so it always does.
+ */
+export function identifierQuotingRule(providerId: string): string {
+  switch (getDbProtocolFamily(providerId)) {
+    case 'MYSQL':
+      return 'Identifier quoting for this database: wrap table and column names in backticks (`orders`.`customer_id`), '
+        + 'never double quotes, and put string values in single quotes. Here a double-quoted word is a STRING, so '
+        + '"status" = \'paid\' compares two strings and silently matches nothing. This overrides any rule above '
+        + 'that says to double-quote names.'
+    case 'MSSQL':
+      return 'Identifier quoting for this database: use double quotes or [brackets] for table and column names, never '
+        + 'backticks; string values go in single quotes.'
+    default:
+      return 'Identifier quoting for this database: use double quotes for table and column names, never backticks; '
+        + 'string values go in single quotes.'
+  }
+}
+
 export const VALID_DB_PROVIDER_IDS = DB_PROVIDER_PRESETS.map(p => p.id)
 
 export interface VectorStorePreset {

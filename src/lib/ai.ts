@@ -13,6 +13,7 @@
 import { routingMemoryBlock } from '@/lib/memory-routing'
 import { defaultSqlRulesPrompt } from '@/lib/prompt-settings'
 import type { LlmUsage } from '@/lib/llm-client'
+import { identifierQuotingRule } from '@/lib/db-provider-presets'
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { db } from '@/lib/db'
 import { wrapUntrusted, DATA_BOUNDARY_RULE } from '@/lib/evidence-boundary'
@@ -367,6 +368,7 @@ export async function generateSql(args: {
         role: 'user',
         content:
           `Dialect: ${args.provider}\n` +
+          `${identifierQuotingRule(args.provider)}\n` +
           (args.businessContext
             ? `\n## BUSINESS CONTEXT\n${args.businessContext}\n`
             // A profile from an OLDER prompt has no query-hints section, and that is

@@ -9,6 +9,7 @@
 import { db } from '@/lib/db'
 import { decryptConfig, encryptConfig } from '@/lib/crypto'
 import { isBlockedHost, isBlockedHostAsync } from '@/lib/llm-config'
+import { guardedFetch, readTextBounded } from '@/lib/guarded-fetch'
 import { ALLOWED_MCP_CMDS } from '@/lib/admin-tools'
 import { z } from 'zod'
 import { createHash } from 'node:crypto'
@@ -291,13 +292,15 @@ export async function executePlugin(args: {
     if (hasBody) {
       bodyStr = JSON.stringify(effectiveArgs ?? {})
     }
-    const response = await fetch(url, {
+    // Same two defects as the REST executor, measured there: a redirect to an internal host was followed (the
+    // check above only covers the first hop), and the whole body was read before 8,000 characters were kept.
+    const response = await guardedFetch(url, {
       method: manifest.method,
       headers,
       body: bodyStr,
       signal: AbortSignal.timeout(manifest.timeoutMs || 15000),
     })
-    const output = (await response.text()).slice(0, 8000)
+    const output = (await readTextBounded(response, 64 * 1024)).slice(0, 8000)
     const latencyMs = Date.now() - started
     if (!response.ok) {
       return { ok: false, output: '', error: `Webhook returned HTTP ${response.status}.`, latencyMs }

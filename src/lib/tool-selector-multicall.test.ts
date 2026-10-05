@@ -78,13 +78,25 @@ describe('selectToolWithLlm — every tool call is resolved', () => {
     expect(sel?.extraTools?.map((t) => t.toolId)).toEqual(['sql', 'rest'])
   })
 
-  test('a DUPLICATE of the primary is dropped — the same source would run twice', async () => {
+  test('an identical REPEAT of a call is dropped — the same source would run twice', async () => {
     chatResult = [
-      { name: 'search_knowledge_base', arguments: '{"query":"a"}' },
-      { name: 'search_knowledge_base', arguments: '{"query":"b"}' },
+      { name: 'search_knowledge_base', arguments: '{"query":"a","limit":3}' },
+      // Same call, different key order and spacing.
+      { name: 'search_knowledge_base', arguments: '{ "limit": 3, "query": "a" }' },
     ]
     const sel = await ask()
     expect(sel?.extraTools).toBeUndefined()
+  })
+
+  test('the SAME tool with different arguments is a second part, not a repeat', async () => {
+    // Two databases in one question: both are `query_database`, and the second used to be dropped.
+    chatResult = [
+      { name: 'query_database', arguments: '{"question":"total orders","database":"HR Database"}' },
+      { name: 'query_database', arguments: '{"question":"stock of SKU-1","database":"Warehouse"}' },
+      { name: 'query_database', arguments: '{"question":"stock of SKU-1","database":"Warehouse"}' },
+    ]
+    const sel = await ask()
+    expect(sel?.extraTools).toEqual([{ toolId: 'sql', args: { question: 'stock of SKU-1', database: 'Warehouse' } }])
   })
 
   test('an UNKNOWN tool name is dropped rather than carried as an id', async () => {

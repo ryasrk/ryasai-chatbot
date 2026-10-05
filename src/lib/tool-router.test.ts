@@ -381,6 +381,7 @@ import {
   formatDocForIntent,
   parseRestCallJson,
   runNonStreamingChatCompletion,
+  unansweredPartsNote,
   sanitizeSqlError,
   summarize,
   withSqlConcurrency,
@@ -2755,5 +2756,59 @@ describe('runNonStreamingChatCompletion — speculative retrieval cancellation',
       expect(specLog).toHaveLength(1)
       expect(specLog[0].controller.signal.aborted).toBe(true)
     })
+  })
+})
+
+describe('a compound question — several tool calls, both transports', () => {
+  const twoCalls = () => ({
+    toolId: 'rest', decision: 'REST' as RouteDecision, args: { question: 'weather in Jakarta' }, reason: 'stub', llmUsed: true,
+    extraTools: [{ toolId: 'sql', args: { question: 'customers in Jakarta' } }],
+  })
+
+  test('NON-streaming: the calls run as one plan instead of the first tool only', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => twoCalls())
+    mockPlanQuery.mockClear()
+    mockExecutePlan.mockClear()
+    mockExecutePlan.mockImplementation(async () => [
+      { stepId: 'step1', tool: 'rest', ok: true, output: '31C', latencyMs: 5 },
+      { stepId: 'step2', tool: 'sql', ok: true, output: '1 customer', latencyMs: 5 },
+    ])
+    mockSynthesizeAnswer.mockImplementation(async () => 'BOTH-PARTS')
+
+    const r = await runNonStreamingChatCompletion({ question: 'weather and customers in Jakarta', userId: 'u1', allowMultiStepDag: true })
+    expect(r.answer).toContain('BOTH-PARTS')
+    // The calls are the plan, so the planner model is not consulted for them.
+    expect(mockPlanQuery.mock.calls.length).toBe(0)
+    const plan = (mockExecutePlan.mock.calls[0] as unknown as [{ plan: { steps: Array<{ tool: string }> } }])[0].plan
+    expect(plan.steps.map((s) => s.tool)).toEqual(['rest', 'sql'])
+  })
+
+  test('streaming, caller NOT opted into multi-step: the first tool answers and the rest is NAMED', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => twoCalls())
+    const r = await runStreamingChatCompletion({ question: 'weather and customers in Jakarta', userId: 'u1' })
+    let text = ''
+    for await (const c of r.stream) text += c
+    expect(text).toContain('**Not answered:**')
+    expect(text).toContain('- customers in Jakarta')
+  })
+
+  test('one tool call adds no note', () => {
+    expect(unansweredPartsNote(undefined)).toBe('')
+    expect(unansweredPartsNote([{ toolId: 'sql', args: { question: 'only part' } }])).toBe('')
+  })
+
+  test('the note lists each unanswered part by its question, or by tool when it has none', () => {
+    const note = unansweredPartsNote([
+      { toolId: 'rest', args: { question: 'first' } },
+      { toolId: 'sql', args: { question: 'second' } },
+      { toolId: 'rag', args: {} },
+    ])
+    expect(note).toContain('- second')
+    expect(note).toContain('- rag')
+    expect(note).not.toContain('- first')
   })
 })

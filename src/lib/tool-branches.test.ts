@@ -147,8 +147,12 @@ mock.module('@/lib/plugin-registry', () => ({ executePlugin: (args: any) => plug
 // block check read hostname 'x', so a request to 169.254.169.254 sailed through and
 // my whitelist test only exercised the stub. These two are now the REAL helpers;
 // only the parts that need credentials or the network are mocked.
+/** Scriptable per test: the REST executor must survive an auth step that FAILS. */
+let authHeadersImpl: () => Promise<Record<string, string>> = async () => ({})
+const mockInvalidateOAuthToken = mock((_c: Record<string, unknown>) => {})
 mock.module('@/lib/rest-api-connectors', () => ({
-  buildAuthHeaders: mock(async () => ({})),
+  buildAuthHeaders: mock(async () => authHeadersImpl()),
+  invalidateOAuthToken: mockInvalidateOAuthToken,
   buildEndpointUrl: realBuildEndpointUrl,
   matchEndpoint: realMatchEndpoint,
   sanitizeHeaders: mock(() => ({})),
@@ -968,6 +972,83 @@ describe('executeRestRequest — SSRF and auth', () => {
     expect(logged.endpointId).toBe('ep-7')
     expect(logged.requestSummary).toContain('/invoices')
     expect(logged.statusCode).toBe(200)
+  })
+
+  test('an auth step that FAILS is returned as { ok: false } and logged, never thrown', async () => {
+    // MEASURED through the real executor: an OAuth2 token endpoint answering 429 (or non-JSON) made 80 of 100
+    // concurrent calls THROW past the `{ ok: false }` contract, with no request-log row. Auth now runs inside it.
+    authHeadersImpl = async () => { throw new Error('OAuth2 token fetch failed (HTTP 429).') }
+    let fetched = false
+    globalFetch = async () => { fetched = true; return new Response('{}', { status: 200 }) }
+    mockRestRequestLogCreate.mockClear()
+    try {
+      const r = await executeRestRequest({
+        connector: { ...base, authType: 'OAUTH2' },
+        endpointId: 'ep-1', method: 'GET', path: '/orders',
+        plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+      })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.error).toContain('HTTP 429')
+      expect(fetched).toBe(false)
+      expect(mockRestRequestLogCreate).toHaveBeenCalledTimes(1)
+    } finally {
+      authHeadersImpl = async () => ({})
+    }
+  })
+
+  test('a 401 on an OAUTH2 connector drops the cached token, so the next call fetches a fresh one', async () => {
+    mockInvalidateOAuthToken.mockClear()
+    globalFetch = async () => new Response('{"error":"expired"}', { status: 401 })
+    await executeRestRequest({
+      connector: { ...base, authType: 'OAUTH2' },
+      endpointId: 'ep-1', method: 'GET', path: '/orders',
+      plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+    })
+    expect(mockInvalidateOAuthToken).toHaveBeenCalledTimes(1)
+    // ...and only for OAuth2: a static bearer token has no cache to drop.
+    await executeRestRequest({
+      connector: { ...base, authType: 'BEARER' },
+      endpointId: 'ep-1', method: 'GET', path: '/orders',
+      plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+    })
+    expect(mockInvalidateOAuthToken).toHaveBeenCalledTimes(1)
+  })
+
+  test('a redirect to an internal host is refused before the second request is made', async () => {
+    // MEASURED: with the default `redirect: "follow"`, a permitted API answering 302 -> 127.0.0.1 was followed and
+    // the internal response came back as the API answer.
+    const urls: string[] = []
+    let redirectMode: unknown
+    globalFetch = async (url: string, init?: RequestInit) => {
+      urls.push(String(url))
+      redirectMode = init?.redirect
+      return new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } })
+    }
+    const r = await executeRestRequest({
+      connector: base,
+      endpointId: 'ep-1', method: 'GET', path: '/orders',
+      plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+    })
+    expect(redirectMode).toBe('manual')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('redirected to a blocked internal host')
+    expect(urls).toHaveLength(1)
+  })
+
+  test('only a bounded prefix of a huge response is read', async () => {
+    let pulled = 0
+    globalFetch = async () => new Response(new ReadableStream({
+      pull(c) { pulled++; c.enqueue(new TextEncoder().encode('z'.repeat(64 * 1024))) }, // never ends on its own
+    }), { status: 200 })
+    const r = await executeRestRequest({
+      connector: base,
+      endpointId: 'ep-1', method: 'GET', path: '/orders',
+      plan: { endpointId: 'ep-1', query: {}, explanation: '', body: null },
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.bodyText.length).toBe(8000)
+    // An endless body would hang `res.text()` forever; the bounded reader stops after a few chunks.
+    expect(pulled).toBeLessThan(10)
   })
 })
 

@@ -1,9 +1,11 @@
-import { describe, expect, test, afterEach } from 'bun:test'
+import { describe, expect, test, afterEach, beforeEach } from 'bun:test'
 import {
   buildAuthHeaders,
   buildEndpointUrl,
   matchEndpoint,
   sanitizeHeaders,
+  invalidateOAuthToken,
+  _clearOAuthTokenCache,
   type EndpointDefinition,
 } from './rest-api-connectors'
 
@@ -81,6 +83,8 @@ describe('REST API connector utilities', () => {
  */
 describe('buildAuthHeaders — OAUTH2 client credentials', () => {
   const realFetch = global.fetch
+  // Tokens are cached per credential set, so every test starts cold or it would read a neighbour's token.
+  beforeEach(() => _clearOAuthTokenCache())
   afterEach(() => {
     global.fetch = realFetch
   })
@@ -147,31 +151,33 @@ describe('buildAuthHeaders — OAUTH2 client credentials', () => {
     ).rejects.toThrow(/OAuth2 token fetch failed \(HTTP 401\)/)
   })
 
-  test('a 200 response with NO access_token returns no Authorization header', async () => {
-    // Some providers answer 200 with an error envelope. The route must not send `Bearer undefined`.
+  test('a 200 response with NO access_token THROWS, like any failed token step', async () => {
+    // Some providers answer 200 with an error envelope. Never `Bearer undefined` — and no longer a silent `{}`
+    // either: that sent the API call unauthenticated, and the operator saw a third party's bare 401 instead of the
+    // token problem. Same reasoning as the non-2xx case above.
     global.fetch = (async () =>
       new Response(JSON.stringify({ error: 'invalid_scope' }), { status: 200 })) as unknown as typeof fetch
 
-    expect(
-      await buildAuthHeaders('OAUTH2', {
+    await expect(
+      buildAuthHeaders('OAUTH2', {
         tokenUrl: 'https://auth.example.com/token',
         clientId: 'cid',
         clientSecret: 'shh',
       }),
-    ).toEqual({})
+    ).rejects.toThrow('no access_token')
   })
 
-  test('a non-string access_token is ignored, not coerced', async () => {
+  test('a non-string access_token is not coerced into a header', async () => {
     global.fetch = (async () =>
       new Response(JSON.stringify({ access_token: 12345 }), { status: 200 })) as unknown as typeof fetch
 
-    expect(
-      await buildAuthHeaders('OAUTH2', {
+    await expect(
+      buildAuthHeaders('OAUTH2', {
         tokenUrl: 'https://auth.example.com/token',
         clientId: 'cid',
         clientSecret: 'shh',
       }),
-    ).toEqual({})
+    ).rejects.toThrow('no access_token')
   })
 
   test('a THROWN network error propagates (the caller decides how to report it)', async () => {
@@ -206,5 +212,92 @@ describe('buildAuthHeaders — OAUTH2 client credentials', () => {
       clientSecret: 'secret-value',
     })
     expect(JSON.stringify(headers)).not.toContain('secret-value')
+  })
+})
+
+/**
+ * OAuth2 tokens are cached, shared, and fetched through the SSRF guard.
+ *
+ * MEASURED against a mock identity provider that allows 20 token requests a second: 100 concurrent API calls made
+ * 100 token requests, 80 were refused with 429, and those 80 calls failed. The token URL was also never SSRF-checked,
+ * so a client secret could be posted to an internal host.
+ */
+describe('OAuth2 tokens — cached, shared, and SSRF-checked', () => {
+  const realFetch = global.fetch
+  const creds = { tokenUrl: 'https://auth.example.com/token', clientId: 'cid', clientSecret: 'shh' }
+  let tokenCalls = 0
+  let expiresIn: number | undefined = 3600
+  beforeEach(() => {
+    _clearOAuthTokenCache()
+    tokenCalls = 0
+    expiresIn = 3600
+    global.fetch = (async () => {
+      tokenCalls++
+      // A real provider takes a moment; the overlap is what single-flight has to handle.
+      await new Promise((r) => setTimeout(r, 20))
+      return new Response(JSON.stringify({ access_token: `tok-${tokenCalls}`, ...(expiresIn ? { expires_in: expiresIn } : {}) }), { status: 200 })
+    }) as unknown as typeof fetch
+  })
+  afterEach(() => {
+    global.fetch = realFetch
+  })
+
+  test('a second call reuses the token instead of asking again', async () => {
+    const a = await buildAuthHeaders('OAUTH2', creds)
+    const b = await buildAuthHeaders('OAUTH2', creds)
+    expect(a).toEqual({ Authorization: 'Bearer tok-1' })
+    expect(b).toEqual(a)
+    expect(tokenCalls).toBe(1)
+  })
+
+  test('100 concurrent first calls share ONE token request (cold cache)', async () => {
+    const all = await Promise.all(Array.from({ length: 100 }, () => buildAuthHeaders('OAUTH2', creds)))
+    expect(tokenCalls).toBe(1)
+    expect(new Set(all.map((h) => h.Authorization))).toEqual(new Set(['Bearer tok-1']))
+  })
+
+  test('different credentials get different tokens', async () => {
+    await buildAuthHeaders('OAUTH2', creds)
+    const other = await buildAuthHeaders('OAUTH2', { ...creds, clientId: 'another' })
+    expect(other).toEqual({ Authorization: 'Bearer tok-2' })
+    expect(tokenCalls).toBe(2)
+  })
+
+  test('a token past its lifetime is fetched again', async () => {
+    expiresIn = 0.04 // 40 ms; a short-lived token is reused for half its life
+    await buildAuthHeaders('OAUTH2', creds)
+    await new Promise((r) => setTimeout(r, 60))
+    await buildAuthHeaders('OAUTH2', creds)
+    expect(tokenCalls).toBe(2)
+  })
+
+  test('invalidateOAuthToken (the executor calls it on a 401) forces a fresh token', async () => {
+    await buildAuthHeaders('OAUTH2', creds)
+    invalidateOAuthToken(creds)
+    const again = await buildAuthHeaders('OAUTH2', creds)
+    expect(again).toEqual({ Authorization: 'Bearer tok-2' })
+  })
+
+  test('a FAILED token request is not cached: the next call tries again', async () => {
+    let first = true
+    global.fetch = (async () => {
+      tokenCalls++
+      if (first) { first = false; return new Response('busy', { status: 429 }) }
+      return new Response(JSON.stringify({ access_token: 'recovered', expires_in: 3600 }), { status: 200 })
+    }) as unknown as typeof fetch
+    await expect(buildAuthHeaders('OAUTH2', creds)).rejects.toThrow('HTTP 429')
+    expect(await buildAuthHeaders('OAUTH2', creds)).toEqual({ Authorization: 'Bearer recovered' })
+  })
+
+  test('a non-JSON token response is a clear error, not a JSON parse crash', async () => {
+    global.fetch = (async () => new Response('<html>login page</html>', { status: 200 })) as unknown as typeof fetch
+    await expect(buildAuthHeaders('OAUTH2', creds)).rejects.toThrow('did not return JSON')
+  })
+
+  test('a token URL on a private IP is refused BEFORE the client secret is sent', async () => {
+    let sent = false
+    global.fetch = (async () => { sent = true; return new Response('{}') }) as unknown as typeof fetch
+    await expect(buildAuthHeaders('OAUTH2', { ...creds, tokenUrl: 'http://169.254.169.254/token' })).rejects.toThrow('blocked internal host')
+    expect(sent).toBe(false)
   })
 })

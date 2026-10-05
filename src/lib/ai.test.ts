@@ -332,6 +332,16 @@ describe('generateSql', () => {
     expect(lastRequestBody).toContain('IDR minor units')
   })
 
+  test('the dialect quoting rule reaches the prompt, so a MySQL model is told backticks', async () => {
+    // The org's editable rules may still say "always double-quote"; this line is sent from code after them.
+    fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
+    await generateSql({ question: 'count customers', schemaDescription: 'TABLE customers(id)', provider: 'MYSQL' })
+    expect(lastRequestBody).toContain('wrap table and column names in backticks')
+    await generateSql({ question: 'count customers', schemaDescription: 'TABLE customers(id)', provider: 'POSTGRESQL' })
+    expect(lastRequestBody).toContain('use double quotes for table and column names')
+    expect(lastRequestBody).not.toContain('wrap table and column names in backticks')
+  })
+
   test('omits the business-context block entirely when not provided', async () => {
     fetchSqlResponse = '{"sql":"SELECT 1","explanation":"ok"}'
     await generateSql({
@@ -2142,10 +2152,35 @@ describe('generateRestCall — the endpoint list is bounded', () => {
     await generateRestCall({ question: 'q', endpoints: eps(60, 10) })
     const user = getSentMessages().find((m) => m.role === 'user')!.content
     // The notice is the part that keeps the cap honest: without it the model believes it has seen every endpoint.
-    expect(user).toContain('[60 endpoints configured; showing the first 40')
+    expect(user).toContain('[60 endpoints configured; showing the 40 most relevant to the question')
     expect(user).toContain('if none matches, say so rather than guessing')
+    // With nothing in the question to rank by, the order is the caller's, so the cap keeps the first 40.
     expect(user).toContain('id=e39;')
     expect(user).not.toContain('id=e40;')
+  })
+
+  test('the 40 listed are the most RELEVANT, so an endpoint past the 40th position is still offered', async () => {
+    // MEASURED with three APIs and 50 endpoints: the tracking endpoint lay past the 40th position and was never
+    // listed, so no model could call it. Relevance, not position, decides who makes the cut.
+    const many = [
+      ...eps(55, 10),
+      { id: 'track', connectorName: 'Shipping', method: 'GET', path: '/ship/track', description: 'Track a shipment', parameterSchema: null, sampleResponse: null },
+    ]
+    fetchRestResponse = '{"endpointId":"track","query":{},"body":null,"explanation":"x"}'
+    await generateRestCall({ question: 'Track shipment SHP-1001', endpoints: many })
+    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    expect(user).toContain('id=track;')
+    expect(user.split('\n').filter((l) => l.startsWith('- id=')).length).toBe(40)
+  })
+
+  test('with nothing relevant, every API keeps a share of the 40 slots', async () => {
+    const a = Array.from({ length: 45 }, (_, i) => ({ id: `a${i}`, connectorName: 'Big', method: 'GET', path: `/a${i}`, description: null, parameterSchema: null, sampleResponse: null }))
+    const b = Array.from({ length: 5 }, (_, i) => ({ id: `b${i}`, connectorName: 'Small', method: 'GET', path: `/b${i}`, description: null, parameterSchema: null, sampleResponse: null }))
+    fetchRestResponse = '{"endpointId":"a0","query":{},"body":null,"explanation":"x"}'
+    await generateRestCall({ question: 'q', endpoints: [...a, ...b] })
+    const user = getSentMessages().find((m) => m.role === 'user')!.content
+    // By position, the 45 "Big" endpoints filled all 40 slots and "Small" vanished entirely.
+    expect(user).toContain('connector=Small;')
   })
 
   test('parameterSchema stays FULL — it is the contract the model must not violate', async () => {

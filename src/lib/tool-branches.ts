@@ -11,6 +11,9 @@ import {
   type RestEndpointOption,
 } from '@/lib/ai'
 import { type SpeculativeRetrieval } from '@/lib/speculative-retrieval'
+// Namespace import for `expandQuery`: tests mock intent-pipeline with partial surfaces, and a missing NAMED export
+// fails the whole file at load.
+import * as intentNs from '@/lib/intent-pipeline'
 import { wrapUntrusted } from '@/lib/evidence-boundary'
 import {
   buildAuthHeaders,
@@ -18,6 +21,11 @@ import {
   matchEndpoint,
   sanitizeHeaders,
 } from '@/lib/rest-api-connectors'
+// Namespace import: several test files mock rest-api-connectors with a partial surface, and a missing NAMED
+// export fails the whole file at load. Absent in such a mock, invalidation is simply skipped.
+import * as restConnectorsNs from '@/lib/rest-api-connectors'
+import { guardedFetch, readTextBounded } from '@/lib/guarded-fetch'
+
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
 import { gatherRagEvidence } from '@/lib/pipelines/rag-pipeline'
@@ -38,6 +46,9 @@ import {
 } from '@/lib/tool-utils'
 
 const log = scopedLogger('tool-branches')
+
+/** Bytes read from a REST response; only 8,000 characters are kept (4 bytes per character at most, plus room). */
+const REST_RESPONSE_READ_BYTES = 64 * 1024
 
 // ---------------------------------------------------------------------------
 // Non-streaming branch executors — one function per RouteDecision.
@@ -296,12 +307,15 @@ export async function runRestBranch(args: {
   const started = Date.now()
   const connectors = await db.restApiConnector.findMany({
     where: { isActive: true },
+    // A defined order: the endpoint listing used to depend on whatever order the rows came back in.
+    orderBy: { createdAt: 'asc' },
     include: {
       endpoints: {
         where: { isEnabled: true },
         orderBy: [{ method: 'asc' }, { path: 'asc' }],
-        // The streaming twin's comment applies here too: the prompt caps the listing, so loading more is wasted.
-        take: 40,
+        // generateRestCall shows the 40 most RELEVANT endpoints (source-relevance.ts). Capping here at 40 per
+        // connector, by path, decided relevance by alphabet before the ranking ever ran. 200 bounds the payload.
+        take: 200,
       },
     },
   })
@@ -322,6 +336,8 @@ export async function runRestBranch(args: {
   const plan = await generateRestCall({
     question: args.question,
     endpoints: endpointOptions,
+    // Translated phrasings let an Indonesian question rank an English endpoint description.
+    phrasings: [args.question, ...(intentNs.expandQuery?.(args.question) ?? [])],
     memoryContext: args.memoryContext,
   })
   const selected = endpointOptions.find((endpoint) => endpoint.id === plan.endpointId)
@@ -533,13 +549,10 @@ export async function executeRestRequest(args: {
   const authConfig = args.connector.encryptedAuthConfig
     ? decryptConfig(args.connector.encryptedAuthConfig)
     : {}
-  const authHeaders = await buildAuthHeaders(args.connector.authType, authConfig)
   const hasBody = args.method !== 'GET' && args.method !== 'HEAD' && args.plan.body !== null
-  const headers = {
-    ...authHeaders,
-    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-  }
-  const requestSummary = JSON.stringify({
+  let headers: Record<string, string> = hasBody ? { 'Content-Type': 'application/json' } : {}
+  // A function, so the summary logged on failure shows whatever headers existed when it failed.
+  const requestSummary = () => JSON.stringify({
     method: args.method,
     path: args.path,
     query: args.plan.query,
@@ -554,13 +567,24 @@ export async function executeRestRequest(args: {
     if (isBlockedHost(parsedUrl.hostname) || await isBlockedHostAsync(parsedUrl.hostname)) {
       return { ok: false, error: 'Endpoint points to a blocked internal host.', latencyMs: Date.now() - started }
     }
-    const response = await fetch(url, {
+    // Inside the `try`: building auth can FAIL (an OAuth2 token endpoint that is down, rate-limited or answers
+    // non-JSON). It used to run before the `try`, so that failure was THROWN past this function's
+    // `{ ok: false }` contract and never logged — MEASURED, 80 of 100 concurrent OAuth2 calls threw.
+    headers = { ...(await buildAuthHeaders(args.connector.authType, authConfig)), ...headers }
+    // `guardedFetch` re-checks every redirect hop: with the default `redirect: 'follow'` a permitted API answering
+    // `302 -> http://127.0.0.1/...` was followed and the internal response returned (measured).
+    const response = await guardedFetch(url, {
       method: args.method,
       headers,
       body: hasBody ? JSON.stringify(args.plan.body) : undefined,
       signal: AbortSignal.timeout(args.connector.timeoutMs),
     })
-    const bodyText = (await response.text()).slice(0, 8000)
+    // Bounded: only 8,000 characters are kept, and a 300 MB response was read whole first (measured +304 MB RSS).
+    const bodyText = (await readTextBounded(response, REST_RESPONSE_READ_BYTES)).slice(0, 8000)
+    if (response.status === 401 && args.connector.authType.trim().toUpperCase() === 'OAUTH2') {
+      // The cached token was rejected (revoked, rotated): the next call fetches a fresh one.
+      restConnectorsNs.invalidateOAuthToken?.(authConfig)
+    }
     const latencyMs = Date.now() - started
     await db.restApiRequestLog.create({
       data: {
@@ -569,7 +593,7 @@ export async function executeRestRequest(args: {
         endpointId: args.endpointId,
         statusCode: response.status,
         latencyMs,
-        requestSummary,
+        requestSummary: requestSummary(),
         responseSummary: summarize(bodyText),
       },
     })
@@ -596,7 +620,7 @@ export async function executeRestRequest(args: {
         connectorId: args.connector.id,
         endpointId: args.endpointId,
         latencyMs,
-        requestSummary,
+        requestSummary: requestSummary(),
         errorMessage: error,
       },
     })

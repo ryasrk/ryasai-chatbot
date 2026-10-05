@@ -228,3 +228,41 @@ describe('runMultiStepDag', () => {
     expect(state.planCalls[0].chatHistory).toEqual(history)
   })
 })
+
+describe('runMultiStepDag — tool calls from the model', () => {
+  const calls = [
+    { toolId: 'rest', args: { question: 'weather in Jakarta' } },
+    { toolId: 'sql', args: { question: 'customers in Jakarta' } },
+  ]
+
+  test('several calls ARE the plan: the planner model is not asked again', async () => {
+    state.results = [step({ stepId: 'step1', tool: 'rest' }), step({ stepId: 'step2', tool: 'sql' })]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1', requestedTools: calls })
+    expect(state.planCalls).toHaveLength(0)
+    expect(state.executeCalls[0].plan.steps.map((s: any) => [s.tool, s.input.question])).toEqual([
+      ['rest', 'weather in Jakarta'],
+      ['sql', 'customers in Jakarta'],
+    ])
+    expect(r?.answer).toBe('synthesized answer')
+  })
+
+  test('a failed part is named in the answer', async () => {
+    state.results = [step({ stepId: 'step1', tool: 'rest' }), step({ stepId: 'step2', tool: 'sql', ok: false, output: '', error: 'connection refused' })]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1', requestedTools: calls })
+    expect(r?.answer).toContain('synthesized answer')
+    expect(r?.answer).toContain('**Not answered:**\n- customers in Jakarta: connection refused')
+  })
+
+  test('citations of every answered part are returned', async () => {
+    const a = { type: 'REST_API', source: 'Weather API GET /weather' }
+    const b = { type: 'DATABASE', source: 'Sales.customers' }
+    state.results = [step({ stepId: 'step1', tool: 'rest', citations: [a] }), step({ stepId: 'step2', tool: 'sql', citations: [b] })]
+    const r = await runMultiStepDag({ question: 'q', userId: 'u1', requestedTools: calls })
+    expect(r?.citations).toEqual([a, b] as never)
+  })
+
+  test('a single call still goes through the planner', async () => {
+    await runMultiStepDag({ question: 'q', userId: 'u1', requestedTools: [calls[0]] })
+    expect(state.planCalls).toHaveLength(1)
+  })
+})

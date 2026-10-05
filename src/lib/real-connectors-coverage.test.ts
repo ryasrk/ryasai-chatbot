@@ -676,11 +676,12 @@ describe('normaliseRow', () => {
     expect(out.at).toBe('2024-03-04T05:06:07.890Z')
   })
 
-  test('converts BigInt to Number (including precision loss it accepts)', () => {
+  test('converts a safe BigInt to Number, and keeps an unsafe one exact as a string', () => {
     // BigInt() rather than a `42n` literal — the tsconfig target predates ES2020.
     expect(normaliseRow({ n: BigInt(42) }).n).toBe(42)
-    // 2^53+1 is not exactly representable — pinned so the behaviour is explicit.
-    expect(normaliseRow({ n: BigInt('9007199254740993') }).n).toBe(9007199254740992)
+    // 2^53+1 is not exactly representable. This used to be pinned as accepted precision LOSS (…993 -> …992);
+    // measured against MySQL/MariaDB, that silently altered BIGINT ids, so it now stays exact.
+    expect(normaliseRow({ n: BigInt('9007199254740993') }).n).toBe('9007199254740993')
   })
 
   test('converts a Buffer to a 0x-prefixed hex string', () => {

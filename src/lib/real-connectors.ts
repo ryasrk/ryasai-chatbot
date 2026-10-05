@@ -17,5 +17,6 @@ export { ClickHouseConnector } from '@/lib/real-connector-clickhouse'
 export {
   parseConnectionString, readDbConfig, describeConnectionError, assertNoDangerousFunctions, assertSingleStatement,
   assertSelectOnly, normaliseRow, loadDriver,
+  pgConnectionString, pgTypeOverrides, MYSQL_EXACT_VALUES, MYSQL_ANSI_QUOTES, enableAnsiQuotes,
   type ConnectionFailureReason, type DetailedTestResult,
 } from '@/lib/real-connector-shared'

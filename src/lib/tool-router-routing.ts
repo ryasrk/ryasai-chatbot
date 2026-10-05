@@ -198,6 +198,9 @@ export function applyToolGating(
   return effective
 }
 
+/** One tool call the model made; a compound question carries several. */
+export type RequestedTool = { toolId: string; args: Record<string, unknown> }
+
 export function startSpeculativeRouting(
   args: Parameters<typeof resolveRouting>[0],
   effectiveQuestion: string,
@@ -248,7 +251,7 @@ export async function resolveRouting(
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
-): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[] }> {
+): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[]; requestedTools?: RequestedTool[] }> {
   const [docCount, intCount, , , , restEndpoints] = dbData
   const restEndpointCount = restEndpoints.length
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
@@ -270,6 +273,7 @@ export async function resolveRouting(
    * this: it reads a "MULTI_STEP" marker out of the model's text, and a reply carrying tool calls has no text.
    */
   let extraToolIds: string[] = []
+  let requestedTools: RequestedTool[] = []
 
   // The LLM chooses the tool on BOTH paths (with and without history). History
   // previously routed through `routeQuery` while the first turn used the
@@ -289,6 +293,7 @@ export async function resolveRouting(
     // Compound questions: the model can ask for SEVERAL sources in one reply. Recorded here and acted on by
     // `runStreamingChatCompletion`, because only that layer can route the follow-up turn.
     extraToolIds = sel.extraTools?.map((t) => t.toolId) ?? []
+    if (sel.toolId && sel.extraTools?.length) requestedTools = [{ toolId: sel.toolId, args: sel.args }, ...sel.extraTools]
     // The model named the database it wants. Taking it here is what keeps SQL
     // working at all now that the heuristic router (which used to supply this)
     // is gone.
@@ -359,7 +364,7 @@ export async function resolveRouting(
     }
   }
 
-  return { decision, resolvedIntegrationId, ...(extraToolIds.length > 0 ? { extraToolIds } : {}) }
+  return { decision, resolvedIntegrationId, ...(extraToolIds.length > 0 ? { extraToolIds, requestedTools } : {}) }
 }
 
 export async function loadContextualContext(decision: RouteDecision, sessionId?: string): Promise<string> {

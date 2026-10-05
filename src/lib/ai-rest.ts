@@ -4,6 +4,7 @@
  * any request is made, so this module grants nothing by itself. Split from `ai.ts`.
  */
 import { chatOnce } from '@/lib/ai-chat'
+import { selectRelevant } from '@/lib/source-relevance'
 
 export interface RestEndpointOption {
   id: string
@@ -51,7 +52,19 @@ export async function generateRestCall(args: {
   question: string
   endpoints: RestEndpointOption[]
   memoryContext?: string
+  /** The question plus rewordings (e.g. translations), used only to RANK which endpoints are listed. */
+  phrasings?: string[]
 }): Promise<RestCallPlan> {
+  // The 40 listed are the most RELEVANT to the question, not the first 40 loaded. MEASURED with three APIs and 50
+  // endpoints: the shipment-tracking endpoint (15th of the third API) was never listed, so even a model that always
+  // picks correctly could not call it. `selectRelevant` also keeps every API represented when nothing matches.
+  const listed = selectRelevant(
+    args.endpoints,
+    (e) => `${e.connectorName} ${e.method} ${e.path} ${e.description ?? ''}`,
+    (e) => e.connectorName,
+    args.phrasings ?? [args.question],
+    REST_PROMPT_ENDPOINT_LIMIT,
+  )
   const raw = await chatOnce(
     [
       {
@@ -83,8 +96,7 @@ export async function generateRestCall(args: {
            *    from a longer list), and the cap keeps the worst case bounded. Over-cap endpoints are not silently
            *    hidden: the count is stated so the model can say so rather than guess.
            */
-          `Whitelisted endpoints:\n${REST_PROMPT_ENDPOINT_LIMIT < args.endpoints.length ? `[${args.endpoints.length} endpoints configured; showing the first ${REST_PROMPT_ENDPOINT_LIMIT} — if none matches, say so rather than guessing]\n` : ''}${args.endpoints
-            .slice(0, REST_PROMPT_ENDPOINT_LIMIT)
+          `Whitelisted endpoints:\n${REST_PROMPT_ENDPOINT_LIMIT < args.endpoints.length ? `[${args.endpoints.length} endpoints configured; showing the ${REST_PROMPT_ENDPOINT_LIMIT} most relevant to the question — if none matches, say so rather than guessing]\n` : ''}${listed
             .map(
               (endpoint) =>
                 `- id=${endpoint.id}; connector=${endpoint.connectorName}; method=${endpoint.method}; path=${endpoint.path}; description=${endpoint.description ?? '-'}; parameterSchema=${endpoint.parameterSchema ?? '-'}; sampleResponse=${truncateSampleResponse(endpoint.sampleResponse)}`,

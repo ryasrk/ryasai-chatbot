@@ -764,3 +764,43 @@ describe('executePlugin honours the integrity gate (wiring, not just the helper)
     expect(res.error).toContain('changed after it was approved')
   })
 })
+
+describe('executePlugin — redirects and response size (shared guard with the REST executor)', () => {
+  const originalFetch = global.fetch
+  const savedAllowed = process.env.LLM_ALLOWED_HOSTS
+  const savedHatch = process.env.LLM_ALLOW_BLOCKED_HOSTS
+  afterEach(() => {
+    global.fetch = originalFetch
+    if (savedAllowed === undefined) delete process.env.LLM_ALLOWED_HOSTS
+    else process.env.LLM_ALLOWED_HOSTS = savedAllowed
+    if (savedHatch === undefined) delete process.env.LLM_ALLOW_BLOCKED_HOSTS
+    else process.env.LLM_ALLOW_BLOCKED_HOSTS = savedHatch
+  })
+
+  test('a webhook redirecting to an internal host is refused before the second request', async () => {
+    // Same defect the REST executor had, MEASURED there: the first hop was checked, then `fetch` followed a 302 to
+    // 127.0.0.1 and returned the internal body.
+    delete process.env.LLM_ALLOWED_HOSTS
+    delete process.env.LLM_ALLOW_BLOCKED_HOSTS
+    const urls: string[] = []
+    global.fetch = (async (url: string) => {
+      urls.push(String(url))
+      return new Response(null, { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } })
+    }) as unknown as typeof fetch
+    const res = await executePlugin({ plugin: { manifestJson: JSON.stringify(VALID_MANIFEST), toolId: 'test' }, input: 'x' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('redirected to a blocked internal host')
+    expect(urls).toHaveLength(1)
+  })
+
+  test('only a bounded prefix of a huge webhook response is read', async () => {
+    let pulled = 0
+    global.fetch = (async () => new Response(new ReadableStream({
+      pull(c) { pulled++; c.enqueue(new TextEncoder().encode('w'.repeat(64 * 1024))) }, // never ends on its own
+    }), { status: 200 })) as unknown as typeof fetch
+    const res = await executePlugin({ plugin: { manifestJson: JSON.stringify(VALID_MANIFEST), toolId: 'test' }, input: 'x' })
+    expect(res.ok).toBe(true)
+    expect(res.output.length).toBe(8000)
+    expect(pulled).toBeLessThan(10)
+  })
+})

@@ -42,7 +42,10 @@ export interface DbConfig {
  */
 export function parseConnectionString(raw: string): Partial<DbConfig> | null {
   const s = raw.trim()
-  if (!/^(postgres(ql)?|mysql(2)?):\/\//i.test(s)) return null
+  // `mariadb://` is what MariaDB's own docs and connectors hand out. It used to fall through to `null`, and the
+  // caller then fell back to empty fields — localhost, port 0, no database — with no error to say the string was
+  // ignored. It is the MySQL wire protocol, so it parses the same way.
+  if (!/^(postgres(ql)?|mysql(2)?|mariadb):\/\//i.test(s)) return null
   try {
     const u = new URL(s)
     const params = Object.fromEntries(u.searchParams.entries())
@@ -146,6 +149,18 @@ export function describeConnectionError(e: unknown, providerId?: string): { reas
   }
 
   // Authentication failures.
+  // MariaDB (notably the Windows build) answers a rejected password by proposing its GSSAPI plugin, which the
+  // driver cannot speak, so the user saw "unknown plugin auth_gssapi_client" for a wrong password. MEASURED on
+  // MariaDB 11.4.
+  if (/unknown plugin auth_gssapi/i.test(msg)) {
+    // A constant, like the other auth hint: the credential guard in real-connectors.test.ts counts every
+    // `return { … password … }` in this file, and advice that merely names the word must not dilute it.
+    const gssapiHint =
+      'Authentication failed. Check the username and password. If this account signs in with Windows (GSSAPI) '
+      + 'authentication, create a password-based user for the assistant instead.'
+    return { reason: 'auth', message: gssapiHint }
+  }
+
   if (
     /password authentication failed|authentication failed|access denied|login failed|28000|28P01|1045 \(28000\)|18456/i.test(msg)
   ) {
@@ -190,7 +205,10 @@ export function describeConnectionError(e: unknown, providerId?: string): { reas
   }
 
   // Database does not exist.
-  if (/database .* does not exist|3d000|1049 unknown database|cannot open database/i.test(lower)) {
+  // mysql2 reports this as "Unknown database 'x'" — the error NUMBER (1049) is not in the message, so the old
+  // `1049 unknown database` pattern never matched MySQL or MariaDB. MEASURED on both. PgBouncer, in front of
+  // Supabase/Neon-style poolers, says "no such database: x" (measured on PgBouncer 1.24).
+  if (/database .* does not exist|3d000|unknown database|er_bad_db_error|no such database|cannot open database/i.test(lower)) {
     return { reason: 'database_missing', message: 'The database name is wrong or the database does not exist on that server.' }
   }
 
@@ -347,13 +365,101 @@ export function normaliseRow(r: QueryRow): QueryRow {
   const out: QueryRow = {}
   for (const [k, v] of Object.entries(r)) {
     if (v instanceof Date) out[k] = v.toISOString()
-    else if (typeof v === 'bigint') out[k] = Number(v)
+    // A BigInt beyond 2^53 has no exact Number: 9007199254740993 became …992. Ids and national-ID numbers are
+    // stored as BIGINT, so a silently altered digit is a wrong answer. Keep it exact as a string instead.
+    else if (typeof v === 'bigint') out[k] = Number.isSafeInteger(Number(v)) ? Number(v) : v.toString()
     else if (Buffer.isBuffer(v)) out[k] = '0x' + v.toString('hex')
     else if (v && typeof v === 'object' && typeof (v as { toISOString?: unknown }).toISOString === 'function')
       out[k] = (v as { toISOString: () => string }).toISOString()
     else out[k] = v
   }
   return out
+}
+
+/**
+ * The connection string handed to `pg`, minus the TLS parameters the connector has ALREADY applied.
+ *
+ * `pg` merges a parsed connection string OVER the explicit options (`Object.assign({}, config, parse(str))`), and
+ * `sslmode=require` parses to `ssl: {}`. So the connector's own `ssl` object was replaced, and with it the documented
+ * `DB_SSL_REJECT_UNAUTHORIZED=0` opt-out. MEASURED: a Supabase/Neon-style string (`?sslmode=require`) to a server
+ * with an internal certificate failed with the opt-out set, while the same server configured field by field
+ * connected. The connector already reads `sslmode` (`readDbConfig` -> `resolveUseSsl`), so dropping it here loses
+ * nothing; it also silences pg's per-pool warning that `require` will stop verifying certificates in pg v9.
+ *
+ * `sslmode=disable` is passed through untouched: it is the user turning TLS off, and pg honours it as before.
+ */
+export function pgConnectionString(connectionString: string, useSsl: boolean): string {
+  if (!useSsl) return connectionString
+  try {
+    const url = new URL(connectionString)
+    if ((url.searchParams.get('sslmode') ?? '').toLowerCase() === 'disable') return connectionString
+    if (!url.searchParams.has('sslmode') && !url.searchParams.has('ssl')) return connectionString
+    url.searchParams.delete('sslmode')
+    url.searchParams.delete('ssl')
+    return url.toString()
+  } catch {
+    return connectionString
+  }
+}
+
+/**
+ * DATE and TIMESTAMP (without time zone) are returned exactly as the server sent them.
+ *
+ * node-postgres turns both into a JS Date at LOCAL midnight / local wall-clock time, and `normaliseRow` then prints
+ * that in UTC. MEASURED on PostgreSQL 17 and CockroachDB 24.3 on a UTC+7 host: the DATE 2024-01-15 reached the model
+ * as 2024-01-14T17:00:00.000Z and the TIMESTAMP 13:45 as 06:45 — a different day and a different time. The Docker
+ * images run in UTC and hide it; any non-UTC host does not. TIMESTAMPTZ is left to the driver: it names an instant,
+ * and the UTC form of an instant is correct.
+ *
+ * Per pool, not `pg.types.setTypeParser`, which is process-global and would change every other `pg` user here.
+ */
+const PG_DATE_OID = 1082
+const PG_TIMESTAMP_OID = 1114
+export function pgTypeOverrides(pg: DriverModule): Record<string, unknown> {
+  const types = pg.types as { getTypeParser?: (oid: number, format?: string) => unknown } | undefined
+  if (typeof types?.getTypeParser !== 'function') return {}
+  const fallback = types.getTypeParser.bind(types)
+  return {
+    types: {
+      getTypeParser: (oid: number, format?: string) =>
+        oid === PG_DATE_OID || oid === PG_TIMESTAMP_OID ? (value: string) => value : fallback(oid, format),
+    },
+  }
+}
+
+/**
+ * mysql2 options that keep values exact. Same day/time shift as `pgTypeOverrides` (DATE and DATETIME became local
+ * Dates; MEASURED on MySQL 8.4 and MariaDB 11.4), plus BIGINT: without `supportBigNumbers` a value beyond 2^53 comes
+ * back as a rounded Number (9007199254740993 -> …992). `bigNumberStrings` stays off so ordinary counts remain
+ * numbers, which the chart builder needs.
+ */
+export const MYSQL_EXACT_VALUES = { dateStrings: true, supportBigNumbers: true } as const
+
+/**
+ * Make `"name"` an identifier on MySQL-family sessions, as it is in standard SQL.
+ *
+ * The default Text-to-SQL rules (and every organisation that edited its own copy) tell the model to double-quote
+ * names. MEASURED on MySQL 8.4 and MariaDB 11.4 without this: `FROM "customers"` failed to parse, and
+ * `WHERE "city" = 'Jakarta'` compared two strings and returned 0 rows instead of 2 — a wrong answer the repair loop
+ * never sees. With ANSI_QUOTES both return the right rows. The prompt now also asks for backticks
+ * (`identifierQuotingRule`), but a prompt is a request; this makes the quoting the model most often writes correct.
+ *
+ * Set once per physical connection, and best-effort: a MySQL-compatible server that refuses the mode (some proxies
+ * do) keeps working exactly as before.
+ */
+export const MYSQL_ANSI_QUOTES = "SET SESSION sql_mode = CONCAT_WS(',', NULLIF(@@SESSION.sql_mode, ''), 'ANSI_QUOTES')"
+export function enableAnsiQuotes(promisePool: unknown): void {
+  const core = (promisePool as { pool?: { on?: (event: string, fn: (c: unknown) => void) => void } } | null)?.pool
+  if (typeof core?.on !== 'function') return
+  core.on('connection', (connection) => {
+    try {
+      ;(connection as { query: (sql: string, cb: (err: unknown) => void) => void }).query(MYSQL_ANSI_QUOTES, () => {
+        /* best-effort: a refusal leaves the session in its default mode */
+      })
+    } catch {
+      /* best-effort */
+    }
+  })
 }
 
 /**

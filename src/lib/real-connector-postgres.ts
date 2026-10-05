@@ -14,6 +14,8 @@ import {
   detailedPing,
   assembleSchema,
   enrichSchema,
+  pgConnectionString,
+  pgTypeOverrides,
   type DetailedTestResult,
   type PingablePool,
   type RawColumnRow,
@@ -42,7 +44,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
           ? this._config.connectionString
           : undefined
       this._pool = new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
-        ...(explicitConnStr ? { connectionString: explicitConnStr } : {
+        ...(explicitConnStr ? { connectionString: pgConnectionString(explicitConnStr, useSsl) } : {
           host: c.host,
           port: c.port || 5432,
           database: c.database,
@@ -54,6 +56,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
         connectionTimeoutMillis: QUERY_TIMEOUT_MS,
         idleTimeoutMillis: 30_000,
         max: 10,
+        ...pgTypeOverrides(pg),
       })
     }
     return this._pool
@@ -98,7 +101,7 @@ export class PostgresConnector implements BaseDatabaseConnector {
           ? this._config.connectionString
           : undefined
       return new (pg.Pool as new (cfg: Record<string, unknown>) => unknown)({
-        ...(explicitConnStr ? { connectionString: explicitConnStr } : {
+        ...(explicitConnStr ? { connectionString: pgConnectionString(explicitConnStr, useSsl) } : {
           host: c.host,
           port: c.port || 5432,
           database: c.database,
