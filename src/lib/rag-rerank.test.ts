@@ -331,7 +331,7 @@ describe('rerankWithLlm — reordering by model judgement', () => {
   })
 })
 
-describe('rerankWithLlm — one call that also judges sufficiency (RAG_MERGED_JUDGE=on)', () => {
+describe('rerankWithLlm — one call that also judges sufficiency (on by default)', () => {
   // The reranker and the sufficiency judge read the same question and the same chunks; asked together, the judge's
   // separate call (1.38 per question in the A/B) is not needed. Off by default until an A/B decides.
   const row = (i: number) => ({
@@ -363,12 +363,17 @@ describe('rerankWithLlm — one call that also judges sufficiency (RAG_MERGED_JU
     })
   })
 
-  test('off by default: the prompt and the chunks are unchanged', async () => {
-    state.chunkRows = Array.from({ length: 9 }, (_, i) => row(i))
-    state.chatRaw = '{"answers": true, "scores": [{"index":5,"score":10}]}'
-    const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
-    expect(r.chunks[0].rerankVerdict).toBeUndefined()
-    expect(JSON.stringify(state.chatCalls[0].messages)).not.toContain('"answers"')
+  test('RAG_MERGED_JUDGE=off: the prompt and the chunks are as before', async () => {
+    process.env.RAG_MERGED_JUDGE = 'off'
+    try {
+      state.chunkRows = Array.from({ length: 9 }, (_, i) => row(i))
+      state.chatRaw = '{"answers": true, "scores": [{"index":5,"score":10}]}'
+      const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
+      expect(r.chunks[0].rerankVerdict).toBeUndefined()
+      expect(JSON.stringify(state.chatCalls[0].messages)).not.toContain('"answers"')
+    } finally {
+      delete process.env.RAG_MERGED_JUDGE
+    }
   })
 })
 

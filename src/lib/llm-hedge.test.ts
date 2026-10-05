@@ -66,14 +66,14 @@ describe('hedgedRequest — a backup request for a slow call (The Tail at Scale)
 })
 
 describe('hedgeDelayForPurpose', () => {
-  test('off unless LLM_HEDGE=on, and only for the measured purposes', () => {
+  test('on by default for the measured purposes, off with LLM_HEDGE=off', () => {
     delete process.env.LLM_HEDGE
-    expect(hedgeDelayForPurpose('agent')).toBeUndefined()
-    process.env.LLM_HEDGE = 'on'
+    expect(hedgeDelayForPurpose('agent')).toBeGreaterThan(0)
+    expect(hedgeDelayForPurpose('rag-rerank')).toBeGreaterThan(0)
+    expect(hedgeDelayForPurpose('sql')).toBeUndefined()
+    process.env.LLM_HEDGE = 'off'
     try {
-      expect(hedgeDelayForPurpose('agent')).toBeGreaterThan(0)
-      expect(hedgeDelayForPurpose('rag-rerank')).toBeGreaterThan(0)
-      expect(hedgeDelayForPurpose('sql')).toBeUndefined()
+      expect(hedgeDelayForPurpose('agent')).toBeUndefined()
     } finally {
       delete process.env.LLM_HEDGE
     }

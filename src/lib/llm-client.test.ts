@@ -1971,13 +1971,12 @@ describe('usage records prompt-cache hits (cachedTokens)', () => {
   })
 })
 
-describe('chatOnce — hedged requests are wired (LLM_HEDGE=on)', () => {
+describe('chatOnce — hedged requests are wired (on by default)', () => {
   test('a slow selector call gets one backup and returns the first answer', async () => {
-    process.env.LLM_HEDGE = 'on'
     let calls = 0
     global.fetch = mock((_url: string, init: RequestInit) => {
       calls++
-      const delay = calls === 1 ? 10_000 : 10
+      const delay = calls === 1 ? 20_000 : 10
       return new Promise<Response>((resolve, reject) => {
         const t = setTimeout(() => resolve(jsonResponse({ choices: [{ message: { content: `answer-${calls}` } }] })), delay)
         init.signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')) })
@@ -1988,17 +1987,22 @@ describe('chatOnce — hedged requests are wired (LLM_HEDGE=on)', () => {
       const out = await chatOnce({ ...openaiCfg, model: 'm-hedge' }, [{ role: 'user', content: 'q' }], 0, 'agent')
       expect(out).toMatch(/^answer-/)
       expect(calls).toBe(2)
-      expect(Date.now() - started).toBeLessThan(7000)
+      expect(Date.now() - started).toBeLessThan(12_000)
     } finally {
       delete process.env.LLM_HEDGE
     }
-  }, 10_000)
+  }, 15_000)
 
-  test('off by default: one request', async () => {
+  test('LLM_HEDGE=off: one request', async () => {
+    process.env.LLM_HEDGE = 'off'
     let calls = 0
     global.fetch = mock(() => { calls++; return Promise.resolve(jsonResponse({ choices: [{ message: { content: 'x' } }] })) }) as unknown as typeof fetch
-    await chatOnce(openaiCfg, [{ role: 'user', content: 'q' }], 0, 'agent')
-    expect(calls).toBe(1)
+    try {
+      await chatOnce(openaiCfg, [{ role: 'user', content: 'q' }], 0, 'agent')
+      expect(calls).toBe(1)
+    } finally {
+      delete process.env.LLM_HEDGE
+    }
   })
 })
 

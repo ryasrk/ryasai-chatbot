@@ -317,9 +317,10 @@ async function rerankWithLlm(
      * as they were (MEASURED locally: `ownContent` is absent there, and the reranker already saw the real text).
      */
     const chunkList = chunks.map((c, i) => `[${i}] ${(c.ownContent ?? c.content).slice(0, 300)}`).join('\n\n')
-    // RAG_MERGED_JUDGE=on: the same call also says whether the chunks TOGETHER answer the query, so the separate
-    // sufficiency judge (1.38 calls per question in the 2026-10-05 A/B) can be skipped. Same question, same chunks.
-    const mergedJudge = process.env.RAG_MERGED_JUDGE === 'on'
+    // The same call also says whether the chunks TOGETHER answer the query, so the separate sufficiency judge can be
+    // skipped. A/B on the 20 hardest eval questions (2 runs per arm): judge calls 1.40 -> 0.20 per question, accuracy
+    // not lower. On by default; RAG_MERGED_JUDGE=off restores the separate judge.
+    const mergedJudge = process.env.RAG_MERGED_JUDGE !== 'off'
     const systemPrompt = mergedJudge
       ? 'You are a retrieval reranker. Given a query and text chunks, score each chunk\'s relevance to the query from 0 to 10.\n' +
         '10 = directly answers the query, 7 = contains relevant info, 4 = partially relevant, 1 = not relevant.\n' +

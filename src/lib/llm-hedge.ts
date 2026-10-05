@@ -1,5 +1,5 @@
 /**
- * Hedged requests for slow LLM calls: if a call is still outstanding after its purpose's p95, send an identical backup
+ * Hedged requests for hanging LLM calls: if a call is still outstanding near its purpose's p99, send an identical backup
  * and take whichever finishes first (Dean & Barroso, "The Tail at Scale", CACM 2013 — about 5% extra load for a much
  * shorter tail). The answer is the same request's answer, so accuracy is untouched; only waiting time changes.
  *
@@ -7,21 +7,25 @@
  * max 27.2 s — a few calls hang until the provider's 30 s timeout and set the tail of the whole turn. Failed calls are
  * not in LlmUsageLog at all, so the real tail is longer than that.
  *
- * Off unless `LLM_HEDGE=on`. A backup's tokens are billed by the provider but cannot be logged (it is aborted before it
- * reports usage), so hedges are counted by the `onHedge` hook instead.
+ * On by default; `LLM_HEDGE=off` disables it. A backup's tokens are billed by the provider but cannot be logged (it is
+ * aborted before it reports usage), so hedges are logged by the `onHedge` hook instead.
+ *
+ * A/B on the 20 hardest eval questions (2 runs per arm, with the merged judge): max latency 59.3 -> 43.1 s, accuracy
+ * not lower. At p95 thresholds the backup rate was too high for hard questions (selector 6 of 18 calls, rerank 10 of
+ * 62), so the delays sit near p99: hedging is for calls that HANG, not for calls that are merely slow.
  */
 
-/** Milliseconds before a backup is sent, per purpose: ~p95 of the 175-question A/B (rounded up). */
+/** Milliseconds before a backup is sent, per purpose: ~p99 of the 175-question A/B, so only hangs are hedged. */
 const HEDGE_AFTER_MS: Record<string, number> = {
-  agent: 4500,
-  'rag-rerank': 5000,
-  reflection: 3000,
-  'rag-decompose': 2500,
-  synthesis: 6500,
+  agent: 8000,
+  'rag-rerank': 8000,
+  reflection: 4000,
+  'rag-decompose': 4000,
+  synthesis: 10000,
 }
 
 export function hedgeDelayForPurpose(purpose: string | undefined): number | undefined {
-  if (process.env.LLM_HEDGE !== 'on' || !purpose) return undefined
+  if (process.env.LLM_HEDGE === 'off' || !purpose) return undefined
   return HEDGE_AFTER_MS[purpose]
 }
 
