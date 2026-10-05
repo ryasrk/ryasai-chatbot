@@ -12,6 +12,7 @@
 import type { LlmMessage, LlmToolDef, LlmResponseFormat, LlmToolCall, LlmUsage, AgentChatMessage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
 import { cachedTokensOf } from '@/lib/llm-client-types'
+import { hedgeDelayForPurpose, hedgedRequest } from '@/lib/llm-hedge'
 import { getLlmRuntimeConfig, getAgentLlmConfig } from '@/lib/llm-config'
 import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, readCompletionBody, toOpenAiMessages, LlmProviderError } from './llm-client-utils'
 
@@ -150,15 +151,20 @@ async function chatOnceInner(
       },
     }
   }
-  const send = () => fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
+  const attempt = (signal?: AbortSignal) => fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${cfg.apiKey}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([AbortSignal.timeout(LLM_TIMEOUT_MS), signal]) : AbortSignal.timeout(LLM_TIMEOUT_MS),
   })
+  // A call still outstanding after its purpose's p95 gets an identical backup (llm-hedge.ts, LLM_HEDGE=on).
+  const hedgeAfter = hedgeDelayForPurpose(purpose)
+  const send = () => hedgeAfter
+    ? hedgedRequest(attempt, hedgeAfter, () => console.info(`[llm] hedge: backup request for ${purpose} after ${hedgeAfter}ms`))
+    : attempt()
   let res = await send()
   if (!res.ok) {
     let errText = await readErrorBody(res)
