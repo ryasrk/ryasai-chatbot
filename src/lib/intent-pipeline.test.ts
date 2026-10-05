@@ -1,4 +1,4 @@
-import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RetrievedChunk } from './rag'
@@ -1762,6 +1762,9 @@ describe('mergeRetrievalResults ranks by AGREEMENT, not by a per-query score', (
 // --- Rerank ONCE over the merged pools ---
 
 describe('retrieveWithReflection — one rerank over the union of the expansions', () => {
+  // A single question is reranked only with RAG_RERANK_SCOPE=all (default: compound hops only).
+  beforeEach(() => { process.env.RAG_RERANK_SCOPE = 'all' })
+  afterEach(() => { delete process.env.RAG_RERANK_SCOPE })
   const pool = (q: string) => [
     makeChunk({ chunkId: `a-${q}`, content: 'A'.repeat(100), score: 0.9 }),
     makeChunk({ chunkId: 'shared', content: 'S'.repeat(100), score: 0.5 }),
@@ -2008,9 +2011,10 @@ describe('retrieveWithReflection — the reranker verdict replaces the judge cal
   })
 })
 
-describe('retrieveWithReflection — RAG_RERANK_SCOPE=compound', () => {
-  const withScope = async (fn: () => Promise<void>) => {
-    process.env.RAG_RERANK_SCOPE = 'compound'
+describe('retrieveWithReflection — rerank scope (default compound)', () => {
+  const withScope = async (fn: () => Promise<void>, scope?: string) => {
+    if (scope) process.env.RAG_RERANK_SCOPE = scope
+    else delete process.env.RAG_RERANK_SCOPE
     rerankOn = true
     mockRerankMerged.mockClear()
     mockRetrieveRelevantChunks.mockClear()
@@ -2029,6 +2033,15 @@ describe('retrieveWithReflection — RAG_RERANK_SCOPE=compound', () => {
       expect(calls.length).toBeGreaterThan(0)
       expect(calls.every(([a]) => a._noRerank === true)).toBe(true)
     })
+  })
+
+  test('RAG_RERANK_SCOPE=all: a single question is reranked again', async () => {
+    await withScope(async () => {
+      await retrieveWithReflection({ query: 'Berapa hari cuti tahunan karyawan tetap?', topK: 8 })
+      const calls = mockRetrieveRelevantChunks.mock.calls as unknown as Array<[{ _noRerank?: boolean }]>
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls.some(([a]) => a._noRerank === true)).toBe(false)
+    }, 'all')
   })
 
   test('a compound question still reranks each hop', async () => {

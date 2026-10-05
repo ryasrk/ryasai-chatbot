@@ -517,9 +517,11 @@ export async function retrieveWithReflection(args: {
   const subQuestions = await decomposeForRetrieval(args.query)
   let merged: RetrievalResult, perSub: RetrievedChunk[][] = [], k = args.topK
   const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
-  // RAG_RERANK_SCOPE=compound: rerank only the hops of a compound question. retrieval-recall.ts (2026-10-05): single facts
-  // had their evidence in context 98.6% in fused order vs 87.5% after the LLM rerank, at a fifth of the tokens.
-  const singleNoRerank = process.env.RAG_RERANK_SCOPE === 'compound'
+  // Rerank only the hops of a compound question (RAG_RERANK_SCOPE=all reranks single facts too). retrieval-recall.ts
+  // (2026-10-05): single facts had their evidence in context 98.6% in fused order vs 87.5% after the LLM rerank, at a fifth
+  // of the tokens. Answer-level A/B, 60 questions, two interleaved runs per arm, same judge: correct 76.8 -> 88.6%
+  // (Fisher p=0.022), faithful 75.9 -> 90.4% (p=0.004), first-answer p50 12.0 -> 5.1 s, LLM tokens per run ~970k -> ~500k.
+  const singleNoRerank = process.env.RAG_RERANK_SCOPE !== 'all'
   const compound = (subs: string[]) => retrieveCompound({
     question: args.query, subQuestions: subs, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
     retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
