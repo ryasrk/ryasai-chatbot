@@ -133,6 +133,11 @@ export async function runRagBranch(args: {
   documentIds?: string[] | null
   /** Retrieval the router started alongside intent analysis; reused only when it was started for exactly this request. */
   speculativeRetrieval?: SpeculativeRetrieval | null
+  /**
+   * The turn reached retrieval only because the knowledge-base probe matched it (kb-probe.ts), not because the model
+   * asked for documents. When the evidence does not support an answer, it is answered as the chat turn it was.
+   */
+  chatIfUnsupported?: boolean
 }): Promise<CompletionResult> {
   const started = Date.now()
   const evidence = await gatherRagEvidence(args)
@@ -140,7 +145,7 @@ export async function runRagBranch(args: {
     log.warn('RAG retrieval failed; answering from chat', { error: evidence.reason })
     return runChatBranch(args, { degradedFrom: 'RAG', degradedReason: evidence.reason })
   }
-  if (evidence.kind === 'empty') return runChatBranch(args)
+  if (evidence.kind === 'empty' || (args.chatIfUnsupported && !evidence.supported)) return runChatBranch(args)
 
   const answer = await generateAnswer({
     question: args.question,

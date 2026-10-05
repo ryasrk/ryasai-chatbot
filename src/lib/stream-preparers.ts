@@ -108,6 +108,11 @@ export async function prepareRagStream(args: {
   documentIds?: string[] | null
   /** Retrieval the router started alongside intent analysis; reused only when it was started for exactly this request. */
   speculativeRetrieval?: SpeculativeRetrieval | null
+  /**
+   * The turn reached retrieval only because the knowledge-base probe matched it (kb-probe.ts), not because the model
+   * asked for documents. When the evidence does not support an answer, it is answered as the chat turn it was.
+   */
+  chatIfUnsupported?: boolean
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
   const evidence = await gatherRagEvidence(args)
@@ -123,7 +128,7 @@ export async function prepareRagStream(args: {
       ),
     }
   }
-  if (evidence.kind === 'empty') return prepareChatStream(args)
+  if (evidence.kind === 'empty' || (args.chatIfUnsupported && !evidence.supported)) return prepareChatStream(args)
 
   let usage: { promptTokens: number; completionTokens: number } | undefined
   const stream = streamAnswer({

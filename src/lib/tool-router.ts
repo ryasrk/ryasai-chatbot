@@ -26,7 +26,7 @@ import { runMultiStepDag, runAgenticLoop, runStreamingAgenticLoop } from '@/lib/
 import { withUsageTracking } from '@/lib/llm-client'
 import {
   formatSchemasForIntent, formatDocForIntent, loadIntentPipeline, loadDbData, applyToolGating, startSpeculativeRouting,
-  settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, type RequestedTool, type PlannedTool,
+  settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, documentsHoldTheAnswer, type RequestedTool, type PlannedTool,
 } from '@/lib/tool-router-routing'
 export { chooseAvailableDecision, formatSchemaForIntent, formatSchemasForIntent, formatDocForIntent } from '@/lib/tool-router-routing'
 
@@ -256,6 +256,11 @@ async function _runNonStreamingChatCompletion(args: {
   }
 
   if (!intent.needsRetrieval) {
+    // The intent model cannot see what the documents hold; one lexical probe can (kb-probe.ts).
+    if (await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })) {
+      const prefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
+      return remember(await runRagBranch({ ...args, question: effectiveQuestion, systemPromptPrefix: prefix, memoryContext, chatHistory: args.chatHistory ?? [], speculativeRetrieval, chatIfUnsupported: true }))
+    }
     cancelSpeculativeRetrieval(speculativeRetrieval)
     // THE PATH THAT MADE MEMORY LOOK BROKEN. A plain conversation turn returns here, above the branch
     // dispatch where the write used to live — so the most common kind of turn never reached memory.
@@ -283,9 +288,12 @@ async function _runNonStreamingChatCompletion(args: {
     { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
     promptSettings.tools,
   )
+  // A chat verdict on a question the documents hold is answered from them (kb-probe.ts), with the chat fallback armed.
+  const probedToDocuments = effectiveDecision === 'CHAT'
+    && await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
   // Only a RAG verdict uses the retrieval. (This transport has no multi-source DAG branch, so `extraToolIds` never
   // diverts a RAG verdict away from it.)
-  if (effectiveDecision !== 'RAG') cancelSpeculativeRetrieval(speculativeRetrieval)
+  if (effectiveDecision !== 'RAG' && !probedToDocuments) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
@@ -309,6 +317,7 @@ async function _runNonStreamingChatCompletion(args: {
   else if (effectiveDecision === 'REST') result = await runRestBranch(branchArgs)
   else if (effectiveDecision === 'PLUGIN') result = await runPluginBranch(branchArgs)
   else if (effectiveDecision === 'CONTEXTUAL_CHAT' && contextualContext) result = await runContextualChatBranch({ ...branchArgs, context: contextualContext })
+  else if (probedToDocuments) result = await runRagBranch({ ...branchArgs, chatIfUnsupported: true })
   else result = await runChatBranch(branchArgs)
   if (unanswered) result = { ...result, answer: `${result.answer}\n\n${unanswered}` }
 
@@ -429,6 +438,11 @@ async function _runStreamingChatCompletion(args: {
   }
 
   if (!intent.needsRetrieval) {
+    // Same probe as the non-streaming transport; see `documentsHoldTheAnswer`.
+    if (await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })) {
+      const prefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
+      return prepareRagStream({ question: effectiveQuestion, systemPromptPrefix: prefix, memoryContext, chatHistory: args.chatHistory ?? [], documentIds: args.documentIds, speculativeRetrieval, chatIfUnsupported: true })
+    }
     cancelSpeculativeRetrieval(speculativeRetrieval)
     return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: args.systemPromptPrefix, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
@@ -445,9 +459,9 @@ async function _runStreamingChatCompletion(args: {
   // for `extraToolIds` alone would abort a retrieval the single-source RAG branch still needs, and a cancelled result
   // re-throws into that branch's degrade-to-chat handling — a silent quality loss with no error to find.
   const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag || args.agenticRound)
-  if (effectiveDecision !== 'RAG' || dagWillRun) cancelSpeculativeRetrieval(speculativeRetrieval)
-
-  // DEBUG: trace routing decisions
+  const probedToDocuments = !dagWillRun && effectiveDecision === 'CHAT'
+    && await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
+  if ((effectiveDecision !== 'RAG' && !probedToDocuments) || dagWillRun) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
   const mergedPrefix = [args.systemPromptPrefix, promptSettings.systemPrompt].filter(Boolean).join('\n\n') || undefined
@@ -506,6 +520,7 @@ async function _runStreamingChatCompletion(args: {
   else if (effectiveDecision === 'REST') prepared = await prepareRestStream(branchArgs)
   else if (effectiveDecision === 'PLUGIN') prepared = await preparePluginStream(branchArgs)
   else if (effectiveDecision === 'CONTEXTUAL_CHAT' && contextualContext) prepared = await prepareContextualChatStream({ ...branchArgs, context: contextualContext })
+  else if (probedToDocuments) prepared = await prepareRagStream({ ...branchArgs, chatIfUnsupported: true })
   else prepared = await prepareChatStream(branchArgs)
 
   // Reached with several requested tools only when the multi-step path did not answer.

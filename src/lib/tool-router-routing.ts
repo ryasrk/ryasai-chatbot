@@ -13,6 +13,7 @@ import { rewriteQuery } from '@/lib/intent-pipeline'
 import { getPromptSettings } from '@/lib/prompt-settings'
 import { recallContext } from '@/lib/cognee'
 import { scopedLogger } from '@/lib/logger'
+import { probeKnowledgeBase } from '@/lib/kb-probe'
 import { stripSessionWrapper, type ChatHistoryEntry } from '@/lib/tool-utils'
 
 const log = scopedLogger('tool-router')
@@ -198,6 +199,23 @@ export function applyToolGating(
   return effective
 }
 
+/**
+ * Should a turn the router would answer from general knowledge be answered from the documents instead?
+ *
+ * Only when the org has documents, retrieval is enabled, and one chunk holds most of the question (see kb-probe.ts for
+ * the calibration). The caller arms the RAG branch's `chatIfUnsupported`, so a probe that matched by accident still
+ * gets a chat answer — never a "not found in the documents" for a general question.
+ */
+export async function documentsHoldTheAnswer(args: {
+  question: string
+  documentCount: number
+  ragToolEnabled: boolean
+  documentIds?: string[] | null
+}): Promise<boolean> {
+  if (args.documentCount === 0 || !args.ragToolEnabled) return false
+  return (await probeKnowledgeBase({ question: args.question, documentIds: args.documentIds })).strong
+}
+
 /** One tool call the model made; a compound question carries several. */
 export type RequestedTool = { toolId: string; args: Record<string, unknown> }
 
@@ -221,8 +239,10 @@ export async function resolvePlannedTool(
   const wanted = planned.database?.trim().toLowerCase()
   if (!wanted) return null
   const scoped = integrationIds && integrationIds.length > 0 ? integrationIds : null
+  // Spread conditionally, as everywhere in the chat path: an empty `in: []` would match nothing.
+  const intScope = scoped ? { id: { in: scoped } } : {}
   const rows = await db.integration.findMany({
-    where: { status: 'active', ...(scoped ? { id: { in: scoped } } : {}) },
+    where: { status: 'active', ...intScope },
     select: { id: true, name: true },
   })
   const hit = rows.find((r) => r.name.trim().toLowerCase() === wanted && (!scoped || scoped.includes(r.id)))

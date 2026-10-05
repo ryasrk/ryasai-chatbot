@@ -38,6 +38,8 @@ export type RagEvidence =
       answerContext: string
       citations: Citation[]
       citationTrail: Retrieval['citationTrail']
+      /** Reflection judged the evidence enough to answer from. False = the answer can only say what was not found. */
+      supported: boolean
     }
 
 /**
@@ -122,5 +124,5 @@ export async function gatherRagEvidence(args: RagEvidenceArgs): Promise<RagEvide
     },
   })
 
-  return { kind: 'ready', context, answerContext, citations, citationTrail: retrieval.citationTrail }
+  return { kind: 'ready', context, answerContext, citations, citationTrail: retrieval.citationTrail, supported: retrieval.reflection.sufficient }
 }

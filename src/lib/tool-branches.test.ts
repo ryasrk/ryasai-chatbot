@@ -258,6 +258,47 @@ afterEach(() => {
   global.fetch = originalFetch
 })
 
+describe('runRagBranch — a turn the documents were only PROBED for', () => {
+  // The router sends a would-be chat turn to retrieval when one chunk holds most of the question (kb-probe.ts). When
+  // the evidence then does not support an answer, the turn is answered as the chat it was — not "not found".
+  const insufficient = () => mockRetrieveWithReflection.mockImplementation(async () => ({
+    chunks: [makeChunk({ chunkId: 'c1', documentId: 'doc-a', score: 0.2 })],
+    queryTokens: [], candidatesScanned: 1, graphContext: '', retrievalPasses: 2,
+    reflection: { sufficient: false, reason: 'off topic', confidence: 0.2 },
+    citationTrail: undefined,
+  }))
+
+  test('unsupported evidence on a probed turn answers from chat', async () => {
+    insufficient()
+    mockGenerateAnswer.mockClear()
+    mockChatWithArgs.mockClear()
+    const r = await runRagBranch({ question: 'How does climate change affect agriculture?', chatIfUnsupported: true })
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(0)
+    expect(r.toolRuns[0].type).toBe('CHAT')
+  })
+
+  test('without the flag, unsupported evidence is still answered from the documents (says what it did not find)', async () => {
+    insufficient()
+    mockGenerateAnswer.mockClear()
+    const r = await runRagBranch({ question: 'What is the travel allowance for grade G9?' })
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1)
+    expect(r.toolRuns[0].type).toBe('RAG')
+  })
+
+  test('SUPPORTED evidence on a probed turn is answered from the documents', async () => {
+    mockRetrieveWithReflection.mockImplementation(async () => ({
+      chunks: [makeChunk({ chunkId: 'c1', documentId: 'doc-a', score: 0.9 })],
+      queryTokens: [], candidatesScanned: 1, graphContext: '', retrievalPasses: 1,
+      reflection: { sufficient: true, reason: '', confidence: 1 },
+      citationTrail: undefined,
+    }))
+    mockGenerateAnswer.mockClear()
+    const r = await runRagBranch({ question: 'What accord was established in 2016?', chatIfUnsupported: true })
+    expect(mockGenerateAnswer).toHaveBeenCalledTimes(1)
+    expect(r.toolRuns[0].type).toBe('RAG')
+  })
+})
+
 describe('runRagBranch — source guidance injection', () => {
   test('prepends [Source guidance] when a contributing doc has a contextPrompt', async () => {
     mockRetrieveWithReflection.mockImplementation(async () => ({

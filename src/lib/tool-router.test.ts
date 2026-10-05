@@ -174,6 +174,15 @@ mock.module('@/lib/rag-fts', () => ({
   searchFtsChunkIds: mockSearchFtsChunkIds,
 }))
 
+// The knowledge-base probe (kb-probe.ts) is its own module with its own tests; here only its verdict matters.
+const kbProbe = { strong: false, calls: [] as Array<{ question: string; documentIds?: string[] | null }> }
+mock.module('@/lib/kb-probe', () => ({
+  probeKnowledgeBase: async (a: { question: string; documentIds?: string[] | null }) => {
+    kbProbe.calls.push(a)
+    return { strong: kbProbe.strong, matched: 0, terms: 0 }
+  },
+}))
+
 mock.module('@/lib/cognee', () => ({
   // `memoryContextValue` is the streaming block's seam. A null recall is what
   // the existing non-streaming tests were written against, so the default stays
@@ -417,6 +426,8 @@ beforeEach(() => {
   memoryContextValue = 'MEMORY-CONTEXT'
   lastIntentArgs = {}
   intentQuestionValue = undefined
+  kbProbe.strong = false
+  kbProbe.calls = []
   streamCalls.length = 0
   streamEventOrder = 0
   chatStreamArgs.length = 0
@@ -1657,6 +1668,74 @@ mock.module('@/lib/speculative-retrieval', () => ({
 }))
 
 const { runStreamingChatCompletion, formatSchemaForIntent, formatSchemasForIntent } = await import('./tool-router')
+
+describe('a would-be chat turn whose answer the documents hold (kb-probe), both transports', () => {
+  /*
+   * MEASURED LIVE (2026-10-05): questions about an uploaded book, phrased as general knowledge ("What accord … was
+   * established in 2016?"), were answered from the model's memory, contradicting the document. A strong lexical match
+   * sends the turn to retrieval; `chatIfUnsupported` lets it fall back to chat when the evidence does not hold up.
+   */
+  const withDocs = () => mockDocumentCount.mockImplementation(async () => 1)
+
+  test('STREAMING, intent says no retrieval, the probe is strong: the documents answer, with the chat fallback armed', async () => {
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: false }
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'What accord was established in 2016?', userId: 'u1', documentIds: ['d1'] })
+    expect(ragStreamArgs).toHaveLength(1)
+    expect(ragStreamArgs[0].chatIfUnsupported).toBe(true)
+    expect(chatStreamArgs).toHaveLength(0)
+    // The probe reads inside the caller's document scope.
+    expect(kbProbe.calls[0].documentIds).toEqual(['d1'])
+  })
+
+  test('STREAMING, the selector picks chat, the probe is strong: the documents answer', async () => {
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'chat', decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'What percentage choose euthanasia?', userId: 'u1' })
+    expect(ragStreamArgs).toHaveLength(1)
+    expect(ragStreamArgs[0].chatIfUnsupported).toBe(true)
+  })
+
+  test('STREAMING, a weak probe leaves the chat turn alone', async () => {
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: false }
+    await runStreamingChatCompletion({ question: 'Write a haiku about rain', userId: 'u1' })
+    expect(ragStreamArgs).toHaveLength(0)
+    expect(chatStreamArgs).toHaveLength(1)
+  })
+
+  test('with no documents the probe is not even run', async () => {
+    mockDocumentCount.mockImplementation(async () => 0)
+    intentState.value = { needsClarification: false, needsRetrieval: false }
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'What accord was established in 2016?', userId: 'u1' })
+    expect(kbProbe.calls).toHaveLength(0)
+  })
+
+  test('NON-streaming, intent says no retrieval, the probe is strong: the speculative retrieval is USED, not aborted', async () => {
+    return withOrg(async () => {
+      withDocs()
+      intentState.value = { needsClarification: false, needsRetrieval: false }
+      kbProbe.strong = true
+      await runNonStreamingChatCompletion({ question: 'What accord was established in 2016?', userId: 'u1' })
+      expect(kbProbe.calls).toHaveLength(1)
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(false)
+    })
+  })
+
+  test('NON-streaming, weak probe: the speculative retrieval is aborted as before', async () => {
+    return withOrg(async () => {
+      withDocs()
+      intentState.value = { needsClarification: false, needsRetrieval: false }
+      await runNonStreamingChatCompletion({ question: 'Write a haiku about rain', userId: 'u1' })
+      expect(specLog[0].controller.signal.aborted).toBe(true)
+    })
+  })
+})
 
 /** Pull every chunk out of a StreamingCompletionResult. */
 async function drainStream(stream: AsyncGenerator<string, void, unknown>): Promise<string[]> {

@@ -396,6 +396,20 @@ describe('prepareRagStream', () => {
   })
 })
 
+describe('prepareRagStream — a turn the documents were only PROBED for (parity with runRagBranch)', () => {
+  test('unsupported evidence on a probed turn streams the chat answer instead', async () => {
+    reflectionSufficient = false
+    const r = await prepareRagStream({ question: 'How does climate change affect agriculture?', chatIfUnsupported: true })
+    expect(r.toolRuns[0].type).toBe('CHAT')
+  })
+
+  test('without the flag the same evidence is still answered from the documents', async () => {
+    reflectionSufficient = false
+    const r = await prepareRagStream({ question: 'q' })
+    expect(r.toolRuns[0].type).toBe('RAG')
+  })
+})
+
 /**
  * TRANSPORT PARITY — the streaming RAG branch must send what its non-streaming twin sends.
  *
