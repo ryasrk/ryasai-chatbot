@@ -86,7 +86,16 @@ mock.module('@/lib/db', () => ({
         dbState.messageCreates.push(a)
         return { id: `msg${dbState.messageCreates.length}` }
       },
-      findMany: async () => dbState.history,
+      // Like the database: a message this request already CREATED is read back too (newest first). Returning only the
+      // seeded rows hid that the route created the question before reading history, so every turn looked like a
+      // follow-up to itself.
+      findMany: async () => [
+        ...dbState.messageCreates
+          .filter((m: any) => m.data?.sender === 'user' || m.data?.sender === 'ai')
+          .map((m: any) => ({ sender: m.data.sender, text: m.data.text }))
+          .reverse(),
+        ...dbState.history,
+      ],
     },
     toolRun: {
       create: async (a: any) => {
@@ -511,6 +520,21 @@ describe('POST /api/v1/chat/completions — prior turns are handed to the router
     expect(seen[0].chatHistory.map((h: any) => h.role)).toEqual([
       'user', 'assistant', 'user', 'assistant',
     ])
+  })
+
+  test('the question being asked is NOT part of its own history', async () => {
+    dbState.history = []
+    const seen: any[] = []
+    routerState.nonStreaming = async (a: any) => {
+      seen.push(a)
+      return { answer: 'ok', citations: [], chartData: null, toolRuns: [], integrationId: null }
+    }
+    await post({ messages: [{ role: 'user', content: 'first and only question' }] })
+    // MEASURED LIVE: history was read AFTER the question was stored, so a first turn arrived as a follow-up to itself —
+    // the question appeared twice in the prompt and every turn took the agentic loop, which could not run a compound
+    // question as one plan. The web route reads history before it stores; this one must agree.
+    expect(seen[0].chatHistory).toEqual([])
+    expect(seen[0].question).toBe('first and only question')
   })
 
   test('blank and whitespace-only history rows are dropped, not sent as empty turns', async () => {

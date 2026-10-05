@@ -302,11 +302,14 @@ const agenticState: {
 // not guessed: my first version replaced the whole module and those tests failed.
 // Only runAgenticLoop is intercepted, via a delegating wrapper.
 const realAgentic = await import('@/lib/tool-router-agentic')
+// Captured BEFORE mock.module: Bun rebinds the module's live exports, so `realAgentic.runAgenticLoop` read later is the
+// wrapper below and `delegate` recursed until the stack overflowed.
+const realRunAgenticLoop = realAgentic.runAgenticLoop
 mock.module('@/lib/tool-router-agentic', () => ({
   ...realAgentic,
   runAgenticLoop: async (a: Record<string, unknown>, runCompletion: unknown) => {
     agenticState.calls.push(a)
-    if (agenticState.delegate) return realAgentic.runAgenticLoop(a as never, runCompletion as never)
+    if (agenticState.delegate) return realRunAgenticLoop(a as never, runCompletion as never)
     return agenticState.result
   },
 }))
@@ -2783,6 +2786,59 @@ describe('a compound question — several tool calls, both transports', () => {
     expect(mockPlanQuery.mock.calls.length).toBe(0)
     const plan = (mockExecutePlan.mock.calls[0] as unknown as [{ plan: { steps: Array<{ tool: string }> } }])[0].plan
     expect(plan.steps.map((s) => s.tool)).toEqual(['rest', 'sql'])
+  })
+
+  /*
+   * MEASURED LIVE (2026-10-05, eval org): on a FOLLOW-UP turn the router hands the turn to the agentic loop, and the
+   * loop's rounds were dispatched without multi-step permission — so "cuti tahunan … dan jumlah artist di chinook"
+   * answered the documents half and appended "Not answered" for the database half on every try. The API route made
+   * every turn a follow-up (its history included the question itself), so over HTTP no compound question was ever
+   * answered in full.
+   */
+  test('NON-streaming FOLLOW-UP turn: the agentic round still runs the calls as one plan', async () => {
+    agenticState.delegate = true
+    try {
+      mockIntegrationCount.mockImplementation(async () => 1)
+      intentState.value = { needsClarification: false, needsRetrieval: true }
+      mockSelectToolWithLlm.mockImplementation(async () => twoCalls())
+      mockExecutePlan.mockClear()
+      mockExecutePlan.mockImplementation(async () => [
+        { stepId: 'step1', tool: 'rest', ok: true, output: '31C', latencyMs: 5 },
+        { stepId: 'step2', tool: 'sql', ok: true, output: '1 customer', latencyMs: 5 },
+      ])
+      mockSynthesizeAnswer.mockImplementation(async () => 'BOTH-PARTS')
+
+      const r = await runNonStreamingChatCompletion({
+        question: 'weather and customers in Jakarta', userId: 'u1', allowMultiStepDag: true,
+        chatHistory: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }],
+      })
+      expect(r.answer).toContain('BOTH-PARTS')
+      expect(r.answer).not.toContain('**Not answered:**')
+      expect(agenticState.calls).toHaveLength(1)
+    } finally {
+      agenticState.delegate = false
+    }
+  })
+
+  test('STREAMING follow-up turn (web chat, turn two onward): the agentic round runs the calls as one plan', async () => {
+    mockIntegrationCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => twoCalls())
+    mockExecutePlan.mockClear()
+    mockExecutePlan.mockImplementation(async () => [
+      { stepId: 'step1', tool: 'rest', ok: true, output: '31C', latencyMs: 5 },
+      { stepId: 'step2', tool: 'sql', ok: true, output: '1 customer', latencyMs: 5 },
+    ])
+    mockSynthesizeAnswer.mockImplementation(async () => 'BOTH-PARTS')
+
+    const r = await runStreamingChatCompletion({
+      question: 'weather and customers in Jakarta', userId: 'u1', allowMultiStepDag: true,
+      chatHistory: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }],
+    })
+    let text = ''
+    for await (const c of r.stream) text += c
+    expect(text).toContain('BOTH-PARTS')
+    expect(text).not.toContain('**Not answered:**')
   })
 
   test('streaming, caller NOT opted into multi-step: the first tool answers and the rest is NAMED', async () => {

@@ -174,6 +174,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // History is read BEFORE the question is stored, as the web route does. Read after, it held the question itself:
+    // a first turn arrived as a follow-up to itself, so every API turn took the agentic loop (measured live,
+    // 2026-10-05) and the model saw the question twice.
+    const recentMessages = await db.chatMessage.findMany({
+      where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { sender: true, text: true },
+    })
+
     await db.chatMessage.create({
       data: {
         organizationId: identity.organizationId,
@@ -182,13 +192,6 @@ export async function POST(req: NextRequest) {
         sender: 'user',
         text: question,
       },
-    })
-
-    const recentMessages = await db.chatMessage.findMany({
-      where: { sessionId: session.id, sender: { in: ['user', 'ai'] } },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: { sender: true, text: true },
     })
     const chatHistory = recentMessages
       .reverse()

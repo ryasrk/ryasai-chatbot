@@ -42,17 +42,20 @@ export async function POST(req: NextRequest) {
       if (existing) sessionCreatedAt = existing.createdAt
     }
 
-    await db.chatMessage.create({
-      data: { sessionId, userId: user.userId, sender: 'user', text: message, organizationId: user.organizationId },
-    }).catch(() => null)
-
-    // Load chat history (last 10 messages, exclude agent sender to avoid duplication)
+    // Loaded BEFORE the question is stored: `runAgentOrchestrator` appends the question itself after the history,
+    // so reading after the insert sent the same question as two consecutive user turns.
+    // Last 10 messages; the agent sender is excluded to avoid duplication.
     const recentMessages = await db.chatMessage.findMany({
       where: { sessionId, sender: { in: ['user', 'ai'] } },
       orderBy: { createdAt: 'desc' },
       take: 10,
       select: { sender: true, text: true, createdAt: true },
     }).catch(() => [])
+
+    await db.chatMessage.create({
+      data: { sessionId, userId: user.userId, sender: 'user', text: message, organizationId: user.organizationId },
+    }).catch(() => null)
+
     const fmtOptsHist: Intl.DateTimeFormatOptions = { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }
     const chatHistory = recentMessages
       .reverse()

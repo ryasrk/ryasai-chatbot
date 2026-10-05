@@ -441,16 +441,17 @@ describe('the user turn is persisted before the plan runs', () => {
   })
 
   test('the user turn is persisted before the orchestrator runs', async () => {
-    // The turn being answered is part of its own history window, which only holds if the write lands first.
+    // The transcript holds the turn before any tokens are spent answering it.
     await frames(await post({ message: 'hi' }))
     expect(events.indexOf('chatMessage.create:user')).toBeLessThan(events.indexOf('runAgentOrchestrator'))
   })
 
-  test('history is loaded AFTER the insert and excludes the AGENT sender', async () => {
-    // Including `agent` would re-feed the previous answer as if the user had said it.
+  test('history is loaded BEFORE the insert and excludes the AGENT sender', async () => {
+    // Including `agent` would re-feed the previous answer as if the user had said it. Loading AFTER the insert put the
+    // question in its own history, and the orchestrator appends the question again: two identical user turns.
     await frames(await post({ message: 'hi' }))
     expect(capturedHistoryQuery!.where).toEqual({ sessionId: 's-new', sender: { in: ['user', 'ai'] } })
-    expect(events.indexOf('chatMessage.create:user')).toBeLessThan(events.indexOf('chatMessage.findMany'))
+    expect(events.indexOf('chatMessage.findMany')).toBeLessThan(events.indexOf('chatMessage.create:user'))
   })
 
   test('history uses a 10-message window ordered newest first, then reversed', async () => {

@@ -293,7 +293,7 @@ export async function runAgenticLoop(
     documentIds?: string[] | null
     integrationIds?: string[] | null
   },
-  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null }) => Promise<CompletionResult>,
+  runCompletion: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null; agenticRound?: boolean }) => Promise<CompletionResult>,
 ): Promise<AgenticIterationResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -335,6 +335,9 @@ export async function runAgenticLoop(
         systemPromptPrefix: args.systemPromptPrefix,
         documentIds: args.documentIds,
         integrationIds: args.integrationIds,
+        // A round may still run several tools as one plan: without this a compound follow-up answered its first
+        // part and dropped the rest (measured live, 2026-10-05). The router never starts a second loop for a round.
+        agenticRound: true,
       }))
     } catch (e) {
       if (e instanceof AgenticDeadlineError) {
@@ -468,7 +471,7 @@ export async function runStreamingAgenticLoop(
     documentIds?: string[] | null
     integrationIds?: string[] | null
   },
-  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null }) => Promise<StreamingCompletionResult>,
+  runStreaming: (a: { question: string; userId: string; sessionId?: string; integrationId?: string; chatHistory?: ChatHistoryEntry[]; skipClarification?: boolean; systemPromptPrefix?: string; documentIds?: string[] | null; integrationIds?: string[] | null; agenticRound?: boolean }) => Promise<StreamingCompletionResult>,
 ): Promise<StreamingCompletionResult> {
   const allToolRuns: PendingToolRun[] = []
   const allCitations: Citation[] = []
@@ -507,6 +510,9 @@ export async function runStreamingAgenticLoop(
           systemPromptPrefix: args.systemPromptPrefix,
           documentIds: args.documentIds,
           integrationIds: args.integrationIds,
+          // A round may still run several tools as one plan: without this a compound follow-up answered its first
+          // part and dropped the rest (measured live, 2026-10-05). The router never starts a second loop for a round.
+          agenticRound: true,
         }))
       } catch (e) {
         if (e instanceof AgenticDeadlineError) {

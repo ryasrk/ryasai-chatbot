@@ -43,6 +43,11 @@ export async function runNonStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  /**
+   * This call is one round of the agentic loop. The round may run several tool calls as one plan, but never starts
+   * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
+   */
+  agenticRound?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
   signal?: AbortSignal
@@ -93,6 +98,11 @@ async function _runNonStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  /**
+   * This call is one round of the agentic loop. The round may run several tool calls as one plan, but never starts
+   * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
+   */
+  agenticRound?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
   signal?: AbortSignal
@@ -241,7 +251,7 @@ async function _runNonStreamingChatCompletion(args: {
   const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools } = await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
 
   // Same hand-off as the streaming path: the model asked for several tools, so its calls run as one plan.
-  if (extraToolIds.length > 0 && args.allowMultiStepDag) {
+  if (extraToolIds.length > 0 && (args.allowMultiStepDag || args.agenticRound)) {
     const dag = await runMultiStepDag({
       question: effectiveQuestion, userId: args.userId, sessionId: args.sessionId,
       chatHistory: args.chatHistory, documentIds: args.documentIds, integrationIds: args.integrationIds, requestedTools,
@@ -302,6 +312,11 @@ export async function runStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  /**
+   * This call is one round of the agentic loop. The round may run several tool calls as one plan, but never starts
+   * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
+   */
+  agenticRound?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
   /** See `runNonStreamingChatCompletion` — same contract, both transports. */
@@ -333,6 +348,11 @@ async function _runStreamingChatCompletion(args: {
   sessionId?: string
   chatHistory?: ChatHistoryEntry[]
   allowMultiStepDag?: boolean
+  /**
+   * This call is one round of the agentic loop. The round may run several tool calls as one plan, but never starts
+   * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
+   */
+  agenticRound?: boolean
   skipClarification?: boolean
   systemPromptPrefix?: string
   /** See `runNonStreamingChatCompletion` — same contract, both transports. */
@@ -406,7 +426,7 @@ async function _runStreamingChatCompletion(args: {
   // The DAG condition must mirror the branch below EXACTLY (`extraToolIds.length > 0 && args.allowMultiStepDag`): cancelling
   // for `extraToolIds` alone would abort a retrieval the single-source RAG branch still needs, and a cancelled result
   // re-throws into that branch's degrade-to-chat handling — a silent quality loss with no error to find.
-  const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag)
+  const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag || args.agenticRound)
   if (effectiveDecision !== 'RAG' || dagWillRun) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   // DEBUG: trace routing decisions
@@ -437,7 +457,7 @@ async function _runStreamingChatCompletion(args: {
    * CALLS. Guarded by `allowMultiStepDag` for the same reason the other DAG entry is: the planner costs an extra LLM
    * call, and callers that opted out of multi-step must not be charged for it.
    */
-  if (extraToolIds.length > 0 && args.allowMultiStepDag) {
+  if (dagWillRun) {
     const dag = await runMultiStepDag({
       question: effectiveQuestion,
       userId: args.userId,
