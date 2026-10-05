@@ -1911,3 +1911,34 @@ describe('retrieveWithReflection — an insufficient first pass on an un-marked 
   })
 })
 
+describe('evaluateEvidenceSufficiency — it sees all the evidence, and judges every part', () => {
+  // retrieval-recall.ts, 2026-10-05: implicit multi-hop questions were judged SUFFICIENT with one hop missing, so the
+  // second pass never ran. The judge saw only the first 2,000 characters of a 4-8 chunk context.
+  test('a fact beyond the old 2,000-character window reaches the judge', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockClear()
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"ok","confidence":0.9}')
+    try {
+      await evaluateEvidenceSufficiency({ question: 'q', evidence: 'x'.repeat(3000) + ' FACT-AT-3000' })
+      const sent = JSON.stringify(mockChatOnce.mock.calls[0])
+      expect(sent).toContain('FACT-AT-3000')
+    } finally {
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+      mockChatOnce.mockImplementation(async () => '')
+    }
+  })
+
+  test('the judge is told a multi-part question needs EVERY part', async () => {
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockClear()
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"ok","confidence":0.9}')
+    try {
+      await evaluateEvidenceSufficiency({ question: 'q', evidence: 'some evidence text' })
+      expect(JSON.stringify(mockChatOnce.mock.calls[0])).toMatch(/EVERY/)
+    } finally {
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+      mockChatOnce.mockImplementation(async () => '')
+    }
+  })
+})
+

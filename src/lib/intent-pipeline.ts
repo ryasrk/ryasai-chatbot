@@ -446,6 +446,13 @@ export async function rewriteQuery(args: {
 // or ask for clarification.
 // ----------------------------------------------------------------------------
 
+/**
+ * How much of the evidence the judge reads. It was 2,000 characters — under half of a 4-chunk context (581 characters
+ * per chunk on average, compound questions up to 8 chunks) — so a missing hop could not be seen and the second pass
+ * never ran (retrieval-recall.ts, 2026-10-05).
+ */
+const REFLECTION_EVIDENCE_CHARS = 8000
+
 const REFLECTION_SYSTEM_PROMPT = `You are a reflection evaluator for a RAG system. Given the user's question and the retrieved evidence, determine if the evidence is SUFFICIENT to answer the question.
 
 Rules:
@@ -453,6 +460,8 @@ Rules:
 - If the evidence is about a different topic → insufficient
 - If the evidence is tangentially related but doesn't answer the question → insufficient
 - If the evidence partially answers but key details are missing → insufficient
+- If the question asks for several facts, or for a figure that must be combined from several facts (a total, a
+  difference, a value looked up via another value), the evidence is sufficient only if EVERY one of them is present
 - If the evidence directly answers the question → sufficient
 - Empty evidence → insufficient
 
@@ -516,7 +525,7 @@ export async function evaluateEvidenceSufficiency(args: {
         // Higher stakes than the reflexion site — a document that talks its way past this check
         // suppresses the retrieval reflection pass entirely, which is a QUALITY effect a customer
         // would feel and could not attribute.
-        content: `Question: ${args.question}\n\n${wrapUntrusted('CONTEXT (EVIDENCE TO ASSESS):', args.evidence.slice(0, 2000), { withRule: true })}\n\nIs the evidence above sufficient to answer the question?`,
+        content: `Question: ${args.question}\n\n${wrapUntrusted('CONTEXT (EVIDENCE TO ASSESS):', args.evidence.slice(0, REFLECTION_EVIDENCE_CHARS), { withRule: true })}\n\nIs the evidence above sufficient to answer the question?`,
       },
     ], 0, 'reflection')
 
