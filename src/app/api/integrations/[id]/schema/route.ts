@@ -17,6 +17,7 @@ import { decryptConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { filterSchemaForPolicy, loadSqlAccessPolicy, normalizeRole } from '@/lib/access-scope'
+import { TABLE_DESCRIPTION_MAX } from '@/lib/integration-limits'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -138,7 +139,7 @@ interface SchemaPatchBody {
   description: string | null
 }
 
-const SCHEMA_DESC_MAX = 500
+const SCHEMA_DESC_MAX = TABLE_DESCRIPTION_MAX
 
 /**
  * PATCH /api/integrations/[id]/schema

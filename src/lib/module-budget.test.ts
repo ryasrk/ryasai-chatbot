@@ -1,11 +1,15 @@
 /**
- * Architecture rules for `src/lib`: no import cycle, and no module longer than 800 lines.
+ * Architecture rules for ALL of `src` (`.ts` and `.tsx`): no import cycle, and no module longer than 800 lines.
  *
  * HISTORY. Measured on 2026-10-04: three static import cycles (the largest spanned the router, planner, agentic loop,
  * tool selector and unified tools) and nine non-test modules over 800 lines. This file began as a ratchet that only
  * let both numbers fall. Both reached zero the same day — the cycles broken with leaf modules and one explicit port,
  * the nine modules split along their seams with their public surface kept by re-export — so both are now absolute.
  * A module that needs to grow past the cap has two responsibilities: split it along the seam, not around the rule.
+ *
+ * EXTENDED TO ALL OF `src` on 2026-10-05. Measured first: the whole tree already had 0 cycles, and four files outside
+ * `src/lib` were over the cap (settings-view 1,196, schedules-view 1,108, app/page 863, schema-viewer 809). Each was
+ * split along its existing seams (tabs, dialogs, the navigation shell, the schedule model), so the rule starts absolute.
  *
  * Static `import`/`export … from` only: type-only imports are erased, and a dynamic `import()` is the documented way
  * this codebase breaks a runtime cycle.
@@ -17,16 +21,16 @@ import { dirname, join, relative, resolve } from 'node:path'
 const ROOT = join(import.meta.dir, '../..')
 const MAX_LINES = 800
 
-const files = globSync('src/lib/**/*.ts', { cwd: ROOT }).filter((f) => !f.endsWith('.test.ts'))
+const files = globSync('src/**/*.{ts,tsx}', { cwd: ROOT }).filter((f) => !/\.test\.tsx?$/.test(f))
 const known = new Set(files)
-const short = (f: string) => f.replace(/^src\/lib\//, '')
+const short = (f: string) => f.replace(/^src\//, '')
 
 function resolveSpec(from: string, spec: string): string | null {
   let base: string
   if (spec.startsWith('@/')) base = 'src/' + spec.slice(2)
   else if (spec.startsWith('.')) base = relative(ROOT, resolve(ROOT, dirname(from), spec))
   else return null
-  for (const candidate of [`${base}.ts`, `${base}/index.ts`, base]) if (known.has(candidate)) return candidate
+  for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base]) if (known.has(candidate)) return candidate
   return null
 }
 
@@ -81,7 +85,7 @@ function cycles(graph: Map<string, string[]>): string[][] {
   return out
 }
 
-describe('src/lib module budget', () => {
+describe('src module budget', () => {
   test(`no module is longer than ${MAX_LINES} lines`, () => {
     const violations: string[] = []
     for (const f of files) {

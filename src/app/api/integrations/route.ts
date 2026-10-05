@@ -17,8 +17,10 @@ import { enrichSchemaDescriptions } from '@/lib/schema-enrichment'
 import { invalidateSourceEmbeddingCache } from '@/lib/smart-router'
 import { logSwallowed } from '@/lib/logger'
 import { checkQuota, quotaExceededMessage } from '@/lib/plan-gating'
+import { VALID_DB_PROVIDER_IDS } from '@/lib/db-provider-presets'
 
-const ALLOWED_DATABASE_PROVIDERS = new Set(['POSTGRESQL', 'MYSQL', 'MSSQL', 'CLICKHOUSE', 'SUPABASE', 'NEON', 'PLANETSCALE', 'TIDB', 'COCKROACHDB'])
+// The preset list IS the supported set: a hand-kept copy here could accept an id no connector or SQL guard resolves.
+const ALLOWED_DATABASE_PROVIDERS = new Set(VALID_DB_PROVIDER_IDS)
 
 export async function GET(_req: NextRequest) {
   try {

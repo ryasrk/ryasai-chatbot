@@ -15,6 +15,7 @@ import { getActiveUser, requireRole, writeAudit, handleApiError } from '@/lib/se
 import { decryptConfig, maskConfig } from '@/lib/crypto'
 import { connectorRegistry } from '@/lib/connectors'
 import { filterSchemaForPolicy, loadSqlAccessPolicy, normalizeRole } from '@/lib/access-scope'
+import { INTEGRATION_PROMPT_MAX } from '@/lib/integration-limits'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -94,7 +95,6 @@ interface PatchBody {
   contextPrompt?: string
 }
 
-const INTEGRATION_PROMPT_MAX = 4000
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx) {
   try {
