@@ -1322,6 +1322,66 @@ describe('runNonStreamingChatCompletion — the agentic hand-off', () => {
   })
 })
 
+describe('runNonStreamingChatCompletion — a step whose tool the plan already chose', () => {
+  /*
+   * MEASURED LIVE (2026-10-05): every step of a compound plan re-entered the full router with only its question, so a
+   * two-part question paid intent analysis, the tool selector and a speculative rerank AGAIN per step (11–14 LLM calls
+   * per question), and a `sql` step could be re-routed to another tool. The model already chose the tool and the
+   * database; the step runs it.
+   */
+  const twoDatabases = () => {
+    mockIntegrationCount.mockImplementation(async () => 2)
+    mockIntegrationFindMany.mockImplementation(async () => [
+      { id: 'integ-sales', name: 'Sales DB', type: 'postgresql' },
+      { id: 'integ-hr', name: 'HR DB', type: 'postgresql' },
+    ])
+    mockIntegrationFindFirst.mockImplementation(async () => ({
+      id: 'integ-hr', name: 'HR DB', provider: 'POSTGRESQL', encryptedConfig: 'enc',
+      schemas: [{ tableName: 'employees', columns: [{ name: 'id', type: 'int' }] }],
+    }))
+  }
+
+  test('a planned SQL step runs on the NAMED database without the selector or intent analysis', async () => {
+    return withOrg(async () => {
+      twoDatabases()
+      mockSelectToolWithLlm.mockClear()
+      lastIntentArgs = {}
+      await runNonStreamingChatCompletion({ question: 'how many employees', userId: 'u1', plannedTool: { tool: 'sql', database: 'hr db' } })
+      expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(0)
+      expect(lastIntentArgs).toEqual({})
+      const looked = (mockIntegrationFindFirst.mock.calls as unknown[][]).map((c) => (c[0] as { where?: { id?: string } })?.where?.id)
+      expect(looked).toContain('integ-hr')
+      expect(looked).not.toContain('integ-sales')
+    })
+  })
+
+  test('the database name is resolved INSIDE the key scope — a name outside it is not reached', async () => {
+    return withOrg(async () => {
+      twoDatabases()
+      mockIntegrationFindFirst.mockClear()
+      mockSelectToolWithLlm.mockClear()
+      await runNonStreamingChatCompletion({
+        question: 'how many employees', userId: 'u1', integrationIds: ['integ-sales'], plannedTool: { tool: 'sql', database: 'HR DB' },
+      })
+      // The mock returns BOTH rows whatever the filter, so this holds only if the resolver also checks the scope itself.
+      const looked = (mockIntegrationFindFirst.mock.calls as unknown[][]).map((c) => (c[0] as { where?: { id?: string } })?.where?.id)
+      expect(looked).not.toContain('integ-hr')
+      // Unresolvable inside the scope, so the step falls back to ordinary (scoped) routing.
+      expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  test('a planned RAG step does not ask the selector again', async () => {
+    return withOrg(async () => {
+      mockSelectToolWithLlm.mockClear()
+      lastIntentArgs = {}
+      await runNonStreamingChatCompletion({ question: 'annual leave days', userId: 'u1', plannedTool: { tool: 'rag' } })
+      expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(0)
+      expect(lastIntentArgs).toEqual({})
+    })
+  })
+})
+
 describe('tool-router — an ambiguous data source', () => {
   test('the integration the MODEL named is what reaches runSqlBranch', async () => {
     return withOrg(async () => {

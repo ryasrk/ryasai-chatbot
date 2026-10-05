@@ -201,6 +201,34 @@ export function applyToolGating(
 /** One tool call the model made; a compound question carries several. */
 export type RequestedTool = { toolId: string; args: Record<string, unknown> }
 
+/** A plan step's tool, chosen by the model before the step runs: the router runs it instead of choosing again. */
+export type PlannedTool = { tool: string; database?: string }
+
+/**
+ * The routing verdict for a step whose tool the plan already chose, or `null` to route as usual.
+ *
+ * A SQL step names its database; the name is resolved among the ACTIVE integrations the key may read, and checked
+ * against the scope again on the result so a name outside it can never resolve. An unknown or out-of-scope name returns
+ * `null`, and the step falls back to ordinary (scoped) routing rather than guessing.
+ */
+export async function resolvePlannedTool(
+  planned: PlannedTool,
+  integrationIds?: string[] | null,
+): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined } | null> {
+  if (planned.tool === 'rag') return { decision: 'RAG', resolvedIntegrationId: undefined }
+  if (planned.tool === 'rest') return { decision: 'REST', resolvedIntegrationId: undefined }
+  if (planned.tool !== 'sql') return null
+  const wanted = planned.database?.trim().toLowerCase()
+  if (!wanted) return null
+  const scoped = integrationIds && integrationIds.length > 0 ? integrationIds : null
+  const rows = await db.integration.findMany({
+    where: { status: 'active', ...(scoped ? { id: { in: scoped } } : {}) },
+    select: { id: true, name: true },
+  })
+  const hit = rows.find((r) => r.name.trim().toLowerCase() === wanted && (!scoped || scoped.includes(r.id)))
+  return hit ? { decision: 'SQL', resolvedIntegrationId: hit.id } : null
+}
+
 export function startSpeculativeRouting(
   args: Parameters<typeof resolveRouting>[0],
   effectiveQuestion: string,

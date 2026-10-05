@@ -347,6 +347,17 @@ export async function executePlan(args: {
   return results
 }
 
+/**
+ * The tool a built-in step runs, handed to the router so it does not choose again. Re-routing a step cost intent
+ * analysis and a selector call per step (measured live: 11–14 LLM calls for a two-part question) and could move a
+ * `sql` step to another tool. Other step kinds route as before.
+ */
+function plannedToolOf(step: PlanStep): { tool: string; database?: string } | undefined {
+  if (step.tool !== 'sql' && step.tool !== 'rag' && step.tool !== 'rest') return undefined
+  const database = step.tool === 'sql' ? step.input.database?.trim() : undefined
+  return database ? { tool: step.tool, database } : { tool: step.tool }
+}
+
 async function executeStep(
   step: PlanStep,
   args: { userId: string; sessionId?: string; onStatus?: (stepId: string, tool: string, status: StepStatus) => void; isAdmin?: boolean; documentIds?: string[] | null; integrationIds?: string[] | null },
@@ -548,6 +559,7 @@ async function executeStep(
       userId: args.userId,
       documentIds: args.documentIds,
       integrationIds: args.integrationIds,
+      plannedTool: plannedToolOf(step),
     })
     if (completion.needsUserInput) {
       args.onStatus?.(step.id, step.tool, 'error')
@@ -637,6 +649,8 @@ async function selfCorrect(args: {
       userId: args.userId,
       documentIds: args.documentIds,
       integrationIds: args.integrationIds,
+      // The retry is the SAME step, so it runs the same tool.
+      plannedTool: plannedToolOf(args.step),
     })
     return completion.answer
   } catch (e) {

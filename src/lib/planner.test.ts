@@ -2170,3 +2170,32 @@ describe('executePlan — a step that stops on a question for the user', () => {
     expect(results[0].citations).toEqual([citation] as never)
   })
 })
+
+describe('executePlan — a built-in step runs the tool the plan chose', () => {
+  // MEASURED LIVE: a step re-entered the router with its question only, so the selector and intent analysis ran again
+  // per step and a `sql` step could be re-routed. The plan's tool (and database) now travel with the step.
+  test('sql, rag and rest steps hand their tool, and a SQL step its database, to the router', async () => {
+    mockRunNonStreaming.mockClear()
+    await executePlan({
+      plan: {
+        steps: [
+          { id: 's1', tool: 'sql', input: { question: 'In HR DB: how many employees', database: 'HR DB' } },
+          { id: 's2', tool: 'rag', input: { question: 'annual leave days' } },
+          { id: 's3', tool: 'rest', input: { question: 'weather in Jakarta' } },
+        ],
+        needsSynthesis: true,
+      },
+      userId: 'u1',
+    })
+    const planned = (mockRunNonStreaming.mock.calls as unknown as Array<[{ plannedTool?: unknown }]>).map((c) => c[0].plannedTool)
+    expect(planned).toEqual([{ tool: 'sql', database: 'HR DB' }, { tool: 'rag' }, { tool: 'rest' }])
+  })
+
+  test('a step of another kind routes as before', async () => {
+    mockRunNonStreaming.mockClear()
+    await executePlan({ plan: { steps: [{ id: 's1', tool: 'chat', input: { question: 'hi' } }], needsSynthesis: false }, userId: 'u1' })
+    const first = (mockRunNonStreaming.mock.calls as unknown as Array<[{ plannedTool?: unknown }]>)[0]?.[0]
+    expect(first?.plannedTool).toBeUndefined()
+  })
+})
+

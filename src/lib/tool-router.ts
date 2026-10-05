@@ -26,9 +26,12 @@ import { runMultiStepDag, runAgenticLoop, runStreamingAgenticLoop } from '@/lib/
 import { withUsageTracking } from '@/lib/llm-client'
 import {
   formatSchemasForIntent, formatDocForIntent, loadIntentPipeline, loadDbData, applyToolGating, startSpeculativeRouting,
-  settleRouting, resolveRouting, loadContextualContext, type RequestedTool,
+  settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, type RequestedTool, type PlannedTool,
 } from '@/lib/tool-router-routing'
 export { chooseAvailableDecision, formatSchemaForIntent, formatSchemasForIntent, formatDocForIntent } from '@/lib/tool-router-routing'
+
+/** A planned step needs retrieval by definition, and its question came from the model, not the user, so nothing to clarify. */
+const PLANNED_STEP_INTENT = { needsClarification: false, clarificationQuestion: undefined, needsRetrieval: true } as const
 
 export async function runNonStreamingChatCompletion(args: {
   question: string
@@ -48,6 +51,11 @@ export async function runNonStreamingChatCompletion(args: {
    * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
    */
   agenticRound?: boolean
+  /**
+   * The tool a plan step already chose (and, for SQL, the database it named). The step runs it: no intent analysis and
+   * no second selector call, which a compound question used to pay again for every step. See `resolvePlannedTool`.
+   */
+  plannedTool?: PlannedTool
   skipClarification?: boolean
   systemPromptPrefix?: string
   signal?: AbortSignal
@@ -103,6 +111,11 @@ async function _runNonStreamingChatCompletion(args: {
    * another loop (`allowMultiStepDag` with history would). See `runAgenticLoop`.
    */
   agenticRound?: boolean
+  /**
+   * The tool a plan step already chose (and, for SQL, the database it named). The step runs it: no intent analysis and
+   * no second selector call, which a compound question used to pay again for every step. See `resolvePlannedTool`.
+   */
+  plannedTool?: PlannedTool
   skipClarification?: boolean
   systemPromptPrefix?: string
   signal?: AbortSignal
@@ -205,10 +218,13 @@ async function _runNonStreamingChatCompletion(args: {
 
   args.signal?.throwIfAborted()
 
+  // A plan step whose tool is already chosen skips the selector and intent analysis; null means route as usual.
+  const planned = args.plannedTool ? await resolvePlannedTool(args.plannedTool, args.integrationIds) : null
+
   // Started BEFORE intent analysis so the two LLM calls overlap; see `startSpeculativeRouting`.
-  const speculativeRouting = startSpeculativeRouting(args, effectiveQuestion, dbData, memoryContext)
+  const speculativeRouting = planned ? null : startSpeculativeRouting(args, effectiveQuestion, dbData, memoryContext)
   // Retrieval joins them: it reads the question and the document scope, not the routing verdict. See speculative-retrieval.ts.
-  const speculativeRetrieval = startSpeculativeRetrieval({
+  const speculativeRetrieval = planned && planned.decision !== 'RAG' ? null : startSpeculativeRetrieval({
     question: effectiveQuestion,
     documentIds: args.documentIds,
     documentCount: docCount,
@@ -216,7 +232,7 @@ async function _runNonStreamingChatCompletion(args: {
     pinnedIntegration: Boolean(args.integrationId),
   })
 
-  const intent = await analyzeIntent({
+  const intent = planned ? PLANNED_STEP_INTENT : await analyzeIntent({
     question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
     chatHistory: args.chatHistory,
     hasDocuments: docCount > 0, hasIntegrations: intCount > 0,
@@ -248,7 +264,9 @@ async function _runNonStreamingChatCompletion(args: {
 
   args.signal?.throwIfAborted()
 
-  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools } = await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
+  const routed: Awaited<ReturnType<typeof resolveRouting>> = planned
+    ?? await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
+  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools } = routed
 
   // Same hand-off as the streaming path: the model asked for several tools, so its calls run as one plan.
   if (extraToolIds.length > 0 && (args.allowMultiStepDag || args.agenticRound)) {
