@@ -1,3 +1,6 @@
+// The suite's `intentState` seam drives the MODEL intent path; the rule path (default) has its own block below.
+process.env.INTENT_MODEL = 'true'
+
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -1330,6 +1333,42 @@ describe('runNonStreamingChatCompletion — the agentic hand-off', () => {
     // The second argument is how the loop calls back for each round; passing a
     // no-op would make every agentic turn return an empty answer.
     expect(agenticState.calls).toHaveLength(1)
+  })
+})
+
+describe('intent without a model call (the default)', () => {
+  // 150 questions through both the intent model and the selector: the model never improved the outcome, and cost
+  // ~3,000 tokens per question. See intent-by-rule.ts.
+  const withRuleIntent = async (fn: () => Promise<void>) => {
+    delete process.env.INTENT_MODEL
+    try { await fn() } finally { process.env.INTENT_MODEL = 'true' }
+  }
+
+  test('no intent-model call; a greeting is answered as chat because the SELECTOR chose chat', async () => {
+    await withRuleIntent(async () => {
+      lastIntentArgs = {}
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'chat', decision: 'CHAT' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      await runStreamingChatCompletion({ question: 'Halo, apa kabar?', userId: 'u1' })
+      expect(lastIntentArgs).toEqual({})
+      expect(chatStreamArgs).toHaveLength(1)
+    })
+  })
+
+  test('a document question still reaches retrieval', async () => {
+    await withRuleIntent(async () => {
+      mockDocumentCount.mockImplementation(async () => 1)
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      await runStreamingChatCompletion({ question: 'Berapa hari cuti tahunan?', userId: 'u1' })
+      expect(ragStreamArgs).toHaveLength(1)
+    })
+  })
+
+  test('a pronoun with no antecedent is still asked about, by rule', async () => {
+    await withRuleIntent(async () => {
+      const r = await runNonStreamingChatCompletion({ question: 'How many of those are there?', userId: 'u1' })
+      expect(r.needsUserInput).toBe(true)
+      expect(lastIntentArgs).toEqual({})
+    })
   })
 })
 

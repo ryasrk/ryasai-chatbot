@@ -1,3 +1,6 @@
+// This suite drives the intent MODEL's verdicts through its mock; the rule path (default) is covered in tool-router.test.ts.
+process.env.INTENT_MODEL = 'true'
+
 import { describe, expect, test, mock, beforeEach } from 'bun:test'
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { narrowDocumentScope, resolveUserRole } from '@/lib/access-scope'
 import { cancelSpeculativeRetrieval, startSpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { analyzeIntent } from '@/lib/intent-pipeline'
+import { intentByRule, intentModelEnabled } from '@/lib/intent-by-rule'
 import { rememberChatTurn } from '@/lib/cognee'
 
 export {
@@ -199,8 +200,10 @@ async function _runNonStreamingChatCompletion(args: {
     pinnedIntegration: Boolean(args.integrationId),
   })
 
-  const intent = planned ? PLANNED_STEP_INTENT : await analyzeIntent({
-    question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
+  // The intent MODEL only on opt-in (INTENT_MODEL=true); by default rules decide clarification and routing decides chat.
+  const intentQuestion = args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question
+  const intent = planned ? PLANNED_STEP_INTENT : !intentModelEnabled() ? intentByRule(intentQuestion) : await analyzeIntent({
+    question: intentQuestion,
     chatHistory: args.chatHistory,
     hasDocuments: docCount > 0, hasIntegrations: intCount > 0,
     documentNames: docRows.map((d) => formatDocForIntent(d)),
@@ -383,8 +386,10 @@ async function _runStreamingChatCompletion(args: {
     pinnedIntegration: Boolean(args.integrationId),
   })
 
-  const intent = await analyzeIntent({
-    question: args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question,
+  // Same choice as the non-streaming transport: the intent model only on opt-in.
+  const intentQuestion = args.chatHistory && args.chatHistory.length > 0 ? effectiveQuestion : args.question
+  const intent = !intentModelEnabled() ? intentByRule(intentQuestion) : await analyzeIntent({
+    question: intentQuestion,
     chatHistory: args.chatHistory,
     hasDocuments: docCount > 0, hasIntegrations: intCount > 0,
     documentNames: docRows.map((d) => formatDocForIntent(d)),
