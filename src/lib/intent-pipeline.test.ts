@@ -1968,3 +1968,43 @@ describe('RAG_REFLECTION=false — the sufficiency judge can be switched off', (
   })
 })
 
+describe('retrieveWithReflection — the reranker verdict replaces the judge call (RAG_MERGED_JUDGE=on)', () => {
+  const run = async (verdict: boolean | undefined) => {
+    process.env.RAG_MERGED_JUDGE = 'on'
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockClear()
+    mockChatOnce.mockImplementation(async () => '{"sufficient":true,"reason":"judge","confidence":0.9}')
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string }) => ({
+      chunks: [makeChunk({ chunkId: `c-${args.query}`, content: 'Cuti tahunan 14 hari kerja. '.repeat(3), score: 1, ...(verdict === undefined ? {} : { rerankVerdict: verdict }) })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+    try {
+      return await retrieveWithReflection({ query: 'Berapa hari cuti tahunan?', topK: 4 })
+    } finally {
+      delete process.env.RAG_MERGED_JUDGE
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+      mockChatOnce.mockImplementation(async () => '')
+    }
+  }
+  const judgeCalls = () => (mockChatOnce.mock.calls as unknown as Array<[unknown, unknown, unknown, string]>).filter((c) => c[3] === 'reflection').length
+
+  test('a "sufficient" verdict: no judge call, one pass', async () => {
+    const r = await run(true)
+    expect(judgeCalls()).toBe(0)
+    expect(r.reflection.sufficient).toBe(true)
+    expect(r.retrievalPasses).toBe(1)
+  })
+
+  test('an "insufficient" verdict: no judge call, and the second pass still runs', async () => {
+    const r = await run(false)
+    expect(judgeCalls()).toBe(0)
+    expect(r.reflection.sufficient).toBe(false)
+    expect(r.retrievalPasses).toBe(2)
+  })
+
+  test('no verdict on the chunks: the judge runs as before', async () => {
+    await run(undefined)
+    expect(judgeCalls()).toBe(1)
+  })
+})
+

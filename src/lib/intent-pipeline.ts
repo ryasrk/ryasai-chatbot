@@ -565,10 +565,13 @@ export async function retrieveWithReflection(args: {
   args.signal?.throwIfAborted()
   const evidenceChunks = merged.chunks.slice(0, k).filter((c) => !isPlaceholderChunk(c.content))
   const evidence = evidenceChunks.map((c) => c.content).join('\n\n')
-  const reflection = await evaluateEvidenceSufficiency({
-    question: args.query,
-    evidence,
-  })
+  // RAG_MERGED_JUDGE=on: the reranker already judged these chunks against the question (every part); its verdict stands
+  // in for the judge call when every evidence chunk carries one. Any chunk without one (rerank skipped, unparseable
+  // reply) falls back to the judge, so the switch can only remove calls, never verdicts.
+  const verdicts = evidenceChunks.map((c) => c.rerankVerdict)
+  const reflection = process.env.RAG_MERGED_JUDGE === 'on' && verdicts.length > 0 && verdicts.every((v) => v !== undefined)
+    ? { sufficient: verdicts.every(Boolean), reason: 'reranker verdict', confidence: 0.7 }
+    : await evaluateEvidenceSufficiency({ question: args.query, evidence })
 
   // 4. Multi-turn: if reflection says insufficient, do one more pass with 2x topK
   if (!reflection.sufficient && merged.chunks.length > 0) {

@@ -164,6 +164,11 @@ export interface RetrievedChunk {
    * re-deriving it from a field that may describe a different ranking.
    */
   rank?: number
+  /**
+   * The reranker's verdict on the endorsed set as a whole: does it hold everything the query needs? Set only when the
+   * merged judge is on (RAG_MERGED_JUDGE=on) and the model answered it; the sufficiency judge then need not run.
+   */
+  rerankVerdict?: boolean
 }
 
 export function sortRetrievedChunks<T extends { score: number; chunkIndex: number }>(

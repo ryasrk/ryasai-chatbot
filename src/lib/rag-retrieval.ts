@@ -317,13 +317,24 @@ async function rerankWithLlm(
      * as they were (MEASURED locally: `ownContent` is absent there, and the reranker already saw the real text).
      */
     const chunkList = chunks.map((c, i) => `[${i}] ${(c.ownContent ?? c.content).slice(0, 300)}`).join('\n\n')
-    const systemPrompt =
-      'You are a retrieval reranker. Given a query and text chunks, score each chunk\'s relevance to the query from 0 to 10.\n' +
-      '10 = directly answers the query, 7 = contains relevant info, 4 = partially relevant, 1 = not relevant.\n' +
-      'Output ONLY a JSON array of {index, score} pairs. Example: [{"index":0,"score":8},{"index":1,"score":3}]'
-    const userMessage = `Query: ${query}\n\nChunks:\n${chunkList}\n\nScore each chunk. Output JSON array of {index, score} pairs only.`
+    // RAG_MERGED_JUDGE=on: the same call also says whether the chunks TOGETHER answer the query, so the separate
+    // sufficiency judge (1.38 calls per question in the 2026-10-05 A/B) can be skipped. Same question, same chunks.
+    const mergedJudge = process.env.RAG_MERGED_JUDGE === 'on'
+    const systemPrompt = mergedJudge
+      ? 'You are a retrieval reranker. Given a query and text chunks, score each chunk\'s relevance to the query from 0 to 10.\n' +
+        '10 = directly answers the query, 7 = contains relevant info, 4 = partially relevant, 1 = not relevant.\n' +
+        'Also decide whether the relevant chunks TOGETHER contain everything needed to answer the query (every part, every figure): "answers" true or false.\n' +
+        'Output ONLY JSON: {"answers": true|false, "scores": [{"index":0,"score":8},{"index":1,"score":3}]}'
+      : 'You are a retrieval reranker. Given a query and text chunks, score each chunk\'s relevance to the query from 0 to 10.\n' +
+        '10 = directly answers the query, 7 = contains relevant info, 4 = partially relevant, 1 = not relevant.\n' +
+        'Output ONLY a JSON array of {index, score} pairs. Example: [{"index":0,"score":8},{"index":1,"score":3}]'
+    const userMessage = mergedJudge
+      ? `Query: ${query}\n\nChunks:\n${chunkList}\n\nScore each chunk and say whether they answer the query. Output the JSON object only.`
+      : `Query: ${query}\n\nChunks:\n${chunkList}\n\nScore each chunk. Output JSON array of {index, score} pairs only.`
 
     const raw = await chatOnce(cfg, [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }], 0, 'rag-rerank')
+    const verdictMatch = mergedJudge ? raw.match(/"answers"\s*:\s*(true|false)/) : null
+    const verdict = verdictMatch ? verdictMatch[1] === 'true' : undefined
 
     const scored = parseRerankerScores(raw, chunks.length)
     if (!scored) return chunks.slice(0, topK)
@@ -342,7 +353,7 @@ async function rerankWithLlm(
        * `[0.3333, 1, 0.5, 0.1111]` — an array that is correctly ordered and a visible score that contradicts it.
        * The UI then labelled it "Match #1…#4", with the best chunk shown as Match #3.
        */
-      reranked.push({ ...chunk, rerankScore: item.score })
+      reranked.push({ ...chunk, rerankScore: item.score, ...(verdict !== undefined ? { rerankVerdict: verdict } : {}) })
     }
     /*
      * A TOTAL rejection is NOT a ranking, so it does not get to empty the result.

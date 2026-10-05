@@ -330,3 +330,45 @@ describe('rerankWithLlm — reordering by model judgement', () => {
     expect(r.chunks[0].chunkId).toBe('c8')
   })
 })
+
+describe('rerankWithLlm — one call that also judges sufficiency (RAG_MERGED_JUDGE=on)', () => {
+  // The reranker and the sufficiency judge read the same question and the same chunks; asked together, the judge's
+  // separate call (1.38 per question in the A/B) is not needed. Off by default until an A/B decides.
+  const row = (i: number) => ({
+    id: `c${i}`, chunkIndex: i, content: `sales by region record number ${i}`, keywords: null,
+    embeddingJson: null, embeddingModel: null, contextPrefix: null, document: { id: 'd1', name: 'doc.pdf' },
+  })
+  const withMerged = async (fn: () => Promise<void>) => {
+    process.env.RAG_MERGED_JUDGE = 'on'
+    try { await fn() } finally { delete process.env.RAG_MERGED_JUDGE }
+  }
+
+  test('the verdict travels on every endorsed chunk, and the prompt asks for it', async () => {
+    await withMerged(async () => {
+      state.chunkRows = Array.from({ length: 9 }, (_, i) => row(i))
+      state.chatRaw = '{"answers": false, "scores": [{"index":5,"score":10},{"index":0,"score":9}]}'
+      const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
+      expect(r.chunks.map((c) => c.chunkId)).toEqual(['c5', 'c0'])
+      expect(r.chunks.every((c) => c.rerankVerdict === false)).toBe(true)
+      expect(JSON.stringify(state.chatCalls[0].messages)).toContain('answers')
+    })
+  })
+
+  test('a reply without the verdict leaves it unset (the judge will run as before)', async () => {
+    await withMerged(async () => {
+      state.chunkRows = Array.from({ length: 9 }, (_, i) => row(i))
+      state.chatRaw = '[{"index":5,"score":10}]'
+      const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
+      expect(r.chunks[0].rerankVerdict).toBeUndefined()
+    })
+  })
+
+  test('off by default: the prompt and the chunks are unchanged', async () => {
+    state.chunkRows = Array.from({ length: 9 }, (_, i) => row(i))
+    state.chatRaw = '{"answers": true, "scores": [{"index":5,"score":10}]}'
+    const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 3 })
+    expect(r.chunks[0].rerankVerdict).toBeUndefined()
+    expect(JSON.stringify(state.chatCalls[0].messages)).not.toContain('"answers"')
+  })
+})
+
