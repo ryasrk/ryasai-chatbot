@@ -1,0 +1,3751 @@
+{
+ "before": {
+  "label": "before",
+  "rows": [
+   {
+    "id": "q001",
+    "firstTokenMs": 4420,
+    "totalMs": 5103,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4326,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1951
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2375
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2625
+     }
+    },
+    "correct": true,
+    "answerPreview": "Arunika formally commits to reducing its aggregate greenhouse gas emissions by **30% (−30%) by December 31, 2030**, measured against its verified 2023 baseline."
+   },
+   {
+    "id": "q002",
+    "firstTokenMs": 4851,
+    "totalMs": 5205,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4910,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1834
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3076
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2114
+     }
+    },
+    "correct": true,
+    "answerPreview": "The 2030 target for **Scope 1 (Direct Fuel & Fleet)** is **17,255 tCO2e**, a 30% reduction against the verified 2023 baseline of 24,650 tCO2e. The table also sh"
+   },
+   {
+    "id": "q003",
+    "firstTokenMs": 3592,
+    "totalMs": 3978,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3451,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1425
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2026
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1928
+     }
+    },
+    "correct": true,
+    "answerPreview": "For Scope 2 (Purchased Electricity), the 2026 interim target listed in the table is **4,650 tCO2e**, down from a verified 2023 baseline of 5,820 tCO2e. The rela"
+   },
+   {
+    "id": "q004",
+    "firstTokenMs": 3328,
+    "totalMs": 4027,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3583,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1754
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1829
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2185
+     }
+    },
+    "correct": true,
+    "answerPreview": "The 2023 baseline for Scope 3 (Waste & Supply Chain) is listed as **1,480 tCO2e**. For context, that same table sets a 2026 interim target of 1,320 tCO2e and a "
+   },
+   {
+    "id": "q005",
+    "firstTokenMs": 7295,
+    "totalMs": 7751,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 7364,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1691
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 5673
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2062
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Sustainability and Environmental Policy (POL-OPS-ESG-2026-002) applies to **1,240 employees**, along with temporary personnel and registered contractors. Co"
+   },
+   {
+    "id": "q007",
+    "firstTokenMs": 3584,
+    "totalMs": 4521,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3665,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1719
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1946
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2561
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan **Grade 1 (C-Level)**, uang harian di **Wilayah Khusus** — yang mencakup Jabodetabek dan Balikpapan — ditetapkan sebesar **Rp800.000 per hari kal"
+   },
+   {
+    "id": "q008",
+    "firstTokenMs": 3596,
+    "totalMs": 4349,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 2878,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1297
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1581
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2636
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan **Grade 2 (Senior Management)**, uang harian di **Wilayah Lainnya (kota/kabupaten lain)** adalah **IDR 400.000** per hari kalender. Sebagai perba"
+   },
+   {
+    "id": "q009",
+    "firstTokenMs": 4209,
+    "totalMs": 4988,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3927,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1831
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2096
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2879
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan kebijakan reimbursement dan perjalanan dinas, batas maksimal penggantian biaya kamar hotel per malam untuk karyawan **Grade 4 adalah IDR 500.000 per"
+   },
+   {
+    "id": "q010",
+    "firstTokenMs": 7439,
+    "totalMs": 8052,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 7490,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1747
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 5743
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2294
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Reimbursement dan Perjalanan Dinas (POL-FIN-2025-004, versi 3.1, berlaku 1 November 2025) mencakup **seluruh 1.240 karyawan PT Arunika Logistik Nusant"
+   },
+   {
+    "id": "q011",
+    "firstTokenMs": 4197,
+    "totalMs": 4715,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4011,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1707
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2304
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2397
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut prosedur dalam kebijakan reimbursement dan perjalanan dinas, form pertanggungjawaban biaya perjalanan dinas beserta klaim *reimbursement* wajib diajukan"
+   },
+   {
+    "id": "q012",
+    "firstTokenMs": 5173,
+    "totalMs": 6145,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4781,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2006
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2775
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3356
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut standar fasilitas akomodasi pada kebijakan perjalanan dinas, plafon maksimal penggantian biaya kamar hotel per malam untuk karyawan **Grade 1 adalah IDR"
+   },
+   {
+    "id": "q014",
+    "firstTokenMs": 4207,
+    "totalMs": 4654,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3836,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1645
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2191
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2316
+     }
+    },
+    "correct": true,
+    "answerPreview": "Dalam ruang lingkup kebijakan pengadaan, fasilitas pergudangan SBY-01 di Surabaya tercatat seluas **18.000 m²**. Angka ini muncul pada bagian daftar \"Fasilitas "
+   },
+   {
+    "id": "q015",
+    "firstTokenMs": 12207,
+    "totalMs": 12716,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 12145,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1855
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 10290
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2409
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Pengadaan Barang dan Jasa (POL-PROC-2026-001) ini mengikat **1.240 karyawan** Arunika. Angka tersebut tercantum pada bagian Ruang Lingkup kebijakan, y"
+   },
+   {
+    "id": "q017",
+    "firstTokenMs": 4489,
+    "totalMs": 5213,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3705,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1441
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2264
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2936
+     }
+    },
+    "correct": true,
+    "answerPreview": "Termin pembayaran standar kepada seluruh rekanan adalah **30 (tiga puluh) hari kalender (Net 30)**, dihitung sejak dokumen penagihan yang lengkap dan benar dite"
+   },
+   {
+    "id": "q018",
+    "firstTokenMs": 3773,
+    "totalMs": 4669,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3141,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1285
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1856
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2800
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut Matriks Otorisasi Pengadaan, seorang **Department Manager** berwenang memberikan otorisasi PR dan PO untuk nilai **di atas Rp 10.000.000 sampai dengan R"
+   },
+   {
+    "id": "q019",
+    "firstTokenMs": 4368,
+    "totalMs": 4923,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4429,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2057
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2372
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2423
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under POL-FIN-2026-003 (the Billing, Credit, and Collections policy), the default credit limit for a **Corporate SME** customer is **IDR 75,000,000**. For conte"
+   },
+   {
+    "id": "q020",
+    "firstTokenMs": 3554,
+    "totalMs": 3660,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3208,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1450
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1758
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1887
+     }
+    },
+    "correct": true,
+    "answerPreview": "In the customer segmentation table, the standard payment terms for an **Enterprise** customer are **Net 45 calendar days**. That row applies to customers with a"
+   },
+   {
+    "id": "q022",
+    "firstTokenMs": 3805,
+    "totalMs": 4485,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3382,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1378
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2004
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2336
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Late Payment Charges section, invoices unpaid past their assigned due date (Net 30 or Net 45) accrue late payment interest at **2.0% per month**, appl"
+   },
+   {
+    "id": "q023",
+    "firstTokenMs": 3929,
+    "totalMs": 4352,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3858,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1773
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2085
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2257
+     }
+    },
+    "correct": true,
+    "answerPreview": "The maximum cumulative late interest charge is **10.0% of the total original invoice principal**. Late payment interest accrues at 2.0% per month (0.067% per da"
+   },
+   {
+    "id": "q028",
+    "firstTokenMs": 3905,
+    "totalMs": 4796,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3567,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1755
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1812
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2836
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Expenditure Classification Standard, the value threshold that triggers Capital Expenditure treatment is an individual unit purchase cost or aggregated"
+   },
+   {
+    "id": "q029",
+    "firstTokenMs": 4208,
+    "totalMs": 4813,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3894,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1669
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2225
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2547
+     }
+    },
+    "correct": true,
+    "answerPreview": "Every operational cost center must integrate a **5.0% contingency reserve**, calculated against its total controllable OPEX baseline. The reserve is intended to"
+   },
+   {
+    "id": "q030",
+    "firstTokenMs": 6064,
+    "totalMs": 7080,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 5177,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1873
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3304
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3757
+     }
+    },
+    "correct": true,
+    "answerPreview": "**58 city delivery vans** are operated under the Urban Last-Mile transport operations. This is the figure recorded against cost center **CC-LAST-70 (Urban Last-"
+   },
+   {
+    "id": "q031",
+    "firstTokenMs": 3805,
+    "totalMs": 4211,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3484,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1524
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1960
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2116
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan dengan masa kerja 5 tahun sampai kurang dari 8 tahun, total hak cuti tahunannya adalah **18 hari kerja**, terdiri dari hak cuti dasar 14 hari ker"
+   },
+   {
+    "id": "q032",
+    "firstTokenMs": 3286,
+    "totalMs": 4027,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3720,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1588
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2132
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1881
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan dengan masa kerja **10 tahun atau lebih (≥ 10 tahun)**, total hak cuti tahunan adalah **22 hari kerja** per tahun, terdiri dari **14 hari kerja**"
+   },
+   {
+    "id": "q033",
+    "firstTokenMs": 3227,
+    "totalMs": 3639,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3399,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1574
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1825
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1804
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel tambahan cuti berdasarkan masa kerja, karyawan dengan masa kerja 3 tahun sampai kurang dari 5 tahun berhak atas: - Hak cuti dasar: 14 hari ker"
+   },
+   {
+    "id": "q037",
+    "firstTokenMs": 3853,
+    "totalMs": 4748,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3705,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1901
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1804
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2813
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk Grade G1 — kategori Pelaksana Lapangan, misalnya Operator Gudang, Helper, dan Kurir Van — batas maksimum bonus kinerja tahunan adalah **10% dari gaji tahu"
+   },
+   {
+    "id": "q038",
+    "firstTokenMs": 4461,
+    "totalMs": 5044,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4264,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1969
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2295
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2738
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut tabel batas manfaat Asuransi Rawat Inap Tambahan (komersial), karyawan Grade G7–G8 memperoleh batas kamar sebesar **IDR 2.200.000 per hari**, dengan tip"
+   },
+   {
+    "id": "q039",
+    "firstTokenMs": 4627,
+    "totalMs": 5059,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4553,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1647
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2906
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2140
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel Struktur Golongan Jabatan (Grade) pada dokumen kompensasi, gaji pokok maksimum untuk Grade G8 (Senior Management & C-Level, seperti CEO, CFO, "
+   },
+   {
+    "id": "q040",
+    "firstTokenMs": 4190,
+    "totalMs": 4845,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3002,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1120
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1882
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2827
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut bagian **7. Administrasi dan Ketentuan Penutup** pada kebijakan kompensasi dan tunjangan (hr-02), periode perhitungan *payroll* (*cut-off*) dihitung **m"
+   },
+   {
+    "id": "q041",
+    "firstTokenMs": 4140,
+    "totalMs": 4889,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3998,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2043
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1955
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2786
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sesuai ketentuan Tunjangan Operasional Kerja, tunjangan makan diberikan sebesar **Rp30.000 per hari kerja efektif** kepada seluruh karyawan Grade G1–G5, baik ya"
+   },
+   {
+    "id": "q171",
+    "firstTokenMs": 4354,
+    "totalMs": 5703,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3213,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1386
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1827
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3864
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan kebijakan pelatihan karyawan Arunika, Grade 1 mencakup posisi Operator Gudang, Driver Truk (CDD/CDE/Fuso/Tronton), dan Kurir Van, dengan pagu anggar"
+   },
+   {
+    "id": "q173",
+    "firstTokenMs": 21157,
+    "totalMs": 21157,
+    "preTokenLlmCalls": 16,
+    "preTokenLlmMs": 43060,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 3,
+      "ms": 4800
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3679
+     },
+     "rag-rerank": {
+      "calls": 7,
+      "ms": 16878
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 4178
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 13525
+     }
+    },
+    "correct": true,
+    "answerPreview": "**Kewenangan persetujuan PO:** untuk nilai di atas Rp 500.000.000, PO disetujui oleh **CEO, Ratna Wijayakusuma**. Rentang tersebut secara eksplisit mencakup pen"
+   },
+   {
+    "id": "q175",
+    "firstTokenMs": 13587,
+    "totalMs": 13587,
+    "preTokenLlmCalls": 14,
+    "preTokenLlmMs": 26022,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 3,
+      "ms": 4241
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1723
+     },
+     "rag-rerank": {
+      "calls": 5,
+      "ms": 7652
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3832
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 8574
+     }
+    },
+    "correct": true,
+    "answerPreview": "Both SOPs share the same effective date: **15 January 2026** (15 Januari 2026). The inbound goods receiving SOP (SOP-OPS-WH-004, version 2.1 / Rev. 02) lists th"
+   },
+   {
+    "id": "q177",
+    "firstTokenMs": 10656,
+    "totalMs": 10656,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 21126,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1798
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2285
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3422
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 4259
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 9362
+     }
+    },
+    "correct": true,
+    "answerPreview": "**Inbound dock appointment booking — deadline is one day before arrival:** transporters or vendors must reserve an unloading slot through the *Dock Appointment*"
+   },
+   {
+    "id": "q178",
+    "firstTokenMs": 12281,
+    "totalMs": 12281,
+    "preTokenLlmCalls": 7,
+    "preTokenLlmMs": 19268,
+    "byPurpose": {
+     "reflection": {
+      "calls": 3,
+      "ms": 5647
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3380
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 10241
+     }
+    },
+    "correct": true,
+    "answerPreview": "For a CDD (Colt Diesel Double, 6-wheel) truck on the Surabaya (SBY-01) → Jakarta Cikarang (JKT-02) lane: - **Cargo insurance limit:** IDR 1,000,000,000 (Rp 1 bi"
+   },
+   {
+    "id": "q179",
+    "firstTokenMs": 11314,
+    "totalMs": 11314,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 21472,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1059
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1920
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 2827
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3504
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 12162
+     }
+    },
+    "correct": false,
+    "answerPreview": "**Jakarta Cikarang (JKT-02) policy limit:** I don't have that figure — the JKT-02 row from the cargo insurance schedule was not available in this result, so I c"
+   },
+   {
+    "id": "chinook-001",
+    "firstTokenMs": 6453,
+    "totalMs": 7003,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 6886,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1634
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2117
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 1846
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1289
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2173
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **275 artists** in the Chinook Music Store database, counting every row in the artist table with no filters applied."
+   },
+   {
+    "id": "chinook-002",
+    "firstTokenMs": 9513,
+    "totalMs": 9995,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7300,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1681
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1945
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2209
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1465
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 4615
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **347 albums**. That figure is the full album table with no filters applied — every album in the catalog is counted, r"
+   },
+   {
+    "id": "chinook-003",
+    "firstTokenMs": 7511,
+    "totalMs": 8089,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 6614,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1560
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1725
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2486
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 843
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3175
+     }
+    },
+    "correct": false,
+    "answerPreview": "The Chinook Music Store catalog contains **3,503 tracks** — the full count of rows in the track table, with no filters applied. One note on scope: this figure c"
+   },
+   {
+    "id": "chinook-004",
+    "firstTokenMs": 7947,
+    "totalMs": 8133,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 9639,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1957
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2169
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1495
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2529
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1489
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1926
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **59 customers** — that's the full count of rows in the customer table, with no filters applied, so every customer rec"
+   },
+   {
+    "id": "chinook-006",
+    "firstTokenMs": 7391,
+    "totalMs": 7655,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 8774,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1534
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1702
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1560
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2696
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1282
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1953
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database records **412** invoices. That's the full count of rows in the invoice table, with no filters applied — so it includes both old"
+   },
+   {
+    "id": "chinook-007",
+    "firstTokenMs": 7103,
+    "totalMs": 7414,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7172,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1513
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2012
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2305
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1342
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2233
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **25 genres** in the Chinook Music Store database. This counts every row in the genre table, including genres that currently have no tracks associated"
+   },
+   {
+    "id": "chinook-008",
+    "firstTokenMs": 7528,
+    "totalMs": 7795,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7365,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1592
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1871
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2564
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1338
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2284
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains 18 playlists, counting every row in the playlist table with no filters applied."
+   },
+   {
+    "id": "chinook-011",
+    "firstTokenMs": 9422,
+    "totalMs": 9838,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 9301,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1743
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1801
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2367
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 3390
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2314
+     }
+    },
+    "correct": false,
+    "answerPreview": "There are **3,290 tracks** in the Chinook Music Store database priced at exactly 0.99. This count covers the entire track catalog with no additional filters app"
+   },
+   {
+    "id": "chinook-012",
+    "firstTokenMs": 8788,
+    "totalMs": 9227,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 10620,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1637
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1949
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1738
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3551
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1745
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1943
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **213** tracks in the Chinook Music Store catalog priced at 1.99. This counts every track with a unit price of exactly 1.99 across all albums, genres,"
+   },
+   {
+    "id": "chinook-013",
+    "firstTokenMs": 9477,
+    "totalMs": 9772,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 8793,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1844
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1782
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3431
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1736
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2740
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **13 customers** from the USA in the Chinook Music Store database. The count matches on the country field case-insensitively (so \"USA\", \"usa\", and sim"
+   },
+   {
+    "id": "sapaan",
+    "firstTokenMs": 3375,
+    "totalMs": 4117,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 4761,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1186
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2291
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1284
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 1818
+     }
+    },
+    "correct": true,
+    "answerPreview": "Halo! Kabar baik, terima kasih sudah bertanya. 😊 Saya siap membantu Anda hari ini. Ada yang bisa saya bantu? Saya bisa membantu dengan: - **Query database (SQL"
+   },
+   {
+    "id": "thanks",
+    "firstTokenMs": 3854,
+    "totalMs": 4056,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 4340,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1290
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1737
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1313
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 2309
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sama-sama! Senang bisa membantu. 😊 Jika nanti Anda memerlukan bantuan lagi — misalnya query database, pencarian dokumen, atau pemanggilan REST API — jangan rag"
+   }
+  ],
+  "summary": {
+   "n": 48,
+   "correct": 45,
+   "firstTokenMedian": 4420,
+   "firstTokenP95": 12281,
+   "totalMedian": 5059,
+   "totalP95": 12716,
+   "preTokenCallsMedian": 2,
+   "preTokenCallsMax": 16
+  }
+ },
+ "after": {
+  "label": "after",
+  "rows": [
+   {
+    "id": "q001",
+    "firstTokenMs": 4289,
+    "totalMs": 4863,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3958,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1826
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2132
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2622
+     }
+    },
+    "correct": true,
+    "answerPreview": "Arunika formally commits to reducing its aggregate greenhouse gas emissions by **30% (-30%) by December 31, 2030**, measured against its verified 2023 baseline."
+   },
+   {
+    "id": "q002",
+    "firstTokenMs": 4770,
+    "totalMs": 5457,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4506,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1755
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2751
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2691
+     }
+    },
+    "correct": true,
+    "answerPreview": "The emissions reduction table sets the 2030 target for Scope 1 (Direct Fuel & Fleet) at **17,255 tCO₂e** — a 30% reduction against the verified 2023 baseline of"
+   },
+   {
+    "id": "q003",
+    "firstTokenMs": 4721,
+    "totalMs": 5215,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4378,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1561
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2817
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2376
+     }
+    },
+    "correct": true,
+    "answerPreview": "The table lists the 2026 interim target for Scope 2 (Purchased Electricity) as **4,650 tCO2e**, down from the 2023 baseline of 5,820 tCO2e and on the way to the"
+   },
+   {
+    "id": "q004",
+    "firstTokenMs": 3655,
+    "totalMs": 4107,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4403,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2121
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2282
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1812
+     }
+    },
+    "correct": true,
+    "answerPreview": "In the emissions baseline table (section 2.2 of the sustainability document), the 2023 baseline for **Scope 3 (Waste & Supply Chain)** is **1,480 tCO2e**. That "
+   },
+   {
+    "id": "q005",
+    "firstTokenMs": 4659,
+    "totalMs": 5092,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4346,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1708
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2638
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2442
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Sustainability and Environmental Policy applies to all 1,240 employees — a figure that also covers temporary personnel and registered contractors working ac"
+   },
+   {
+    "id": "q007",
+    "firstTokenMs": 4785,
+    "totalMs": 5667,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4787,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1863
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2924
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2590
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel uang harian pada kebijakan reimbursement (bagian 4), uang harian untuk karyawan **Grade 1 (C-Level)** di **Wilayah Khusus** adalah **IDR 800.0"
+   },
+   {
+    "id": "q008",
+    "firstTokenMs": 4272,
+    "totalMs": 5467,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4160,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1748
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2412
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3039
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel uang harian pada kebijakan reimbursement (POL-FIN-2025-004), untuk **Grade 2 (Senior Mgmt)** di **Wilayah Lainnya (kota/kabupaten lain)** uang"
+   },
+   {
+    "id": "q009",
+    "firstTokenMs": 3691,
+    "totalMs": 4960,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3631,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1673
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1958
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2990
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan kebijakan reimbursement dan perjalanan dinas (Bagian 3.2 tentang Plafon Hotel per Malam, yang sudah termasuk pajak dan sarapan), batas maksimal peng"
+   },
+   {
+    "id": "q010",
+    "firstTokenMs": 7225,
+    "totalMs": 8588,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 7047,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1739
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 5308
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3264
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Reimbursement dan Perjalanan Dinas (POL-FIN-2025-004, versi 3.1, berlaku 1 November 2025) mencakup **seluruh 1.240 karyawan** PT Arunika Logistik Nusa"
+   },
+   {
+    "id": "q011",
+    "firstTokenMs": 4149,
+    "totalMs": 4752,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3129,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1319
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1810
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2926
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut prosedur pada kebijakan reimbursement dan perjalanan dinas, form pertanggungjawaban biaya perjalanan dinas dan klaim *reimbursement* wajib diajukan pali"
+   },
+   {
+    "id": "q012",
+    "firstTokenMs": 4302,
+    "totalMs": 5019,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4001,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1960
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2041
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2724
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut standar fasilitas akomodasi dalam kebijakan penggantian biaya dan perjalanan dinas, plafon maksimal penggantian biaya kamar hotel per malam untuk karyaw"
+   },
+   {
+    "id": "q014",
+    "firstTokenMs": 4178,
+    "totalMs": 5104,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3445,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1649
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1796
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3141
+     }
+    },
+    "correct": true,
+    "answerPreview": "Dalam ruang lingkup kebijakan pengadaan (dokumen fin-02-pengadaan.md), fasilitas pergudangan SBY-01 yang berlokasi di Surabaya tercatat memiliki luas **18.000 m"
+   },
+   {
+    "id": "q015",
+    "firstTokenMs": 3615,
+    "totalMs": 3979,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3454,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1483
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1971
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1992
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Pengadaan Barang dan Jasa (POL-PROC-2026-001) ini mengikat **1.240 karyawan** Arunika, dan berlaku bagi seluruh aktivitas pembelian barang maupun peng"
+   },
+   {
+    "id": "q017",
+    "firstTokenMs": 4090,
+    "totalMs": 4975,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3613,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1692
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1921
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2814
+     }
+    },
+    "correct": true,
+    "answerPreview": "Termin pembayaran standar kepada seluruh rekanan adalah maksimal **30 (tiga puluh) hari kalender (Net 30)**, dihitung sejak dokumen penagihan yang lengkap dan b"
+   },
+   {
+    "id": "q018",
+    "firstTokenMs": 3446,
+    "totalMs": 4327,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3307,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1704
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1603
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2610
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut Matriks Otorisasi Pengadaan, seorang **Department Manager** berwenang memberikan otorisasi PR dan PO pada rentang nilai **di atas Rp 10.000.000 sampai d"
+   },
+   {
+    "id": "q019",
+    "firstTokenMs": 3353,
+    "totalMs": 4039,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3191,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1540
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1651
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2248
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under POL-FIN-2026-003 (Billing, Credit, and Collections, v3.0, effective 1 January 2026), the default credit limit for a **Corporate SME** customer is **IDR 75"
+   },
+   {
+    "id": "q020",
+    "firstTokenMs": 3599,
+    "totalMs": 4640,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3039,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1590
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1449
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3177
+     }
+    },
+    "correct": true,
+    "answerPreview": "In Arunika's customer segmentation table (the credit and receivables policy), an **Enterprise** customer's standard payment terms are **Net 45 calendar days**. "
+   },
+   {
+    "id": "q022",
+    "firstTokenMs": 3968,
+    "totalMs": 4587,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3222,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1344
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1878
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2695
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Late Payment Charges section, overdue invoices (those unpaid past their assigned due date of Net 30 or Net 45) incur late payment interest at **2.0% p"
+   },
+   {
+    "id": "q023",
+    "firstTokenMs": 3557,
+    "totalMs": 4216,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3585,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1665
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1920
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2068
+     }
+    },
+    "correct": true,
+    "answerPreview": "The maximum cumulative late interest charge is **10.0% of the total original invoice principal**. Under the late payment charges policy, interest accrues at 2.0"
+   },
+   {
+    "id": "q028",
+    "firstTokenMs": 4746,
+    "totalMs": 5674,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3567,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1332
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2235
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3233
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Expenditure Classification Standards, an item must be budgeted as CAPEX when it meets two cumulative criteria — the value threshold and the economic u"
+   },
+   {
+    "id": "q029",
+    "firstTokenMs": 4504,
+    "totalMs": 5008,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4506,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2024
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2482
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2514
+     }
+    },
+    "correct": true,
+    "answerPreview": "Every operational cost center must integrate a standard **5.0% contingency reserve**, calculated against its total controllable OPEX baseline. The reserve exist"
+   },
+   {
+    "id": "q030",
+    "firstTokenMs": 6909,
+    "totalMs": 7665,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 7564,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1589
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 5975
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1671
+     }
+    },
+    "correct": true,
+    "answerPreview": "**58 city delivery vans** are operated under the Urban Last-Mile transport operations. That figure appears in the cost center register, where **CC-LAST-70 (Urba"
+   },
+   {
+    "id": "q031",
+    "firstTokenMs": 3291,
+    "totalMs": 3975,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3612,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1856
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1756
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2052
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan dengan masa kerja 5 tahun sampai kurang dari 8 tahun, total hak cuti tahunannya adalah **18 hari kerja** per tahun. Rinciannya sesuai tabel tamba"
+   },
+   {
+    "id": "q032",
+    "firstTokenMs": 4097,
+    "totalMs": 5329,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3598,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1528
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2070
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3249
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel masa kerja pada kebijakan cuti tahunan (bagian 2.2), karyawan dengan masa kerja 10 tahun atau lebih (≥ 10 tahun) berhak atas **22 hari kerja**"
+   },
+   {
+    "id": "q033",
+    "firstTokenMs": 4269,
+    "totalMs": 4830,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3774,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1515
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2259
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2558
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel tambahan cuti berdasarkan masa kerja, karyawan dengan masa kerja 3 tahun sampai kurang dari 5 tahun memperoleh hak cuti dasar 14 hari kerja di"
+   },
+   {
+    "id": "q037",
+    "firstTokenMs": 3432,
+    "totalMs": 4105,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3195,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1513
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1682
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2411
+     }
+    },
+    "correct": true,
+    "answerPreview": "Dalam tabel struktur golongan jabatan pada kebijakan kompensasi, batas maksimum bonus kinerja tahunan untuk karyawan Grade G1 adalah **10% dari gaji tahunan**. "
+   },
+   {
+    "id": "q038",
+    "firstTokenMs": 3642,
+    "totalMs": 4101,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3514,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1351
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2163
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1927
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut tabel Asuransi Rawat Inap Tambahan (komersial) pada dokumen kompensasi dan tunjangan, karyawan Grade **G7–G8** memperoleh batas kamar per hari sebesar *"
+   },
+   {
+    "id": "q039",
+    "firstTokenMs": 7485,
+    "totalMs": 8137,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 7599,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1810
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 5789
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2334
+     }
+    },
+    "correct": true,
+    "answerPreview": "Pada tabel Struktur Golongan Jabatan (Grade) di dokumen kebijakan kompensasi, Grade **G8** untuk kategori **Senior Management & C-Level** (contoh posisi: CEO, C"
+   },
+   {
+    "id": "q040",
+    "firstTokenMs": 3499,
+    "totalMs": 4233,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 2379,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1168
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1211
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2872
+     }
+    },
+    "correct": true,
+    "answerPreview": "Pada bagian **Administrasi dan Ketentuan Penutup** kebijakan kompensasi dan tunjangan (HR-02) tersebut, periode perhitungan *payroll* (*cut-off*) dihitung mulai"
+   },
+   {
+    "id": "q041",
+    "firstTokenMs": 4410,
+    "totalMs": 5314,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3790,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1819
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1971
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3331
+     }
+    },
+    "correct": true,
+    "answerPreview": "Tunjangan makan harian untuk karyawan Grade G1–G5 adalah **Rp30.000 per hari kerja efektif**, diberikan kepada seluruh karyawan Grade G1–G5 yang hadir di kantor"
+   },
+   {
+    "id": "q171",
+    "firstTokenMs": 4362,
+    "totalMs": 5034,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3652,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1742
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1910
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2940
+     }
+    },
+    "correct": true,
+    "answerPreview": "Pagu anggaran pelatihan tahunan untuk karyawan **Grade 1** di PT Arunika Logistik Nusantara adalah **Rp 2.500.000 per karyawan per tahun**. Grade 1 dalam kebija"
+   },
+   {
+    "id": "q173",
+    "firstTokenMs": 19504,
+    "totalMs": 19504,
+    "preTokenLlmCalls": 16,
+    "preTokenLlmMs": 39641,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 3,
+      "ms": 4865
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2974
+     },
+     "rag-rerank": {
+      "calls": 7,
+      "ms": 13660
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 4423
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 13719
+     }
+    },
+    "correct": true,
+    "answerPreview": "**Persetujuan PO:** Karena nilainya di atas Rp 500.000.000, PO tersebut hanya dapat disetujui oleh **Chief Executive Officer, Ratna Wijayakusuma** — satu-satuny"
+   },
+   {
+    "id": "q175",
+    "firstTokenMs": 16440,
+    "totalMs": 16440,
+    "preTokenLlmCalls": 15,
+    "preTokenLlmMs": 33985,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 3,
+      "ms": 4635
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2054
+     },
+     "rag-rerank": {
+      "calls": 6,
+      "ms": 11068
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 4574
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 11654
+     }
+    },
+    "correct": true,
+    "answerPreview": "The inbound goods receiving SOP — \"Penerimaan Barang (Inbound) Gudang,\" document SOP-OPS-WH-004, version 2.1 (Rev. 02) — carries an effective date of **15 Janua"
+   },
+   {
+    "id": "q177",
+    "firstTokenMs": 10297,
+    "totalMs": 10297,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 19685,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1355
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2302
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 4555
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3623
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 7850
+     }
+    },
+    "correct": true,
+    "answerPreview": "**Inbound dock appointment booking:** Transporters or vendors must reserve their loading/unloading slot through the Dock Appointment module in WMS Gudangku v4 n"
+   },
+   {
+    "id": "q178",
+    "firstTokenMs": 10046,
+    "totalMs": 10046,
+    "preTokenLlmCalls": 7,
+    "preTokenLlmMs": 15547,
+    "byPurpose": {
+     "reflection": {
+      "calls": 3,
+      "ms": 4303
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2591
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 8653
+     }
+    },
+    "correct": true,
+    "answerPreview": "For a CDD (Colt Diesel Double, 6-wheel) truck, the cargo insurance limit is **IDR 1,000,000,000 per conveyance**, under a policy with a 5% deductible subject to"
+   },
+   {
+    "id": "q179",
+    "firstTokenMs": 11490,
+    "totalMs": 11490,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 19739,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1392
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2434
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 3817
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3669
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 8427
+     }
+    },
+    "correct": false,
+    "answerPreview": "**Jakarta Cikarang warehouse (JKT-02) insurance limit:** This figure was not available in the result. The only insurance row retrieved was for a different facil"
+   },
+   {
+    "id": "chinook-001",
+    "firstTokenMs": 9005,
+    "totalMs": 9323,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 8099,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1770
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1976
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2563
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1790
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3138
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **275 artists** in the Chinook Music Store database — a count of every row in the artist table, with no filters applied."
+   },
+   {
+    "id": "chinook-002",
+    "firstTokenMs": 5455,
+    "totalMs": 5842,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 5404,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1360
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1627
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 1765
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 652
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2041
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **347 albums**. That count includes every row in the album table — no filters were applied for artist, genre, or wheth"
+   },
+   {
+    "id": "chinook-003",
+    "firstTokenMs": 7371,
+    "totalMs": 7974,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7647,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1757
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1832
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2333
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1725
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2133
+     }
+    },
+    "correct": false,
+    "answerPreview": "The Chinook Music Store database contains **3,503 tracks** in its catalog. That count covers the entire track table with no filters applied, so it includes ever"
+   },
+   {
+    "id": "chinook-004",
+    "firstTokenMs": 7949,
+    "totalMs": 8137,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 8658,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1601
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1801
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1152
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2712
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1392
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2209
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **59 customers**. That figure is the total row count of the `customer` table, with no filters applied — so it includes"
+   },
+   {
+    "id": "chinook-006",
+    "firstTokenMs": 8576,
+    "totalMs": 9085,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7846,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1698
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1765
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2733
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1650
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2977
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **412 invoices** in total. The count covers every row in the invoice table — all customers and all dates recorded, wit"
+   },
+   {
+    "id": "chinook-007",
+    "firstTokenMs": 6517,
+    "totalMs": 6802,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 6502,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1525
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1904
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 1930
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1143
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2182
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database lists **25 genres** — the total row count of its genre table, with no filters applied. This figure covers only Chinook Music St"
+   },
+   {
+    "id": "chinook-008",
+    "firstTokenMs": 7156,
+    "totalMs": 7352,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7799,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1771
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2129
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2304
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1595
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1660
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **18** playlists in the Chinook Music Store database. This count covers every row in the playlist table, with no filtering by genre, date, or status."
+   },
+   {
+    "id": "chinook-011",
+    "firstTokenMs": 9638,
+    "totalMs": 9989,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 10842,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1596
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2035
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1457
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2785
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 2969
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2172
+     }
+    },
+    "correct": false,
+    "answerPreview": "There are **3,290 tracks** in the Chinook Music Store database with a unit price of exactly 0.99. This count covers every row in the `track` table — all albums,"
+   },
+   {
+    "id": "chinook-012",
+    "firstTokenMs": 12776,
+    "totalMs": 13127,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 14590,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2003
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2393
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1355
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3382
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 5457
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1872
+     }
+    },
+    "correct": true,
+    "answerPreview": "**213** tracks in the Chinook Music Store catalog are priced at 1.99. This is a count of every track row with a unit price of exactly 1.99, with no other filter"
+   },
+   {
+    "id": "chinook-013",
+    "firstTokenMs": 7983,
+    "totalMs": 8380,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 8101,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1393
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2002
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3204
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1502
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2234
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **13 customers from the USA** in the Chinook Music Store database. The count includes records whose country matches \"USA\" in any casing, along with \"U"
+   },
+   {
+    "id": "sapaan",
+    "firstTokenMs": 3928,
+    "totalMs": 4624,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 5826,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2174
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2361
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1291
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 2251
+     }
+    },
+    "correct": true,
+    "answerPreview": "Halo! Kabar saya baik, terima kasih sudah bertanya. 😊 Saya siap membantu Anda dengan berbagai hal, seperti: - **Query database (SQL)** — mencari, menganalisis,"
+   },
+   {
+    "id": "thanks",
+    "firstTokenMs": 3238,
+    "totalMs": 3522,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 4728,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1451
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1945
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1332
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 1567
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sama-sama! 😊 Senang bisa membantu. Jika ada yang perlu dibantu lagi — entah itu query database, pencarian dokumen, pemanggilan REST API, atau sekadar tanya-tan"
+   }
+  ],
+  "summary": {
+   "n": 48,
+   "correct": 45,
+   "firstTokenMedian": 4410,
+   "firstTokenP95": 12776,
+   "totalMedian": 5215,
+   "totalP95": 13127,
+   "preTokenCallsMedian": 2,
+   "preTokenCallsMax": 16
+  }
+ },
+ "or": {
+  "label": "or",
+  "rows": [
+   {
+    "id": "q001",
+    "firstTokenMs": 4263,
+    "totalMs": 4985,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3912,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1747
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2165
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2712
+     }
+    },
+    "correct": true,
+    "answerPreview": "Arunika formally commits to reducing its aggregate greenhouse gas emissions by **30%** against its verified 2023 baseline, with the target date of **December 31"
+   },
+   {
+    "id": "q002",
+    "firstTokenMs": 4457,
+    "totalMs": 4892,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3921,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1629
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2292
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2585
+     }
+    },
+    "correct": true,
+    "answerPreview": "The emissions reduction table sets the 2030 target for **Scope 1 (Direct Fuel & Fleet)** at **17,255 tCO2e** — a 30% reduction against the verified 2023 baselin"
+   },
+   {
+    "id": "q003",
+    "firstTokenMs": 3625,
+    "totalMs": 4140,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3234,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1480
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1754
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2371
+     }
+    },
+    "correct": true,
+    "answerPreview": "The 2026 interim target for Scope 2 (Purchased Electricity) emissions is **4,650 tCO2e**, down from the verified 2023 baseline of 5,820 tCO2e. The table attribu"
+   },
+   {
+    "id": "q004",
+    "firstTokenMs": 3542,
+    "totalMs": 4228,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3194,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1375
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1819
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2387
+     }
+    },
+    "correct": true,
+    "answerPreview": "In the emissions baseline table in the sustainability document, **Scope 3 (Waste & Supply Chain)** shows a 2023 baseline of **1,480 tCO2e**. For context, that s"
+   },
+   {
+    "id": "q005",
+    "firstTokenMs": 3086,
+    "totalMs": 4158,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3537,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1876
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1661
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2147
+     }
+    },
+    "correct": true,
+    "answerPreview": "The sustainability and environmental policy for PT Arunika Logistik Nusantara applies to **1,240 employees**, along with temporary personnel and registered cont"
+   },
+   {
+    "id": "q007",
+    "firstTokenMs": 3817,
+    "totalMs": 4678,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3636,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1742
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1894
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2771
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan **Grade 1 (C-Level)** yang ditugaskan di **Wilayah Khusus**, uang harian ditetapkan sebesar **IDR 800.000 per hari**. Wilayah Khusus dalam tabel "
+   },
+   {
+    "id": "q008",
+    "firstTokenMs": 3897,
+    "totalMs": 4735,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4088,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1846
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2242
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2478
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel uang harian pada kebijakan reimbursement (Bagian 4), untuk Grade 2 (Senior Mgmt) di Wilayah Lainnya (kota/kabupaten lain) besar uang hariannya"
+   },
+   {
+    "id": "q009",
+    "firstTokenMs": 3957,
+    "totalMs": 4803,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4070,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2104
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1966
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2677
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut kebijakan reimbursement (bagian plafon hotel per malam, yang sudah termasuk pajak dan sarapan), batas maksimal penggantian biaya kamar hotel untuk karya"
+   },
+   {
+    "id": "q010",
+    "firstTokenMs": 4775,
+    "totalMs": 5955,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4693,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1761
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2932
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3006
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Reimbursement dan Perjalanan Dinas (POL-FIN-2025-004, versi 3.1) mencakup **1.240 karyawan** PT Arunika Logistik Nusantara. Angka tersebut tercantum p"
+   },
+   {
+    "id": "q011",
+    "firstTokenMs": 10560,
+    "totalMs": 10560,
+    "preTokenLlmCalls": 7,
+    "preTokenLlmMs": 16135,
+    "byPurpose": {
+     "reflection": {
+      "calls": 3,
+      "ms": 4766
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3629
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 7740
+     }
+    },
+    "correct": true,
+    "answerPreview": "Batas waktunya adalah **14 hari kalender setelah tanggal kepulangan** dari perjalanan dinas. Dalam tenggat tersebut, form pertanggungjawaban biaya perjalanan di"
+   },
+   {
+    "id": "q012",
+    "firstTokenMs": 4173,
+    "totalMs": 4924,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3455,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1693
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1762
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2893
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut standar fasilitas akomodasi pada kebijakan perjalanan dinas, plafon maksimal penggantian biaya kamar hotel per malam untuk karyawan **Grade 1 adalah IDR"
+   },
+   {
+    "id": "q014",
+    "firstTokenMs": 4015,
+    "totalMs": 5336,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3535,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1286
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2249
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3073
+     }
+    },
+    "correct": true,
+    "answerPreview": "Dalam ruang lingkup kebijakan pengadaan (fin-02-pengadaan.md), fasilitas pergudangan SBY-01 di Surabaya tercatat seluas **18.000 m²**. Angka ini tercantum pada "
+   },
+   {
+    "id": "q015",
+    "firstTokenMs": 18690,
+    "totalMs": 18690,
+    "preTokenLlmCalls": 8,
+    "preTokenLlmMs": 27866,
+    "byPurpose": {
+     "reflection": {
+      "calls": 2,
+      "ms": 4109
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 7772
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2465
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1470
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 12050
+     }
+    },
+    "correct": true,
+    "answerPreview": "Kebijakan Pengadaan Barang dan Jasa (POL-PROC-2026-001, Versi 2.0) mengikat **1.240 karyawan Arunika**. Cakupan ini berlaku untuk seluruh aktivitas pembelian ba"
+   },
+   {
+    "id": "q017",
+    "firstTokenMs": 3411,
+    "totalMs": 4479,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 2665,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1309
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1356
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2891
+     }
+    },
+    "correct": true,
+    "answerPreview": "Termin pembayaran standar kepada seluruh rekanan adalah maksimal **30 (tiga puluh) hari kalender (Net 30)**, dihitung sejak dokumen penagihan yang lengkap dan b"
+   },
+   {
+    "id": "q018",
+    "firstTokenMs": 4004,
+    "totalMs": 4716,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3967,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1853
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2114
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2462
+     }
+    },
+    "correct": true,
+    "answerPreview": "Seorang **Department Manager** dapat memberikan otorisasi PR dan PO pada rentang nilai **di atas Rp 10.000.000 hingga Rp 50.000.000**. Kewenangan ini berlaku se"
+   },
+   {
+    "id": "q019",
+    "firstTokenMs": 4033,
+    "totalMs": 4609,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3412,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1669
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1743
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2708
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under POL-FIN-2026-003 (the Billing, Credit, and Collections policy), the default credit limit for a **Corporate SME** customer is **IDR 75,000,000**. For conte"
+   },
+   {
+    "id": "q020",
+    "firstTokenMs": 3529,
+    "totalMs": 4617,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3087,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1461
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1626
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2978
+     }
+    },
+    "correct": true,
+    "answerPreview": "In the customer segmentation table of the Arunika receivables/collections policy, an **Enterprise** customer is granted standard payment terms of **Net 45 calen"
+   },
+   {
+    "id": "q022",
+    "firstTokenMs": 3621,
+    "totalMs": 4272,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3166,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1404
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1762
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2322
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Late Payment Charges section, overdue invoices (those unpaid past their Net 30 or Net 45 due dates) incur interest at **2.0% per month**, calculated o"
+   },
+   {
+    "id": "q023",
+    "firstTokenMs": 3998,
+    "totalMs": 4710,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4128,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1903
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2225
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2474
+     }
+    },
+    "correct": true,
+    "answerPreview": "Cumulative late interest charges are strictly capped at **10.0%** of the total original invoice principal. Interest accrues at 2.0% per month (0.067% per day pr"
+   },
+   {
+    "id": "q028",
+    "firstTokenMs": 4385,
+    "totalMs": 5135,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3349,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1544
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1805
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3131
+     }
+    },
+    "correct": true,
+    "answerPreview": "Under the Expenditure Classification Standards in the budget SOP, an item must be budgeted as CAPEX when it meets two cumulative criteria. The first is the valu"
+   },
+   {
+    "id": "q029",
+    "firstTokenMs": 2991,
+    "totalMs": 3739,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 2816,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1029
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1787
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1939
+     }
+    },
+    "correct": true,
+    "answerPreview": "Every operational cost center must integrate a **5.0% contingency reserve**, calculated against its total controllable OPEX baseline. The reserve is intended to"
+   },
+   {
+    "id": "q030",
+    "firstTokenMs": 9211,
+    "totalMs": 10313,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 9113,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2045
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 7068
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3225
+     }
+    },
+    "correct": true,
+    "answerPreview": "Arunika operates **58 city delivery vans** under its Urban Last-Mile transport operations. This is recorded against cost center **CC-LAST-70 (Urban Last-Mile)**"
+   },
+   {
+    "id": "q031",
+    "firstTokenMs": 3742,
+    "totalMs": 4293,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3489,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1456
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2033
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2243
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sesuai tabel tambahan cuti berdasarkan masa kerja, karyawan dengan masa kerja 5 tahun sampai kurang dari 8 tahun memperoleh hak cuti dasar 14 hari kerja ditamba"
+   },
+   {
+    "id": "q032",
+    "firstTokenMs": 4026,
+    "totalMs": 4884,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3356,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1504
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1852
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2878
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel masa kerja pada kebijakan cuti tahunan, karyawan dengan masa kerja **10 tahun atau lebih** (≥ 10 tahun) memperoleh total **22 hari kerja** cut"
+   },
+   {
+    "id": "q033",
+    "firstTokenMs": 3826,
+    "totalMs": 4212,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 3858,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1405
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2453
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1745
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel tambahan cuti berdasarkan masa kerja, karyawan dengan masa kerja 3 tahun sampai kurang dari 5 tahun memperoleh hak cuti dasar 14 hari kerja di"
+   },
+   {
+    "id": "q037",
+    "firstTokenMs": 4767,
+    "totalMs": 4547,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 6626,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2234
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2672
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1720
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel struktur golongan jabatan pada kebijakan kompensasi, batas maksimum bonus kinerja tahunan untuk karyawan **Grade G1 adalah 10%** dari gaji tah"
+   },
+   {
+    "id": "q038",
+    "firstTokenMs": 4940,
+    "totalMs": 5452,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4370,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1607
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2763
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2677
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut tabel batas manfaat Asuransi Rawat Inap Tambahan (komersial), karyawan Grade G7–G8 memiliki batas kamar per hari sebesar **IDR 2.200.000**, dengan tipe "
+   },
+   {
+    "id": "q039",
+    "firstTokenMs": 4301,
+    "totalMs": 5214,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4332,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1813
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2519
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2684
+     }
+    },
+    "correct": true,
+    "answerPreview": "Berdasarkan tabel struktur golongan jabatan (Grade) pada dokumen kompensasi dan tunjangan, untuk Grade **G8** yang mencakup **Senior Management & C-Level** (CEO"
+   },
+   {
+    "id": "q040",
+    "firstTokenMs": 3956,
+    "totalMs": 4271,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4095,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1877
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2218
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2043
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut bagian **7. Administrasi dan Ketentuan Penutup** pada kebijakan kompensasi dan tunjangan tersebut, periode perhitungan *payroll* (*cut-off*) dihitung mu"
+   },
+   {
+    "id": "q041",
+    "firstTokenMs": 4664,
+    "totalMs": 5339,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 4100,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1830
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2270
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3054
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sesuai ketentuan Tunjangan Operasional Kerja, tunjangan makan diberikan sebesar **Rp30.000 per hari kerja efektif** kepada seluruh karyawan **Grade G1–G5**, bai"
+   },
+   {
+    "id": "q171",
+    "firstTokenMs": 69125,
+    "totalMs": 69926,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 68142,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 2024
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 4449
+     },
+     "synthesis": {
+      "calls": 2,
+      "ms": 64958
+     }
+    },
+    "correct": true,
+    "answerPreview": "Untuk karyawan Grade 1 — yang mencakup Operator Gudang, Driver Truk (CDD/CDE/Fuso/Tronton), dan Kurir Van — pagu anggaran pelatihan tahunannya adalah **Rp 2.500"
+   },
+   {
+    "id": "q173",
+    "firstTokenMs": 7364,
+    "totalMs": 8055,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 9349,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1908
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 3277
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 4164
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3076
+     }
+    },
+    "correct": true,
+    "answerPreview": "Menurut matriks otorisasi pengadaan, pembelian armada baru senilai di atas Rp 500.000.000 berada pada tingkat kewenangan Chief Executive Officer, yaitu **Ratna "
+   },
+   {
+    "id": "q175",
+    "firstTokenMs": 14638,
+    "totalMs": 14638,
+    "preTokenLlmCalls": 13,
+    "preTokenLlmMs": 27328,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 2,
+      "ms": 2820
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2464
+     },
+     "rag-rerank": {
+      "calls": 5,
+      "ms": 9642
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 4339
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 8063
+     }
+    },
+    "correct": true,
+    "answerPreview": "Both SOPs share the same effective date: **15 January 2026**. - The inbound goods receipt SOP (SOP-OPS-WH-004, *Penerimaan Barang (Inbound) Gudang*, version 2.1"
+   },
+   {
+    "id": "q177",
+    "firstTokenMs": 12010,
+    "totalMs": 12010,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 22394,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1926
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2432
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3162
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 4106
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 10768
+     }
+    },
+    "correct": true,
+    "answerPreview": "The two deadlines fall on different sides of the clock: - **Inbound dock appointment booking:** the transporter or vendor must reserve a slot through the Dock A"
+   },
+   {
+    "id": "q178",
+    "firstTokenMs": 10659,
+    "totalMs": 10659,
+    "preTokenLlmCalls": 7,
+    "preTokenLlmMs": 16209,
+    "byPurpose": {
+     "reflection": {
+      "calls": 3,
+      "ms": 3836
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2713
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 9660
+     }
+    },
+    "correct": true,
+    "answerPreview": "**Cargo insurance limit:** IDR 1,000,000,000 per conveyance for the CDD fleet (the 140 Colt Diesel Double 6-wheel trucks), with a deductible of 5% of the claim "
+   },
+   {
+    "id": "q179",
+    "firstTokenMs": 11576,
+    "totalMs": 11576,
+    "preTokenLlmCalls": 9,
+    "preTokenLlmMs": 20683,
+    "byPurpose": {
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1107
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1953
+     },
+     "rag-rerank": {
+      "calls": 2,
+      "ms": 4308
+     },
+     "reflection": {
+      "calls": 2,
+      "ms": 3658
+     },
+     "synthesis": {
+      "calls": 3,
+      "ms": 9657
+     }
+    },
+    "correct": false,
+    "answerPreview": "For the Jakarta Cikarang warehouse (JKT-02), the policy limit was not in what I found — no row for that facility appeared in the coverage table, so I can't give"
+   },
+   {
+    "id": "chinook-001",
+    "firstTokenMs": 8019,
+    "totalMs": 8334,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7473,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1692
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1587
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2746
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1448
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2385
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **275 artists**. This counts every row in the artist table with no filters applied, so it includes all artist and band"
+   },
+   {
+    "id": "chinook-002",
+    "firstTokenMs": 6760,
+    "totalMs": 7053,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7119,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1646
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1840
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2235
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1398
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1741
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **347** albums. That figure counts every row in the album table — the complete catalog, with no filters by artist, gen"
+   },
+   {
+    "id": "chinook-003",
+    "firstTokenMs": 9173,
+    "totalMs": 9607,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7806,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1997
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1929
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2070
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1810
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 3693
+     }
+    },
+    "correct": false,
+    "answerPreview": "There are 3,503 tracks in the Chinook Music Store database. That count covers every row in the track table — all albums, genres, and media types, including any "
+   },
+   {
+    "id": "chinook-004",
+    "firstTokenMs": 6569,
+    "totalMs": 6793,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 6789,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1209
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1844
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2065
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1671
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1821
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **59 customers**. That's a count of every row in the customer table, with no filters applied by country, support repre"
+   },
+   {
+    "id": "chinook-006",
+    "firstTokenMs": 8338,
+    "totalMs": 8502,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 8395,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1546
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1815
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1344
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 1845
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1845
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2976
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **412 invoices**. That count covers every row in the invoice table — no filtering by status, date, or customer was app"
+   },
+   {
+    "id": "chinook-007",
+    "firstTokenMs": 6632,
+    "totalMs": 6876,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 6723,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1735
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1736
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2362
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 890
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 1857
+     }
+    },
+    "correct": true,
+    "answerPreview": "The Chinook Music Store database contains **25 genres** in its catalog. This is the total count of all rows in the genre table, with no filters applied."
+   },
+   {
+    "id": "chinook-008",
+    "firstTokenMs": 7628,
+    "totalMs": 7802,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 7612,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1708
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 1994
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 2599
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1311
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2149
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are 18 playlists in the Chinook Music Store database. This count includes every row in the playlist table with no filtering applied, so playlists that con"
+   },
+   {
+    "id": "chinook-011",
+    "firstTokenMs": 14863,
+    "totalMs": 15423,
+    "preTokenLlmCalls": 5,
+    "preTokenLlmMs": 15267,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1450
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 1621
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1223
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3501
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 7472
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2806
+     }
+    },
+    "correct": false,
+    "answerPreview": "**3,290 tracks** in the Chinook Music Store database have a unit price of exactly 0.99. This covers every track in the Chinook catalog — all albums, genres, art"
+   },
+   {
+    "id": "chinook-012",
+    "firstTokenMs": 10554,
+    "totalMs": 10777,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 10564,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2020
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2252
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3575
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 2717
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2441
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are 213 tracks in the Chinook Music Store database priced at exactly 1.99."
+   },
+   {
+    "id": "chinook-013",
+    "firstTokenMs": 9198,
+    "totalMs": 9682,
+    "preTokenLlmCalls": 4,
+    "preTokenLlmMs": 9282,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 1431
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2351
+     },
+     "sql": {
+      "calls": 1,
+      "ms": 3802
+     },
+     "sql-answerability": {
+      "calls": 1,
+      "ms": 1698
+     },
+     "synthesis": {
+      "calls": 1,
+      "ms": 2727
+     }
+    },
+    "correct": true,
+    "answerPreview": "There are **13 customers** from the USA in the Chinook Music Store database. The count was taken across all rows in the customer table with no other filters app"
+   },
+   {
+    "id": "sapaan",
+    "firstTokenMs": 3995,
+    "totalMs": 4701,
+    "preTokenLlmCalls": 3,
+    "preTokenLlmMs": 5969,
+    "byPurpose": {
+     "reflection": {
+      "calls": 1,
+      "ms": 1967
+     },
+     "agent": {
+      "calls": 1,
+      "ms": 2487
+     },
+     "rag-decompose": {
+      "calls": 1,
+      "ms": 1515
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 2205
+     }
+    },
+    "correct": true,
+    "answerPreview": "Halo! Kabar saya baik, terima kasih sudah bertanya. 😊 Saya siap membantu Anda dengan berbagai hal, seperti: - **Query database (SQL)** — mencari, menganalisis,"
+   },
+   {
+    "id": "thanks",
+    "firstTokenMs": 4198,
+    "totalMs": 4505,
+    "preTokenLlmCalls": 2,
+    "preTokenLlmMs": 5394,
+    "byPurpose": {
+     "agent": {
+      "calls": 1,
+      "ms": 2651
+     },
+     "reflection": {
+      "calls": 1,
+      "ms": 2743
+     },
+     "chat": {
+      "calls": 1,
+      "ms": 1846
+     }
+    },
+    "correct": true,
+    "answerPreview": "Sama-sama! Senang bisa membantu. 😊 Jika ada yang perlu dibantu lagi—misalnya query database, pencarian dokumen, atau panggilan API—jangan ragu untuk menghubung"
+   }
+  ],
+  "summary": {
+   "n": 48,
+   "correct": 45,
+   "firstTokenMedian": 4385,
+   "firstTokenP95": 14863,
+   "totalMedian": 5135,
+   "totalP95": 15423,
+   "preTokenCallsMedian": 2,
+   "preTokenCallsMax": 13
+  }
+ }
+}

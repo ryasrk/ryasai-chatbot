@@ -416,23 +416,10 @@ Verified: tsc 0 · lint 0 · 323 files, 7,983 pass, 0 fail · coverage gate OK (
 e2e:prod 19 · eval 63/63. One negative control FAILED to fail (inner-retrieval signal threading had no test) and one
 wiring guard was missing entirely (non-streaming transport) — both found by running the controls, both now covered.
 
-### 2026-10-03 — v2.0.0: security architecture
+### 2026-10-03 — v2.0.0: security architecture *(moved to the archive)*
 
-Six parallel streams, integration-reviewed before landing (the review caught three real defects in the first pass —
-all fixed with the measurement recorded): memory-queue shedding at 1,000 pending; Redis-shared rate limiting on the
-LLM routes (middleware moved to `runtime='nodejs'` — the Edge build stubbed `node:net`, so the counter silently never
-reached Redis while shipping ~700 KB of dead ioredis); a tamper-evident audit hash chain with a verify script whose
-exit codes are the contract; opt-in RLS via `scripts/enable-rls.ts` (its first version crashed on real Postgres —
-`IN (${array})` binds as one parameter and `information_schema.tables` has no `table_owner`; both fixed and the test
-now models the real catalog); per-org daily token/request budgets that make NO db call when unset; and a consolidated
-tool-policy layer (ALLOW/DENY with reasons, compatibility-checked against `applyToolGating` across 32 cases, router
-adoption deliberately deferred). Also: SECURITY.md de-staled, four ADRs (0009-0012), digest pinning in install.sh,
-native fs walk replacing `execSync('du -sb')`, PR #45 merged with its dropped `allowIds` scoping restored.
-
-An e2e failure that looked like a product defect was traced to a zombie standalone server on port 3000 stealing
-BullMQ jobs with the wrong DATABASE_URL — reproduced (embed 0/1 with the zombie, 1/1 after killing it), then both
-suites green: **e2e 19 and e2e:prod 19**. Eval 61/63; both misses are `majemuk-dok-db`, at 60% across 45 historical
-samples. tsc 0 · lint 0 · 322 files, 7,938 pass, 0 fail · coverage gate OK (208 modules) · build.
+Redis-shared rate limits, a tamper-evident audit chain, opt-in RLS, per-org token budgets, a tool-policy layer; a zombie
+server on :3000 explained an e2e failure. Full detail: `docs/progress-log-archive.md`.
 
 ### 2026-10-01 (c) — v1.7.8 *(moved to the archive: routing accuracy)*
 
@@ -476,3 +463,30 @@ Live agentic eval added (`eval-live/run-agentic.ts`): all parts correct 78.8% �
 correctness 91.7% (flat), multi-hop evidence in context 59.0 → 69.2%, **faithfulness 86.9 → 80.3% (regression: selector
 hedges extra DB/REST steps on doc questions — open item 1)**. First token 8–10 s on doc questions; rerank is the main
 cost. Ratings 8.0/8.3/8.5, latency 5.5: `docs/audits/2026-10-05-agentic-rag-latency-evidence.md`.
+
+### 2026-10-05 (d) — unreleased: three retrieval/routing causes fixed, the 13:48 numbers re-measured
+
+`ed6a471` re-measured first (open item 1 closed): faithfulness 80.3 → 85.9%, first token on documents 10.2 → 4.2 s.
+Then, from the wrong answers: PDF-glued words ("CleanAirActAmendments") made searchable (`glued-words.ts`, migration
+`20261005000002`); the SQL→documents second chance existed on the streaming transport only — now one decision in
+`sql-pipeline.ts`, also after a failed query; the Postgres FTS leg ANDed every word and returned 0 rows for 253/255
+questions — now any-word (`buildPgOrQuery`). Full eval: correctness 91.0 → 95.3 / 94.5%, faithfulness → 88.6 / 90.2%.
+Any-word FTS gains only with embeddings down (factual recall 90.3 → 93.8%). Record, defects included (a cache-polluted
+run discarded): `docs/audits/2026-10-05-retrieval-routing-fixes-evidence.md`.
+
+Verified: tsc 0 · lint 0 errors · 366 files, 8,573 pass, 0 fail · coverage:gate OK (246 modules, 77.25%) · e2e 19 ·
+e2e:prod 19.
+
+### 2026-10-05 (e) — unreleased: the 16 failures audited, six causes fixed
+
+Audit of every failure (`docs/audits/2026-10-05-failure-audit.md`, three hypotheses refuted on the way). Fixed, each
+negative-controlled: the reranker saw only a chunk's first 300 chars (55% of evidence lay beyond — now a query-biased
+window); the sufficiency verdict was the first pass's, returned with the second pass's chunks (re-judged); web picks and
+web PLANS skipped "documents first" (q241 went through the DAG); a second pass now also searches the question in the
+other language (cross-language chunk recall 83.3 → 100%); a per-turn `route decided` log (no question text); acronym
+glue read both ways. Full eval: refusal 97.9%, distractor-book and cross-language 100%, 14 of 303 failed (16 before).
+Multi-hop is 69–87% across three runs of ONE build — noise at n=39; q176, q179, q278 fail in all three. The agentic eval
+then found two more (SQL second chance took unsupported documents; the API DAG hand-off leaked the speculative
+retrieval): fixed — agentic all-parts 92.5 → 95.0%, p50 18.6 → 12.2 s, calls 7.8 → 9.4/question, 0 leaks.
+
+Verified: tsc 0 · lint 0 errors · 368 files, 8,604 pass, 0 fail · e2e 19 · e2e:prod 19.

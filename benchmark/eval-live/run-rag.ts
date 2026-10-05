@@ -121,9 +121,12 @@ async function judge(prompt: string): Promise<Record<string, unknown> | null> {
 // `--ids q1,q2` re-runs chosen questions (e.g. to confirm a fix on the ones that failed) without the full set.
 const ids = arg('--ids')?.split(',')
 const selected = (ids ? questions.filter((q) => ids.includes(q.id)) : questions).slice(0, limit)
-console.log(`running ${selected.length} questions against ${base}; judge ${JUDGE}`)
+// `--concurrency N` (default 4) shortens a full run. Correctness and faithfulness do not depend on it; latency does —
+// N parallel turns queue on the provider — so the summary records it, and only runs at the same N compare on latency.
+const concurrency = Math.max(1, Number(arg('--concurrency') ?? 4))
+console.log(`running ${selected.length} questions against ${base}; judge ${JUDGE}; concurrency ${concurrency}`)
 let done = 0
-const results = await mapLimit(selected, 4, async (q) => {
+const results = await mapLimit(selected, concurrency, async (q) => {
   const was = prior?.get(q.id)
   const r = was
     ? { answer: String(was.answer ?? ''), citations: [], tools: (was.tools as string[]) ?? [], ms: Number(was.ms), error: was.error as string | undefined }
@@ -178,6 +181,7 @@ const latencies = results.map((r) => Number(r.ms)).sort((a, b) => a - b)
 const summary = {
   ranAt: new Date().toISOString(),
   judge: JUDGE,
+  concurrency,
   questions: results.length,
   errors: results.filter((r) => r.error).length,
   // A judge failure SHRINKS n silently; it is counted so a run cannot look better by losing its hard cases.

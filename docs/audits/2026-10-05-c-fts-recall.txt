@@ -1,0 +1,11 @@
+fts recall: 255 answerable questions
+top 24  every word (plainto_tsquery, before)   evidence 2/255  zero rows 253  0.7 ms/query
+top 24  any word, ts_rank (shipped)            evidence 214/255  zero rows 0  2.4 ms/query
+top 24  any word, ts_rank norm 1               evidence 213/255  zero rows 0  2.3 ms/query
+top 24  any word, ts_rank_cd                   evidence 211/255  zero rows 0  4.5 ms/query
+top 24  any word, ts_rank_cd norm 1            evidence 209/255  zero rows 0  4.9 ms/query
+top 64  every word (plainto_tsquery, before)   evidence 2/255  zero rows 253  0.4 ms/query
+top 64  any word, ts_rank (shipped)            evidence 218/255  zero rows 0  2.3 ms/query
+top 64  any word, ts_rank norm 1               evidence 217/255  zero rows 0  2.6 ms/query
+top 64  any word, ts_rank_cd                   evidence 216/255  zero rows 0  5.0 ms/query
+top 64  any word, ts_rank_cd norm 1            evidence 217/255  zero rows 0  5.3 ms/query

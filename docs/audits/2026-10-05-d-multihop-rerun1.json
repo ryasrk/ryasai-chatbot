@@ -1,0 +1,1313 @@
+{
+  "summary": {
+    "ranAt": "2026-10-05T13:54:28.948Z",
+    "judge": "ag/gemini-3.8-flash-high",
+    "concurrency": 16,
+    "questions": 39,
+    "errors": 0,
+    "judgeFailures": 0,
+    "rejudgedFrom": null,
+    "answerCorrectness": {
+      "rate": 0.8717948717948718,
+      "low": 0.7329395096236953,
+      "high": 0.9439726505197168,
+      "n": 39
+    },
+    "answerCorrectOrPartial": {
+      "rate": 0.9743589743589743,
+      "low": 0.8681871352137286,
+      "high": 0.9954594139347627,
+      "n": 39
+    },
+    "faithfulness": {
+      "rate": 0.5897435897435898,
+      "low": 0.43418348473344903,
+      "high": 0.7292091056459952,
+      "n": 39
+    },
+    "citationHit": {
+      "rate": 1,
+      "low": 0.9103301463997611,
+      "high": 1,
+      "n": 39
+    },
+    "refusal": {
+      "rate": null,
+      "low": null,
+      "high": null,
+      "n": 0
+    },
+    "numericGrounding": {
+      "rate": 0.7435897435897436,
+      "low": 0.589180432321585,
+      "high": 0.854313741565478,
+      "n": 39
+    },
+    "byCategory": {
+      "multi-hop": {
+        "rate": 0.8717948717948718,
+        "low": 0.7329395096236953,
+        "high": 0.9439726505197168,
+        "n": 39
+      }
+    },
+    "latencyMs": {
+      "p50": 19300,
+      "p95": 33372
+    }
+  },
+  "results": [
+    {
+      "id": "q169",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Siapa Chief Operating Officer yang meninjau kebijakan cuti sekaligus kebijakan manajemen kinerja dan pelatihan karyawan Arunika?",
+      "expected": "Yusuf Halim",
+      "answer": "Chief Operating Officer-nya adalah **Yusuf Halim**.\n\nDalam dokumen kebijakan cuti PT Arunika Logistik Nusantara, bagian pengesahan mencantumkan \"Ditinjau oleh: Yusuf Halim – Chief Operating Officer (COO)\", dengan pembuatnya Sekar Ayuningtyas (CHRO) dan penyetujunya Ratna Wijayakusuma (CEO).\n\nSatu catatan: dari dokumen kebijakan manajemen kinerja dan pelatihan karyawan (POL-HC-2026-002) yang tersedia pada hasil ini, hanya bagian judul, anggaran pelatihan, dan ketentuan ikatan dinas yang muncul — halaman pengesahan atau peninjau dokumennya tidak termasuk, sehingga saya tidak dapat mengutip namanya langsung dari dokumen tersebut. Namun Yusuf Halim adalah satu-satunya COO Arunika yang tercatat di seluruh sumber ini, termasuk dalam daftar jajaran Grade 1 (Direksi/C-Level).",
+      "citedDocs": [
+        "esg-01-keberlanjutan.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-04-kinerja-pelatihan.md",
+        "hr-05-kode-etik.md",
+        "hr-01-kebijakan-cuti.md",
+        "risk-02-asuransi-klaim.md",
+        "sales-01-tarif.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "fin-01-reimbursement.md",
+        "it-03-akses-sistem.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-04-armada.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 20778,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies Yusuf Halim as the Chief Operating Officer.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Dokumen kebijakan manajemen kinerja dan pelatihan karyawan (POL-HC-2026-002) hanya memuat bagian judul, anggaran pelatihan, dan ketentuan ikatan dinas tanpa menyertakan halaman pengesahan atau peninjau dokumen."
+      ]
+    },
+    {
+      "id": "q170",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Platform apa yang digunakan Arunika untuk melaporkan kendala teknis akses HRIS cuti dan untuk mengajukan pelatihan karyawan?",
+      "expected": "Jira Service Management",
+      "answer": "Kedua keperluan itu menggunakan platform yang sama: **Jira Service Management**.\n\n- **Kendala teknis akses HRIS** — dilaporkan sebagai tiket di Jira Service Management, bukan melalui atasan atau HR. Pada saat membuat tiket, pilih tiket kendala teknis, bukan tipe *Ethics & Integrity Violation Report* yang juga tersedia di kanal tersebut. Setelah tiket masuk, penanganannya mengikuti alur eskalasi TI: L1 Support melakukan verifikasi dan diagnosa dasar, dan jika belum tuntas dalam 15 menit tiket otomatis dieskalasi ke L2 Specialist (Administrator Basis Data, Jaringan, atau Spesialis Aplikasi SAP Business One), sedangkan L3 Expert/Principal hanya bila diperlukan *patching* kode atau perbaikan perangkat keras utama. Untuk permohonan hak akses standar dan asistensi teknis non-penghambat, prioritasnya P4 – Rendah dengan target respons maksimal 4 jam dan target penyelesaian 48 jam. Perlu dibedakan: pengajuan cuti dan izin justru bukan lewat jalur ini, melainkan didaftarkan sendiri oleh karyawan melalui modul Arunika Employee Self-Service (ESS) yang terintegrasi dengan ERP SAP Business One.\n\n- **Pengajuan pelatihan karyawan** — juga diajukan melalui portal Jira Service Management, ditujukan kepada Direktorat Human Capital, dan harus masuk minimal 14 hari kerja sebelum jadwal pelaksanaan.",
+      "citedDocs": [
+        "hr-01-kebijakan-cuti.md",
+        "hr-05-kode-etik.md",
+        "fin-01-reimbursement.md",
+        "it-02-penanganan-insiden.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "it-03-akses-sistem.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-04-kinerja-pelatihan.md",
+        "coates-book.txt",
+        "esg-01-keberlanjutan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 33372,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identified Jira Service Management as the platform used for both reporting HRIS technical issues and submitting employee training requests.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Pelaporan kendala teknis akses HRIS dilakukan bukan melalui atasan atau HR (dokumen hanya menyebutkan tiket kendala akses teknis disampaikan via Jira Service Management tanpa keterangan bahwa hal tersebut tidak melalui atasan atau HR).",
+        "Saat membuat tiket untuk kendala akses HRIS di Jira Service Management, terdapat instruksi atau opsi untuk memilih 'tiket kendala teknis' (dan bukan tipe 'Ethics & Integrity Violation Report')."
+      ]
+    },
+    {
+      "id": "q171",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa pagu anggaran pelatihan tahunan untuk satu pengemudi truk atau kurir van yang termasuk Grade 1 di Arunika?",
+      "expected": "Rp 2.500.000",
+      "answer": "Untuk karyawan **Grade 1** — yang mencakup posisi **Driver Truk (CDD/CDE/Fuso/Tronton)** dan **Kurir Van** (serta Operator Gudang) — pagu anggaran pelatihan tahunan adalah **Rp 2.500.000 per karyawan per tahun**.\n\nSebagai konteks tambahan, pagu ini berbeda dari anggaran pelatihan khusus penanganan barang berbahaya (DG Handler) sebesar IDR 4.800.000 per operator, yang dialokasikan tersendiri melalui Divisi People and Culture untuk sertifikasi BNSP/Kemenhub dan bukan bagian dari pagu per grade di atas.\n\nPengajuan pelatihan pada pagu ini harus diajukan lewat portal Jira Service Management ke Direktorat Human Capital paling lambat 14 hari kerja sebelum jadwal pelaksanaan.",
+      "citedDocs": [
+        "hr-04-kinerja-pelatihan.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-04-armada.md",
+        "fin-01-reimbursement.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-03-rekrutmen-onboarding.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 13181,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states the annual training budget cap of Rp 2.500.000, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Anggaran pelatihan khusus penanganan barang berbahaya (DG Handler) sebesar IDR 4.800.000 dialokasikan tersendiri dan bukan merupakan bagian dari pagu anggaran pelatihan tahunan berdasarkan grade jabatan."
+      ]
+    },
+    {
+      "id": "q172",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa selisih waktu antara tanggal efektif SOP Annual Budgeting FY2026 dan tanggal efektif Kebijakan Pengadaan Barang dan Jasa?",
+      "expected": "4 bulan",
+      "answer": "Selisih waktunya sekitar **123 hari** (sekitar 4 bulan lebih 1 hari).\n\nRinciannya: SOP Annual Budgeting FY2026 (SOP-FIN-2025-004, versi 2.0) berlaku efektif **1 September 2025**, sedangkan Kebijakan Pengadaan Barang dan Jasa (POL-PROC-2026-001, versi 2.0) baru berlaku efektif **2 Januari 2026**. Artinya, SOP Annual Budgeting lebih dulu berlaku, dan kebijakan pengadaan menyusul sekitar empat bulan kemudian.",
+      "citedDocs": [
+        "fin-04-anggaran.md",
+        "it-02-penanganan-insiden.md",
+        "ops-05-k3-gudang.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "ops-01-penerimaan-barang.md",
+        "ops-04-armada.md",
+        "hr-01-kebijakan-cuti.md",
+        "fin-02-pengadaan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 18688,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the effective dates (1 September 2025 and 2 January 2026) and states the time difference accurately as approximately 4 months (providing the precise calculation of 123 days / 4 months and 1 day).",
+      "ungroundedNumbers": [
+        "123"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q173",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Jika National Fleet Manager mengajukan pembelian armada baru senilai di atas Rp 500.000.000, siapa yang berwenang menyetujui PO menurut matriks otorisasi dan cost center mana yang memiliki anggarannya?",
+      "expected": "Ratna Wijayakusuma (CEO) dan CC-FLOT-60 (Line-Haul Fleet)",
+      "answer": "Pembelian armada baru senilai di atas Rp 500.000.000 berada di tingkat otorisasi tertinggi, sehingga PO harus disetujui oleh **CEO, Ratna Wijayakusuma**. Matriks otorisasi pengadaan menempatkan CEO pada rentang nilai di atas Rp 500.000.000, dan rentang itu secara eksplisit mencakup pengadaan armada baru, sewa fasilitas, serta kontrak strategis. CFO (Dimas Prasetyo) hanya berwenang sampai Rp 500.000.000 dan COO (Yusuf Halim) sampai Rp 250.000.000, jadi keduanya tidak dapat mengesahkan PO sebesar itu. Perlu dicatat juga bahwa jabatan \"National Fleet Manager\" tidak tercantum sebagai tingkat tersendiri dalam matriks; jabatan manajerial Fleet setara G7 Manager Departemen masuk kelompok Department Manager yang kewenangannya berhenti di Rp 50.000.000.\n\nSoal cost center, saya tidak menemukan cost center yang diberi label khusus untuk pembelian armada baru. Yang terdaftar sebagai cost center fleet adalah:\n\n- **CC-FLOT-60 — Line-Haul Fleet**, mencakup 312 truk (CDD, CDE, Fuso, Tronton), dengan National Fleet Manager sebagai **budget owner** dan Yusuf Halim (COO) sebagai executive sponsor.\n- **CC-LAST-70 — Urban Last-Mile**, mencakup 58 city delivery van, dengan Last-Mile Operations Manager sebagai budget owner dan Yusuf Halim (COO) sebagai executive sponsor.\n\nJadi, jika yang dimaksud adalah anggaran fleet yang dikelola National Fleet Manager, cost center-nya adalah CC-FLOT-60; namun dokumen yang tersedia tidak menyebut adanya cost center tersendiri untuk pengadaan armada baru — yang ada hanya cost center operasional fleet tersebut. Setiap baris anggaran dipetakan langsung ke Cost Center SAP Business One, dan budget owner bertanggung jawab atas penyusunan anggaran, efisiensi biaya, serta pengendalian variance bulanan. Untuk konteks siklus FY2026, pengajuan itemized OPEX dan CAPEX oleh budget owner jatuh pada 22 September 2025 melalui Jira Service Management, dengan sidang pembelaan anggaran pada 6–24 Oktober 2025 bersama Direktorat Keuangan dan CFO.",
+      "citedDocs": [
+        "fin-02-pengadaan.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "hr-04-kinerja-pelatihan.md",
+        "fin-01-reimbursement.md",
+        "it-02-penanganan-insiden.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "fin-04-anggaran.md",
+        "ops-04-armada.md",
+        "coates-book.txt",
+        "risk-01-manajemen-risiko.md",
+        "hr-05-kode-etik.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 38068,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies Ratna Wijayakusuma (CEO) as the authorized person to approve the PO above Rp 500,000,000 and identifies CC-FLOT-60 (Line-Haul Fleet) as the cost center owned/managed by the National Fleet Manager.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q174",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Sebuah aset senilai Rp 50.000.000 dengan masa manfaat lebih dari 1 tahun, bagaimana klasifikasi anggarannya dan metode pemilihan vendor yang harus digunakan?",
+      "expected": "CAPEX dan Pemilihan Terbatas/RFQ (minimal 3 penawaran)",
+      "answer": "Aset senilai **Rp 50.000.000** dengan masa manfaat **lebih dari 1 tahun** memenuhi kedua kriteria CAPEX secara kumulatif: nilainya melebihi ambang batas **Rp 25.000.000** (di luar PPN), dan umur ekonomisnya lebih dari 12 bulan. Karena itu, penganggarannya **wajib diklasifikasikan sebagai Belanja Modal (CAPEX)** — asalkan jenis asetnya termasuk kategori yang diizinkan, seperti penambahan armada/overhaul besar, forklift elektrik, sistem rak gudang heavy-duty, peningkatan dock leveler, cluster server on-premise, atau kustomisasi enterprise core di SAP Business One.\n\nUntuk pemilihan vendornya, karena nilai Rp 50.000.000 berada pada rentang **Rp 10.000.000 s/d Rp 100.000.000**, metode yang harus digunakan adalah **Pemilihan Terbatas (RFQ)**, dengan ketentuan:\n\n- Menyertakan minimal **3 (tiga) surat penawaran harga resmi** yang sah dan dapat diperbandingkan, masing-masing dari vendor terdaftar yang berbeda.\n- Analisis perbandingan harga dan spesifikasi teknis dituangkan dalam format **Commercial Evaluation Summary**.\n\nSebagai catatan otorisasi: nilai CAPEX Rp 50.000.000 ini berada di bawah rentang kewenangan persetujuan CFO (di atas Rp 250.000.000 hingga Rp 500.000.000) maupun CEO (di atas Rp 500.000.000) yang disebutkan dalam kebijakan.",
+      "citedDocs": [
+        "fin-04-anggaran.md",
+        "fin-02-pengadaan.md",
+        "hr-04-kinerja-pelatihan.md",
+        "hr-05-kode-etik.md",
+        "esg-01-keberlanjutan.md",
+        "ops-01-penerimaan-barang.md",
+        "it-04-pemulihan-bencana.md",
+        "ops-02-pengiriman-outbound.md",
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 31935,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the budget classification as CAPEX and the vendor selection method as Pemilihan Terbatas/RFQ with a minimum of 3 quotations, fully matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q175",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "What is the common effective date stated in both the inbound goods receipt SOP and the outbound picking/packing/shipping SOP?",
+      "expected": "15 Januari 2026",
+      "answer": "Both SOPs share the same effective date: **15 January 2026**. That date applies to the inbound goods receiving SOP (Penerimaan Barang (Inbound) Gudang, SOP-OPS-WH-004, version 2.1 / Rev. 02) and equally to the outbound fulfillment SOP (SOP-OPS-OUT-2026-004, Version 4.2), which covers order processing, picking, packing, weight–dimension measurement, and handover to the delivery fleet.",
+      "citedDocs": [
+        "ops-06-barang-berbahaya.md",
+        "ops-01-penerimaan-barang.md",
+        "fin-04-anggaran.md",
+        "risk-02-asuransi-klaim.md",
+        "sales-02-onboarding-pelanggan.md",
+        "it-02-penanganan-insiden.md",
+        "ops-02-pengiriman-outbound.md",
+        "ops-05-k3-gudang.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "sales-01-tarif.md",
+        "fin-03-penagihan-piutang.md",
+        "hr-01-kebijakan-cuti.md",
+        "it-04-pemulihan-bencana.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 26050,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states the effective date as 15 January 2026, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q176",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Who is the Chief Operating Officer that approved both the inbound and outbound warehouse SOPs?",
+      "expected": "Yusuf Halim",
+      "answer": "Based on the documents available in this result, the inbound warehouse SOP — *Penerimaan Barang (Inbound) Gudang*, document SOP-OPS-WH-004, version 2.1 / Rev. 02, effective 15 January 2026, owned by the Warehousing Operations Department — was approved by **Yusuf Halim**, who is listed as Chief Operating Officer. The HR grading document confirms his role, placing Yusuf Halim as the COO among the company's C-level (Grade 1) executives.\n\nHowever, the outbound warehouse SOP does not appear anywhere in this result, so I cannot confirm that the same person approved it — only the inbound SOP's approver was present in the context I was given.",
+      "citedDocs": [
+        "ops-01-penerimaan-barang.md",
+        "fin-01-reimbursement.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 16308,
+      "citationHit": true,
+      "verdict": "partial",
+      "judgeReason": "The assistant correctly identifies Yusuf Halim as the Chief Operating Officer who approved the inbound warehouse SOP, but states it cannot confirm who approved the outbound warehouse SOP or whether he approved both.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q177",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "According to both SOPs, what are the daily scheduling deadlines for inbound dock appointment booking and for same-day outbound Sales Order submission?",
+      "expected": "Inbound dock booking: H-1 at 15:00 WIB; same-day outbound SO: 14:00 WIB",
+      "answer": "The two SOPs set these cut-offs:\n\n**Inbound dock appointment booking (SOP-OPS-WH-004, Warehouse Operations):** Transporters or vendors must book an unloading slot through the Dock Appointment module in the Gudangku v4 WMS no later than **H-1 — one day before arrival — at 15:00 WIB**. Fleet arrival must then match the confirmed slot, with a 30-minute lateness tolerance for trucks.\n\n**Same-day outbound Sales Order submission (outbound shipping SOP):** The daily cut-off is **14:00 WIB**, applied on every operational working day (Monday–Friday). An SO verified in SAP Business One before 14:00 WIB is transmitted automatically to Gudangku v4, and picking and packing for those same-day orders must be completed by **17:30 WIB on the same day**. Orders received after 14:00 WIB are allocated to Shift 3 as Next-Day Dispatch, with loading scheduled before **09:30 WIB the following day**.\n\nSo in short: dock slots close at **15:00 WIB one day ahead**, while same-day Sales Orders close at **14:00 WIB on the dispatch day itself**.",
+      "citedDocs": [
+        "ops-01-penerimaan-barang.md",
+        "ops-05-k3-gudang.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "coates-book.txt",
+        "fin-03-penagihan-piutang.md",
+        "fin-04-anggaran.md",
+        "ops-02-pengiriman-outbound.md",
+        "it-03-akses-sistem.md",
+        "sales-02-onboarding-pelanggan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 19628,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant accurately identifies both deadlines specified in the reference: H-1 at 15:00 WIB for inbound dock appointment booking, and 14:00 WIB for same-day outbound Sales Order submission.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Operational working days for outbound Sales Order cut-off are Monday–Friday."
+      ]
+    },
+    {
+      "id": "q178",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "For a CDD truck operating on the Surabaya-to-Jakarta Cikarang lane, what is the cargo insurance policy limit per conveyance and the standard transit lead time?",
+      "expected": "IDR 1,000,000,000 per conveyance and 2 calendar days",
+      "answer": "For CDD (Colt Diesel Double, 6-wheel) trucks, the cargo insurance policy limit is IDR 1,000,000,000 per conveyance, with a deductible of 5% of the claim (minimum IDR 5,000,000) per incident. This applies across the 140 CDD units in the fleet.\n\nThe standard transit lead time on the Surabaya (SBY-01) → Jakarta Cikarang (JKT-02) lane is 2 calendar days. The CDD is one of the three fleet classes assigned to this lane, alongside Tronton and Fuso, so the same standard applies. Transit is measured from the dispatch scan through to the electronic Proof of Delivery signature, under a contractual on-time delivery target of 97%.\n\nOne caveat: the commercial tariff sheet for origin Surabaya lists the Jakarta/Cikarang route (HUB-JKT02) with an estimated lead time of 1–2 days for CDD/Fuso/Tronton — a wider, non-contractual estimate. For planning purposes, the 2 calendar days committed in the SLA is the binding standard.",
+      "citedDocs": [
+        "risk-02-asuransi-klaim.md",
+        "ops-06-barang-berbahaya.md",
+        "sales-02-onboarding-pelanggan.md",
+        "coates-book.txt",
+        "ops-03-sla-layanan.md",
+        "sales-01-tarif.md",
+        "fin-04-anggaran.md",
+        "it-03-akses-sistem.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 19300,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant accurately provides both required facts: the cargo insurance policy limit of IDR 1,000,000,000 per conveyance and the standard transit lead time of 2 calendar days.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q179",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "What is the cargo insurance policy limit for Arunika's Jakarta Cikarang warehouse, and what monthly On-Time Delivery target does the SLA require?",
+      "expected": "IDR 120,000,000,000 per location and 97%",
+      "answer": "**Jakarta Cikarang (JKT-02) policy limit:** I did not find this figure — the coverage table available to me contains only the Balikpapan (BPN-05) warehouse row, so I cannot state a limit for Cikarang. The only warehouse limit present is Balikpapan's: IDR 30 billion per location, under Policy No. CGO-7742-JKT-2026 with PT Asuransi Sompo Insurance Indonesia (Institute Cargo Clauses (A) All-Risks, warehouse bailee coverage, deductible 10% of the claim with a minimum of IDR 15 million per incident). That Balikpapan figure should not be read as the Cikarang limit.\n\n**Monthly On-Time Delivery target:** 97%, measured monthly per customer account across all contracted lanes, with transit timed from the dispatch scan in the TMS until the e-POD signature. Missing the target triggers service-credit bands on the next monthly billing cycle (95.0–96.9% achieved = 2.5% invoice deduction; 92.0–94.9% = 5.0%; 88.0–91.9% = 10.0%; below 88.0% = 15.0%), applied as invoice offsets rather than cash refunds.",
+      "citedDocs": [
+        "risk-02-asuransi-klaim.md",
+        "it-03-akses-sistem.md",
+        "sales-02-onboarding-pelanggan.md",
+        "esg-01-keberlanjutan.md",
+        "fin-04-anggaran.md",
+        "ops-03-sla-layanan.md",
+        "ops-01-penerimaan-barang.md",
+        "hr-01-kebijakan-cuti.md",
+        "it-02-penanganan-insiden.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 20928,
+      "citationHit": true,
+      "verdict": "partial",
+      "judgeReason": "The assistant correctly provided the 97% monthly On-Time Delivery target, but failed to provide the cargo insurance policy limit for the Jakarta Cikarang warehouse (IDR 120,000,000,000), claiming it could not find the figure.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "The coverage table available contains only the Balikpapan (BPN-05) warehouse row",
+        "The only warehouse limit present is Balikpapan's"
+      ]
+    },
+    {
+      "id": "q180",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "A customer submits a cargo claim eight calendar days after delivery. What is the maximum SLA liability per shipment, and will the cargo insurance claim be accepted?",
+      "expected": "IDR 100,000,000 per shipment; no, it will be barred as late",
+      "answer": "The maximum SLA liability per shipment is **IDR 100,000,000**. Liability for unexcused delay, loss, or damage is capped at 10 times the freight charge of the consignment, and in no case more than IDR 100 million per shipment — so the full IDR 100 million is payable only where 10x the freight charge reaches or exceeds that figure. Indirect, punitive and consequential losses (lost profit, operational downtime) are excluded, as are force majeure, shipper deficiencies, consignee delays and regulatory holds.\n\nThe claim, however, will **not be accepted**. Cargo claims must be formally filed within **7 calendar days** of the delivery date (or scheduled delivery date), counted from the delivery timestamp in the TMS \"RuteKu\", by opening a ticket in Jira Service Management under the `CARGO-CLAIM` queue. At eight calendar days, this filing falls outside that window, and late filings are automatically barred from indemnification — deemed waived and void. The maximum liability figure therefore doesn't come into play here.\n\nOne clarification: the 7-day limit is a claim *filing* deadline, not a decision deadline. Once a claim is properly filed it moves through the workflow stages `Submitted`, `Under-Investigation`, `Adjuster-Survey`, `Approved` and `Closed`, with no separate number of days stated within which acceptance or a decision must be made.",
+      "citedDocs": [
+        "ops-03-sla-layanan.md",
+        "risk-02-asuransi-klaim.md",
+        "sales-02-onboarding-pelanggan.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "fin-04-anggaran.md",
+        "it-01-keamanan-informasi.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 18531,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the maximum SLA liability per shipment is IDR 100,000,000 and that the claim will not be accepted because it exceeds the 7-calendar-day filing deadline and is barred as late.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "There is no separate number of days stated within which acceptance or a decision on a claim must be made (the policy specifies in ALN-SOP-FIN-014 Section 4.2 that the investigation and loss assessment must be completed and an official Loss Assessment Report determining liability and payable damages must be issued within 14 calendar days of Jira ticket creation)."
+      ]
+    },
+    {
+      "id": "q181",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa hari setelah kebijakan Armada mulai berlaku, Kebijakan Keberlanjutan menjadi efektif?",
+      "expected": "27 hari",
+      "answer": "**27 hari.**\n\nKebijakan Pengelolaan Armada dan Pengemudi (POL-OPS-2026-004) mulai berlaku pada **5 Januari 2026**, sedangkan Sustainability and Environmental Policy (POL-OPS-ESG-2026-002) berlaku efektif pada **1 Februari 2026**.\n\nSelisih dari 5 Januari ke 1 Februari 2026 adalah 26 hari tersisa di bulan Januari (hingga 31 Januari) ditambah 1 hari, yaitu **27 hari**.",
+      "citedDocs": [
+        "hr-04-kinerja-pelatihan.md",
+        "ops-04-armada.md",
+        "coates-book.txt",
+        "hr-01-kebijakan-cuti.md",
+        "esg-01-keberlanjutan.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "it-01-keamanan-informasi.md",
+        "fin-02-pengadaan.md",
+        "ops-02-pengiriman-outbound.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 19997,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the Sustainability Policy became effective 27 days after the Fleet Policy took effect, matching the reference answer.",
+      "ungroundedNumbers": [
+        "27"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q182",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa menit lebih lama interval mengemudi berturut-turut maksimal sebelum istirahat dibandingkan batas idling kendaraan?",
+      "expected": "235 menit",
+      "answer": "Batas mengemudi berturut-turut sebelum wajib istirahat adalah **4 jam = 240 menit**, sedangkan batas idling kendaraan adalah **5 menit**. Jadi, interval mengemudi maksimal tersebut **235 menit lebih lama** daripada batas idling.",
+      "citedDocs": [
+        "ops-04-armada.md",
+        "coates-book.txt",
+        "esg-01-keberlanjutan.md",
+        "risk-01-manajemen-risiko.md",
+        "it-03-akses-sistem.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-01-penerimaan-barang.md",
+        "it-04-pemulihan-bencana.md",
+        "ops-06-barang-berbahaya.md",
+        "fin-03-penagihan-piutang.md",
+        "hr-01-kebijakan-cuti.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 27357,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly calculates the difference between the maximum driving interval (4 hours = 240 minutes) and the idling limit (5 minutes), arriving at the correct reference answer of 235 minutes.",
+      "ungroundedNumbers": [
+        "240",
+        "235"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q183",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Siapa nama eksekutif selain CEO Ratna Wijayakusuma yang tercantum sebagai penandatangan/penyetujui di kedua dokumen kebijakan?",
+      "expected": "Yusuf Halim",
+      "answer": "Selain CEO Ratna Wijayakusuma, eksekutif yang tercantum sebagai penandatangan/penyetuju di kedua dokumen kebijakan tersebut adalah **Yusuf Halim (Chief Operating Officer)** dan **Dimas Prasetyo (Chief Financial Officer)**.\n\nPada Kebijakan SLA Layanan Pelanggan (ALN-SLA-OPS-2026-01), keduanya tercatat sebagai *Authorized By* mendampingi Ratna Wijayakusuma sebagai *Approved By*; pada Kebijakan Keberlanjutan dan Lingkungan (POL-OPS-ESG-2026-002), nama keduanya juga terdaftar bersama Ratna Wijayakusuma sebagai pihak yang menyetujui. Pasangan yang sama (Yusuf Halim dan Dimas Prasetyo) juga muncul bersama CEO pada dokumen kebijakan penagihan piutang dan daftar tarif, sedangkan dokumen lain menambahkan nama seperti Sekar Ayuningtyas (CHRO) atau Hendra Gunawan (CTO).",
+      "citedDocs": [
+        "ops-03-sla-layanan.md",
+        "hr-01-kebijakan-cuti.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "hr-05-kode-etik.md",
+        "risk-01-manajemen-risiko.md",
+        "esg-01-keberlanjutan.md",
+        "ops-04-armada.md",
+        "it-03-akses-sistem.md",
+        "sales-01-tarif.md",
+        "hr-04-kinerja-pelatihan.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-05-k3-gudang.md",
+        "it-01-keamanan-informasi.md",
+        "it-02-penanganan-insiden.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 26989,
+      "citationHit": true,
+      "verdict": "partial",
+      "judgeReason": "The assistant correctly identifies Yusuf Halim as the executive who signed both documents. However, it also incorrectly includes Dimas Prasetyo as having signed both policy documents, which is not supported by the evidence (Dimas Prasetyo only signed one of the two documents).",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Pasangan Yusuf Halim dan Dimas Prasetyo muncul bersama CEO sebagai penandatangan/penyetuju pada dokumen kebijakan penagihan piutang (dokumen kebijakan penagihan piutang/POL-FIN-2026-003 hanya disetujui oleh Dimas Prasetyo dan Ratna Wijayakusuma, tanpa Yusuf Halim)."
+      ]
+    },
+    {
+      "id": "q184",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many days after the Information Security Policy takes effect does the Access System SOP become effective?",
+      "expected": "17 days",
+      "answer": "The Information Security Policy takes effect on 15 January 2026, and the Access System SOP becomes effective on 1 February 2026 — **17 days later**.",
+      "citedDocs": [
+        "fin-04-anggaran.md",
+        "it-03-akses-sistem.md",
+        "it-01-keamanan-informasi.md",
+        "esg-01-keberlanjutan.md",
+        "ops-03-sla-layanan.md",
+        "risk-02-asuransi-klaim.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "ops-02-pengiriman-outbound.md",
+        "it-02-penanganan-insiden.md",
+        "hr-01-kebijakan-cuti.md",
+        "sales-02-onboarding-pelanggan.md",
+        "ops-04-armada.md",
+        "ops-05-k3-gudang.md",
+        "coates-book.txt",
+        "it-04-pemulihan-bencana.md",
+        "ops-01-penerimaan-barang.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 28114,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly calculates and states that the Access System SOP becomes effective 17 days after the Information Security Policy.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q185",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many times longer is the standard user password expiration period than the maximum allowed lifetime of a third-party vendor account?",
+      "expected": "3 times",
+      "answer": "The maximum allowed lifetime for a third-party vendor account is **30 calendar days** from provisioning — hardware vendors, software consultants, and system integration contractors must be sponsored by an Arunika Department Head and given a hard system expiration date, with extensions requiring a renewed Jira Service Management ticket approved by the CTO at least 5 business days before expiry.\n\nHowever, I could not calculate the ratio you asked for: the standard user password expiration period does not appear anywhere in the material retrieved. The access-management standard is represented there only by its purpose/scope section, its document-control attributes, and its vendor governance section — none of which state how often a regular employee's password must be changed. Without that figure, the multiple cannot be determined.",
+      "citedDocs": [
+        "it-03-akses-sistem.md",
+        "coates-book.txt",
+        "risk-02-asuransi-klaim.md",
+        "ops-06-barang-berbahaya.md",
+        "ops-03-sla-layanan.md",
+        "it-04-pemulihan-bencana.md",
+        "sales-02-onboarding-pelanggan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 12450,
+      "citationHit": true,
+      "verdict": "incorrect",
+      "judgeReason": "The assistant failed to provide the answer (3 times), stating that it could not determine the ratio because the standard user password expiration period was not found in its retrieved material.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "The access-management standard is represented there only by its purpose/scope section, its document-control attributes, and its vendor governance section"
+      ]
+    },
+    {
+      "id": "q186",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "By how many days does the automatic suspension threshold for inactive accounts exceed the backup data retention period?",
+      "expected": "10 days",
+      "answer": "The automatic suspension threshold is 45 consecutive days of inactivity, and backups are retained for 35 calendar days — so the suspension trigger exceeds the retention period by **10 days**.",
+      "citedDocs": [
+        "it-03-akses-sistem.md",
+        "fin-03-penagihan-piutang.md",
+        "fin-02-pengadaan.md",
+        "sales-02-onboarding-pelanggan.md",
+        "coates-book.txt",
+        "it-01-keamanan-informasi.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "it-04-pemulihan-bencana.md",
+        "ops-04-armada.md",
+        "ops-05-k3-gudang.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-02-pengiriman-outbound.md",
+        "sales-01-tarif.md",
+        "esg-01-keberlanjutan.md",
+        "hr-01-kebijakan-cuti.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 19398,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the threshold exceeds the retention period by 10 days, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q187",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut SOP Penanganan Gangguan dan Insiden TI serta IT-DRP, berapa selisih antara target waktu resolusi insiden prioritas P1 dan Recovery Time Objective (RTO) untuk sistem WMS Gudangku v4?",
+      "expected": "2 jam",
+      "answer": "Berdasarkan SOP Penanganan Gangguan dan Insiden TI (SOP-IT-OPS-004), insiden prioritas **P1 – Kritis** memiliki target waktu resolusi **2 jam** (dengan waktu respon maksimal 15 menit). Sementara itu, dalam dokumen IT-DRP (DRP-ITN-2026-V2), Recovery Time Objective (RTO) untuk sistem WMS Gudangku v4 adalah **4 jam**.\n\nSelisih antara keduanya adalah **2 jam**, dengan RTO sistem Gudangku v4 lebih longgar dibanding target resolusi insiden P1. Perlu dicatat bahwa kedua angka ini mengukur hal yang berbeda: target resolusi 2 jam adalah batas waktu penanganan insiden menurut SOP, sedangkan RTO 4 jam adalah maksimum waktu henti yang dapat ditoleransi bagi sistem WMS sesuai rencana pemulihan bencana.",
+      "citedDocs": [
+        "it-02-penanganan-insiden.md",
+        "ops-01-penerimaan-barang.md",
+        "it-01-keamanan-informasi.md",
+        "fin-04-anggaran.md",
+        "ops-02-pengiriman-outbound.md",
+        "sales-01-tarif.md",
+        "it-04-pemulihan-bencana.md",
+        "hr-01-kebijakan-cuti.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 11905,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the difference as 2 hours, supported by accurate calculations based on the source documents (4 hours RTO minus 2 hours resolution target).",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q188",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The SOP mentions the number of trucks and vans supported by core systems, while the DRP provides a fleet breakdown by vehicle type. How many trucks (excluding vans) does Arunika operate?",
+      "expected": "312 trucks",
+      "answer": "Arunika operates **312 trucks**, excluding vans.\n\nThe DRP records Arunika's fleet as 370 vehicles in total — 312 trucks and 58 vans (the vans being light commercial delivery vehicles used for last-mile/urban delivery). The truck count breaks down as:\n\n- 140 CDD (Colt Diesel Double, 6 wheels)\n- 96 CDE (Colt Diesel Engkel, 4 wheels)\n- 52 Fuso (medium-duty cargo trucks)\n- 24 Tronton (heavy multi-axle trucks)\n\nThat's 140 + 96 + 52 + 24 = 312. The same 312 trucks / 58 vans split appears in the communication tree (Fleet Dispatch handling 312 trucks / 58 vans), in the RBAC framework for the RuteKu (TMS) dispatcher role, and in the FY2026 budgeting SOP, whose OPEX section covers routine maintenance for 312 trucks and 58 vans. These vehicles support round-the-clock, three-shift operations across Arunika's five distribution centers.",
+      "citedDocs": [
+        "esg-01-keberlanjutan.md",
+        "ops-06-barang-berbahaya.md",
+        "it-04-pemulihan-bencana.md",
+        "risk-02-asuransi-klaim.md",
+        "fin-04-anggaran.md",
+        "ops-03-sla-layanan.md",
+        "fin-03-penagihan-piutang.md",
+        "coates-book.txt",
+        "ops-02-pengiriman-outbound.md",
+        "it-03-akses-sistem.md",
+        "it-02-penanganan-insiden.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 19122,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that Arunika operates 312 trucks (excluding vans), matching the reference answer and supported by the detailed breakdown.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q189",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Lokasi Hub mana yang menjadi tempat kejadian insiden P1 WMS down pada contoh kasus SOP sekaligus menjadi lokasi Disaster Recovery Site menurut IT-DRP?",
+      "expected": "Hub Jakarta Cikarang (JKT-02)",
+      "answer": "Keduanya menunjuk ke lokasi yang sama, yaitu **Hub JKT-02 Cikarang (Jakarta Cikarang Hub)**.\n\nPada contoh kasus SOP-IT-OPS-004, insiden P1 WMS down terjadi di Hub JKT-02 Cikarang: server basis data WMS *Gudangku v4* mengalami *crash* mendadak pada Shift 2 pukul 14:15 WIB, sehingga pemindai nirkabel kehilangan koneksi, proses bongkar muat terhenti, dan 45 unit truk CDD/CDE tertahan di area dok inbound. Setelah failover ke klaster replikasi cadangan Cikarang pukul 14:48 WIB, WMS pulih sepenuhnya pukul 15:35 WIB dengan total resolusi 1 jam 15 menit — masih di bawah batas SLA P1 yaitu 2 jam.\n\nSementara itu, menurut dokumen IT Disaster Recovery Plan (DRP-ITN-2026-V2), Disaster Recovery Site juga berlokasi di fasilitas JKT-02 tersebut, di Cikarang Industrial Estate, Jawa Barat. DRS ini berupa Secure Tier-III Colocation Data Center dengan grid listrik independen dari PDC, dua interkoneksi SD-WAN 10 Gbps ke Primary Data Center, dan node komputasi hyperconverged sekunder yang terisolasi.\n\nSebagai pembanding, Primary Data Center berada di Arunika Head Office, Jl. Rungkut Industri III No. 18, Surabaya, yang sekaligus lokasi Surabaya Central Hub (SBY-01). Adapun fasilitas JKT-02 terdaftar dalam tabel tarif sewa gudang sebagai Cikarang Distribution Center di Kawasan Industri GIIC Cikarang, Bekasi, dengan luas area 24.500 m².",
+      "citedDocs": [
+        "it-02-penanganan-insiden.md",
+        "risk-02-asuransi-klaim.md",
+        "ops-01-penerimaan-barang.md",
+        "sales-01-tarif.md",
+        "it-01-keamanan-informasi.md",
+        "risk-01-manajemen-risiko.md",
+        "ops-02-pengiriman-outbound.md",
+        "ops-06-barang-berbahaya.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "it-04-pemulihan-bencana.md",
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 25687,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the location as Hub JKT-02 Cikarang (Jakarta Cikarang Hub), matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "DRS memiliki grid listrik yang independen dari PDC"
+      ]
+    },
+    {
+      "id": "q190",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Using the default credit limit for a Corporate SME in the finance policy and the 2026 warehouse tariff for the Cikarang Distribution Center, what is the largest whole square-meter area that the default credit limit can cover for one month?",
+      "expected": "852 m²",
+      "answer": "Using the Corporate SME default credit limit of IDR 75,000,000 and the Cikarang Distribution Center's warehousing rate of Rp 88,000 per m² per month, the affordable area is 75,000,000 ÷ 88,000 ≈ 852.3 m². Rounded down to a whole square meter for a one-month charge, the largest area the default limit covers is **852 m²**, which comes to IDR 74,976,000 and leaves IDR 24,000 of headroom; 853 m² would cost IDR 75,064,000 and exceed the limit.\n\nOne caveat: the rate schedule for the Cikarang facility (warehouse code JKT-02) is not labelled with a specific year, so the Rp 88,000 per m² per month figure couldn't be confirmed as the 2026-dated tariff — it is simply the rate listed for that facility. Also note this comparison ignores the minimum 6-month commitment and the requirement to pay monthly in advance by the 5th; the limit would need to be available each month across that term, not just for a single month.",
+      "citedDocs": [
+        "fin-03-penagihan-piutang.md",
+        "sales-02-onboarding-pelanggan.md",
+        "fin-04-anggaran.md",
+        "risk-02-asuransi-klaim.md",
+        "sales-01-tarif.md",
+        "coates-book.txt",
+        "esg-01-keberlanjutan.md",
+        "it-04-pemulihan-bencana.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 14309,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly calculates and identifies the largest whole square-meter area as 852 m², exactly matching the reference answer.",
+      "ungroundedNumbers": [
+        "852.3",
+        "852",
+        "74976000",
+        "853",
+        "75064000"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "The rate schedule for the Cikarang facility (warehouse code JKT-02) is not labelled with a specific year, so the Rp 88,000 per m² per month figure could not be confirmed as the 2026-dated tariff."
+      ]
+    },
+    {
+      "id": "q191",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The sales tariff applies a maximum fuel surcharge to freight when solar prices exceed a threshold, while the finance policy caps late payment interest. Which of these two percentages is higher?",
+      "expected": "Late-payment interest cap (10.0%)",
+      "answer": "The finance policy's cap is higher: cumulative late payment interest is limited to **10.0%** of the original invoice principal, versus a maximum fuel surcharge of **9.5%** on base freight once the average diesel price rises above Rp 17,500 per litre — a difference of 0.5 percentage points. For context, the late interest is billed at 2.0% per month (0.067% per day, pro-rata on a 30-day basis), so the 10.0% ceiling represents the maximum that can accumulate, while 9.5% is the single top surcharge tier.",
+      "citedDocs": [
+        "sales-01-tarif.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-03-sla-layanan.md",
+        "coates-book.txt",
+        "fin-04-anggaran.md",
+        "risk-02-asuransi-klaim.md",
+        "it-03-akses-sistem.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 17101,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies that the finance policy's late payment interest cap (10.0%) is higher than the maximum fuel surcharge (9.5%).",
+      "ungroundedNumbers": [
+        "0.5"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q192",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The finance policy requires joint approval for bad debt write-offs up to a certain amount. If that amount is expressed only as inbound pallet handling fees, how many whole pallets can be handled before the cumulative cost would exceed the approval threshold?",
+      "expected": "1,351 pallets",
+      "answer": "The joint-approval tier for bad debt write-offs covers amounts **up to IDR 25,000,000**, which requires sign-off by both the Credit & Collections Manager and the Financial Controller.\n\nAt the standard inbound handling rate of **Rp 18,500 per pallet**, that threshold is reached as follows:\n\n- 1,351 pallets × Rp 18,500 = **Rp 24,993,500** — still within the threshold\n- 1,352 pallets × Rp 18,500 = **Rp 25,012,000** — exceeds it\n\nSo **1,351 whole pallets** could be handled before the cumulative inbound handling cost would pass the IDR 25,000,000 joint-approval threshold.",
+      "citedDocs": [
+        "fin-03-penagihan-piutang.md",
+        "risk-02-asuransi-klaim.md",
+        "coates-book.txt",
+        "fin-04-anggaran.md",
+        "sales-01-tarif.md",
+        "esg-01-keberlanjutan.md",
+        "ops-02-pengiriman-outbound.md",
+        "ops-06-barang-berbahaya.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 15728,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly calculates and states that 1,351 whole pallets can be handled before exceeding the threshold, matching the reference answer.",
+      "ungroundedNumbers": [
+        "1351",
+        "24993500",
+        "1352",
+        "25012000"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q193",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "SOP-COM-2026-002 sets the maximum unsecured credit limit for Tier 1 onboarding clients. Which customer segment in POL-FIN-2026-003 has the same maximum credit limit?",
+      "expected": "Corporate SME",
+      "answer": "Tier 1 clients under SOP-COM-2026-002 qualify for unsecured credit of up to IDR 500,000,000.\n\nIn POL-FIN-2026-003, the segment with that same maximum is **Corporate SME**, whose credit ceiling is IDR 500,000,000 (with a default limit of IDR 75,000,000, approved by the Credit Committee). Note that Enterprise's *default* is also IDR 500,000,000, but its maximum is higher at IDR 2,500,000,000, so Corporate SME is the true match.",
+      "citedDocs": [
+        "sales-02-onboarding-pelanggan.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-03-sla-layanan.md",
+        "hr-05-kode-etik.md",
+        "risk-01-manajemen-risiko.md",
+        "fin-01-reimbursement.md",
+        "hr-01-kebijakan-cuti.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 11337,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies 'Corporate SME' as the matching customer segment with the maximum credit limit of IDR 500,000,000.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q194",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Under the Account Manager Assignment Rules in SOP-COM-2026-002, a client with projected monthly revenue above IDR 250,000,000 is classified as Enterprise. What annual contracted run-rate threshold defines the Enterprise credit segment in POL-FIN-2026-003?",
+      "expected": "> IDR 3,000,000,000",
+      "answer": "The two documents use different scales. In POL-FIN-2026-003 (Billing, Credit, and Collections), the **Enterprise** credit segment is defined by an annual contracted run-rate **above IDR 3,000,000,000**, and it additionally requires a minimum of two years of audited financial statements. Under that policy, Enterprise clients get Net 45 calendar days payment terms, a default credit limit of IDR 500,000,000 (up to a maximum of IDR 2,500,000,000), with credit assessment authority resting with the CFO.\n\nSo while SOP-COM-2026-002 sets the Enterprise commercial tier at above IDR 250,000,000 in projected monthly billing, the finance policy's credit-segment threshold is the IDR 3 billion annual contracted run-rate.",
+      "citedDocs": [
+        "sales-02-onboarding-pelanggan.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-03-sla-layanan.md",
+        "fin-04-anggaran.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 6435,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the threshold as above IDR 3,000,000,000, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q195",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "After a successful Day 5 operational trial shipment and formal Trial Sign-Off under SOP-COM-2026-002, within how many business days must Arunika deliver the resulting invoice under POL-FIN-2026-003?",
+      "expected": "2 business days",
+      "answer": "Under POL-FIN-2026-003, the invoice delivery window is **2 business days** — but the clock starts from **operational milestone completion**, not from the trial sign-off.\n\nThat distinction matters here. The Day 5 operational trial and the formal Trial Sign-Off Form countersigned by the client and Arunika's Operations Supervisor come from SOP-COM-2026-002 (Customer Onboarding and KYC). That procedure establishes the sign-off as the validation gate for the trial shipment, but it attaches no invoice delivery deadline to it. POL-FIN-2026-003 likewise does not measure its 2-business-day window from a trial sign-off.\n\nFor the milestone trigger itself, billing data is generated automatically in SAP Business One when the operational platforms confirm the milestone:\n\n- **Freight Forwarding and Last-Mile:** the trigger is e-POD synchronization in RuteKu (the TMS).\n- **Warehousing:** storage, handling, and value-added service fees close on the final calendar day of each month via Gudangku v4 (the WMS).\n\nSo the practical answer is 2 business days, running from the relevant operational milestone completion — which for a freight trial shipment would be the e-POD sync rather than the countersigned sign-off form. Invoices must be accompanied by commercial receipts, digital tax slips (Faktur Pajak), and validated e-PODs, and any client disputes over rates, damaged cargo, or billing counts must be logged via Jira Service Management within 7 calendar days of invoice dispatch, with undisputed amounts remaining fully payable.",
+      "citedDocs": [
+        "fin-03-penagihan-piutang.md",
+        "risk-01-manajemen-risiko.md",
+        "sales-02-onboarding-pelanggan.md",
+        "coates-book.txt",
+        "fin-01-reimbursement.md",
+        "hr-05-kode-etik.md",
+        "ops-03-sla-layanan.md",
+        "hr-01-kebijakan-cuti.md",
+        "hr-04-kinerja-pelatihan.md",
+        "ops-04-armada.md",
+        "fin-02-pengadaan.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "esg-01-keberlanjutan.md",
+        "risk-02-asuransi-klaim.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "fin-04-anggaran.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 22219,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the invoice must be delivered within 2 business days under POL-FIN-2026-003.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q271",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berdasarkan kebijakan reimbursement, siapa nama Chief Executive Officer yang menandatangani kebijakan tersebut, dan berapa persentase bonus kinerja tahunan maksimum untuk grade jabatannya dalam tabel kompensasi?",
+      "expected": "Ratna Wijayakusuma; 40%",
+      "answer": "Kebijakan Reimbursement dan Perjalanan Dinas (POL-FIN-2025-004, versi 3.1) mencantumkan **Ratna Wijayakusuma** sebagai Chief Executive Officer — dalam aturan kewenangan persetujuan, transaksi di atas IDR 75.000.000 disetujui oleh CFO, Dimas Prasetyo, lalu disahkan oleh CEO, Ratna Wijayakusuma. Perlu dicatat bahwa bagian dokumen yang tersedia memuat aturan ambang persetujuan tersebut, bukan lembar tanda tangan pengesahan resmi, sehingga blok penandatangan lengkapnya tidak terlihat.\n\nDalam tabel kompensasi, jabatan CEO termasuk grade **G8** (Senior Management & C-Level), dengan bonus kinerja tahunan maksimum sebesar **40%**.",
+      "citedDocs": [
+        "esg-01-keberlanjutan.md",
+        "fin-03-penagihan-piutang.md",
+        "fin-01-reimbursement.md",
+        "hr-04-kinerja-pelatihan.md",
+        "ops-02-pengiriman-outbound.md",
+        "sales-01-tarif.md",
+        "hr-05-kode-etik.md",
+        "it-01-keamanan-informasi.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-03-sla-layanan.md",
+        "fin-04-anggaran.md",
+        "coates-book.txt"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 13029,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies Ratna Wijayakusuma as the Chief Executive Officer and states that the maximum annual performance bonus for her grade (G8) is 40%.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Bagian dokumen yang tersedia tidak memuat lembar tanda tangan pengesahan resmi sehingga blok penandatangan lengkapnya tidak terlihat."
+      ]
+    },
+    {
+      "id": "q272",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Apa nomor dokumen yang sama-sama tercantum pada kebijakan cuti dan izin karyawan serta kebijakan manajemen kinerja dan pelatihan karyawan?",
+      "expected": "POL-HC-2026-002",
+      "answer": "Nomor dokumen yang sama-sama tercantum pada kedua kebijakan tersebut adalah **POL-HC-2026-002**.\n\n- **Kebijakan Cuti dan Izin Karyawan**: Kode Dokumen POL-HC-2026-002, Versi 2.0, berlaku efektif 1 Januari 2026, dimiliki oleh Departemen Human Capital & Corporate Affairs dengan klasifikasi Dokumen Internal Perusahaan.\n- **Kebijakan Manajemen Kinerja dan Pelatihan Karyawan**: Nomor Dokumen POL-HC-2026-002, Versi 2.0, berlaku 2 Januari 2026, dikelola oleh Direktorat Human Capital dengan klasifikasi Internal Perusahaan.\n\nPerlu dicatat bahwa nomor yang sama juga muncul pada satu dokumen HR lain, yaitu Kode Etik (POL-HC-2026-002, Versi 3.1, berlaku 5 Januari 2026), sehingga ada indikasi duplikasi nomor dokumen untuk tiga kebijakan berbeda dan sebaiknya diverifikasi ke penerbit dokumen sebelum dijadikan acuan resmi.",
+      "citedDocs": [
+        "hr-01-kebijakan-cuti.md",
+        "coates-book.txt",
+        "hr-04-kinerja-pelatihan.md",
+        "hr-05-kode-etik.md",
+        "sales-01-tarif.md",
+        "ops-06-barang-berbahaya.md",
+        "risk-01-manajemen-risiko.md",
+        "hr-03-rekrutmen-onboarding.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 12391,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the document number as POL-HC-2026-002, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q273",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berdasarkan kebijakan pengadaan dan anggaran, mekanisme apa yang wajib digunakan untuk pengadaan heavy-duty warehouse racking system senilai Rp 150 juta dengan umur manfaat 5 tahun, dan bagaimana klasifikasi anggarannya?",
+      "expected": "Tender formal; CAPEX",
+      "answer": "**Mekanisme yang wajib: Tender Formal.** Nilai Rp 150.000.000 berada di atas ambang Rp 100.000.000, sehingga pengadaannya wajib melalui tender resmi — terbuka atau terbatas — yang dikelola oleh Panitia Pengadaan.\n\nKetentuan pelaksanaannya:\n\n- Panitia Pengadaan dibentuk melalui Surat Keputusan Direksi.\n- Wajib menyusun Dokumen Rencana Kerja dan Syarat (RKS).\n- Evaluasi mencakup tiga aspek: administrasi, teknis, dan komersial.\n- Minimal 3 (tiga) vendor peserta harus lulus kualifikasi awal.\n\nDua jalur lain tidak dapat dipakai: Pengadaan Langsung hanya untuk nilai di bawah Rp 10.000.000 (cukup satu surat penawaran resmi dari vendor terdaftar, diproses staf pengadaan), sedangkan penunjukan langsung tidak berlaku karena nilai Rp 150.000.000 sudah melewati batas Rp 100.000.000 yang mensyaratkan tender. Perlu dicatat bahwa rentang menengah (di atas Rp 10.000.000 sampai Rp 100.000.000) tidak tercakup dalam hasil ini, jadi rinciannya tidak dapat saya konfirmasi.\n\n**Otorisasi persetujuan:** Rp 150.000.000 masuk rentang di atas Rp 100.000.000 hingga Rp 250.000.000, yakni kewenangan Chief Operating Officer (Yusuf Halim), CTO, atau CHRO untuk pengadaan operasional fleet, warehouse, TI, dan SDM. Karena ini heavy-duty warehouse racking, jalurnya berada di bawah COO.\n\n**Klasifikasi anggaran: CAPEX.** Suatu item dibukukan sebagai Capital Expenditure hanya jika memenuhi dua kriteria secara kumulatif:\n\n1. **Ambang nilai:** biaya per unit atau biaya perolehan proyek secara agregat melebihi Rp 25.000.000 (di luar PPN).\n2. **Umur manfaat ekonomis:** lebih dari 1 (satu) tahun (12 bulan).\n\nKeduanya terpenuhi di sini — nilai Rp 150.000.000 melampaui ambang, dan umur manfaat 5 tahun lolos syarat \"lebih dari satu tahun\" (bukan harus 5 tahun). Heavy-duty warehouse racking system juga tercantum eksplisit sebagai kategori CAPEX yang diizinkan, sehingga pengadaan ini dibukukan sebagai CAPEX, bukan OPEX. Sebagai pembanding, OPEX mencakup pembelian aset, perbaikan, atau penggantian alat dengan total biaya Rp 25.000.000 atau kurang, berapa pun umur manfaatnya.\n\nPerlu dicatat bahwa kewenangan otorisasi CAPEX yang tercatat untuk CFO (Dimas Prasetyo) berada pada rentang di atas Rp 250.000.000–Rp 500.000.000, dan di atas Rp 500.000.000 berada pada CEO (Ratna Wijayakusuma) — keduanya di atas nilai pengadaan ini, sehingga jalur persetujuannya tetap pada COO sebagaimana di atas.",
+      "citedDocs": [
+        "fin-02-pengadaan.md",
+        "fin-04-anggaran.md",
+        "hr-04-kinerja-pelatihan.md",
+        "ops-01-penerimaan-barang.md",
+        "risk-02-asuransi-klaim.md",
+        "ops-04-armada.md",
+        "coates-book.txt",
+        "esg-01-keberlanjutan.md",
+        "hr-05-kode-etik.md",
+        "it-01-keamanan-informasi.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "fin-03-penagihan-piutang.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 26873,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies both the required procurement mechanism (Tender Formal) and the budget classification (CAPEX), supported by the appropriate criteria from the policies.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Penunjukan langsung adalah salah satu jalur pengadaan di perusahaan yang tidak berlaku karena nilai Rp 150.000.000 sudah melewati batas Rp 100.000.000 yang mensyaratkan tender (kebijakan pengadaan perusahaan tidak mengenal atau mengatur mekanisme penunjukan langsung)."
+      ]
+    },
+    {
+      "id": "q274",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "SOP inbound menetapkan toleransi kedatangan truk setelah slot booking, dan SOP outbound menetapkan toleransi keterlambatan jadwal keberangkatan armada. Berapa menit toleransi tersebut pada kedua prosedur?",
+      "expected": "30 menit",
+      "answer": "Kedua prosedur menetapkan toleransi **30 menit**.\n\n- **Inbound:** kedatangan truk setelah slot booking yang terkonfirmasi ditoleransi hingga 30 menit. Jika melewatinya, sistem WMS otomatis membatalkan alokasi docking bay, armada dialihkan ke antrean tunggu non-prioritas pada shift berikutnya, dan dikenakan biaya administrasi penataan jadwal ulang sebesar Rp150.000 per armada.\n- **Outbound:** keterlambatan jadwal keberangkatan armada (departure delay) ditoleransi hingga 30 menit. Keterlambatan melebihi batas tersebut akibat kelalaian operasional gudang dikenakan penalti kompensasi armada internal sebesar Rp150.000 per armada.\n\nJadi toleransinya sama, yaitu 30 menit pada masing-masing prosedur.",
+      "citedDocs": [
+        "ops-01-penerimaan-barang.md",
+        "risk-01-manajemen-risiko.md",
+        "ops-02-pengiriman-outbound.md",
+        "hr-04-kinerja-pelatihan.md",
+        "it-02-penanganan-insiden.md",
+        "fin-03-penagihan-piutang.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 11455,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the tolerance for both procedures is 30 minutes, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q275",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "The Customer Service Level Agreement became effective on 1 January 2026. How many days later did the Cargo Insurance and Claims SOP take effect?",
+      "expected": "14 days",
+      "answer": "The Customer Service Level Agreement took effect on 1 January 2026, and the Cargo Insurance and Claims Procedure (ALN-SOP-FIN-014, version 3.2) took effect on 15 January 2026 — **14 days later**.",
+      "citedDocs": [
+        "risk-02-asuransi-klaim.md",
+        "fin-04-anggaran.md",
+        "ops-06-barang-berbahaya.md",
+        "sales-02-onboarding-pelanggan.md",
+        "ops-03-sla-layanan.md",
+        "coates-book.txt",
+        "it-04-pemulihan-bencana.md",
+        "fin-03-penagihan-piutang.md",
+        "it-03-akses-sistem.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 9993,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that the SOP took effect 14 days later, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q276",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Berapa jumlah total unit kendaraan bermotor aktif (truk dan van) yang tercatat dalam Kebijakan Pengelolaan Armada dan Sustainability and Environmental Policy PT Arunika Logistik Nusantara?",
+      "expected": "370 unit",
+      "answer": "Jumlah total unit kendaraan bermotor aktif yang tercatat adalah **370 unit**, terdiri dari **312 truk** dan **58 van** untuk *last-mile delivery*. Rincian truknya: 140 unit CDD (8 ton), 96 unit CDE (4 ton), 52 unit Fuso (15 ton), dan 24 unit Tronton (25 ton), sementara seluruh van berkapasitas 1,2 ton. Semua unit tersebut wajib terpasang modul GPS aktif yang terhubung 24/7 dengan TMS RuteKu dan dipantau oleh Tim *Fleet Monitoring*, serta tersebar di kantor pusat Surabaya dan lima hub pergudangan utama (SBY-01, JKT-02, MDN-03, MKS-04, BPN-05).\n\nPerlu saya sampaikan bahwa angka truk dan van ini berasal dari Kebijakan Pengelolaan Armada dan Pengemudi (POL-OPS-2026-004). Bagian *Sustainability and Environmental Policy* yang tersedia tidak mencantumkan jumlah unit kendaraan sama sekali — cakupannya hanya menyebut 1.240 karyawan/personel, lima fasilitas distribusi, dan komitmen penurunan emisi gas rumah kaca 30% terhadap basis tahun 2023. Jadi, rincian jumlah truk dan van di bawah judul kebijakan lingkungan tersebut tidak tersedia.",
+      "citedDocs": [
+        "ops-04-armada.md",
+        "hr-01-kebijakan-cuti.md",
+        "hr-05-kode-etik.md",
+        "fin-02-pengadaan.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "ops-02-pengiriman-outbound.md",
+        "ops-06-barang-berbahaya.md",
+        "fin-03-penagihan-piutang.md",
+        "hr-04-kinerja-pelatihan.md",
+        "esg-01-keberlanjutan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 13201,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states the total number of active motor vehicles as 370 units (312 trucks and 58 vans), matching the reference answer.",
+      "ungroundedNumbers": [
+        "370"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "Bagian Sustainability and Environmental Policy yang tersedia tidak mencantumkan jumlah unit kendaraan sama sekali.",
+        "Rincian jumlah truk dan van di bawah judul kebijakan lingkungan (Sustainability and Environmental Policy) tidak tersedia."
+      ]
+    },
+    {
+      "id": "q277",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many certified dangerous-goods specialists must be on active floor duty across all DG-accepting hubs during one full day of warehouse operations?",
+      "expected": "12 specialists",
+      "answer": "The Dangerous Goods Handling SOP (SOP-OPS-DG-004) requires **2 certified DG specialists on active floor duty during every shift** at each hub that accepts DG. With warehouses running **3 shifts per day**, that means **6 certified specialists per DG-accepting hub per day** (2 × 3).\n\nApplied to the two hubs identified as DG-accepting — **SBY-01 (Surabaya)** and **JKT-02 (Cikarang)** — the daily total is **12 certified specialists** across both hubs.\n\nOne caveat: which of the network's hubs are individually authorised to accept DG shipments was not found in the available evidence, so if any of the other three hubs (MDN-03, MKS-04, BPN-05) also accept DG, the figure would rise by **6 per additional hub**.",
+      "citedDocs": [
+        "ops-06-barang-berbahaya.md",
+        "ops-03-sla-layanan.md",
+        "coates-book.txt",
+        "it-03-akses-sistem.md",
+        "ops-02-pengiriman-outbound.md",
+        "sales-01-tarif.md",
+        "it-02-penanganan-insiden.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "hr-05-kode-etik.md",
+        "fin-02-pengadaan.md",
+        "ops-01-penerimaan-barang.md",
+        "ops-05-k3-gudang.md",
+        "sales-02-onboarding-pelanggan.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "SQL:success"
+      ],
+      "ms": 29406,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly calculates and states that 12 certified specialists are required across both DG-accepting hubs (SBY-01 and JKT-02) for one full day of operations, matching the reference answer.",
+      "ungroundedNumbers": [],
+      "faithful": false,
+      "unsupported": [
+        "Which of the network's hubs are individually authorised to accept DG shipments was not found in the available evidence.",
+        "The other three hubs (MDN-03, MKS-04, BPN-05) may also accept DG shipments."
+      ]
+    },
+    {
+      "id": "q278",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut Kebijakan Keamanan Informasi dan SOP Akses Sistem, berapa jumlah karyawan yang terikat oleh kebijakan tersebut dan siapa saja yang menyetujui standar akses sistem?",
+      "expected": "1.240 karyawan; Hendra Gunawan (CTO) dan Ratna Wijayakusuma (CEO)",
+      "answer": "**Jumlah karyawan yang terikat kebijakan:** Kebijakan Keamanan Informasi (ALN-POL-IT-004, versi 3.0, berlaku 15 Januari 2026) mengikat **1.240 karyawan** PT Arunika Logistik Nusantara tanpa terkecuali, baik secara operasional maupun hukum. Cakupannya meliputi Kantor Pusat Surabaya, unit armada logistik (312 truk dan 58 van), 5 fasilitas gudang operasional (Surabaya SBY-01 18.000 m², Jakarta Cikarang JKT-02 24.500 m², Medan MDN-03 9.200 m², Makassar MKS-04 7.800 m², Balikpapan BPN-05 6.100 m²), serta sistem ERP SAP Business One, WMS Gudangku v4, TMS RuteKu, portal Jira Service Management, dan infrastruktur pendukung operasional 3 shift pergudangan.\n\n**Persetujuan terkait akses sistem (SOP Akses Sistem, it-03-akses-sistem.md):**\n- **Atasan langsung** wajib memvalidasi kebutuhan bisnis dalam waktu 24 jam kerja.\n- Untuk modul di **SAP Business One** atau peran administratif di **Gudangku v4**, wajib ada persetujuan digital eksplisit (*digital sign-off*) dari **CFO Dimas Prasetyo atau CTO Hendra Gunawan**.\n- Pemenuhan permintaan yang sudah disetujui dilakukan IT Infrastructure dengan SLA 8 jam kerja (Senin–Jumat, 08.00–17.00 WIB).\n- Untuk akses pihak ketiga/vendor, perpanjangan akun di luar batas kedaluwarsa maksimal 30 hari kalender memerlukan tiket Jira Service Management baru yang disetujui oleh **CTO Hendra Gunawan**, diajukan paling lambat 5 hari kerja sebelum kedaluwarsa, dengan sponsor Department Head Arunika.\n\nSatu hal yang perlu saya sampaikan terus terang: yang tersedia adalah matriks persetujuan untuk *permintaan akses sistem*, bukan keterangan eksplisit mengenai siapa yang menyetujui atau meratifikasi *standar* akses sistem itu sendiri sebagai dokumen kebijakan.",
+      "citedDocs": [
+        "it-01-keamanan-informasi.md",
+        "fin-02-pengadaan.md",
+        "it-02-penanganan-insiden.md",
+        "hr-04-kinerja-pelatihan.md",
+        "ops-01-penerimaan-barang.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-06-barang-berbahaya.md",
+        "fin-01-reimbursement.md",
+        "hr-03-rekrutmen-onboarding.md",
+        "coates-book.txt",
+        "risk-02-asuransi-klaim.md",
+        "hr-01-kebijakan-cuti.md",
+        "ops-05-k3-gudang.md",
+        "it-03-akses-sistem.md",
+        "ops-04-armada.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 20226,
+      "citationHit": true,
+      "verdict": "partial",
+      "judgeReason": "The assistant correctly identified the number of employees bound by the policy (1.240 karyawan). However, it failed to identify who approved the system access standard (Hendra Gunawan and Ratna Wijayakusuma), instead providing details about operational access approval workflows and stating that document approval information was unavailable.",
+      "ungroundedNumbers": [
+        "08.00",
+        "17.00"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "yang tersedia adalah matriks persetujuan untuk *permintaan akses sistem*, bukan keterangan eksplisit mengenai siapa yang menyetujui atau meratifikasi *standar* akses sistem itu sendiri sebagai dokumen kebijakan"
+      ]
+    },
+    {
+      "id": "q279",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Which document sets the shorter maximum recovery time for a total WMS Gudangku v4 outage: the SOP's P1 resolution target or the DRP's RTO for Gudangku v4?",
+      "expected": "SOP P1 resolution target of 2 hours",
+      "answer": "The SOP sets the shorter limit. The incident-handling SOP's P1 (\"Kritis\") tier — covering a total core-system outage with no adequate manual workaround — carries a maximum response time of 15 minutes and a resolution target of 2 hours. The DRP's RTO for **Gudangku v4** is 4 hours (with an RPO of 15 minutes). So the SOP's 2-hour P1 resolution target is the tighter of the two, half the DRP's 4-hour maximum tolerable downtime.",
+      "citedDocs": [
+        "it-04-pemulihan-bencana.md",
+        "it-02-penanganan-insiden.md",
+        "ops-06-barang-berbahaya.md",
+        "fin-04-anggaran.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 6987,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies that the SOP sets the shorter maximum recovery time with its P1 resolution target of 2 hours (compared to the DRP's RTO of 4 hours).",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q280",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "How many total fleet units are affected by a TMS credit hold lock under Arunika's policy?",
+      "expected": "370 units",
+      "answer": "Under Arunika's credit-hold policy, the TMS lock (\"RuteKu\") automatically blocks booking creation, route planning, and dispatch allocation **across all fleet assets** — CDD, CDE, Fuso, Tronton, and delivery vans.\n\nSince every fleet asset is in scope, the affected total is the entire fleet:\n\n- CDD (Colt Diesel Double, 6 wheels): 140 units\n- CDE (Colt Diesel Engkel, 4 wheels): 96 units\n- Fuso (medium-duty trucks): 52 units\n- Tronton (heavy multi-axle trucks): 24 units\n- Delivery/vans (blind vans, last-mile): 58 units\n\nThat is 312 trucks plus 58 vans, for a **total of 370 fleet units** locked out by the TMS credit hold.",
+      "citedDocs": [
+        "fin-03-penagihan-piutang.md",
+        "risk-02-asuransi-klaim.md",
+        "coates-book.txt",
+        "fin-04-anggaran.md",
+        "ops-03-sla-layanan.md",
+        "sales-02-onboarding-pelanggan.md"
+      ],
+      "tools": [
+        "RAG:success"
+      ],
+      "ms": 22447,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states that a total of 370 fleet units are affected, providing the exact number matching the reference answer along with accurate supporting breakdown details.",
+      "ungroundedNumbers": [
+        "370"
+      ],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q281",
+      "category": "multi-hop",
+      "lang": "en",
+      "question": "Under the onboarding SOP, what is the maximum unsecured credit limit for a Tier 1 client, and how does it compare to the default credit limit assigned to the Enterprise customer segment in the billing policy?",
+      "expected": "IDR 500,000,000; it is equal to the Enterprise default credit limit.",
+      "answer": "Under the onboarding SOP (SOP-COM-2026-002), the maximum unsecured credit limit for a Tier 1 client is **IDR 500,000,000**. Reaching Tier 1 requires at least three years of operating history with verified profitable cash flow, and the standard payment terms are Net 30 days.\n\nThe billing, credit, and collections policy (POL-FIN-2026-003, v3.0) assigns the Enterprise customer segment a **default credit limit of IDR 500,000,000** — exactly the same figure as the Tier 1 unsecured ceiling, so on those two specific numbers the two policies align.\n\nThey are not the same measure, however, so the match shouldn't be over-read:\n\n- The onboarding figure is a **maximum unsecured** limit (a ceiling) for Tier 1 clients, whereas the billing policy figure is a **default** limit for Enterprise accounts — the segment can be extended up to a maximum of IDR 2,500,000,000, which is five times the Tier 1 ceiling.\n- The two schemes also differ on payment terms and qualification: Enterprise accounts get Net 45 calendar days and must show an annual contracted run-rate above IDR 3,000,000,000 plus at least two years of audited financial statements, while Tier 1 clients are on Net 30 days under a three-year operating-history test.\n\nIn short: the two limits are numerically identical at IDR 500,000,000, but the Enterprise default sits well below that segment's own IDR 2,500,000,000 maximum, so the equality reflects a common starting point rather than a shared cap.",
+      "citedDocs": [
+        "sales-02-onboarding-pelanggan.md",
+        "fin-03-penagihan-piutang.md",
+        "ops-03-sla-layanan.md",
+        "sales-01-tarif.md",
+        "risk-02-asuransi-klaim.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 13065,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly identifies the maximum unsecured credit limit for a Tier 1 client as IDR 500,000,000 and states that it is equal/identical to the default credit limit for the Enterprise customer segment, while also providing helpful context.",
+      "ungroundedNumbers": [],
+      "faithful": true,
+      "unsupported": []
+    },
+    {
+      "id": "q282",
+      "category": "multi-hop",
+      "lang": "id",
+      "question": "Menurut rencana mitigasi risiko utama 2026 untuk kargo bernilai tinggi, pertanggungan polis marine cargo dinaikkan per hub. Berapa selisih nilai pertanggungan tersebut dengan limit polis asuransi untuk gudang JKT-02 yang tercantum dalam SOP asuransi kargo?",
+      "expected": "IDR 110.000.000.000",
+      "answer": "Selisihnya adalah **IDR 110.000.000.000** (IDR 110 miliar).\n\nRinciannya:\n- Rencana mitigasi risiko utama 2026 (RSK-OPR-01, skor 12/Tinggi) mencantumkan kenaikan pertanggungan polis *marine cargo* senilai **IDR 10.000.000.000 per hub**, di samping SOP inspeksi forklift ganda dan instalasi 128 CCTV 4K yang terhubung ke WMS Gudangku v4.\n- Limit polis untuk gudang JKT-02 Cikarang (Regional Hub, 24.500 m²) adalah **IDR 120.000.000.000 per lokasi**, dengan *deductible* 10% dari nilai klaim (minimum IDR 25.000.000), di bawah polis CGO-7742-JKT-2026 dari PT Asuransi Sompo Insurance Indonesia.\n\nPengurangan IDR 120 miliar dengan IDR 10 miliar menghasilkan selisih **IDR 110 miliar**.\n\nSatu catatan penting: angka limit JKT-02 tersebut berasal dari data cakupan asuransi pada dokumen risiko/asuransi-klaim, bukan dari dokumen SOP asuransi kargo tersendiri — dokumen SOP khusus asuransi kargo (dengan nomor dokumen dan prosedur langkah-langkahnya) tidak ditemukan, sehingga angka itu adalah limit yang tersedia untuk JKT-02, bukan kutipan dari SOP.",
+      "citedDocs": [
+        "risk-02-asuransi-klaim.md",
+        "risk-01-manajemen-risiko.md",
+        "esg-01-keberlanjutan.md",
+        "sales-01-tarif.md",
+        "coates-book.txt",
+        "hr-05-kode-etik.md",
+        "ops-01-penerimaan-barang.md",
+        "it-04-pemulihan-bencana.md",
+        "hr-04-kinerja-pelatihan.md",
+        "hr-02-kompensasi-tunjangan.md",
+        "ops-02-pengiriman-outbound.md",
+        "sales-02-onboarding-pelanggan.md",
+        "it-01-keamanan-informasi.md",
+        "fin-04-anggaran.md",
+        "it-03-akses-sistem.md"
+      ],
+      "tools": [
+        "RAG:success",
+        "RAG:success"
+      ],
+      "ms": 23127,
+      "citationHit": true,
+      "verdict": "correct",
+      "judgeReason": "The assistant correctly states the exact difference of IDR 110.000.000.000, matching the reference answer, and accurately explains the calculation.",
+      "ungroundedNumbers": [
+        "110000000000",
+        "110"
+      ],
+      "faithful": false,
+      "unsupported": [
+        "Dokumen SOP khusus asuransi kargo (dengan nomor dokumen dan prosedur langkah-langkahnya) tidak ditemukan.",
+        "Angka limit JKT-02 bukan berasal atau dikutip dari dokumen SOP asuransi kargo tersendiri."
+      ]
+    }
+  ]
+}

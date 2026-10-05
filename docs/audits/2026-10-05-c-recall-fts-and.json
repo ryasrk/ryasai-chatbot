@@ -1,0 +1,2378 @@
+{
+  "ranAt": "2026-10-05T11:50:30.094Z",
+  "topK": 8,
+  "byCategory": {
+    "factual": {
+      "questions": 144,
+      "allEvidence": {
+        "rate": 0.9861111111111112,
+        "low": 0.9507765031823722,
+        "high": 0.9961829453084451,
+        "n": 144
+      },
+      "quoteRecall": {
+        "rate": 0.9861111111111112,
+        "low": 0.9507765031823722,
+        "high": 0.9961829453084451,
+        "n": 144
+      }
+    },
+    "multi-hop": {
+      "questions": 39,
+      "allEvidence": {
+        "rate": 0.6410256410256411,
+        "low": 0.484178631846895,
+        "high": 0.772581153035089,
+        "n": 39
+      },
+      "quoteRecall": {
+        "rate": 0.782051282051282,
+        "low": 0.6783908645244479,
+        "high": 0.8592330333465614,
+        "n": 78
+      }
+    },
+    "cross-language": {
+      "questions": 24,
+      "allEvidence": {
+        "rate": 0.8333333333333334,
+        "low": 0.6414652961213058,
+        "high": 0.9332143199927109,
+        "n": 24
+      },
+      "quoteRecall": {
+        "rate": 0.8333333333333334,
+        "low": 0.6414652961213058,
+        "high": 0.9332143199927109,
+        "n": 24
+      }
+    },
+    "colloquial": {
+      "questions": 24,
+      "allEvidence": {
+        "rate": 1,
+        "low": 0.8620194241710247,
+        "high": 1,
+        "n": 24
+      },
+      "quoteRecall": {
+        "rate": 1,
+        "low": 0.8620194241710247,
+        "high": 1,
+        "n": 24
+      }
+    },
+    "distractor-book": {
+      "questions": 24,
+      "allEvidence": {
+        "rate": 0.875,
+        "low": 0.6899571185214243,
+        "high": 0.9565574496068442,
+        "n": 24
+      },
+      "quoteRecall": {
+        "rate": 0.875,
+        "low": 0.6899571185214243,
+        "high": 0.9565574496068442,
+        "n": 24
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "q001",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q002",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q003",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q004",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q005",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q006",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q007",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q008",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q009",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q010",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q011",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q012",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q013",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q014",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q015",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q016",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q017",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q018",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q019",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q020",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q021",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q022",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q023",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q024",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q025",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q026",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q027",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q028",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q029",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q030",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q031",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q032",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q033",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q034",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q035",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q036",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q037",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q038",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q039",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q040",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q041",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q042",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q043",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q044",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q045",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q046",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q047",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q048",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q049",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q050",
+      "category": "factual",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q051",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q052",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q053",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q054",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q055",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q056",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q057",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q058",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q059",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q060",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q061",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q062",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q063",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q064",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q065",
+      "category": "factual",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q066",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q067",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q068",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q069",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q070",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q071",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q072",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q073",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q074",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q075",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q076",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q077",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q078",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q079",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q080",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q081",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q082",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q083",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q084",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q085",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q086",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q087",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q088",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q089",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q090",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q091",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q092",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q093",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q094",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q095",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q096",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q097",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q098",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q099",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q100",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q101",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q102",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q103",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q104",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q105",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q106",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q107",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q108",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q109",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q110",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q111",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q112",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q113",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q114",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q115",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q116",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q117",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q118",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q119",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q120",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q121",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q122",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q123",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q124",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q125",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q126",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q127",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q128",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q129",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q130",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q131",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q132",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q133",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q134",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q135",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q136",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q137",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q138",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q139",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q140",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q141",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q142",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q143",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q144",
+      "category": "factual",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q145",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q146",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q147",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q148",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q149",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q150",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q151",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q152",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q153",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q154",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q155",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q156",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q157",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q158",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q159",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q160",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q161",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q162",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 11,
+      "passes": 2
+    },
+    {
+      "id": "q163",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q164",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q165",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q166",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 15,
+      "passes": 2
+    },
+    {
+      "id": "q167",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 9,
+      "passes": 2
+    },
+    {
+      "id": "q168",
+      "category": "cross-language",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q169",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 4,
+      "passes": 1
+    },
+    {
+      "id": "q170",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q171",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q172",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 4,
+      "passes": 1
+    },
+    {
+      "id": "q173",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q174",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q175",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q176",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 2,
+      "passes": 1
+    },
+    {
+      "id": "q177",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 3,
+      "passes": 1
+    },
+    {
+      "id": "q178",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q179",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q180",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 11,
+      "passes": 2
+    },
+    {
+      "id": "q181",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q182",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q183",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q184",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q185",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 10,
+      "passes": 2
+    },
+    {
+      "id": "q186",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q187",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q188",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q189",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q190",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q191",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q192",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q193",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q194",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q195",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q196",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q197",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q198",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q199",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q200",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 13,
+      "passes": 2
+    },
+    {
+      "id": "q201",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q202",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q203",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 13,
+      "passes": 2
+    },
+    {
+      "id": "q204",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q205",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q206",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q207",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q208",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q209",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 9,
+      "passes": 2
+    },
+    {
+      "id": "q210",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q211",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q212",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q213",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q214",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q215",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 11,
+      "passes": 2
+    },
+    {
+      "id": "q216",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q217",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q218",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q219",
+      "category": "colloquial",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q220",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q221",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q222",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q223",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q224",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q225",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q226",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q227",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q228",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q229",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q230",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q231",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q232",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q233",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q234",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q235",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q236",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q237",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 10,
+      "passes": 2
+    },
+    {
+      "id": "q238",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q239",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q240",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q241",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q242",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q243",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q271",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q272",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q273",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 13,
+      "passes": 2
+    },
+    {
+      "id": "q274",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q275",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q276",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 12,
+      "passes": 2
+    },
+    {
+      "id": "q277",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q278",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q279",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q280",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q281",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 2,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q282",
+      "category": "multi-hop",
+      "evidence": 2,
+      "found": 1,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    }
+  ]
+}

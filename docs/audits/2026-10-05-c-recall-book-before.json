@@ -1,0 +1,239 @@
+{
+  "ranAt": "2026-10-05T11:13:22.019Z",
+  "topK": 8,
+  "byCategory": {
+    "distractor-book": {
+      "questions": 24,
+      "allEvidence": {
+        "rate": 0.7916666666666666,
+        "low": 0.5952915551476452,
+        "high": 0.9075531089521192,
+        "n": 24
+      },
+      "quoteRecall": {
+        "rate": 0.7916666666666666,
+        "low": 0.5952915551476452,
+        "high": 0.9075531089521192,
+        "n": 24
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "q220",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q221",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q222",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q223",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q224",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q225",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q226",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q227",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q228",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q229",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q230",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q231",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q232",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 0,
+      "all": false,
+      "chunks": 16,
+      "passes": 2
+    },
+    {
+      "id": "q233",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q234",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q235",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q236",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q237",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q238",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q239",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q240",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q241",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q242",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    },
+    {
+      "id": "q243",
+      "category": "distractor-book",
+      "evidence": 1,
+      "found": 1,
+      "all": true,
+      "chunks": 8,
+      "passes": 1
+    }
+  ]
+}

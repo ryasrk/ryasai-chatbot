@@ -897,3 +897,22 @@ driven through the real module.
 
 **Verified:** tsc 0 · lint 0 · 315 files, 7712 pass, 0 fail · coverage:gate OK (204 modules) · build · e2e 19 ·
 e2e:prod 19. Full eval: **62/63** (was 53/54 before this work).
+
+### 2026-10-03 — v2.0.0: security architecture
+
+Six parallel streams, integration-reviewed before landing (the review caught three real defects in the first pass —
+all fixed with the measurement recorded): memory-queue shedding at 1,000 pending; Redis-shared rate limiting on the
+LLM routes (middleware moved to `runtime='nodejs'` — the Edge build stubbed `node:net`, so the counter silently never
+reached Redis while shipping ~700 KB of dead ioredis); a tamper-evident audit hash chain with a verify script whose
+exit codes are the contract; opt-in RLS via `scripts/enable-rls.ts` (its first version crashed on real Postgres —
+`IN (${array})` binds as one parameter and `information_schema.tables` has no `table_owner`; both fixed and the test
+now models the real catalog); per-org daily token/request budgets that make NO db call when unset; and a consolidated
+tool-policy layer (ALLOW/DENY with reasons, compatibility-checked against `applyToolGating` across 32 cases, router
+adoption deliberately deferred). Also: SECURITY.md de-staled, four ADRs (0009-0012), digest pinning in install.sh,
+native fs walk replacing `execSync('du -sb')`, PR #45 merged with its dropped `allowIds` scoping restored.
+
+An e2e failure that looked like a product defect was traced to a zombie standalone server on port 3000 stealing
+BullMQ jobs with the wrong DATABASE_URL — reproduced (embed 0/1 with the zombie, 1/1 after killing it), then both
+suites green: **e2e 19 and e2e:prod 19**. Eval 61/63; both misses are `majemuk-dok-db`, at 60% across 45 historical
+samples. tsc 0 · lint 0 · 322 files, 7,938 pass, 0 fail · coverage gate OK (208 modules) · build.
+
