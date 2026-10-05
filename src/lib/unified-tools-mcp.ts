@@ -37,74 +37,15 @@ export async function buildMcpUnifiedTools(): Promise<UnifiedTool[]> {
         description: `[MCP: ${mcp.serverName}] ${mcp.description || mcp.toolName}`,
         parameters,
         category: 'mcp' as const,
-        async execute(params, context) {
-          const start = Date.now()
-          const orgId = context.organizationId || getOrgContext()
-
-          // Circuit breaker check
-          const cb = toolCircuitBreaker.isExecutionAllowed(toolId)
-          if (!cb.allowed) {
-            return { ok: false, output: '', error: cb.reason, latencyMs: 0 }
-          }
-
-          // Rate limit check
-          if (orgId) {
-            const rl = await checkToolRateLimit('mcp', orgId)
-            if (!rl.allowed) {
-              return { ok: false, output: '', error: 'Rate limit exceeded for MCP tools. Try again in a minute.', latencyMs: 0 }
-            }
-          }
-
-          try {
-            const res = await withToolSandbox(toolId, () => callMcpTool(mcp.serverId, mcp.toolName, params))
-            if (res.ok) {
-              toolCircuitBreaker.recordSuccess(toolId)
-            } else {
-              toolCircuitBreaker.recordFailure(toolId, res.error)
-            }
-
-            // Observability: record ToolRun
-            if (orgId) {
-              await db.toolRun.create({
-                data: {
-                  organizationId: orgId,
-                  chatMessageId: null,
-                  type: 'PLUGIN',
-                  status: res.ok ? 'success' : 'error',
-                  latencyMs: Date.now() - start,
-                  inputSummary: `MCP [${mcp.serverName}]: ${mcp.toolName}`,
-                  outputSummary: (res.output || '').slice(0, 500) || null,
-                  errorMessage: res.error ?? null,
-                },
-              }).catch(logSwallowed('unified-tools: toolRun.create (MCP)'))
-            }
-
-            return {
-              ok: res.ok,
-              output: res.output,
-              error: res.error,
-              latencyMs: Date.now() - start,
-            }
-          } catch (err) {
-            toolCircuitBreaker.recordFailure(toolId, err)
-            return {
-              ok: false,
-              output: '',
-              error: err instanceof Error ? err.message : String(err),
-              latencyMs: Date.now() - start,
-            }
-          }
-        },
+        // The same guards as resources and prompts — this surface used to carry its own copy of them, and the copy had
+        // already drifted (a thrown call reached the breaker as an Error object, the others as its message).
+        execute: withMcpGuards(toolId, `MCP [${mcp.serverName}]: ${mcp.toolName}`, (params) => callMcpTool(mcp.serverId, mcp.toolName, params)),
       }
     })
   } catch {
     return []
   }
 }
-
-// ---------------------------------------------------------------------------
-// Plugin Webhooks Adapter
-// ---------------------------------------------------------------------------
 
 /**
  * Wrap a tool's executor with the guards every MCP surface shares: the circuit
@@ -120,9 +61,9 @@ export async function buildMcpUnifiedTools(): Promise<UnifiedTool[]> {
 function withMcpGuards(
   toolId: string,
   label: string,
-  run: () => Promise<{ ok: boolean; output: string; error?: string }>,
+  run: (params: Record<string, unknown>) => Promise<{ ok: boolean; output: string; error?: string }>,
 ): (params: Record<string, unknown>, context: ToolExecutionContext) => Promise<ToolExecutionResult> {
-  return async (_params, context) => {
+  return async (params, context) => {
     const start = Date.now()
     const orgId = context.organizationId || getOrgContext()
 
@@ -140,7 +81,7 @@ function withMcpGuards(
 
     let res: { ok: boolean; output: string; error?: string }
     try {
-      res = await withToolSandbox(toolId, run)
+      res = await withToolSandbox(toolId, () => run(params))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       toolCircuitBreaker.recordFailure(toolId, message)
