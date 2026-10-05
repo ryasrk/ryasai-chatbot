@@ -16,6 +16,7 @@
  */
 import { Parser } from 'node-sql-parser'
 import { dangerousFunctionLabel } from '@/lib/sql-function-denylist'
+import { DB_PROVIDER_PRESETS } from '@/lib/db-provider-presets'
 
 /** Our provider ids → node-sql-parser dialect names. A provider absent here is not AST-checked. */
 const DIALECTS: Record<string, string> = {
@@ -23,6 +24,22 @@ const DIALECTS: Record<string, string> = {
   MYSQL: 'MySQL',
   MARIADB: 'MariaDB',
   MSSQL: 'TransactSQL',
+}
+
+/**
+ * The parser dialect for a provider id, including the managed presets (`SUPABASE`, `NEON`, `COCKROACHDB`,
+ * `PLANETSCALE`, `TIDB`) through their protocol family.
+ *
+ * MEASURED before this lookup: the guard received the preset id, found no entry in `DIALECTS`, and returned
+ * `checked: false`, so for those five providers neither the per-role table/column policy nor the parsed checks ran
+ * (`SELECT salary FROM secret_table` passed with a policy allowing one column of another table). An id that is
+ * neither listed nor a preset stays unchecked, as before.
+ */
+function dialectFor(provider: string | undefined): string | undefined {
+  const id = String(provider ?? '').toUpperCase()
+  if (DIALECTS[id]) return DIALECTS[id]
+  const family = DB_PROVIDER_PRESETS.find((p) => p.id === id)?.family
+  return family ? DIALECTS[family] : undefined
 }
 
 /** Schemas no business question needs, and whose contents describe the server rather than the data. */
@@ -97,11 +114,74 @@ function* nodes(root: unknown): Generator<Record<string, unknown>> {
   }
 }
 
+/**
+ * Rewrite `"name"` to `` `name` `` outside strings and comments, so the guard parses a MySQL-family query the way the
+ * SERVER runs it.
+ *
+ * WHY: the MySQL connector turns on ANSI_QUOTES per session (`enableAnsiQuotes`), so `"salary"` there is a COLUMN.
+ * node-sql-parser in MySQL/MariaDB mode reads it as a STRING. MEASURED before this rewrite: with `salary` denied to the
+ * role, `WHERE "salary" > 100` and `ORDER BY "salary" DESC LIMIT 1` passed the policy check, and on the server they
+ * filter and sort by the real column, so the role could read the column one comparison at a time. If a server refuses
+ * ANSI_QUOTES, the rewrite only makes the guard stricter: a string literal is checked as if it were a column.
+ */
+export function ansiQuotesToBackticks(sql: string): string {
+  let out = ''
+  let i = 0
+  while (i < sql.length) {
+    const c = sql[i]
+    const next = sql[i + 1]
+    if (c === "'" || c === '`') {
+      // Copied verbatim. A single-quoted string ends at an unescaped quote ('' and \' are escapes), a backticked
+      // name at an unpaired backtick.
+      let j = i + 1
+      while (j < sql.length) {
+        if (c === "'" && sql[j] === '\\') { j += 2; continue }
+        if (sql[j] === c) {
+          if (sql[j + 1] === c) { j += 2; continue }
+          break
+        }
+        j++
+      }
+      out += sql.slice(i, j + 1)
+      i = j + 1
+    } else if (c === '"') {
+      let name = ''
+      let j = i + 1
+      while (j < sql.length) {
+        if (sql[j] === '"') {
+          if (sql[j + 1] === '"') { name += '"'; j += 2; continue }
+          break
+        }
+        name += sql[j]
+        j++
+      }
+      out += '`' + name.replace(/`/g, '``') + '`'
+      i = j + 1
+    } else if ((c === '-' && next === '-') || c === '#') {
+      const end = sql.indexOf('\n', i)
+      const stop = end === -1 ? sql.length : end
+      out += sql.slice(i, stop)
+      i = stop
+    } else if (c === '/' && next === '*') {
+      const end = sql.indexOf('*/', i + 2)
+      const stop = end === -1 ? sql.length : end + 2
+      out += sql.slice(i, stop)
+      i = stop
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
 export function checkSqlAst(sql: string, opts: AstGuardOptions = {}): AstGuardResult {
-  const dialect = DIALECTS[String(opts.provider ?? '').toUpperCase()]
+  const dialect = dialectFor(opts.provider)
   if (!dialect) return { ok: true, checked: false, tables: [] }
 
-  const text = sql.trim().replace(/;\s*$/, '')
+  const trimmed = sql.trim().replace(/;\s*$/, '')
+  // MySQL-family sessions run with ANSI_QUOTES; see `ansiQuotesToBackticks`.
+  const text = dialect === 'MySQL' || dialect === 'MariaDB' ? ansiQuotesToBackticks(trimmed) : trimmed
   let ast: unknown
   try {
     ast = parser.astify(text, { database: dialect })

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkSqlAst, type SqlAccessPolicy } from '@/lib/sql-ast-guard'
+import { ansiQuotesToBackticks, checkSqlAst, type SqlAccessPolicy } from '@/lib/sql-ast-guard'
 import { validateAndSanitizeLlmSql } from '@/lib/guardrails'
 
 const pg = (sql: string, extra: Parameters<typeof checkSqlAst>[1] = {}) => checkSqlAst(sql, { provider: 'POSTGRESQL', ...extra })
@@ -167,6 +167,75 @@ describe('checkSqlAst — per-role access policy', () => {
 
   test('table names compare case-insensitively', () => {
     expect(pg('SELECT NAME FROM Employees', { policy: viewer, schemaColumns: SCHEMA }).ok).toBe(true)
+  })
+})
+
+describe('checkSqlAst — MySQL-family sessions run with ANSI_QUOTES', () => {
+  // The connector sets ANSI_QUOTES, so on the server `"salary"` is the COLUMN. Before the guard rewrote double quotes,
+  // the parser read these as string literals and both queries below passed with `salary` denied.
+  const viewer = policy({ employees: ['id', 'name', 'dept_id'], departments: null })
+
+  for (const provider of ['MYSQL', 'MARIADB']) {
+    test(`${provider}: a double-quoted restricted column is denied in WHERE and ORDER BY`, () => {
+      for (const sql of [
+        'SELECT name FROM employees WHERE "salary" > 100',
+        'SELECT name FROM employees ORDER BY "salary" DESC LIMIT 1',
+        'SELECT "e"."name" FROM "employees" "e" WHERE "e"."salary" > 100',
+      ]) {
+        const r = checkSqlAst(sql, { provider, policy: viewer, schemaColumns: SCHEMA })
+        expect(r.ok).toBe(false)
+        if (!r.ok) expect(r.detectedNodes).toEqual(['column:employees.salary'])
+      }
+    })
+
+    test(`${provider}: double-quoted allowed names still pass, and single-quoted values stay values`, () => {
+      const r = checkSqlAst(`SELECT "name" FROM "employees" WHERE "name" = 'Ann "salary"' LIMIT 5`, { provider, policy: viewer, schemaColumns: SCHEMA })
+      expect(r.ok).toBe(true)
+    })
+  }
+
+  test('PostgreSQL is not rewritten (double quotes are already identifiers there)', () => {
+    expect(pg('SELECT name FROM employees WHERE "salary" > 100', { policy: viewer, schemaColumns: SCHEMA }).ok).toBe(false)
+  })
+})
+
+describe('checkSqlAst — managed provider presets are checked through their protocol family', () => {
+  // These ids reached the guard as-is and were not in its dialect map, so it skipped every check for them.
+  const viewer = policy({ employees: ['id', 'name'] })
+  for (const provider of ['SUPABASE', 'NEON', 'COCKROACHDB', 'PLANETSCALE', 'TIDB']) {
+    test(`${provider}: the per-role policy is enforced`, () => {
+      const r = checkSqlAst('SELECT salary FROM employees', { provider, policy: viewer, schemaColumns: SCHEMA })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.kind).toBe('access')
+      expect(checkSqlAst('SELECT name FROM employees', { provider, policy: viewer, schemaColumns: SCHEMA }).ok).toBe(true)
+    })
+  }
+
+  test('MySQL-family presets get the ANSI_QUOTES reading too', () => {
+    const r = checkSqlAst('SELECT name FROM employees WHERE "salary" > 1', { provider: 'TIDB', policy: viewer, schemaColumns: SCHEMA })
+    expect(r.ok).toBe(false)
+  })
+
+  test('ClickHouse and unknown ids stay unchecked (the parser has no ClickHouse dialect)', () => {
+    expect(checkSqlAst('SELECT 1', { provider: 'CLICKHOUSE' })).toEqual({ ok: true, checked: false, tables: [] })
+    expect(checkSqlAst('SELECT 1', { provider: 'SOMETHING_ELSE' })).toEqual({ ok: true, checked: false, tables: [] })
+  })
+})
+
+describe('ansiQuotesToBackticks', () => {
+  test('rewrites identifiers, escaping embedded quotes and backticks', () => {
+    expect(ansiQuotesToBackticks('SELECT "a" FROM "t"')).toBe('SELECT `a` FROM `t`')
+    expect(ansiQuotesToBackticks('SELECT "a""b", "c`d"')).toBe('SELECT `a"b`, `c``d`')
+  })
+
+  test('leaves strings, backticked names and comments untouched', () => {
+    const sql = `SELECT \`x\` FROM t WHERE a = 'say "hi"' AND b = 'it''s' AND c = 'back\\'"slash' -- "c"\n/* "d" */ # "e"`
+    expect(ansiQuotesToBackticks(sql)).toBe(sql)
+  })
+
+  test('an unterminated quote does not loop or throw', () => {
+    expect(ansiQuotesToBackticks('SELECT "abc')).toBe('SELECT `abc`')
+    expect(ansiQuotesToBackticks("SELECT 'abc")).toBe("SELECT 'abc")
   })
 })
 
