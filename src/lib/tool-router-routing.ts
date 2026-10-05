@@ -299,7 +299,7 @@ export async function resolveRouting(
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
-): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[]; requestedTools?: RequestedTool[] }> {
+): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[]; requestedTools?: RequestedTool[]; needsMultipleTools?: boolean }> {
   const [docCount, intCount, , , , restEndpoints] = dbData
   const restEndpointCount = restEndpoints.length
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
@@ -412,7 +412,7 @@ export async function resolveRouting(
     }
   }
 
-  return { decision, resolvedIntegrationId, ...(extraToolIds.length > 0 ? { extraToolIds, requestedTools } : {}) }
+  return { decision, resolvedIntegrationId, ...(extraToolIds.length > 0 ? { extraToolIds, requestedTools } : {}), ...(sel?.needsMultipleTools ? { needsMultipleTools: true } : {}) }
 }
 
 export async function loadContextualContext(decision: RouteDecision, sessionId?: string): Promise<string> {

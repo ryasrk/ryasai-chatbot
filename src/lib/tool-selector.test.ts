@@ -170,9 +170,10 @@ describe('tool-selector — every tool call is resolved, not just the first', ()
     // `agenticRound` counts as consent: only the agentic loop sets it, and the loop is entered only under
     // `allowMultiStepDag` (both transports' DAG gates must name both, and nothing else).
     const router = await Bun.file(new URL('./tool-router.ts', import.meta.url)).text()
-    const gates = router.match(/extraToolIds\.length > 0 && (?:Boolean\()?\(?args\.allowMultiStepDag[^)\n]*\)?/g) ?? []
+    // Every line that gates the plan on the selection (extra tool calls, or the text marker) must also require consent.
+    const gates = router.split('\n').filter((l) => /extraToolIds\.length > 0/.test(l) && /allowMultiStepDag/.test(l) && !l.trim().startsWith('//'))
     expect(gates).toHaveLength(2)
-    for (const g of gates) expect(g).toMatch(/args\.allowMultiStepDag \|\| args\.agenticRound/)
+    for (const g of gates) expect(g).toMatch(/&& (?:Boolean)?\(args\.allowMultiStepDag \|\| args\.agenticRound\)/)
   })
 
   test('a planner that declines leaves the first source answering', async () => {

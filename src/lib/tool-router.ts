@@ -1,6 +1,5 @@
 import { narrowDocumentScope, resolveUserRole } from '@/lib/access-scope'
 import { cancelSpeculativeRetrieval, startSpeculativeRetrieval } from '@/lib/speculative-retrieval'
-import { selectToolWithLlm } from '@/lib/tool-selector'
 import { analyzeIntent } from '@/lib/intent-pipeline'
 import { rememberChatTurn } from '@/lib/cognee'
 
@@ -25,7 +24,7 @@ import {
 import { runMultiStepDag, runAgenticLoop, runStreamingAgenticLoop } from '@/lib/tool-router-agentic'
 import { withUsageTracking } from '@/lib/llm-client'
 import {
-  formatSchemasForIntent, formatDocForIntent, loadIntentPipeline, loadDbData, applyToolGating, startSpeculativeRouting,
+  formatSchemasForIntent, formatDocForIntent, loadIntentPipeline, applyToolGating, startSpeculativeRouting,
   settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, documentsHoldTheAnswer, type RequestedTool, type PlannedTool,
 } from '@/lib/tool-router-routing'
 export { chooseAvailableDecision, formatSchemaForIntent, formatSchemasForIntent, formatDocForIntent } from '@/lib/tool-router-routing'
@@ -168,41 +167,9 @@ async function _runNonStreamingChatCompletion(args: {
     return remember({ answer: result.answer, citations: result.citations, chartData: result.chartData, toolRuns: result.toolRuns })
   }
 
-  if (args.allowMultiStepDag) {
-    // ponytail: pre-route to check if this is a clear single-tool question.
-    // When the smart router confidently picks SQL or RAG, skip the LLM
-    // planner (which would overthink simple data questions and route to
-    // CHAT, causing the "asks for clarification instead of querying" bug).
-    // The planner is only valuable for genuine multi-step questions that
-    // need data from multiple tools (e.g. "compare revenue with the policy
-    // doc for Q3").
-    // The DAG costs a SECOND LLM call (planQueryWithTools), so it must run only
-    // when it can add something. It used to run whenever the heuristic router
-    // was not confident, which was most turns. The model now picks the tool
-    // itself, so it is also the only component that can say whether ONE tool
-    // suffices: the DAG runs only when the model reports that several are
-    // needed. MEASURED cost of getting this wrong: two planner calls per turn on
-    // a BYOK key, where the customer pays for both.
-    const [, intCountForPrompt] = await loadDbData(args)
-    const quickPick = await selectToolWithLlm({
-      question: args.question, context: 'chat', isAdmin: false,
-      memoryContext: undefined, chatHistory: args.chatHistory,
-      needsDatabaseListing: intCountForPrompt > 0,
-    })
-    const quickCalls: RequestedTool[] | undefined = quickPick?.toolId && quickPick.extraTools?.length
-      ? [{ toolId: quickPick.toolId, args: quickPick.args }, ...quickPick.extraTools]
-      : undefined
-    const needsMultiple = quickPick?.needsMultipleTools === true || quickCalls !== undefined
-    // A FAILED selector (null) also enters the DAG: with no routing decision at
-    // all, the planner is the only remaining way to answer, and skipping it
-    // would turn a provider blip into an empty reply.
-    const cannotRoute = quickPick === null
-
-    if (needsMultiple || cannotRoute) {
-      const dagResult = await runMultiStepDag({ ...args, requestedTools: quickCalls })
-      if (dagResult) return remember(dagResult)
-    }
-  }
+  // No separate multi-step pre-check here. It called the tool selector SERIALLY before the pipeline (2.1 s p50) and
+  // routing then asked it again (measured: two `agent` calls per API question). A compound question is read off the
+  // routing selection below, as the streaming transport always did.
 
   // ponytail: cooperative abort — check between pipeline stages so an external
   // timeout/cancel stops the chain at the next boundary. The per-branch LLM
@@ -271,10 +238,10 @@ async function _runNonStreamingChatCompletion(args: {
 
   const routed: Awaited<ReturnType<typeof resolveRouting>> = planned
     ?? await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
-  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools } = routed
+  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools, needsMultipleTools } = routed
 
-  // Same hand-off as the streaming path: the model asked for several tools, so its calls run as one plan.
-  if (extraToolIds.length > 0 && (args.allowMultiStepDag || args.agenticRound)) {
+  // Same hand-off as the streaming path: the model asked for several tools (or said so in text), so they run as a plan.
+  if ((extraToolIds.length > 0 || needsMultipleTools) && (args.allowMultiStepDag || args.agenticRound)) {
     const dag = await runMultiStepDag({
       question: effectiveQuestion, userId: args.userId, sessionId: args.sessionId,
       chatHistory: args.chatHistory, documentIds: args.documentIds, integrationIds: args.integrationIds, requestedTools,

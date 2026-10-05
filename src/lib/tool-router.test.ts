@@ -1333,6 +1333,40 @@ describe('runNonStreamingChatCompletion — the agentic hand-off', () => {
   })
 })
 
+describe('runNonStreamingChatCompletion — the tool selector runs ONCE per turn', () => {
+  /*
+   * MEASURED (2026-10-05, LlmUsageLog of the agentic eval): a single-source API question made two `agent` calls. The
+   * multi-step pre-check called the selector SERIALLY before the pipeline started (2.1 s p50), and routing then called
+   * it again with the same question, in parallel with intent analysis. The streaming transport never had the
+   * pre-check: it reads a compound question off the routing selection itself.
+   */
+  test('a single-source question with multi-step allowed asks the selector once', async () => {
+    return withOrg(async () => {
+      mockIntegrationCount.mockImplementation(async () => 1)
+      intentState.value = { needsClarification: false, needsRetrieval: true }
+      mockSelectToolWithLlm.mockClear()
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      await runNonStreamingChatCompletion({ question: 'annual leave days', userId: 'u1', allowMultiStepDag: true })
+      expect(mockSelectToolWithLlm).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  test('a text-marked multi-step verdict still reaches the planner', async () => {
+    return withOrg(async () => {
+      mockIntegrationCount.mockImplementation(async () => 1)
+      intentState.value = { needsClarification: false, needsRetrieval: true }
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'rag', decision: 'RAG' as RouteDecision, args: {}, reason: 'stub', llmUsed: true, needsMultipleTools: true }))
+      mockPlanQuery.mockClear()
+      mockPlanQuery.mockImplementation(async () => ({ steps: [{ id: 's1', tool: 'rag', input: { question: 'q' } }, { id: 's2', tool: 'sql', input: { question: 'q' } }], needsSynthesis: true }))
+      mockExecutePlan.mockImplementation(async () => [{ stepId: 's1', tool: 'rag', ok: true, output: 'a', latencyMs: 1 }, { stepId: 's2', tool: 'sql', ok: true, output: 'b', latencyMs: 1 }])
+      mockSynthesizeAnswer.mockImplementation(async () => 'PLANNED')
+      const r = await runNonStreamingChatCompletion({ question: 'compare x with y', userId: 'u1', allowMultiStepDag: true })
+      expect(mockPlanQuery).toHaveBeenCalledTimes(1)
+      expect(r.answer).toContain('PLANNED')
+    })
+  })
+})
+
 describe('runNonStreamingChatCompletion — a step whose tool the plan already chose', () => {
   /*
    * MEASURED LIVE (2026-10-05): every step of a compound plan re-entered the full router with only its question, so a
