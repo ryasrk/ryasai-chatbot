@@ -1,0 +1,2378 @@
+{
+  "generatedAt": "2026-10-05",
+  "sources": [
+    "rag-questions.json (factual)",
+    "sql-questions.json (scalar cases)"
+  ],
+  "counts": {
+    "doc_db": 40,
+    "db_db": 15,
+    "doc_doc": 15,
+    "three_part": 10,
+    "single_doc": 10,
+    "single_db": 10,
+    "scope": 10
+  },
+  "questions": [
+    {
+      "id": "doc_db-01",
+      "set": "doc_db",
+      "question": "What is the per-event spending cap for emergency expenditures from the IT Contingency Reserve? Also, what is the total amount from all invoice line items in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q083",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "What is the per-event spending cap for emergency expenditures from the IT Contingency Reserve?",
+          "expectedAnswer": "IDR 650,000,000",
+          "evidence": "Authorizes emergency expenditures from the IT Contingency Reserve (capped at IDR 650,000,000 per event)."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-030",
+          "source": "Chinook Music Store",
+          "question": "What is the total amount from all invoice line items in the Chinook Music Store database?",
+          "expectedAnswer": "2328.60"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-02",
+      "set": "doc_db",
+      "question": "According to Section 6, what annual training budget is allocated per operative for dangerous goods handler certification? Also, what is the average product price in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q119",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "According to Section 6, what annual training budget is allocated per operative for dangerous goods handler certification?",
+          "expectedAnswer": "IDR 4,800,000 per operative",
+          "evidence": "CHRO Sekar Ayuningtyas allocates an annual training budget of IDR 4,800,000 per operative through the People and Culture Division."
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-019",
+          "source": "ERP Demo",
+          "question": "What is the average product price in the ERP Demo database?",
+          "expectedAnswer": "3192000"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-03",
+      "set": "doc_db",
+      "question": "What is the largest invoice total in the Chinook Music Store database? Also, what is the maximum liability cap per shipment stated in Section 5.2?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-024",
+          "source": "Chinook Music Store",
+          "question": "What is the largest invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "25.86"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q101",
+          "source": "ops-03-sla-layanan.md",
+          "question": "What is the maximum liability cap per shipment stated in Section 5.2?",
+          "expectedAnswer": "IDR 100,000,000",
+          "evidence": "Arunika’s liability for unexcused delay, loss, or damage is strictly capped at **10 times (10x) the freight charge** of the consignment, up to a maximum of IDR 100,000,000 per shipment."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-04",
+      "set": "doc_db",
+      "question": "What is the total revnue from all orders in the ERP Demo database? Also, what contractual On-Time Delivery target does Arunika commit to under Section 3.1 of the SLA?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-093",
+          "source": "ERP Demo",
+          "question": "What is the total revnue from all orders in the ERP Demo database?",
+          "expectedAnswer": "68545000"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q100",
+          "source": "ops-03-sla-layanan.md",
+          "question": "What contractual On-Time Delivery target does Arunika commit to under Section 3.1 of the SLA?",
+          "expectedAnswer": "97%",
+          "evidence": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of **97%** measured monthly per customer account across all contracted lanes."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-05",
+      "set": "doc_db",
+      "question": "What is the per-location policy limit shown in Table 1 for the JKT-02 Cikarang regional hub warehouse? Also, how many trakcs are in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q129",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "What is the per-location policy limit shown in Table 1 for the JKT-02 Cikarang regional hub warehouse?",
+          "expectedAnswer": "IDR 120,000,000,000 per location",
+          "evidence": "| Warehouse | JKT-02 Cikarang | Regional hub (24,500 m²) | 120,000,000,000 per location | 10% of claim (min. 25,000,000) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-111",
+          "source": "Chinook Music Store",
+          "question": "How many trakcs are in the Chinook Music Store database?",
+          "expectedAnswer": "3503"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-06",
+      "set": "doc_db",
+      "question": "In the Account Manager Assignment Rules table, what is the projected monthly revenue range defined for the Commercial client tier? Also, what is the total revenue from all orders in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q140",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "In the Account Manager Assignment Rules table, what is the projected monthly revenue range defined for the Commercial client tier?",
+          "expectedAnswer": "IDR 20,000,000 to IDR 75,000,000",
+          "evidence": "| **Commercial** | IDR 20,000,000 to IDR 75,000,000 | Account Manager | Portfolio-managed account, standard monthly reporting, priority support queue |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-016",
+          "source": "ERP Demo",
+          "question": "What is the total revenue from all orders in the ERP Demo database?",
+          "expectedAnswer": "68545000"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-07",
+      "set": "doc_db",
+      "question": "How many invoices have a total greater than 10 in the Chinook Music Store database? Also, the Maximum Storage Limits table lists Balikpapan as prohibited for dangerous goods. What is the total facility area shown for BPN-05?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-019",
+          "source": "Chinook Music Store",
+          "question": "How many invoices have a total greater than 10 in the Chinook Music Store database?",
+          "expectedAnswer": "64"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q117",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "The Maximum Storage Limits table lists Balikpapan as prohibited for dangerous goods. What is the total facility area shown for BPN-05?",
+          "expectedAnswer": "6,100 m²",
+          "evidence": "| **BPN-05** | Balikpapan, East Kalimantan | 6,100 m² | 0 m² | 0 kg (0 MT) | Prohibited |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-08",
+      "set": "doc_db",
+      "question": "Which product category generates the most revenue in the ERP Demo database? Also, how many employees are covered by this sustainability and environmental policy?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-088",
+          "source": "ERP Demo",
+          "question": "Which product category generates the most revenue in the ERP Demo database?",
+          "expectedAnswer": "Electronics, 51450000"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q005",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "How many employees are covered by this sustainability and environmental policy?",
+          "expectedAnswer": "1,240",
+          "evidence": "The directives set forth in this policy apply to all 1,240 employees, temporary personnel, and registered contractors"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-09",
+      "set": "doc_db",
+      "question": "According to Table 1, what is the policy limit for a single Tronton conveyance? Also, how many employees work at the company in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q127",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "According to Table 1, what is the policy limit for a single Tronton conveyance?",
+          "expectedAnswer": "IDR 5,000,000,000 per conveyance",
+          "evidence": "| Transit Fleet | Tronton (24 units) | Heavy multi-axle trucks | 5,000,000,000 per conveyance | 5% of claim (min. 15,000,000) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-005",
+          "source": "Chinook Music Store",
+          "question": "How many employees work at the company in the Chinook Music Store database?",
+          "expectedAnswer": "8"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-10",
+      "set": "doc_db",
+      "question": "Under the service credit framework in Table 4.1, what invoice deduction percentage applies when the achieved monthly OTD is between 95.0% and 96.9%? Also, how many warehouses are there in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q098",
+          "source": "ops-03-sla-layanan.md",
+          "question": "Under the service credit framework in Table 4.1, what invoice deduction percentage applies when the achieved monthly OTD is between 95.0% and 96.9%?",
+          "expectedAnswer": "2.5% Invoice Deduction",
+          "evidence": "| **95.0% – 96.9%** | 0.1% – 2.0% Missed | 2.5% Invoice Deduction | Hub Operations Review |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-006",
+          "source": "ERP Demo",
+          "question": "How many warehouses are there in the ERP Demo database?",
+          "expectedAnswer": "3"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-11",
+      "set": "doc_db",
+      "question": "What is the average track duration in milliseconds in the Chinook Music Store database? Also, according to the Recovery Objectives table, what is the Recovery Time Objective (RTO) for the Gudangku v4 warehouse management system?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-027",
+          "source": "Chinook Music Store",
+          "question": "What is the average track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "393599.212103910933"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q079",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "According to the Recovery Objectives table, what is the Recovery Time Objective (RTO) for the Gudangku v4 warehouse management system?",
+          "expectedAnswer": "4 hours",
+          "evidence": "| **Gudangku v4** | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-12",
+      "set": "doc_db",
+      "question": "How many employees are there in the ERP Demo database? Also, under Section 4.1, within how many calendar days must a cargo loss, damage, or shortage notice be formally filed after delivery or scheduled delivery?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-013",
+          "source": "ERP Demo",
+          "question": "How many employees are there in the ERP Demo database?",
+          "expectedAnswer": "7"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q132",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "Under Section 4.1, within how many calendar days must a cargo loss, damage, or shortage notice be formally filed after delivery or scheduled delivery?",
+          "expectedAnswer": "7 calendar days",
+          "evidence": "Claimants must formally file any cargo loss, damage, or shortage notice within seven (7) calendar days of shipment delivery or scheduled delivery date."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-13",
+      "set": "doc_db",
+      "question": "What failover mechanism is configured for the RuteKu transport management system in the Recovery Objectives table? Also, which genre is the most popular among customers from the USA in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q080",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "What failover mechanism is configured for the RuteKu transport management system in the Recovery Objectives table?",
+          "expectedAnswer": "Automated hourly log shipping with standby instance",
+          "evidence": "| **RuteKu** | Transport Management (TMS) | Dispatch & tracking for 312 trucks and 58 delivery vans | 1 hour | 8 hours | Automated hourly log shipping with standby instance |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-107",
+          "source": "Chinook Music Store",
+          "question": "Which genre is the most popular among customers from the USA in the Chinook Music Store database?",
+          "expectedAnswer": "Rock, 157"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-14",
+      "set": "doc_db",
+      "question": "How many calendar days after invoice dispatch does the policy allow a client to log a billing dispute in Jira Service Management? Also, which customer segment has the highest average order value in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q024",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "How many calendar days after invoice dispatch does the policy allow a client to log a billing dispute in Jira Service Management?",
+          "expectedAnswer": "7 calendar days",
+          "evidence": "Client disputes regarding rates, damaged cargo, or billing counts must be logged via Jira Service Management within 7 calendar days of invoice dispatch."
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-090",
+          "source": "ERP Demo",
+          "question": "Which customer segment has the highest average order value in the ERP Demo database?",
+          "expectedAnswer": "Enterprise, 8230000"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-15",
+      "set": "doc_db",
+      "question": "How many tracks cost more than 1 dollar in the Chinook Music Store database? Also, what is the maximum cumulative late interest charge allowed as a percentage of the original invoice principal?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-017",
+          "source": "Chinook Music Store",
+          "question": "How many tracks cost more than 1 dollar in the Chinook Music Store database?",
+          "expectedAnswer": "213"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q023",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "What is the maximum cumulative late interest charge allowed as a percentage of the original invoice principal?",
+          "expectedAnswer": "10.0% of the total original invoice principal",
+          "evidence": "- **Cap:** Cumulative late interest charges are strictly capped at 10.0% of the total original invoice principal."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-16",
+      "set": "doc_db",
+      "question": "Which warehouses store products ordered by SMB customers in the ERP Demo database? Also, for a claim arising at the BPN-05 Balikpapan warehouse, what minimum deductible applies?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-052",
+          "source": "ERP Demo",
+          "question": "Which warehouses store products ordered by SMB customers in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q130",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "For a claim arising at the BPN-05 Balikpapan warehouse, what minimum deductible applies?",
+          "expectedAnswer": "IDR 15,000,000",
+          "evidence": "| Warehouse | BPN-05 Balikpapan | Regional hub (6,100 m²) | 30,000,000,000 per location | 10% of claim (min. 15,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-17",
+      "set": "doc_db",
+      "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions? Also, how many invoices have been issued in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q003",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions?",
+          "expectedAnswer": "4,650 tCO2e",
+          "evidence": "| **Scope 2 (Purchased Electricity)** | 5,820 | 4,650 | 4,074 | Rooftop solar installation, high-bay LED retrofits |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-006",
+          "source": "Chinook Music Store",
+          "question": "How many invoices have been issued in the Chinook Music Store database?",
+          "expectedAnswer": "412"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-18",
+      "set": "doc_db",
+      "question": "Which customer segment listed in the POL-FIN-2026-003 table has a default credit limit of IDR 500,000,000? Also, how many products are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q021",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "Which customer segment listed in the POL-FIN-2026-003 table has a default credit limit of IDR 500,000,000?",
+          "expectedAnswer": "Enterprise",
+          "evidence": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-001",
+          "source": "ERP Demo",
+          "question": "How many products are in the ERP Demo database?",
+          "expectedAnswer": "10"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-19",
+      "set": "doc_db",
+      "question": "How many artists are in the Chinook Music Store database? Also, according to the RBAC table in ARN-IT-STD-2026-004, what system role identifier is granted to a Gudangku v4 user who may perform inventory adjustments up to a specified limit and bin relocations?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-001",
+          "source": "Chinook Music Store",
+          "question": "How many artists are in the Chinook Music Store database?",
+          "expectedAnswer": "275"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q073",
+          "source": "it-03-akses-sistem.md",
+          "question": "According to the RBAC table in ARN-IT-STD-2026-004, what system role identifier is granted to a Gudangku v4 user who may perform inventory adjustments up to a specified limit and bin relocations?",
+          "expectedAnswer": "WMS-SUPERVISOR",
+          "evidence": "| **Gudangku v4** (WMS) | `WMS-SUPERVISOR` | Inventory adjustments up to IDR 50,000,000, bin relocations | Facility Head (SBY/JKT/MDN/MKS/BPN) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-20",
+      "set": "doc_db",
+      "question": "Which products have inventory below their reorder level in the ERP Demo database? Also, under the Account Manager Assignment Rules table, which assigned role corresponds to a client whose projected monthly revenue exceeds IDR 250,000,000?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-037",
+          "source": "ERP Demo",
+          "question": "Which products have inventory below their reorder level in the ERP Demo database?",
+          "expectedAnswer": "UPS 1500VA"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q139",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "Under the Account Manager Assignment Rules table, which assigned role corresponds to a client whose projected monthly revenue exceeds IDR 250,000,000?",
+          "expectedAnswer": "Key Account Manager (KAM)",
+          "evidence": "| **Enterprise** | Above IDR 250,000,000 | Key Account Manager (KAM) | Dedicated single point of contact, custom SLA, monthly steering meetings |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-21",
+      "set": "doc_db",
+      "question": "What is the fulfillment SLA for approved access requests submitted through Jira Service Management under this procedure? Also, what is the smallest invoice total in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q077",
+          "source": "it-03-akses-sistem.md",
+          "question": "What is the fulfillment SLA for approved access requests submitted through Jira Service Management under this procedure?",
+          "expectedAnswer": "8 working hours",
+          "evidence": "IT Infrastructure fulfills approved Jira requests within 8 working hours (business schedule: Monday–Friday, 08:00–17:00 WIB)."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-023",
+          "source": "Chinook Music Store",
+          "question": "What is the smallest invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "0.99"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-22",
+      "set": "doc_db",
+      "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline? Also, how many prodcts are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q029",
+          "source": "fin-04-anggaran.md",
+          "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline?",
+          "expectedAnswer": "5.0%",
+          "evidence": "Every operational cost center must integrate a standard **5.0% contingency reserve** calculated against its total controllable OPEX baseline."
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-091",
+          "source": "ERP Demo",
+          "question": "How many prodcts are in the ERP Demo database?",
+          "expectedAnswer": "10"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-23",
+      "set": "doc_db",
+      "question": "What is the minimum track duration in milliseconds in the Chinook Music Store database? Also, per Table 3.1, which fleet class is assigned to the Jakarta Cikarang (JKT-02) to Balikpapan (BPN-05) lane?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-032",
+          "source": "Chinook Music Store",
+          "question": "What is the minimum track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "1071"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q099",
+          "source": "ops-03-sla-layanan.md",
+          "question": "Per Table 3.1, which fleet class is assigned to the Jakarta Cikarang (JKT-02) to Balikpapan (BPN-05) lane?",
+          "expectedAnswer": "Ro-Ro Sea Freight / Fuso",
+          "evidence": "| Jakarta Cikarang (JKT-02) | Balikpapan (BPN-05) | 4 Calendar Days | Ro-Ro Sea Freight / Fuso |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-24",
+      "set": "doc_db",
+      "question": "Which warehouse stores the product that was ordered the most in the ERP Demo database? Also, what is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-089",
+          "source": "ERP Demo",
+          "question": "Which warehouse stores the product that was ordered the most in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q022",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "What is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+          "expectedAnswer": "2.0% per month",
+          "evidence": "- **Rate:** 2.0% per month, calculated on a 30-day pro-rata basis (0.067% per diem) against the gross overdue principal balance."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-25",
+      "set": "doc_db",
+      "question": "Under the Training and Handler Certification section, how frequently must a certified dangerous goods handler be recertified? Also, how many customers are from Brazil in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q118",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "Under the Training and Handler Certification section, how frequently must a certified dangerous goods handler be recertified?",
+          "expectedAnswer": "every twenty-four (24) months",
+          "evidence": "Recertification is mandatory every twenty-four (24) months."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-014",
+          "source": "Chinook Music Store",
+          "question": "How many customers are from Brazil in the Chinook Music Store database?",
+          "expectedAnswer": "5"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-26",
+      "set": "doc_db",
+      "question": "In the Role-Based Access Control table, who is the designated approver for the `TMS-FLEET-ADMIN` role? Also, what is the maximum product price in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q074",
+          "source": "it-03-akses-sistem.md",
+          "question": "In the Role-Based Access Control table, who is the designated approver for the `TMS-FLEET-ADMIN` role?",
+          "expectedAnswer": "COO (Yusuf Halim)",
+          "evidence": "| **RuteKu** (TMS) | `TMS-FLEET-ADMIN` | Fleet records, driver onboarding, GPS geofence routing | COO (Yusuf Halim) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-024",
+          "source": "ERP Demo",
+          "question": "What is the maximum product price in the ERP Demo database?",
+          "expectedAnswer": "18500000"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-27",
+      "set": "doc_db",
+      "question": "What is the maximum track duration in milliseconds in the Chinook Music Store database? Also, how many city delivery vans are operated under the Urban Last-Mile transport operations?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-031",
+          "source": "Chinook Music Store",
+          "question": "What is the maximum track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "5286953"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q030",
+          "source": "fin-04-anggaran.md",
+          "question": "How many city delivery vans are operated under the Urban Last-Mile transport operations?",
+          "expectedAnswer": "58 vans",
+          "evidence": "| **CC-LAST-70** | Urban Last-Mile | 58 City Delivery Vans | Last-Mile Operations Manager | Yusuf Halim (COO) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-28",
+      "set": "doc_db",
+      "question": "How many customers are there in the ERP Demo database? Also, still referring to the Account Manager Assignment Rules table, what engagement and service level is specified for the Corporate tier?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-003",
+          "source": "ERP Demo",
+          "question": "How many customers are there in the ERP Demo database?",
+          "expectedAnswer": "7"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q141",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "Still referring to the Account Manager Assignment Rules table, what engagement and service level is specified for the Corporate tier?",
+          "expectedAnswer": "Dedicated manager, bi-weekly performance updates, quarterly business reviews",
+          "evidence": "| **Corporate** | IDR 75,000,001 to IDR 250,000,000 | Senior Account Manager | Dedicated manager, bi-weekly performance updates, quarterly business reviews |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-29",
+      "set": "doc_db",
+      "question": "What is the maximum allowed idling time for motorized equipment at warehouse loading docks and client delivery drop-off bays? Also, what is the average invoice total in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q006",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "What is the maximum allowed idling time for motorized equipment at warehouse loading docks and client delivery drop-off bays?",
+          "expectedAnswer": "5 minutes",
+          "evidence": "A strict vehicle idling limit of **5 minutes** (300 seconds) is mandatory for all motorized equipment operating at warehouse loading docks, cross-docking staging lanes, and client delivery drop-off bays."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-022",
+          "source": "Chinook Music Store",
+          "question": "What is the average invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "5.6519417475728155"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-30",
+      "set": "doc_db",
+      "question": "How many CDD trucks does Arunika operate, as stated in the Purpose and Scope section? Also, find the customer with id 1. in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q131",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "How many CDD trucks does Arunika operate, as stated in the Purpose and Scope section?",
+          "expectedAnswer": "140",
+          "evidence": "cargo operations utilizing Arunika's 312 trucks (140 CDD, 96 CDE, 52 Fuso, 24 Tronton) and 58 vans"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-014",
+          "source": "ERP Demo",
+          "question": "Find the customer with id 1. in the ERP Demo database?",
+          "expectedAnswer": "PT Forward Together"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-31",
+      "set": "doc_db",
+      "question": "What is the total revenue from all invoices in the Chinook Music Store database? Also, how many vehicles make up Arunika's fleet as described in the Purpose and Operational Context section?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-021",
+          "source": "Chinook Music Store",
+          "question": "What is the total revenue from all invoices in the Chinook Music Store database?",
+          "expectedAnswer": "2328.60"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q082",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "How many vehicles make up Arunika's fleet as described in the Purpose and Operational Context section?",
+          "expectedAnswer": "370 vehicles",
+          "evidence": "orchestrate 1,240 employees, a 370-vehicle fleet (140 CDD, 96 CDE, 52 Fuso, 24 Tronton, and 58 vans), and round-the-clock"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-32",
+      "set": "doc_db",
+      "question": "Which customer placed the order with the most items in the ERP Demo database? Also, within how many business days after each DR exercise must the CTO submit an evaluation report to the Board of Directors?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-087",
+          "source": "ERP Demo",
+          "question": "Which customer placed the order with the most items in the ERP Demo database?",
+          "expectedAnswer": "PT Global Technology"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q084",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "Within how many business days after each DR exercise must the CTO submit an evaluation report to the Board of Directors?",
+          "expectedAnswer": "10 business days",
+          "evidence": "Within 10 business days following each exercise, the CTO submits an evaluation report to the Board of Directors detailing observed RTO/RPO metrics, bottleneck analyses, and required corrective actions."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-33",
+      "set": "doc_db",
+      "question": "What aggregate reduction in greenhouse gas emissions does Arunika formally commit to achieving against its 2023 baseline, and by what deadline? Also, how many invoice line items are there in total in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q001",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "What aggregate reduction in greenhouse gas emissions does Arunika formally commit to achieving against its 2023 baseline, and by what deadline?",
+          "expectedAnswer": "30% by December 31, 2030",
+          "evidence": "Arunika formally commits to reducing aggregate greenhouse gas (GHG) emissions by **30% (-30%) by December 31, 2030**, against the verified 2023 baseline."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-020",
+          "source": "Chinook Music Store",
+          "question": "How many invoice line items are there in total in the Chinook Music Store database?",
+          "expectedAnswer": "2240"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-34",
+      "set": "doc_db",
+      "question": "According to the customer segmentation table in the Arunika policy, what are the standard payment terms for an Enterprise customer? Also, which warehouses have above-average capacity in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q020",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "According to the customer segmentation table in the Arunika policy, what are the standard payment terms for an Enterprise customer?",
+          "expectedAnswer": "Net 45 calendar days",
+          "evidence": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-063",
+          "source": "ERP Demo",
+          "question": "Which warehouses have above-average capacity in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-35",
+      "set": "doc_db",
+      "question": "What is the average number of tracks per album in the Chinook Music Store database? Also, table 1 states the minimum deductible for a CDE transit fleet claim; what is that amount?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-033",
+          "source": "Chinook Music Store",
+          "question": "What is the average number of tracks per album in the Chinook Music Store database?",
+          "expectedAnswer": "10.0951008645533141"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q128",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "Table 1 states the minimum deductible for a CDE transit fleet claim; what is that amount?",
+          "expectedAnswer": "IDR 5,000,000",
+          "evidence": "| Transit Fleet | CDE (96 units) | Colt Diesel Engkel (4 wheels) | 500,000,000 per conveyance | 5% of claim (min. 5,000,000) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-36",
+      "set": "doc_db",
+      "question": "Which products have total inventory less than 500 units in the ERP Demo database? Also, according to the Credit Limit Tiers policy, what is the maximum unsecured credit limit available under Tier 2?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-061",
+          "source": "ERP Demo",
+          "question": "Which products have total inventory less than 500 units in the ERP Demo database?",
+          "expectedAnswer": "UPS 1500VA"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q142",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "According to the Credit Limit Tiers policy, what is the maximum unsecured credit limit available under Tier 2?",
+          "expectedAnswer": "IDR 150,000,000",
+          "evidence": "Tier 2 (Unsecured Credit up to IDR 150,000,000): Operating history between one and three years. Payment terms: Net 14 days."
+        }
+      ]
+    },
+    {
+      "id": "doc_db-37",
+      "set": "doc_db",
+      "question": "According to the Maximum Storage Limits table, what is the maximum dangerous goods capacity permitted at the Surabaya Hub (SBY-01)? Also, what is the most expensive track in the best-selling genre in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q115",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "According to the Maximum Storage Limits table, what is the maximum dangerous goods capacity permitted at the Surabaya Hub (SBY-01)?",
+          "expectedAnswer": "45,000 kg (45 MT)",
+          "evidence": "| **SBY-01** | Surabaya, East Java | 18,000 m² | 1,200 m² | 45,000 kg (45 MT) | Yes |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-109",
+          "source": "Chinook Music Store",
+          "question": "What is the most expensive track in the best-selling genre in the Chinook Music Store database?",
+          "expectedAnswer": "\"40\", 0.99"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-38",
+      "set": "doc_db",
+      "question": "According to the emissions reduction table, what is the 2030 target for Scope 1 (Direct Fuel & Fleet) emissions? Also, how many orders are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q002",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "According to the emissions reduction table, what is the 2030 target for Scope 1 (Direct Fuel & Fleet) emissions?",
+          "expectedAnswer": "17,255 tCO2e",
+          "evidence": "| **Scope 1 (Direct Fuel & Fleet)** | 24,650 | 22,185 | 17,255 | Telematics controls, idling cap, EV van deployment |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-008",
+          "source": "ERP Demo",
+          "question": "How many orders are in the ERP Demo database?",
+          "expectedAnswer": "10"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-39",
+      "set": "doc_db",
+      "question": "How many tracks cost 1.99 in the Chinook Music Store database? Also, according to the Cost Center Governance and Budget Owners table, who is the designated budget owner for the Warehousing East cost center coded CC-WHSE-51?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-012",
+          "source": "Chinook Music Store",
+          "question": "How many tracks cost 1.99 in the Chinook Music Store database?",
+          "expectedAnswer": "213"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q025",
+          "source": "fin-04-anggaran.md",
+          "question": "According to the Cost Center Governance and Budget Owners table, who is the designated budget owner for the Warehousing East cost center coded CC-WHSE-51?",
+          "expectedAnswer": "Regional Warehouse Head East",
+          "evidence": "| **CC-WHSE-51** | Warehousing East | SBY-01 (18,000 m²), BPN-05 (6,100 m²) | Regional Warehouse Head East | Yusuf Halim (COO) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_db-40",
+      "set": "doc_db",
+      "question": "Which customers have no invoices in the ERP Demo database? Also, which core operational system and designated approver are associated with the `TMS-DISPATCHER` role identifier in the RBAC table?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-057",
+          "source": "ERP Demo",
+          "question": "Which customers have no invoices in the ERP Demo database?",
+          "expectedAnswer": "UD Independent Blessing"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q076",
+          "source": "it-03-akses-sistem.md",
+          "question": "Which core operational system and designated approver are associated with the `TMS-DISPATCHER` role identifier in the RBAC table?",
+          "expectedAnswer": "RuteKu (TMS), Transport Operations Manager",
+          "evidence": "| **RuteKu** (TMS) | `TMS-DISPATCHER` | Manifest generation, assigning 312 trucks and 58 vans | Transport Operations Manager |"
+        }
+      ]
+    },
+    {
+      "id": "db_db-01",
+      "set": "db_db",
+      "question": "What is the total reveneu from all sales in the Chinook Music Store database? Also, which customers have overdue invoices in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-114",
+          "source": "Chinook Music Store",
+          "question": "What is the total reveneu from all sales in the Chinook Music Store database?",
+          "expectedAnswer": "2328.60"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-043",
+          "source": "ERP Demo",
+          "question": "Which customers have overdue invoices in the ERP Demo database?",
+          "expectedAnswer": "PT Global Technology"
+        }
+      ]
+    },
+    {
+      "id": "db_db-02",
+      "set": "db_db",
+      "question": "Which employee manages the department with the highest total salary in the ERP Demo database? Also, what is the total size in bytes of all tracks in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-086",
+          "source": "ERP Demo",
+          "question": "Which employee manages the department with the highest total salary in the ERP Demo database?",
+          "expectedAnswer": "Budi Santoso"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-039",
+          "source": "Chinook Music Store",
+          "question": "What is the total size in bytes of all tracks in the Chinook Music Store database?",
+          "expectedAnswer": "117386255350"
+        }
+      ]
+    },
+    {
+      "id": "db_db-03",
+      "set": "db_db",
+      "question": "How many tracks are longer than the average track duration in the Chinook Music Store database? Also, what is the average order amount in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-078",
+          "source": "Chinook Music Store",
+          "question": "How many tracks are longer than the average track duration in the Chinook Music Store database?",
+          "expectedAnswer": "494"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-023",
+          "source": "ERP Demo",
+          "question": "What is the average order amount in the ERP Demo database?",
+          "expectedAnswer": "6854500"
+        }
+      ]
+    },
+    {
+      "id": "db_db-04",
+      "set": "db_db",
+      "question": "List categories with more than 2 products. in the ERP Demo database? Also, how many tracks cost 0.99 in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-073",
+          "source": "ERP Demo",
+          "question": "List categories with more than 2 products. in the ERP Demo database?",
+          "expectedAnswer": "Accessories, 4"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-011",
+          "source": "Chinook Music Store",
+          "question": "How many tracks cost 0.99 in the Chinook Music Store database?",
+          "expectedAnswer": "3290"
+        }
+      ]
+    },
+    {
+      "id": "db_db-05",
+      "set": "db_db",
+      "question": "How many genres are available in the Chinook Music Store database? Also, what is the unit price of SKU-901 in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-007",
+          "source": "Chinook Music Store",
+          "question": "How many genres are available in the Chinook Music Store database?",
+          "expectedAnswer": "25"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-011",
+          "source": "ERP Demo",
+          "question": "What is the unit price of SKU-901 in the ERP Demo database?",
+          "expectedAnswer": "18500000"
+        }
+      ]
+    },
+    {
+      "id": "db_db-06",
+      "set": "db_db",
+      "question": "What is the average salary of employees in the ERP Demo database? Also, what is the most expensive track in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-017",
+          "source": "ERP Demo",
+          "question": "What is the average salary of employees in the ERP Demo database?",
+          "expectedAnswer": "15500000"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-082",
+          "source": "Chinook Music Store",
+          "question": "What is the most expensive track in the Chinook Music Store database?",
+          "expectedAnswer": "\"?\", 1.99"
+        }
+      ]
+    },
+    {
+      "id": "db_db-07",
+      "set": "db_db",
+      "question": "How many tracks have no composer listed in the Chinook Music Store database? Also, what is the minimum order total in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-016",
+          "source": "Chinook Music Store",
+          "question": "How many tracks have no composer listed in the Chinook Music Store database?",
+          "expectedAnswer": "977"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-025",
+          "source": "ERP Demo",
+          "question": "What is the minimum order total in the ERP Demo database?",
+          "expectedAnswer": "855000"
+        }
+      ]
+    },
+    {
+      "id": "db_db-08",
+      "set": "db_db",
+      "question": "What is the total amount of all invoices in the ERP Demo database? Also, how many customers are from the USA in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-020",
+          "source": "ERP Demo",
+          "question": "What is the total amount of all invoices in the ERP Demo database?",
+          "expectedAnswer": "68545000"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-013",
+          "source": "Chinook Music Store",
+          "question": "How many customers are from the USA in the Chinook Music Store database?",
+          "expectedAnswer": "13"
+        }
+      ]
+    },
+    {
+      "id": "db_db-09",
+      "set": "db_db",
+      "question": "Which artist's tracks appear in the most playlists in the Chinook Music Store database? Also, what is the total inventory quantity across all warehouses in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-108",
+          "source": "Chinook Music Store",
+          "question": "Which artist's tracks appear in the most playlists in the Chinook Music Store database?",
+          "expectedAnswer": "Eugene Ormandy, 7"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-018",
+          "source": "ERP Demo",
+          "question": "What is the total inventory quantity across all warehouses in the ERP Demo database?",
+          "expectedAnswer": "20085"
+        }
+      ]
+    },
+    {
+      "id": "db_db-10",
+      "set": "db_db",
+      "question": "What is the average product price in the ERP Demo database? Also, what's the average length of a song in milliseconds in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-019",
+          "source": "ERP Demo",
+          "question": "What is the average product price in the ERP Demo database?",
+          "expectedAnswer": "3192000"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-119",
+          "source": "Chinook Music Store",
+          "question": "What's the average length of a song in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "393599.212103910933"
+        }
+      ]
+    },
+    {
+      "id": "db_db-11",
+      "set": "db_db",
+      "question": "How many tracks are in the Chinook Music Store database? Also, what is the total revnue from all orders in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-003",
+          "source": "Chinook Music Store",
+          "question": "How many tracks are in the Chinook Music Store database?",
+          "expectedAnswer": "3503"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-093",
+          "source": "ERP Demo",
+          "question": "What is the total revnue from all orders in the ERP Demo database?",
+          "expectedAnswer": "68545000"
+        }
+      ]
+    },
+    {
+      "id": "db_db-12",
+      "set": "db_db",
+      "question": "What is the total revenue from all orders in the ERP Demo database? Also, how many invoises are there in total in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-016",
+          "source": "ERP Demo",
+          "question": "What is the total revenue from all orders in the ERP Demo database?",
+          "expectedAnswer": "68545000"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-115",
+          "source": "Chinook Music Store",
+          "question": "How many invoises are there in total in the Chinook Music Store database?",
+          "expectedAnswer": "412"
+        }
+      ]
+    },
+    {
+      "id": "db_db-13",
+      "set": "db_db",
+      "question": "How many albums are in the Chinook Music Store database? Also, which product category generates the most revenue in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-002",
+          "source": "Chinook Music Store",
+          "question": "How many albums are in the Chinook Music Store database?",
+          "expectedAnswer": "347"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-088",
+          "source": "ERP Demo",
+          "question": "Which product category generates the most revenue in the ERP Demo database?",
+          "expectedAnswer": "Electronics, 51450000"
+        }
+      ]
+    },
+    {
+      "id": "db_db-14",
+      "set": "db_db",
+      "question": "How many warehouses are there in the ERP Demo database? Also, how many customers are in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-006",
+          "source": "ERP Demo",
+          "question": "How many warehouses are there in the ERP Demo database?",
+          "expectedAnswer": "3"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-004",
+          "source": "Chinook Music Store",
+          "question": "How many customers are in the Chinook Music Store database?",
+          "expectedAnswer": "59"
+        }
+      ]
+    },
+    {
+      "id": "db_db-15",
+      "set": "db_db",
+      "question": "How many playlists exist in the Chinook Music Store database? Also, how many employees are there in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-008",
+          "source": "Chinook Music Store",
+          "question": "How many playlists exist in the Chinook Music Store database?",
+          "expectedAnswer": "18"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-013",
+          "source": "ERP Demo",
+          "question": "How many employees are there in the ERP Demo database?",
+          "expectedAnswer": "7"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-01",
+      "set": "doc_doc",
+      "question": "Berapa skor risiko untuk risiko RSK-OPR-01 pada Tabel 7 Lima Risiko Utama Arunika? Selain itu, dalam rentang nilai berapa seorang Department Manager dapat memberikan otorisasi PR dan PO sesuai Matriks Otorisasi Pengadaan?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q121",
+          "source": "risk-01-manajemen-risiko.md",
+          "question": "Berapa skor risiko untuk risiko RSK-OPR-01 pada Tabel 7 Lima Risiko Utama Arunika?",
+          "expectedAnswer": "12 (Tinggi)",
+          "evidence": "| 1 | **RSK-OPR-01**<br>Operasional | Kerusakan/kehilangan kargo bernilai tinggi akibat insiden bongkar muat pada 3 shift pergudangan di JKT-02 (24.500 m²) & SBY-01 (18.000 m²). | 3 | 4 | **12**<br>(Tinggi) | COO<br>(Yusuf Halim) | Penerapan SOP inspeksi forklift ganda, instalasi 128 CCTV resolusi 4K terhubung WMS Gudangku v4, dan kenaikan pertanggungan polis marine cargo senilai IDR 10.000.000.000 per hub. |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q018",
+          "source": "fin-02-pengadaan.md",
+          "question": "Dalam rentang nilai berapa seorang Department Manager dapat memberikan otorisasi PR dan PO sesuai Matriks Otorisasi Pengadaan?",
+          "expectedAnswer": "> Rp 10.000.000 – Rp 50.000.000",
+          "evidence": "| **Department Manager** | > Rp 10.000.000 – Rp 50.000.000 | Sesuai batas Rencana Anggaran Biaya (RAB) departemen berjalan |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-02",
+      "set": "doc_doc",
+      "question": "Berapa persentase kuota maksimal untuk predikat kinerja Luar Biasa (Outstanding) menurut tabel distribusi kuota? Selain itu, berapa jumlah unit armada CDE yang tercatat dalam ruang lingkup kebijakan ini?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q054",
+          "source": "hr-04-kinerja-pelatihan.md",
+          "question": "Berapa persentase kuota maksimal untuk predikat kinerja Luar Biasa (Outstanding) menurut tabel distribusi kuota?",
+          "expectedAnswer": "5%",
+          "evidence": "| **5** | Luar Biasa (*Outstanding*) | 5% |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q124",
+          "source": "risk-01-manajemen-risiko.md",
+          "question": "Berapa jumlah unit armada CDE yang tercatat dalam ruang lingkup kebijakan ini?",
+          "expectedAnswer": "96 unit",
+          "evidence": "370 unit armada (140 CDD, 96 CDE, 52 Fuso, 24 Tronton, dan 58 van)."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-03",
+      "set": "doc_doc",
+      "question": "In the Cost Center Governance and Budget Owners table, what is the official cost center name mapped to code CC-TECH-40? Also, under POL-FIN-2026-003, what is the default credit limit for a Corporate SME customer?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q026",
+          "source": "fin-04-anggaran.md",
+          "question": "In the Cost Center Governance and Budget Owners table, what is the official cost center name mapped to code CC-TECH-40?",
+          "expectedAnswer": "Technology & Systems",
+          "evidence": "| **CC-TECH-40** | Technology & Systems | SAP B1, Gudangku v4, RuteKu | IT Infrastructure Manager | Hendra Gunawan (CTO) |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q019",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "Under POL-FIN-2026-003, what is the default credit limit for a Corporate SME customer?",
+          "expectedAnswer": "IDR 75,000,000",
+          "evidence": "| **Corporate SME** | Contracted client; operating history > 12 months; bank statements & NPWP verified | Net 30 calendar days | IDR 75,000,000 | IDR 500,000,000 | Credit Committee |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-04",
+      "set": "doc_doc",
+      "question": "For Tier 3 customers in the credit policy, how many days of estimated logistics spending must the rolling security deposit cover? Also, within how many calendar days must clients submit claims after the delivery timestamp, as specified in Section 5.1?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q143",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "For Tier 3 customers in the credit policy, how many days of estimated logistics spending must the rolling security deposit cover?",
+          "expectedAnswer": "thirty days",
+          "evidence": "Requires a rolling security deposit equal to thirty days of estimated logistics spending or prepayment prior to cargo dispatch."
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q102",
+          "source": "ops-03-sla-layanan.md",
+          "question": "Within how many calendar days must clients submit claims after the delivery timestamp, as specified in Section 5.1?",
+          "expectedAnswer": "7 calendar days",
+          "evidence": "Clients must submit claims for delay, loss, or damage within **7 calendar days** of the delivery timestamp in TMS \"RuteKu\" through Jira Service Management."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-05",
+      "set": "doc_doc",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja minimal 10 tahun sesuai tabel masa kerja? Selain itu, berapa batas maksimal tumpukan palet untuk penumpukan langsung di atas lantai (block stacking) menurut standar penumpukan palet?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q032",
+          "source": "hr-01-kebijakan-cuti.md",
+          "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja minimal 10 tahun sesuai tabel masa kerja?",
+          "expectedAnswer": "22 hari kerja",
+          "evidence": "| $\\ge$ 10 tahun | 14 hari kerja | 8 hari kerja | 22 hari kerja |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q113",
+          "source": "ops-05-k3-gudang.md",
+          "question": "Berapa batas maksimal tumpukan palet untuk penumpukan langsung di atas lantai (block stacking) menurut standar penumpukan palet?",
+          "expectedAnswer": "3 (tiga) tingkat",
+          "evidence": "Untuk penumpukan langsung di atas lantai (*block stacking*), **batas maksimal tumpukan palet adalah 3 (tiga) tingkat**. Penumpukan melebihi 3 tingkat dilarang tanpa menggunakan struktur racking permanen."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-06",
+      "set": "doc_doc",
+      "question": "Berapa jumlah truk dan van yang termasuk dalam ruang lingkup kebijakan ini? Selain itu, berapa batas toleransi kerugian bersih kumulatif akibat risiko operasional per triwulan menurut Selera Risiko?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q065",
+          "source": "it-01-keamanan-informasi.md",
+          "question": "Berapa jumlah truk dan van yang termasuk dalam ruang lingkup kebijakan ini?",
+          "expectedAnswer": "312 truk dan 58 van",
+          "evidence": "Kantor Pusat Surabaya (Jl. Rungkut Industri III No. 18), unit armada logistik (312 truk dan 58 van), serta 5 fasilitas gudang operasional:"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q125",
+          "source": "risk-01-manajemen-risiko.md",
+          "question": "Berapa batas toleransi kerugian bersih kumulatif akibat risiko operasional per triwulan menurut Selera Risiko?",
+          "expectedAnswer": "IDR 750.000.000",
+          "evidence": "Toleransi kerugian bersih kumulatif akibat risiko operasional maksimal IDR 750.000.000 per triwulan."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-07",
+      "set": "doc_doc",
+      "question": "In the Maximum Storage Limits table, which facility code corresponds to the Cikarang, West Java warehouse that is authorized to accept dangerous goods? Also, what is the Recovery Point Objective (RPO) specified for SAP Business One in the Recovery Objectives table?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q116",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "In the Maximum Storage Limits table, which facility code corresponds to the Cikarang, West Java warehouse that is authorized to accept dangerous goods?",
+          "expectedAnswer": "JKT-02",
+          "evidence": "| **JKT-02** | Cikarang, West Java | 24,500 m² | 1,800 m² | 75,000 kg (75 MT) | Yes |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q081",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "What is the Recovery Point Objective (RPO) specified for SAP Business One in the Recovery Objectives table?",
+          "expectedAnswer": "4 hours",
+          "evidence": "| **SAP Business One** | Enterprise Resource Planning (ERP) | General ledger, invoicing, procurement, billing | 4 hours | 24 hours | Daily full backup with 4-hour differential replication |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-08",
+      "set": "doc_doc",
+      "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa besar uang harian untuk karyawan Grade 1 di Wilayah Khusus? Selain itu, berapa target maksimal LTIFR yang ditetapkan untuk periode operasional 2026?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q007",
+          "source": "fin-01-reimbursement.md",
+          "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa besar uang harian untuk karyawan Grade 1 di Wilayah Khusus?",
+          "expectedAnswer": "IDR 800.000",
+          "evidence": "Grade 1 (C-Level) | IDR 800.000 | IDR 700.000 | IDR 600.000"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q112",
+          "source": "ops-05-k3-gudang.md",
+          "question": "Berapa target maksimal LTIFR yang ditetapkan untuk periode operasional 2026?",
+          "expectedAnswer": "0,35 per 1.000.000 jam kerja",
+          "evidence": "Target *Lost Time Injury Frequency Rate* (LTIFR) untuk periode operasional 2026 adalah **maksimal 0,35 per 1.000.000 jam kerja**, dengan sasaran nihil kecelakaan kerja fatal (*zero fatality*)."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-09",
+      "set": "doc_doc",
+      "question": "Menurut tabel metode pemeriksaan barang, produk pangan/ritel kartonan tergolong dalam kategori apa dan metode pemeriksaannya seperti apa? Selain itu, berapa luas hub pergudangan JKT-02 yang disebutkan dalam dokumen?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q090",
+          "source": "ops-01-penerimaan-barang.md",
+          "question": "Menurut tabel metode pemeriksaan barang, produk pangan/ritel kartonan tergolong dalam kategori apa dan metode pemeriksaannya seperti apa?",
+          "expectedAnswer": "Fast Moving FMCG, Sampling (AQL 1.0)",
+          "evidence": "| **Fast Moving FMCG** | Produk pangan/ritel kartonan | Sampling (AQL 1.0) | Sampel acak 10% koli per lot sesuai standar ISO 2859-1 |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q126",
+          "source": "risk-01-manajemen-risiko.md",
+          "question": "Berapa luas hub pergudangan JKT-02 yang disebutkan dalam dokumen?",
+          "expectedAnswer": "24.500 m²",
+          "evidence": "5 hub pergudangan utama (SBY-01 18.000 m², JKT-02 24.500 m², MDN-03 9.200 m², MKS-04 7.800 m², dan BPN-05 6.100 m²)"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-10",
+      "set": "doc_doc",
+      "question": "Berapa jumlah tingkatan klasifikasi data yang diatur dalam dokumen kebijakan keamanan informasi ini? Selain itu, dalam tabel struktur golongan jabatan pada kebijakan kompensasi, berapa persentase batas maksimum bonus kinerja tahunan untuk karyawan Grade G1?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q061",
+          "source": "it-01-keamanan-informasi.md",
+          "question": "Berapa jumlah tingkatan klasifikasi data yang diatur dalam dokumen kebijakan keamanan informasi ini?",
+          "expectedAnswer": "4 (empat)",
+          "evidence": "Seluruh data, arsip elektronik, dokumen cetak, dan rekaman digital diklasifikasikan ke dalam 4 (empat) tingkatan:"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q037",
+          "source": "hr-02-kompensasi-tunjangan.md",
+          "question": "Dalam tabel struktur golongan jabatan pada kebijakan kompensasi, berapa persentase batas maksimum bonus kinerja tahunan untuk karyawan Grade G1?",
+          "expectedAnswer": "10%",
+          "evidence": "| **G1** | Pelaksana Lapangan (Operator Gudang, Helper, Kurir Van) | 4.200.000 | 5.500.000 | 10% |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-11",
+      "set": "doc_doc",
+      "question": "What permitted operational functions are listed for the `ERP-FIN-CLERK` role in the RBAC framework table? Also, which executive sponsor is listed for the Human Capital cost center CC-HCTR-30 in the budget owners table?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q075",
+          "source": "it-03-akses-sistem.md",
+          "question": "What permitted operational functions are listed for the `ERP-FIN-CLERK` role in the RBAC framework table?",
+          "expectedAnswer": "AP/AR entry, transport billing, vendor reconciliation",
+          "evidence": "| **SAP Business One** | `ERP-FIN-CLERK` | AP/AR entry, transport billing, vendor reconciliation | CFO (Dimas Prasetyo) |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q027",
+          "source": "fin-04-anggaran.md",
+          "question": "Which executive sponsor is listed for the Human Capital cost center CC-HCTR-30 in the budget owners table?",
+          "expectedAnswer": "Sekar Ayuningtyas (CHRO)",
+          "evidence": "| **CC-HCTR-30** | Human Capital | 1,240 Staff, Talent, Payroll | HC Operations Manager | Sekar Ayuningtyas (CHRO) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-12",
+      "set": "doc_doc",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang terikat oleh prosedur ini? Selain itu, pada Matriks Evaluasi Risiko 5x5, berapa skor risiko jika kemungkinan bernilai 4 (Sering) dan dampak bernilai 3 (Sedang)?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q070",
+          "source": "it-02-penanganan-insiden.md",
+          "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang terikat oleh prosedur ini?",
+          "expectedAnswer": "1.240",
+          "evidence": "Prosedur ini berlaku mengikat bagi 1.240 karyawan dan sistem inti Arunika"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q123",
+          "source": "risk-01-manajemen-risiko.md",
+          "question": "Pada Matriks Evaluasi Risiko 5x5, berapa skor risiko jika kemungkinan bernilai 4 (Sering) dan dampak bernilai 3 (Sedang)?",
+          "expectedAnswer": "Tinggi (12)",
+          "evidence": "| **4 - Sering** | Rendah (4) | Sedang (8) | Tinggi (12) | Ekstrem (16) | Ekstrem (20) |"
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-13",
+      "set": "doc_doc",
+      "question": "Berapa luas fasilitas pergudangan SBY-01 yang disebutkan dalam ruang lingkup kebijakan pengadaan? Selain itu, berdasarkan ketentuan plafon hotel pada kebijakan reimbursement, berapa batas maksimal penggantian kamar hotel per malam untuk karyawan Grade 4?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q014",
+          "source": "fin-02-pengadaan.md",
+          "question": "Berapa luas fasilitas pergudangan SBY-01 yang disebutkan dalam ruang lingkup kebijakan pengadaan?",
+          "expectedAnswer": "18.000 m²",
+          "evidence": "- SBY-01 (Surabaya, 18.000 m²)"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q009",
+          "source": "fin-01-reimbursement.md",
+          "question": "Berdasarkan ketentuan plafon hotel pada kebijakan reimbursement, berapa batas maksimal penggantian kamar hotel per malam untuk karyawan Grade 4?",
+          "expectedAnswer": "IDR 500.000",
+          "evidence": "Grade 4: Maksimal IDR 500.000 per malam (Hotel Bintang 3 atau *budget business hotel*)."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-14",
+      "set": "doc_doc",
+      "question": "Siapa nama Chief Technology Officer yang menyetujui dokumen SOP ini menurut lembar pengesahan? Selain itu, menurut prosedur slot booking pada SOP inbound, berapa lama toleransi keterlambatan kedatangan armada setelah slot terkonfirmasi?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q069",
+          "source": "it-02-penanganan-insiden.md",
+          "question": "Siapa nama Chief Technology Officer yang menyetujui dokumen SOP ini menurut lembar pengesahan?",
+          "expectedAnswer": "Hendra Gunawan",
+          "evidence": "| **Bambang Kurniawan**<br>IT Operations Lead | **Ahmad Fauzan**<br>IT Infrastructure Manager | **Hendra Gunawan**<br>Chief Technology Officer (CTO) |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q085",
+          "source": "ops-01-penerimaan-barang.md",
+          "question": "Menurut prosedur slot booking pada SOP inbound, berapa lama toleransi keterlambatan kedatangan armada setelah slot terkonfirmasi?",
+          "expectedAnswer": "30 menit",
+          "evidence": "Waktu kedatangan armada mengacu pada slot terkonfirmasi dengan ketentuan **toleransi keterlambatan truk 30 menit**."
+        }
+      ]
+    },
+    {
+      "id": "doc_doc-15",
+      "set": "doc_doc",
+      "question": "Dalam tabel standar packing, kategori barang mana yang mensyaratkan penggunaan lakban sekuriti dan strapping? Selain itu, sanksi apa yang dikenakan kepada karyawan yang melakukan pelanggaran SOP operasional berulang atau merokok di luar batas area merokok yang ditentukan?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q093",
+          "source": "ops-02-pengiriman-outbound.md",
+          "question": "Dalam tabel standar packing, kategori barang mana yang mensyaratkan penggunaan lakban sekuriti dan strapping?",
+          "expectedAnswer": "Elektronik & Fragile",
+          "evidence": "| **Elektronik & Fragile** | Box Triple Wall K275 + Siku Karton | Bubble wrap 3 lapis + Busa PE 20 mm | Lakban sekuriti (*tamper-evident*) + Strapping | Stiker Fragile & Arah Panah Tegak |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q057",
+          "source": "hr-05-kode-etik.md",
+          "question": "Sanksi apa yang dikenakan kepada karyawan yang melakukan pelanggaran SOP operasional berulang atau merokok di luar batas area merokok yang ditentukan?",
+          "expectedAnswer": "Surat Peringatan I (SP 1)",
+          "evidence": "| **Surat Peringatan I (SP 1)** | 6 Bulan | Manajer Departemen & HC | Pelanggaran SOP operasional berulang; merokok di luar batas area merokok yang ditentukan. |"
+        }
+      ]
+    },
+    {
+      "id": "three_part-01",
+      "set": "three_part",
+      "question": "In the emissions baseline table, what 2023 baseline value is shown for Scope 3 (Waste & Supply Chain)? Also, what is the per-event spending cap for emergency expenditures from the IT Contingency Reserve? Also, what is the total amount from all invoice line items in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q004",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "In the emissions baseline table, what 2023 baseline value is shown for Scope 3 (Waste & Supply Chain)?",
+          "expectedAnswer": "1,480 tCO2e",
+          "evidence": "| **Scope 3 (Waste & Supply Chain)** | 1,480 | 1,320 | 1,036 | Packaging circularity, consolidated backhaul lines |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q083",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "What is the per-event spending cap for emergency expenditures from the IT Contingency Reserve?",
+          "expectedAnswer": "IDR 650,000,000",
+          "evidence": "Authorizes emergency expenditures from the IT Contingency Reserve (capped at IDR 650,000,000 per event)."
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-030",
+          "source": "Chinook Music Store",
+          "question": "What is the total amount from all invoice line items in the Chinook Music Store database?",
+          "expectedAnswer": "2328.60"
+        }
+      ]
+    },
+    {
+      "id": "three_part-02",
+      "set": "three_part",
+      "question": "According to Section 6, what annual training budget is allocated per operative for dangerous goods handler certification? Also, what is the maximum liability cap per shipment stated in Section 5.2? Also, which customer segment has the highest average order value in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q119",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "According to Section 6, what annual training budget is allocated per operative for dangerous goods handler certification?",
+          "expectedAnswer": "IDR 4,800,000 per operative",
+          "evidence": "CHRO Sekar Ayuningtyas allocates an annual training budget of IDR 4,800,000 per operative through the People and Culture Division."
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q101",
+          "source": "ops-03-sla-layanan.md",
+          "question": "What is the maximum liability cap per shipment stated in Section 5.2?",
+          "expectedAnswer": "IDR 100,000,000",
+          "evidence": "Arunika’s liability for unexcused delay, loss, or damage is strictly capped at **10 times (10x) the freight charge** of the consignment, up to a maximum of IDR 100,000,000 per shipment."
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-090",
+          "source": "ERP Demo",
+          "question": "Which customer segment has the highest average order value in the ERP Demo database?",
+          "expectedAnswer": "Enterprise, 8230000"
+        }
+      ]
+    },
+    {
+      "id": "three_part-03",
+      "set": "three_part",
+      "question": "What contractual On-Time Delivery target does Arunika commit to under Section 3.1 of the SLA? Also, what is the per-location policy limit shown in Table 1 for the JKT-02 Cikarang regional hub warehouse? Also, what is the largest invoice total in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q100",
+          "source": "ops-03-sla-layanan.md",
+          "question": "What contractual On-Time Delivery target does Arunika commit to under Section 3.1 of the SLA?",
+          "expectedAnswer": "97%",
+          "evidence": "Arunika commits to a contractual On-Time Delivery (\"OTD\") target of **97%** measured monthly per customer account across all contracted lanes."
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q129",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "What is the per-location policy limit shown in Table 1 for the JKT-02 Cikarang regional hub warehouse?",
+          "expectedAnswer": "IDR 120,000,000,000 per location",
+          "evidence": "| Warehouse | JKT-02 Cikarang | Regional hub (24,500 m²) | 120,000,000,000 per location | 10% of claim (min. 25,000,000) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-024",
+          "source": "Chinook Music Store",
+          "question": "What is the largest invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "25.86"
+        }
+      ]
+    },
+    {
+      "id": "three_part-04",
+      "set": "three_part",
+      "question": "In the Account Manager Assignment Rules table, what is the projected monthly revenue range defined for the Commercial client tier? Also, the Maximum Storage Limits table lists Balikpapan as prohibited for dangerous goods. What is the total facility area shown for BPN-05? Also, which warehouses store products ordered by SMB customers in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q140",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "In the Account Manager Assignment Rules table, what is the projected monthly revenue range defined for the Commercial client tier?",
+          "expectedAnswer": "IDR 20,000,000 to IDR 75,000,000",
+          "evidence": "| **Commercial** | IDR 20,000,000 to IDR 75,000,000 | Account Manager | Portfolio-managed account, standard monthly reporting, priority support queue |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q117",
+          "source": "ops-06-barang-berbahaya.md",
+          "question": "The Maximum Storage Limits table lists Balikpapan as prohibited for dangerous goods. What is the total facility area shown for BPN-05?",
+          "expectedAnswer": "6,100 m²",
+          "evidence": "| **BPN-05** | Balikpapan, East Kalimantan | 6,100 m² | 0 m² | 0 kg (0 MT) | Prohibited |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-052",
+          "source": "ERP Demo",
+          "question": "Which warehouses store products ordered by SMB customers in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse"
+        }
+      ]
+    },
+    {
+      "id": "three_part-05",
+      "set": "three_part",
+      "question": "How many employees are covered by this sustainability and environmental policy? Also, according to Table 1, what is the policy limit for a single Tronton conveyance? Also, how many trakcs are in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q005",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "How many employees are covered by this sustainability and environmental policy?",
+          "expectedAnswer": "1,240",
+          "evidence": "The directives set forth in this policy apply to all 1,240 employees, temporary personnel, and registered contractors"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q127",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "According to Table 1, what is the policy limit for a single Tronton conveyance?",
+          "expectedAnswer": "IDR 5,000,000,000 per conveyance",
+          "evidence": "| Transit Fleet | Tronton (24 units) | Heavy multi-axle trucks | 5,000,000,000 per conveyance | 5% of claim (min. 15,000,000) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-111",
+          "source": "Chinook Music Store",
+          "question": "How many trakcs are in the Chinook Music Store database?",
+          "expectedAnswer": "3503"
+        }
+      ]
+    },
+    {
+      "id": "three_part-06",
+      "set": "three_part",
+      "question": "Under the service credit framework in Table 4.1, what invoice deduction percentage applies when the achieved monthly OTD is between 95.0% and 96.9%? Also, according to the Recovery Objectives table, what is the Recovery Time Objective (RTO) for the Gudangku v4 warehouse management system? Also, how many products are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q098",
+          "source": "ops-03-sla-layanan.md",
+          "question": "Under the service credit framework in Table 4.1, what invoice deduction percentage applies when the achieved monthly OTD is between 95.0% and 96.9%?",
+          "expectedAnswer": "2.5% Invoice Deduction",
+          "evidence": "| **95.0% – 96.9%** | 0.1% – 2.0% Missed | 2.5% Invoice Deduction | Hub Operations Review |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q079",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "According to the Recovery Objectives table, what is the Recovery Time Objective (RTO) for the Gudangku v4 warehouse management system?",
+          "expectedAnswer": "4 hours",
+          "evidence": "| **Gudangku v4** | Warehouse Management (WMS) | Inventory tracking, 3-shift picking & dispatch across 5 DCs | 15 minutes | 4 hours | Active-Passive snapshot replication to DRS cluster |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-001",
+          "source": "ERP Demo",
+          "question": "How many products are in the ERP Demo database?",
+          "expectedAnswer": "10"
+        }
+      ]
+    },
+    {
+      "id": "three_part-07",
+      "set": "three_part",
+      "question": "Under Section 4.1, within how many calendar days must a cargo loss, damage, or shortage notice be formally filed after delivery or scheduled delivery? Also, what failover mechanism is configured for the RuteKu transport management system in the Recovery Objectives table? Also, how many invoices have a total greater than 10 in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q132",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "Under Section 4.1, within how many calendar days must a cargo loss, damage, or shortage notice be formally filed after delivery or scheduled delivery?",
+          "expectedAnswer": "7 calendar days",
+          "evidence": "Claimants must formally file any cargo loss, damage, or shortage notice within seven (7) calendar days of shipment delivery or scheduled delivery date."
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q080",
+          "source": "it-04-pemulihan-bencana.md",
+          "question": "What failover mechanism is configured for the RuteKu transport management system in the Recovery Objectives table?",
+          "expectedAnswer": "Automated hourly log shipping with standby instance",
+          "evidence": "| **RuteKu** | Transport Management (TMS) | Dispatch & tracking for 312 trucks and 58 delivery vans | 1 hour | 8 hours | Automated hourly log shipping with standby instance |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-019",
+          "source": "Chinook Music Store",
+          "question": "How many invoices have a total greater than 10 in the Chinook Music Store database?",
+          "expectedAnswer": "64"
+        }
+      ]
+    },
+    {
+      "id": "three_part-08",
+      "set": "three_part",
+      "question": "How many calendar days after invoice dispatch does the policy allow a client to log a billing dispute in Jira Service Management? Also, for a claim arising at the BPN-05 Balikpapan warehouse, what minimum deductible applies? Also, which products have inventory below their reorder level in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q024",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "How many calendar days after invoice dispatch does the policy allow a client to log a billing dispute in Jira Service Management?",
+          "expectedAnswer": "7 calendar days",
+          "evidence": "Client disputes regarding rates, damaged cargo, or billing counts must be logged via Jira Service Management within 7 calendar days of invoice dispatch."
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q130",
+          "source": "risk-02-asuransi-klaim.md",
+          "question": "For a claim arising at the BPN-05 Balikpapan warehouse, what minimum deductible applies?",
+          "expectedAnswer": "IDR 15,000,000",
+          "evidence": "| Warehouse | BPN-05 Balikpapan | Regional hub (6,100 m²) | 30,000,000,000 per location | 10% of claim (min. 15,000,000) |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-037",
+          "source": "ERP Demo",
+          "question": "Which products have inventory below their reorder level in the ERP Demo database?",
+          "expectedAnswer": "UPS 1500VA"
+        }
+      ]
+    },
+    {
+      "id": "three_part-09",
+      "set": "three_part",
+      "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions? Also, which customer segment listed in the POL-FIN-2026-003 table has a default credit limit of IDR 500,000,000? Also, how many employees work at the company in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q003",
+          "source": "esg-01-keberlanjutan.md",
+          "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions?",
+          "expectedAnswer": "4,650 tCO2e",
+          "evidence": "| **Scope 2 (Purchased Electricity)** | 5,820 | 4,650 | 4,074 | Rooftop solar installation, high-bay LED retrofits |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q021",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "Which customer segment listed in the POL-FIN-2026-003 table has a default credit limit of IDR 500,000,000?",
+          "expectedAnswer": "Enterprise",
+          "evidence": "| **Enterprise** | Annual contracted run-rate > IDR 3,000,000,000; minimum 2 years audited financial statements | Net 45 calendar days | IDR 500,000,000 | IDR 2,500,000,000 | CFO Dimas Prasetyo |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "chinook-005",
+          "source": "Chinook Music Store",
+          "question": "How many employees work at the company in the Chinook Music Store database?",
+          "expectedAnswer": "8"
+        }
+      ]
+    },
+    {
+      "id": "three_part-10",
+      "set": "three_part",
+      "question": "According to the RBAC table in ARN-IT-STD-2026-004, what system role identifier is granted to a Gudangku v4 user who may perform inventory adjustments up to a specified limit and bin relocations? Also, under the Account Manager Assignment Rules table, which assigned role corresponds to a client whose projected monthly revenue exceeds IDR 250,000,000? Also, how many prodcts are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q073",
+          "source": "it-03-akses-sistem.md",
+          "question": "According to the RBAC table in ARN-IT-STD-2026-004, what system role identifier is granted to a Gudangku v4 user who may perform inventory adjustments up to a specified limit and bin relocations?",
+          "expectedAnswer": "WMS-SUPERVISOR",
+          "evidence": "| **Gudangku v4** (WMS) | `WMS-SUPERVISOR` | Inventory adjustments up to IDR 50,000,000, bin relocations | Facility Head (SBY/JKT/MDN/MKS/BPN) |"
+        },
+        {
+          "kind": "doc",
+          "sourceId": "q139",
+          "source": "sales-02-onboarding-pelanggan.md",
+          "question": "Under the Account Manager Assignment Rules table, which assigned role corresponds to a client whose projected monthly revenue exceeds IDR 250,000,000?",
+          "expectedAnswer": "Key Account Manager (KAM)",
+          "evidence": "| **Enterprise** | Above IDR 250,000,000 | Key Account Manager (KAM) | Dedicated single point of contact, custom SLA, monthly steering meetings |"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-091",
+          "source": "ERP Demo",
+          "question": "How many prodcts are in the ERP Demo database?",
+          "expectedAnswer": "10"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-01",
+      "set": "single_doc",
+      "question": "Berapa tarif pengiriman kargo umum per kilogram dari Distribution Center Surabaya ke Semarang menurut Tabel Tarif Layanan Transportasi dan Freight Forwarding?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q133",
+          "source": "sales-01-tarif.md",
+          "question": "Berapa tarif pengiriman kargo umum per kilogram dari Distribution Center Surabaya ke Semarang menurut Tabel Tarif Layanan Transportasi dan Freight Forwarding?",
+          "expectedAnswer": "Rp 2.400 per kg",
+          "evidence": "Semarang | HUB-SMG01 | Truk CDE / CDD | 1 Hari | Rp 2.400 | Rp 24.000"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-02",
+      "set": "single_doc",
+      "question": "What is the fulfillment SLA for approved access requests submitted through Jira Service Management under this procedure?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q077",
+          "source": "it-03-akses-sistem.md",
+          "question": "What is the fulfillment SLA for approved access requests submitted through Jira Service Management under this procedure?",
+          "expectedAnswer": "8 working hours",
+          "evidence": "IT Infrastructure fulfills approved Jira requests within 8 working hours (business schedule: Monday–Friday, 08:00–17:00 WIB)."
+        }
+      ]
+    },
+    {
+      "id": "single_doc-03",
+      "set": "single_doc",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang tercakup dalam ruang lingkup kebijakan reimbursement dan perjalanan dinas ini?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q010",
+          "source": "fin-01-reimbursement.md",
+          "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang tercakup dalam ruang lingkup kebijakan reimbursement dan perjalanan dinas ini?",
+          "expectedAnswer": "1.240 karyawan",
+          "evidence": "seluruh 1.240 karyawan PT Arunika Logistik Nusantara"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-04",
+      "set": "single_doc",
+      "question": "Berapa insentif pendampingan yang diterima karyawan yang menjalankan tugas sebagai Buddy?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q048",
+          "source": "hr-03-rekrutmen-onboarding.md",
+          "question": "Berapa insentif pendampingan yang diterima karyawan yang menjalankan tugas sebagai Buddy?",
+          "expectedAnswer": "Rp350.000 per karyawan baru",
+          "evidence": "Karyawan yang menjalankan tugas sebagai Buddy berhak memperoleh insentif pendampingan sebesar Rp350.000 per karyawan baru yang dibayarkan melalui payroll pada akhir masa pendampingan setelah pengumpulan laporan *Buddy Evaluation Form*."
+        }
+      ]
+    },
+    {
+      "id": "single_doc-05",
+      "set": "single_doc",
+      "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q029",
+          "source": "fin-04-anggaran.md",
+          "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline?",
+          "expectedAnswer": "5.0%",
+          "evidence": "Every operational cost center must integrate a standard **5.0% contingency reserve** calculated against its total controllable OPEX baseline."
+        }
+      ]
+    },
+    {
+      "id": "single_doc-06",
+      "set": "single_doc",
+      "question": "Per Table 3.1, which fleet class is assigned to the Jakarta Cikarang (JKT-02) to Balikpapan (BPN-05) lane?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q099",
+          "source": "ops-03-sla-layanan.md",
+          "question": "Per Table 3.1, which fleet class is assigned to the Jakarta Cikarang (JKT-02) to Balikpapan (BPN-05) lane?",
+          "expectedAnswer": "Ro-Ro Sea Freight / Fuso",
+          "evidence": "| Jakarta Cikarang (JKT-02) | Balikpapan (BPN-05) | 4 Calendar Days | Ro-Ro Sea Freight / Fuso |"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-07",
+      "set": "single_doc",
+      "question": "Berapa panjang minimal kata sandi yang disyaratkan untuk setiap akun pengguna menurut kebijakan ini?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q066",
+          "source": "it-01-keamanan-informasi.md",
+          "question": "Berapa panjang minimal kata sandi yang disyaratkan untuk setiap akun pengguna menurut kebijakan ini?",
+          "expectedAnswer": "12 karakter",
+          "evidence": "Setiap akun pengguna wajib memiliki panjang kata sandi **minimal 12 karakter**"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-08",
+      "set": "single_doc",
+      "question": "Siapa yang berwenang menerbitkan Surat Peringatan II berdasarkan tabel jenjang sanksi?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q055",
+          "source": "hr-05-kode-etik.md",
+          "question": "Siapa yang berwenang menerbitkan Surat Peringatan II berdasarkan tabel jenjang sanksi?",
+          "expectedAnswer": "Head of Division & HC",
+          "evidence": "| **Surat Peringatan II (SP 2)** | 6 Bulan | Head of Division & HC | Mengabaikan instruksi kerja resmi; merusak aset fasilitas pergudangan atau armada akibat kelalaian operasional. |"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-09",
+      "set": "single_doc",
+      "question": "Berapa luas area fasilitas pergudangan JKT-02 Cikarang yang tercantum dalam ruang lingkup kebijakan?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q051",
+          "source": "hr-04-kinerja-pelatihan.md",
+          "question": "Berapa luas area fasilitas pergudangan JKT-02 Cikarang yang tercantum dalam ruang lingkup kebijakan?",
+          "expectedAnswer": "24.500 m²",
+          "evidence": "JKT-02 Cikarang (24.500 m²)"
+        }
+      ]
+    },
+    {
+      "id": "single_doc-10",
+      "set": "single_doc",
+      "question": "What is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+      "parts": [
+        {
+          "kind": "doc",
+          "sourceId": "q022",
+          "source": "fin-03-penagihan-piutang.md",
+          "question": "What is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+          "expectedAnswer": "2.0% per month",
+          "evidence": "- **Rate:** 2.0% per month, calculated on a 30-day pro-rata basis (0.067% per diem) against the gross overdue principal balance."
+        }
+      ]
+    },
+    {
+      "id": "single_db-01",
+      "set": "single_db",
+      "question": "What is the average track duration in milliseconds in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-027",
+          "source": "Chinook Music Store",
+          "question": "What is the average track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "393599.212103910933"
+        }
+      ]
+    },
+    {
+      "id": "single_db-02",
+      "set": "single_db",
+      "question": "Which warehouse stores the product that was ordered the most in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-089",
+          "source": "ERP Demo",
+          "question": "Which warehouse stores the product that was ordered the most in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse"
+        }
+      ]
+    },
+    {
+      "id": "single_db-03",
+      "set": "single_db",
+      "question": "Which genre is the most popular among customers from the USA in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-107",
+          "source": "Chinook Music Store",
+          "question": "Which genre is the most popular among customers from the USA in the Chinook Music Store database?",
+          "expectedAnswer": "Rock, 157"
+        }
+      ]
+    },
+    {
+      "id": "single_db-04",
+      "set": "single_db",
+      "question": "What is the maximum product price in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-024",
+          "source": "ERP Demo",
+          "question": "What is the maximum product price in the ERP Demo database?",
+          "expectedAnswer": "18500000"
+        }
+      ]
+    },
+    {
+      "id": "single_db-05",
+      "set": "single_db",
+      "question": "How many tracks cost more than 1 dollar in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-017",
+          "source": "Chinook Music Store",
+          "question": "How many tracks cost more than 1 dollar in the Chinook Music Store database?",
+          "expectedAnswer": "213"
+        }
+      ]
+    },
+    {
+      "id": "single_db-06",
+      "set": "single_db",
+      "question": "How many customers are there in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-003",
+          "source": "ERP Demo",
+          "question": "How many customers are there in the ERP Demo database?",
+          "expectedAnswer": "7"
+        }
+      ]
+    },
+    {
+      "id": "single_db-07",
+      "set": "single_db",
+      "question": "How many invoices have been issued in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-006",
+          "source": "Chinook Music Store",
+          "question": "How many invoices have been issued in the Chinook Music Store database?",
+          "expectedAnswer": "412"
+        }
+      ]
+    },
+    {
+      "id": "single_db-08",
+      "set": "single_db",
+      "question": "Find the customer with id 1. in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-014",
+          "source": "ERP Demo",
+          "question": "Find the customer with id 1. in the ERP Demo database?",
+          "expectedAnswer": "PT Forward Together"
+        }
+      ]
+    },
+    {
+      "id": "single_db-09",
+      "set": "single_db",
+      "question": "How many artists are in the Chinook Music Store database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-001",
+          "source": "Chinook Music Store",
+          "question": "How many artists are in the Chinook Music Store database?",
+          "expectedAnswer": "275"
+        }
+      ]
+    },
+    {
+      "id": "single_db-10",
+      "set": "single_db",
+      "question": "Which customer placed the order with the most items in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "erp-087",
+          "source": "ERP Demo",
+          "question": "Which customer placed the order with the most items in the ERP Demo database?",
+          "expectedAnswer": "PT Global Technology"
+        }
+      ]
+    },
+    {
+      "id": "scope-01",
+      "set": "scope",
+      "question": "What is the smallest invoice total in the Chinook Music Store database? Also, which warehouses have above-average capacity in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-023",
+          "source": "Chinook Music Store",
+          "question": "What is the smallest invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "0.99"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-063",
+          "source": "ERP Demo",
+          "question": "Which warehouses have above-average capacity in the ERP Demo database?",
+          "expectedAnswer": "Jakarta Main Warehouse",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-02",
+      "set": "scope",
+      "question": "What is the minimum track duration in milliseconds in the Chinook Music Store database? Also, which products have total inventory less than 500 units in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-032",
+          "source": "Chinook Music Store",
+          "question": "What is the minimum track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "1071"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-061",
+          "source": "ERP Demo",
+          "question": "Which products have total inventory less than 500 units in the ERP Demo database?",
+          "expectedAnswer": "UPS 1500VA",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-03",
+      "set": "scope",
+      "question": "How many customers are from Brazil in the Chinook Music Store database? Also, how many orders are in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-014",
+          "source": "Chinook Music Store",
+          "question": "How many customers are from Brazil in the Chinook Music Store database?",
+          "expectedAnswer": "5"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-008",
+          "source": "ERP Demo",
+          "question": "How many orders are in the ERP Demo database?",
+          "expectedAnswer": "10",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-04",
+      "set": "scope",
+      "question": "What is the maximum track duration in milliseconds in the Chinook Music Store database? Also, which customers have no invoices in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-031",
+          "source": "Chinook Music Store",
+          "question": "What is the maximum track duration in milliseconds in the Chinook Music Store database?",
+          "expectedAnswer": "5286953"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-057",
+          "source": "ERP Demo",
+          "question": "Which customers have no invoices in the ERP Demo database?",
+          "expectedAnswer": "UD Independent Blessing",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-05",
+      "set": "scope",
+      "question": "What is the average invoice total in the Chinook Music Store database? Also, which customers have overdue invoices in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-022",
+          "source": "Chinook Music Store",
+          "question": "What is the average invoice total in the Chinook Music Store database?",
+          "expectedAnswer": "5.6519417475728155"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-043",
+          "source": "ERP Demo",
+          "question": "Which customers have overdue invoices in the ERP Demo database?",
+          "expectedAnswer": "PT Global Technology",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-06",
+      "set": "scope",
+      "question": "What is the total revenue from all invoices in the Chinook Music Store database? Also, which employee manages the department with the highest total salary in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-021",
+          "source": "Chinook Music Store",
+          "question": "What is the total revenue from all invoices in the Chinook Music Store database?",
+          "expectedAnswer": "2328.60"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-086",
+          "source": "ERP Demo",
+          "question": "Which employee manages the department with the highest total salary in the ERP Demo database?",
+          "expectedAnswer": "Budi Santoso",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-07",
+      "set": "scope",
+      "question": "How many invoice line items are there in total in the Chinook Music Store database? Also, what is the average order amount in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-020",
+          "source": "Chinook Music Store",
+          "question": "How many invoice line items are there in total in the Chinook Music Store database?",
+          "expectedAnswer": "2240"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-023",
+          "source": "ERP Demo",
+          "question": "What is the average order amount in the ERP Demo database?",
+          "expectedAnswer": "6854500",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-08",
+      "set": "scope",
+      "question": "What is the average number of tracks per album in the Chinook Music Store database? Also, list categories with more than 2 products. in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-033",
+          "source": "Chinook Music Store",
+          "question": "What is the average number of tracks per album in the Chinook Music Store database?",
+          "expectedAnswer": "10.0951008645533141"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-073",
+          "source": "ERP Demo",
+          "question": "List categories with more than 2 products. in the ERP Demo database?",
+          "expectedAnswer": "Accessories, 4",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-09",
+      "set": "scope",
+      "question": "What is the most expensive track in the best-selling genre in the Chinook Music Store database? Also, what is the unit price of SKU-901 in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-109",
+          "source": "Chinook Music Store",
+          "question": "What is the most expensive track in the best-selling genre in the Chinook Music Store database?",
+          "expectedAnswer": "\"40\", 0.99"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-011",
+          "source": "ERP Demo",
+          "question": "What is the unit price of SKU-901 in the ERP Demo database?",
+          "expectedAnswer": "18500000",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    },
+    {
+      "id": "scope-10",
+      "set": "scope",
+      "question": "How many tracks cost 1.99 in the Chinook Music Store database? Also, what is the average salary of employees in the ERP Demo database?",
+      "parts": [
+        {
+          "kind": "db",
+          "sourceId": "chinook-012",
+          "source": "Chinook Music Store",
+          "question": "How many tracks cost 1.99 in the Chinook Music Store database?",
+          "expectedAnswer": "213"
+        },
+        {
+          "kind": "db",
+          "sourceId": "erp-017",
+          "source": "ERP Demo",
+          "question": "What is the average salary of employees in the ERP Demo database?",
+          "expectedAnswer": "15500000",
+          "outOfScope": true
+        }
+      ],
+      "scopedTo": "chinook"
+    }
+  ]
+}
