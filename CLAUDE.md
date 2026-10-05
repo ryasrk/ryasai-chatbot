@@ -15,11 +15,11 @@
 
 | | |
 |---|---|
-| Path | `/home/ryasr/ryasai/Chatbot` |
+| Path | `/home/ryasr/ryasai/ryasai-chatbot` |
 | Stack | Next.js 16 (App Router) · React 19 · TypeScript 5 · Prisma 6 · PostgreSQL 16 (pgvector + pg_trgm) · Bun · Tailwind 4 · shadcn/ui |
-| Runtime | Bun for dev/test, Node standalone for prod build |
+| Runtime | Bun 1.4.2 for dev/test and the shipped server; Node 22 for the Docker builder |
 | Domain | Multi-tenant AI assistant deployed **on-prem per customer**, licensed with a signed machine-bound key: natural-language → SQL, RAG over company docs, whitelisted REST calls, streaming chat |
-| Status | **Release 2.1.0** (2026-10-03). Latency. Verified by execution, not assertion: `tsc` 0 · `lint` 0 · `bun run test` 323/323 files, 7983 pass, 0 fail · coverage:gate exit 0 · `e2e` and `e2e:prod` both 19 passed |
+| Status | Release 2.1.0 (2026-10-03). Current checks and limitations: `docs/audits/2026-10-05-documentation-audit.md`; release-time results are historical. |
 | Version | 2.1.0 |
 | Language | English (standardized — all UI, errors, system prompts, comments in English) |
 
@@ -472,3 +472,9 @@ driven through the real module.
 **Verified:** tsc 0 · lint 0 · 315 files, 7712 pass, 0 fail · coverage:gate OK (204 modules) · build · e2e 19 ·
 e2e:prod 19. Full eval: **62/63** (was 53/54 before this work).
 
+
+### 2026-10-05 — Documentation audit
+
+Corrected deployment migrations, BYOK data flow, local embedding setup and tenant API examples;
+repaired repo links and shortened repeated instruction prose to address the measured budget failure.
+Current validation and untested areas are recorded in `docs/audits/2026-10-05-documentation-audit.md`.

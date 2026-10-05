@@ -14,16 +14,16 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The app container runs `prisma db push` then `server.js` (Next.js standalone).
+Compose runs the one-shot `migrate` service (`bun scripts/migrate.ts`) before app and scheduler startup. The app image runs `bun server.js`; it does not contain the Prisma CLI. Customer installs use `install.sh` and its generated `docker-compose.prod.yml`.
 
 ### Bare metal
 
 ```bash
 bun install
-bunx prisma db push --accept-data-loss
 bunx prisma generate
+bun run db:deploy                # reviewed migrations; DATABASE_URL must be loaded
 bun run build                    # → .next/standalone/
-node .next/standalone/server.js  # web server
+bun run start                   # web server with .env loaded
 bun run mini-services/scheduler/index.ts  # scheduler (separate process)
 ```
 
@@ -46,10 +46,10 @@ helm upgrade --install chatbot ./helm \
 
 ```bash
 curl https://chatbot.example.com/api/v1/health
-# {"ok":true,"service":"ryasai","version":"0.4.0","time":"..."}
+# Dependency-free liveness; version comes from the deployed build.
 
 curl https://chatbot.example.com/api/health
-# {"ok":true,"checks":{"db":{"ok":true},"redis":{"ok":true}}}
+# Readiness: 503 for database failure; optional failures appear in degraded/checks.
 ```
 
 ---
@@ -59,9 +59,10 @@ curl https://chatbot.example.com/api/health
 ### Docker
 
 ```bash
-# Pin to previous image tag
-docker compose down
-IMAGE_TAG=0.3.0 docker compose up -d
+# Edit image references in the deployed Compose file to reviewed previous
+# tags or digests for app, scheduler/migrate and embeddings.
+# IMAGE_TAG is not consumed by the repository Compose file.
+docker compose up -d
 ```
 
 ### Kubernetes (Helm)
@@ -81,7 +82,7 @@ kubectl argo rollouts undo chatbot
 
 ### Database rollback
 
-If a migration was applied (`prisma db push`), roll back the schema manually. Always take a backup before deploying:
+Production uses reviewed SQL migrations through `bun run db:deploy`. An older image may not be compatible with a newer schema. Plan rollback with the reviewed migration and a tested backup/restore procedure; changing the image alone does not revert the database. Always take a backup before deploying:
 
 ```bash
 bun run scripts/backup.ts --compress

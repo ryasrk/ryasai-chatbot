@@ -164,8 +164,9 @@ For a second write, assert BOTH tokens are visible via `CHUNKS` (not via
 - pinned image `cognee/cognee:1.6.0` (never `:latest` — the app must
   be able to read what the store wrote),
 - relational + vector + cache on the **bundled PostgreSQL**, in cognee's own database `cognee_db`
-  (never the app's `ryasai`: `migrate` runs `prisma db push` on every boot, which drops an unknown
-  EMPTY table silently and refuses to boot when it has rows). A one-shot `cognee-db-init` creates
+  (never the app's `ryasai`: historically the `migrate` service ran `prisma db push`, which dropped an unknown
+  EMPTY table silently and refused to boot when it had rows). Production now uses reviewed
+  migrations via `scripts/migrate.ts`; the databases remain separate. A one-shot `cognee-db-init` creates
   the database first, and cognee waits for it with
   `depends_on: {cognee-db-init: {condition: service_completed_successfully}}` — a missing database
   makes cognee exit(1), which under `restart: unless-stopped` reads as a crash loop. **No

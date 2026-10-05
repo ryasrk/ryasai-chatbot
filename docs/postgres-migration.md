@@ -1,6 +1,6 @@
 # PostgreSQL Migration Guide
 
-This guide covers migrating ryasai Chatbot from SQLite to PostgreSQL for production deployments.
+> **Historical migration reference.** The current schema and supported deployments already require PostgreSQL 16. SQLite mode and the source edits below describe an older implementation. For current setup and reviewed production migrations, follow [Deployment](./deployment.md) and [Operations](./operations.md); do not apply these legacy steps to a current installation.
 
 ## When to Migrate
 

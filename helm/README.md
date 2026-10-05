@@ -33,9 +33,9 @@ produce a broken or unsafe release:
 | Redis env | `REDIS_URL=redis://redis:6379` | **not in `values.yaml`** |
 | `DATABASE_URL` | built into compose per service | a `secret.DATABASE_URL` value with no in-cluster default or guidance |
 
-The chart also still describes the app as "Single-tenant" (`Chart.yaml`, `values.yaml`), which
-contradicts the multi-tenant code (`organizationId` on every model — see `AGENTS.md` →
-"Multi-Tenancy" and `src/lib/prisma-tenant.ts`).
+`Chart.yaml` and the replica guidance in `values.yaml` now describe the app as multi-tenant.
+That terminology correction does not reconcile the deployment gaps above. The tenant model
+is defined by `prisma/schema.prisma` and `src/lib/prisma-tenant.ts`.
 
 ## Status
 

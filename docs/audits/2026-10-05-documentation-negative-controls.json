@@ -1,0 +1,16 @@
+{
+  "command": "bun test src/lib/readme-claims.test.ts",
+  "controls": [
+    {
+      "case": "egress",
+      "violation_exit": 1,
+      "restored_exit": 0
+    },
+    {
+      "case": "inventory",
+      "violation_exit": 1,
+      "restored_exit": 0
+    }
+  ],
+  "restored_sha256": "228ec125a3b173824636887e989615e7810207e1ace5eecef87ca2d1a61fb412"
+}

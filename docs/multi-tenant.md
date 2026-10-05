@@ -2,7 +2,7 @@
 
 ## Overview
 
-ryasai Chatbot is a multi-tenant SaaS. Every organization has its own isolated data via `organizationId` on all data models. A Prisma client extension auto-injects the org ID into all queries using AsyncLocalStorage.
+ryasai Chatbot is deployed on-prem per customer and supports multiple organizations within an installation. Organization-owned models carry `organizationId`. The Prisma extension scopes supported operations using AsyncLocalStorage; raw SQL and nested relation operations require explicit ownership checks.
 
 ## Architecture
 
@@ -12,8 +12,7 @@ ryasai Chatbot is a multi-tenant SaaS. Every organization has its own isolated d
 
 ### Tenant Isolation
 
-The Prisma tenant extension (`src/lib/prisma-tenant.ts`) uses `AsyncLocalStorage` to track the current org context. When `getActiveUser()` is called, it sets the org context via `enterWithOrg(orgId)`. Every subsequent Prisma query on org-scoped models automatically gets `organizationId` injected into the `where` clause (reads) and `data` object (creates).
-
+Every route must call `enterWithOrg(user.organizationId)` immediately after `getActiveUser()` in the route's own frame. `enterWithOrg` accepts one string and returns `void`; `getOrgContext()` returns a string or `undefined`. The extension injects tenant predicates into supported reads and writes, including unique reads, and rejects missing context or foreign tenant IDs. Client-supplied IDs must still use `findFirst` or `findFirstOrThrow`. Model membership and pre-auth exceptions are defined in `src/lib/prisma-tenant.ts`.
 Escape hatch: `bypassOrg(fn)` runs a callback without org scoping — used by SSO login, signup, setup wizard, and seed scripts.
 
 ### RBAC
@@ -23,20 +22,17 @@ Three roles per org: `admin` > `analyst` > `viewer`
 - Applied to all configuration routes (integrations, LLM config, MCP, API keys, schedules, notifications, org settings, user management)
 - All org members can view (GET routes)
 
-### License Validation
+### License Validation and Plans
 
-- Signup requires a valid license key from the License-Validator service
-- `getActiveUser()` checks org `licenseStatus` on every request
-- Expired/invalid/suspended → 402 Payment Required
-- Scheduler re-validates all org licenses daily
-- Webhook receiver: POST /api/webhooks/license (for real-time revocation)
+The installation validates its machine-bound key against our central License Validator.
+`getActiveUser()` enforces the org licence on authenticated requests; the scheduler consults
+the same `getLockdownReason` predicate before work. `none`/`unpaid`, expired and deactivated
+licences lock down work. An unreachable validator is tolerated only within the grace period.
+`POST /api/webhooks/license` receives licence updates.
 
-### Plan-Based Feature Gating
-
-- Plans: starter < pro < enterprise
-- `hasPlan(user.plan, 'pro')` — returns true if user's plan >= required plan
-- MCP servers, schedules, agent: require pro or higher
-- Limits per plan: maxUsers, maxIntegrations, maxDocuments (see `src/lib/plan-gating.ts`)
+The commercial entitlement is `flat`. Legacy `starter`, `pro` and `enterprise` plans remain
+in `src/lib/plan-gating.ts`; feature and quota checks still apply wherever wired. They are
+licensing-era compatibility, not per-token billing. Customers pay their own AI providers.
 
 ### Team Management
 
@@ -49,7 +45,7 @@ Three roles per org: `admin` > `analyst` > `viewer`
 
 - OIDC: Keycloak, Azure AD, Auth0, Google (see docs/sso-setup.md)
 - SAML 2.0: AD FS, Shibboleth, Okta SAML
-- SSO users get `organizationId: 'org-default'` by default (assign to correct org after first login)
+- SSO provisioning uses `SSO_ORGANIZATION_ID`, or the sole existing organization when unset. No organization or multiple unselected organizations causes provisioning to fail closed.
 
 ## Environment Variables
 
@@ -58,5 +54,6 @@ Three roles per org: `admin` > `analyst` > `viewer`
 | `LICENSE_VALIDATOR_URL` | License-Validator service URL (default: http://localhost:9000) |
 | `LICENSE_PRODUCT` | Product identifier (default: ryasai-chatbot) |
 | `LICENSE_WEBHOOK_SECRET` | Shared secret for license webhook receiver |
+| `SSO_ORGANIZATION_ID` | Explicit target organization for SSO provisioning; required when multiple orgs exist |
 | `OIDC_*` | OIDC SSO configuration (see sso-setup.md) |
 | `SAML_*` | SAML 2.0 SSO configuration (see sso-setup.md) |

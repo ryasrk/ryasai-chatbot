@@ -1,0 +1,21 @@
+{
+  "summary": {
+    "total_links": 174,
+    "valid": 173,
+    "broken": 1,
+    "skipped": 0,
+    "duplicate_anchors": 59
+  },
+  "excluded_skill_examples": [
+    {
+      "source_file": ".github/skills/impeccable/reference/document.md",
+      "line": 311,
+      "text": "",
+      "target": "...",
+      "type": "image",
+      "valid": false,
+      "error": "File not found: '...'"
+    }
+  ],
+  "unresolved_product_links": []
+}

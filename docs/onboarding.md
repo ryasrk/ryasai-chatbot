@@ -50,7 +50,7 @@ Default login: `admin@ryas.ai` / `admin12345`
 
 ## Architecture
 
-See the [Mermaid architecture diagrams in the README](../README.md#architecture) and the [ADRs](./adr/) for design decisions.
+See the [Architecture documentation](../ARCHITECTURE.md) and the [ADRs](./adr/) for design decisions.
 
 Request flow: User query → Intent Pipeline (parallel) → Smart Router → Tool branch (SQL/RAG/REST/Chat) or Agentic Loop (max 3 iterations) → Answer + citations.
 

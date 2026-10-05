@@ -60,15 +60,13 @@ describe('README claims — each one checkable from the repository', () => {
     }
   })
 
-  test('the test-count claim is rounded AND tells the reader how to check it', () => {
-    /*
-     * MEASURED: the previous README said "291 test modules", which is the RUNNER's count (it includes files outside
-     * `src/`). A reader running `find src -name '*.test.ts' | wc -l` gets 281 and concludes the README is wrong. So
-     * the claim is now a round number WITH its method, which is the only kind of count this kind of document can
-     * keep true.
-     */
-    expect(readme).toMatch(/around \d+ test files/)
-    expect(readme).toContain("find src -name '*.test.ts'")
+  test('test totals are obtained from the official runner', () => {
+    // Fixed totals drift as files are added. The old assertion required a stale round number.
+    expect(readme).toContain('Use `bun run test`')
+    expect(readme).toContain('current executed file and test totals')
+    expect(readme).toContain('bun run test:integration')
+    expect(readme).not.toMatch(/around \d+ test files|[\d,]+\+ individual tests/)
+    expect(pkg.scripts.test).toBe('bun scripts/test.ts')
   })
 
   test('answer quality is NOT claimed as a number', () => {
@@ -84,12 +82,15 @@ describe('README claims — each one checkable from the repository', () => {
     expect(readme).toMatch(/measur\w* it on your own corpus/i)
   })
 
-  test('the deployment promises match the architecture the code enforces', () => {
-    // "We can see nothing" is a claim about where credentials live, so it is checked rather than asserted.
-    const readmeSaysLocal = /nothing is sent to a vendor cloud/i.test(readme)
-    expect(readmeSaysLocal).toBe(true)
-    // The BYOK claim: the transport sends only the org's own key, which comes from the org's own row.
+  test('the deployment description discloses configured AI and licence requests', () => {
+    // BYOK can target a hosted provider. The old assertion pinned a false no-egress promise.
+    expect(readme).not.toMatch(/nothing is sent to a vendor cloud/i)
+    expect(readme).toContain('using a hosted provider sends the relevant prompts and evidence to that provider')
+    expect(readme).toContain('contacts our central License Validator')
+    expect(readme).toContain('non-empty key value')
     const client = read('src/lib/llm-client.ts')
     expect(client).toContain('cfg.apiKey')
+    expect(client).toContain('${cfg.baseUrl}/chat/completions')
+    expect(read('src/lib/license-client.ts')).toContain('/api/v1/license/validate')
   })
 })

@@ -4,7 +4,7 @@
 
 Multi-tenant AI assistant deployed ON-PREM per customer (NL → SQL, RAG, REST, streaming chat), licensed with a signed machine-bound key. Stack: Next.js 16 (App Router, Turbopack) · React 19 · TypeScript 5 · Prisma 6 · PostgreSQL 16 (pgvector + pg_trgm) · Bun · Tailwind 4 · shadcn/ui. Proprietary.
 
-> `CLAUDE.md` is a large living log (1000+ lines) of session history — trust it for *why* decisions were made, but verify current state against the code. An earlier "single-tenant refactor" mentioned in its progress log was reverted; the codebase is multi-tenant. `docs/adr/0001-single-tenant-architecture.md` and the helm chart description are likewise stale — the code (org-scoped models, tenant extension) is the source of truth.
+> `CLAUDE.md` is a large living log (1000+ lines) of session history — trust it for *why* decisions were made, but verify current state against the code. An earlier "single-tenant refactor" mentioned in its progress log was reverted; the codebase is multi-tenant. ADR 0001 is superseded; the Helm chart remains unsupported. The code (org-scoped models, tenant extension) is the source of truth.
 
 ## ⛔ Non-negotiable invariants (read before touching these areas)
 
@@ -222,74 +222,37 @@ The direction matters and is easy to invert: the app is the CLIENT. It POSTs to
 an Ed25519-signed verdict. Our validator is the authority; a self-hosted install
 cannot mint its own license.
 
-**Consequences — several earlier notes in this file were written as if this were a
-multi-tenant SaaS and are WRONG for this business:**
+**Commercial model:** `licensePlan = 'flat'` is one entitlement for all features. There is
+no usage-metered, per-token, per-seat or per-query billing. Do not propose metering as a
+missing feature: the customer operates the installation and pays its own AI provider.
+Legacy `starter|pro|enterprise` quotas remain enforced where wired, but are compatibility
+leftovers rather than the revenue model. `llm-budget.ts` / `assertWithinBudget` is an optional
+operator safety valve, off unless `LLM_DAILY_TOKEN_BUDGET` is set; do not build billing on it.
 
-- **There is no usage metering, no token budget, and no cost tracking to sell.**
-  Billing is the signed LICENSE (a flat per-install entitlement). We do not charge
-  per token, per seat, or per query, and we could not if we wanted to: the install
-  is on the customer's premises with the customer's LLM key. Repeatedly, agents —
-  and I — have "found" a missing cost/quota/budget feature here. **It is not
-  missing; it is deliberately absent.** Verify the business model before proposing
-  metering work.
-- The token budget (`llm-budget.ts`, `assertWithinBudget` in the chat send route)
-  is **dormant**: it exists as an optional operator safety valve against a runaway
-  agent loop, is OFF unless `LLM_DAILY_TOKEN_BUDGET` is set, and is not a billing
-  mechanism. Do not build on it.
-- **Plan tiers / quotas (`starter|pro|enterprise`, `checkQuota`) are dormant
-  licensing-era leftovers**, not a revenue path. The shipped commercial model is
-  `licensePlan = 'flat'` — one entitlement, all features. Per-org quota checks
-  still exist and are enforced where wired; they are simply never the thing that
-  separates a paying customer from a non-paying one (the LICENSE is).
-- **Multi-tenancy IS still load-bearing even here** — do not "simplify" it away.
-  A single install can host several `Organization` rows (signup creates one), and
-  more importantly the org scoping is what keeps data separated within the
-  install and what every security guard in this file depends on. The past
-  "single-tenant refactor" that removed `organizationId` was REVERTED for good
-  reason; re-read the Cross-tenant IDOR section before touching it.
+**Multi-tenancy remains load-bearing.** Signup can create multiple `Organization` rows in an
+installation. Their scoping separates data and underpins the security guards. The previous
+refactor that removed `organizationId` was reverted; do not repeat it. Read Cross-tenant IDOR
+before changing tenant isolation.
 
 ## Bring-your-own-key: the customer pays their provider, not us
 
-**ryasai ships no LLM and no embedding model.** Every org supplies its own chat
-endpoint, API key, and embedding endpoint in Settings > AI Configuration
-(`LlmConfig`: `baseUrl`/`encryptedApiKey`/`model` + the `embedding*` quartet).
-There is no platform key and no platform fallback anywhere in the transport —
-verified: `llm-client.ts` sends only `cfg.apiKey`, which comes from the org's own
-row via `getLlmRuntimeConfig()` (`findFirst` → org-scoped by the tenant
-extension). An org with no config resolves `null` and the call fails closed.
+Every org supplies its own chat endpoint, key and model in Settings > AI Configuration.
+The standard Docker deployment includes a local embedding service; configure its endpoint,
+model and non-empty placeholder key per org, or choose a hosted embedder. `LlmConfig` holds
+the chat fields and `embedding*` quartet. No platform key or cross-org credential fallback
+exists: `llm-client.ts` sends `cfg.apiKey` from the org-scoped `getLlmRuntimeConfig()`.
+An unconfigured org resolves `null` and fails closed. Live evidence: `trial/21-byok-isolation.ts`.
 
-Verified live (`trial/21-byok-isolation.ts`): two configured orgs each resolve
-their OWN model + key with no cross-org bleed, and an unconfigured org gets
-`null` rather than someone else's credentials.
+`LlmUsageLog` is monitoring, not our COGS or billing. Provider spend is the customer's.
+`LLM_DAILY_TOKEN_BUDGET` is a process-wide operator safety valve, off by default; do not build
+per-org billing or a budget UI on it. The signed licence is the entitlement (see Deployment model).
 
-**What this means for the money model — do not get this backwards:**
-
-- **There is no per-org LLM COGS.** Token spend lands on the customer's provider
-  invoice. `LlmUsageLog` tracks tokens for monitoring and for the customer's own
-  runaway-loop protection — NOT for our margin. Do not build billing on it, and
-  do not assume a cost column is missing-but-needed; our costs are hosting,
-  Postgres, Redis and bandwidth, which are roughly flat per tenant.
-- **The token budget is a dormant operator safety valve, not a product feature.**
-  `LLM_DAILY_TOKEN_BUDGET` is env-configured (one process-wide number, OFF by
-  default) and exists only to stop a runaway agent loop. It is not a billing
-  mechanism and there is no per-org budget UI to build — see "Deployment model"
-  above: the entitlement is the signed license, not a usage meter.
-- The schema line calling `LlmUsageLog` "cost tracking" was **removed** — it
-  described a billing model we are not in and would mislead the next reader into
-  building usage-based charging on top of the customer's own key.
-
-**BYOK failure handling is a first-class UX problem.** Because the credential is
-the customer's, a 401/402/404 is never an operator misconfiguration — it is
-their action item. Previously EVERY provider failure collapsed into one status
-and told the user *"AI provider is not configured. Open Settings…"*, which is
-actively misleading when the URL and model are already correct and only the key
-is dead, credit ran out, or the model was renamed. `classifyProviderFailure()`
-(`llm-client-utils.ts`) now separates `auth` / `quota` / `model_missing` /
-`model_unsupported` / `unreachable` / `unknown`, and `LlmProviderError` carries
-that classification on the error so callers can show a precise fix. The raw
-provider body is NEVER sent to a client (it can echo the key prefix) — it stays
-in server-side logs; only the category + hint cross the wire.
-`toTypedError` maps it to 502 (upstream), not 500 (our fault).
+**BYOK failure handling.** Provider failures must identify the customer's action item.
+`classifyProviderFailure()` (`llm-client-utils.ts`) separates `auth`, `quota`, `model_missing`,
+`model_unsupported`, `unreachable` and `unknown`; `LlmProviderError` carries the classification.
+Do not collapse a dead key, exhausted credit or renamed model into "provider not configured".
+Raw provider bodies can echo key prefixes: keep them in server logs, and send only category
+and hint to clients. `toTypedError` maps these upstream failures to 502.
 
 
 ## Billing and editable context prompts (pointer)

@@ -6,25 +6,37 @@ This guide covers deploying ryasai Chatbot in production: Docker (recommended), 
 
 ## Quick Start (Docker)
 
-The fastest path — Postgres + app in two containers:
+The customer installer pulls prebuilt images and generates `docker-compose.prod.yml`:
+
+```bash
+curl -sSL https://ryasai.my.id/install.sh | bash
+```
+
+For repository-based Compose setup:
 
 ```bash
 cp .env.example .env
-# Edit .env: set ENCRYPTION_SECRET_KEY (required). ADMIN_INITIAL_PASSWORD is NOT read
-# by anything — see the note in the env table below.
+# Set ENCRYPTION_SECRET_KEY; review the credentials in docker-compose.yml.
 docker compose up -d
 ```
 
-**Services started:**
+The repository Compose file runs the following services. Its local embedding service has a
+build context; use the installer for customer installations with prebuilt embedding images.
 
-| Service | Container | Port | Role |
-|---------|-----------|------|------|
-| `app` | ryasai-chatbot | 3000 | Next.js standalone server (runs `prisma db push` then `server.js`) |
-| `db` | pgvector/pgvector:pg16 | 5432 (internal) | PostgreSQL 16 + pgvector |
+| Service | Role |
+|---------|------|
+| `db` | PostgreSQL 16 with pgvector |
+| `redis` | Queues and shared runtime state |
+| `migrate` | One-shot `bun scripts/migrate.ts`, gates app and scheduler startup |
+| `app` | Bun running the Next.js standalone server |
+| `scheduler` | Separate scheduled-job worker |
+| `local-embeddings` | Local embedding endpoint, configured per org in Settings |
+| `cognee-db-init` | Creates the separate `cognee_db` database |
+| `cognee` | Pinned Cognee HTTP memory/graph sidecar |
 
-Access the app at `http://localhost:3000`. The setup wizard runs on first launch — create the admin account there.
-
-> **SQLite instead of Postgres?** Comment out `DATABASE_URL` in `app.environment`, remove the `db` service + `depends_on`, set `DATABASE_URL=file:./db/custom.db` in `.env`. The `/app/db` volume persists the SQLite file. See `docker-compose.yml` header comments.
+Repository Compose binds the app to `127.0.0.1:3000`; access it locally or through a reverse
+proxy. The installer defaults to port `38180`. Register through the UI, activate the licence,
+and configure AI endpoints. PostgreSQL is required; the current Prisma schema has no SQLite mode.
 
 ---
 
@@ -36,74 +48,43 @@ Copy `.env.example` to `.env` and set **at minimum** these variables:
 
 | Variable | Required | Example | Notes |
 |----------|----------|---------|-------|
-| `DATABASE_URL` | Yes | `postgresql://ryasai:STRONG_PW@db:5432/ryasai` | Postgres URL (compose default) or `file:./db/custom.db` for SQLite |
+| `DATABASE_URL` | Yes | `postgresql://ryasai:STRONG_PW@db:5432/ryasai` | PostgreSQL URL; repository Compose sets its own per-service URL |
 | `ENCRYPTION_SECRET_KEY` | Yes | `openssl rand -hex 32` | 64-char hex string for AES-256-GCM. App refuses to start without it. |
 | `ADMIN_INITIAL_PASSWORD` | **No** | (unused) | Not read by any code. The first admin is created by the signup form, not from this value |
-| `ADMIN_EMAIL` | No | `admin@yourcompany.com` | Default: `admin@example.com` |
+| `ADMIN_EMAIL` | No | `admin@yourcompany.com` | Unused; signup creates the admin from browser input |
 | `AUTH_DEMO_FALLBACK` | Yes (prod) | `false` | **Must be `false` in production.** When `true`, unauthenticated requests impersonate the admin. |
 | `NODE_ENV` | Set by compose | `production` | Enables secure cookies, disables dev overlays |
 | `PORT` | No | `3000` | Next.js listen port (Dockerfile default: 3000) |
 | `COGNEE_ENABLED` | No | unset | Kill switch for the AI memory layer. Unset = the per-org toggle in Settings decides; `false` = force off everywhere; `true` = also on before an org is set up. (Adds a Postgres dependency in prod.) |
-| `NEXT_PUBLIC_APP_VERSION` | No | `2.0.0` | Shown in UI footer |
+| `NEXT_PUBLIC_APP_VERSION` | No | `2.1.0` | Build-time public setting; prebuilt images use the code fallback when no build value is supplied |
 
 **Generate an encryption key:**
 ```bash
 openssl rand -hex 32
 ```
 
-### Postgres vs SQLite Mode
+### Persistence and Health
 
-| Mode | When to use | Setup |
-|------|-------------|-------|
-| **Postgres** (default compose) | Production, > 10K chunks, concurrent users, pgvector embeddings | `docker compose up` — pgvector image included. Change `provider` in `prisma/schema.prisma` to `"postgresql"`. See [Postgres Setup](#postgres-setup) below. |
-| **SQLite** | Dev, single-user demo, < 10K chunks | Set `DATABASE_URL=file:./db/custom.db`, remove `db` service from compose. Volume `/app/db` persists the file. |
+Keep the named volumes declared in `docker-compose.yml`, including PostgreSQL data, Cognee
+graph state and the embedding model cache. Back up the app database and the memory state
+before upgrades; see [Operations](./operations.md).
 
-### Volume Mounts
+The Dockerfile and Compose readiness checks probe `/api/health`. A failed database check
+returns HTTP 503. Redis, validator, Cognee and embedding failures are reported in `checks`
+and `degraded` without changing the HTTP status. `/api/v1/health` is dependency-free liveness.
 
-The compose file mounts `pgdata` for Postgres data persistence. For SQLite mode, the Dockerfile declares `VOLUME ["/app/db"]` — mount a named volume to persist the SQLite file across container rebuilds:
-
-```yaml
-volumes:
-  - ./data/db:/app/db
-```
-
-### Health Check
-
-The Dockerfile includes a built-in health check hitting `/api/v1/health`:
-
-```
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3
-  CMD node -e "fetch('http://localhost:3000/api/v1/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
-```
-
-Manual check:
 ```bash
+curl http://localhost:3000/api/health
 curl http://localhost:3000/api/v1/health
-# {"ok":true,"service":"ryasai","version":"2.0.0","time":"2026-07-25T..."}
 ```
 
 ### Scheduler as Sidecar
 
 The scheduler (`mini-services/scheduler/index.ts`) is a BullMQ worker that processes repeatable cron jobs from a Redis queue. It is **not** started by the Docker image's `CMD` (which runs only the web server). The web server starts its own BullMQ worker for document processing via `instrumentation.ts`.
 
-**Option A — Separate container (recommended for Docker):**
-
-Add a `scheduler` service to `docker-compose.yml`:
-```yaml
-  scheduler:
-    build: .
-    command: >
-      sh -c "bunx prisma db push --accept-data-loss && bun run mini-services/scheduler/index.ts"
-    env_file: .env
-    environment:
-      - DATABASE_URL=postgresql://ryasai:ryasai@db:5432/ryasai
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - ryasai-net
-```
+**Option A — Compose:** The `scheduler` service is already defined and uses the separate
+scheduler image. It waits for the shared migration service and Redis. Do not run schema
+pushes from scheduler startup.
 
 **Option B — Separate process (bare metal):**
 ```bash
@@ -119,9 +100,10 @@ See [Bare Metal Deployment](#bare-metal-deployment) below.
 
 ### Prerequisites
 
-- **Bun 1+** (for install/build)
-- **Node 22+** (for running the standalone prod build)
-- **PostgreSQL 14+ with pgvector** (if using Postgres mode) or no DB for SQLite
+- **Bun 1.4.2** (the pinned install/test/runtime version)
+- **Node 22** (used by the Docker production builder)
+- **PostgreSQL 16 with pgvector and pg_trgm**, plus Redis for scheduled work
+- PostgreSQL client tools (`psql`, `pg_dump`) for migration inspection and backups
 
 ### Steps
 
@@ -133,23 +115,18 @@ bun install
 cp .env.example .env
 # Edit .env: set DATABASE_URL, ENCRYPTION_SECRET_KEY, AUTH_DEMO_FALLBACK=false
 
-# 3. Apply database schema
-bunx prisma db push --accept-data-loss
+# 3. Generate the client and apply reviewed production migrations
 bunx prisma generate
+bun run db:deploy
 
 # 4. Build standalone production bundle
 bun run build
 # Output: .next/standalone/ (self-contained Node server + .next/static + public/)
 
-# 5. Seed demo data (optional — skip for fresh production installs)
-bun run scripts/seed.ts
-
-# 6. Start the production server
-node .next/standalone/server.js
-# Or with env loading:
+# 5. Start with production environment loading
 bun run start
 
-# 7. Start the scheduler (separate process)
+# 6. Start the scheduler (separate process)
 bun run mini-services/scheduler/index.ts
 ```
 
@@ -250,31 +227,24 @@ sudo -u postgres psql -d ryasai -c "CREATE EXTENSION IF NOT EXISTS vector;"
 sudo -u postgres psql -d ryasai -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 ```
 
-### Step 2 — Update Prisma Datasource
+### Step 2 — Configure the database URL
 
-Edit `prisma/schema.prisma`:
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-```
+The Prisma datasource already uses PostgreSQL. Set `.env`:
 
-Update `.env`:
-```
+```dotenv
 DATABASE_URL="postgresql://ryasai:STRONG_PASSWORD@localhost:5432/ryasai?schema=public"
 ```
 
-### Step 3 — Apply Schema + Adapt Raw SQL
+### Step 3 — Apply reviewed migrations
 
 ```bash
-bunx prisma migrate dev --name init
 bunx prisma generate
+bun run db:deploy
 ```
 
-Three files contain SQLite-specific raw SQL that needs Postgres adaptation. **See `docs/postgres-migration.md` for the full step-by-step guide** (PRAGMA → information_schema, FTS5 → tsvector, JSON embeddings → pgvector column).
-
-The docker-compose `db` service uses `pgvector/pgvector:pg16` which has the extension pre-installed.
+`scripts/migrate.ts` deploys versioned SQL. An existing database without migration history
+is adopted only if it matches the frozen baseline; a mismatch requires backup and reviewed
+reconciliation. Use `prisma db push` only for development prototypes.
 
 ### Connection Pooling
 
@@ -287,11 +257,14 @@ sudo apt install pgbouncer
 # Point DATABASE_URL at PgBouncer (port 6432) instead of Postgres directly
 ```
 
-Prisma 6 supports PgBouncer transaction mode natively — no `?pgbouncer=true` parameter needed.
+Use a direct database connection for migration and backup operations; validate pooled application
+connections against your provider before production use.
 
 ### pgvector for Embeddings
 
-The current implementation stores embeddings as JSON strings in SQLite and computes cosine similarity in JavaScript. For > 10K document chunks, migrate to a pgvector column with an IVFFlat index for sub-millisecond similarity search. See `docs/postgres-migration.md` Step 4c.
+Document chunks store embeddings in PostgreSQL, with JSON metadata and a pgvector column.
+The configured embedding model must match the stored vectors and column dimensions. Check
+semantic retrieval and rebuild embeddings after a model change; see [AI/RAG reference](./architecture-reference.md).
 
 ---
 
@@ -306,7 +279,6 @@ Run through this before exposing the deployment to the internet.
 - [ ] **Configure CORS for external API** — set `CHAT_API_CORS_ORIGIN` env var to your specific origin(s). Defaults to `*` (all origins) for development. For production, restrict to your integration's origin.
 - [ ] **Enable audit logging** — on by default. All security-relevant actions (login, SQL execute, guardrail block, API key creation, integration create) are written to `AuditLog`. View via Security > Audit Log.
 - [ ] **Set API key rate limits** — when creating API keys via Settings > Integration API, set `requestLimitPerMinute` and `dailyRequestLimit` to sane values for your integration. The enforcement is per-key (in-memory counter + DB-backed daily reset).
-- [ ] **Restrict `WS_CORS_ORIGIN`** — set to your specific origins (comma-separated). Never use a wildcard in production.
 - [ ] **Use HTTPS** — Caddy auto-provisions TLS. If using a different proxy, terminate TLS at the edge.
 - [ ] **Secure the database** — Postgres should not be exposed externally. The compose network (`ryasai-net`) keeps `db` internal. For bare metal, bind Postgres to `localhost` or use a firewall.
 - [ ] **Review SSRF blocklist** — the app blocks RFC1918, link-local, CGNAT, ULA, and cloud metadata endpoints (`metadata.google.internal`, `metadata.aws.internal`, `metadata.azure.com`) for outbound webhook/plugin/MCP/REST calls. DNS-rebinding protection via `dns.lookup` is also applied. Verify this covers your internal network ranges.
@@ -352,54 +324,9 @@ Every LLM call (router, SQL gen, RAG, REST, synthesis, chat) is logged to the `L
 
 ## Architecture
 
-```
-                    User (browser)
-                         │
-                         ▼
-              Caddy (reverse proxy, TLS)
-                         │
-                         ▼
-              Next.js standalone (port 3000)
-                    │
-         ┌──────────┼──────────────────────────┐
-         │          │                          │
-    Chat API    Agentic API              Admin API
-    (SSE)       (planner + tools)     (sessions, integrations,
-         │          │                  documents, plugins, MCP,
-         │          │                  notifications, schedules,
-         │          │                  monitoring, traces)
-         ▼          ▼
-    ┌─────────────────────────┐
-    │   Smart Router           │  self-adjusting: schema + perf
-    │   → SQL | RAG | REST     │  + latency + similarity + breaker
-    │     | CHAT | PLUGIN      │
-    └─────────────────────────┘
-         │           │          │
-         ▼           ▼          ▼
-    Connector    RAG Engine   Plugin Registry
-    (SQL exec +  (hybrid:      (9 prebuilt +
-     guardrail)  lexical +     custom webhook
-                 semantic +    tools, SSRF-guarded)
-                 FTS + vector
-                 store)
-         │           │          │
-         ▼           ▼          ▼
-    ┌─────────────────────────────────┐
-    │   Database (SQLite or Postgres) │
-    │   + pgvector (embeddings, opt)  │
-    │   + Cognee (memory, opt)        │
-    └─────────────────────────────────┘
+The app, document worker and separate scheduler use the same organization-scoped data layer.
+PostgreSQL stores application data; Redis backs queues; the Cognee HTTP sidecar uses its own
+database and persisted graph state. Chat requests reach the configured BYOK endpoints.
 
-               Scheduler (sidecar process)
-               BullMQ worker — repeatable cron jobs from Redis
-               → executes due prompts → notifications
-               → graceful shutdown: worker.close() + connection.quit()
-```
-
-**Key design properties:**
-
-- **Fail-closed by default** — missing config, expired key, ambiguous permission → refuse + audit. Never guess.
-- **SQL guardrails** — every LLM-generated SQL passes AST validation (SELECT only, LIMIT 100, no DML/DDL) before execution.
-- **Tenant isolation** — single-admin deployment; all resources scoped to the single admin user.
-- **Streaming end-to-end** — SSE token streaming for both internal chat and the external OpenAI-compatible API.
-- **Every tool run is observable** — `ToolRun` row with latency, status, input/output summary. Guardrail blocks → `AuditLog` at critical severity.
+See [Architecture](../ARCHITECTURE.md) for the service boundaries, tenant-entry conventions,
+shared SQL/RAG pipelines and validation limits.

@@ -6,7 +6,7 @@
 > **Original Date:** 2026-07-30
 > **Superseded by:** the multi-tenant architecture spec — `docs/superpowers/specs/2026-07-31-multi-tenant-design.md`
 >
-> **What changed and when.** This ADR was accepted one day before the product changed direction. On 2026-07-31 the project upgraded from single-tenant to multi-tenant SaaS: an `Organization` tenant root was added and every data model gained an `organizationId`, scoped automatically by a Prisma client extension + `AsyncLocalStorage` (`src/lib/prisma-tenant.ts`). The "no `companyId` field on any model" and "queries are unscoped" statements below are therefore **false for the current code**.
+> **What changed and when.** This ADR was accepted one day before the product changed direction. On 2026-07-31 the project added multi-tenancy within its on-prem deployment: an `Organization` tenant root was added and every data model gained an `organizationId`, scoped automatically by a Prisma client extension + `AsyncLocalStorage` (`src/lib/prisma-tenant.ts`). The "no `companyId` field on any model" and "queries are unscoped" statements below are therefore **false for the current code**.
 >
 > **Why this file is kept, not deleted.** It preserves the reasoning behind the original decision (regulated-industry data isolation, the row-level-isolation costs that were weighed). That history is why the current design deliberately isolates at the *row* level via an auto-injecting extension rather than relying on every developer remembering a filter — and why `tenant-route-guard.test.ts` statically enforces org-context entry on every route.
 >

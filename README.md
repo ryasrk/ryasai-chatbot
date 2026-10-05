@@ -8,7 +8,9 @@
 An AI assistant for enterprises that runs **on your own hardware**. Staff ask questions in plain language and it
 answers from your data — your databases, your documents and your internal APIs — with sources they can check.
 
-It is installed once, per customer, inside your network. Nothing is sent to a vendor cloud.
+It is installed once, per customer, inside your network. Requests go to the AI endpoints you configure;
+using a hosted provider sends the relevant prompts and evidence to that provider. The installation also
+contacts our central License Validator to validate its machine-bound licence.
 
 ---
 
@@ -45,7 +47,7 @@ an optional component.
 | **Where it runs** | Your own servers, one installation per customer |
 | **Who pays for AI usage** | You do, directly to the provider you choose |
 | **How it is licensed** | A signed licence key, bound to the machine it runs on |
-| **What we can see** | Nothing. Your data and your provider credentials stay inside your network |
+| **Data flow** | App storage stays on your servers; configured AI providers receive inference requests, and our validator receives licence-validation requests |
 
 ### You bring your own AI provider
 
@@ -53,8 +55,10 @@ The assistant does not bundle an AI model that you are billed for. You configure
 in **Settings → AI Configuration**, and your usage is billed to you by that provider. We never see the key, and a
 copied deployment does not silently keep working because the licence is bound to the machine.
 
-A self-contained embedding model is included, so document search works without a second vendor and without an
-additional key.
+The standard Docker deployment includes a local embedding service. Configure its endpoint and model in
+**Settings → AI Configuration → Embedding**; an OpenAI-compatible endpoint requires a non-empty key value,
+even if the local server accepts a placeholder. Hosted embedding endpoints are also supported. Semantic
+search needs a working embedding configuration; lexical search can work without it.
 
 ### Installing
 
@@ -133,7 +137,7 @@ Common commands:
 bun run dev            # development server
 bun run test           # unit tests
 bun run e2e            # end-to-end tests (development)
-bun run e2e:prod       # end-to-end tests against the production build
+bun run build && bun run e2e:prod  # build, then test the production artifact
 bunx tsc --noEmit      # type check
 bun run lint           # linter
 ```
@@ -164,14 +168,10 @@ exist to measure it on your own corpus rather than on ours — a question-set ge
 documents, and an evaluation runner that scores retrieval and answers. Run them against your data before trusting any
 number, including ours.
 
-**On what is verified automatically.** Type checking, linting, around 280 test files (7,200+ individual tests) and
-an end-to-end suite run on every change. Both the development server and the production build are exercised, because
-those two environments have diverged before in ways that only surfaced once the product was shipped.
-
-Counts are deliberately given as round numbers with the command to check them, rather than as exact figures copied
-from one run: `find src -name '*.test.ts' | wc -l` and `bun run test` are the sources of truth. This file has already
-carried a stale count twice, and a reader who checks a number and finds it wrong stops trusting the ones they cannot
-check.
+**On what CI checks.** The CI workflow runs type checking, linting, the per-file unit suite, coverage
+and its gate, then end-to-end tests against both development and production servers. Use `bun run test`
+for the current executed file and test totals; integration tests run separately with `bun run test:integration`.
+A configured CI workflow does not by itself prove that a particular commit passed.
 
 ---
 
