@@ -26,6 +26,7 @@ import {
   LLM_MAX_RETRIES,
   LLM_RETRY_BACKOFF_BASE_MS,
   maxTokensForPurpose,
+  reasoningEffortForPurpose,
 } from '@/lib/constants'
 
 export * from './llm-client-types'
@@ -129,6 +130,10 @@ async function chatOnceInner(
     temperature,
     max_tokens: maxTokensForPurpose(purpose),
   }
+  // No thinking for structured steps (see `reasoningEffortForPurpose`), unless this endpoint already rejected the field.
+  const effort = reasoningEffortForPurpose(purpose)
+  const effortKey = `${cfg.baseUrl}\u0000${cfg.model}`
+  if (effort && !REASONING_EFFORT_UNSUPPORTED.has(effortKey)) body.reasoning_effort = effort
   if (tools && tools.length > 0) {
     body.tools = tools
   }
@@ -143,7 +148,7 @@ async function chatOnceInner(
       },
     }
   }
-  const res = await fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
+  const send = () => fetchWithRetry(`${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -152,9 +157,17 @@ async function chatOnceInner(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
   })
+  let res = await send()
   if (!res.ok) {
-    const errText = await readErrorBody(res)
-    throw providerError(res.status, errText)
+    let errText = await readErrorBody(res)
+    // An endpoint that does not know `reasoning_effort` answers 400 naming it: remember that, and ask again without it.
+    if (res.status === 400 && 'reasoning_effort' in body && /reasoning/i.test(errText)) {
+      REASONING_EFFORT_UNSUPPORTED.add(effortKey)
+      delete body.reasoning_effort
+      res = await send()
+      if (!res.ok) errText = await readErrorBody(res)
+    }
+    if (!res.ok) throw providerError(res.status, errText)
   }
   // readCompletionBody: see llm-client-utils for why res.json() is not safe here.
   //
@@ -246,6 +259,9 @@ async function withEmptyRetry<T>(run: () => Promise<T>, label: string): Promise<
   }
   return last
 }
+
+/** Endpoints (base URL + model) that rejected `reasoning_effort`; they are not sent it again in this process. */
+const REASONING_EFFORT_UNSUPPORTED = new Set<string>()
 
 export async function chatOnce(
   cfg: LlmRuntimeConfig,

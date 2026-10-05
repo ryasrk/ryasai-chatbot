@@ -214,6 +214,22 @@ export const LLM_MAX_TOKENS_BY_PURPOSE: Record<string, number> = {
  */
 export const LLM_DEFAULT_MAX_TOKENS = 4096
 
+/**
+ * Purposes whose output is a small structured object (scores, a verdict, a list) and that gain nothing from thinking.
+ *
+ * MEASURED (2026-10-05, cbcn/deepseek-v4.1-flash, the production rerank prompt): no control → 564–1,208 completion
+ * tokens (465–1,109 of them reasoning), 3.6–6.4 s; `reasoning_effort: "none"` → 98 tokens, 0 reasoning, 1.6 s, valid
+ * JSON. The rerank alone was 35% of all tokens in the final RAG eval. Provider guidance agrees: well-defined
+ * classification and ranking do not need a reasoning pass. The answer, SQL and agent purposes keep the model default.
+ * `LLM_REASONING_EFFORT_STRUCTURED=off` sends nothing; a provider that rejects the field is retried without it.
+ */
+const STRUCTURED_PURPOSES = new Set(['rag-rerank', 'reflection', 'rag-decompose', 'intent-analysis', 'query-rewrite'])
+
+export function reasoningEffortForPurpose(purpose: string | undefined): 'none' | undefined {
+  if (process.env.LLM_REASONING_EFFORT_STRUCTURED === 'off') return undefined
+  return purpose && STRUCTURED_PURPOSES.has(purpose) ? 'none' : undefined
+}
+
 /** The ceiling for a purpose, falling back to `LLM_DEFAULT_MAX_TOKENS`. */
 export function maxTokensForPurpose(purpose: string): number {
   return LLM_MAX_TOKENS_BY_PURPOSE[purpose] ?? LLM_DEFAULT_MAX_TOKENS

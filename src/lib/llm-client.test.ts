@@ -1889,3 +1889,67 @@ describe('chatOnce puts the tool_call wire shape on the REQUEST (wiring, not jus
     expect(calls[0].function).toEqual({ name: 'web_search', arguments: '{"query":"x"}' })
   })
 })
+
+describe('chatOnce — structured steps do not pay for thinking (reasoning_effort)', () => {
+  /*
+   * MEASURED (2026-10-05, cbcn/deepseek-v4.1-flash, the production rerank prompt): with no reasoning control a rerank
+   * wrote 564–1,208 completion tokens of which 465–1,109 were reasoning, in 3.6–6.4 s; with `reasoning_effort: "none"`
+   * 98 tokens, 0 reasoning, 1.6 s, valid JSON, on both rounds. Over the final RAG eval the rerank alone was 35% of all
+   * tokens. Structured steps (rerank, reflection, decomposition, intent, query rewrite) get "none"; the answer does not.
+   */
+  const bodyOf = (fetchMock: { mock: { calls: unknown[][] } }, i = 0) =>
+    JSON.parse((fetchMock.mock.calls[i] as unknown as [string, RequestInit])[1].body as string) as Record<string, unknown>
+
+  test.each(['rag-rerank', 'reflection', 'rag-decompose', 'intent-analysis', 'query-rewrite'])('%s asks for no reasoning', async (purpose) => {
+    const fetchMock = mock(() => Promise.resolve(jsonResponse({ choices: [{ message: { content: '[]' } }] })))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await chatOnce({ ...openaiCfg, model: `m-${purpose}` }, [{ role: 'user', content: 'q' }], 0, purpose)
+    expect(bodyOf(fetchMock).reasoning_effort).toBe('none')
+  })
+
+  test.each(['chat', 'synthesis', 'agent', 'sql'])('%s keeps the model default', async (purpose) => {
+    const fetchMock = mock(() => Promise.resolve(jsonResponse({ choices: [{ message: { content: 'x' } }] })))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'q' }], 0, purpose)
+    expect('reasoning_effort' in bodyOf(fetchMock)).toBe(false)
+  })
+
+  test('LLM_REASONING_EFFORT_STRUCTURED=off sends nothing', async () => {
+    process.env.LLM_REASONING_EFFORT_STRUCTURED = 'off'
+    try {
+      const fetchMock = mock(() => Promise.resolve(jsonResponse({ choices: [{ message: { content: '[]' } }] })))
+      global.fetch = fetchMock as unknown as typeof fetch
+      await chatOnce({ ...openaiCfg, model: 'm-off' }, [{ role: 'user', content: 'q' }], 0, 'rag-rerank')
+      expect('reasoning_effort' in bodyOf(fetchMock)).toBe(false)
+    } finally {
+      delete process.env.LLM_REASONING_EFFORT_STRUCTURED
+    }
+  })
+
+  test('a provider that rejects the parameter is retried without it, and not sent it again', async () => {
+    let n = 0
+    const fetchMock = mock((_url: string, init: RequestInit) => {
+      n++
+      const body = JSON.parse(init.body as string) as Record<string, unknown>
+      if ('reasoning_effort' in body) {
+        return Promise.resolve(new Response(JSON.stringify({ error: { message: "Unrecognized request argument supplied: reasoning_effort" } }), { status: 400 }))
+      }
+      return Promise.resolve(jsonResponse({ choices: [{ message: { content: '[]' } }] }))
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+    const cfg = { ...openaiCfg, model: 'm-rejects-effort' }
+    expect(await chatOnce(cfg, [{ role: 'user', content: 'q' }], 0, 'rag-rerank')).toBe('[]')
+    expect(n).toBe(2)
+    await chatOnce(cfg, [{ role: 'user', content: 'q' }], 0, 'reflection')
+    expect(n).toBe(3)
+    expect('reasoning_effort' in bodyOf(fetchMock, 2)).toBe(false)
+  })
+
+  test('any other 400 is still an error, not a retry', async () => {
+    const fetchMock = mock(() => Promise.resolve(new Response(JSON.stringify({ error: { message: 'context length exceeded' } }), { status: 400 })))
+    global.fetch = fetchMock as unknown as typeof fetch
+    await expect(chatOnce({ ...openaiCfg, model: 'm-other-400' }, [{ role: 'user', content: 'q' }], 0, 'rag-rerank')).rejects.toThrow()
+    expect(fetchMock.mock.calls.length).toBe(1)
+  })
+})
+
