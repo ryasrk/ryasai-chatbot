@@ -124,10 +124,20 @@ export function interleavePools(pools: RetrievedChunk[][], cap: number): Retriev
   return out
 }
 
+/** Chunks each hop contributes to the answer context; the context is max(topK, this × hops). */
+export const CHUNKS_PER_HOP = 2
+/** Candidates of each hop the reranker sees. MEASURED: evidence of failing hops sat at fused depth 2–19 of their pool. */
+const HOP_POOL = 16
+
 /**
- * First-pass retrieval for a decomposed question. Each sub-question is expanded (so cross-language matching still
- * works) and retrieved WITHOUT a rerank; the pools meet in one interleaved rerank pool, are reranked once against the
- * whole question, and `coverageMerge` puts back any sub-question's best chunk the joint cut dropped.
+ * First-pass retrieval for a decomposed question. Each sub-question is expanded (cross-language matching still works),
+ * retrieved un-reranked, and RERANKED AGAINST ITSELF — not against the whole question, which let the hop the reranker
+ * preferred crowd the other out. Each hop then contributes its top `CHUNKS_PER_HOP`, interleaved.
+ *
+ * MEASURED (retrieval-recall.ts, 39 multi-hop questions): with one joint rerank over a 12-chunk pool, all evidence
+ * reached the 4-chunk context for 59.0% (decomposition alone: 61.5%); the failing hops' evidence sat at depth 2–19 of
+ * their own pools, or first in them but not chosen as the hop's guaranteed chunk (the pool is ordered by agreement
+ * across expansions, not by relevance to the hop).
  *
  * The retrieval functions are passed in rather than imported: the caller (`retrieveWithReflection`) owns them, and
  * importing them here would close an import cycle.
@@ -141,14 +151,14 @@ export async function retrieveCompound<R extends { chunks: RetrievedChunk[] }>(a
   expand: (query: string) => string[]
   merge: (results: R[]) => R
   rerank: ((question: string, pool: RetrievedChunk[], topK: number) => Promise<RetrievedChunk[]>) | null
-}): Promise<{ merged: R; perSub: RetrievedChunk[][] }> {
+}): Promise<{ merged: R; perSub: RetrievedChunk[][]; topK: number }> {
   // Two variants per sub-question: the sub-question and its first translation/synonym variant.
   const perSubResults = await Promise.all(
     args.subQuestions.map(async (sq) => args.merge(await Promise.all(args.expand(sq).slice(0, 2).map((q) => args.retrieve(q))))),
   )
-  const perSub = perSubResults.map((r) => r.chunks)
-  const pool = interleavePools(perSub, args.topK * 3)
-  const ranked = args.rerank ? await args.rerank(args.question, pool, args.topK) : pool.slice(0, args.topK)
-  const merged = args.merge(perSubResults)
-  return { merged: { ...merged, chunks: coverageMerge(ranked, perSub, args.topK) }, perSub }
+  const perSub = await Promise.all(perSubResults.map((r, i) => args.rerank
+    ? args.rerank(args.subQuestions[i], r.chunks.slice(0, HOP_POOL), CHUNKS_PER_HOP)
+    : Promise.resolve(r.chunks.slice(0, CHUNKS_PER_HOP))))
+  const topK = Math.max(args.topK, CHUNKS_PER_HOP * args.subQuestions.length)
+  return { merged: { ...args.merge(perSubResults), chunks: interleavePools(perSub, topK) }, perSub, topK }
 }

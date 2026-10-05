@@ -133,36 +133,40 @@ describe('interleavePools — the rerank pool holds every hop', () => {
   })
 })
 
-describe('retrieveCompound — each hop is searched on its own and kept', () => {
+describe('retrieveCompound — each hop is searched, reranked and kept on its own', () => {
   const chunk = (id: string, score: number) => ({ chunkId: id, score } as unknown as RetrievedChunk)
   const pools: Record<string, RetrievedChunk[]> = {
-    'When does the security policy take effect?': [chunk('sec1', 0.9), chunk('sec2', 0.8)],
-    'When does the access SOP become effective?': [chunk('acc1', 0.4)],
+    'When does the security policy take effect?': [chunk('sec1', 0.9), chunk('sec2', 0.8), chunk('sec3', 0.7)],
+    'When does the access SOP become effective?': [chunk('acc-noise', 0.6), chunk('acc-answer', 0.4), chunk('acc3', 0.3)],
   }
   const merge = (rs: Array<{ chunks: RetrievedChunk[] }>) => ({ chunks: rs.flatMap((r) => r.chunks) })
+  const subQuestions = Object.keys(pools)
 
-  test('every sub-question is retrieved, and a hop the joint rerank dropped is restored', async () => {
-    const asked: string[] = []
-    const { merged, perSub } = await retrieveCompound({
+  test('each hop is reranked against ITS OWN sub-question, and contributes its top chunks', async () => {
+    const reranked: string[] = []
+    const { merged, perSub, topK } = await retrieveCompound({
       question: 'How many days after the security policy does the access SOP take effect?',
-      subQuestions: Object.keys(pools),
-      topK: 2,
-      retrieve: async (q) => { asked.push(q); return { chunks: pools[q] ?? [] } },
-      expand: (q) => [q],
-      merge,
-      // A reranker that prefers the first hop's chunks for the whole question.
-      rerank: async (_q, pool, k) => pool.filter((c) => c.chunkId.startsWith('sec')).slice(0, k),
+      subQuestions, topK: 4, expand: (q) => [q], merge,
+      retrieve: async (q) => ({ chunks: pools[q] ?? [] }),
+      // A reranker that knows the answer chunk of the access hop is not its fused head.
+      rerank: async (q, pool, k) => {
+        reranked.push(q)
+        return [...pool].sort((x, y) => (y.chunkId === 'acc-answer' ? 1 : 0) - (x.chunkId === 'acc-answer' ? 1 : 0)).slice(0, k)
+      },
     })
-    expect(asked.sort()).toEqual(Object.keys(pools).sort())
-    expect(merged.chunks.map((c) => c.chunkId)).toEqual(['sec1', 'acc1'])
-    expect(perSub).toHaveLength(2)
+    expect(reranked.sort()).toEqual([...subQuestions].sort())
+    expect(perSub[1][0].chunkId).toBe('acc-answer')
+    expect(merged.chunks.map((c) => c.chunkId)).toContain('acc-answer')
+    expect(topK).toBe(4)
   })
 
-  test('with no reranker the interleaved pool is cut to top-K', async () => {
-    const { merged } = await retrieveCompound({
-      question: 'q', subQuestions: Object.keys(pools), topK: 2,
-      retrieve: async (q) => ({ chunks: pools[q] ?? [] }), expand: (q) => [q], merge, rerank: null,
+  test('three hops get room for two chunks each', async () => {
+    const three = { ...pools, 'Who approved the outbound SOP?': [chunk('out1', 0.5), chunk('out2', 0.4)] }
+    const { merged, topK } = await retrieveCompound({
+      question: 'q', subQuestions: Object.keys(three), topK: 4, expand: (q) => [q], merge,
+      retrieve: async (q) => ({ chunks: three[q] ?? [] }), rerank: null,
     })
-    expect(merged.chunks.map((c) => c.chunkId)).toEqual(['sec1', 'acc1'])
+    expect(topK).toBe(6)
+    expect(merged.chunks.map((c) => c.chunkId)).toEqual(['sec1', 'acc-noise', 'out1', 'sec2', 'acc-answer', 'out2'])
   })
 })

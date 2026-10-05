@@ -1862,15 +1862,19 @@ describe('retrieveWithReflection — a compound question is retrieved hop by hop
            makeChunk({ chunkId: 'sec2', content: 'Security policy scope '.repeat(4), score: 0.8 })],
       queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
     }))
-    // A reranker that keeps only the security-policy chunks for the whole question.
-    mockRerankMerged.mockImplementation((async (_q: string, chunks: Array<{ chunkId: string }>, k: number) =>
-      chunks.filter((c) => c.chunkId.startsWith('sec')).slice(0, k)) as never)
+    // A reranker that judges relevance to the question it is GIVEN: for the whole question it would keep only the
+    // security chunks (the old joint rerank dropped the access hop); for the access sub-question, the access chunk.
+    mockRerankMerged.mockClear()
+    mockRerankMerged.mockImplementation((async (rq: string, chunks: Array<{ chunkId: string }>, k: number) =>
+      chunks.filter((c) => (/^When does the Access/.test(rq) ? c.chunkId === 'access' : c.chunkId.startsWith('sec'))).slice(0, k)) as never)
     try {
       const r = await retrieveWithReflection({ query: q, topK: 2 })
       const asked = (mockRetrieveRelevantChunks.mock.calls as unknown as Array<[{ query: string; _skipDecompose?: boolean }]>).map(([a]) => a)
       expect(subs.every((s) => asked.some((a) => a.query === s))).toBe(true)
       expect(asked.every((a) => a._skipDecompose === true)).toBe(true)
       expect(r.chunks.map((c) => c.chunkId)).toContain('access')
+      // Each hop was reranked against its own sub-question, never the whole question.
+      expect((mockRerankMerged.mock.calls as unknown as Array<[string]>).map(([rq]) => rq).sort()).toEqual([...subs].sort())
     } finally {
       rerankOn = false
       mockGetLlmRuntimeConfig.mockImplementation(async () => null)

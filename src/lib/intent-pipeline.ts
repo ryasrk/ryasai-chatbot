@@ -623,10 +623,10 @@ export async function retrieveWithReflection(args: {
 }> {
   // 0. A compound question: standalone sub-questions, each searched and kept (rag-decompose.ts). Simple: [query], no call.
   const subQuestions = await decomposeForRetrieval(args.query)
-  let merged: RetrievalResult, perSub: RetrievedChunk[][] = []
+  let merged: RetrievalResult, perSub: RetrievedChunk[][] = [], k = args.topK
   if (subQuestions.length > 1) {
     const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
-    ;({ merged, perSub } = await retrieveCompound({
+    ;({ merged, perSub, topK: k } = await retrieveCompound({
       question: args.query, subQuestions, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
       retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
       rerank: rerankOn ? ragNs.rerankMergedChunks : null,
@@ -671,7 +671,7 @@ export async function retrieveWithReflection(args: {
   // answer, say so" — so the bot disclaimed knowledge it never received. See
   // `isPlaceholderChunk` for the full trace.
   args.signal?.throwIfAborted()
-  const evidenceChunks = merged.chunks.slice(0, args.topK).filter((c) => !isPlaceholderChunk(c.content))
+  const evidenceChunks = merged.chunks.slice(0, k).filter((c) => !isPlaceholderChunk(c.content))
   const evidence = evidenceChunks.map((c) => c.content).join('\n\n')
   const reflection = await evaluateEvidenceSufficiency({
     question: args.query,
@@ -694,7 +694,7 @@ export async function retrieveWithReflection(args: {
       // Re-stamped: the per-query ranks carried by `merged`/`secondPass` describe the orders the individual
       // retrievals produced, and this is a NEW order after the merge and the select. The UI labels these
       // "Match #N", so the label has to come from the list the caller receives.
-      chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged2.chunks, args.topK * 2), perSub, args.topK * 2)),
+      chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged2.chunks, k * 2), perSub, k * 2)),
       queryTokens: merged2.queryTokens,
       candidatesScanned: merged2.candidatesScanned,
       graphContext: merged2.graphContext,
@@ -705,7 +705,7 @@ export async function retrieveWithReflection(args: {
 
   return {
     // Same reason as the second-pass return above: the merged order is new, so the ranks are re-stamped.
-    chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged.chunks, args.topK), perSub, args.topK)),
+    chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged.chunks, k), perSub, k)),
     queryTokens: merged.queryTokens,
     candidatesScanned: merged.candidatesScanned,
     graphContext: merged.graphContext,
