@@ -517,6 +517,9 @@ export async function retrieveWithReflection(args: {
   const subQuestions = await decomposeForRetrieval(args.query)
   let merged: RetrievalResult, perSub: RetrievedChunk[][] = [], k = args.topK
   const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
+  // RAG_RERANK_SCOPE=compound: rerank only the hops of a compound question. retrieval-recall.ts (2026-10-05): single facts
+  // had their evidence in context 98.6% in fused order vs 87.5% after the LLM rerank, at a fifth of the tokens.
+  const singleNoRerank = process.env.RAG_RERANK_SCOPE === 'compound'
   const compound = (subs: string[]) => retrieveCompound({
     question: args.query, subQuestions: subs, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
     retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
@@ -535,10 +538,10 @@ export async function retrieveWithReflection(args: {
     // billed to the customer's key). The expansions now return their un-reranked candidate pools; the pools are merged
     // by agreement and ONE rerank picks the final members from the union. With a single expansion nothing is deferred,
     // so that path is byte-for-byte what it was.
-    const canDeferRerank = expansions.length > 1 && rerankOn
+    const canDeferRerank = expansions.length > 1 && rerankOn && !singleNoRerank
     const allResults = await Promise.all(
       expansions.map((q) =>
-        retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal }),
+        retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal, ...(singleNoRerank ? { _noRerank: true } : {}) }),
       ),
     )
     args.signal?.throwIfAborted()
@@ -585,6 +588,7 @@ export async function retrieveWithReflection(args: {
       query: args.query,
       topK: args.topK * 2,
       signal: args.signal,
+      ...(singleNoRerank ? { _noRerank: true } : {}),
       // Same scope as the first pass. Omitting it here is the subtle form of the bug: the first pass
       // would respect the scope and the reflection pass would quietly widen it back out.
       documentIds: args.documentIds,

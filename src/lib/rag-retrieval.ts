@@ -77,6 +77,11 @@ export async function retrieveRelevantChunks(args: {
    */
   _skipRerank?: boolean
   /**
+   * This call behaves as if the reranker were off: fused order, `topK` chunks, no model call. For callers that rerank
+   * only where it helps (RAG_RERANK_SCOPE=compound: the hops of a compound question, not single facts).
+   */
+  _noRerank?: boolean
+  /**
    * Restrict retrieval to these documents. `null`/absent = every document, which keeps every
    * existing caller behaving exactly as before.
    *
@@ -112,7 +117,9 @@ export async function retrieveRelevantChunks(args: {
   // Resolved once per call, so the value that keys the cache entry is provably the
   // same one that orders the result — resolving twice would let a mid-call change
   // write a ranking under a key that no longer describes it.
-  const skipRerank = args._skipRerank === true && ragRerankEnabled()
+  // One answer for the whole call: the reranker is on, and this call did not opt out of it.
+  const rerankOn = ragRerankEnabled() && args._noRerank !== true
+  const skipRerank = args._skipRerank === true && rerankOn
   const cacheKey = ragCacheKey(args.query, args.topK, args.documentIds, skipRerank)
   if (cacheKey) {
     const cached = await cacheGet<Awaited<ReturnType<typeof retrieveRelevantChunks>>>(cacheKey)
@@ -144,7 +151,7 @@ export async function retrieveRelevantChunks(args: {
       args.signal?.throwIfAborted()
       merged.chunks = skipRerank
         ? merged.chunks
-        : ragRerankEnabled()
+        : rerankOn
           ? await dispatchRerank(args.query, merged.chunks, args.topK)
           : selectTopRetrievedChunks(merged.chunks, args.topK)
       _cacheMisses += 1
@@ -179,7 +186,7 @@ export async function retrieveRelevantChunks(args: {
   // entirely when chunks.length <= topK. Opt OUT with RAG_LLM_RERANK=false.
   // (Was opt-in for years while CLAUDE.md claimed the opposite — the drift
   // meant the flagship precision feature never ran anywhere.)
-  const rerankEnabled = ragRerankEnabled()
+  const rerankEnabled = rerankOn
   // A wider pool gives the reranker access to evidence beyond the lexical head.
   // Bound operator overrides so malformed values cannot create an unbounded query.
   const configuredMultiplier = Number(process.env.RAG_POOL_MULTIPLIER ?? 8)

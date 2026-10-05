@@ -377,3 +377,20 @@ describe('rerankWithLlm — one call that also judges sufficiency (on by default
   })
 })
 
+describe('retrieveRelevantChunks — _noRerank (fused order, no reranker)', () => {
+  // retrieval-recall.ts, 2026-10-05: for single-fact questions the LLM reranker kept the evidence in 87.5% of
+  // contexts and the fused top-8 alone in 98.6%, at a fifth of the tokens. `_noRerank` gives one call exactly the
+  // "reranker off" behaviour, so a caller can rerank where it helps (the hops of a compound question) and not elsewhere.
+  const row = (i: number) => ({
+    id: `c${i}`, chunkIndex: i, content: `sales by region record number ${i}`, keywords: null,
+    embeddingJson: null, embeddingModel: null, contextPrefix: null, document: { id: 'd1', name: 'doc.pdf' },
+  })
+  test('no reranker call, and topK fused chunks come back', async () => {
+    state.chunkRows = Array.from({ length: 12 }, (_, i) => row(i))
+    state.chatRaw = '[{"index":5,"score":10}]'
+    const r = await retrieveRelevantChunks({ query: 'sales by region', topK: 4, _noRerank: true })
+    expect(state.chatCalls.filter((c) => c.purpose === 'rag-rerank')).toHaveLength(0)
+    expect(r.chunks).toHaveLength(4)
+  })
+})
+

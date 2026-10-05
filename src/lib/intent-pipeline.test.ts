@@ -2008,3 +2008,42 @@ describe('retrieveWithReflection — the reranker verdict replaces the judge cal
   })
 })
 
+describe('retrieveWithReflection — RAG_RERANK_SCOPE=compound', () => {
+  const withScope = async (fn: () => Promise<void>) => {
+    process.env.RAG_RERANK_SCOPE = 'compound'
+    rerankOn = true
+    mockRerankMerged.mockClear()
+    mockRetrieveRelevantChunks.mockClear()
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string }) => ({
+      chunks: [makeChunk({ chunkId: `c-${args.query}`, content: 'Cuti tahunan 14 hari kerja. '.repeat(3), score: 1 })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+    try { await fn() } finally { delete process.env.RAG_RERANK_SCOPE; rerankOn = false }
+  }
+
+  test('a single question is retrieved in fused order: no rerank, every retrieval marked _noRerank', async () => {
+    await withScope(async () => {
+      await retrieveWithReflection({ query: 'Berapa hari cuti tahunan karyawan tetap?', topK: 8 })
+      expect(mockRerankMerged).toHaveBeenCalledTimes(0)
+      const calls = mockRetrieveRelevantChunks.mock.calls as unknown as Array<[{ _noRerank?: boolean }]>
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls.every(([a]) => a._noRerank === true)).toBe(true)
+    })
+  })
+
+  test('a compound question still reranks each hop', async () => {
+    await withScope(async () => {
+      mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+      mockChatOnce.mockImplementation((async (_c: unknown, _m: unknown, _t: unknown, purpose?: string) =>
+        purpose === 'rag-decompose' ? JSON.stringify(['When does the security policy take effect?', 'When does the access SOP become effective?']) : '{"sufficient":true,"reason":"ok","confidence":0.9}') as never)
+      try {
+        await retrieveWithReflection({ query: 'How many days after the security policy takes effect does the access SOP become effective?', topK: 8 })
+        expect(mockRerankMerged.mock.calls.length).toBeGreaterThanOrEqual(2)
+      } finally {
+        mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+        mockChatOnce.mockImplementation(async () => '')
+      }
+    })
+  })
+})
+
