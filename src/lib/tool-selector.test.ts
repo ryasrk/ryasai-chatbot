@@ -167,8 +167,12 @@ describe('tool-selector — every tool call is resolved, not just the first', ()
 
   test('the multi-tool plan is only entered when the caller allowed multi-step', async () => {
     // The planner costs an extra LLM call on a BYOK key, so a caller that opted out must not be charged for it.
+    // `agenticRound` counts as consent: only the agentic loop sets it, and the loop is entered only under
+    // `allowMultiStepDag` (both transports' DAG gates must name both, and nothing else).
     const router = await Bun.file(new URL('./tool-router.ts', import.meta.url)).text()
-    expect(router).toMatch(/if \(extraToolIds\.length > 0 && args\.allowMultiStepDag\)/)
+    const gates = router.match(/extraToolIds\.length > 0 && (?:Boolean\()?\(?args\.allowMultiStepDag[^)\n]*\)?/g) ?? []
+    expect(gates).toHaveLength(2)
+    for (const g of gates) expect(g).toMatch(/args\.allowMultiStepDag \|\| args\.agenticRound/)
   })
 
   test('a planner that declines leaves the first source answering', async () => {

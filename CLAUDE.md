@@ -307,21 +307,10 @@ implementasi (planner, cognee, plugin, scheduler, Postgres) → perombakan UI/UX
 nyata + typed errors → arsitektur RAG produksi + migrasi Postgres → perbaikan isolasi tes →
 pemecahan `tool-router.ts` → algoritma kualitas P1 (pola LightRAG) → verifikasi UI + audit kontras.
 
-### 2026-09-30 (b) — Release 1.4.0: AI Memory gets its own extraction model, and the sub-menu names its consumer
+### 2026-09-30 (b) — Release 1.4.0 *(moved to the archive: AI Memory gets its own extraction model)*
 
-**Version 1.3.0 → 1.4.0** (minor: a new user-facing capability, no breaking change). Eight stamped locations bumped, CHANGELOG heading cut, `main` fast-forwarded, tag `v1.4.0` pushed, all six image tags verified published, then **deployed and confirmed live** — `/api/v1/health` reports 1.4.0, all six services healthy, and the served `install.sh` updated to 1.4.0 (sha256 identical to the tested copy).
-
-**The sub-menu now says which consumer it configures.** `Chat Configuration` / `AI Memory Configuration` / `Embedding`, replacing "LLM / Embedding / AI Memory" — where two of the three fed DIFFERENT consumers with different credentials and neither name said which.
-
-**Memory can have its own model**, stored as an `LlmConfig` row with `purpose: 'memory'` (the table's unique key is `(organizationId, purpose)`, so no schema change). Extraction is high-volume and structure-bound where a fast model is the better trade, and the previous mechanism was a hard COPY of the chat row. **The fallback is the load-bearing part**: unset means FOLLOW CHAT, so every upgrading install keeps working — verified on production, where no `memory` row exists and the boot log reads `Memory provider shared with cognee: Shared openai/cbcn/deepseek-v4-flash`.
-
-**Storage facts come from the sidecar**, measured live: `relational_db=postgres, vector_db=pgvector, graph_db=kuzu, file_storage=local`. `getCogneeGraphProvider()` was deliberately NOT used as the source — it derives the graph backend from a field its own comment calls INERT, so it is right only by coincidence.
-
-**Two limits found by probing the sidecar, reported instead of worked around:** `save_llm_config` stores provider/model/api_key and has NO endpoint field (four spellings posted, all stored `''`), so the endpoint is saved app-side and surfaced as the exact `OPENAI_API_BASE=` line; and the settings API exposes no embedding parameters, so the Embedding tab REPORTS the memory embedder rather than offering a field that could not take effect.
-
-**Negative-controlled 21/21, and the control changed the code twice** — the recurring value of running it: (1) the test guarding ENCRYPTION of a billable credential asserted only that the mocked encryptor had been CALLED, so a route calling it and storing plaintext passed; it now reads the stored payload and decrypts it back, with the UPDATE arm covered separately (the harness proved those are separate write sites by only breaking one). (2) The rename guard asserted the new label but not the absence of the old, so reverting to `LLM` stayed green.
-
-**Verified:** tsc 0 · lint 0 errors · 300/300 files, 7431 pass, 0 fail · coverage:gate exit 0 (203 gated modules; new route floored at 98 against a measured 99.37%) · e2e dev 18 · e2e:prod 18.
+The sub-menu names its consumer; memory can have its own model (`LlmConfig` purpose `memory`) and FOLLOWS CHAT when
+unset. Storage facts come from the sidecar. Full detail: `docs/progress-log-archive.md`.
 
 ### 2026-09-30 (c) — Release 1.5.0 *(moved to the archive: the memory panel leads with state)*
 
@@ -445,33 +434,10 @@ BullMQ jobs with the wrong DATABASE_URL — reproduced (embed 0/1 with the zombi
 suites green: **e2e 19 and e2e:prod 19**. Eval 61/63; both misses are `majemuk-dok-db`, at 60% across 45 historical
 samples. tsc 0 · lint 0 · 322 files, 7,938 pass, 0 fail · coverage gate OK (208 modules) · build.
 
-### 2026-10-01 (c) — v1.7.8: routing accuracy — role-aware sources, a second chance after an empty database, both halves of a compound question
+### 2026-10-01 (c) — v1.7.8 *(moved to the archive: routing accuracy)*
 
-**The routing error class was narrow.** Over 526 document questions in an eval, 5.7% reached the database, and they
-concentrated on two phrasings whose WORDS look like a data query while the answer is a policy figure. Three fixes, each
-negative-controlled at N=20–40 per arm:
-
-- **A database that cannot answer defers to the documents** (`sql-answerability.ts`, new). The verdict is read from the
-  ROWS — empty, all-NULL, or the generator's improvised "tidak tersedia" row — never from the answer's wording, which
-  is a documented failure class here. Needs documents present, is skipped when the user PINNED the database, and is a
-  SECOND ATTEMPT: rows that answer are kept, and if the documents find nothing the database answer stands.
-  49/60 → 56/60 on the affected questions; 24/24 genuine database questions unaffected.
-- **Tool descriptions state the ROLE.** `sql` answers what the records SAY, `rag` what the rules DEFINE. Reverting the
-  wording dropped the right choice 20/20 → 13/20; with it 240/240 at N=40. In the tool schemas, not the rule list,
-  because the rule list already costs ~37pp per rule.
-- **Every tool call is resolved, not just `result[0]`.** MEASURED: the model asked for BOTH sources on 5 of 16 tries of
-  a two-part question. The pre-existing trigger could never fire — it reads a marker from the model's TEXT and a
-  tool-calling reply has none (0 of 40). 4/12 → 11/12 on the old compound question; 6/12 on a new one.
-
-**Two of my own hypotheses were wrong**, recorded rather than dropped: the NULL rerank scores were not "unranked" (the
-reranker endorses ~2.24 of ~12; the rest are REJECTED — see 1.7.7), and the local reranker is not blind (only
-production carries the 377-char prefix). **One guard was vacuous**: deleting the line returning `extraTools` left every
-test green, because the selector guards asserted source TEXT and the router test mocks the selector; behaviour is now
-driven through the real module.
-
-**Verified:** tsc 0 · lint 0 · 315 files, 7712 pass, 0 fail · coverage:gate OK (204 modules) · build · e2e 19 ·
-e2e:prod 19. Full eval: **62/63** (was 53/54 before this work).
-
+A database that cannot answer defers to the documents (`sql-answerability.ts`), tool descriptions state the ROLE, and
+every tool call is resolved. Full eval 62/63. Full detail: `docs/progress-log-archive.md`.
 
 ### 2026-10-05 — Documentation audit
 

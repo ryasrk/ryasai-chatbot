@@ -22,7 +22,9 @@ import { VIEW_KEYS } from './view-routing'
  * doing — every navigation key appears exactly once, so a future edit cannot silently drop a view.
  */
 const root = join(import.meta.dir, '..', '..')
+// The navigation config and sidebar moved from page.tsx to the app shell (module-size rule, 2026-10-05); read both.
 const pageSrc = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf-8')
+  + readFileSync(join(root, 'src', 'components', 'app-shell', 'navigation.tsx'), 'utf-8')
 const dashboardRaw = readFileSync(join(root, 'src', 'components', 'views', 'dashboard-view.tsx'), 'utf-8')
 
 /**
@@ -318,6 +320,7 @@ describe('sidebar layout: every menu stays REACHABLE, which a clip used to preve
    * would notice missing.
    */
   const src = readFileSync(join(import.meta.dir, '..', 'app', 'page.tsx'), 'utf8')
+    + readFileSync(join(import.meta.dir, '..', 'components', 'app-shell', 'navigation.tsx'), 'utf8')
 
   test('the nav wrapper uses flex-1 + min-h-0, not h-full', () => {
     // `h-full` = 100% of the shell, which the header already occupies part of -> the pair overflows the shell.

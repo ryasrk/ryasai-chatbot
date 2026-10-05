@@ -455,7 +455,7 @@ async function _runStreamingChatCompletion(args: {
     promptSettings.tools,
   )
   // Only a RAG verdict uses the retrieval — unless the multi-source DAG will run, which plans and retrieves for itself.
-  // The DAG condition must mirror the branch below EXACTLY (`extraToolIds.length > 0 && args.allowMultiStepDag`): cancelling
+  // The DAG condition must mirror the branch below EXACTLY (`dagWillRun`, below): cancelling
   // for `extraToolIds` alone would abort a retrieval the single-source RAG branch still needs, and a cancelled result
   // re-throws into that branch's degrade-to-chat handling — a silent quality loss with no error to find.
   const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag || args.agenticRound)
