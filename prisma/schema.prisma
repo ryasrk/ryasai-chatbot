@@ -823,6 +823,8 @@ model LlmUsageLog {
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
   totalTokens      Int      @default(0)
+  /// Prompt tokens served from the provider's prompt cache (0 = none, or the provider does not report it).
+  cachedTokens     Int      @default(0)
   latencyMs        Int?
   createdAt        DateTime @default(now())
 

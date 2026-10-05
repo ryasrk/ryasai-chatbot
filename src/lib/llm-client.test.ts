@@ -1953,3 +1953,21 @@ describe('chatOnce — structured steps do not pay for thinking (reasoning_effor
   })
 })
 
+describe('usage records prompt-cache hits (cachedTokens)', () => {
+  // Probe 2026-10-05: the current gateway reported 0 cache hits for an identical 5,729-token prefix, and the app did
+  // not record cache hits at all — so on a provider that DOES cache (OpenAI, Anthropic, DeepSeek) the saving would be
+  // invisible. Each provider names the field differently; all three shapes are read.
+  const dataOf = () => (mockLlmUsageCreate.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data
+
+  test.each([
+    ['OpenAI', { prompt_tokens: 2000, completion_tokens: 10, total_tokens: 2010, prompt_tokens_details: { cached_tokens: 1536 } }, 1536],
+    ['DeepSeek', { prompt_tokens: 2000, completion_tokens: 10, total_tokens: 2010, prompt_cache_hit_tokens: 1800 }, 1800],
+    ['none reported', { prompt_tokens: 2000, completion_tokens: 10, total_tokens: 2010 }, 0],
+  ])('%s shape', async (_name, usage, expected) => {
+    mockLlmUsageCreate.mockClear()
+    global.fetch = mock(() => Promise.resolve(jsonResponse({ choices: [{ message: { content: 'x' } }], usage }))) as unknown as typeof fetch
+    await chatOnce(openaiCfg, [{ role: 'user', content: 'q' }], 0, 'synthesis')
+    expect(dataOf().cachedTokens).toBe(expected)
+  })
+})
+

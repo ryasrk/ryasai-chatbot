@@ -11,6 +11,7 @@
  */
 import type { LlmMessage, LlmToolDef, LlmResponseFormat, LlmToolCall, LlmUsage, AgentChatMessage } from './llm-client-types'
 import type { LlmRuntimeConfig } from '@/lib/llm-config'
+import { cachedTokensOf } from '@/lib/llm-client-types'
 import { getLlmRuntimeConfig, getAgentLlmConfig } from '@/lib/llm-config'
 import { logLlmUsage, iterSseStream, fetchWithRetry, readErrorBody, readCompletionBody, toOpenAiMessages, LlmProviderError } from './llm-client-utils'
 
@@ -93,6 +94,7 @@ async function chatOnceInner(
       promptTokens: data.usage?.input_tokens ?? 0,
       completionTokens: data.usage?.output_tokens ?? 0,
       totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+      cachedTokens: cachedTokensOf(data.usage),
     }
     _usageStorage.enterWith({ promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens })
     if (responseFormat) {
@@ -199,6 +201,7 @@ async function chatOnceInner(
     promptTokens: data.usage?.prompt_tokens ?? 0,
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
+    cachedTokens: cachedTokensOf(data.usage),
   }
   _usageStorage.enterWith({ promptTokens: usageData.promptTokens, completionTokens: usageData.completionTokens })
   if (responseFormat) {
@@ -467,6 +470,7 @@ async function* chatStreamOnce(
           promptTokens: parsed.usage.prompt_tokens ?? 0,
           completionTokens: parsed.usage.completion_tokens ?? 0,
           totalTokens: parsed.usage.total_tokens ?? 0,
+          cachedTokens: cachedTokensOf(parsed.usage),
         }
       }
       // delta.content = real SSE token; message.content = non-stream fallback

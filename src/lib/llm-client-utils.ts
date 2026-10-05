@@ -67,6 +67,7 @@ export function logLlmUsage(
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
         totalTokens: usage.totalTokens,
+        cachedTokens: usage.cachedTokens ?? 0,
         latencyMs: latencyMs ?? null,
       },
     })

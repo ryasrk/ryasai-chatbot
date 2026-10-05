@@ -51,6 +51,18 @@ export interface LlmUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  /** Prompt tokens served from the provider's prompt cache (0 when none or not reported). */
+  cachedTokens?: number
+}
+
+/**
+ * Cached prompt tokens, whichever name the provider uses: OpenAI `prompt_tokens_details.cached_tokens`, DeepSeek
+ * `prompt_cache_hit_tokens`, Anthropic `cache_read_input_tokens`. All three appeared in one gateway's usage object.
+ */
+export function cachedTokensOf(usage: unknown): number {
+  const u = (usage ?? {}) as { prompt_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number; cache_read_input_tokens?: number }
+  const n = u.prompt_tokens_details?.cached_tokens || u.prompt_cache_hit_tokens || u.cache_read_input_tokens || 0
+  return Number.isFinite(n) ? n : 0
 }
 
 export interface LlmResponseFormat {
