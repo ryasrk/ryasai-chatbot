@@ -51,6 +51,8 @@ import type { ChatHistoryEntry } from '@/lib/tool-utils'
 import { wrapUntrusted } from './evidence-boundary'
 import { expandQuery } from '@/lib/query-expansion'
 import { coverageMerge, decomposeForRetrieval, retrieveCompound } from '@/lib/rag-decompose'
+import { mergeRetrievalResults, type RetrievalResult } from '@/lib/retrieval-merge'
+export { mergeRetrievalResults } from '@/lib/retrieval-merge'
 export { expandQuery } from '@/lib/query-expansion'
 
 export interface IntentAnalysis {
@@ -536,68 +538,9 @@ export async function evaluateEvidenceSufficiency(args: {
 // Expanded retrieval — runs the variants `expandQuery` (query-expansion.ts) produces and merges their results.
 // ---------------------------------------------------------------------------
 
-interface RetrievalResult {
-  chunks: RetrievedChunk[]
-  queryTokens: string[]
-  candidatesScanned: number
-  graphContext: string
-  citationTrail?: Array<{ entity: string; relation: string; chunkId: string; relevance: number }>
-}
-
 // ponytail: cap expansions at 3 to limit parallel retrieval calls.
 // Ceiling: 3x retrieval calls per RAG query. The RAG cache absorbs repeats.
 const MAX_EXPANSIONS = 3
-
-/**
- * Union of several retrieval passes, deduped by chunkId keeping the best score.
- *
- * Deliberately UNBOUNDED — callers must apply selectTopRetrievedChunks to the
- * result. 3 query expansions plus an optional second pass at 2x topK used to
- * reach the prompt whole, so a topK of 4 shipped ~20 chunks (~69K chars with
- * parent-doc prefixes): the cost of every RAG turn, and the best chunk buried
- * in the middle where models reliably miss it.
- */
-export function mergeRetrievalResults(results: RetrievalResult[]): RetrievalResult {
-  // MERGE BY AGREEMENT, NOT BY SCORE ALONE.
-  //
-  // `score` is per-QUERY, not cross-query: `lexicalFirst` assigns 1/(rank+1), so every pass
-  // gives its own rank-1 chunk exactly 1.0. Sorting a merged pool by that number alone
-  // therefore compares incomparable values, and every tie is resolved by Map insertion order
-  // — which is to say arbitrarily. MEASURED on a compound question ("kapan pelatihan keamanan
-  // informasi dilaksanakan dan berapa lama sertifikatnya berlaku?"): the ORIGINAL query
-  // ranked 03-panduan-onboarding.md first and correctly, one synonym expansion ranked
-  // 09-panduan-pelatihan first, and the merge put a third document (08-kebijakan-perjalanan-
-  // dinas, which contains ZERO chunks about training) at rank 4 purely on tie order.
-  //
-  // So agreement is counted explicitly: a chunk found by more passes ranks above one found by
-  // fewer, and the score only breaks ties WITHIN the same agreement count. That is the same
-  // consensus principle RRF was reached for, applied where it actually helps.
-  const agreement = new Map<string, number>()
-  const seen = new Map<string, RetrievedChunk>()
-  for (const r of results) {
-    for (const chunk of r.chunks) {
-      agreement.set(chunk.chunkId, (agreement.get(chunk.chunkId) ?? 0) + 1)
-      const existing = seen.get(chunk.chunkId)
-      if (!existing || chunk.score > existing.score) {
-        seen.set(chunk.chunkId, chunk)
-      }
-    }
-  }
-  const chunks = [...seen.values()].sort(
-    (a, b) =>
-      (agreement.get(b.chunkId) ?? 0) - (agreement.get(a.chunkId) ?? 0) ||
-      b.score - a.score ||
-      // Final tie-break on chunkId, so the order is TOTAL. Two chunks the same number of
-      // passes agreed on, with equal scores, must not depend on Map iteration order or the
-      // result drifts between identical requests.
-      a.chunkId.localeCompare(b.chunkId),
-  )
-  const queryTokens = [...new Set(results.flatMap((r) => r.queryTokens))]
-  const candidatesScanned = results.reduce((sum, r) => sum + r.candidatesScanned, 0)
-  const graphContext = results.map((r) => r.graphContext).filter(Boolean).join('\n\n')
-  const citationTrail = results.flatMap((r) => r.citationTrail ?? [])
-  return { chunks, queryTokens, candidatesScanned, graphContext, citationTrail: citationTrail.length > 0 ? citationTrail : undefined }
-}
 
 export async function retrieveWithReflection(args: {
   query: string
@@ -624,13 +567,14 @@ export async function retrieveWithReflection(args: {
   // 0. A compound question: standalone sub-questions, each searched and kept (rag-decompose.ts). Simple: [query], no call.
   const subQuestions = await decomposeForRetrieval(args.query)
   let merged: RetrievalResult, perSub: RetrievedChunk[][] = [], k = args.topK
+  const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
+  const compound = (subs: string[]) => retrieveCompound({
+    question: args.query, subQuestions: subs, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
+    retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
+    rerank: rerankOn ? ragNs.rerankMergedChunks : null,
+  })
   if (subQuestions.length > 1) {
-    const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
-    ;({ merged, perSub, topK: k } = await retrieveCompound({
-      question: args.query, subQuestions, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
-      retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
-      rerank: rerankOn ? ragNs.rerankMergedChunks : null,
-    }))
+    ;({ merged, perSub, topK: k } = await compound(subQuestions))
   } else {
     // 1. Expand query with synonyms + multilingual variants
     const expansions = expandQuery(args.query).slice(0, MAX_EXPANSIONS)
@@ -642,8 +586,7 @@ export async function retrieveWithReflection(args: {
     // billed to the customer's key). The expansions now return their un-reranked candidate pools; the pools are merged
     // by agreement and ONE rerank picks the final members from the union. With a single expansion nothing is deferred,
     // so that path is byte-for-byte what it was.
-    const canDeferRerank =
-      expansions.length > 1 && typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
+    const canDeferRerank = expansions.length > 1 && rerankOn
     const allResults = await Promise.all(
       expansions.map((q) =>
         retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal }),
@@ -681,7 +624,12 @@ export async function retrieveWithReflection(args: {
   // 4. Multi-turn: if reflection says insufficient, do one more pass with 2x topK
   if (!reflection.sufficient && merged.chunks.length > 0) {
     args.signal?.throwIfAborted()
-    const secondPass = await retrieveRelevantChunks({
+    // Real evidence, not compound, yet insufficient: maybe an IMPLICIT multi-hop (grade -> budget table), one hop found.
+    // The model splits it now and this pass retrieves hop by hop (retrieval-recall.ts misses of that shape, 2026-10-05).
+    const forced = perSub.length === 0 && evidence ? await decomposeForRetrieval(args.query, { force: true }) : []
+    const hops = forced.length > 1 ? await compound(forced) : null
+    if (hops) ({ perSub, topK: k } = hops)
+    const secondPass = hops?.merged ?? await retrieveRelevantChunks({
       query: args.query,
       topK: args.topK * 2,
       signal: args.signal,

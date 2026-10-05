@@ -1884,3 +1884,30 @@ describe('retrieveWithReflection — a compound question is retrieved hop by hop
   })
 })
 
+describe('retrieveWithReflection — an insufficient first pass on an un-marked question is split then', () => {
+  // retrieval-recall.ts misses (2026-10-05): implicit multi-hop questions ("the training budget of a Grade 1 driver"
+  // needs the grade table AND the budget table) carry no comparison cue, so only the reflection verdict reveals them.
+  test('the second pass retrieves the model-written hops, not the whole question at 2x topK', async () => {
+    const q = 'Berapa pagu anggaran pelatihan tahunan untuk satu pengemudi truk Grade 1?'
+    const subs = ['Pengemudi truk termasuk grade berapa?', 'Berapa pagu anggaran pelatihan tahunan untuk Grade 1?']
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockImplementation((async (_c: unknown, _m: unknown, _t: unknown, purpose?: string) =>
+      purpose === 'rag-decompose' ? JSON.stringify(subs) : '{"sufficient":false,"reason":"budget missing","confidence":0.9}') as never)
+    mockRetrieveRelevantChunks.mockClear()
+    mockRetrieveRelevantChunks.mockImplementation(async (args: { query: string; topK: number }) => ({
+      chunks: [makeChunk({ chunkId: `c-${args.query}`, content: 'Pengemudi truk adalah Grade 1. '.repeat(3), score: 1 })],
+      queryTokens: [args.query], candidatesScanned: 1, graphContext: '',
+    }))
+    try {
+      const r = await retrieveWithReflection({ query: q, topK: 4 })
+      const asked = (mockRetrieveRelevantChunks.mock.calls as unknown as Array<[{ query: string; topK: number }]>).map(([a]) => a)
+      expect(r.retrievalPasses).toBe(2)
+      expect(subs.every((s) => asked.some((a) => a.query === s))).toBe(true)
+      expect(asked.some((a) => a.query === q && a.topK === 8)).toBe(false)
+    } finally {
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+      mockChatOnce.mockImplementation(async () => '')
+    }
+  })
+})
+

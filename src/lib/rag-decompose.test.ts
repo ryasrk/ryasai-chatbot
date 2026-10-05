@@ -27,6 +27,7 @@ describe('needsDecomposition — which questions get a model split', () => {
     'Who is the Chief Operating Officer that approved both the inbound and outbound warehouse SOPs?',
     'Siapa Chief Operating Officer yang meninjau kebijakan cuti sekaligus kebijakan manajemen kinerja dan pelatihan karyawan Arunika?',
     'Berapa selisih nilai pertanggungan tersebut dengan limit polis asuransi untuk gudang JKT-02?',
+    'Berapa hari setelah kebijakan Armada mulai berlaku, Kebijakan Keberlanjutan menjadi efektif?',
   ])('%s', (q) => expect(needsDecomposition(q)).toBe(true))
 
   test.each([

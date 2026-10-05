@@ -18,7 +18,7 @@ import { decomposeQuery, isComplexQuery } from '@/lib/hyde'
  * Comparison and "both" cues the conjunction regex cannot see: a question that relates two facts without an "and"
  * between two clauses ("how many days after X takes effect does Y …", "exceed", "selisih … dengan").
  */
-const RELATES_TWO_FACTS = /\b(both|each of|difference|differ|exceed(s|ed)?|longer than|shorter than|more than|less than|after .{3,80}? (takes|took|become|becomes|became) effect|days? (after|before)|selisih|sekaligus|keduanya|kedua (prosedur|kebijakan|sop|dokumen)|masing-masing|dibanding(kan)?|lebih (lama|lambat|cepat|besar|kecil|tinggi|rendah) dari(pada)?)\b/i
+const RELATES_TWO_FACTS = /\b(both|each of|difference|differ|exceed(s|ed)?|longer than|shorter than|more than|less than|after .{3,80}? (takes|took|become|becomes|became) effect|days? (after|before)|hari (setelah|sebelum)|selisih|sekaligus|keduanya|kedua (prosedur|kebijakan|sop|dokumen)|masing-masing|dibanding(kan)?|lebih (lama|lambat|cepat|besar|kecil|tinggi|rendah) dari(pada)?)\b/i
 
 export function needsDecomposition(question: string): boolean {
   if (RELATES_TWO_FACTS.test(question)) return true
@@ -60,9 +60,11 @@ const SYSTEM = 'Split the user question into the separate questions that must ea
  * The queries to retrieve for: the question itself when it is simple, else 2–3 standalone sub-questions. The model is
  * asked only when `needsDecomposition` says so; any failure or unusable reply falls back to the heuristic split.
  */
-export async function decomposeForRetrieval(question: string): Promise<string[]> {
+export async function decomposeForRetrieval(question: string, opts: { force?: boolean } = {}): Promise<string[]> {
   // `RAG_MODEL_DECOMPOSE=false` restores the previous path exactly (the regex split inside retrieveRelevantChunks).
-  if (process.env.RAG_MODEL_DECOMPOSE === 'false' || !needsDecomposition(question)) return [question]
+  if (process.env.RAG_MODEL_DECOMPOSE === 'false') return [question]
+  // `force`: the first pass came back insufficient, so the question may be an IMPLICIT multi-hop no cue marks.
+  if (!opts.force && !needsDecomposition(question)) return [question]
   try {
     const { getRoleLlmConfig } = await import('@/lib/llm-config')
     const { chatOnce } = await import('@/lib/llm-client')
@@ -75,7 +77,7 @@ export async function decomposeForRetrieval(question: string): Promise<string[]>
   } catch {
     // Fall through: retrieval must not fail because a planning call did.
   }
-  return decomposeQuery(question)
+  return opts.force ? [question] : decomposeQuery(question)
 }
 
 /**
