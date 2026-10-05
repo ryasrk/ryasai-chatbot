@@ -1942,3 +1942,29 @@ describe('evaluateEvidenceSufficiency — it sees all the evidence, and judges e
   })
 })
 
+describe('RAG_REFLECTION=false — the sufficiency judge can be switched off', () => {
+  // For an A/B of its cost against its effect (2026-10-05): with it off, no judge call, no second pass.
+  test('no model call, and the evidence is taken as sufficient', async () => {
+    process.env.RAG_REFLECTION = 'false'
+    mockGetLlmRuntimeConfig.mockImplementation(async () => MOCK_CONFIG)
+    mockChatOnce.mockClear()
+    try {
+      const r = await evaluateEvidenceSufficiency({ question: 'q', evidence: 'Cuti tahunan 14 hari kerja.' })
+      expect(r.sufficient).toBe(true)
+      expect(mockChatOnce.mock.calls).toHaveLength(0)
+    } finally {
+      delete process.env.RAG_REFLECTION
+      mockGetLlmRuntimeConfig.mockImplementation(async () => null)
+    }
+  })
+
+  test('empty evidence is still insufficient with the judge off (no model is needed to see that)', async () => {
+    process.env.RAG_REFLECTION = 'false'
+    try {
+      expect((await evaluateEvidenceSufficiency({ question: 'q', evidence: '' })).sufficient).toBe(false)
+    } finally {
+      delete process.env.RAG_REFLECTION
+    }
+  })
+})
+

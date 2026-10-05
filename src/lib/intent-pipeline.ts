@@ -446,6 +446,9 @@ export async function evaluateEvidenceSufficiency(args: {
     return { sufficient: false, reason: 'Evidence has no substantive content', confidence: 0.8 }
   }
 
+  // RAG_REFLECTION=false: no judge call and so no second pass — the deterministic checks above still apply.
+  if (process.env.RAG_REFLECTION === 'false') return { sufficient: true, reason: 'reflection disabled', confidence: 0 }
+
   const cfg = await getRoleLlmConfig('query')
   if (!cfg) {
     // No LLM — assume sufficient (let the answer generator handle it)
