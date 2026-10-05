@@ -1772,6 +1772,69 @@ describe('a would-be chat turn whose answer the documents hold (kb-probe), both 
     expect(ragStreamArgs[0].chatIfUnsupported).toBe(true)
   })
 
+  test('STREAMING, the selector picks web_search, the probe is strong: the documents first, the web as the fallback', async () => {
+    // Failure audit 2026-10-05: q241 went to the web on every re-ask while the uploaded book held the sentence.
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'web_search', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'What percentage of those at the end of life now choose euthanasia?', userId: 'u1' })
+    expect(ragStreamArgs).toHaveLength(1)
+    expect(ragStreamArgs[0]).toMatchObject({ webIfUnsupported: true, chatIfUnsupported: false })
+    expect(pluginStreamArgs).toHaveLength(0)
+  })
+
+  test('STREAMING, a web pick the user ASKED for (or a URL) goes to the web, whatever the probe says', async () => {
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'web_search', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'Search the web: what percentage choose euthanasia?', userId: 'u1' })
+    await runStreamingChatCompletion({ question: 'Summarise https://example.org/euthanasia-statistics', userId: 'u1' })
+    expect(ragStreamArgs).toHaveLength(0)
+    expect(pluginStreamArgs).toHaveLength(2)
+  })
+
+  test('STREAMING, a non-web plugin is never redirected by the probe', async () => {
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'plugin:weather', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+    kbProbe.strong = true
+    await runStreamingChatCompletion({ question: 'What is the weather in Jakarta?', userId: 'u1' })
+    expect(ragStreamArgs).toHaveLength(0)
+    expect(pluginStreamArgs).toHaveLength(1)
+  })
+
+  test('every routed turn records its route and where it came from — the selector, or the fallback when it failed', async () => {
+    // Failure audit 2026-10-05: q223/q235 were answered from the web under load, next to selector timeouts, and no
+    // record said which route the turns took.
+    withDocs()
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'web_search', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+    kbProbe.strong = true
+    // The logger writes one JSON line per entry to console.log; the route line is read from there.
+    const routeLogs: Array<Record<string, unknown>> = []
+    const original = console.log
+    console.log = (...a: unknown[]) => {
+      try {
+        const e = JSON.parse(String(a[0]))
+        if (e.msg === 'route decided') routeLogs.push(e)
+      } catch { /* not a log entry */ }
+    }
+    try {
+      await runStreamingChatCompletion({ question: 'What percentage of those at the end of life now choose euthanasia?', userId: 'u1' })
+      expect(routeLogs.at(-1)).toMatchObject({ transport: 'stream', decision: 'PLUGIN', selectedToolId: 'web_search', probedToDocuments: true, webPick: true, source: 'selector' })
+
+      mockSelectToolWithLlm.mockImplementation(async () => null)
+      await runStreamingChatCompletion({ question: 'What percentage of those at the end of life now choose euthanasia?', userId: 'u1' })
+      expect(routeLogs.at(-1)).toMatchObject({ transport: 'stream', source: 'fallback' })
+      // No question text reaches the line.
+      expect(JSON.stringify(routeLogs)).not.toContain('euthanasia')
+    } finally {
+      console.log = original
+    }
+  })
+
   test('STREAMING, a weak probe leaves the chat turn alone', async () => {
     withDocs()
     intentState.value = { needsClarification: false, needsRetrieval: false }
@@ -1797,6 +1860,35 @@ describe('a would-be chat turn whose answer the documents hold (kb-probe), both 
       expect(kbProbe.calls).toHaveLength(1)
       expect(specLog).toHaveLength(1)
       expect(specLog[0].controller.signal.aborted).toBe(false)
+    })
+  })
+
+  test('NON-streaming, a web_search pick the documents hold: the retrieval is USED, not aborted', async () => {
+    return withOrg(async () => {
+      withDocs()
+      intentState.value = { needsClarification: false, needsRetrieval: true }
+      mockSelectToolWithLlm.mockImplementation(async () => ({ toolId: 'web_search', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true }))
+      kbProbe.strong = true
+      await runNonStreamingChatCompletion({ question: 'What percentage of those at the end of life now choose euthanasia?', userId: 'u1' })
+      expect(kbProbe.calls).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(false)
+    })
+  })
+
+  test('NON-streaming, a turn handed to the multi-step plan aborts the speculative retrieval', async () => {
+    // Agentic eval 2026-10-05: the DAG return skipped the cancel, so a database-only compound question paid for a
+    // whole document retrieval (decompose, reranks, judges, translation) it never used.
+    return withOrg(async () => {
+      withDocs()
+      mockIntegrationCount.mockImplementation(async () => 1)
+      intentState.value = { needsClarification: false, needsRetrieval: true }
+      mockSelectToolWithLlm.mockImplementation(async () => ({
+        toolId: 'sql', decision: 'SQL' as RouteDecision, args: {}, integrationId: 'int-1', reason: 'stub', llmUsed: true,
+        extraTools: [{ toolId: 'sql', args: { question: 'jumlah karyawan' } }],
+      }))
+      await runNonStreamingChatCompletion({ question: 'Two database questions at once', userId: 'u1', allowMultiStepDag: true })
+      expect(specLog).toHaveLength(1)
+      expect(specLog[0].controller.signal.aborted).toBe(true)
     })
   })
 
@@ -2843,6 +2935,44 @@ describe('runStreamingChatCompletion — a compound question is not reduced to i
     for await (const c of r.stream) text += c
     expect(text).toContain('COMBINED-ANSWER')
     expect(r.toolRuns.length).toBeGreaterThan(0)
+  })
+
+  test('a plan of web steps the documents hold does not reach the planner: the documents first, the web as fallback', async () => {
+    // q241 replayed in-process (2026-10-05): 2 of 3 selections were several web_fetch calls, which entered the DAG
+    // ahead of every single-tool check and fetched Wikipedia while the uploaded book held the sentence.
+    mockDocumentCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'web_fetch', decision: 'PLUGIN' as RouteDecision, args: { url: 'https://en.wikipedia.org/wiki/Euthanasia' }, reason: 'stub', llmUsed: true,
+      extraTools: [{ toolId: 'web_fetch', args: { url: 'https://en.wikipedia.org/wiki/Assisted_suicide' } }],
+    }))
+    kbProbe.strong = true
+    mockSynthesizeAnswer.mockImplementation(async () => 'PLAN-ANSWER')
+    const r = await runStreamingChatCompletion({ question: 'What percentage of those at the end of life now choose euthanasia?', userId: 'u1', allowMultiStepDag: true })
+    let text = ''
+    for await (const c of r.stream) text += c
+    expect(text).not.toContain('PLAN-ANSWER')
+    expect(ragStreamArgs.at(-1)).toMatchObject({ webIfUnsupported: true })
+  })
+
+  test('a plan that mixes web and data steps still runs as a plan', async () => {
+    mockDocumentCount.mockImplementation(async () => 1)
+    mockIntegrationCount.mockImplementation(async () => 1)
+    intentState.value = { needsClarification: false, needsRetrieval: true }
+    mockSelectToolWithLlm.mockImplementation(async () => ({
+      toolId: 'web_search', decision: 'PLUGIN' as RouteDecision, args: {}, reason: 'stub', llmUsed: true,
+      extraTools: [{ toolId: 'sql', args: { question: 'jumlah karyawan' } }],
+    }))
+    kbProbe.strong = true
+    mockPlanQuery.mockImplementation(async () => ({ steps: [{ id: 's1', tool: 'sql', input: { question: 'x' } }], needsSynthesis: true }))
+    mockExecutePlan.mockImplementation(async () => [{ stepId: 's1', tool: 'sql', ok: true, output: 'rows', latencyMs: 5 }])
+    mockSynthesizeAnswer.mockImplementation(async () => 'PLAN-ANSWER')
+    const r = await runStreamingChatCompletion({ question: 'Compare the web figure with our headcount', userId: 'u1', allowMultiStepDag: true })
+    let text = ''
+    for await (const c of r.stream) text += c
+    // The DAG built from the requested tools answered; the documents-first redirect did not take the turn.
+    expect(text).toContain('PLAN-ANSWER')
+    expect(ragStreamArgs.some((a) => a.webIfUnsupported)).toBe(false)
   })
 
   test('ONE tool call does NOT enter the planner — the single-source path is unchanged', async () => {

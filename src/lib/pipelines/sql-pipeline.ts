@@ -32,6 +32,9 @@ import {
   safeParseSampleRow,
 } from '@/lib/tool-utils'
 import type { QueryResult } from '@/lib/connectors'
+import { judgeSqlAnswerability, type RelevanceJudge } from '@/lib/sql-answerability'
+import { chatOnce } from '@/lib/llm-client'
+import { getRoleLlmConfig } from '@/lib/llm-config'
 import { filterSchemaForPolicy, loadSqlAccessPolicy, resolveUserRole } from '@/lib/access-scope'
 
 const log = scopedLogger('sql-pipeline')
@@ -382,4 +385,63 @@ export function buildCrossSourceNote(integrationName: string, integrationNames: 
     `other sources (${otherSources.join(', ')}) that were NOT included, and offer to run it per source. Never ` +
     `present a count from ${integrationName} as the count for the workspace.\n\n`
   )
+}
+
+/**
+ * The model-backed relevance judge. Same contract as the one measured in the eval: it must say "answers" only when
+ * the rows hold the specific value asked for. Returns `true` (keep the rows) whenever it cannot decide, because a
+ * judge outage must never turn a working database answer into a fallback.
+ */
+export const defaultRelevanceJudge: RelevanceJudge = async (question, rows) => {
+  const cfg = await getRoleLlmConfig('query')
+  if (!cfg) return true
+  const raw = String(await chatOnce(cfg, [
+    {
+      role: 'system',
+      content:
+        'You judge whether a database result can answer a question. Reply ONLY with JSON {"answers": true|false}. ' +
+        '"answers" is true ONLY when the rows contain the specific value the question asks for. It is false when the ' +
+        'rows are unrelated records, a placeholder, NULL, or a message saying the data is unavailable.',
+    },
+    { role: 'user', content: `Question: ${question}\nRows (${rows.length}): ${JSON.stringify(rows.slice(0, 5)).slice(0, 600)}` },
+  ], 0, 'sql-answerability'))
+  if (/"answers"\s*:\s*false/i.test(raw)) return false
+  return true
+}
+
+/**
+ * Should the documents get a second chance at a question the database branch handled? Returns the reason, or `null`
+ * to keep the database's answer. Both transports ask THIS, so the second chance cannot exist on one and not the other.
+ *
+ * MEASURED (live eval, 2026-10-05): it existed only on the streaming transport. On `/api/v1` the four wrong factual
+ * answers of a 303-question run were all document-table questions routed to the database ("In the Maximum Storage
+ * Limits table, which facility code…") — answered "no matching data", a guessed count, or, when the generator wrote a
+ * UNION the guard blocked three times, an error. `rows: null` is that last case: a query that never ran is not an
+ * answer either.
+ *
+ * Never for a pinned database (the user chose it), and only when the documents in scope exist at all. The caller
+ * still keeps the database's answer when retrieval cites nothing.
+ */
+export async function documentsShouldAnswerInstead(args: {
+  question: string
+  /** The executed result's rows, or `null` when every attempt failed. */
+  rows: ReadonlyArray<Record<string, unknown>> | null
+  userPinnedIntegration?: boolean
+  documentIds?: string[] | null
+  relevanceJudge?: RelevanceJudge
+}): Promise<string | null> {
+  if (args.userPinnedIntegration) return null
+  try {
+    // Documents first: one indexed count, so an org without documents never pays for the relevance judge's model call.
+    const docScope = args.documentIds && args.documentIds.length > 0 ? { id: { in: args.documentIds } } : {}
+    const documents = await db.document.count({ where: { status: 'ready', isEnabled: true, ...docScope } })
+    if (documents === 0) return null
+    if (!args.rows) return 'sql-failed'
+    const verdict = await judgeSqlAnswerability({ question: args.question, rows: args.rows, judge: args.relevanceJudge ?? defaultRelevanceJudge })
+    return verdict.answers ? null : verdict.reason
+  } catch (e) {
+    // The second chance is an improvement on an answer the turn already has; failing to decide must not lose it.
+    log.warn('documents second-chance check failed; keeping the database answer', { error: e instanceof Error ? e.message : String(e) })
+    return null
+  }
 }

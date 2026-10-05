@@ -28,6 +28,8 @@ const mockGetPromptSettings = mock(async (): Promise<unknown> => ({
   tools: { rag: true, sql: true, restApi: true },
 }))
 const mockDocumentFindMany = mock(async (): Promise<unknown> => [])
+/** Ready documents in scope — the SQL branch's second chance needs some. 0 by default keeps it out of other tests. */
+const docCount = { value: 0, where: [] as unknown[] }
 const mockIntegrationFindFirst = mock(async (): Promise<unknown> => null)
 // Single active integration keeps the disambiguation path out of these tests;
 // the ambiguity behaviour has its own tests in integration-selection.test.ts.
@@ -47,7 +49,7 @@ const mockQueryHistoryCreate = mock(async () => ({}))
 
 mock.module('@/lib/db', () => ({
   db: {
-    document: { findMany: mockDocumentFindMany },
+    document: { findMany: mockDocumentFindMany, count: async (a: { where: unknown }) => { docCount.where.push(a.where); return docCount.value } },
     restApiConnector: { findMany: mockRestConnectorFindMany },
     plugin: { findFirst: mockPluginFindFirst },
     restApiRequestLog: { create: mockRestRequestLogCreate },
@@ -216,6 +218,8 @@ beforeEach(() => {
     citationTrail: undefined as string[] | undefined,
   }))
   mockDocumentFindMany.mockImplementation(async () => [])
+  docCount.value = 0
+  docCount.where = []
   // EVERY mock an in-file test overrides must be restored here. Bun's mock.module
   // state (and each mock's implementation) survives between tests in one file:
   // `twoSources` left behind by the disambiguation block made the later
@@ -1320,5 +1324,123 @@ describe('runRagBranch — a failed retrieval leaves a DEGRADED trace', () => {
     mockRetrieveWithReflection.mockImplementationOnce(async () => ({ chunks: [], graphContext: '', queryTokens: [], candidatesScanned: 0, reflection: { sufficient: false }, retrievalPasses: 1 }))
     const r = await runRagBranch({ question: 'hello' })
     expect(r.toolRuns[0].outputSummary ?? '').not.toContain('DEGRADED')
+  })
+})
+
+describe('runSqlBranch — the documents get a second chance when the database did not answer', () => {
+  /*
+   * MEASURED (live eval, 2026-10-05, /api/v1): all four wrong factual answers of 303 were document-table questions
+   * routed here — "no matching data", a guessed count, and a UNION the guard blocked three times. The second chance
+   * existed only on the streaming transport (stream-preparers.ts); the decision now lives in sql-pipeline.ts.
+   */
+  const oneSource = async () => ({
+    id: 'int-1', name: 'S', provider: 'POSTGRESQL', encryptedConfig: {},
+    schemas: [{ tableName: 't', columns: '[]', rowCount: 1, sampleRow: null, description: null }],
+  })
+  const documentsHoldIt = () => mockRetrieveWithReflection.mockImplementation(async () => ({
+    chunks: [makeChunk({ chunkId: 'c1', documentId: 'doc-a', score: 0.9 })],
+    queryTokens: [], candidatesScanned: 1, graphContext: '', retrievalPasses: 1,
+    reflection: { sufficient: true, reason: '', confidence: 1 },
+    citationTrail: undefined,
+  }))
+
+  test('EMPTY rows: answered from the documents, both attempts on the audit trail', async () => {
+    mockIntegrationFindFirst.mockImplementation(oneSource)
+    mockConnectorExecuteQuery.mockImplementation(async () => ({ rows: [], rowCount: 0, executionMs: 1 }))
+    docCount.value = 3
+    documentsHoldIt()
+    const r = await runSqlBranch({ question: 'In the Maximum Storage Limits table, which facility code…', userId: 'u1', documentIds: ['doc-a'] })
+    expect(r.toolRuns.map((t) => t.type)).toEqual(['SQL', 'RAG'])
+    expect(r.toolRuns[0]).toMatchObject({ status: 'success', outputSummary: 'not used: no-rows' })
+    expect(r.citations.length).toBeGreaterThan(0)
+    // The key's document scope reaches both the count and the retrieval.
+    expect(docCount.where[0]).toMatchObject({ id: { in: ['doc-a'] } })
+  })
+
+  test('a query that FAILED every attempt: the documents answer and the error is kept', async () => {
+    mockIntegrationFindFirst.mockImplementation(oneSource)
+    mockValidateSql.mockImplementation(() => ({ ok: false, reason: 'dangerous pattern detected — union select', detectedNodes: [] }))
+    docCount.value = 3
+    documentsHoldIt()
+    const r = await runSqlBranch({ question: 'q', userId: 'u1' })
+    expect(mockConnectorExecuteQuery).not.toHaveBeenCalled()
+    expect(r.toolRuns[0]).toMatchObject({ type: 'SQL', status: 'error', outputSummary: 'not used: sql-failed' })
+    expect(r.toolRuns[0].errorMessage).toContain('union select')
+    expect(r.answer).not.toContain('failed after')
+  })
+
+  test('documents whose evidence does not SUPPORT an answer do not replace the database answer', async () => {
+    // Agentic eval 2026-10-05: a correct ERP answer the relevance judge rejected was replaced by "not found in the
+    // documents" — retrieval had cited an IT-security policy. Citations were the only check.
+    mockIntegrationFindFirst.mockImplementation(oneSource)
+    docCount.value = 3
+    mockRetrieveWithReflection.mockImplementation(async () => ({
+      chunks: [makeChunk({ chunkId: 'c1', documentId: 'doc-a', score: 0.9 })],
+      queryTokens: [], candidatesScanned: 1, graphContext: '', retrievalPasses: 2,
+      reflection: { sufficient: false, reason: 'unrelated policy', confidence: 1 }, citationTrail: undefined,
+    }))
+    const r = await runSqlBranch({ question: 'Which warehouse stores the most-ordered product?', userId: 'u1', relevanceJudge: async () => false })
+    expect(r.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+    expect(r.citations[0]?.type).toBe('DATABASE')
+  })
+
+  test('rows that answer are kept', async () => {
+    mockIntegrationFindFirst.mockImplementation(oneSource)
+    docCount.value = 3
+    documentsHoldIt()
+    const r = await runSqlBranch({ question: 'q', userId: 'u1', relevanceJudge: async () => true })
+    expect(r.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+    expect(r.citations[0]?.type).toBe('DATABASE')
+  })
+
+  test('a pinned database, no documents, or documents that cite nothing: the database answer stands', async () => {
+    mockIntegrationFindFirst.mockImplementation(oneSource)
+    mockConnectorExecuteQuery.mockImplementation(async () => ({ rows: [], rowCount: 0, executionMs: 1 }))
+    docCount.value = 3
+    documentsHoldIt()
+    const pinned = await runSqlBranch({ question: 'q', userId: 'u1', userPinnedIntegration: true })
+    expect(pinned.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+
+    docCount.value = 0
+    const noDocs = await runSqlBranch({ question: 'q', userId: 'u1' })
+    expect(noDocs.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+
+    docCount.value = 3
+    mockRetrieveWithReflection.mockImplementation(async () => ({
+      chunks: [] as RetrievedChunk[], queryTokens: [] as string[], candidatesScanned: 0, graphContext: '', retrievalPasses: 1,
+      reflection: { sufficient: false, reason: 'nothing', confidence: 0 }, citationTrail: undefined as string[] | undefined,
+    }))
+    const nothingFound = await runSqlBranch({ question: 'q', userId: 'u1' })
+    expect(nothingFound.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+    expect(nothingFound.citations[0]?.type).toBe('DATABASE')
+  })
+})
+
+describe('runRagBranch — a web pick the documents may hold (webIfUnsupported)', () => {
+  // Failure audit 2026-10-05 (q241): the documents get the turn first; the web tool the model picked is the fallback.
+  const evidence = (sufficient: boolean) => mockRetrieveWithReflection.mockImplementation(async () => ({
+    chunks: [makeChunk({ chunkId: 'c1', documentId: 'doc-a', score: 0.9 })],
+    queryTokens: [], candidatesScanned: 1, graphContext: '', retrievalPasses: sufficient ? 1 : 2,
+    reflection: { sufficient, reason: '', confidence: 1 }, citationTrail: undefined,
+  }))
+
+  test('supported evidence: answered from the documents, the web is not called', async () => {
+    evidence(true)
+    const r = await runRagBranch({ question: 'What percentage choose euthanasia?', webIfUnsupported: true })
+    expect(r.toolRuns[0].type).toBe('RAG')
+    expect(pluginSelector.calls).toHaveLength(0)
+  })
+
+  test('unsupported evidence: the web tool runs, not plain chat', async () => {
+    evidence(false)
+    mockChatWithArgs.mockClear()
+    await runRagBranch({ question: 'What percentage choose euthanasia?', webIfUnsupported: true })
+    expect(pluginSelector.calls).toHaveLength(1)
+  })
+
+  test('failed retrieval: the web tool runs too', async () => {
+    mockRetrieveWithReflection.mockImplementation(async () => { throw new Error('vector store unreachable') })
+    await runRagBranch({ question: 'What percentage choose euthanasia?', webIfUnsupported: true })
+    expect(pluginSelector.calls).toHaveLength(1)
   })
 })

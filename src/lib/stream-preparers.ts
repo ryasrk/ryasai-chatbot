@@ -25,11 +25,9 @@ import {
   type StreamingCompletionResult,
 } from '@/lib/tool-utils'
 import { executeRestRequest } from '@/lib/tool-branches'
-import { judgeSqlAnswerability, type RelevanceJudge } from '@/lib/sql-answerability'
-import { gatherRagEvidence } from '@/lib/pipelines/rag-pipeline'
-import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
-import { chatOnce } from '@/lib/llm-client'
-import { getRoleLlmConfig } from '@/lib/llm-config'
+import type { RelevanceJudge } from '@/lib/sql-answerability'
+import { gatherRagEvidence, type RagEvidence } from '@/lib/pipelines/rag-pipeline'
+import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage, documentsShouldAnswerInstead } from '@/lib/pipelines/sql-pipeline'
 
 const log = scopedLogger('stream-preparers')
 
@@ -113,9 +111,14 @@ export async function prepareRagStream(args: {
    * asked for documents. When the evidence does not support an answer, it is answered as the chat turn it was.
    */
   chatIfUnsupported?: boolean
+  /** As in `runRagBranch`: a web pick the documents may hold — the web tool runs when retrieval does not support an answer. */
+  webIfUnsupported?: boolean
+  /** As in `runRagBranch`: evidence the caller already gathered and checked. */
+  evidence?: RagEvidence
 }): Promise<StreamingCompletionResult> {
   const started = Date.now()
-  const evidence = await gatherRagEvidence(args)
+  const evidence = args.evidence ?? await gatherRagEvidence(args)
+  if (args.webIfUnsupported && (evidence.kind !== 'ready' || !evidence.supported)) return preparePluginStream(args)
   if (evidence.kind === 'degraded') {
     log.warn('RAG retrieval failed; answering from chat', { error: evidence.reason })
     const degraded = await prepareChatStream({ ...args })
@@ -277,6 +280,8 @@ export async function prepareSqlStream(args: {
     }
   }
   if (outcome.kind === 'failed') {
+    const fallback = await tryDocumentsAfterSqlMiss(args, null, started, outcome.lastError)
+    if (fallback) return fallback
     return {
       toolRuns: [{
         type: 'SQL',
@@ -309,10 +314,8 @@ export async function prepareSqlStream(args: {
    * eval reached this branch. The verdict is read off the ROWS, never off the answer's wording, and when the rows
    * answer this does nothing. A pinned database is never second-guessed.
    */
-  if (!args.userPinnedIntegration) {
-    const fallback = await tryDocumentsAfterSqlMiss(args, result.rows, started)
-    if (fallback) return fallback
-  }
+  const fallback = await tryDocumentsAfterSqlMiss(args, result.rows, started)
+  if (fallback) return fallback
 
   // The measured population travels WITH the rows, inside the untrusted wrapper (rule 17).
   const context =
@@ -362,28 +365,6 @@ async function* singleChunkStream(text: string): AsyncGenerator<string, void, un
 }
 
 /**
- * The model-backed relevance judge. Same contract as the one measured in the eval: it must say "answers" only when
- * the rows hold the specific value asked for. Returns `true` (keep the rows) whenever it cannot decide, because a
- * judge outage must never turn a working database answer into a fallback.
- */
-const defaultRelevanceJudge: RelevanceJudge = async (question, rows) => {
-  const cfg = await getRoleLlmConfig('query')
-  if (!cfg) return true
-  const raw = String(await chatOnce(cfg, [
-    {
-      role: 'system',
-      content:
-        'You judge whether a database result can answer a question. Reply ONLY with JSON {"answers": true|false}. ' +
-        '"answers" is true ONLY when the rows contain the specific value the question asks for. It is false when the ' +
-        'rows are unrelated records, a placeholder, NULL, or a message saying the data is unavailable.',
-    },
-    { role: 'user', content: `Question: ${question}\nRows (${rows.length}): ${JSON.stringify(rows.slice(0, 5)).slice(0, 600)}` },
-  ], 0, 'sql-answerability'))
-  if (/"answers"\s*:\s*false/i.test(raw)) return false
-  return true
-}
-
-/**
  * Try the document corpus when the SQL result did not answer. Returns `null` — meaning "keep the database answer" —
  * unless the rows are provably unhelpful AND the documents actually produced evidence. The documents' own result is
  * returned as-is, so it carries its citations, reflection note and source guidance exactly like a routed RAG turn.
@@ -395,32 +376,28 @@ async function tryDocumentsAfterSqlMiss(
     memoryContext?: string
     chatHistory?: ChatHistoryEntry[]
     documentIds?: string[] | null
+    userPinnedIntegration?: boolean
     relevanceJudge?: RelevanceJudge
   },
-  rows: ReadonlyArray<Record<string, unknown>>,
+  rows: ReadonlyArray<Record<string, unknown>> | null,
   started: number,
+  sqlError?: string,
 ): Promise<StreamingCompletionResult | null> {
-  const verdict = await judgeSqlAnswerability({
-    question: args.question,
-    rows,
-    judge: args.relevanceJudge ?? defaultRelevanceJudge,
-  })
-  if (verdict.answers) return null
+  const reason = await documentsShouldAnswerInstead({ ...args, rows })
+  if (!reason) return null
 
-  const docScope = args.documentIds && args.documentIds.length > 0 ? { id: { in: args.documentIds } } : {}
-  const documents = await db.document.count({ where: { status: 'ready', isEnabled: true, ...docScope } })
-  if (documents === 0) return null
-
-  const viaDocuments = await prepareRagStream({
+  const ragArgs = {
     question: args.question,
     systemPromptPrefix: args.systemPromptPrefix,
     memoryContext: args.memoryContext,
     chatHistory: args.chatHistory,
     documentIds: args.documentIds,
-  })
-  // `prepareRagStream` degrades to plain CHAT when retrieval found nothing, and that carries no citations. Taking it
-  // would trade a real "the database has no data" answer for a general-knowledge reply, so it is not accepted.
-  if (viaDocuments.citations.length === 0) return null
+  }
+  // Only SUPPORTED evidence takes over (same rule as runSqlBranch, with the measurement there): citations alone were
+  // not enough, because retrieval nearly always returns some chunk.
+  const evidence = await gatherRagEvidence(ragArgs)
+  if (evidence.kind !== 'ready' || !evidence.supported) return null
+  const viaDocuments = await prepareRagStream({ ...ragArgs, evidence })
 
   return {
     ...viaDocuments,
@@ -428,10 +405,11 @@ async function tryDocumentsAfterSqlMiss(
     toolRuns: [
       {
         type: 'SQL',
-        status: 'success',
+        status: sqlError ? 'error' : 'success',
         latencyMs: Date.now() - started,
         inputSummary: summarize(args.question),
-        outputSummary: `not used: ${verdict.reason}`,
+        outputSummary: `not used: ${reason}`,
+        ...(sqlError ? { errorMessage: sqlError.slice(0, 500) } : {}),
       },
       ...viaDocuments.toolRuns,
     ],

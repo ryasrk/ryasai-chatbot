@@ -216,6 +216,36 @@ export async function documentsHoldTheAnswer(args: {
   return (await probeKnowledgeBase({ question: args.question, documentIds: args.documentIds })).strong
 }
 
+/** The user names the web or a page: their choice of source, not one the documents-first probe may override. */
+const EXPLICIT_WEB = /https?:\/\/|\bwww\.|\b(web|internet|online|google|website|situs|browse|browsing|telusuri)\b/i
+
+/**
+ * A web pick that the documents may answer instead.
+ *
+ * MEASURED (failure audit, 2026-10-05): ADR 0017's probe redirected a CHAT verdict only, and `web_search`/`web_fetch`
+ * route as PLUGIN — so q241 ("What percentage of those at the end of life now choose euthanasia?", answered by the
+ * uploaded book) went to the web on every re-ask while retrieval held the sentence at rank 0. The web is general
+ * knowledge too. The caller still runs the web tool when retrieval does not support an answer (CRAG, arXiv
+ * 2401.15884), and a user who asks for the web, or gives a URL, gets it.
+ */
+export function webPickTheDocumentsMayHold(args: {
+  decision: RouteDecision
+  selectedToolId?: string
+  /**
+   * Every tool the model asked for. MEASURED (q241 replayed in-process): 2 of 3 selections were SEVERAL `web_fetch`
+   * calls, which go to the multi-step DAG before any single-tool check — so the rule must cover the whole request,
+   * and is only true when every requested tool is a web tool (a plan that also wants SQL is not a web lookup).
+   */
+  requestedToolIds?: string[]
+  question: string
+}): boolean {
+  const isWeb = (id?: string) => id === 'web_search' || id === 'web_fetch'
+  return args.decision === 'PLUGIN'
+    && isWeb(args.selectedToolId)
+    && (args.requestedToolIds ?? []).every(isWeb)
+    && !EXPLICIT_WEB.test(args.question)
+}
+
 /** One tool call the model made; a compound question carries several. */
 export type RequestedTool = { toolId: string; args: Record<string, unknown> }
 
@@ -299,7 +329,7 @@ export async function resolveRouting(
   effectiveQuestion: string,
   dbData: DbData,
   memoryContext: string,
-): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[]; requestedTools?: RequestedTool[]; needsMultipleTools?: boolean }> {
+): Promise<{ decision: RouteDecision; resolvedIntegrationId: string | undefined; extraToolIds?: string[]; requestedTools?: RequestedTool[]; needsMultipleTools?: boolean; selectedToolId?: string; routeReason?: string }> {
   const [docCount, intCount, , , , restEndpoints] = dbData
   const restEndpointCount = restEndpoints.length
   const hasHistory = args.chatHistory && args.chatHistory.length > 0
@@ -412,7 +442,16 @@ export async function resolveRouting(
     }
   }
 
-  return { decision, resolvedIntegrationId, ...(extraToolIds.length > 0 ? { extraToolIds, requestedTools } : {}), ...(sel?.needsMultipleTools ? { needsMultipleTools: true } : {}) }
+  return {
+    decision, resolvedIntegrationId,
+    // The tool the model named, so the router can tell a web pick from any other plugin (webPickTheDocumentsMayHold).
+    ...(sel?.toolId ? { selectedToolId: sel.toolId } : {}),
+    // Why: the selector's reason, or "fallback router: …" when the selector failed. Computed here and, until the
+    // failure audit of 2026-10-05, dropped — so a turn answered from the web under load could not be traced to the
+    // selector timeout that sent it there.
+    ...(selectionReason ? { routeReason: selectionReason } : {}),
+    ...(extraToolIds.length > 0 ? { extraToolIds, requestedTools } : {}), ...(sel?.needsMultipleTools ? { needsMultipleTools: true } : {}),
+  }
 }
 
 export async function loadContextualContext(decision: RouteDecision, sessionId?: string): Promise<string> {

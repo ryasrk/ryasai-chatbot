@@ -28,8 +28,9 @@ import { guardedFetch, readTextBounded } from '@/lib/guarded-fetch'
 
 import { selectRelevantPlugins } from '@/lib/plugin-selector'
 import { executePlugin } from '@/lib/plugin-registry'
-import { gatherRagEvidence } from '@/lib/pipelines/rag-pipeline'
-import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage } from '@/lib/pipelines/sql-pipeline'
+import { gatherRagEvidence, type RagEvidence } from '@/lib/pipelines/rag-pipeline'
+import { runSqlPipeline, buildCrossSourceNote, forbiddenSourceMessage, documentsShouldAnswerInstead } from '@/lib/pipelines/sql-pipeline'
+import type { RelevanceJudge } from '@/lib/sql-answerability'
 import { getLastLlmUsage } from '@/lib/llm-client'
 import type { Citation } from '@/lib/types'
 import {
@@ -138,9 +139,17 @@ export async function runRagBranch(args: {
    * asked for documents. When the evidence does not support an answer, it is answered as the chat turn it was.
    */
   chatIfUnsupported?: boolean
+  /**
+   * The model picked a web tool and the probe found the question in the documents (CRAG, arXiv 2401.15884: go to the
+   * web when retrieval does not hold the answer). Unsupported, empty or failed retrieval runs the web tool it picked.
+   */
+  webIfUnsupported?: boolean
+  /** Evidence the caller already gathered (the SQL branch's second chance checks it before handing over). */
+  evidence?: RagEvidence
 }): Promise<CompletionResult> {
   const started = Date.now()
-  const evidence = await gatherRagEvidence(args)
+  const evidence = args.evidence ?? await gatherRagEvidence(args)
+  if (args.webIfUnsupported && (evidence.kind !== 'ready' || !evidence.supported)) return runPluginBranch(args)
   if (evidence.kind === 'degraded') {
     log.warn('RAG retrieval failed; answering from chat', { error: evidence.reason })
     return runChatBranch(args, { degradedFrom: 'RAG', degradedReason: evidence.reason })
@@ -200,9 +209,49 @@ export async function runSqlBranch(args: {
    * axis had before it was fixed.
    */
   integrationIds?: string[] | null
+  /** The API-key scope's documents, for the second chance below (`null`/absent = every document). */
+  documentIds?: string[] | null
+  /** The user chose this database: its answer is never second-guessed by the documents. */
+  userPinnedIntegration?: boolean
+  relevanceJudge?: RelevanceJudge
 }): Promise<CompletionResult> {
   const started = Date.now()
   const outcome = await runSqlPipeline(args)
+
+  // The documents' second chance, decided by the same function as the streaming transport (sql-pipeline.ts).
+  const viaDocuments = async (rows: ReadonlyArray<Record<string, unknown>> | null, sqlError?: string): Promise<CompletionResult | null> => {
+    const reason = await documentsShouldAnswerInstead({ ...args, rows })
+    if (!reason) return null
+    const ragArgs = {
+      question: args.question,
+      systemPromptPrefix: args.systemPromptPrefix,
+      memoryContext: args.memoryContext,
+      chatHistory: args.chatHistory,
+      documentIds: args.documentIds,
+    }
+    // The documents take over only when their evidence SUPPORTS an answer. Checking for citations was not enough:
+    // retrieval nearly always returns some chunk, so a database answer the relevance judge wrongly rejected was
+    // replaced by "not found in the documents" — MEASURED (agentic eval 2026-10-05): "Which warehouse stores the
+    // product ordered the most in the ERP Demo database?" judged irrelevant 2 of 2 times, then answered from an
+    // IT-security policy. Unsupported evidence keeps the database's answer.
+    const evidence = await gatherRagEvidence(ragArgs)
+    if (evidence.kind !== 'ready' || !evidence.supported) return null
+    const rag = await runRagBranch({ ...ragArgs, evidence })
+    return {
+      ...rag,
+      toolRuns: [
+        {
+          type: 'SQL',
+          status: sqlError ? 'error' : 'success',
+          latencyMs: Date.now() - started,
+          inputSummary: summarize(args.question),
+          outputSummary: `not used: ${reason}`,
+          ...(sqlError ? { errorMessage: sqlError.slice(0, 500) } : {}),
+        },
+        ...rag.toolRuns,
+      ],
+    }
+  }
 
   if (outcome.kind === 'ambiguous') return ambiguousDataSourceResult('SQL', args.question, outcome.candidates, started)
   if (outcome.kind === 'unavailable') return unavailableDataSourceResult('SQL', args.question, started)
@@ -241,6 +290,8 @@ export async function runSqlBranch(args: {
     }
   }
   if (outcome.kind === 'failed') {
+    const fallback = await viaDocuments(null, outcome.lastError)
+    if (fallback) return fallback
     return {
       answer: `Sorry, the database query failed after ${SQL_REPAIR_ATTEMPTS + 1} attempts.\n\nLast error: ${sanitizeSqlError(outcome.lastError)}\n\nSuggestion: try a more specific question, or check whether the queried table columns are available in this integration.`,
       citations: [],
@@ -259,6 +310,8 @@ export async function runSqlBranch(args: {
   }
 
   const { integration, result, finalSql, sqlExplanation } = outcome
+  const fallback = await viaDocuments(result.rows)
+  if (fallback) return fallback
   // `integrationNames` comes from `loadDbData`, which the router already ran — an explicit `integrationId` must
   // perform no candidate listing here (pinned by tool-branches.test.ts).
   const crossSourceNote = buildCrossSourceNote(integration.name, args.integrationNames)

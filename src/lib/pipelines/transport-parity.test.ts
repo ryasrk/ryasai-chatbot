@@ -18,6 +18,8 @@ let executedSql: string[] = []
 let auditRows: Array<{ action: string; severity: string; userId: string }> = []
 let queryHistoryRows: Array<{ success: boolean; generatedSql: string }> = []
 let rateLimitAllowed = true
+let readyDocuments = 0
+let emptyRows = false
 let userRole = 'admin'
 let accessMode = 'open'
 let policyRows: Array<{ tableName: string; allowedColumns: string | null }> = []
@@ -71,7 +73,7 @@ mock.module('@/lib/db', () => ({
     user: { findFirst: async () => ({ role: userRole }) },
     dataAccessPolicy: { findMany: async () => policyRows },
     document: {
-      count: async () => 0,
+      count: async () => readyDocuments,
       findMany: async () => [{ id: 'd1', name: 'leave.pdf', contextPrompt: 'Quote the article number.' }],
     },
   },
@@ -96,7 +98,7 @@ mock.module('@/lib/connectors', () => ({
         executedSql.push(sql)
         const next = connectorErrors.shift()
         if (next) throw next
-        return { rows: [{ total: 42 }], rowCount: 1, executionMs: 3 }
+        return emptyRows ? { rows: [], rowCount: 0, executionMs: 3 } : { rows: [{ total: 42 }], rowCount: 1, executionMs: 3 }
       },
       close: async () => {},
     }),
@@ -160,6 +162,8 @@ const { runSqlBranch, runRagBranch } = await import('@/lib/tool-branches')
 const { prepareSqlStream, prepareRagStream } = await import('@/lib/stream-preparers')
 
 beforeEach(() => {
+  readyDocuments = 0
+  emptyRows = false
   answerContexts = []
   ragChunks = []
   ragSufficient = true
@@ -263,6 +267,35 @@ describe('runSqlBranch and prepareSqlStream have identical SQL side effects', ()
     expect(viaBranch.generatorSaw).toEqual([])
     expect(branch.toolRuns[0].status).toBe('blocked')
     expect(stream.toolRuns[0].status).toBe('blocked')
+  })
+
+  // MEASURED (live eval, 2026-10-05): this second chance existed on the streaming transport only, so /api/v1 answered
+  // document-table questions "no matching data" or "the query failed after 3 attempts".
+  const leaveChunk = {
+    chunkId: 'c0', documentId: 'd1', documentName: 'leave.pdf', chunkIndex: 0, score: 0.9,
+    content: 'Annual leave is 12 days.', keywords: '', semanticSimilarity: 0.9,
+  } as never
+  test('empty rows with documents in scope: both transports answer from the documents and record both attempts', async () => {
+    const { branch, stream } = await runBoth(() => {
+      readyDocuments = 2; emptyRows = true; ragChunks = [leaveChunk]
+      generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    })
+    const shape = (runs: Array<{ type: string; status: string; outputSummary?: string }>) => runs.map((t) => [t.type, t.status, t.outputSummary ?? ''])
+    expect(shape(branch.toolRuns)[0]).toEqual(['SQL', 'success', 'not used: no-rows'])
+    expect(shape(stream.toolRuns)[0]).toEqual(shape(branch.toolRuns)[0])
+    expect(branch.toolRuns.map((t) => t.type)).toEqual(stream.toolRuns.map((t) => t.type))
+    expect(branch.citations).toEqual(stream.citations)
+  })
+
+  test('every attempt blocked by the guard, documents in scope: both transports answer from the documents', async () => {
+    const { branch, stream } = await runBoth(() => {
+      readyDocuments = 2; ragChunks = [leaveChunk]
+      generateSqlResults = [{ sql: 'DELETE FROM orders' }, { sql: 'DELETE FROM orders' }, { sql: 'DELETE FROM orders' }]
+    })
+    expect(branch.toolRuns[0]).toMatchObject({ type: 'SQL', status: 'error', outputSummary: 'not used: sql-failed' })
+    expect(stream.toolRuns[0]).toMatchObject({ type: 'SQL', status: 'error', outputSummary: 'not used: sql-failed' })
+    expect(branch.citations).toEqual(stream.citations)
+    expect(branch.citations.length).toBeGreaterThan(0)
   })
 })
 

@@ -1,4 +1,5 @@
 import { narrowDocumentScope, resolveUserRole } from '@/lib/access-scope'
+import { scopedLogger } from '@/lib/logger'
 import { cancelSpeculativeRetrieval, startSpeculativeRetrieval } from '@/lib/speculative-retrieval'
 import { analyzeIntent } from '@/lib/intent-pipeline'
 import { intentByRule, intentModelEnabled } from '@/lib/intent-by-rule'
@@ -26,9 +27,11 @@ import { runMultiStepDag, runAgenticLoop, runStreamingAgenticLoop } from '@/lib/
 import { withUsageTracking } from '@/lib/llm-client'
 import {
   formatSchemasForIntent, formatDocForIntent, loadIntentPipeline, applyToolGating, startSpeculativeRouting,
-  settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, documentsHoldTheAnswer, type RequestedTool, type PlannedTool,
+  settleRouting, resolveRouting, loadContextualContext, resolvePlannedTool, documentsHoldTheAnswer, webPickTheDocumentsMayHold, type RequestedTool, type PlannedTool,
 } from '@/lib/tool-router-routing'
 export { chooseAvailableDecision, formatSchemaForIntent, formatSchemasForIntent, formatDocForIntent } from '@/lib/tool-router-routing'
+
+const log = scopedLogger('tool-router')
 
 /** A planned step needs retrieval by definition, and its question came from the model, not the user, so nothing to clarify. */
 const PLANNED_STEP_INTENT = { needsClarification: false, clarificationQuestion: undefined, needsRetrieval: true } as const
@@ -241,10 +244,26 @@ async function _runNonStreamingChatCompletion(args: {
 
   const routed: Awaited<ReturnType<typeof resolveRouting>> = planned
     ?? await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
-  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools, needsMultipleTools } = routed
+  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools, needsMultipleTools, selectedToolId, routeReason } = routed
+
+  const effectiveDecision = applyToolGating(
+    decision,
+    { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
+    promptSettings.tools,
+  )
+  const holdsIt = () => documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
+  // A web pick — one call or a plan of several — is general knowledge too: the documents get the turn first and the web
+  // is the fallback. Decided BEFORE the multi-step hand-off, which would otherwise run the web steps unasked (q241).
+  const webPick = webPickTheDocumentsMayHold({ decision: effectiveDecision, selectedToolId, requestedToolIds: requestedTools?.map((t) => t.toolId), question: effectiveQuestion })
+  const webPlanProbed = webPick && await holdsIt()
 
   // Same hand-off as the streaming path: the model asked for several tools (or said so in text), so they run as a plan.
-  if ((extraToolIds.length > 0 || needsMultipleTools) && (args.allowMultiStepDag || args.agenticRound)) {
+  if (!webPlanProbed && (extraToolIds.length > 0 || needsMultipleTools) && (args.allowMultiStepDag || args.agenticRound)) {
+    logRoute({ transport: 'api', decision, effectiveDecision, selectedToolId, routeReason, probedToDocuments: false, webPick, dagWillRun: true })
+    // The plan retrieves for itself, so the speculative retrieval is cancelled here, as the streaming transport does
+    // (`dagWillRun`). MEASURED (agentic eval 2026-10-05): this return skipped the cancel below, and a database-only
+    // compound question still ran decomposition, two reranks, two judges and a translation — 6 of its 14 LLM calls.
+    cancelSpeculativeRetrieval(speculativeRetrieval)
     const dag = await runMultiStepDag({
       question: effectiveQuestion, userId: args.userId, sessionId: args.sessionId,
       chatHistory: args.chatHistory, documentIds: args.documentIds, integrationIds: args.integrationIds, requestedTools,
@@ -253,16 +272,11 @@ async function _runNonStreamingChatCompletion(args: {
   }
   const unanswered = unansweredPartsNote(requestedTools)
 
-  const effectiveDecision = applyToolGating(
-    decision,
-    { hasIntegrations: intCount > 0, hasDocuments: docCount > 0, hasRestApis: restEndpointCount > 0 },
-    promptSettings.tools,
-  )
   // A chat verdict on a question the documents hold is answered from them (kb-probe.ts), with the chat fallback armed.
-  const probedToDocuments = effectiveDecision === 'CHAT'
-    && await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
+  const probedToDocuments = webPlanProbed || (effectiveDecision === 'CHAT' && await holdsIt())
   // Only a RAG verdict uses the retrieval. (This transport has no multi-source DAG branch, so `extraToolIds` never
   // diverts a RAG verdict away from it.)
+  logRoute({ transport: 'api', decision, effectiveDecision, selectedToolId, routeReason, probedToDocuments, webPick })
   if (effectiveDecision !== 'RAG' && !probedToDocuments) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
@@ -282,12 +296,12 @@ async function _runNonStreamingChatCompletion(args: {
   }
 
   let result: CompletionResult
-  if (effectiveDecision === 'SQL') result = await runSqlBranch(branchArgs)
+  if (effectiveDecision === 'SQL') result = await runSqlBranch({ ...branchArgs, userPinnedIntegration: Boolean(args.integrationId) })
   else if (effectiveDecision === 'RAG') result = await runRagBranch(branchArgs)
   else if (effectiveDecision === 'REST') result = await runRestBranch(branchArgs)
-  else if (effectiveDecision === 'PLUGIN') result = await runPluginBranch(branchArgs)
+  else if (effectiveDecision === 'PLUGIN' && !probedToDocuments) result = await runPluginBranch(branchArgs)
   else if (effectiveDecision === 'CONTEXTUAL_CHAT' && contextualContext) result = await runContextualChatBranch({ ...branchArgs, context: contextualContext })
-  else if (probedToDocuments) result = await runRagBranch({ ...branchArgs, chatIfUnsupported: true })
+  else if (probedToDocuments) result = await runRagBranch({ ...branchArgs, chatIfUnsupported: !webPick, webIfUnsupported: webPick })
   else result = await runChatBranch(branchArgs)
   if (unanswered) result = { ...result, answer: `${result.answer}\n\n${unanswered}` }
 
@@ -419,7 +433,7 @@ async function _runStreamingChatCompletion(args: {
     return prepareChatStream({ question: effectiveQuestion, systemPromptPrefix: args.systemPromptPrefix, memoryContext, chatHistory: args.chatHistory ?? [] })
   }
 
-  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools } = await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
+  const { decision, resolvedIntegrationId, extraToolIds = [], requestedTools, selectedToolId, routeReason } = await settleRouting(speculativeRouting, () => resolveRouting(args, effectiveQuestion, dbData, memoryContext))
 
   const effectiveDecision = applyToolGating(
     decision,
@@ -430,9 +444,13 @@ async function _runStreamingChatCompletion(args: {
   // The DAG condition must mirror the branch below EXACTLY (`dagWillRun`, below): cancelling
   // for `extraToolIds` alone would abort a retrieval the single-source RAG branch still needs, and a cancelled result
   // re-throws into that branch's degrade-to-chat handling — a silent quality loss with no error to find.
-  const dagWillRun = extraToolIds.length > 0 && Boolean(args.allowMultiStepDag || args.agenticRound)
-  const probedToDocuments = !dagWillRun && effectiveDecision === 'CHAT'
-    && await documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
+  const holdsIt = () => documentsHoldTheAnswer({ question: effectiveQuestion, documentCount: docCount, ragToolEnabled: promptSettings.tools.rag, documentIds: args.documentIds })
+  // As on the other transport: a web pick or a plan of web steps, probed before the DAG would run it.
+  const webPick = webPickTheDocumentsMayHold({ decision: effectiveDecision, selectedToolId, requestedToolIds: requestedTools?.map((t) => t.toolId), question: effectiveQuestion })
+  const webPlanProbed = webPick && await holdsIt()
+  const dagWillRun = !webPlanProbed && extraToolIds.length > 0 && Boolean(args.allowMultiStepDag || args.agenticRound)
+  const probedToDocuments = webPlanProbed || (!dagWillRun && effectiveDecision === 'CHAT' && await holdsIt())
+  logRoute({ transport: 'stream', decision, effectiveDecision, selectedToolId, routeReason, probedToDocuments, webPick, dagWillRun })
   if ((effectiveDecision !== 'RAG' && !probedToDocuments) || dagWillRun) cancelSpeculativeRetrieval(speculativeRetrieval)
 
   const contextualContext = await loadContextualContext(effectiveDecision, args.sessionId)
@@ -490,9 +508,9 @@ async function _runStreamingChatCompletion(args: {
     prepared = await prepareSqlStream({ ...branchArgs, userPinnedIntegration: Boolean(args.integrationId) })
   } else if (effectiveDecision === 'RAG') prepared = await prepareRagStream(branchArgs)
   else if (effectiveDecision === 'REST') prepared = await prepareRestStream(branchArgs)
-  else if (effectiveDecision === 'PLUGIN') prepared = await preparePluginStream(branchArgs)
+  else if (effectiveDecision === 'PLUGIN' && !probedToDocuments) prepared = await preparePluginStream(branchArgs)
   else if (effectiveDecision === 'CONTEXTUAL_CHAT' && contextualContext) prepared = await prepareContextualChatStream({ ...branchArgs, context: contextualContext })
-  else if (probedToDocuments) prepared = await prepareRagStream({ ...branchArgs, chatIfUnsupported: true })
+  else if (probedToDocuments) prepared = await prepareRagStream({ ...branchArgs, chatIfUnsupported: !webPick, webIfUnsupported: webPick })
   else prepared = await prepareChatStream(branchArgs)
 
   // Reached with several requested tools only when the multi-step path did not answer.
@@ -540,4 +558,30 @@ async function* withTrailer(stream: AsyncGenerator<string, void, unknown>, trail
 
 async function* singleShotStream(answer: string): AsyncGenerator<string, void, unknown> {
   yield answer
+}
+
+/**
+ * One line per routed turn: what was chosen, by what, and what the router did with it.
+ *
+ * MEASURED GAP (failure audit, 2026-10-05): two questions were answered from the web under load and correctly when
+ * re-asked; the log showed tool-selector timeouts at the same seconds, but no record of the route each turn took, so
+ * the path could only be inferred. The fields follow the OpenTelemetry GenAI idea of an agent decision as a recorded
+ * operation; no question text and no model prose is logged.
+ */
+function logRoute(fields: {
+  transport: 'api' | 'stream'
+  decision: string
+  effectiveDecision: string
+  selectedToolId?: string
+  routeReason?: string
+  probedToDocuments: boolean
+  webPick: boolean
+  dagWillRun?: boolean
+}): void {
+  // The reason's ORIGIN, never its text: the fallback router's reason is model prose that may quote the question.
+  const { routeReason, ...rest } = fields
+  const source = routeReason?.startsWith('fallback router:')
+    ? (routeReason.includes('provider unavailable') ? 'fallback-degraded' : 'fallback')
+    : fields.selectedToolId ? 'selector' : 'planned-or-default'
+  log.info('route decided', { ...rest, source })
 }

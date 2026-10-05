@@ -408,6 +408,19 @@ describe('prepareRagStream — a turn the documents were only PROBED for (parity
     const r = await prepareRagStream({ question: 'q' })
     expect(r.toolRuns[0].type).toBe('RAG')
   })
+
+  test('a web pick (webIfUnsupported): unsupported evidence runs the web tool, supported evidence does not', async () => {
+    pluginRow = { id: 'p1', toolId: 'web_search', chatEnabled: true }
+    pluginResult = { ok: true, output: 'web result' }
+    reflectionSufficient = false
+    await prepareRagStream({ question: 'What percentage choose euthanasia?', webIfUnsupported: true })
+    expect(pluginExecArgs).toHaveLength(1)
+
+    reflectionSufficient = true
+    const r = await prepareRagStream({ question: 'What percentage choose euthanasia?', webIfUnsupported: true })
+    expect(r.toolRuns[0].type).toBe('RAG')
+    expect(pluginExecArgs).toHaveLength(1)
+  })
 })
 
 /**
@@ -1170,6 +1183,16 @@ describe('prepareSqlStream — the documents fallback when the database did not 
     expect(outage.citations[0]?.type).toBe('DATABASE')
   })
 
+  test('documents whose evidence does not SUPPORT an answer do not replace the database answer', async () => {
+    readyDocumentCount = 3
+    reflectionSufficient = false
+    connectorRows = [{ id: 1, nama: 'Andi' }]
+    generateSqlResults = [{ sql: 'SELECT total FROM orders LIMIT 10' }]
+    const r = await run({ relevanceJudge: async () => false })
+    expect(r.citations[0]?.type).toBe('DATABASE')
+    expect(r.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+  })
+
   test('NO documents means no fallback — the database answer stands', async () => {
     readyDocumentCount = 0
     connectorRows = []
@@ -1177,6 +1200,25 @@ describe('prepareSqlStream — the documents fallback when the database did not 
     const r = await run({ relevanceJudge: async () => false })
     expect(r.citations[0]?.type).toBe('DATABASE')
     expect(r.toolRuns.map((t) => t.type)).toEqual(['SQL'])
+  })
+
+  test('a query that FAILED every attempt is not an answer either — the documents get the turn, the error is kept', async () => {
+    // MEASURED (live eval, 2026-10-05): a document question routed here made the generator write a UNION the guard
+    // blocked three times, and the user got "the database query failed after 3 attempts".
+    readyDocumentCount = 3
+    generateSqlResults = [{ sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }]
+    const r = await run()
+    expect(executedSql).toEqual([])
+    expect(r.citations[0]?.type).toBe('DOCUMENT')
+    expect(r.toolRuns[0]).toMatchObject({ type: 'SQL', status: 'error', outputSummary: 'not used: sql-failed' })
+    expect(r.toolRuns[0]?.errorMessage).toBeTruthy()
+  })
+
+  test('a FAILED query with no documents still reports the failure', async () => {
+    readyDocumentCount = 0
+    generateSqlResults = [{ sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }, { sql: 'DROP TABLE users' }]
+    const r = await run()
+    expect(r.toolRuns.map((t) => [t.type, t.status])).toEqual([['SQL', 'error']])
   })
 
   test('a database the USER pinned is never second-guessed', async () => {
