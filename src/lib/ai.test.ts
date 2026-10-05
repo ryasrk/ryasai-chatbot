@@ -439,6 +439,19 @@ describe('generateSql', () => {
 // ---------------------------------------------------------------------------
 
 describe('generateAnswer', () => {
+  test('a multi-part answer is told to answer the parts, not narrate how they were found', async () => {
+    // Final RAG eval: answers synthesised from several steps said "the step-3 lookup…", "the knowledge graph records…"
+    // — claims about the process, judged unsupported. The rule rides in the USER message: the system prompt is at its
+    // ceiling (assertSystemPromptUnderCeiling).
+    fetchChatResponse = 'ok'
+    await generateAnswer({ question: 'q', context: 'c', source: 'SQL', multiPart: true })
+    const user = getSentMessages().filter((m) => m.role === 'user').at(-1)!.content
+    expect(user).toMatch(/do not mention steps/i)
+    fetchChatResponse = 'ok'
+    await generateAnswer({ question: 'q', context: 'c', source: 'SQL' })
+    expect(getSentMessages().filter((m) => m.role === 'user').at(-1)!.content).not.toMatch(/do not mention steps/i)
+  })
+
   test('returns the answer string from chatOnce', async () => {
     fetchChatResponse = 'Total sales: $42,000'
     const result = await generateAnswer({ question: 'what are total sales?', context: 'rows: [{total: 42000}]', source: 'SQL' })

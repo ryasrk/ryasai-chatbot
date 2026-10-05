@@ -710,5 +710,6 @@ export async function synthesizeAnswer(args: {
     question: args.question,
     context,
     source: 'SQL',
+    multiPart: true,
   })
 }

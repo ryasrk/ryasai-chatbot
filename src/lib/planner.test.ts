@@ -2242,3 +2242,18 @@ describe('executePlan — a step that runs the whole chat pipeline gets a pipeli
   })
 })
 
+describe('synthesizeAnswer — a multi-part answer answers the parts, not the process', () => {
+  test('the synthesis is asked as multi-part', async () => {
+    mockGenerateAnswer.mockClear()
+    await synthesizeAnswer({
+      question: 'leave days and artist count',
+      stepResults: [
+        { stepId: 's1', tool: 'rag', ok: true, output: '14 days', latencyMs: 1 },
+        { stepId: 's2', tool: 'sql', ok: true, output: '275', latencyMs: 1 },
+      ],
+      plan: { steps: [{ id: 's1', tool: 'rag', input: {} }, { id: 's2', tool: 'sql', input: {} }], needsSynthesis: true },
+    })
+    expect((mockGenerateAnswer.mock.calls[0] as unknown as [{ multiPart?: boolean }])[0].multiPart).toBe(true)
+  })
+})
+

@@ -434,6 +434,8 @@ export async function generateAnswer(args: {
   rowCount?: number
   /** True when the result was cut off by the LIMIT clamp (resultLimit reached). */
   truncated?: boolean
+  /** The CONTEXT holds findings for several parts of the question (a plan's steps). */
+  multiPart?: boolean
 }): Promise<string> {
   const sourceLabel = answerContextLabel(args.source)
   const messages: ChatMessage[] = []
@@ -501,6 +503,11 @@ export async function generateAnswer(args: {
     content:
       `Question: ${args.question}\n\n` +
       `CONTEXT (${sourceLabel}):\n${args.context}\n\n` +
+      // Measured in the final RAG eval: multi-step answers narrated the process ("the step-3 lookup", "the knowledge
+      // graph records"), which the faithfulness judge rightly scored as unsupported claims.
+      (args.multiPart
+        ? 'The CONTEXT holds the findings for each part of the question. Answer every part directly from them. Do not mention steps, tools, searches, databases checked, the knowledge graph, or how the information was found.\n\n'
+        : '') +
       `Answer:`,
   })
   assertSystemMessagesUnderCeiling(messages, 'generateAnswer')
