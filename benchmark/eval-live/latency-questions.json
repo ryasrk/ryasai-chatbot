@@ -1,0 +1,361 @@
+{
+  "generatedAt": "2026-10-05",
+  "questions": [
+    {
+      "id": "q001",
+      "question": "What aggregate reduction in greenhouse gas emissions does Arunika formally commit to achieving against its 2023 baseline, and by what deadline?",
+      "any": [
+        "30"
+      ]
+    },
+    {
+      "id": "q002",
+      "question": "According to the emissions reduction table, what is the 2030 target for Scope 1 (Direct Fuel & Fleet) emissions?",
+      "any": [
+        "17,255",
+        "17255"
+      ]
+    },
+    {
+      "id": "q003",
+      "question": "What is the 2026 interim target listed in the table for Scope 2 (Purchased Electricity) emissions?",
+      "any": [
+        "4,650",
+        "4650"
+      ]
+    },
+    {
+      "id": "q004",
+      "question": "In the emissions baseline table, what 2023 baseline value is shown for Scope 3 (Waste & Supply Chain)?",
+      "any": [
+        "1,480",
+        "1480"
+      ]
+    },
+    {
+      "id": "q005",
+      "question": "How many employees are covered by this sustainability and environmental policy?",
+      "any": [
+        "1,240",
+        "1240"
+      ]
+    },
+    {
+      "id": "q007",
+      "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa besar uang harian untuk karyawan Grade 1 di Wilayah Khusus?",
+      "any": [
+        "800.000",
+        "800000"
+      ]
+    },
+    {
+      "id": "q008",
+      "question": "Berdasarkan tabel uang harian pada kebijakan reimbursement, berapa uang harian untuk karyawan Senior Management di Wilayah Lainnya?",
+      "any": [
+        "400.000",
+        "400000"
+      ]
+    },
+    {
+      "id": "q009",
+      "question": "Berdasarkan ketentuan plafon hotel pada kebijakan reimbursement, berapa batas maksimal penggantian kamar hotel per malam untuk karyawan Grade 4?",
+      "any": [
+        "500.000",
+        "500000"
+      ]
+    },
+    {
+      "id": "q010",
+      "question": "Berapa jumlah karyawan PT Arunika Logistik Nusantara yang tercakup dalam ruang lingkup kebijakan reimbursement dan perjalanan dinas ini?",
+      "any": [
+        "1.240",
+        "1240"
+      ]
+    },
+    {
+      "id": "q011",
+      "question": "Berapa hari kalender batas waktu pengajuan form pertanggungjawaban biaya perjalanan dinas dan klaim reimbursement setelah tanggal kepulangan menurut prosedur dalam dokumen ini?",
+      "any": [
+        "14"
+      ]
+    },
+    {
+      "id": "q012",
+      "question": "Berapa plafon maksimal penggantian biaya kamar hotel per malam termasuk pajak dan sarapan untuk karyawan Grade 1 menurut standar fasilitas akomodasi?",
+      "any": [
+        "2.200.000",
+        "2200000"
+      ]
+    },
+    {
+      "id": "q014",
+      "question": "Berapa luas fasilitas pergudangan SBY-01 yang disebutkan dalam ruang lingkup kebijakan pengadaan?",
+      "any": [
+        "18.000",
+        "18000"
+      ]
+    },
+    {
+      "id": "q015",
+      "question": "Berapa banyak karyawan yang diikat oleh Kebijakan Pengadaan Barang dan Jasa ini?",
+      "any": [
+        "1.240",
+        "1240"
+      ]
+    },
+    {
+      "id": "q017",
+      "question": "Berapa maksimal hari kalender termin pembayaran standar kepada rekanan sejak dokumen penagihan lengkap dan benar diterima?",
+      "any": [
+        "30"
+      ]
+    },
+    {
+      "id": "q018",
+      "question": "Dalam rentang nilai berapa seorang Department Manager dapat memberikan otorisasi PR dan PO sesuai Matriks Otorisasi Pengadaan?",
+      "any": [
+        "10.000.000",
+        "10000000"
+      ]
+    },
+    {
+      "id": "q019",
+      "question": "Under POL-FIN-2026-003, what is the default credit limit for a Corporate SME customer?",
+      "any": [
+        "75,000,000",
+        "75000000"
+      ]
+    },
+    {
+      "id": "q020",
+      "question": "According to the customer segmentation table in the Arunika policy, what are the standard payment terms for an Enterprise customer?",
+      "any": [
+        "45"
+      ]
+    },
+    {
+      "id": "q022",
+      "question": "What is the monthly late payment interest rate applied to overdue invoices under the Late Payment Charges section?",
+      "any": [
+        "2.0"
+      ]
+    },
+    {
+      "id": "q023",
+      "question": "What is the maximum cumulative late interest charge allowed as a percentage of the original invoice principal?",
+      "any": [
+        "10.0"
+      ]
+    },
+    {
+      "id": "q028",
+      "question": "Under the CAPEX classification standard in the Expenditure Classification section, what is the minimum acquisition cost (excluding VAT) that requires an item to be budgeted as Capital Expenditure?",
+      "any": [
+        "25,000,000",
+        "25000000"
+      ]
+    },
+    {
+      "id": "q029",
+      "question": "What standard percentage contingency reserve must every operational cost center integrate against its total controllable OPEX baseline?",
+      "any": [
+        "5.0"
+      ]
+    },
+    {
+      "id": "q030",
+      "question": "How many city delivery vans are operated under the Urban Last-Mile transport operations?",
+      "any": [
+        "58"
+      ]
+    },
+    {
+      "id": "q031",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja 5 tahun sampai kurang dari 8 tahun sesuai tabel tambahan loyalitas?",
+      "any": [
+        "18"
+      ]
+    },
+    {
+      "id": "q032",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja minimal 10 tahun sesuai tabel masa kerja?",
+      "any": [
+        "22"
+      ]
+    },
+    {
+      "id": "q033",
+      "question": "Berapa total hak cuti tahunan bagi karyawan dengan masa kerja 3 tahun sampai kurang dari 5 tahun berdasarkan tabel loyalitas?",
+      "any": [
+        "16"
+      ]
+    },
+    {
+      "id": "q037",
+      "question": "Dalam tabel struktur golongan jabatan pada kebijakan kompensasi, berapa persentase batas maksimum bonus kinerja tahunan untuk karyawan Grade G1?",
+      "any": [
+        "10"
+      ]
+    },
+    {
+      "id": "q038",
+      "question": "Menurut tabel batas manfaat asuransi rawat inap tambahan, berapa batas kamar per hari untuk karyawan Grade G7–G8?",
+      "any": [
+        "2.200.000",
+        "2200000"
+      ]
+    },
+    {
+      "id": "q039",
+      "question": "Pada tabel struktur Grade, berapa gaji pokok maksimum yang tercantum untuk Senior Management & C-Level (Grade G8)?",
+      "any": [
+        "65.000.000",
+        "65000000"
+      ]
+    },
+    {
+      "id": "q040",
+      "question": "Di bagian administrasi dan ketentuan penutup kebijakan ini, kapan periode cut-off payroll dimulai dan berakhir?",
+      "any": [
+        "21"
+      ]
+    },
+    {
+      "id": "q041",
+      "question": "Berapa besar tunjangan makan harian yang diterima karyawan Grade G1–G5 sesuai ketentuan tunjangan operasional kerja?",
+      "any": [
+        "30.000",
+        "30000"
+      ]
+    },
+    {
+      "id": "q171",
+      "question": "Berapa pagu anggaran pelatihan tahunan untuk satu pengemudi truk atau kurir van yang termasuk Grade 1 di Arunika?",
+      "any": [
+        "2.500.000",
+        "2500000"
+      ]
+    },
+    {
+      "id": "q173",
+      "question": "Jika National Fleet Manager mengajukan pembelian armada baru senilai di atas Rp 500.000.000, siapa yang berwenang menyetujui PO menurut matriks otorisasi dan cost center mana yang memiliki anggarannya?",
+      "any": [
+        "60"
+      ]
+    },
+    {
+      "id": "q175",
+      "question": "What is the common effective date stated in both the inbound goods receipt SOP and the outbound picking/packing/shipping SOP?",
+      "any": [
+        "15"
+      ]
+    },
+    {
+      "id": "q177",
+      "question": "According to both SOPs, what are the daily scheduling deadlines for inbound dock appointment booking and for same-day outbound Sales Order submission?",
+      "any": [
+        "15"
+      ]
+    },
+    {
+      "id": "q178",
+      "question": "For a CDD truck operating on the Surabaya-to-Jakarta Cikarang lane, what is the cargo insurance policy limit per conveyance and the standard transit lead time?",
+      "any": [
+        "1,000,000,000",
+        "1000000000"
+      ]
+    },
+    {
+      "id": "q179",
+      "question": "What is the cargo insurance policy limit for Arunika's Jakarta Cikarang warehouse, and what monthly On-Time Delivery target does the SLA require?",
+      "any": [
+        "120,000,000,000",
+        "120000000000"
+      ]
+    },
+    {
+      "id": "chinook-001",
+      "question": "How many artists are in the Chinook Music Store database?",
+      "any": [
+        "275"
+      ]
+    },
+    {
+      "id": "chinook-002",
+      "question": "How many albums are in the Chinook Music Store database?",
+      "any": [
+        "347"
+      ]
+    },
+    {
+      "id": "chinook-003",
+      "question": "How many tracks are in the Chinook Music Store database?",
+      "any": [
+        "3503"
+      ]
+    },
+    {
+      "id": "chinook-004",
+      "question": "How many customers are in the Chinook Music Store database?",
+      "any": [
+        "59"
+      ]
+    },
+    {
+      "id": "chinook-006",
+      "question": "How many invoices have been issued in the Chinook Music Store database?",
+      "any": [
+        "412"
+      ]
+    },
+    {
+      "id": "chinook-007",
+      "question": "How many genres are available in the Chinook Music Store database?",
+      "any": [
+        "25"
+      ]
+    },
+    {
+      "id": "chinook-008",
+      "question": "How many playlists exist in the Chinook Music Store database?",
+      "any": [
+        "18"
+      ]
+    },
+    {
+      "id": "chinook-011",
+      "question": "How many tracks cost 0.99 in the Chinook Music Store database?",
+      "any": [
+        "3290"
+      ]
+    },
+    {
+      "id": "chinook-012",
+      "question": "How many tracks cost 1.99 in the Chinook Music Store database?",
+      "any": [
+        "213"
+      ]
+    },
+    {
+      "id": "chinook-013",
+      "question": "How many customers are from the USA in the Chinook Music Store database?",
+      "any": [
+        "13"
+      ]
+    },
+    {
+      "id": "sapaan",
+      "question": "Halo, apa kabar?",
+      "any": [
+        ""
+      ]
+    },
+    {
+      "id": "thanks",
+      "question": "Terima kasih atas bantuannya!",
+      "any": [
+        ""
+      ]
+    }
+  ]
+}

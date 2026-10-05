@@ -18,6 +18,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { DB_NAME, withDatabase } from './db-names'
 
 interface RagQuestion { id: string; category: string; lang: string; question: string; expectedAnswer: string; evidence: Array<{ source: string; quote: string }> }
 interface SqlCase { id: string; dataset: 'chinook' | 'erp'; question: string; goldRows: unknown[][]; goldRowCount: number }
@@ -39,7 +40,6 @@ const dir = import.meta.dir
 const rag = (JSON.parse(readFileSync(join(dir, 'rag-questions.json'), 'utf8')) as { questions: RagQuestion[] }).questions
 const sql = (JSON.parse(readFileSync(join(dir, 'sql-questions.json'), 'utf8')) as { cases: SqlCase[] }).cases
 
-export const DB_NAME = { chinook: 'Chinook Music Store', erp: 'ERP Demo' } as const
 
 // A fixed LCG, so the set is identical on every machine and every rebuild.
 let seed = 20261005
@@ -81,13 +81,6 @@ const nextDb = (ds: 'chinook' | 'erp'): SqlCase => {
   return c
 }
 
-/** Name the database inside the question: a compound question over two databases is ambiguous otherwise. */
-export function withDatabase(question: string, ds: 'chinook' | 'erp'): string {
-  const name = DB_NAME[ds]
-  if (/\bin the database\b/i.test(question)) return question.replace(/\bin the database\b/i, `in the ${name} database`)
-  const q = question.trim().replace(/\?+$/, '')
-  return `${q} in the ${name} database?`
-}
 
 const docPart = (q: RagQuestion): AgenticPart => ({
   kind: 'doc', sourceId: q.id, source: q.evidence[0].source, question: q.question,

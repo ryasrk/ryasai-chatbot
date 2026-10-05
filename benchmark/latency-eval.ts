@@ -199,12 +199,16 @@ async function main() {
   if (!orgId || !userId) throw new Error('EVAL_ORG_ID and EVAL_USER_ID are required')
   enterWithOrg(orgId)
   const label = flag('--label') ?? 'run'
-  const limit = Number(flag('--limit') ?? QUESTIONS.length)
+  // `--questions file.json` replaces the built-in set (which matches the seeded demo corpus) with one for another
+  // corpus, e.g. benchmark/eval-live/latency-questions.json for the live-eval organisation.
+  const questionsFile = flag('--questions')
+  const pool: EvalQuestion[] = questionsFile ? (JSON.parse(readFileSync(questionsFile, 'utf8')) as { questions: EvalQuestion[] }).questions : QUESTIONS
+  const limit = Number(flag('--limit') ?? pool.length)
   // `--only a,b` runs just those ids; `--repeat N` runs each N times. Both exist so a single odd result (a routing flip
   // on a temperature-0 call is still one sample) can be told apart from a real regression by repetition.
   const only = flag('--only')?.split(',')
   const repeat = Math.max(1, Number(flag('--repeat') ?? 1))
-  const selected = (only ? QUESTIONS.filter((q) => only.includes(q.id)) : QUESTIONS.slice(0, limit))
+  const selected = (only ? pool.filter((q) => only.includes(q.id)) : pool.slice(0, limit))
   const plan = selected.flatMap((q) => Array.from({ length: repeat }, () => q))
 
   const rows: Row[] = []
