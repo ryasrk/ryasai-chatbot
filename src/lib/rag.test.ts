@@ -189,6 +189,16 @@ describe('RAG chunking', () => {
     expect(hybrid.semanticScore).toBeGreaterThan(0)
     expect(hybrid.total).toBeGreaterThan(lexical.total)
   })
+
+  test('a word a PDF extraction glued to its neighbours still scores (glued-words.ts)', () => {
+    // Verbatim from the eval book: without the split form, none of the four query words is in the chunk.
+    const glued = scoreChunk(tokenize('Clean Air Act Amendments'), {
+      content: 'In the United States, the CleanAirActAmendments in 1990 set strict standards.',
+      keywords: '',
+    })
+    expect(glued.contentHits).toBe(4)
+    expect(glued.phraseHits).toBeGreaterThan(0)
+  })
 })
 
 describe('tokenize', () => {

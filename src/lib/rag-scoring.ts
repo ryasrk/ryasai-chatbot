@@ -1,4 +1,5 @@
 import { combineHybridScore, cosineSimilarity } from '@/lib/embeddings'
+import { gluedWordVariants } from '@/lib/glued-words'
 import {
   RAG_MAX_PER_DOCUMENT,
 } from '@/lib/constants'
@@ -215,7 +216,8 @@ export function scoreChunk(
   queryTokens: string[],
   chunk: { content: string; keywords?: string | null },
 ): RetrievalScore {
-  const contentTokens = tokenize(chunk.content)
+  // Glued PDF words count under their split form too, as the tsv does (glued-words.ts).
+  const contentTokens = tokenize(`${chunk.content} ${gluedWordVariants(chunk.content)}`)
   const contentSet = new Set(contentTokens)
   const keywordSet = new Set(
     (chunk.keywords ?? '')

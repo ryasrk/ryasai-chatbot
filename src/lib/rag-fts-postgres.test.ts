@@ -18,7 +18,9 @@ mock.module('@/lib/db', () => ({
 }))
 mock.module('@/lib/db-provider', () => ({ getDbProvider: () => 'postgresql' as const }))
 
-import { ensureRagFtsTable, upsertChunkFts, rebuildFts, searchFtsChunkIds } from './rag-fts'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ensureRagFtsTable, upsertChunkFts, rebuildFts, searchFtsChunkIds, TSV_SOURCE_SQL } from './rag-fts'
 
 beforeEach(() => {
   mockExecuteRawUnsafe.mockClear()
@@ -53,6 +55,25 @@ describe('rebuildFts (Postgres)', () => {
     expect(sqls.some((s) => s.includes('UPDATE "DocumentChunk"') && s.includes('to_tsvector'))).toBe(true)
     expect(result.indexed).toBe(1)
     expect(sqls.some((s) => s.includes('DELETE FROM DocumentChunkFts'))).toBe(false)
+  })
+})
+
+describe('what tsv indexes', () => {
+  // Three writers compute tsv — the single-chunk upsert, the rebuild, and the migration that re-indexed existing chunks.
+  // If one drifts, a chunk's searchable words depend on which path wrote it last.
+  test('upsert and rebuild both index the glued-word variants', async () => {
+    enterWithOrg('org-fts')
+    await upsertChunkFts({ chunkId: 'c1', content: 'text', keywords: 'kw' })
+    await rebuildFts()
+    const tsvWrites = mockExecuteRawUnsafe.mock.calls.map((c) => c[0] as string).filter((s) => s.includes('SET tsv'))
+    expect(tsvWrites).toHaveLength(2)
+    for (const sql of tsvWrites) expect(sql).toContain(`to_tsvector('simple', ${TSV_SOURCE_SQL})`)
+    expect(TSV_SOURCE_SQL).toContain('regexp_matches(content,')
+  })
+
+  test('migration 20261005000002 re-indexes with the same expression, byte for byte', () => {
+    const migration = readFileSync(join(import.meta.dir, '../../prisma/migrations/20261005000002_glued_words_tsv/migration.sql'), 'utf8')
+    expect(migration).toContain(`SET tsv = to_tsvector('simple', ${TSV_SOURCE_SQL}) WHERE tsv IS NOT NULL;`)
   })
 })
 
@@ -115,7 +136,7 @@ describe('rebuildFts (Postgres) — the BM25 corpus-stats refresh', () => {
   test('DECLARED EQUIVALENT: the !query guard in the Postgres path', async () => {
     enterWithOrg('org-fts')
     // `if (!query) return []` short-circuits an all-whitespace token list. WITHOUT it the
-    // query still runs and PostgreSQL's `plainto_tsquery('simple', '')` matches NOTHING,
+    // query still runs and PostgreSQL's `to_tsquery('simple', '')` matches NOTHING,
     // so the empty array is returned either way -- the guard avoids a round trip, not a
     // different result. Declared, and pinned so the outcome cannot drift.
     enterWithOrg('org-empty')
@@ -160,7 +181,7 @@ describe('searchFtsChunkIds (Postgres)', () => {
     expect(mockQueryRawUnsafe).not.toHaveBeenCalled()
   })
 
-  test('uses ts_rank + plainto_tsquery scoped to org', async () => {
+  test('uses ts_rank + an any-word to_tsquery scoped to org', async () => {
     enterWithOrg('org-fts')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementationOnce(
@@ -170,7 +191,8 @@ describe('searchFtsChunkIds (Postgres)', () => {
     expect(ids).toEqual(['pg-1'])
     const sql = mockQueryRawUnsafe.mock.calls[0].map(String).join(' ')
     expect(sql).toContain('ts_rank')
-    expect(sql).toContain('plainto_tsquery')
+    expect(sql).toContain("to_tsquery('simple', $1)")
+    expect(mockQueryRawUnsafe.mock.calls[0][1]).toBe('search | term')
     expect(sql).toContain('organizationId')
   })
 

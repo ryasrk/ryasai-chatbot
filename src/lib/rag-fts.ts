@@ -1,9 +1,16 @@
 import { db } from '@/lib/db'
 import { getDbProvider } from '@/lib/db-provider'
 import { getOrgContext } from '@/lib/prisma-tenant'
+import { GLUED_WORDS_SQL } from '@/lib/glued-words'
 
 // ponytail: lazy check so mock.module('@/lib/db-provider') works in tests.
 const isPostgres = () => getDbProvider() === 'postgresql'
+
+/**
+ * What `tsv` indexes: the chunk, its keywords, and the split form of words a PDF extraction glued together
+ * (glued-words.ts). Shared by the single-chunk upsert, the rebuild and migration 20261005000002 so they cannot drift.
+ */
+export const TSV_SOURCE_SQL = `content || ' ' || COALESCE(keywords, '') || ' ' || ${GLUED_WORDS_SQL('content')}`
 
 let sqliteFtsReady = false
 let sqliteFtsPending: Promise<void> | undefined
@@ -15,6 +22,27 @@ export function buildFtsMatchQuery(tokens: string[]): string {
     .slice(0, 12)
     .map((token) => `"${token.replace(/"/g, '""')}"`)
     .join(' OR ')
+}
+
+/** Terms per Postgres full-text query. Questions measure 5–20 content words; the cap bounds what a caller can send. */
+export const PG_FTS_MAX_TERMS = 32
+
+/**
+ * The Postgres full-text query: ANY of the question's words, ranked by `ts_rank`.
+ *
+ * WHY OR (measured 2026-10-05 on the live-eval corpus, 255 answerable questions): this used `plainto_tsquery`, which
+ * ANDs every word, and a chunk rarely holds every word of a question ("…discussed in the context of advances against
+ * the drug trade…"). 253 of the 255 got ZERO rows, so the lexical leg contributed nothing and retrieval was
+ * vector-only at the candidate stage. Any-word with `ts_rank`: the evidence is in the top 64 for 218 of 255 (ts_rank_cd
+ * 216, either normalised 217; 2 ms per query). The SQLite path already ORs (`buildFtsMatchQuery`).
+ *
+ * WHY THIS IS SAFE WITH `to_tsquery`: every term is cut down to letters and digits before the join, so the only
+ * operator in the string is the `|` placed here — "a & b", "!e", "f:g" become plain words — and the string is bound,
+ * never spliced. Empty when nothing survives.
+ */
+export function buildPgOrQuery(tokens: string[]): string {
+  const terms = tokens.flatMap((t) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u)).filter(Boolean)
+  return [...new Set(terms)].slice(0, PG_FTS_MAX_TERMS).join(' | ')
 }
 
 export function normalizeFtsRows(rows: Array<{ chunkId: string; rank: number }>): string[] {
@@ -51,7 +79,7 @@ export async function upsertChunkFts(args: {
   await ensureRagFtsTable()
   if (isPostgres()) {
     await db.$executeRawUnsafe(
-      `UPDATE "DocumentChunk" SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, '')) WHERE id = $1 AND "organizationId" = $2`,
+      `UPDATE "DocumentChunk" SET tsv = to_tsvector('simple', ${TSV_SOURCE_SQL}) WHERE id = $1 AND "organizationId" = $2`,
       args.chunkId,
       orgId,
     )
@@ -83,7 +111,7 @@ export async function rebuildFts(): Promise<{ indexed: number }> {
   if (isPostgres()) {
     await db.$executeRawUnsafe(`
       UPDATE "DocumentChunk"
-      SET tsv = to_tsvector('simple', content || ' ' || COALESCE(keywords, ''))
+      SET tsv = to_tsvector('simple', ${TSV_SOURCE_SQL})
       FROM "Document" d
       WHERE "DocumentChunk"."documentId" = d."id" AND d."status" = 'ready' AND d."isEnabled" = true
         AND "DocumentChunk"."organizationId" = $1
@@ -137,7 +165,7 @@ export async function searchFtsChunkIds(args: {
   if (!orgId) return []
 
   if (isPostgres()) {
-    const query = args.queryTokens.join(' ').trim()
+    const query = buildPgOrQuery(args.queryTokens)
     if (!query) return []
     try {
       await ensureRagFtsTable()
@@ -146,9 +174,9 @@ export async function searchFtsChunkIds(args: {
       // and the fused result would drift. The id tie-break makes the order total and stable.
       const rows = await db.$queryRawUnsafe<Array<{ chunkId: string; rank: number }>>(
         `
-          SELECT id AS "chunkId", -ts_rank(tsv, plainto_tsquery('simple', $1)) AS rank
+          SELECT id AS "chunkId", -ts_rank(tsv, to_tsquery('simple', $1)) AS rank
           FROM "DocumentChunk"
-          WHERE tsv @@ plainto_tsquery('simple', $1)
+          WHERE tsv @@ to_tsquery('simple', $1)
             AND "organizationId" = $2
           ORDER BY rank ASC, id ASC
           LIMIT $3

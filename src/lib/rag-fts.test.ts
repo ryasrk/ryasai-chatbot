@@ -37,7 +37,7 @@ let dbProvider: 'sqlite' | 'postgresql' = 'sqlite'
 const setDbProvider = (p: 'sqlite' | 'postgresql') => { dbProvider = p }
 mock.module('@/lib/db-provider', () => ({ getDbProvider: () => dbProvider }))
 
-import { buildFtsMatchQuery, normalizeFtsRows, ensureRagFtsTable, upsertChunkFts, rebuildFts, searchFtsChunkIds } from './rag-fts'
+import { buildFtsMatchQuery, normalizeFtsRows, ensureRagFtsTable, upsertChunkFts, rebuildFts, searchFtsChunkIds, PG_FTS_MAX_TERMS } from './rag-fts'
 import { bypassOrg, enterWithOrg } from './prisma-tenant'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -855,13 +855,13 @@ describe('rag-fts (Postgres arm) — the search path', () => {
     expect(ids).toEqual(['pg-1'])
     const [sql, ...args] = mockQueryRawUnsafe.mock.calls[0]!
     expect(String(sql)).toContain('ts_rank')
-    expect(String(sql)).toContain('plainto_tsquery')
+    expect(String(sql)).toContain("to_tsquery('simple', $1)")
     expect(String(sql)).toContain('$1')
     expect(String(sql)).toContain('$2')
     expect(String(sql)).toContain('$3')
-    // The JOINED tokens are the only caller-controlled value and they are the
+    // The OR-joined terms are the only caller-controlled value and they are the
     // FIRST bind — not concatenated into the statement.
-    expect(args).toEqual(['invoice total', 'org-pg', 9])
+    expect(args).toEqual(['invoice | total', 'org-pg', 9])
     expect(String(sql)).not.toContain('invoice')
     // $1 appears TWICE (rank expression and WHERE MATCH) and refers to the SAME
     // bind, which is why the arg list has three entries, not four.
@@ -878,66 +878,44 @@ describe('rag-fts (Postgres arm) — the search path', () => {
     mockQueryRawUnsafe.mockImplementation(async () => [])
     await searchFtsChunkIds({ queryTokens: ['q'], limit: 3 })
     const sql = String(mockQueryRawUnsafe.mock.calls[0]![0])
-    expect(sql).toMatch(/tsv @@ plainto_tsquery\('simple', \$1\)/)
+    expect(sql).toMatch(/tsv @@ to_tsquery\('simple', \$1\)/)
     expect(sql).toMatch(/AND "organizationId" = \$2/)
     expect(mockQueryRawUnsafe.mock.calls[0]![2]).toBe('org-pg')
   })
 
-  test('the Postgres term is the RAW joined token string — buildFtsMatchQuery is NOT used', async () => {
+  test('the Postgres term carries NO tsquery operator but the `|` it places itself', async () => {
     enterWithOrg('org-fts')
-    // MEASURED ASYMMETRY, and the reason the tsquery question has a different
-    // answer on each backend. The SQLite path sanitises and quotes every token
-    // through buildFtsMatchQuery; the Postgres path does
-    // `args.queryTokens.join(' ').trim()` and hands the JOINED RAW STRING to
-    // `plainto_tsquery`.
-    //
-    // That is SAFE, but for a different reason than the SQLite path: the
-    // payload is a bind parameter (so no SQL injection), and `plainto_tsquery`
-    // parses its input as PLAIN TEXT — it does not interpret `&`, `|`, `!`,
-    // `<->` or `:` as operators. Those are `to_tsquery` constructs. So the
-    // tsquery-operator bypass the task asked about does NOT exist here, and the
-    // absence of the sanitiser is not a hole.
+    // This path now uses `to_tsquery`, which DOES interpret `&`, `|`, `!`, `<->` and `:`. It was `plainto_tsquery`
+    // (plain text, every word ANDed), which matched zero rows for 253 of 255 eval questions. The safety moved from
+    // the function to the input: every term is cut to letters and digits before the join (buildPgOrQuery), and the
+    // string is bound, never spliced.
     setDbProvider('postgresql')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementation(async () => [])
-    const payload = ["a & b", "c | d", "!e", "f:g", "NEAR(a b)"]
+    const payload = ['a & b', 'c | d', '!e', 'f:g', 'NEAR(a b)', "x' OR 1=1 --", 'h <-> i']
     await searchFtsChunkIds({ queryTokens: payload, limit: 5 })
     const bound = mockQueryRawUnsafe.mock.calls[0]![1] as string
-    // Raw, unsanitised, operator characters intact — and bound, not spliced.
-    expect(bound).toBe('a & b c | d !e f:g NEAR(a b)')
-    expect(bound).toContain('&')
-    expect(bound).toContain('|')
-    expect(bound).toContain('!')
-    // The function name is what makes this safe, so it is pinned: a switch to
-    // `to_tsquery` would turn `a & b` into an operator expression and this
-    // assertion (plus the SQL-shape one above) would be the tripwire.
+    expect(bound).toBe('a | b | c | d | e | f | g | near | x | or | 1 | h | i')
+    // Between the separators there is nothing but letters and digits.
+    for (const term of bound.split(' | ')) expect(term).toMatch(/^[\p{L}\p{N}]+$/u)
     const sql = String(mockQueryRawUnsafe.mock.calls[0]![0])
-    expect(sql).toContain('plainto_tsquery')
-    // NOTE: a naive `not.toContain('to_tsquery(')` MATCHES inside
-    // 'plainto_tsquery('  -- the substring check cannot tell the two functions
-    // apart. An assertion that cannot distinguish them is worthless, so a
-    // preceded-by-non-letter boundary is used instead.
-    expect(/(?<![a-z_])to_tsquery\(/.test(sql)).toBe(false)
-    // And the positive form of the same fact, so the lookbehind is not the only
-    // thing standing between a real `to_tsquery` and a green test.
-    expect(/plainto_tsquery\(/.test(sql)).toBe(true)
+    expect(sql).not.toContain('x')
+    expect(/(?<![a-z_])to_tsquery\(/.test(sql)).toBe(true)
+    expect(/plainto_tsquery\(/.test(sql)).toBe(false)
   })
 
-  test('NO token-count cap on the Postgres path — a 10000-token query is bound in full', async () => {
+  test('the Postgres query is capped at PG_FTS_MAX_TERMS distinct terms', async () => {
     enterWithOrg('org-fts')
-    // The 12-term cap lives only in buildFtsMatchQuery (SQLite). Here the whole
-    // joined string is one bind argument, so the bound is the caller's array
-    // length. Parameterised, therefore not injectable, but unbounded in SIZE.
-    // Pinned as the measured ceiling.
+    // An OR over every term is a scan over every chunk holding any of them, so the size is bounded here; it was
+    // unbounded (a 10,000-token query was bound in full) while every word was ANDed.
     setDbProvider('postgresql')
     enterWithOrg('org-pg')
     mockQueryRawUnsafe.mockImplementation(async () => [])
     const tokens = Array.from({ length: 10_000 }, (_, i) => `t${i}`)
-    await searchFtsChunkIds({ queryTokens: tokens, limit: 1 })
+    await searchFtsChunkIds({ queryTokens: [...tokens, 't0', 'T1'], limit: 1 })
     const bound = mockQueryRawUnsafe.mock.calls[0]![1] as string
-    expect(bound.split(' ')).toHaveLength(10_000)
-    expect(bound.startsWith('t0 t1')).toBe(true)
-    expect(bound.endsWith('t9999')).toBe(true)
+    expect(bound.split(' | ')).toHaveLength(PG_FTS_MAX_TERMS)
+    expect(bound.startsWith('t0 | t1 | t2')).toBe(true)
   })
 
   test('a whitespace-only Postgres query short-circuits WITHOUT a round trip', async () => {
