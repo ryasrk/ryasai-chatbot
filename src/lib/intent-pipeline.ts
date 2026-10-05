@@ -50,6 +50,7 @@ import { isPlaceholderChunk } from '@/lib/rag-chunking'
 import type { ChatHistoryEntry } from '@/lib/tool-utils'
 import { wrapUntrusted } from './evidence-boundary'
 import { expandQuery } from '@/lib/query-expansion'
+import { coverageMerge, decomposeForRetrieval, retrieveCompound } from '@/lib/rag-decompose'
 export { expandQuery } from '@/lib/query-expansion'
 
 export interface IntentAnalysis {
@@ -620,32 +621,44 @@ export async function retrieveWithReflection(args: {
   reflection: ReflectionResult
   retrievalPasses: number
 }> {
-  // 1. Expand query with synonyms + multilingual variants
-  const expansions = expandQuery(args.query).slice(0, MAX_EXPANSIONS)
+  // 0. A compound question: standalone sub-questions, each searched and kept (rag-decompose.ts). Simple: [query], no call.
+  const subQuestions = await decomposeForRetrieval(args.query)
+  let merged: RetrievalResult, perSub: RetrievedChunk[][] = []
+  if (subQuestions.length > 1) {
+    const rerankOn = typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
+    ;({ merged, perSub } = await retrieveCompound({
+      question: args.query, subQuestions, topK: args.topK, expand: expandQuery, merge: mergeRetrievalResults,
+      retrieve: (q) => retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: rerankOn, _skipDecompose: true, signal: args.signal }),
+      rerank: rerankOn ? ragNs.rerankMergedChunks : null,
+    }))
+  } else {
+    // 1. Expand query with synonyms + multilingual variants
+    const expansions = expandQuery(args.query).slice(0, MAX_EXPANSIONS)
 
-  // 2. Retrieve with all expansions in parallel, merge + dedupe by chunkId
-  //
-  // RERANK ONCE, NOT ONCE PER EXPANSION. Each expansion used to run its own LLM rerank over its own candidates, so a
-  // three-variant query paid for three rerank calls (MEASURED: up to 3 `rag-rerank` calls in one turn, ~2 s each and
-  // billed to the customer's key). The expansions now return their un-reranked candidate pools; the pools are merged
-  // by agreement and ONE rerank picks the final members from the union. With a single expansion nothing is deferred,
-  // so that path is byte-for-byte what it was.
-  const canDeferRerank =
-    expansions.length > 1 && typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
-  const allResults = await Promise.all(
-    expansions.map((q) =>
-      retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal }),
-    ),
-  )
-  args.signal?.throwIfAborted()
-  let merged = mergeRetrievalResults(allResults)
-  if (canDeferRerank) {
-    // The pool is capped at the size ONE retrieval would have handed the reranker, so the prompt does not grow with
-    // the number of expansions. `merged.chunks` is ordered by agreement then score, so the cap keeps the chunks the
-    // most passes found.
-    const pool = merged.chunks.slice(0, args.topK * 3)
-    const reranked = await ragNs.rerankMergedChunks(args.query, pool, args.topK)
-    merged = { ...merged, chunks: reranked }
+    // 2. Retrieve with all expansions in parallel, merge + dedupe by chunkId
+    //
+    // RERANK ONCE, NOT ONCE PER EXPANSION. Each expansion used to run its own LLM rerank over its own candidates, so a
+    // three-variant query paid for three rerank calls (MEASURED: up to 3 `rag-rerank` calls in one turn, ~2 s each and
+    // billed to the customer's key). The expansions now return their un-reranked candidate pools; the pools are merged
+    // by agreement and ONE rerank picks the final members from the union. With a single expansion nothing is deferred,
+    // so that path is byte-for-byte what it was.
+    const canDeferRerank =
+      expansions.length > 1 && typeof ragNs.rerankMergedChunks === 'function' && ragNs.ragRerankEnabled?.() === true
+    const allResults = await Promise.all(
+      expansions.map((q) =>
+        retrieveRelevantChunks({ query: q, topK: args.topK, documentIds: args.documentIds, _skipRerank: canDeferRerank, signal: args.signal }),
+      ),
+    )
+    args.signal?.throwIfAborted()
+    merged = mergeRetrievalResults(allResults)
+    if (canDeferRerank) {
+      // The pool is capped at the size ONE retrieval would have handed the reranker, so the prompt does not grow with
+      // the number of expansions. `merged.chunks` is ordered by agreement then score, so the cap keeps the chunks the
+      // most passes found.
+      const pool = merged.chunks.slice(0, args.topK * 3)
+      const reranked = await ragNs.rerankMergedChunks(args.query, pool, args.topK)
+      merged = { ...merged, chunks: reranked }
+    }
   }
 
   // 3. Reflect — is the evidence sufficient to answer?
@@ -681,7 +694,7 @@ export async function retrieveWithReflection(args: {
       // Re-stamped: the per-query ranks carried by `merged`/`secondPass` describe the orders the individual
       // retrievals produced, and this is a NEW order after the merge and the select. The UI labels these
       // "Match #N", so the label has to come from the list the caller receives.
-      chunks: stampRetrievedRanks(selectTopRetrievedChunks(merged2.chunks, args.topK * 2)),
+      chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged2.chunks, args.topK * 2), perSub, args.topK * 2)),
       queryTokens: merged2.queryTokens,
       candidatesScanned: merged2.candidatesScanned,
       graphContext: merged2.graphContext,
@@ -692,7 +705,7 @@ export async function retrieveWithReflection(args: {
 
   return {
     // Same reason as the second-pass return above: the merged order is new, so the ranks are re-stamped.
-    chunks: stampRetrievedRanks(selectTopRetrievedChunks(merged.chunks, args.topK)),
+    chunks: stampRetrievedRanks(coverageMerge(selectTopRetrievedChunks(merged.chunks, args.topK), perSub, args.topK)),
     queryTokens: merged.queryTokens,
     candidatesScanned: merged.candidatesScanned,
     graphContext: merged.graphContext,

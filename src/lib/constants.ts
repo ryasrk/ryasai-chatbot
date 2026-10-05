@@ -203,6 +203,8 @@ export const LLM_MAX_TOKENS_BY_PURPOSE: Record<string, number> = {
   'contextual-retrieval': 4096,
   'source-init': 4096,
   'alignment-check': 4096,
+  // A short JSON list, but from the same reasoning model: headroom, not answer size (see above).
+  'rag-decompose': 8192,
 }
 
 /**
