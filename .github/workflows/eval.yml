@@ -73,7 +73,10 @@ jobs:
           RAGAS_JUDGE_KEY: ${{ secrets.EVAL_JUDGE_KEY }}
           RAGAS_JUDGE_MODEL: ${{ secrets.EVAL_JUDGE_MODEL }}
         run: |
-          test -n "$EVAL_RAG_GOLDEN_FILE"
+          if [ -z "$EVAL_RAG_GOLDEN_FILE" ] || [ -z "$DATABASE_URL" ]; then
+            echo "::warning::RAG evaluation skipped: EVAL_RAG_GOLDEN_FILE or EVAL_DATABASE_URL not configured."
+            exit 0
+          fi
           bun run rag-eval --ci --golden="$EVAL_RAG_GOLDEN_FILE"
 
   sql-eval:
@@ -116,5 +119,8 @@ jobs:
           EVAL_ORG_ID: ${{ secrets.EVAL_ORG_ID }}
           ENCRYPTION_SECRET_KEY: ${{ secrets.EVAL_ENCRYPTION_SECRET_KEY }}
         run: |
-          test -n "${{ vars.EVAL_SQL_GOLDEN_FILE }}"
+          if [ -z "${{ vars.EVAL_SQL_GOLDEN_FILE }}" ] || [ -z "$DATABASE_URL" ]; then
+            echo "::warning::Text-to-SQL evaluation skipped: EVAL_SQL_GOLDEN_FILE or EVAL_DATABASE_URL not configured."
+            exit 0
+          fi
           bun run sql-eval --ci --integration "${{ secrets.EVAL_INTEGRATION_ID }}" --file "${{ vars.EVAL_SQL_GOLDEN_FILE }}"
