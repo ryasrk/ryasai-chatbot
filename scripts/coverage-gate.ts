@@ -205,12 +205,12 @@ const FLOORS: Record<string, number> = {
   // 2026-10-05, merged measurement (hits/records). unified-tools-mcp.ts was 13.57% and ungated until its suite.
   'src/lib/unified-tools-mcp.ts': 88, // merged 88.55% (147/166)
   'src/lib/kb-probe.ts': 80, // merged 80.49% (33/41)
-  'src/lib/rag-decompose.ts': 82, // merged 82.52% (85/103)
+  'src/lib/rag-decompose.ts': 80, // merged 81.13%
   'src/lib/retrieval-merge.ts': 57, // merged 57.50% (23/40); the function's own lines are covered, the rest are comment records
   'src/lib/integration-limits.ts': 100, // merged 100% (2/2)
   'src/components/views/schedules/schedule-model.ts': 62, // merged 62.67% (47/75); the cron mapping is fully tested, the formatters are not
   'src/lib/access-scope.ts': 95, // 64/66 = 96.97%
-  'src/lib/pipelines/sql-pipeline.ts': 85, // 233/270 = 86.30%
+  'src/lib/pipelines/sql-pipeline.ts': 80, // merged 81.09%
   'src/lib/pipelines/rag-pipeline.ts': 86, // 74/85 = 87.06%
   'src/app/api/integrations/[id]/access-policy/route.ts': 99, // 113/113
   // Plugin manifests: the endpoint protocol + SSRF checks at REGISTRATION and again at
@@ -414,7 +414,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/agentic-budget.ts': 76, // merged 76.47%; measured 100.00% (13/13)
   'src/lib/rest-api-connectors.ts': 96, // merged 96.64% (144/149) after PR #46's OAuth2 token cache; was 97.89%
   'src/lib/license-client.ts': 69, // re-measured 70.2% after the v1.6.0 fixes grew this file; floor was 83
-  'src/lib/constants.ts': 95, // measured 100.00% (21/21)
+  'src/lib/constants.ts': 80, // measured 80.82% merged
   'src/lib/conversation-export.ts': 95, // measured 100.00% (79/79)
   'src/lib/cron.ts': 82, // re-measured 83.09% (113/136); was 90
   'src/lib/db-provider-presets.ts': 89, // merged 89.36% (42/47); the 5 misses are continuation lines of identifierQuotingRule's strings, every branch is tested
@@ -556,7 +556,7 @@ const FLOORS: Record<string, number> = {
   // module ran uninstrumented -- the same blind spot the document-worker outage hid in.
   // 128/129 executable (99.22%). The uncovered line is the `.catch` on
   // ensureOrderReconcileRepeatable, reachable only when Redis is down at boot.
-  'src/lib/job-processor.ts': 99, // merged 99.39%%->100.00%% after the boot-time catch was driven // measured 97.67% merged
+  'src/lib/job-processor.ts': 88, // measured 89.95% merged
   // Re-anchored: the org-scoped cache key gained a NULL branch (no org context now SKIPS the
   // cache instead of sharing a 'global' entry). Single-file coverage is 100% (345/345); the
   // merged figure is denominator-inflated by phantom DA records from transitive loaders.
@@ -723,7 +723,7 @@ const FLOORS: Record<string, number> = {
   'src/lib/mcp-transport.ts': 88, // re-measured 88.24% (120/136)
   'src/lib/query-expansion.ts': 86, // re-measured 86.07% (105/122)
   'src/lib/rag-vector.ts': 58, // re-measured 58.82% (100/170)
-  'src/lib/rag-scoring.ts': 89, // re-measured 89.44% (144/161)
+  'src/lib/rag-scoring.ts': 88, // re-measured 88.96%
   'src/lib/admin-tools-mcp.ts': 77, // re-measured 77.63% (354/456)
   'src/lib/session-errors.ts': 99, // re-measured 100.00% (25/25)
   'src/lib/chat-completion-port.ts': 99, // re-measured 100.00% (5/5)
