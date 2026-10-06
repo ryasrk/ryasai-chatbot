@@ -36,7 +36,7 @@ fail()  { echo -e "${C_RED}ERROR:${C_NC} $*" >&2; exit 1; }
 # src/components/views/topbar.tsx, src/lib/otel.ts and CHANGELOG.md.
 # `src/lib/release-version.test.ts` fails the build when they disagree, and also when a pushed
 # `v<version>` tag disagrees — so a release published as `:1.1.0` cannot report `1.0.0` in its UI.
-INSTALLER_VERSION="2.1.0"
+INSTALLER_VERSION="2.2.0"
 
 # The set of variable NAMES this installer's generated .env defines, one per line.
 #

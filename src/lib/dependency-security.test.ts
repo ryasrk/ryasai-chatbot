@@ -37,6 +37,8 @@ const PINNED: Array<{ name: string; fixedIn: string; advisory: string }> = [
   { name: 'prismjs', fixedIn: '1.30.0', advisory: 'DOM clobbering (GHSA-x7hr-w5r2-h6wg), bundled into a client chunk' },
   { name: 'deepmerge-ts', fixedIn: '8.0.0', advisory: 'stack exhaustion on recursive graphs (GHSA-ggr8-5vv4-36mx), prisma CLI' },
   { name: 'effect', fixedIn: '3.20.0', advisory: 'AsyncLocalStorage context loss under concurrent load (GHSA-38f7-945m-qr2g), prisma CLI' },
+  { name: 'proxy-addr', fixedIn: '2.0.8', advisory: 'IP spoofing via IPv4-mapped IPv6 trust subnet (GHSA-jqcg-44mw-7w3h)' },
+  { name: 'source-map-js', fixedIn: '1.2.2', advisory: 'event-loop denial of service through indexed source-map (GHSA-68fv-2mgg-jv7q)' },
 ]
 
 /** Compare dotted versions numerically; returns <0, 0, >0. A prerelease suffix is ignored (none are used here). */

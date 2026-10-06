@@ -114,6 +114,90 @@ function* nodes(root: unknown): Generator<Record<string, unknown>> {
   }
 }
 
+function extractFromItems(fromList: unknown, inScopeCtes: ReadonlySet<string>): Array<{ schema: string | null; table: string }> {
+  const tables: Array<{ schema: string | null; table: string }> = []
+  if (!Array.isArray(fromList)) return tables
+  const stack = [...fromList]
+  while (stack.length > 0) {
+    const item = stack.pop()
+    if (!item || typeof item !== 'object') continue
+    const obj = item as Record<string, unknown>
+    if (obj.table && typeof obj.table === 'string') {
+      const t = lower(obj.table)
+      const schema = obj.db ? lower(obj.db) : null
+      if (!schema && inScopeCtes.has(t)) {
+        continue
+      }
+      tables.push({ schema, table: t })
+    } else if (obj.expr && typeof obj.expr === 'object') {
+      const expr = obj.expr as Record<string, unknown>
+      if (expr.type === 'tables' && Array.isArray(expr.expr)) {
+        stack.push(...expr.expr)
+      }
+    }
+  }
+  return tables
+}
+
+/**
+ * Traverse the AST to extract referenced physical base tables, respecting CTE lexical scope.
+ *
+ * CTE scoping rule: a CTE defined in a `WITH` clause is visible within that SELECT and its nested
+ * subqueries (unless shadowed), but is NEVER visible to an enclosing parent query. If an outer query
+ * references `payroll`, an inner subquery `WITH payroll AS (...)` must not cause the outer `payroll`
+ * to be treated as a CTE reference.
+ */
+function extractBaseTablesScoped(root: unknown): Array<{ schema: string | null; table: string }> {
+  const baseTables: Array<{ schema: string | null; table: string }> = []
+
+  function walk(node: unknown, inScopeCtes: ReadonlySet<string> = new Set()) {
+    if (!node || typeof node !== 'object') return
+
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, inScopeCtes)
+      return
+    }
+
+    const obj = node as Record<string, unknown>
+    if (obj.type === 'select') {
+      const currentCtes = new Set(inScopeCtes)
+      if (Array.isArray(obj.with)) {
+        for (const cte of obj.with as Array<{ name?: { value?: unknown } | string; stmt?: unknown }>) {
+          const n = typeof cte?.name === 'string' ? cte.name : cte?.name?.value
+          if (cte?.stmt) {
+            walk(cte.stmt, new Set(currentCtes))
+          }
+          if (n) currentCtes.add(lower(n))
+        }
+      }
+
+      const fromTables = extractFromItems(obj.from, currentCtes)
+      baseTables.push(...fromTables)
+
+      for (const [k, v] of Object.entries(obj)) {
+        if (k === 'with') continue
+        if (k === '_next') {
+          walk(v, currentCtes)
+          continue
+        }
+        if (Array.isArray(v)) {
+          for (const item of v) walk(item, currentCtes)
+        } else if (v && typeof v === 'object') {
+          walk(v, currentCtes)
+        }
+      }
+      return
+    }
+
+    for (const v of Object.values(obj)) {
+      if (v && typeof v === 'object') walk(v, inScopeCtes)
+    }
+  }
+
+  walk(root)
+  return baseTables
+}
+
 /**
  * Rewrite `"name"` to `` `name` `` outside strings and comments, so the guard parses a MySQL-family query the way the
  * SERVER runs it.
@@ -177,7 +261,17 @@ export function ansiQuotesToBackticks(sql: string): string {
 
 export function checkSqlAst(sql: string, opts: AstGuardOptions = {}): AstGuardResult {
   const dialect = dialectFor(opts.provider)
-  if (!dialect) return { ok: true, checked: false, tables: [] }
+  if (!dialect) {
+    if (opts.policy) {
+      return {
+        ok: false,
+        kind: 'access',
+        reason: 'Access policy cannot be enforced for this provider.',
+        detectedNodes: [opts.provider ?? 'unknown'],
+      }
+    }
+    return { ok: true, checked: false, tables: [] }
+  }
 
   const trimmed = sql.trim().replace(/;\s*$/, '')
   // MySQL-family sessions run with ANSI_QUOTES; see `ansiQuotesToBackticks`.
@@ -233,13 +327,18 @@ export function checkSqlAst(sql: string, opts: AstGuardOptions = {}): AstGuardRe
     }
   }
 
-  // Base tables: everything the parser lists, minus CTE references.
-  const baseTables: Array<{ schema: string | null; table: string }> = []
+  // Base tables: extract with CTE lexical scoping so an inner subquery CTE does not hide
+  // a physical base table queried in the outer scope.
+  const baseTables = extractBaseTablesScoped(root)
   for (const entry of parser.tableList(text, { database: dialect })) {
     const [schema, table] = split(entry)
-    const t = lower(table)
-    if (!schema && cteNames.has(t)) continue
-    baseTables.push({ schema: schema ? lower(schema) : null, table: t })
+    if (schema) {
+      const s = lower(schema)
+      const t = lower(table)
+      if (!baseTables.some((b) => b.schema === s && b.table === t)) {
+        baseTables.push({ schema: s, table: t })
+      }
+    }
   }
   const systemRefs = baseTables.filter((t) => (t.schema && SYSTEM_SCHEMAS.has(t.schema)) || SYSTEM_TABLE.test(t.table))
   if (systemRefs.length > 0) {
@@ -285,8 +384,9 @@ function checkPolicy(
     const star = column === '(.*)'
     const ownerTable = owner ? lower(owner) : null
 
-    // A column qualified by a CTE is the CTE's output; the CTE body's own columns are checked as their own entries.
-    if (ownerTable && cteNames.has(ownerTable)) continue
+    // A column qualified by a pure CTE is the CTE's output; the CTE body's own columns are checked as their own entries.
+    // If ownerTable is in tables, it is a physical base table and must NOT be skipped.
+    if (ownerTable && cteNames.has(ownerTable) && !tables.includes(ownerTable)) continue
 
     const candidates = ownerTable && tables.includes(ownerTable)
       ? [ownerTable]

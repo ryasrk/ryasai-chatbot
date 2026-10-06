@@ -392,7 +392,7 @@ export function validateAndSanitizeLlmSql(generatedSql: string, options: AstGuar
 
   // 3b. Parse. A real parse sees what the scan cannot: the base tables and columns read (for per-role access), every
   // function call as a node, SELECT … INTO, and statement shape. Fail-closed on an unparseable query.
-  const ast = options.provider ? checkSqlAst(generatedSql, options) : null
+  const ast = (options.provider || options.policy) ? checkSqlAst(generatedSql, options) : null
   if (ast && !ast.ok) {
     inc('guardrail_blocks_total', { type: `ast_${ast.kind}` })
     return {

@@ -30,7 +30,7 @@ export const publicConfig = {
    * whatever this file happened to say, which is how a customer reports the wrong version.
    * All five now say 1.0.0; keep them in step when releasing.
    */
-  appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? '2.1.0',
+  appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? '2.2.0',
   /** WebSocket port the browser client connects to (via the Caddy gateway). */
   wsPort: publicInt('NEXT_PUBLIC_WS_PORT', 3003),
 } as const

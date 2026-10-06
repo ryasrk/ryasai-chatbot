@@ -3,7 +3,7 @@
 [![CI](https://github.com/ryasrk/ryasai-chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/ryasrk/ryasai-chatbot/actions/workflows/ci.yml)
 [![Build Images](https://github.com/ryasrk/ryasai-chatbot/actions/workflows/build-images.yml/badge.svg)](https://github.com/ryasrk/ryasai-chatbot/actions/workflows/build-images.yml)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 
 An AI assistant for enterprises that runs **on your own hardware**. Staff ask questions in plain language and it
 answers from your data — your databases, your documents and your internal APIs — with sources they can check.
@@ -154,7 +154,7 @@ Stack, in brief: Next.js, React, TypeScript, PostgreSQL with `pgvector`, Bun, Ta
 
 | | |
 |---|---|
-| **Version** | 2.1.0 |
+| **Version** | 2.2.0 |
 | **Release history** | [CHANGELOG.md](./CHANGELOG.md) |
 | **Architecture** | [ARCHITECTURE.md](./ARCHITECTURE.md) |
 | **Organisation isolation** | [MULTI-TENANT-GUIDE.md](./MULTI-TENANT-GUIDE.md) |

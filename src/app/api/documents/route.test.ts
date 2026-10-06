@@ -33,6 +33,10 @@ const listWheres: Array<Record<string, unknown>> = []
 let storageChosen = false
 let storageReads = 0
 
+let lastFindManySelect: Record<string, unknown> | undefined
+let mockFindManyDocs: Array<Record<string, unknown>> = []
+let mockRawQueryResult: Array<{ documentId: string; n: bigint }> = []
+
 let docCount = 0
 let extractCalls = 0
 let detectCalls = 0
@@ -58,9 +62,10 @@ const createdDoc = {
 mock.module('@/lib/db', () => ({
   db: {
     document: {
-      findMany: async (q: { where: Record<string, unknown> }) => {
+      findMany: async (q: { where: Record<string, unknown>; select?: Record<string, unknown> }) => {
         listWheres.push(q.where)
-        return []
+        lastFindManySelect = q.select
+        return mockFindManyDocs
       },
       count: async () => docCount,
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -80,6 +85,7 @@ mock.module('@/lib/db', () => ({
       },
       findMany: async () => persistedChunks,
     },
+    $queryRaw: async () => mockRawQueryResult,
   },
 }))
 
@@ -93,6 +99,7 @@ mock.module('@/lib/session', () => ({
    */
   UnauthorizedError: class UnauthorizedError extends Error {
     readonly code = 'UNAUTHORIZED'
+    readonly statusCode = 401
     constructor(message = 'No active session.') {
       super(message)
       this.name = 'UnauthorizedError'
@@ -173,7 +180,7 @@ mock.module('@/lib/prisma-tenant', () => ({
   getOrgContext: () => undefined,
   // Same reason as getOrgContext above: the real llm-client-utils imports requireOrgContext too, and a
   // partial mock that omits it fails the file at collection time with an export error.
-  requireOrgContext: () => { throw new Error('requireOrgContext called in a route test with no org') },
+  requireOrgContext: () => 'org-1',
 }))
 
 // The predicate under test is mocked at the BOUNDARY (this module), not reimplemented: what the route
@@ -199,6 +206,9 @@ beforeEach(() => {
   getActiveUserImpl = async () => admin
   storageChosen = false
   storageReads = 0
+  mockFindManyDocs = []
+  mockRawQueryResult = []
+  lastFindManySelect = undefined
   docCount = 0
   extractCalls = 0
   detectCalls = 0
@@ -280,6 +290,37 @@ describe('the gate sits behind the cheaper refusals', () => {
     expect(storageReads).toBe(0)
     expect(createdDocs).toHaveLength(0)
   })
+
+  test('an unauthenticated request is refused with 401 before reading formData', async () => {
+    const { UnauthorizedError } = await import('@/lib/session')
+    getActiveUserImpl = async () => {
+      throw new UnauthorizedError('No active session.')
+    }
+    let formDataCalled = false
+    const req = {
+      formData: async () => {
+        formDataCalled = true
+        throw new Error('formData should not be buffered for unauthenticated request')
+      },
+    }
+    const res = await POST(req as never)
+    expect(res.status).toBe(401)
+    expect(formDataCalled).toBe(false)
+  })
+
+  test('a non-admin is refused by role before reading formData', async () => {
+    getActiveUserImpl = async () => ({ ...viewer, plan: 'flat' })
+    let formDataCalled = false
+    const req = {
+      formData: async () => {
+        formDataCalled = true
+        throw new Error('formData should not be buffered for non-admin request')
+      },
+    }
+    const res = await POST(req as never)
+    expect(res.status).toBe(403)
+    expect(formDataCalled).toBe(false)
+  })
 })
 
 describe('request validation still answers before any auth work', () => {
@@ -346,5 +387,40 @@ describe('GET /api/documents — per-role visibility', () => {
     listWheres.length = 0
     await GET(new Request('http://x/api/documents?category=SOP') as never)
     expect(listWheres[0]).toEqual({ category: 'SOP' })
+  })
+
+  test('does not select chunks.embeddingJson into memory, aggregates counts via raw SQL', async () => {
+    getActiveUserImpl = async () => admin
+    mockFindManyDocs = [
+      {
+        id: 'doc-1',
+        name: 'test.pdf',
+        type: 'pdf',
+        sizeBytes: 1024,
+        mimeType: 'application/pdf',
+        status: 'ready',
+        isEnabled: true,
+        category: 'Legal',
+        description: '',
+        cognifyStatus: 'completed',
+        cognifyError: null,
+        createdAt: new Date(),
+        _count: { chunks: 10 },
+      },
+    ]
+    mockRawQueryResult = [{ documentId: 'doc-1', n: BigInt(7) }]
+
+    const res = await GET(new Request('http://x/api/documents') as never)
+    expect(res.status).toBe(200)
+
+    // Ensure chunks: { select: { embeddingJson: true } } was NOT selected (avoiding heap bloat)
+    expect(lastFindManySelect?.chunks).toBeUndefined()
+
+    const body = (await res.json()) as {
+      documents: Array<{ chunkCount: number; embeddedChunkCount: number; embeddedJsonOnlyChunkCount: number }>
+    }
+    expect(body.documents).toHaveLength(1)
+    expect(body.documents[0].chunkCount).toBe(10)
+    expect(body.documents[0].embeddedChunkCount).toBe(7)
   })
 })

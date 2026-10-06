@@ -229,12 +229,19 @@ describe('requireExternalApiKey', () => {
     expect(identity.apiKeyId).toBe('key-ok')
   })
 
-  test('short token (< 13 chars) → falls back to all-keys scan, still invalid', async () => {
+  test('short token (< 13 chars) or invalid prefix → fast rejects without db scan', async () => {
     mockApiKeyFindMany.mockImplementation(async () => [])
     const req = new NextRequest('http://localhost/', {
       headers: { Authorization: 'Bearer ryas' },
     })
     await expect(requireExternalApiKey(req)).rejects.toThrow('invalid or has been revoked')
+    expect(mockApiKeyFindMany).not.toHaveBeenCalled()
+
+    const reqWrongPrefix = new NextRequest('http://localhost/', {
+      headers: { Authorization: 'Bearer invalid_prefix_key_123' },
+    })
+    await expect(requireExternalApiKey(reqWrongPrefix)).rejects.toThrow('invalid or has been revoked')
+    expect(mockApiKeyFindMany).not.toHaveBeenCalled()
   })
 
   test('no rate limits configured → skips count checks, succeeds', async () => {

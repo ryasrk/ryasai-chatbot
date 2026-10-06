@@ -14,7 +14,7 @@ process.env.LLM_ALLOWED_HOSTS = 'localhost'
 const { guardedFetch, readTextBounded, BlockedHostError, TooManyRedirectsError, MAX_REDIRECT_HOPS } = await import('@/lib/guarded-fetch')
 
 let internalHits = 0
-const seen: Array<{ path: string; method: string; auth: string | null; apiKey: string | null; contentType: string | null }> = []
+const seen: Array<{ path: string; method: string; auth: string | null; apiKey: string | null; contentType: string | null; body?: string }> = []
 let publicSrv: ReturnType<typeof Bun.serve>
 let otherSrv: ReturnType<typeof Bun.serve>
 let internalSrv: ReturnType<typeof Bun.serve>
@@ -25,8 +25,9 @@ beforeAll(() => {
   internalSrv = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch() { internalHits++; return new Response('INTERNAL-SECRET') } })
   otherSrv = Bun.serve({
     hostname: '127.0.0.1', port: 0,
-    fetch(req) {
-      seen.push({ path: new URL(req.url).pathname, method: req.method, auth: req.headers.get('authorization'), apiKey: req.headers.get('x-api-key'), contentType: req.headers.get('content-type') })
+    async fetch(req) {
+      const body = await req.text()
+      seen.push({ path: new URL(req.url).pathname, method: req.method, auth: req.headers.get('authorization'), apiKey: req.headers.get('x-api-key'), contentType: req.headers.get('content-type'), body })
       return new Response('other-origin')
     },
   })
@@ -41,6 +42,7 @@ beforeAll(() => {
       if (u.pathname === '/same') return new Response(null, { status: 302, headers: { location: '/final' } })
       if (u.pathname === '/final') return new Response('final-body')
       if (u.pathname === '/to-other') return new Response(null, { status: 302, headers: { location: `${OTHER}/landed` } })
+      if (u.pathname === '/to-other-307') return new Response(null, { status: 307, headers: { location: `${OTHER}/landed` } })
       if (u.pathname === '/see-other') return new Response(null, { status: 303, headers: { location: '/final' } })
       if (u.pathname === '/loop') return new Response(null, { status: 302, headers: { location: '/loop' } })
       if (u.pathname === '/huge') {
@@ -116,6 +118,19 @@ describe('guardedFetch — credentials never follow a redirect to another origin
     const final = seen.find((s) => s.path === '/final')!
     expect(final.method).toBe('GET')
     expect(final.contentType).toBeNull()
+  })
+
+  test('a cross-origin redirect drops request body to prevent credential leaks (even on 307)', async () => {
+    seen.length = 0
+    await guardedFetch(`${PUBLIC}/to-other-307`, {
+      method: 'POST',
+      body: 'client_secret=secret123',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    })
+    const landed = seen.find((s) => s.path === '/landed')!
+    expect(landed.method).toBe('GET')
+    expect((landed as any).body).toBe('')
+    expect(landed.contentType).toBeNull()
   })
 })
 

@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-10-06
+
+### Security & Production Readiness Hardening
+
+- **SQL AST Guard & Policy Enforcement**:
+  - Implemented lexical CTE scoping (`extractBaseTablesScoped`) in `sql-ast-guard.ts` so inner subquery CTEs cannot shadow outer physical base tables, completely closing the `DataAccessPolicy` bypass.
+  - Enforced fail-closed access verification for database providers without AST parser dialects (ClickHouse) when restricted data access policies are active.
+- **Cross-Origin Credential & Body Protection**:
+  - `guardedFetch` drops request body and switches method to `GET` on cross-origin redirects (including HTTP 307/308), preventing leakage of OAuth client secrets and sensitive payloads.
+- **Ingestion & Buffer DoS Mitigation**:
+  - Enforced authentication and admin role checks before parsing multipart `formData` in `POST /api/documents`, mitigating unauthenticated 50MB buffering DoS attacks.
+  - Eliminated high-memory heap allocation on `GET /api/documents` by replacing full `embeddingJson` loading with raw SQL aggregate counting.
+  - Added fast rejection for malformed or short API keys (< 13 characters or missing `ryas_` prefix) to prevent full-table database scans.
+- **Worker Reliability & Supply Chain**:
+  - Handled incomplete chunk embeddings in BullMQ `document-embed` to trigger exponential backoff retries and mark document status as error upon retry exhaustion.
+  - Overrode vulnerable dependencies (`proxy-addr@2.0.8`, `source-map-js@1.2.2`).
+
 ## [2.1.0] - 2026-10-03
 
 ### Latency: the retrieval no longer waits for the routing verdict

@@ -62,33 +62,34 @@ export async function requireExternalApiKey(
   const token = getBearerToken(req)
   if (!token) throw new UnauthorizedError('API key must be sent as a Bearer token.')
 
+  // Fast rejection: valid API keys must have KEY_PREFIX ('ryas_') and at least 13 characters.
+  // This avoids scanning active API keys in the database for invalid or malformed tokens.
+  if (token.length < 13 || !token.startsWith(KEY_PREFIX)) {
+    throw new UnauthorizedError('API key is invalid or has been revoked.')
+  }
+
   // ponytail: prefix-based narrowing — extract first 13 chars (KEY_PREFIX + 8) to filter
-  // candidates before hashing. Falls back to all keys if prefix is too short.
+  // candidates before hashing.
   const prefix = token.slice(0, 13)
   // The key identifies the org, so its candidate lookup is explicitly pre-auth.
-  const candidates = await bypassOrg(async () => prefix.length >= 13
-    ? await db.apiKey.findMany({
-        where: { isActive: true, revokedAt: null, keyPrefix: prefix },
-        select: {
-            id: true, organizationId: true, label: true, keyHash: true,
-            requestLimitPerMinute: true, dailyRequestLimit: true,
-            // Scope columns are selected HERE and only here, so no call site can enforce a scope it
-            // never loaded. A missing column would arrive as undefined and resolve to unrestricted,
-            // which is why the select is explicit rather than a bare `findMany()`.
-            allowedIntegrationIds: true, allowedDocumentIds: true, allowedTools: true,
-          },
-      })
-    : await db.apiKey.findMany({
-        where: { isActive: true, revokedAt: null },
-        select: {
-            id: true, organizationId: true, label: true, keyHash: true,
-            requestLimitPerMinute: true, dailyRequestLimit: true,
-            // Scope columns are selected HERE and only here, so no call site can enforce a scope it
-            // never loaded. A missing column would arrive as undefined and resolve to unrestricted,
-            // which is why the select is explicit rather than a bare `findMany()`.
-            allowedIntegrationIds: true, allowedDocumentIds: true, allowedTools: true,
-          },
-      })
+  const candidates = await bypassOrg(async () =>
+    db.apiKey.findMany({
+      where: { isActive: true, revokedAt: null, keyPrefix: prefix },
+      select: {
+        id: true,
+        organizationId: true,
+        label: true,
+        keyHash: true,
+        requestLimitPerMinute: true,
+        dailyRequestLimit: true,
+        // Scope columns are selected HERE and only here, so no call site can enforce a scope it
+        // never loaded. A missing column would arrive as undefined and resolve to unrestricted,
+        // which is why the select is explicit rather than a bare `findMany()`.
+        allowedIntegrationIds: true,
+        allowedDocumentIds: true,
+        allowedTools: true,
+      },
+    }),
   )
 
   const matched = candidates.find((candidate) =>

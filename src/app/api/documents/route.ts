@@ -69,20 +69,6 @@ export async function GET(req: NextRequest) {
         allowedRoles: true,
         createdAt: true,
         _count: { select: { chunks: true } },
-        // EMBEDDING COMPLETENESS, which nothing exposed before.
-        //
-        // `POST /api/documents` sets `status: 'ready'` at upload, BEFORE the embed job is even
-        // enqueued, so the status badge cannot distinguish "accepted" from "searchable". Chunks
-        // are embedded by a background job — one job per document, chunk by chunk. MEASURED: a
-        // document can sit at `ready` with one of its two chunks vectorised and neither the API
-        // nor the UI could say so; retrieval then searched a corpus missing half the document,
-        // surfacing as an intermittently failing citation assertion rather than as an error.
-        //
-        // Counting vectorised chunks here makes the gap observable, so the UI can show real
-        // progress and a test can wait on the condition instead of on a timer.
-        // `embedding` is `Unsupported("vector(384)")` in the schema, so Prisma cannot SELECT it through the typed
-        // API — the vectorised count is read with one raw aggregate below, keyed by document id.
-        chunks: { select: { embeddingJson: true } },
       },
     })
 
@@ -112,23 +98,45 @@ export async function GET(req: NextRequest) {
       // A vector-less install (no pgvector) must still list documents; the count then reads 0, which is TRUE.
     }
 
-    const data = docs.map((d) => ({
-      id: d.id,
-      name: d.name,
-      type: d.type,
-      sizeBytes: d.sizeBytes,
-      mimeType: d.mimeType,
-      status: d.status,
-      isEnabled: d.isEnabled,
-      category: d.category,
-      description: d.description,
-      cognifyStatus: d.cognifyStatus,
-      cognifyError: d.cognifyError,
-      createdAt: d.createdAt,
-      chunkCount: d._count.chunks,
-      embeddedChunkCount: vectorCounts.get(d.id) ?? 0,
-      embeddedJsonOnlyChunkCount: d.chunks.filter((c) => c.embeddingJson !== null).length - (vectorCounts.get(d.id) ?? 0),
-    }))
+    /*
+     * How many chunks have embeddingJson, counted via raw SQL aggregate instead of selecting
+     * `chunks: { select: { embeddingJson: true } }` into memory. Loading large vector JSON strings
+     * across thousands of chunks can consume hundreds of megabytes of heap.
+     */
+    const jsonCounts = new Map<string, number>()
+    try {
+      const rows = await db.$queryRaw<Array<{ documentId: string; n: bigint }>>`
+        SELECT "documentId", COUNT(*) AS n
+        FROM "DocumentChunk"
+        WHERE "organizationId" = ${requireOrgContext()} AND "embeddingJson" IS NOT NULL
+        GROUP BY "documentId"
+      `
+      for (const row of rows) jsonCounts.set(row.documentId, Number(row.n))
+    } catch {
+      // A DB failure or empty chunk table falls back cleanly; count reads 0.
+    }
+
+    const data = docs.map((d) => {
+      const vectorCount = vectorCounts.get(d.id) ?? 0
+      const jsonCount = jsonCounts.get(d.id) ?? 0
+      return {
+        id: d.id,
+        name: d.name,
+        type: d.type,
+        sizeBytes: d.sizeBytes,
+        mimeType: d.mimeType,
+        status: d.status,
+        isEnabled: d.isEnabled,
+        category: d.category,
+        description: d.description,
+        cognifyStatus: d.cognifyStatus,
+        cognifyError: d.cognifyError,
+        createdAt: d.createdAt,
+        chunkCount: d._count.chunks,
+        embeddedChunkCount: vectorCount,
+        embeddedJsonOnlyChunkCount: Math.max(0, jsonCount - vectorCount),
+      }
+    })
 
     return NextResponse.json({ documents: data, total: data.length })
   } catch (e) {
@@ -144,60 +152,60 @@ export async function GET(req: NextRequest) {
  * - Writes DOC_UPLOAD audit log.
  */
 export async function POST(req: NextRequest) {
-  let formData: FormData
-  try {
-    formData = await req.formData()
-  } catch {
-    return NextResponse.json(
-      { error: 'Expected multipart/form-data request' },
-      { status: 400 },
-    )
-  }
-
-  const file = formData.get('file')
-  const category = (formData.get('category') as string | null)?.trim() || 'Uncategorized'
-  const description = (formData.get('description') as string | null)?.trim() || ''
-
-  if (!file || !(file instanceof File)) {
-    return NextResponse.json({ error: 'Missing "file" field' }, { status: 400 })
-  }
-  if (file.size <= 0) {
-    return NextResponse.json({ error: 'File is empty' }, { status: 400 })
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json(
-      {
-        error: 'File exceeds 50 MB limit (spec §8)',
-        sizeBytes: file.size,
-        limitBytes: MAX_BYTES,
-      },
-      { status: 413 },
-    )
-  }
-
-  const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ''
-  if (!ALLOWED_EXTENSIONS.has(ext)) {
-    return NextResponse.json(
-      { error: `File type ${ext} is not allowed. Accepted: ${[...ALLOWED_EXTENSIONS].join(', ')}` },
-      { status: 400 },
-    )
-  }
-  // Check MIME type if provided (some browsers don't set it correctly).
-  // ponytail: compare the media type only — clients routinely append parameters
-  // ("text/plain;charset=utf-8"), which failed the old exact-match check and
-  // rejected uploads the extension list explicitly allows.
-  if (file.type) {
-    const mimeType = file.type.split(';')[0].trim().toLowerCase()
-    if (!ALLOWED_MIME_TYPES.has(mimeType) && mimeType !== 'application/octet-stream') {
-      return NextResponse.json({ error: `MIME type ${file.type} is not allowed.` }, { status: 400 })
-    }
-  }
-
   try {
     const user = await getActiveUser()
     enterWithOrg(user.organizationId)
     // Viewer read access is fine for documents, but mutating the corpus is admin-only.
     requireRole(user, 'admin')
+
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch {
+      return NextResponse.json(
+        { error: 'Expected multipart/form-data request' },
+        { status: 400 },
+      )
+    }
+
+    const file = formData.get('file')
+    const category = (formData.get('category') as string | null)?.trim() || 'Uncategorized'
+    const description = (formData.get('description') as string | null)?.trim() || ''
+
+    if (!file || !(file instanceof File)) {
+      return NextResponse.json({ error: 'Missing "file" field' }, { status: 400 })
+    }
+    if (file.size <= 0) {
+      return NextResponse.json({ error: 'File is empty' }, { status: 400 })
+    }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        {
+          error: 'File exceeds 50 MB limit (spec §8)',
+          sizeBytes: file.size,
+          limitBytes: MAX_BYTES,
+        },
+        { status: 413 },
+      )
+    }
+
+    const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ''
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return NextResponse.json(
+        { error: `File type ${ext} is not allowed. Accepted: ${[...ALLOWED_EXTENSIONS].join(', ')}` },
+        { status: 400 },
+      )
+    }
+    // Check MIME type if provided (some browsers don't set it correctly).
+    // ponytail: compare the media type only — clients routinely append parameters
+    // ("text/plain;charset=utf-8"), which failed the old exact-match check and
+    // rejected uploads the extension list explicitly allows.
+    if (file.type) {
+      const mimeType = file.type.split(';')[0].trim().toLowerCase()
+      if (!ALLOWED_MIME_TYPES.has(mimeType) && mimeType !== 'application/octet-stream') {
+        return NextResponse.json({ error: `MIME type ${file.type} is not allowed.` }, { status: 400 })
+      }
+    }
 
     // Quota check before extraction/embedding — those are the expensive steps,
     // and refusing after paying for them would waste an embedding call per

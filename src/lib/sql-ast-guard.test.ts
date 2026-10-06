@@ -216,9 +216,51 @@ describe('checkSqlAst — managed provider presets are checked through their pro
     expect(r.ok).toBe(false)
   })
 
-  test('ClickHouse and unknown ids stay unchecked (the parser has no ClickHouse dialect)', () => {
+  test('ClickHouse and unknown ids stay unchecked without policy (the parser has no ClickHouse dialect)', () => {
     expect(checkSqlAst('SELECT 1', { provider: 'CLICKHOUSE' })).toEqual({ ok: true, checked: false, tables: [] })
     expect(checkSqlAst('SELECT 1', { provider: 'SOMETHING_ELSE' })).toEqual({ ok: true, checked: false, tables: [] })
+  })
+
+  test('ClickHouse with a restricted policy fails closed (cannot enforce AST policy)', () => {
+    const p = policy({ orders: ['id'] })
+    const r = checkSqlAst('SELECT * FROM secret_table', { provider: 'CLICKHOUSE', policy: p })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.kind).toBe('access')
+      expect(r.reason).toContain('Access policy cannot be enforced')
+      expect(r.detectedNodes).toEqual(['CLICKHOUSE'])
+    }
+
+    const vr = validateAndSanitizeLlmSql('SELECT * FROM secret_table', { provider: 'CLICKHOUSE', policy: p })
+    expect(vr.ok).toBe(false)
+    expect(vr.violation).toBe('access')
+  })
+
+  test('a table matching an inner subquery CTE is still checked in the outer scope', () => {
+    const sql = 'SELECT salary FROM payroll WHERE EXISTS (WITH payroll AS (SELECT 1 AS id) SELECT id FROM payroll)'
+
+    // Case 1: payroll table is not in policy
+    const p1 = policy({ employees: ['id'] })
+    const r1 = checkSqlAst(sql, { provider: 'POSTGRESQL', policy: p1 })
+    expect(r1.ok).toBe(false)
+    if (!r1.ok) {
+      expect(r1.kind).toBe('access')
+      expect(r1.detectedNodes).toEqual(['table:payroll'])
+    }
+
+    // Case 2: payroll table is in policy, but salary column is restricted
+    const p2 = policy({ payroll: ['id'] })
+    const r2 = checkSqlAst(sql, { provider: 'POSTGRESQL', policy: p2, schemaColumns: new Map([['payroll', new Set(['id', 'salary'])]]) })
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) {
+      expect(r2.kind).toBe('access')
+      expect(r2.detectedNodes).toEqual(['column:payroll.salary'])
+    }
+
+    // Case 3: validateAndSanitizeLlmSql also blocks it
+    const vr = validateAndSanitizeLlmSql(sql, { provider: 'POSTGRESQL', policy: p1 })
+    expect(vr.ok).toBe(false)
+    expect(vr.violation).toBe('access')
   })
 })
 

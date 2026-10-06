@@ -116,7 +116,17 @@ export function registerJobHandler(type: JobType, handler: JobHandler): void {
 
 registerJobHandler('document-embed', async (data) => {
   if (!data.documentId) return
-  await embedDocumentChunks({ documentId: data.documentId })
+  const result = await embedDocumentChunks({ documentId: data.documentId })
+  if (!result) return
+  if (result.skipped > 0) {
+    throw new Error(`Embedding incomplete for document ${data.documentId}: ${result.embedded} embedded, ${result.skipped} skipped`)
+  }
+  const chunkCount = (await db.documentChunk.count?.({
+    where: { documentId: data.documentId },
+  })) ?? 0
+  if (chunkCount > 0 && result.embedded === 0) {
+    throw new Error(`Embedding failed for document ${data.documentId}: 0 of ${chunkCount} chunks embedded`)
+  }
 })
 
 registerJobHandler('document-cognify', async (data) => {
@@ -216,6 +226,27 @@ export function startJobWorker(): Worker<JobData> {
       } catch (error) {
         // Renewal needs operator action; retrying burns attempts without changing entitlement.
         if (error instanceof LicenseError) throw new UnrecoverableError(error.message)
+
+        // When BullMQ retries are exhausted, reflect failure in Document.status
+        const maxAttempts = job?.opts?.attempts ?? 1
+        const attemptsMade = (job?.attemptsMade ?? 0) + 1
+        if (job?.data?.documentId && attemptsMade >= maxAttempts) {
+          try {
+            const orgId = await resolveJobOrg(job.data)
+            if (orgId) {
+              await bypassOrg(() =>
+                db.document.updateMany({
+                  where: { id: job.data.documentId, organizationId: orgId },
+                  data: job.data.type === 'document-cognify'
+                    ? { cognifyStatus: 'failed', cognifyError: (error as Error).message }
+                    : { status: 'error', cognifyError: (error as Error).message },
+                }),
+              )
+            }
+          } catch (updateErr) {
+            console.error('[worker] failed to update document error status:', updateErr)
+          }
+        }
         throw error
       }
     },
@@ -234,7 +265,28 @@ export function startJobWorker(): Worker<JobData> {
       },
     },
   )
-  worker.on('failed', (job, err) => console.error('[worker] job failed:', job?.data.type, err.message))
+  worker.on('failed', async (job, err) => {
+    console.error('[worker] job failed:', job?.data?.type, err.message)
+    const maxAttempts = job?.opts?.attempts ?? 1
+    const attemptsMade = job?.attemptsMade ?? 1
+    if (job?.data?.documentId && attemptsMade >= maxAttempts) {
+      try {
+        const orgId = await resolveJobOrg(job.data)
+        if (orgId) {
+          await bypassOrg(() =>
+            db.document.updateMany({
+              where: { id: job.data.documentId, organizationId: orgId },
+              data: job.data.type === 'document-cognify'
+                ? { cognifyStatus: 'failed', cognifyError: err.message }
+                : { status: 'error', cognifyError: err.message },
+            }),
+          )
+        }
+      } catch (updateErr) {
+        console.error('[worker] failed to update document error status on failed event:', updateErr)
+      }
+    }
+  })
   // Ensure the reconciliation repeatable AFTER the worker exists so an hourly
   // tick always has a consumer. Non-fatal when Redis is briefly down.
   void ensureOrderReconcileRepeatable().catch((e) =>

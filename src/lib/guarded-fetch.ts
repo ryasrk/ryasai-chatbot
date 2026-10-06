@@ -75,6 +75,11 @@ export async function guardedFetch(
     const next = new URL(location, url)
     if (next.origin !== originalOrigin) {
       headers = Object.fromEntries(Object.entries(headers).filter(([k]) => !isCredentialHeader(k)))
+      if (body !== undefined) {
+        body = undefined
+        method = 'GET'
+        headers = Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'content-type'))
+      }
     }
     if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
       method = 'GET'

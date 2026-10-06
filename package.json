@@ -1,6 +1,6 @@
 {
   "name": "ryasai-chatbot",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "scripts": {
     "dev": "bun scripts/dev.ts",
@@ -120,7 +120,9 @@
   "overrides": {
     "deepmerge-ts": "8.0.2",
     "effect": "3.20.0",
-    "prismjs": "1.30.0"
+    "prismjs": "1.30.0",
+    "proxy-addr": "2.0.8",
+    "source-map-js": "1.2.2"
   },
   "patchedDependencies": {
     "braces@3.0.3": "patches/braces@3.0.3.patch"

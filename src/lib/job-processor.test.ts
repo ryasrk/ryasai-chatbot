@@ -80,9 +80,10 @@ const calls = {
   runOrderReconciliation: 0,
 }
 const issueOutcome = { ok: true as boolean, reason: '' }
+const embedOutcome = { embedded: 1, skipped: 0, provider: 'OPENAI', model: 'text-embedding-3-small' }
 
 mock.module('@/lib/embeddings', () => ({
-  embedDocumentChunks: async (a: unknown) => { calls.embedDocumentChunks.push(a) },
+  embedDocumentChunks: async (a: unknown) => { calls.embedDocumentChunks.push(a); return embedOutcome },
   embedCompanyDocuments: async (a: unknown) => { calls.embedCompanyDocuments.push(a) },
 }))
 let cognifyEnabled = true
@@ -113,6 +114,7 @@ const dbState = {
   doc: null as { id: string; name: string; organizationId?: string } | null,
   chunkOrderBy: null as unknown,
   chunkSelect: null as unknown,
+  chunkCount: 0,
 }
 mock.module('@/lib/db', () => ({
   db: {
@@ -135,6 +137,7 @@ mock.module('@/lib/db', () => ({
       },
     },
     documentChunk: {
+      count: async () => dbState.chunkCount,
       findMany: async (args: { orderBy?: unknown; select?: unknown }) => {
         dbState.chunkOrderBy = args.orderBy
         dbState.chunkSelect = args.select
@@ -194,7 +197,12 @@ beforeEach(() => {
   calls.runOrderReconciliation = 0
   issueOutcome.ok = true
   issueOutcome.reason = ''
+  embedOutcome.embedded = 1
+  embedOutcome.skipped = 0
+  embedOutcome.provider = 'OPENAI'
+  embedOutcome.model = 'text-embedding-3-small'
   dbState.doc = null
+  dbState.chunkCount = 0
   dbLookups.length = 0
   // Clear the ambient org between tests; AsyncLocalStorage leaks across tests in a file.
   // A sentinel VALUE (rather than a helper) is used so "no org" is a genuine `undefined`:
@@ -388,6 +396,61 @@ describe('the handlers registered at module load', () => {
     startJobWorker()
     await capturedProcessor!({ data: { type: 'document-embed', organizationId: 'o1' } })
     expect(calls.embedDocumentChunks).toHaveLength(0)
+  })
+
+  test('document-embed throws when skipped chunks exist so BullMQ triggers retry', async () => {
+    embedOutcome.skipped = 2
+    embedOutcome.embedded = 1
+    startJobWorker()
+    await expect(
+      capturedProcessor!({ data: { type: 'document-embed', documentId: 'doc-9', organizationId: 'o1' } }),
+    ).rejects.toThrow('Embedding incomplete for document doc-9')
+    embedOutcome.skipped = 0
+  })
+
+  test('document-embed throws when chunks were expected but 0 were embedded', async () => {
+    embedOutcome.embedded = 0
+    embedOutcome.skipped = 0
+    dbState.chunkCount = 4
+    startJobWorker()
+    await expect(
+      capturedProcessor!({ data: { type: 'document-embed', documentId: 'doc-zero', organizationId: 'o1' } }),
+    ).rejects.toThrow('Embedding failed for document doc-zero: 0 of 4 chunks embedded')
+  })
+
+  test('Document.status reflects error when worker retries are exhausted', async () => {
+    embedOutcome.skipped = 2
+    embedOutcome.embedded = 0
+    licenseState.updates.length = 0
+    startJobWorker()
+    await expect(
+      capturedProcessor!({
+        data: { type: 'document-embed', documentId: 'doc-exhausted', organizationId: 'o1' },
+        attemptsMade: 2,
+        opts: { attempts: 3 },
+      } as any),
+    ).rejects.toThrow('Embedding incomplete for document doc-exhausted')
+
+    expect(licenseState.updates).toHaveLength(1)
+    expect(licenseState.updates[0].where).toEqual({ id: 'doc-exhausted', organizationId: 'o1' })
+    expect(licenseState.updates[0].data.status).toBe('error')
+    expect(licenseState.updates[0].data.cognifyError).toContain('Embedding incomplete for document doc-exhausted')
+  })
+
+  test('Document.status is NOT updated to error when attempts remain for BullMQ retry', async () => {
+    embedOutcome.skipped = 2
+    embedOutcome.embedded = 0
+    licenseState.updates.length = 0
+    startJobWorker()
+    await expect(
+      capturedProcessor!({
+        data: { type: 'document-embed', documentId: 'doc-retry', organizationId: 'o1' },
+        attemptsMade: 0,
+        opts: { attempts: 3 },
+      } as any),
+    ).rejects.toThrow('Embedding incomplete for document doc-retry')
+
+    expect(licenseState.updates).toHaveLength(0)
   })
 
   test('document-cognify loads the chunks IN INDEX ORDER and hands them to cognifyDocument', async () => {
