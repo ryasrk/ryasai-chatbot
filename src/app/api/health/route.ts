@@ -12,6 +12,7 @@ import {
 } from '@/lib/health-status'
 import { validatorUrl } from '@/lib/license-client'
 import { cogneeServerReady } from '@/lib/cognee-http'
+import { bypassOrg } from '@/lib/prisma-tenant'
 
 /**
  * What one check reports. `configured` keeps "this dependency is absent by
@@ -115,7 +116,7 @@ export async function GET() {
 async function probeDb(timeoutMs: number): Promise<CheckStatus & { configured: boolean }> {
   const start = Date.now()
   try {
-    await withDeadline(db.document.count(), timeoutMs, 'Database probe')
+    await withDeadline(bypassOrg(() => db.document.count()), timeoutMs, 'Database probe')
     return { ok: true, configured: true, latencyMs: Date.now() - start }
   } catch (e) {
     return {
